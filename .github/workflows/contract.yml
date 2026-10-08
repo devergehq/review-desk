@@ -1,0 +1,52 @@
+# The contract checks. Deliberately a separate workflow from ci.yml, which runs the Rust
+# build: the two arrive on different branches (DEV-854 and DEV-850) and editing one file
+# from both would have conflicted for no benefit. The job name differs too, so the two
+# never appear as the same check on a pull request.
+name: Contract
+
+on:
+  pull_request:
+    paths:
+      - 'contract/**'
+      - '.github/workflows/contract.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'contract/**'
+      - '.github/workflows/contract.yml'
+
+concurrency:
+  group: contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Lint the OpenAPI document and validate every example
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contract
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: contract/package-lock.json
+
+      # `npm ci` rather than `npm install`: the lockfile is what makes this run
+      # reproducible, and a check whose tooling drifts underneath it is not a check.
+      - name: Install the pinned tooling
+        run: npm ci
+
+      - name: Lint the OpenAPI document
+        run: npm run lint
+
+      # Validates every example against its schema AND fails when an operation has no
+      # example at all. The second half is the part that matters: a validator that only
+      # checks the files that happen to exist would pass a contract with no examples,
+      # which is the state this contract replaces.
+      - name: Validate every example against its schema
+        run: npm run validate

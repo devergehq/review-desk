@@ -1,0 +1,6 @@
+{
+  "code": "store_unavailable",
+  "message": "Could not open ~/.review-desk/review-desk.db: permission denied.",
+  "field": null,
+  "expected": null
+}

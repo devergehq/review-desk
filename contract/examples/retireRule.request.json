@@ -1,0 +1,3 @@
+{
+  "reason": "The legacy importer is removed in #415, so there is nothing left for the guard to protect."
+}
