@@ -1,0 +1,20 @@
+[package]
+name = "review-desk"
+description = "Review Desk: the record of an agent-assisted code review."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "review-desk"
+path = "src/main.rs"
+
+[dependencies]
+review-desk-store = { path = "../store" }
+clap.workspace = true
+
+[dev-dependencies]
+assert_cmd.workspace = true
+predicates.workspace = true
+tempfile.workspace = true
