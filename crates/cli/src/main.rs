@@ -46,7 +46,21 @@ enum DbCommand {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    // clap would exit the process itself with code 2 on a usage error, which is the
+    // code this binary reserves for being unable to run. A typo is a refused request.
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(error) => {
+            let _ = error.print();
+            // Help and version are not errors; clap reports them through the same type
+            // and sends them to standard output.
+            return if error.use_stderr() {
+                ExitCode::from(EXIT_REFUSED)
+            } else {
+                ExitCode::SUCCESS
+            };
+        }
+    };
 
     match run(cli) {
         Ok(()) => ExitCode::SUCCESS,

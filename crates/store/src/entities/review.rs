@@ -15,6 +15,8 @@ impl Store {
     /// A review is unique on repository, pull request and round; a second one fails
     /// with [`StoreError::DuplicateReview`] rather than an opaque SQLite error.
     pub fn create_review(&self, new: NewReview) -> Result<Review> {
+        validate(&new)?;
+
         let created_at = now();
         self.conn
             .execute(
@@ -155,6 +157,50 @@ impl Store {
 
         self.get_review(id)
     }
+}
+
+/// Check the identity the rest of the store keys on.
+///
+/// The store is the only way into the record, so it is the only place that can hold
+/// this line. A review whose repository is empty or malformed would silently partition
+/// the record: rules are scoped by the same string, and `rules_for_repo` would never
+/// match it.
+fn validate(new: &NewReview) -> Result<()> {
+    let repo = new.repo.trim();
+    let (owner, name) = repo.split_once('/').unwrap_or(("", ""));
+    if owner.is_empty() || name.is_empty() || name.contains('/') {
+        return Err(StoreError::InvalidValue {
+            field: "repo",
+            value: new.repo.clone(),
+            expected: "a repository as owner/repo".to_string(),
+        });
+    }
+
+    if new.pr < 1 {
+        return Err(StoreError::InvalidValue {
+            field: "pr",
+            value: new.pr.to_string(),
+            expected: "a pull request number of 1 or more".to_string(),
+        });
+    }
+
+    if new.round < 1 {
+        return Err(StoreError::InvalidValue {
+            field: "round",
+            value: new.round.to_string(),
+            expected: "a round of 1 or more".to_string(),
+        });
+    }
+
+    if new.head_sha.trim().is_empty() {
+        return Err(StoreError::InvalidValue {
+            field: "head_sha",
+            value: new.head_sha.clone(),
+            expected: "the head commit being reviewed".to_string(),
+        });
+    }
+
+    Ok(())
 }
 
 /// Build a review from a row selecting [`COLUMNS`].
