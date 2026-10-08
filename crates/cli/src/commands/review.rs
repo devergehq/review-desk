@@ -1,7 +1,9 @@
-//! `review open`, `review link` and `review show`.
+//! `review open`, `review link`, `review find` and `review show`.
 
 use clap::Subcommand;
-use review_desk_store::{Finding, FullReview, Outcome, Review, ReviewLinks, Store};
+use review_desk_store::{
+    Draft, Finding, FullReview, Outcome, Review, ReviewFacts, ReviewLayer, ReviewLinks, Store,
+};
 use serde_json::json;
 
 use crate::error::{CliError, Result};
@@ -13,6 +15,11 @@ pub enum ReviewCommand {
     ///
     /// A head commit already reviewed returns that review. A new head commit on a pull
     /// request that has been reviewed before starts the next round. Prints the id.
+    ///
+    /// Any fact given is written to the review, and a fact left out is left as it was.
+    /// Running this again on a head commit already reviewed hands back the same review
+    /// without spending a round, so it is also how a finished session records what it
+    /// did not check.
     Open {
         /// The repository, as owner/repo.
         #[arg(long, value_name = "OWNER/REPO")]
@@ -23,6 +30,18 @@ pub enum ReviewCommand {
         /// The head commit being reviewed.
         #[arg(long, value_name = "SHA")]
         head: String,
+        /// The pull request's title.
+        #[arg(long, value_name = "TEXT")]
+        title: Option<String>,
+        /// The Linear ticket the change is for.
+        #[arg(long = "ticket", value_name = "ID")]
+        ticket: Option<String>,
+        /// Additions plus deletions in the change.
+        #[arg(long = "changed-lines", value_name = "N")]
+        changed_lines: Option<i64>,
+        /// What the review did not look at, in the reviewer's own words.
+        #[arg(long = "not-checked", value_name = "TEXT")]
+        not_checked: Option<String>,
     },
 
     /// Store the other systems' ids against a review.
@@ -44,7 +63,21 @@ pub enum ReviewCommand {
         github_review: Option<String>,
     },
 
-    /// Print the whole review: the brief, the findings and the outcomes.
+    /// List the reviews of a pull request, newest round first.
+    ///
+    /// For an agent that has lost a review id: the rounds are printed with their head
+    /// commits, so the one being worked on can be picked out.
+    Find {
+        /// The repository, as owner/repo.
+        #[arg(long, value_name = "OWNER/REPO")]
+        repo: String,
+        /// The pull request number.
+        #[arg(long, value_name = "N")]
+        pr: i64,
+    },
+
+    /// Print the whole review: the layers, the brief, the findings, the outcomes and
+    /// the draft.
     Show {
         /// The review's id.
         #[arg(long, value_name = "ID")]
@@ -54,9 +87,27 @@ pub enum ReviewCommand {
 
 pub fn run(command: &ReviewCommand) -> Result<Report> {
     match command {
-        ReviewCommand::Open { repo, pr, head } => {
+        ReviewCommand::Open {
+            repo,
+            pr,
+            head,
+            title,
+            ticket,
+            changed_lines,
+            not_checked,
+        } => {
             let store = Store::open_default()?;
-            let opened = store.open_review(repo, *pr, head)?;
+            let opened = store.open_review_with(
+                repo,
+                *pr,
+                head,
+                &ReviewFacts {
+                    title: title.clone(),
+                    ticket_id: ticket.clone(),
+                    changed_lines: *changed_lines,
+                    not_checked: not_checked.clone(),
+                },
+            )?;
 
             Ok(Report::new(
                 json!({ "review": opened.review, "created": opened.created }),
@@ -99,6 +150,30 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
             ))
         }
 
+        ReviewCommand::Find { repo, pr } => {
+            let store = Store::open_default()?;
+            // The store lists rounds oldest first, which is right for reading a pull
+            // request's history. An agent recovering an id wants the round it is on,
+            // so the newest comes first here.
+            let mut reviews = store.list_reviews(repo, *pr)?;
+            reviews.reverse();
+
+            let plain = if reviews.is_empty() {
+                format!("no reviews of {repo}#{pr}")
+            } else {
+                reviews
+                    .iter()
+                    .map(found_line)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+
+            Ok(Report::new(
+                json!({ "repo": repo, "pr": pr, "reviews": reviews }),
+                plain,
+            ))
+        }
+
         ReviewCommand::Show { review } => {
             let store = Store::open_default()?;
             let full = store.full_review(*review)?;
@@ -107,6 +182,18 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
             Ok(Report::new(serde_json::to_value(&full)?, plain))
         }
     }
+}
+
+/// `3 round 2 head 3f9c2ab — Retry failed webhook deliveries`
+fn found_line(review: &Review) -> String {
+    let mut line = format!(
+        "{} round {} head {}",
+        review.id, review.round, review.head_sha
+    );
+    if let Some(title) = &review.title {
+        line.push_str(&format!(" — {title}"));
+    }
+    line
 }
 
 /// `review 3: session=s-1 ledger=- github-review=gh-44`, with `-` for an id not held.
@@ -135,6 +222,21 @@ fn show_lines(full: &FullReview) -> String {
         format!("  {}", links_line(review)),
     ];
 
+    if let Some(title) = &review.title {
+        lines.push(format!("  title: {title}"));
+    }
+    for (label, value) in [
+        ("ticket", review.ticket_id.clone()),
+        ("changed lines", review.changed_lines.map(|n| n.to_string())),
+        ("not checked", review.not_checked.clone()),
+    ] {
+        if let Some(value) = value {
+            lines.push(format!("  {label}: {value}"));
+        }
+    }
+
+    lines.push(format!("  layers: {}", layers_line(&full.layers)));
+
     match &full.brief {
         Some(brief) => {
             lines.push(format!(
@@ -149,10 +251,21 @@ fn show_lines(full: &FullReview) -> String {
                 ("diagram", &brief.diagram),
                 ("option map", &brief.option_map),
                 ("approach", &brief.approach_verdict),
+                ("provenance", &brief.provenance),
             ] {
                 if let Some(value) = value {
                     lines.push(format!("    {label}: {value}"));
                 }
+            }
+            for option in &brief.options {
+                lines.push(format!(
+                    "    option {}{}: {} (for: {} · against: {})",
+                    option.key,
+                    if option.chosen { " — built" } else { "" },
+                    option.title,
+                    option.argument_for,
+                    option.argument_against,
+                ));
             }
         }
         None => lines.push("  brief: none".to_string()),
@@ -168,7 +281,34 @@ fn show_lines(full: &FullReview) -> String {
         lines.push(format!("    {}", outcome_line(outcome)));
     }
 
+    match &full.draft {
+        Some(draft) => lines.push(format!("  draft: {}", draft_line(draft))),
+        None => lines.push("  draft: none".to_string()),
+    }
+
     lines.join("\n")
+}
+
+/// `1 lint done, 2 understand waiting_on_you, …`, every layer, in order.
+///
+/// All seven, always: the store completes the set, so a layer nothing has written reads
+/// as `pending` rather than being missing from the line.
+fn layers_line(layers: &[ReviewLayer]) -> String {
+    layers
+        .iter()
+        .map(|layer| format!("{} {} {}", layer.number, layer.name, layer.state))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// `ready, 1240 characters` or `approved as request_changes, 1240 characters`.
+fn draft_line(draft: &Draft) -> String {
+    let mut line = draft.status.to_string();
+    if let Some(event) = &draft.event {
+        line.push_str(&format!(" as {event}"));
+    }
+    line.push_str(&format!(", {} characters", draft.body.len()));
+    line
 }
 
 /// `2 should clarity src/x.rs:12 held_back — the name says nothing`

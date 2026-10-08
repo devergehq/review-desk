@@ -389,3 +389,39 @@ fn a_review_with_no_draft_has_none_and_an_unknown_review_cannot_have_one() {
         other => panic!("expected UnknownParent, got {other:?}"),
     }
 }
+
+#[test]
+fn rewriting_a_draft_clears_a_lint_that_described_the_old_body() {
+    // The lint is a statement about a particular body. Keeping it across a rewrite
+    // would attribute "passes, 118 of 150 words" to text it never saw, and the
+    // contract says the lint is re-run on every save.
+    let (_dir, store) = temp_store();
+    let review = store
+        .create_review(new_review("acme/portal", 412, "3f9c2ab", 1))
+        .unwrap();
+
+    store
+        .put_draft(
+            review.id,
+            NewDraft {
+                body: "the first body".to_string(),
+                status: DraftStatus::Ready,
+                lint: Some(DraftLint {
+                    passes: Some(true),
+                    visible_words: Some(118),
+                    ..DraftLint::default()
+                }),
+            },
+        )
+        .unwrap();
+
+    let rewritten = store
+        .put_draft(review.id, NewDraft::ready("a different body"))
+        .unwrap();
+
+    assert!(
+        rewritten.lint.is_empty(),
+        "a body saved with no lint has not been linted: {:?}",
+        rewritten.lint
+    );
+}

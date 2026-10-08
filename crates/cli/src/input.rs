@@ -13,6 +13,25 @@ use crate::error::{CliError, Result};
 /// The path that means standard input.
 const STDIN: &str = "-";
 
+/// Read text from `path`, or from standard input when `path` is `-`.
+///
+/// Not every document a command takes is JSON. A draft body is GitHub-flavoured
+/// markdown that gets posted verbatim, and wrapping it in a JSON string so the command
+/// line could parse it would mean every mermaid fence and every quotation mark in a
+/// review had to be escaped by whatever wrote it.
+pub fn read_text(path: &Path) -> Result<String> {
+    if path == Path::new(STDIN) {
+        let mut text = String::new();
+        std::io::stdin()
+            .read_to_string(&mut text)
+            .map_err(|error| CliError::bad_input("cannot read standard input", error))?;
+        return Ok(text);
+    }
+
+    std::fs::read_to_string(path)
+        .map_err(|error| CliError::bad_input(format!("cannot read {}", path.display()), error))
+}
+
 /// Read one JSON document from `path`, or from standard input when `path` is `-`.
 ///
 /// `closed_sets`, when given, is appended to a refusal from the *parse*, naming what the
