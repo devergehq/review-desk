@@ -1,13 +1,13 @@
 //! Findings: what a review found, each with a sequence number stable within its review.
 
-use rusqlite::{params, OptionalExtension, Row};
+use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior};
 
 use crate::error::{Result, StoreError};
 use crate::model::{now, Disposition, Finding, NewFinding};
 use crate::{is_foreign_key_violation, Store};
 
 const COLUMNS: &str = "review_id, seq, lens, severity, file, line, claim, evidence, \
-                       disposition, disposition_reason, created_at";
+                       disposition, disposition_reason, github_comment_id, created_at";
 
 impl Store {
     /// Add a finding to a review, assigning the next sequence number within it.
@@ -15,9 +15,13 @@ impl Store {
     /// Fails with [`StoreError::UnknownParent`] if the review does not exist; the
     /// database enforces that, not this function.
     pub fn add_finding(&self, review_id: i64, new: NewFinding) -> Result<Finding> {
-        // One transaction, so two callers adding findings at once cannot be handed the
-        // same sequence number.
-        let tx = self.conn.unchecked_transaction()?;
+        // The read that picks the sequence number and the insert that claims it must
+        // be one step. A DEFERRED transaction would take a read lock and then try to
+        // upgrade it on the insert, and SQLite refuses that upgrade immediately with
+        // "database is locked" rather than waiting out the busy timeout — it cannot
+        // wait without risking deadlock. IMMEDIATE takes the write lock up front, so a
+        // second caller queues on the busy handler instead of failing.
+        let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
 
         let seq: i64 = tx.query_row(
             "SELECT COALESCE(MAX(seq), 0) + 1 FROM findings WHERE review_id = ?1",
@@ -109,6 +113,61 @@ impl Store {
 
         self.get_finding(review_id, seq)
     }
+
+    /// Record the GitHub review comment a finding was posted as.
+    ///
+    /// Linking the same finding to the same comment again changes nothing, so the
+    /// command can be re-run. Linking a comment that another finding already holds is
+    /// refused: a comment belongs to one finding, and the harvester would otherwise
+    /// record the same reply against two of them.
+    pub fn set_finding_github_comment(
+        &self,
+        review_id: i64,
+        seq: i64,
+        comment_id: &str,
+    ) -> Result<Finding> {
+        let comment_id = comment_id.trim();
+        if comment_id.is_empty() {
+            return Err(StoreError::InvalidValue {
+                field: "github_comment_id",
+                value: comment_id.to_string(),
+                expected: "the id of the GitHub review comment the finding was posted as"
+                    .to_string(),
+            });
+        }
+
+        // Checked first, so an unknown finding is NotFound rather than a no-op update.
+        self.get_finding(review_id, seq)?;
+
+        if let Some(holder) = self.find_finding_by_github_comment(comment_id)? {
+            if (holder.review_id, holder.seq) != (review_id, seq) {
+                return Err(StoreError::DuplicateGithubComment {
+                    comment_id: comment_id.to_string(),
+                    review_id: holder.review_id,
+                    seq: holder.seq,
+                });
+            }
+        }
+
+        self.conn.execute(
+            "UPDATE findings SET github_comment_id = ?3 WHERE review_id = ?1 AND seq = ?2",
+            params![review_id, seq, comment_id],
+        )?;
+
+        self.get_finding(review_id, seq)
+    }
+
+    /// The finding posted as this GitHub review comment, if any.
+    pub fn find_finding_by_github_comment(&self, comment_id: &str) -> Result<Option<Finding>> {
+        Ok(self
+            .conn
+            .query_row(
+                &format!("SELECT {COLUMNS} FROM findings WHERE github_comment_id = ?1"),
+                params![comment_id],
+                row_to_finding,
+            )
+            .optional()?)
+    }
 }
 
 /// Build a finding from a row selecting [`COLUMNS`].
@@ -124,6 +183,7 @@ fn row_to_finding(row: &Row<'_>) -> rusqlite::Result<Finding> {
         evidence: row.get("evidence")?,
         disposition: row.get("disposition")?,
         disposition_reason: row.get("disposition_reason")?,
+        github_comment_id: row.get("github_comment_id")?,
         created_at: row.get("created_at")?,
     })
 }

@@ -25,6 +25,7 @@ mod entities;
 pub mod error;
 pub mod migrations;
 pub mod model;
+mod normalise;
 pub mod path;
 
 use std::path::{Path, PathBuf};
@@ -35,8 +36,8 @@ pub use crate::error::{Result, StoreError};
 pub use crate::migrations::newest_version;
 pub use crate::model::{
     now, Actor, Brief, Disposition, Finding, FindingRef, FullReview, NewBrief, NewFinding,
-    NewOutcome, NewReview, NewRule, Outcome, OutcomeKind, Review, ReviewLinks, Rule, RuleScope,
-    RuleStage, Severity, Timestamp,
+    NewOutcome, NewReview, NewRule, OpenedReview, Outcome, OutcomeKind, PrState, Review,
+    ReviewLinks, Rule, RuleScope, RuleStage, Severity, Timestamp,
 };
 pub use crate::path::{default_db_path, resolve_db_path, DB_ENV_VAR};
 
@@ -67,6 +68,11 @@ impl Store {
     ///
     /// This exists so that a test, or a recovery, can hold a database at an older
     /// version deliberately. Ordinary callers want [`Store::open`].
+    ///
+    /// The typed functions speak the newest schema only: once a migration adds a
+    /// column, a read of that entity against an older database fails on the missing
+    /// column. A database held back is for inspecting and migrating, not for writing
+    /// through.
     pub fn open_at_version(path: impl AsRef<Path>, target: i64) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
 

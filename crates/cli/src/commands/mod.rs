@@ -1,0 +1,83 @@
+//! The command groups.
+//!
+//! One module per group, one variant in [`Command`] and one arm in [`run`]. A new group
+//! is a three-line change in this file and a file of its own, which is what keeps two
+//! sessions adding commands at the same time out of each other's way.
+
+mod brief;
+mod db;
+mod finding;
+mod harvest;
+mod outcome;
+mod review;
+mod rules;
+
+use clap::{Parser, Subcommand};
+
+use crate::error::Result;
+use crate::report::Report;
+
+/// The whole command line.
+#[derive(Debug, Parser)]
+#[command(
+    name = "review-desk",
+    version,
+    about = "The record of an agent-assisted code review."
+)]
+pub struct Cli {
+    #[command(subcommand)]
+    command: Command,
+
+    /// Print one JSON document on standard output and nothing else.
+    #[arg(long, global = true)]
+    pub json: bool,
+}
+
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Inspect the database.
+    Db {
+        #[command(subcommand)]
+        command: db::DbCommand,
+    },
+    /// Open, link and read a review.
+    Review {
+        #[command(subcommand)]
+        command: review::ReviewCommand,
+    },
+    /// Store and confirm a review's brief.
+    Brief {
+        #[command(subcommand)]
+        command: brief::BriefCommand,
+    },
+    /// Add findings and change what is to become of them.
+    Finding {
+        #[command(subcommand)]
+        command: finding::FindingCommand,
+    },
+    /// Record what became of a finding.
+    Outcome {
+        #[command(subcommand)]
+        command: outcome::OutcomeCommand,
+    },
+    /// Read the rules in force.
+    Rules {
+        #[command(subcommand)]
+        command: rules::RulesCommand,
+    },
+    /// Read the outcomes of posted reviews back from GitHub and record them.
+    Harvest(harvest::HarvestArgs),
+}
+
+/// Run whatever was asked for, and hand back what it has to say.
+pub fn run(cli: &Cli) -> Result<Report> {
+    match &cli.command {
+        Command::Db { command } => db::run(command),
+        Command::Review { command } => review::run(command),
+        Command::Brief { command } => brief::run(command),
+        Command::Finding { command } => finding::run(command),
+        Command::Outcome { command } => outcome::run(command),
+        Command::Rules { command } => rules::run(command),
+        Command::Harvest(args) => harvest::run(args),
+    }
+}

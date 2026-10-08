@@ -1,0 +1,6 @@
+{
+  "code": "github_unavailable",
+  "message": "Could not read acme/portal#412: gh is not logged in. Run `gh auth login`, or pass head_sha.",
+  "field": "head_sha",
+  "expected": null
+}

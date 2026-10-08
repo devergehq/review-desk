@@ -1,0 +1,6 @@
+{
+  "code": "invalid_value",
+  "message": "\"wontfix\" is not a disposition.",
+  "field": "disposition",
+  "expected": "in_draft, held_back, suppressed"
+}

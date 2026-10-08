@@ -1,2 +1,5 @@
 target/
 .DS_Store
+
+# Tooling for the contract checks (contract/package.json pins the versions).
+contract/node_modules/

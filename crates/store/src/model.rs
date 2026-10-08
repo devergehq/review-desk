@@ -115,6 +115,11 @@ string_enum! {
 
 string_enum! {
     /// What happened to a finding.
+    ///
+    /// The last three are what the harvester records. `Replied` is deliberately not
+    /// `Accepted` or `Rejected`: deciding which a reply was needs judgement, and the
+    /// harvester is deterministic. It stores the reply and leaves the reading of it to
+    /// a person or an agent.
     OutcomeKind as "kind" {
         Cut => "cut",
         Regraded => "regraded",
@@ -122,7 +127,25 @@ string_enum! {
         Kept => "kept",
         Rejected => "rejected",
         RaisedAgain => "raised_again",
+        Replied => "replied",
+        ThreadResolved => "thread_resolved",
         CodeChangedAfter => "code_changed_after",
+    }
+}
+
+string_enum! {
+    /// What a pull request was last seen to be.
+    PrState as "pr_state" {
+        Open => "open",
+        Merged => "merged",
+        Closed => "closed",
+    }
+}
+
+impl PrState {
+    /// Whether this pull request is finished with, and so has nothing left to harvest.
+    pub fn is_settled(&self) -> bool {
+        matches!(self, PrState::Merged | PrState::Closed)
     }
 }
 
@@ -178,6 +201,13 @@ impl RuleScope {
         match (scope, repo) {
             ("global", _) => Ok(RuleScope::Global),
             ("repo", Some(repo)) => Ok(RuleScope::Repo(repo)),
+            // "repo" is a valid scope, so blaming the scope column here would be both
+            // wrong and self-contradictory. The fault is the missing repository.
+            ("repo", None) => Err(StoreError::InvalidValue {
+                field: "scope_repo",
+                value: String::new(),
+                expected: "a repository as owner/repo, because the scope is repo".to_string(),
+            }),
             (other, _) => Err(StoreError::InvalidValue {
                 field: "scope",
                 value: other.to_string(),
@@ -205,7 +235,23 @@ pub struct Review {
     pub ledger_id: Option<String>,
     /// The review posted on GitHub.
     pub github_review_id: Option<String>,
+    /// What the pull request was last seen to be. `None` means the harvester has never
+    /// looked.
+    pub pr_state: Option<PrState>,
+    /// When the pull request reached that state: merged or closed at. `None` while it
+    /// is open.
+    pub pr_state_at: Option<Timestamp>,
+    /// When the harvester last read this review's outcomes back from GitHub.
+    pub harvested_at: Option<Timestamp>,
     pub created_at: Timestamp,
+}
+
+impl Review {
+    /// Whether this review's pull request was finished with at the last harvest, and
+    /// so should not be fetched again.
+    pub fn is_settled(&self) -> bool {
+        self.pr_state.is_some_and(|state| state.is_settled())
+    }
 }
 
 /// A review to create.
@@ -221,6 +267,16 @@ pub struct NewReview {
     pub ledger_id: Option<String>,
     #[serde(default)]
     pub github_review_id: Option<String>,
+}
+
+/// A review opened for a head commit: the one that was already there, or a new round.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OpenedReview {
+    pub review: Review,
+    /// True when this call created the review, false when it was already on the record.
+    /// A caller that needs to know which happened should not have to read the round and
+    /// guess.
+    pub created: bool,
 }
 
 /// The ids of the other systems' records for a review. A field left `None` is left
@@ -260,7 +316,12 @@ impl Brief {
 }
 
 /// A brief to store, replacing any brief already held for the review.
+///
+/// Unknown fields are refused. Every field but `problem` is optional, so a misspelled
+/// `option_map` would otherwise deserialise to `None` and the record would quietly lose
+/// what the review actually wrote.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NewBrief {
     pub problem: String,
     #[serde(default)]
@@ -289,11 +350,19 @@ pub struct Finding {
     pub disposition: Disposition,
     /// Why it was held back or suppressed.
     pub disposition_reason: Option<String>,
+    /// The GitHub review comment this finding was posted as, set by
+    /// `review-desk finding link`. Without it the harvester cannot find the finding's
+    /// thread, so it is skipped for replies and resolution.
+    pub github_comment_id: Option<String>,
     pub created_at: Timestamp,
 }
 
 /// A finding to add to a review. The sequence number is assigned by the store.
+///
+/// Unknown fields are refused, for the same reason as [`NewBrief`]: a misspelled
+/// `evidence` is a finding with no evidence, which is worse than a refusal.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NewFinding {
     pub lens: String,
     pub severity: Severity,
@@ -328,6 +397,10 @@ pub struct Outcome {
     pub occurred_at: Timestamp,
     /// Anything worth saying beyond the kind.
     pub detail: Option<String>,
+    /// The GitHub fact this was harvested from — a reply comment's id, a thread's root
+    /// comment id, a commit — or `None` for an outcome recorded by hand. It is what
+    /// makes a second harvest write nothing.
+    pub harvest_key: Option<String>,
 }
 
 /// An outcome to record against a finding.

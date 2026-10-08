@@ -99,10 +99,81 @@ fn a_database_that_cannot_be_opened_exits_two() {
 }
 
 #[test]
-fn an_unknown_command_is_rejected() {
+fn an_unknown_command_is_refused_not_reported_as_broken() {
+    // Exit 1, not 2. clap's own default is 2, which is the code this binary reserves
+    // for being unable to run — a typo would have paged whoever treats 2 as broken.
+    //
+    // The names here are deliberate nonsense. This guard first used `review open`, which
+    // DEV-851 then made a real command; a guard against unknown commands has to name
+    // something no later slice will ever claim, or it quietly stops guarding.
     review_desk()
-        .args(["review", "open"])
+        .args(["not-a-command"])
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("unrecognized subcommand"));
+
+    review_desk()
+        .args(["review", "not-a-command"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("unrecognized subcommand"));
+}
+
+#[test]
+fn a_missing_argument_is_refused_not_reported_as_broken() {
+    // The case the old guard was really testing: a real command with an argument left
+    // out. clap calls this a usage error and would exit 2 of its own accord.
+    review_desk()
+        .args(["review", "open", "--repo", "devergehq/review-desk"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("--pr"));
+}
+
+#[test]
+fn a_corrupt_database_exits_two() {
+    // The other half of "a database that cannot be read": a file that opens fine and
+    // turns out not to be a database. SQLite opens lazily, so this fails later and under
+    // a different error than a path that is a directory — but it is still Review Desk
+    // being unable to run, so it is still 2.
+    let dir = TempDir::new().unwrap();
+    let corrupt = dir.path().join("corrupt.db");
+    std::fs::write(&corrupt, b"this is not a SQLite database, it is a note").unwrap();
+
+    review_desk()
+        .env("REVIEW_DESK_DB", &corrupt)
+        .args(["db", "version"])
+        .assert()
+        .code(2);
+}
+
+#[test]
+fn help_stays_text_even_when_json_is_asked_for() {
+    // The one stated exception to "with --json, standard output is one JSON document":
+    // --help and --version describe the command line rather than answering a question
+    // about a record, and they are not failures. Pinned here so it stays a decision.
+    review_desk()
+        .args(["--help", "--json"])
+        .assert()
+        .code(0)
+        .stdout(predicate::str::contains("Usage:"));
+
+    review_desk()
+        .args(["--version", "--json"])
+        .assert()
+        .code(0)
+        .stdout(predicate::str::contains(env!("CARGO_PKG_VERSION")));
+}
+
+#[test]
+fn a_missing_subcommand_is_refused() {
+    review_desk().arg("db").assert().code(1);
+    review_desk().assert().code(1);
+}
+
+#[test]
+fn help_and_version_are_not_errors() {
+    review_desk().arg("--help").assert().code(0);
+    review_desk().arg("--version").assert().code(0);
+    review_desk().args(["db", "--help"]).assert().code(0);
 }

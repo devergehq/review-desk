@@ -1,0 +1,18 @@
+# Redocly lint configuration for the Review Desk local API.
+#
+# `security-defined` is off deliberately. It requires every operation to name a
+# security scheme, and this version of Review Desk has no authentication at all: the
+# server binds 127.0.0.1 and reachability is the authorisation. DEV-854 requires that
+# decision to be stated rather than worked around, so it is stated here and in README.md
+# instead of being papered over with an empty scheme that would imply auth exists.
+#
+# Turn this rule back on in the same change that adds authentication.
+extends:
+  - recommended
+
+rules:
+  security-defined: off
+
+apis:
+  review-desk@v1:
+    root: ./openapi.yaml

@@ -1,0 +1,1550 @@
+openapi: 3.1.0
+
+info:
+  title: Review Desk local API
+  version: 0.1.0
+  summary: The JSON the local Rust server serves to the Review Desk dashboard.
+  description: |
+    Review Desk serves this API from a local binary, for one developer, on the loopback
+    interface only. The dashboard in `web/` is its only client.
+
+    Four rules hold everywhere in this document:
+
+    - **Times are RFC 3339 in UTC**, with a `Z` offset. The store holds them as integer
+      seconds since the Unix epoch; the server converts at this boundary.
+    - **Identifiers from other systems are opaque strings.** The Allele session, the
+      dispatcher ledger entry, the GitHub review and the Linear ticket are never parsed,
+      validated or constructed by Review Desk.
+    - **Errors share one shape**, `Error`, with a machine-readable `code` and a `message`.
+    - **Nothing here posts to GitHub.** Approving a draft moves a status. The review
+      session reads the approved draft and posts it.
+
+    Review ids, finding sequence numbers and rule ids are Review Desk's own and are
+    integers, matching the store in `crates/store/src/model.rs`.
+  license:
+    name: UNLICENSED
+    url: https://github.com/devergehq/review-desk
+  contact:
+    name: Review Desk
+    url: https://github.com/devergehq/review-desk
+
+servers:
+  - url: http://127.0.0.1:7777/api/v1
+    description: |
+      The local server binds 127.0.0.1 only. There is no authentication in this version;
+      reachability is the authorisation. See contract/README.md.
+
+tags:
+  - name: inbox
+    description: What is waiting on the developer.
+  - name: review
+    description: One review, its brief and its findings.
+  - name: draft
+    description: The draft review and its approval.
+  - name: rules
+    description: Rules and their stages.
+
+paths:
+  /inbox:
+    get:
+      operationId: getInbox
+      tags: [inbox]
+      summary: Everything waiting on the developer, grouped
+      description: |
+        Serves the whole Inbox screen in one call: the five waiting groups, the reviews in
+        progress, and the week's figures.
+      responses:
+        '200':
+          description: The inbox.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Inbox' }
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
+  /repos:
+    get:
+      operationId: listRepos
+      tags: [rules]
+      summary: The repositories Review Desk holds a record for
+      description: |
+        Fills the repository picker on the Rules screen. A repository appears once it has
+        either a review or a repository-scoped rule.
+      responses:
+        '200':
+          description: The repositories, by name.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [repos]
+                properties:
+                  repos:
+                    type: array
+                    items: { $ref: '#/components/schemas/RepoSummary' }
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
+  /reviews:
+    post:
+      operationId: startReview
+      tags: [review]
+      summary: Start a review from a pull request link
+      description: |
+        Behind the Inbox's "Understand it first" button. Creates the review for the next
+        round, or returns the existing review for that head commit, matching
+        `review open` in DEV-851. No findings are written: the review starts at layer 2
+        and waits for the developer to confirm the brief.
+
+        **`head_sha` is optional, because the screen cannot supply one.** The Inbox has
+        only a pasted link, so when `head_sha` is omitted the server resolves the head
+        commit itself, by reading the pull request from GitHub, and stores the resolved
+        value. A caller that already knows the head — the command line, or a review
+        session — passes it and no read happens.
+
+        The head is resolved **before the review is created, not afterwards**. A review
+        with no head commit could not be deduplicated: the store finds an existing review
+        by repository, number and head commit, so creating one headless would make a
+        second review on the next click, and its round could not be assigned correctly.
+
+        That read is a read. Nothing here writes to GitHub. If the read cannot be made —
+        `gh` missing, not logged in, or the pull request unreachable — the request fails
+        with `github_unavailable` and no review is created, rather than a review being
+        created in a state nothing can complete.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartReviewRequest' }
+      responses:
+        '201':
+          description: The review, new or already present.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Review' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '502':
+          description: |
+            The head commit was not supplied and could not be read from GitHub. No review
+            was created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
+  /reviews/{reviewId}:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+    get:
+      operationId: getReview
+      tags: [review]
+      summary: One review whole, as the One review screen shows it
+      description: |
+        Serves the One review screen in one call: the review, its seven-layer status, the
+        brief, every finding with its disposition, the outcomes recorded so far, what was
+        not checked, and a pointer to the draft.
+      responses:
+        '200':
+          description: The review.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewDetail' }
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
+  /reviews/{reviewId}/brief/confirm:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+    post:
+      operationId: confirmBrief
+      tags: [review]
+      summary: Confirm the brief, releasing the layers behind it
+      description: |
+        The developer's act at layer 2. Sets `confirmed_at` and removes the review from
+        the Inbox's "Confirm the problem" group. Confirming an already confirmed brief
+        returns the brief unchanged rather than failing.
+      responses:
+        '200':
+          description: The confirmed brief.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Brief' }
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The review has no brief to confirm.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
+  /reviews/{reviewId}/findings/{seq}:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+      - name: seq
+        in: path
+        required: true
+        description: The finding's sequence number within its review, from 1.
+        schema: { type: integer, format: int64, minimum: 1 }
+    patch:
+      operationId: setFindingDisposition
+      tags: [review]
+      summary: Move a finding between the draft, held back and suppressed
+      description: |
+        A finding is never deleted. Holding it back or suppressing it records a reason,
+        which is what lets a later rule proposal cite it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetFindingDispositionRequest' }
+      responses:
+        '200':
+          description: The finding as it now stands.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Finding' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
+  /reviews/{reviewId}/draft:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+    get:
+      operationId: getDraft
+      tags: [draft]
+      summary: The draft body, its checks, the edits so far and the nits held back
+      description: |
+        Serves the Draft preview screen. `body` is GitHub-flavoured markdown and is what
+        the review session will post verbatim; the dashboard renders it and never
+        rewrites it.
+      responses:
+        '200':
+          description: The draft.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DraftDetail' }
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+    put:
+      operationId: saveDraft
+      tags: [draft]
+      summary: Save an edited draft body
+      description: |
+        Replaces the body and re-runs the checks. The developer's edits are recorded as
+        outcomes against the findings they touched, which is the strongest signal in the
+        feedback loop, so the caller states them rather than leaving them to be guessed
+        from a text diff.
+
+        Refused once the draft is `approved` or `posted`: an approved draft is what the
+        review session reads, and editing it underneath would change what gets posted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SaveDraftRequest' }
+      responses:
+        '200':
+          description: The draft as saved, with its checks re-run.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DraftDetail' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The draft is approved or posted and cannot be edited.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
+  /reviews/{reviewId}/draft/approve:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+    post:
+      operationId: approveDraft
+      tags: [draft]
+      summary: Approve the draft and choose the event it is posted as
+      description: |
+        Behind "Approve and post". **This endpoint does not post.** It sets the draft's
+        status to `approved`, stores the chosen event and `approved_at`, and stops. The
+        review session discovers the approved draft and posts it to GitHub under the
+        developer's name; it then reports back the GitHub review id through
+        `review link --github-review` in DEV-851, which is what moves the status to
+        `posted`.
+
+        How the session learns of the approval is an open question in the project brief;
+        nothing in this contract depends on the answer.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApproveDraftRequest' }
+      responses:
+        '200':
+          description: The approved draft.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DraftDetail' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The draft is not in a state that can be approved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
+  /reviews/{reviewId}/draft/send-back:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+    post:
+      operationId: sendBackDraft
+      tags: [draft]
+      summary: Send the draft back to the review session with a note
+      description: |
+        Behind "Send back with a note". Sets the status to `sent_back` and stores the
+        note, which is the instruction the session reworks against.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SendBackDraftRequest' }
+      responses:
+        '200':
+          description: The draft, sent back.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DraftDetail' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The draft is not in a state that can be sent back.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
+  /reviews/{reviewId}/held-back/ticket:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+    post:
+      operationId: requestNitTicket
+      tags: [draft]
+      summary: Ask for one ticket covering the nits held back, or record the one filed
+      description: |
+        Behind "File as one ticket for an agent". Review Desk does not file Linear
+        tickets, for the same reason it does not post to GitHub: it owns the record, not
+        the outward action. Sent with no `ticket_id` it moves the request to `requested`
+        for an agent to pick up; sent with one it records the ticket that was filed and
+        moves to `filed`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RequestNitTicketRequest' }
+      responses:
+        '200':
+          description: The state of the ticket for this review's held-back nits.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NitTicket' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: This review holds back no nits.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
+  /rules:
+    get:
+      operationId: listRules
+      tags: [rules]
+      summary: Rules for a repository, by stage, with the week's figures
+      description: |
+        Serves the Rules screen. With `repo` set, returns that repository's rules and
+        every global rule, matching `rules list --repo` in DEV-851. Without it, returns
+        every rule in every scope, which is the picker's "All repositories".
+
+        Unlike the command line, this includes `proposed` and `retired` rules: the
+        screen's whole purpose is deciding on them.
+      parameters:
+        - name: repo
+          in: query
+          required: false
+          description: A repository as `owner/repo`. Omitted means every repository.
+          schema: { $ref: '#/components/schemas/RepoName' }
+      responses:
+        '200':
+          description: The rules and the summary figures.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RulesPage' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
+  /rules/{ruleId}/promote:
+    parameters:
+      - $ref: '#/components/parameters/RuleId'
+    post:
+      operationId: promoteRule
+      tags: [rules]
+      summary: Promote a rule one stage along
+      description: |
+        A rule graduates observation to repository rule to lint check to CI check. The
+        developer promotes; **the app never promotes a rule itself.** `to_stage` is
+        stated by the caller rather than inferred, so an accidental double click cannot
+        skip a stage silently.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PromoteRuleRequest' }
+      responses:
+        '200':
+          description: The rule at its new stage.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Rule' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: That stage does not follow the rule's current stage.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
+  /rules/{ruleId}/dismiss:
+    parameters:
+      - $ref: '#/components/parameters/RuleId'
+    post:
+      operationId: dismissRule
+      tags: [rules]
+      summary: Dismiss a proposed rule
+      description: |
+        Rejects a proposal. The rule moves to `retired` with the reason recorded, rather
+        than being deleted, so the harvester does not propose it again next week with no
+        memory of having been told no.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RuleReasonRequest' }
+      responses:
+        '200':
+          description: The dismissed rule.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Rule' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
+  /rules/{ruleId}/retire:
+    parameters:
+      - $ref: '#/components/parameters/RuleId'
+    post:
+      operationId: retireRule
+      tags: [rules]
+      summary: Retire a rule that has gone stale
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RuleReasonRequest' }
+      responses:
+        '200':
+          description: The retired rule.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Rule' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
+  /rules/{ruleId}/defer:
+    parameters:
+      - $ref: '#/components/parameters/RuleId'
+    post:
+      operationId: deferRule
+      tags: [rules]
+      summary: Keep a stale rule for a further period
+      description: |
+        Behind "Keep 60 more days". Sets `review_again_at`, which is what takes the rule
+        out of the stale group without pretending a finding cited it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeferRuleRequest' }
+      responses:
+        '200':
+          description: The rule, with its next review date set.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Rule' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
+components:
+
+  parameters:
+    ReviewId:
+      name: reviewId
+      in: path
+      required: true
+      description: Review Desk's own review id.
+      schema: { type: integer, format: int64, minimum: 1 }
+    RuleId:
+      name: ruleId
+      in: path
+      required: true
+      description: Review Desk's own rule id.
+      schema: { type: integer, format: int64, minimum: 1 }
+
+  responses:
+    BadRequest:
+      description: The request was understood and refused.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: No such review, finding, draft or rule.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    StoreUnavailable:
+      description: |
+        Review Desk could not run: the database is unreadable or a migration failed.
+        This is the HTTP equivalent of exit code 2 in DEV-851, and a caller must be able
+        to tell it from a refusal without reading the message.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      description: |
+        The one error shape. `code` is for the client to branch on and never changes
+        wording; `message` is for a person and may change freely.
+      properties:
+        code: { $ref: '#/components/schemas/ErrorCode' }
+        message:
+          type: string
+          minLength: 1
+          description: One sentence, for a person.
+        field:
+          type: [string, 'null']
+          description: The field at fault, when one value caused the refusal.
+        expected:
+          type: [string, 'null']
+          description: |
+            The accepted values, comma separated, when `code` is `invalid_value`. A
+            caller that rejects input has to say what it would have accepted.
+
+    ErrorCode:
+      type: string
+      description: |
+        `store_unavailable` means Review Desk is broken and the caller should warn
+        loudly. `github_unavailable` means a read Review Desk needed could not be made —
+        `gh` missing or not logged in — which is the developer's environment rather than
+        their request. Every other code means the request was understood and refused.
+      enum:
+        - bad_request
+        - invalid_value
+        - not_found
+        - conflict
+        - github_unavailable
+        - store_unavailable
+
+    RepoName:
+      type: string
+      pattern: '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$'
+      examples: ['acme/portal']
+      description: A repository as `owner/repo`. The join key, with the head commit.
+
+    ForeignId:
+      type: [string, 'null']
+      minLength: 1
+      description: |
+        An identifier owned by another system — an Allele session, a dispatcher ledger
+        entry, a GitHub review, a Linear ticket. Opaque: Review Desk stores and returns
+        it and never parses it.
+
+    Severity:
+      type: string
+      enum: [blocker, should, nit, question]
+    Disposition:
+      type: string
+      enum: [in_draft, held_back, suppressed]
+    OutcomeKind:
+      type: string
+      enum: [cut, regraded, rewritten, kept, rejected, raised_again, code_changed_after]
+    Actor:
+      type: string
+      enum: [developer, author, harvester]
+    RuleStage:
+      type: string
+      description: |
+        A rule's graduation. `active` is a repository or global rule applied by a review;
+        `lint` and `ci` are checked without a model.
+      enum: [proposed, active, lint, ci, retired]
+    DraftStatus:
+      type: string
+      description: |
+        `drafting` while the session is writing; `ready` once it is waiting on the
+        developer; `approved` once the developer has approved it and before the session
+        posts; `sent_back` when the developer returned it with a note; `posted` once the
+        GitHub review id is recorded.
+      enum: [drafting, ready, approved, sent_back, posted]
+    ReviewEvent:
+      type: string
+      description: The GitHub review event the approved draft is to be posted as.
+      enum: [comment, request_changes, approve]
+
+    RepoSummary:
+      type: object
+      additionalProperties: false
+      required: [repo, open_reviews, active_rules]
+      properties:
+        repo: { $ref: '#/components/schemas/RepoName' }
+        open_reviews:
+          type: integer
+          minimum: 0
+          description: Reviews on this repository not yet posted.
+        active_rules:
+          type: integer
+          minimum: 0
+          description: Rules at stage `active`, `lint` or `ci` scoped to this repository.
+
+    Review:
+      type: object
+      additionalProperties: false
+      required: [id, repo, pr, head_sha, round, created_at]
+      description: One review of one pull request at one head commit.
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        repo: { $ref: '#/components/schemas/RepoName' }
+        pr:
+          type: integer
+          format: int64
+          minimum: 1
+          description: The pull request number.
+        head_sha:
+          type: string
+          pattern: '^[0-9a-f]{7,40}$'
+          description: The head commit reviewed, full or abbreviated.
+        round:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Which round of review this is on that pull request, from 1.
+        title:
+          type: [string, 'null']
+          description: The pull request's title, as the caller supplied it.
+        ticket_id: { $ref: '#/components/schemas/ForeignId' }
+        changed_lines:
+          type: [integer, 'null']
+          minimum: 0
+          description: Additions plus deletions, as the caller supplied it.
+        session_id: { $ref: '#/components/schemas/ForeignId' }
+        ledger_id: { $ref: '#/components/schemas/ForeignId' }
+        github_review_id: { $ref: '#/components/schemas/ForeignId' }
+        created_at: { type: string, format: date-time }
+
+    StartReviewRequest:
+      type: object
+      additionalProperties: false
+      required: [pr_url]
+      description: |
+        Only the link is required. Every other field is an optimisation: a caller that
+        already knows a value passes it and saves the server a read.
+      properties:
+        pr_url:
+          type: string
+          format: uri
+          description: |
+            The pull request link the developer pasted. The server parses `owner/repo`
+            and the number out of it.
+          examples: ['https://github.com/acme/portal/pull/412']
+        head_sha:
+          type: [string, 'null']
+          pattern: '^[0-9a-f]{7,40}$'
+          description: |
+            The head commit to review. **Omit it and the server resolves it from the pull
+            request**, which is what the Inbox screen does. Pass it to review one
+            specific commit, which is what the command line does.
+        title:
+          type: [string, 'null']
+          description: Resolved with the head commit when omitted.
+        ticket_id: { $ref: '#/components/schemas/ForeignId' }
+        changed_lines:
+          type: [integer, 'null']
+          minimum: 0
+          description: Resolved with the head commit when omitted.
+
+    ReviewLayerName:
+      type: string
+      description: The seven layers of a review, in order.
+      enum: [lint, understand, alternatives, solution_map, code_review, draft, harvest]
+
+    ReviewLayerState:
+      type: string
+      description: |
+        `waiting_on_you` is the developer's turn and is what the Inbox groups on.
+        `pending` has not started. `failed` is a layer that ran and did not pass, which
+        only `lint` can currently be.
+      enum: [pending, running, done, waiting_on_you, failed, skipped]
+
+    ReviewLayer:
+      type: object
+      additionalProperties: false
+      required: [number, name, state]
+      properties:
+        number: { type: integer, minimum: 1, maximum: 7 }
+        name: { $ref: '#/components/schemas/ReviewLayerName' }
+        state: { $ref: '#/components/schemas/ReviewLayerState' }
+        detail:
+          type: [string, 'null']
+          description: |
+            The short phrase the screen shows after the layer's name — "passed",
+            "confirmed by you", "3 options", "6 findings". Written by the layer that ran;
+            not derived, so a skipped layer cannot be mistaken for a finished one.
+        updated_at:
+          type: [string, 'null']
+          format: date-time
+
+    BriefOption:
+      type: object
+      additionalProperties: false
+      required: [key, title, argument_for, argument_against, chosen]
+      description: |
+        One alternative, written before the diff was read. The store holds the option map
+        as one opaque string today; this is the shape the screen needs instead.
+      properties:
+        key:
+          type: string
+          pattern: '^[A-Z]$'
+          description: The letter the option is known by.
+        title: { type: string, minLength: 1 }
+        argument_for: { type: string, minLength: 1 }
+        argument_against: { type: string, minLength: 1 }
+        chosen:
+          type: boolean
+          description: Whether this is what the author built.
+
+    Brief:
+      type: object
+      additionalProperties: false
+      required: [review_id, problem, options, confirmed, updated_at]
+      description: What the review understood before it read the diff. One per review.
+      properties:
+        review_id: { type: integer, format: int64, minimum: 1 }
+        problem: { type: string, minLength: 1 }
+        diagram:
+          type: [string, 'null']
+          description: Mermaid source. The dashboard renders it; the server never parses it.
+        options:
+          type: array
+          items: { $ref: '#/components/schemas/BriefOption' }
+        approach_verdict:
+          type: [string, 'null']
+        provenance:
+          type: [string, 'null']
+          description: |
+            Where the problem statement came from and what the developer changed about
+            it — "from the ticket and the code · you corrected one sentence".
+        confirmed:
+          type: boolean
+          description: Whether the developer has confirmed it. True exactly when `confirmed_at` is set.
+        confirmed_at:
+          type: [string, 'null']
+          format: date-time
+        updated_at: { type: string, format: date-time }
+
+    Finding:
+      type: object
+      additionalProperties: false
+      required: [review_id, seq, key, lens, severity, claim, disposition, created_at]
+      description: One thing the review found. Never deleted, only dispositioned.
+      properties:
+        review_id: { type: integer, format: int64, minimum: 1 }
+        seq:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Stable within its review, from 1.
+        key:
+          type: string
+          pattern: '^F[0-9]+$'
+          description: |
+            `seq` as a person quotes it — `F1`. Derived as `F` followed by `seq`, so it
+            needs nothing stored; the dashboard displays this and never computes it.
+        lens:
+          type: string
+          minLength: 1
+          description: Which review lens found it. Open set; the lenses live in review-craft.
+        severity: { $ref: '#/components/schemas/Severity' }
+        file: { type: [string, 'null'] }
+        line: { type: [integer, 'null'], minimum: 1 }
+        claim: { type: string, minLength: 1 }
+        evidence: { type: [string, 'null'] }
+        disposition: { $ref: '#/components/schemas/Disposition' }
+        disposition_reason:
+          type: [string, 'null']
+          description: Why it was held back or suppressed.
+        rule_id:
+          type: [integer, 'null']
+          format: int64
+          minimum: 1
+          description: |
+            The rule this finding was raised under, if any. This is the citation that
+            makes a rule's "cited by 6 later findings" count answerable and the one that
+            keeps a rule from going stale.
+        rule_key:
+          type: [string, 'null']
+          pattern: '^R-[0-9]{2,}$'
+          description: The cited rule's display key, for the link on the screen.
+        created_at: { type: string, format: date-time }
+
+    SetFindingDispositionRequest:
+      type: object
+      additionalProperties: false
+      required: [disposition]
+      properties:
+        disposition: { $ref: '#/components/schemas/Disposition' }
+        reason:
+          type: [string, 'null']
+          description: |
+            Required by the server when moving to `held_back` or `suppressed`: a finding
+            removed from the draft without a reason teaches the harvester nothing.
+
+    Outcome:
+      type: object
+      additionalProperties: false
+      required: [id, review_id, finding_seq, finding_key, kind, actor, occurred_at]
+      description: What became of a finding.
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        review_id: { type: integer, format: int64, minimum: 1 }
+        finding_seq: { type: integer, format: int64, minimum: 1 }
+        finding_key: { type: string, pattern: '^F[0-9]+$' }
+        kind: { $ref: '#/components/schemas/OutcomeKind' }
+        actor: { $ref: '#/components/schemas/Actor' }
+        occurred_at: { type: string, format: date-time }
+        detail:
+          type: [string, 'null']
+          description: Anything worth saying beyond the kind — "Blocker to Should".
+
+    SeverityCounts:
+      type: object
+      additionalProperties: false
+      required: [blocker, should, nit, question]
+      properties:
+        blocker: { type: integer, minimum: 0 }
+        should: { type: integer, minimum: 0 }
+        nit: { type: integer, minimum: 0 }
+        question: { type: integer, minimum: 0 }
+
+    DispositionCounts:
+      type: object
+      additionalProperties: false
+      required: [in_draft, held_back, suppressed]
+      properties:
+        in_draft: { type: integer, minimum: 0 }
+        held_back: { type: integer, minimum: 0 }
+        suppressed: { type: integer, minimum: 0 }
+
+    NitTicketStatus:
+      type: string
+      description: |
+        `none` until the developer asks for one; `requested` once they have and before an
+        agent files it; `filed` once a ticket id is recorded.
+      enum: [none, requested, filed]
+
+    NitTicket:
+      type: object
+      additionalProperties: false
+      required: [review_id, status, finding_seqs]
+      description: |
+        The one ticket covering the nits held back from this review's draft. Review Desk
+        records it; it does not file it.
+      properties:
+        review_id: { type: integer, format: int64, minimum: 1 }
+        status: { $ref: '#/components/schemas/NitTicketStatus' }
+        ticket_id: { $ref: '#/components/schemas/ForeignId' }
+        finding_seqs:
+          type: array
+          items: { type: integer, format: int64, minimum: 1 }
+          description: The held-back findings the ticket covers.
+        requested_at: { type: [string, 'null'], format: date-time }
+        filed_at: { type: [string, 'null'], format: date-time }
+
+    RequestNitTicketRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        ticket_id: { $ref: '#/components/schemas/ForeignId' }
+
+    ReviewDetail:
+      type: object
+      additionalProperties: false
+      required:
+        [review, layers, findings, outcomes, finding_severities, finding_dispositions, nit_ticket]
+      description: Everything the One review screen shows.
+      properties:
+        review: { $ref: '#/components/schemas/Review' }
+        layers:
+          type: array
+          minItems: 7
+          maxItems: 7
+          items: { $ref: '#/components/schemas/ReviewLayer' }
+        brief:
+          oneOf:
+            - $ref: '#/components/schemas/Brief'
+            - type: 'null'
+        findings:
+          type: array
+          items: { $ref: '#/components/schemas/Finding' }
+        outcomes:
+          type: array
+          items: { $ref: '#/components/schemas/Outcome' }
+        finding_severities: { $ref: '#/components/schemas/SeverityCounts' }
+        finding_dispositions: { $ref: '#/components/schemas/DispositionCounts' }
+        not_checked:
+          type: [string, 'null']
+          description: |
+            What the review did not look at, in the reviewer's own words. The one section
+            of a review with no adversary, so it is stored rather than derived.
+        nit_ticket: { $ref: '#/components/schemas/NitTicket' }
+        draft_status:
+          oneOf:
+            - $ref: '#/components/schemas/DraftStatus'
+            - type: 'null'
+          description: Null when no draft has been written yet.
+
+    DraftLint:
+      type: object
+      additionalProperties: false
+      required: [passes, checked_at]
+      description: |
+        The result of running the review-craft lint over the draft body. Every count is
+        of the body as it stands, re-run on every save.
+      properties:
+        passes:
+          type: boolean
+          description: Whether the lint reported no errors. Warnings do not fail it.
+        visible_words:
+          type: [integer, 'null']
+          minimum: 0
+        word_budget:
+          type: [integer, 'null']
+          minimum: 0
+          description: The budget for this change's size, so the screen can show "118 of 150".
+        findings_in_body:
+          type: [integer, 'null']
+          minimum: 0
+          description: Findings the body actually raises.
+        findings_expected:
+          type: [integer, 'null']
+          minimum: 0
+          description: Findings at disposition `in_draft`. A mismatch means one was dropped silently.
+        raised_before_on_pr:
+          type: [integer, 'null']
+          minimum: 0
+          description: |
+            Findings in this body already raised in an earlier round on the same pull
+            request. Non-zero is a review going in a circle.
+        errors:
+          type: array
+          items: { type: string }
+          description: The lint's error lines, verbatim. Empty when it passes.
+        checked_at: { type: string, format: date-time }
+
+    DraftEdit:
+      type: object
+      additionalProperties: false
+      required: [finding_seq, finding_key, kind, summary]
+      description: |
+        One edit the developer made between draft and post. Stored as an `Outcome` with
+        actor `developer`; this is that outcome as the screen lists it.
+      properties:
+        finding_seq: { type: integer, format: int64, minimum: 1 }
+        finding_key: { type: string, pattern: '^F[0-9]+$' }
+        kind: { $ref: '#/components/schemas/OutcomeKind' }
+        summary:
+          type: string
+          minLength: 1
+          description: What changed — "rename suggestion", "Blocker to Should", "first sentence".
+        occurred_at: { type: [string, 'null'], format: date-time }
+
+    HeldBackFinding:
+      type: object
+      additionalProperties: false
+      required: [finding_seq, finding_key, claim]
+      properties:
+        finding_seq: { type: integer, format: int64, minimum: 1 }
+        finding_key: { type: string, pattern: '^F[0-9]+$' }
+        claim: { type: string, minLength: 1 }
+        severity: { $ref: '#/components/schemas/Severity' }
+
+    Draft:
+      type: object
+      additionalProperties: false
+      required: [review_id, body, status, updated_at]
+      description: |
+        The draft review. **The merged store has no table for this**; the record is
+        specified in contract/README.md and migrated by a later issue. An approved draft
+        is what the review session reads and posts.
+      properties:
+        review_id: { type: integer, format: int64, minimum: 1 }
+        body:
+          type: string
+          description: |
+            The review body as GitHub-flavoured markdown, posted verbatim. May be empty
+            while the status is `drafting`.
+        status: { $ref: '#/components/schemas/DraftStatus' }
+        event:
+          oneOf:
+            - $ref: '#/components/schemas/ReviewEvent'
+            - type: 'null'
+          description: Chosen at approval. Null until then.
+        approved_at: { type: [string, 'null'], format: date-time }
+        sent_back_note:
+          type: [string, 'null']
+          description: The developer's instruction when the draft was sent back.
+        sent_back_at: { type: [string, 'null'], format: date-time }
+        posted_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When the session reported the posted review. Set together with the review's
+            `github_review_id`, never by this API acting on GitHub.
+        updated_at: { type: string, format: date-time }
+
+    DraftDetail:
+      type: object
+      additionalProperties: false
+      required: [draft, review, lint, edits, held_back, nit_ticket]
+      description: Everything the Draft preview screen shows.
+      properties:
+        draft: { $ref: '#/components/schemas/Draft' }
+        review: { $ref: '#/components/schemas/Review' }
+        lint: { $ref: '#/components/schemas/DraftLint' }
+        edits:
+          type: array
+          items: { $ref: '#/components/schemas/DraftEdit' }
+        held_back:
+          type: array
+          items: { $ref: '#/components/schemas/HeldBackFinding' }
+        nit_ticket: { $ref: '#/components/schemas/NitTicket' }
+
+    SaveDraftRequest:
+      type: object
+      additionalProperties: false
+      required: [body]
+      properties:
+        body: { type: string }
+        edits:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [finding_seq, kind, summary]
+            properties:
+              finding_seq: { type: integer, format: int64, minimum: 1 }
+              kind: { $ref: '#/components/schemas/OutcomeKind' }
+              summary: { type: string, minLength: 1 }
+          description: |
+            The edits this save represents, recorded as outcomes with actor `developer`.
+            Empty when the developer only reformatted.
+
+    ApproveDraftRequest:
+      type: object
+      additionalProperties: false
+      required: [event]
+      properties:
+        event: { $ref: '#/components/schemas/ReviewEvent' }
+
+    SendBackDraftRequest:
+      type: object
+      additionalProperties: false
+      required: [note]
+      properties:
+        note:
+          type: string
+          minLength: 1
+          description: |
+            What the session is to change. Refused when empty: a bare rejection teaches
+            nothing.
+
+    RuleScope:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      description: How widely a rule applies.
+      properties:
+        kind:
+          type: string
+          enum: [global, repo]
+        repo:
+          oneOf:
+            - $ref: '#/components/schemas/RepoName'
+            - type: 'null'
+          description: Set when `kind` is `repo`, null when `global`.
+
+    RuleCounts:
+      type: object
+      additionalProperties: false
+      description: |
+        A rule's counts. Every field is optional because the screen shows a different set
+        per stage: a repository rule shows raised, kept and rejected, a CI check shows
+        what the check caught instead. A field the store cannot yet answer is null, never
+        zero — zero is a measurement and null is the absence of one.
+      properties:
+        raised:
+          type: [integer, 'null']
+          minimum: 0
+          description: Findings raised citing this rule.
+        kept:
+          type: [integer, 'null']
+          minimum: 0
+          description: Of those, the ones the developer kept in the posted draft.
+        rejected_with_reason:
+          type: [integer, 'null']
+          minimum: 0
+          description: Of those, the ones an author rejected and gave a reason for.
+        cited_by_findings:
+          type: [integer, 'null']
+          minimum: 0
+        caught_by_check:
+          type: [integer, 'null']
+          minimum: 0
+          description: |
+            Catches by the lint or CI check this rule graduated into. Review Desk holds
+            no CI data, so this is null until something reports it.
+        raised_in_a_review_since:
+          type: [integer, 'null']
+          minimum: 0
+          description: |
+            Findings raised by a review since the rule became a check. Non-zero means the
+            check is not doing the job and a model is still spending tokens on it.
+        exceptions:
+          type: [integer, 'null']
+          minimum: 0
+          description: Accepted exceptions to the rule.
+        last_human_mention_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When a human reviewer last said this out loud. Review Desk has no source for
+            it, so it is null until a harvester supplies one.
+
+    Rule:
+      type: object
+      additionalProperties: false
+      required: [id, key, statement, prevents, scope, stage, stale, counts, created_at]
+      description: |
+        Something learned, that should stop a finding recurring. Every rule names the
+        failure it prevents; a preference with no consequence does not qualify.
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        key:
+          type: string
+          pattern: '^R-[0-9]{2,}$'
+          description: |
+            `id` as a person quotes it — `R-09`. Derived by zero-padding `id` to two
+            digits, so it needs nothing stored and never changes for a given rule.
+        statement: { type: string, minLength: 1 }
+        prevents:
+          type: string
+          minLength: 1
+          description: The failure it prevents. Never empty; that is what makes it a rule.
+        scope: { $ref: '#/components/schemas/RuleScope' }
+        stage: { $ref: '#/components/schemas/RuleStage' }
+        stage_label:
+          type: [string, 'null']
+          description: |
+            The stage as the screen words it — "Repository rule", "CI check",
+            "Repository rule · 1 exception". Derived from `stage` and `counts.exceptions`.
+        why_proposed:
+          type: [string, 'null']
+          description: |
+            Why the app proposed it, with the count behind it — "you cut this kind of
+            finding from 5 of the last 5 drafts that raised it". Set on proposals.
+        note:
+          type: [string, 'null']
+          description: |
+            A free line the screen shows under the statement: a staleness note, or the
+            accepted exception and its reason.
+        origin_review_id:
+          type: [integer, 'null']
+          format: int64
+          minimum: 1
+        origin_pr:
+          type: [integer, 'null']
+          format: int64
+          minimum: 1
+          description: The pull request it was decided on, for the "Decided on #377" link.
+        origin_findings:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [review_id, seq]
+            properties:
+              review_id: { type: integer, format: int64, minimum: 1 }
+              seq: { type: integer, format: int64, minimum: 1 }
+        stale:
+          type: boolean
+          description: |
+            Whether nothing has cited it for long enough to question it. Derived from
+            `last_cited_at` and `review_again_at`, not a stage: a stale rule is still in
+            force until the developer retires it.
+        last_cited_at:
+          type: [string, 'null']
+          format: date-time
+          description: When a finding last cited it. Null means never.
+        review_again_at:
+          type: [string, 'null']
+          format: date-time
+          description: Set by "Keep 60 more days". Until then the rule is not shown as stale.
+        counts: { $ref: '#/components/schemas/RuleCounts' }
+        created_at: { type: string, format: date-time }
+
+    RulesSummary:
+      type: object
+      additionalProperties: false
+      required: [active_rules, active_rules_cap]
+      description: The four figures across the top of the Rules screen.
+      properties:
+        active_rules: { type: integer, minimum: 0 }
+        active_rules_cap:
+          type: integer
+          minimum: 1
+          description: The per-repository cap. A rule set nobody can hold in their head is not a rule set.
+        replay_matched:
+          type: [integer, 'null']
+          minimum: 0
+          description: |
+            Findings that came back the same on the last replay. Review Desk has no
+            replay yet, so this is null until the consistency check exists.
+        replay_total: { type: [integer, 'null'], minimum: 0 }
+        findings_kept: { type: [integer, 'null'], minimum: 0 }
+        findings_total: { type: [integer, 'null'], minimum: 0 }
+        findings_window_days:
+          type: [integer, 'null']
+          minimum: 1
+          description: The window the kept-findings figures cover.
+        raised_twice_on_one_pr:
+          type: [integer, 'null']
+          minimum: 0
+          description: Reviews that raised the same finding twice — a review that went in a circle.
+
+    RulesPage:
+      type: object
+      additionalProperties: false
+      required: [summary, proposed, active, stale]
+      description: Everything the Rules screen shows, for one repository or all of them.
+      properties:
+        repo:
+          oneOf:
+            - $ref: '#/components/schemas/RepoName'
+            - type: 'null'
+          description: Null for every repository.
+        summary: { $ref: '#/components/schemas/RulesSummary' }
+        proposed:
+          type: array
+          items: { $ref: '#/components/schemas/Rule' }
+        active:
+          type: array
+          items: { $ref: '#/components/schemas/Rule' }
+          description: Rules at stage `active`, `lint` or `ci` that are not stale.
+        stale:
+          type: array
+          items: { $ref: '#/components/schemas/Rule' }
+          description: In force, but nothing has cited them lately.
+
+    PromoteRuleRequest:
+      type: object
+      additionalProperties: false
+      required: [to_stage]
+      properties:
+        to_stage: { $ref: '#/components/schemas/RuleStage' }
+
+    RuleReasonRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          description: |
+            Why. Recorded on the rule so the harvester does not propose the same thing
+            again next week with no memory of having been told no.
+
+    DeferRuleRequest:
+      type: object
+      additionalProperties: false
+      required: [days]
+      properties:
+        days:
+          type: integer
+          minimum: 1
+          maximum: 365
+          description: How long to keep the rule before asking again.
+
+    InboxTotals:
+      type: object
+      additionalProperties: false
+      required: [items, repos]
+      properties:
+        items:
+          type: integer
+          minimum: 0
+          description: Every item across the five waiting groups.
+        repos:
+          type: integer
+          minimum: 0
+          description: Distinct repositories those items span.
+
+    InboxPr:
+      type: object
+      additionalProperties: false
+      required: [repo, pr]
+      description: The pull request an inbox item is about.
+      properties:
+        repo: { $ref: '#/components/schemas/RepoName' }
+        pr: { type: integer, format: int64, minimum: 1 }
+        title: { type: [string, 'null'] }
+
+    InboxBriefItem:
+      type: object
+      additionalProperties: false
+      required: [review_id, pull_request, blocks_later_layers]
+      description: A brief waiting to be confirmed. Layer 2.
+      properties:
+        review_id: { type: integer, format: int64, minimum: 1 }
+        pull_request: { $ref: '#/components/schemas/InboxPr' }
+        ticket_id: { $ref: '#/components/schemas/ForeignId' }
+        brief_ready_at: { type: [string, 'null'], format: date-time }
+        blocks_later_layers:
+          type: boolean
+          description: |
+            Whether the session is holding at layer 2 for this confirmation. True is
+            what justifies "nothing else runs until you confirm" on the screen.
+
+    InboxDraftItem:
+      type: object
+      additionalProperties: false
+      required: [review_id, pull_request, round, severities, held_back, is_delta]
+      description: A draft waiting to be approved. Layer 6.
+      properties:
+        review_id: { type: integer, format: int64, minimum: 1 }
+        pull_request: { $ref: '#/components/schemas/InboxPr' }
+        round: { type: integer, format: int64, minimum: 1 }
+        severities: { $ref: '#/components/schemas/SeverityCounts' }
+        held_back:
+          type: integer
+          minimum: 0
+          description: Nits held back for a ticket.
+        is_delta:
+          type: boolean
+          description: |
+            Whether this round reviews only what changed since the last one. True when
+            `round` is above 1, which the screen words as "delta since your last review".
+
+    InboxReplyEvent:
+      type: object
+      additionalProperties: false
+      required: [finding_seq, finding_key, kind]
+      properties:
+        finding_seq: { type: integer, format: int64, minimum: 1 }
+        finding_key: { type: string, pattern: '^F[0-9]+$' }
+        kind: { $ref: '#/components/schemas/OutcomeKind' }
+        detail: { type: [string, 'null'] }
+
+    InboxReplyItem:
+      type: object
+      additionalProperties: false
+      required: [review_id, pull_request, events]
+      description: |
+        An author has acted on a posted review. Built from outcomes with actor `author`
+        or `harvester`.
+      properties:
+        review_id: { type: integer, format: int64, minimum: 1 }
+        pull_request: { $ref: '#/components/schemas/InboxPr' }
+        events:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/InboxReplyEvent' }
+
+    DescriptionLint:
+      type: object
+      additionalProperties: false
+      required: [passes]
+      description: The review-craft description lint on the developer's own pull request.
+      properties:
+        passes: { type: boolean }
+        budget_ratio:
+          type: [number, 'null']
+          minimum: 0
+          description: Body characters over budget, so the screen can say "2.3× its budget".
+
+    InboxOwnPrItem:
+      type: object
+      additionalProperties: false
+      required: [pull_request]
+      description: |
+        A pull request of the developer's own with no reviewer. **Review Desk owns none
+        of this**: it is GitHub state. The server can read GitHub — `POST /reviews` does,
+        to resolve a head commit — but nothing lists the developer's own pull requests,
+        and no issue covers it. Every field but `pull_request` is therefore nullable, and
+        the group is empty until something supplies it. See contract/README.md.
+      properties:
+        pull_request: { $ref: '#/components/schemas/InboxPr' }
+        opened_at: { type: [string, 'null'], format: date-time }
+        description_lint:
+          oneOf:
+            - $ref: '#/components/schemas/DescriptionLint'
+            - type: 'null'
+
+    InboxProposedRuleItem:
+      type: object
+      additionalProperties: false
+      required: [rule_id, rule_key, statement]
+      properties:
+        rule_id: { type: integer, format: int64, minimum: 1 }
+        rule_key: { type: string, pattern: '^R-[0-9]{2,}$' }
+        statement: { type: string, minLength: 1 }
+        why_proposed: { type: [string, 'null'] }
+        scope: { $ref: '#/components/schemas/RuleScope' }
+
+    InboxInProgressItem:
+      type: object
+      additionalProperties: false
+      required: [review_id, pull_request, layer_number, layer_name, layers_total]
+      description: A review a session is still working on.
+      properties:
+        review_id: { type: integer, format: int64, minimum: 1 }
+        pull_request: { $ref: '#/components/schemas/InboxPr' }
+        layer_number: { type: integer, minimum: 1, maximum: 7 }
+        layer_name: { $ref: '#/components/schemas/ReviewLayerName' }
+        layers_total:
+          type: integer
+          const: 7
+          description: Stated so the screen's "Layer 5 of 7" needs no constant of its own.
+        session_id: { $ref: '#/components/schemas/ForeignId' }
+        session_alive:
+          type: [boolean, 'null']
+          description: |
+            Whether the Allele session is still running. Allele owns this, not Review
+            Desk; null when nothing has told the server. Null is the honest answer and
+            the screen must render it, rather than showing "session alive" by default.
+
+    InboxHandled:
+      type: object
+      additionalProperties: false
+      required: [window_days]
+      description: |
+        What was dealt with without the developer. Each figure is null when its source is
+        absent, which for `description_problems_caught` is always until CI reports in.
+      properties:
+        window_days: { type: integer, minimum: 1 }
+        description_problems_caught:
+          type: [integer, 'null']
+          minimum: 0
+          description: Caught by the description CI check. Needs a CI source Review Desk has not got.
+        nits_filed:
+          type: [integer, 'null']
+          minimum: 0
+          description: Held-back nits covered by a filed ticket.
+        nit_tickets:
+          type: [integer, 'null']
+          minimum: 0
+          description: Tickets those nits were filed as.
+
+    Inbox:
+      type: object
+      additionalProperties: false
+      required:
+        - totals
+        - briefs_to_confirm
+        - drafts_to_approve
+        - author_replies
+        - own_prs_without_reviewer
+        - proposed_rules
+        - in_progress
+        - handled_without_you
+      description: |
+        The whole Inbox screen. The five waiting groups are separate arrays rather than
+        one tagged list, because each carries different fields and the screen renders
+        each differently; `totals.items` is their combined length.
+      properties:
+        totals: { $ref: '#/components/schemas/InboxTotals' }
+        briefs_to_confirm:
+          type: array
+          items: { $ref: '#/components/schemas/InboxBriefItem' }
+        drafts_to_approve:
+          type: array
+          items: { $ref: '#/components/schemas/InboxDraftItem' }
+        author_replies:
+          type: array
+          items: { $ref: '#/components/schemas/InboxReplyItem' }
+        own_prs_without_reviewer:
+          type: array
+          items: { $ref: '#/components/schemas/InboxOwnPrItem' }
+        proposed_rules:
+          type: array
+          items: { $ref: '#/components/schemas/InboxProposedRuleItem' }
+        in_progress:
+          type: array
+          items: { $ref: '#/components/schemas/InboxInProgressItem' }
+        handled_without_you: { $ref: '#/components/schemas/InboxHandled' }

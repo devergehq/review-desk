@@ -1,0 +1,6 @@
+{
+  "repos": [
+    { "repo": "acme/portal", "open_reviews": 4, "active_rules": 11 },
+    { "repo": "acme/billing-api", "open_reviews": 2, "active_rules": 6 }
+  ]
+}

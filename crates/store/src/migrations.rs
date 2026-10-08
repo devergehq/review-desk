@@ -5,8 +5,9 @@
 //! `PRAGMA user_version`, each in its own transaction, and records the new version. A
 //! migration that has shipped is never edited; the next change is a new entry.
 //!
-//! The split below is not arbitrary: version 1 is the review record, version 2 is the
-//! learning layer the project brief treats as a later concern.
+//! The split is not arbitrary: version 1 is the review record, version 2 is the
+//! learning layer the project brief treats as a later concern, and version 3 is what
+//! the harvester needs to read a posted review's outcomes back from GitHub.
 
 use rusqlite::Connection;
 
@@ -99,7 +100,7 @@ CREATE TABLE rules (
     created_at       INTEGER NOT NULL,
     CHECK (
         (scope = 'global' AND scope_repo IS NULL)
-        OR (scope = 'repo' AND scope_repo IS NOT NULL)
+        OR (scope = 'repo' AND scope_repo IS NOT NULL AND scope_repo <> '')
     )
 );
 
@@ -113,6 +114,44 @@ CREATE TABLE rule_findings (
     FOREIGN KEY (review_id, finding_seq)
         REFERENCES findings (review_id, seq) ON DELETE CASCADE
 );
+"#,
+    },
+    Migration {
+        version: 3,
+        name: "harvest",
+        sql: r#"
+-- The comment a finding was posted as. Set by `review-desk finding link`, and the
+-- only handle the harvester has on a finding's thread.
+ALTER TABLE findings ADD COLUMN github_comment_id TEXT;
+
+-- One GitHub comment is one finding. The index is partial because most findings have
+-- no linked comment, and SQLite would otherwise have to be trusted to treat every one
+-- of those NULLs as distinct.
+CREATE UNIQUE INDEX findings_by_github_comment
+    ON findings (github_comment_id)
+    WHERE github_comment_id IS NOT NULL;
+
+-- What the pull request was last seen to be, when it reached that state, and when the
+-- harvester last looked. A review whose pull request is settled is not fetched again.
+ALTER TABLE reviews ADD COLUMN pr_state     TEXT;
+ALTER TABLE reviews ADD COLUMN pr_state_at  INTEGER;
+ALTER TABLE reviews ADD COLUMN harvested_at INTEGER;
+
+CREATE INDEX reviews_by_pr_state ON reviews (pr_state);
+
+-- The identity of the GitHub fact an outcome was harvested from: a reply comment's id,
+-- a thread's root comment id, a commit. It is what makes a second harvest write
+-- nothing: the index below refuses the row rather than the code remembering not to
+-- write it.
+--
+-- The index is partial so that an outcome recorded by hand, which has no key, is never
+-- caught by it. Two developers may record "kept" against one finding twice; two
+-- harvests of one reply may not.
+ALTER TABLE outcomes ADD COLUMN harvest_key TEXT;
+
+CREATE UNIQUE INDEX outcomes_by_harvest_key
+    ON outcomes (review_id, finding_seq, kind, harvest_key)
+    WHERE harvest_key IS NOT NULL;
 "#,
     },
 ];
@@ -151,18 +190,33 @@ pub fn migrate_to(conn: &Connection, target: i64) -> Result<i64> {
 }
 
 /// Apply one migration and record its version, atomically.
+///
+/// The version is read again inside the transaction. Two processes opening a fresh
+/// database at the same moment both see version 0 outside it; without the second read
+/// the loser would run a migration that has just been applied and fail on a table that
+/// already exists.
 fn apply(conn: &Connection, migration: &Migration) -> Result<()> {
-    let run = || -> rusqlite::Result<()> {
-        conn.execute_batch("BEGIN")?;
+    let run = || -> rusqlite::Result<bool> {
+        // IMMEDIATE takes the write lock before the read, so the version this reads
+        // cannot change under it and a competing process waits rather than racing.
+        conn.execute_batch("BEGIN IMMEDIATE")?;
+
+        let current: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        if current >= migration.version {
+            // Someone else applied it while we were waiting for the lock.
+            conn.execute_batch("COMMIT")?;
+            return Ok(false);
+        }
+
         conn.execute_batch(migration.sql)?;
         // PRAGMA will not take a bound parameter, so the version is formatted in. It
         // comes from the const table above, never from a caller.
         conn.execute_batch(&format!("PRAGMA user_version = {}", migration.version))?;
         conn.execute_batch("COMMIT")?;
-        Ok(())
+        Ok(true)
     };
 
-    run().map_err(|source| {
+    run().map(|_| ()).map_err(|source| {
         let _ = conn.execute_batch("ROLLBACK");
         StoreError::Migration {
             version: migration.version,

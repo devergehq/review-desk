@@ -7,8 +7,8 @@ mod common;
 
 use common::{new_review, temp_store};
 use review_desk_store::{
-    Actor, Disposition, FindingRef, NewBrief, NewFinding, NewOutcome, NewRule, OutcomeKind,
-    RuleScope, RuleStage, Severity, StoreError,
+    Actor, Disposition, FindingRef, NewBrief, NewFinding, NewOutcome, NewReview, NewRule,
+    OutcomeKind, PrState, RuleScope, RuleStage, Severity, StoreError,
 };
 
 fn a_finding(claim: &str) -> NewFinding {
@@ -215,12 +215,14 @@ fn an_unknown_value_names_what_was_expected() {
     assert_eq!(Actor::valid_values(), "developer, author, harvester");
     assert_eq!(
         OutcomeKind::valid_values(),
-        "cut, regraded, rewritten, kept, rejected, raised_again, code_changed_after"
+        "cut, regraded, rewritten, kept, rejected, raised_again, replied, thread_resolved, \
+         code_changed_after"
     );
     assert_eq!(
         RuleStage::valid_values(),
         "proposed, active, lint, ci, retired"
     );
+    assert_eq!(PrState::valid_values(), "open, merged, closed");
 }
 
 #[test]
@@ -269,4 +271,68 @@ fn a_rule_citing_the_same_finding_twice_cites_it_once() {
         .expect("a repeated citation is not a failure");
 
     assert_eq!(rule.origin_findings, vec![cited]);
+}
+
+#[test]
+fn a_review_must_name_a_repository_a_pull_request_and_a_round() {
+    let (_dir, store) = temp_store();
+
+    let cases: [(NewReview, &str); 6] = [
+        (new_review("", 1, "head", 1), "repo"),
+        (new_review("no-slash", 1, "head", 1), "repo"),
+        (new_review("owner/", 1, "head", 1), "repo"),
+        (new_review("devergehq/review-desk", 0, "head", 1), "pr"),
+        (new_review("devergehq/review-desk", 1, "head", 0), "round"),
+        (new_review("devergehq/review-desk", 1, "", 1), "head_sha"),
+    ];
+
+    for (new, expected_field) in cases {
+        match store.create_review(new.clone()) {
+            Err(StoreError::InvalidValue {
+                field, expected, ..
+            }) => {
+                assert_eq!(field, expected_field, "for {new:?}");
+                assert!(!expected.is_empty(), "the error says what it wanted");
+            }
+            other => panic!("expected InvalidValue on {expected_field}, got {other:?}"),
+        }
+    }
+
+    // A review whose repository is empty would silently partition the record, because
+    // rules are scoped by the same string.
+    assert!(store.list_reviews("", 1).unwrap().is_empty());
+}
+
+#[test]
+fn a_rule_scoped_to_a_repository_cannot_name_an_empty_one() {
+    let (_dir, store) = temp_store();
+
+    match store.create_rule(NewRule {
+        statement: "scoped to nothing".to_string(),
+        prevents: "nothing".to_string(),
+        scope: RuleScope::Repo("   ".to_string()),
+        stage: RuleStage::Active,
+        origin_review_id: None,
+        origin_findings: vec![],
+    }) {
+        Err(StoreError::InvalidValue { field, .. }) => assert_eq!(field, "scope_repo"),
+        other => panic!("expected InvalidValue on scope_repo, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_repo_scope_with_no_repository_blames_the_right_column() {
+    // "repo" is a valid scope, so the error must not claim otherwise.
+    match RuleScope::from_columns("repo", None) {
+        Err(StoreError::InvalidValue {
+            field, expected, ..
+        }) => {
+            assert_eq!(field, "scope_repo");
+            assert!(
+                expected.contains("owner/repo"),
+                "it should say what it wanted, got {expected:?}"
+            );
+        }
+        other => panic!("expected InvalidValue on scope_repo, got {other:?}"),
+    }
 }

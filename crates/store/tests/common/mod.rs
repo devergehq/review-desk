@@ -2,6 +2,10 @@
 //!
 //! Every store in these tests lives in a `TempDir`. Nothing here ever touches
 //! `~/.review-desk/review-desk.db`, and `default_path_is_never_used` asserts it.
+//!
+//! Each integration test file compiles this module into its own binary, so a helper
+//! that one of them does not use is dead code there. That is what the allow is for.
+#![allow(dead_code)]
 
 use std::path::PathBuf;
 

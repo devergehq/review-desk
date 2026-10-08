@@ -15,6 +15,17 @@ impl Store {
     /// Replacing clears the confirmation: the developer confirmed the text that was
     /// there, not whatever replaces it.
     pub fn put_brief(&self, review_id: i64, new: NewBrief) -> Result<Brief> {
+        // `problem` is required by serde, but an empty string satisfies that. A brief
+        // with no problem in it can still be confirmed, and then the record holds a
+        // developer's assent to nothing — which is worse than having no brief at all.
+        if new.problem.trim().is_empty() {
+            return Err(StoreError::InvalidValue {
+                field: "problem",
+                value: new.problem,
+                expected: "what problem the change is solving".to_string(),
+            });
+        }
+
         let updated_at = now();
         self.conn
             .execute(
