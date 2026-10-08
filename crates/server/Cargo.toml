@@ -1,0 +1,28 @@
+[package]
+name = "review-desk-server"
+description = "The Review Desk local HTTP server: the contract's JSON API and the embedded dashboard."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+build = "build.rs"
+
+[lib]
+name = "review_desk_server"
+path = "src/lib.rs"
+
+[dependencies]
+review-desk-store = { path = "../store" }
+review-desk-harvest = { path = "../harvest" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tiny_http = "0.12"
+
+# The conformance test reads contract/openapi.yaml and validates responses against it.
+# Both of these are test-only on purpose: the shipped binary gains neither, and a schema
+# validator in the binary would be 78 crates to check what the handlers already know.
+[dev-dependencies]
+jsonschema = { version = "0.58", default-features = false }
+serde_norway = "0.9"
+tempfile.workspace = true

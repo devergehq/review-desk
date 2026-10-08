@@ -22,8 +22,25 @@ impl Report {
         }
     }
 
+    /// An answer that has already been given.
+    ///
+    /// `serve` prints where the server is before it starts serving, because a report
+    /// printed when it returns would be printed when the server stopped. This is what it
+    /// returns afterwards: printing a second document would break the promise that
+    /// `--json` writes exactly one.
+    pub fn silent() -> Self {
+        Report {
+            document: Value::Null,
+            plain: String::new(),
+        }
+    }
+
     /// Write this answer to standard output, in one shape or the other.
     pub fn print(&self, json: bool) {
+        if self.document.is_null() && self.plain.is_empty() {
+            return;
+        }
+
         if json {
             println!("{}", self.document);
         } else if !self.plain.is_empty() {

@@ -49,3 +49,79 @@ jobs:
 
       - name: Test
         run: cargo test --workspace --all-features
+
+      # The job above has no Node, so what it just built and tested is the no-front-end
+      # binary. This asserts that deliberately, rather than leaving it as a property of
+      # which tools the runner happens to have.
+      - name: The binary built without Node says so at /
+        run: |
+          cargo build
+          ./target/debug/review-desk serve --port 0 --json > served.json &
+          server=$!
+          for _ in $(seq 1 50); do
+            [ -s served.json ] && break
+            sleep 0.2
+          done
+          url=$(sed -n 's/.*"url":"\([^"]*\)".*/\1/p' served.json)
+          test -n "$url" || { echo "serve printed nothing"; cat served.json; exit 1; }
+          curl -fsS "${url}api/v1/health" | tee health.json
+          grep -q '"front_end_embedded":false' health.json
+          curl -fsS "$url" | grep -q "The front end was not built into this binary."
+          kill "$server"
+        env:
+          REVIEW_DESK_DB: ${{ runner.temp }}/ci-no-front-end.db
+
+  embedded:
+    name: The binary with the dashboard in it
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Cache cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-embedded-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-embedded-${{ runner.os }}-
+
+      # The one command sequence the README documents, run as documented. If it stops
+      # producing a binary with the dashboard in it, this is where that is found.
+      - name: Build the dashboard
+        run: pnpm install --frozen-lockfile && pnpm run generate
+        working-directory: web
+
+      - name: Build and test with the dashboard embedded
+        run: cargo test -p review-desk-server
+
+      - name: The embedded dashboard is served
+        run: |
+          cargo build
+          ./target/debug/review-desk serve --port 0 --json > served.json &
+          server=$!
+          for _ in $(seq 1 50); do
+            [ -s served.json ] && break
+            sleep 0.2
+          done
+          url=$(sed -n 's/.*"url":"\([^"]*\)".*/\1/p' served.json)
+          test -n "$url" || { echo "serve printed nothing"; cat served.json; exit 1; }
+          curl -fsS "${url}api/v1/health" | grep -q '"front_end_embedded":true'
+          # The index, a prerendered client-side route, and the API, from one binary.
+          curl -fsS "$url" | grep -qi "<!doctype html>"
+          curl -fsS "${url}reviews/17" | grep -qi "<!doctype html>"
+          kill "$server"
+        env:
+          REVIEW_DESK_DB: ${{ runner.temp }}/ci-embedded.db

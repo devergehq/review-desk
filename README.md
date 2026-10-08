@@ -7,10 +7,12 @@ pull requests: GitHub and Linear already do that, and its unit is the finding an
 rule, not the PR. It runs locally, owns its own record, and needs nothing else
 installed.
 
-This repository is at the second slice: the store, the commands an agent session
-calls to record a review, the harvester that reads a posted review's outcomes back
-from GitHub, and the dashboard's four screens running on sample data. There is no HTTP
-API yet, and the dashboard is not embedded in the binary yet.
+This repository is at the third slice: the store, the commands an agent session calls
+to record a review, the harvester that reads a posted review's outcomes back from
+GitHub, the dashboard's four screens, and the local HTTP server that serves the JSON API
+and the dashboard from one binary. **All sixteen of the contract's operations are
+answered.** The dashboard still runs on sample data and calls no API yet; switching it
+over is the next slice.
 
 **Only the developer signs off.** Confirming a brief and approving a draft happen in
 the dashboard; the command line that agent sessions call has no command for either. An
@@ -431,8 +433,11 @@ Tests always use a temporary file and never touch the default path.
 | -- | -- |
 | `crates/store` | `review-desk-store`: the record store. The only code that opens the database file. |
 | `crates/harvest` | `review-desk-harvest`: reads a posted review's outcomes back from GitHub. GitHub sits behind a trait, so its tests replay responses captured from a real pull request. |
+| `crates/server` | `review-desk-server`: the local HTTP server. The contract's JSON API and the embedded dashboard, on `127.0.0.1`. |
 | `crates/cli` | `review-desk`: the binary. One module per command group under `src/commands`. |
 | `web` | The dashboard: a Nuxt app, four screens, built to static files. |
+| `contract` | The OpenAPI file both sides are built to, its examples, and the checks over them. |
+| `docs/brief.md` | The project's design record. When it and the Linear project disagree, it is right. |
 | `docs/mockups` | The five mockups the dashboard was built from, and where it departs from them. |
 
 **The store crate is the only thing that opens the database.** The binary, and every
@@ -461,8 +466,8 @@ anything that serves files:
 cd web/.output/public && python3 -m http.server 8080
 ```
 
-Nuxt runs with server-side rendering off and generates static files, which a later issue
-embeds in the binary. Nuxt's own server routes are not used: the JSON API is the Rust
+Nuxt runs with server-side rendering off and generates static files, which `cargo build`
+embeds in the binary — see [the local server](#the-local-server). Nuxt's own server routes are not used: the JSON API is the Rust
 server's. Fonts are bundled rather than fetched, so the built app asks nothing of the
 network and works on a machine with no internet.
 
@@ -477,6 +482,179 @@ cd web && pnpm exec vitest run test/architecture.spec.ts
 ```
 
 While the fixtures are serving, every screen carries a "Sample data" marker in the header.
+
+
+## The local server
+
+**`review-desk serve` serves the JSON API in `contract/openapi.yaml` and the dashboard,
+from one binary, on `127.0.0.1`.**
+
+```sh
+review-desk serve                 # http://127.0.0.1:7777/
+review-desk serve --port 8080
+review-desk serve --port 0        # any free port; the one bound is printed
+review-desk serve --json          # one document saying where it is
+```
+
+It prints where it is and then serves. The API is under `/api/v1`, matching the
+contract's `servers` entry; everything else is the dashboard.
+
+```sh
+curl -s http://127.0.0.1:7777/api/v1/health
+# {"front_end_embedded":true,"schema_version":4,"status":"ok"}
+```
+
+### Building a binary with the dashboard in it
+
+Two commands, in this order. The second embeds whatever the first produced.
+
+```sh
+cd web && pnpm install --frozen-lockfile && pnpm run generate && cd ..
+cargo build --release
+```
+
+**`cargo build` on a machine with no Node also works**, and is the normal case for
+anyone working on the Rust side. The binary then serves the API exactly as it otherwise
+would, and `/` is a page saying the front end was not built and naming the two commands
+above. `GET /api/v1/health` reports which kind of build it is, which is also how CI
+checks both.
+
+The embedding is a build script: it walks `web/.output/public` if it is there and emits
+an empty table if it is not. Build the front end after a `cargo build` and the next
+`cargo build` picks it up.
+
+**If `/` shows the "not built" page when you expected the dashboard, check
+`front_end_embedded` and then the modification times.** Cargo decides whether to re-run
+a build script by comparing them, and copying or moving a previously built
+`web/.output/public` into place preserves them — so nothing looks changed. A fresh
+`pnpm run generate` always writes new files and is never affected; `touch -c` over the
+directory fixes a restored one.
+
+### What it binds, and who may talk to it
+
+**It binds `127.0.0.1` and there is no flag to change that.** There is no authentication
+in this version — being able to reach the port is the authorisation, which
+`contract/README.md` states and justifies. That is sound only while the bind holds: on
+`0.0.0.0`, or through a tunnel, the whole record becomes readable and writable by anyone
+who can reach it. The version that adds authentication is the version that may add the
+flag.
+
+Two tests hold the line: one asserts the address bound, and one asserts that every
+non-loopback address this machine has refuses a connection on the same port. The second
+exists because a listener on `0.0.0.0` would pass the first.
+
+**Binding loopback is not enough on its own, because a web page is also on this machine.**
+Confirming a brief and approving a draft happen through this API and nowhere else, and an
+approved draft is what a review session posts to GitHub under the developer's name. A page
+on another origin that could `POST` to `127.0.0.1:7777` could approve a draft the
+developer has never read — and "only the developer signs off" would be enforced by
+nothing. So every request to `/api/v1` passes `crates/server/src/guard.rs` first:
+
+| Check | Closes |
+| -- | -- |
+| `Host` is the loopback address and the port actually bound | DNS rebinding: a name the attacker controls, resolved to 127.0.0.1 |
+| `Origin`, when present, is this server's own | A page on another origin driving `fetch`, or submitting a form |
+| `Content-Type` is `application/json` on a write | A plain HTML form, which cannot send one |
+
+**Every response also carries `X-Frame-Options: DENY` and
+`Content-Security-Policy: frame-ancestors 'none'`.** The guard stops another origin
+*talking* to the API; it cannot stop one *embedding* the dashboard, and a click stolen
+through a transparent iframe produces a request that genuinely comes from the dashboard's
+own origin — every check passes, because nothing is wrong with the request. One stolen
+click on a draft at `ready` publishes a review the developer never read, under their name.
+
+**No CORS headers are sent**, by omission and on purpose; a test asserts none ever appear.
+`localhost:<port>` is accepted beside the literal address, which is safe rather than a
+convenience hole: rebinding points a name *the attacker controls* at 127.0.0.1, so the
+browser sends that name and never `localhost`.
+
+**An absent `Origin` is allowed**, deliberately. Nothing that is not a browser sends one —
+`curl`, a script, a review session — and a browser always sends one on a cross-origin
+request, including a form submission. Refusing the absent case would break every
+non-browser caller and stop no attacker; the content-type check is what covers the form.
+
+**What this does not stop: another process on the same machine.** A local program can set
+any header it likes, so none of this defends against code already running as the
+developer. That is the authorisation model the contract states, and closing it needs
+authentication. What these checks buy is the narrower and more valuable thing — a web page
+cannot reach the API, and a web page is the one attacker that arrives without the
+developer installing anything.
+
+### Which operations are answered
+
+**All sixteen.** One GET per screen, and every write the four screens make.
+
+| Screen | Reads | Writes |
+| -- | -- | -- |
+| Inbox | `GET /inbox` | `POST /reviews` |
+| One review | `GET /reviews/{id}` | `POST …/brief/confirm`, `PATCH …/findings/{seq}` |
+| Draft preview | `GET /reviews/{id}/draft` | `PUT …/draft`, `POST …/draft/approve`, `POST …/draft/send-back`, `POST …/held-back/ticket` |
+| Rules | `GET /rules?repo=`, `GET /repos` | `POST /rules/{id}/promote`, `/dismiss`, `/retire`, `/defer` |
+
+**Two of them are sign-offs, and only the developer can make one.** Confirming a brief
+and approving a draft happen here and nowhere else: `review-desk brief confirm` does not
+exist, and the store refuses any actor but the developer. The server passes a constant,
+not an argument — a sign-off endpoint that could be told whose signature to record would
+be one that could be told the wrong one.
+
+**Approving does not post.** It sets the draft's status, stores the chosen event and the
+time, and stops. The review session finds the approved draft and posts it under the
+developer's name, then records the GitHub review id through `review link
+--github-review`, which is what moves the status to `posted`.
+
+A field the record has no source for is served as `null`, never as zero: session
+liveness, the developer's own pull requests, the CI figures and the replay figures are
+all absent rather than measured, and the dashboard has to render the absence.
+
+### It reads GitHub once and never writes to it
+
+`POST /reviews` reads a pull request's head commit when the caller omits one, which is
+what the Inbox screen needs: it has only a pasted link. The read goes through
+`crates/harvest`'s `GitHub` trait — four read-only methods, run through `gh`, so the
+developer's existing login is used and Review Desk handles no tokens.
+
+**The request is checked in full before anything reaches for GitHub.** A malformed link
+is refused with `invalid_value`, not with a report that `gh` is missing, so a machine
+with no `gh` is told the real problem. A supplied `head_sha` means no read is made at
+all. If the read cannot be made, the answer is `github_unavailable` and **no review is
+created** — a review with no head commit could not be deduplicated or given a round.
+
+### Errors on the wire
+
+The body is the contract's `Error` object itself, not a document wrapping one — which is
+different from the command line's `--json`, because the two have different contracts.
+
+```json
+{ "code": "conflict",
+  "message": "this draft is approved and only a draft that is ready can be sent back" }
+```
+
+| `code` | Status | Means |
+| -- | -- | -- |
+| `bad_request` | 400 | The body was not the shape the operation takes |
+| `invalid_value` | 400 | One value was not acceptable; `field` and `expected` say which and what |
+| `not_found` | 404 | No such review, finding, draft or rule |
+| `conflict` | 409 | The record is not in a state the request can be made against |
+| `store_unavailable` | 500 | Review Desk is broken. The HTTP equivalent of exit 2 |
+| `github_unavailable` | 502 | A read Review Desk needed could not be made: `gh` missing or logged out |
+
+**Refused and broken are tellable apart without reading the message**, which is the
+command line's exit-code split carried onto the wire: `store_unavailable` is the only
+code that means Review Desk itself is broken.
+
+### Conformance
+
+`crates/server/tests/conformance.rs` reads the schemas out of `contract/openapi.yaml` and
+validates every response the server actually serves against them — rather than
+transcribing the contract into Rust types, which would only check the server against one
+reading of it.
+
+```sh
+cargo test -p review-desk-server
+```
+
+It includes a test that a deliberately wrong body **fails** validation, because a
+conformance test that silently validates nothing passes every time.
 
 ## The record
 

@@ -1,0 +1,597 @@
+//! Every response this server actually serves, validated against `contract/openapi.yaml`.
+//!
+//! The contract is the agreement between this server and the dashboard, and an agreement
+//! nothing checks is a document. So the schemas are read from the contract file itself —
+//! not transcribed into Rust types, which would only check the server against my reading
+//! of it — and each response is validated against the schema the operation declares.
+//!
+//! `openapi.yaml` is OpenAPI 3.1, whose schema objects *are* JSON Schema 2020-12, so a
+//! schema can be validated as it stands: the whole document is handed to the validator
+//! with a `$ref` at its root, which is what lets `#/components/schemas/...` resolve.
+//!
+//! **The validator is itself under test.** `a_wrong_body_fails_validation` exists because
+//! a conformance test that silently validates nothing — an unresolved `$ref`, a schema
+//! that ignores `required` — passes every time and means nothing.
+
+mod common;
+
+use jsonschema::Validator;
+use serde_json::{json, Value};
+
+/// The contract, as JSON.
+fn contract() -> Value {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contract/openapi.yaml");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("reading {}: {error}", path.display()));
+    serde_norway::from_str(&text).expect("contract/openapi.yaml is not readable as YAML")
+}
+
+/// A validator for a schema in the contract, named or pointed at.
+///
+/// A name is `#/components/schemas/<name>`; anything containing a `/` is taken as a JSON
+/// pointer, which is how an operation whose response schema is declared inline — `/repos`
+/// is the only one — gets validated against the contract rather than against a
+/// transcription of it.
+fn validator(schema: &str) -> Validator {
+    let pointer = if schema.contains('/') {
+        schema.to_string()
+    } else {
+        format!("#/components/schemas/{schema}")
+    };
+
+    let mut document = contract();
+    assert!(
+        document
+            .pointer(pointer.trim_start_matches('#'))
+            .is_some_and(Value::is_object),
+        "contract/openapi.yaml has nothing at {pointer}"
+    );
+
+    // A `$ref` at the root, with the rest of the document still there so the reference
+    // resolves inside it. Unknown keywords — `openapi`, `info`, `paths` — are ignored by
+    // a JSON Schema validator, which is what makes this work.
+    document["$ref"] = json!(pointer);
+
+    jsonschema::validator_for(&document)
+        .unwrap_or_else(|error| panic!("building a validator for {pointer}: {error}"))
+}
+
+/// Validate, and say what was wrong if it is not valid.
+#[track_caller]
+fn assert_valid(schema_name: &str, instance: &Value) {
+    let validator = validator(schema_name);
+    let problems: Vec<String> = validator
+        .iter_errors(instance)
+        .map(|error| format!("  at {}: {error}", error.instance_path()))
+        .collect();
+
+    assert!(
+        problems.is_empty(),
+        "this body does not validate against {schema_name}:\n{}\nbody was:\n{}",
+        problems.join("\n"),
+        serde_json::to_string_pretty(instance).unwrap()
+    );
+}
+
+#[track_caller]
+fn assert_invalid(schema_name: &str, instance: &Value, why: &str) {
+    let validator = validator(schema_name);
+    assert!(
+        !validator.is_valid(instance),
+        "{schema_name} accepted a body it should have refused ({why}):\n{}",
+        serde_json::to_string_pretty(instance).unwrap()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The validator is doing something
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_validator_refuses_a_wrong_body() {
+    // A required field left out.
+    assert_invalid(
+        "Review",
+        &json!({ "id": 1, "repo": "acme/portal", "pr": 412, "round": 1,
+                 "created_at": "2026-10-09T00:00:00Z" }),
+        "head_sha is required",
+    );
+
+    // A field the contract does not declare. Every object sets
+    // additionalProperties: false, which is what makes a mistyped field name a failure
+    // here rather than a field the dashboard silently never sees.
+    assert_invalid(
+        "Review",
+        &json!({ "id": 1, "repo": "acme/portal", "pr": 412, "head_sha": "3f9c2ab",
+                 "round": 1, "created_at": "2026-10-09T00:00:00Z", "headSha": "3f9c2ab" }),
+        "headSha is not a field of Review",
+    );
+
+    // A closed set broken.
+    assert_invalid(
+        "Error",
+        &json!({ "code": "teapot", "message": "I am a teapot." }),
+        "teapot is not an ErrorCode",
+    );
+
+    // A pattern broken: `key` is `^F[0-9]+$`.
+    assert_invalid(
+        "Finding",
+        &json!({ "review_id": 1, "seq": 1, "key": "finding-1", "lens": "x",
+                 "severity": "nit", "claim": "c", "disposition": "in_draft",
+                 "created_at": "2026-10-09T00:00:00Z" }),
+        "finding-1 does not match ^F[0-9]+$",
+    );
+
+    // And the shape that should pass, so a validator that refuses everything is caught
+    // as readily as one that accepts everything.
+    assert_valid(
+        "Error",
+        &json!({ "code": "conflict", "message": "The draft is approved." }),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The three operations that are implemented
+// ---------------------------------------------------------------------------
+
+#[test]
+fn start_review_validates_as_a_review() {
+    let harness = common::start(common::recorded_github());
+
+    let answer = harness.api(
+        "POST",
+        "/reviews",
+        Some(r#"{"pr_url":"https://github.com/devergehq/locus/pull/64"}"#),
+    );
+
+    assert_eq!(answer.status, 201, "{}", answer.text());
+    assert_valid("Review", &answer.json());
+}
+
+#[test]
+fn start_review_with_a_supplied_head_validates_as_a_review() {
+    let harness = common::start_with_no_github();
+
+    let answer = harness.api(
+        "POST",
+        "/reviews",
+        Some(r#"{"pr_url":"https://github.com/acme/portal/pull/412","head_sha":"3f9c2ab"}"#),
+    );
+
+    assert_eq!(answer.status, 201, "{}", answer.text());
+    assert_valid("Review", &answer.json());
+}
+
+#[test]
+fn confirm_brief_validates_as_a_brief() {
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+
+    let answer = harness.api(
+        "POST",
+        &format!("/reviews/{}/brief/confirm", seeded.review_id),
+        None,
+    );
+
+    assert_eq!(answer.status, 200, "{}", answer.text());
+    assert_valid("Brief", &answer.json());
+}
+
+#[test]
+fn set_finding_disposition_validates_as_a_finding() {
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+
+    for body in [
+        r#"{"disposition":"held_back","reason":"a nit; it goes in the ticket"}"#,
+        r#"{"disposition":"suppressed","reason":"no consequence named"}"#,
+        r#"{"disposition":"in_draft"}"#,
+    ] {
+        let answer = harness.api(
+            "PATCH",
+            &format!("/reviews/{}/findings/1", seeded.review_id),
+            Some(body),
+        );
+
+        assert_eq!(answer.status, 200, "{}", answer.text());
+        assert_valid("Finding", &answer.json());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The thirteen the store can answer since DEV-860
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_inbox_validates() {
+    let harness = common::start_with_no_github();
+    common::seed(&harness.store);
+
+    let answer = harness.api("GET", "/inbox", None);
+    assert_eq!(answer.status, 200, "{}", answer.text());
+    assert_valid("Inbox", &answer.json());
+
+    let inbox = answer.json();
+    assert!(
+        !inbox["briefs_to_confirm"].as_array().unwrap().is_empty(),
+        "the seeded record has an unconfirmed brief: {inbox}"
+    );
+    assert!(
+        !inbox["drafts_to_approve"].as_array().unwrap().is_empty(),
+        "the seeded record has a draft waiting: {inbox}"
+    );
+    assert_eq!(
+        inbox["in_progress"][0]["layers_total"], 7,
+        "the screen's \"Layer 5 of 7\" needs the total stated"
+    );
+    assert!(
+        inbox["in_progress"][0]["session_alive"].is_null(),
+        "Allele owns session liveness and nothing tells this server about it; null is \
+         the honest answer and the screen has to render it"
+    );
+}
+
+#[test]
+fn an_empty_inbox_still_validates() {
+    // Nothing seeded. Every group is an empty array and every figure is a real zero or a
+    // null — the shape a first run serves, which is the one nobody tests and everybody
+    // sees first.
+    let harness = common::start_with_no_github();
+
+    let answer = harness.api("GET", "/inbox", None);
+    assert_eq!(answer.status, 200, "{}", answer.text());
+    assert_valid("Inbox", &answer.json());
+    assert_eq!(answer.json()["totals"]["items"], 0);
+}
+
+#[test]
+fn the_repository_list_validates() {
+    let harness = common::start_with_no_github();
+    common::seed(&harness.store);
+
+    let answer = harness.api("GET", "/repos", None);
+    assert_eq!(answer.status, 200, "{}", answer.text());
+    assert_valid(
+        "#/paths/~1repos/get/responses/200/content/application~1json/schema",
+        &answer.json(),
+    );
+
+    let repos = answer.json();
+    let names: Vec<String> = repos["repos"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|repo| repo["repo"].as_str().unwrap().to_string())
+        .collect();
+    assert!(
+        names.contains(&"acme/portal".to_string())
+            && names.contains(&"acme/billing-api".to_string()),
+        "both seeded repositories should be listed; got {names:?}"
+    );
+}
+
+#[test]
+fn one_review_validates_whole() {
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+
+    let answer = harness.api("GET", &format!("/reviews/{}", seeded.review_id), None);
+    assert_eq!(answer.status, 200, "{}", answer.text());
+    assert_valid("ReviewDetail", &answer.json());
+
+    let detail = answer.json();
+    assert_eq!(
+        detail["layers"].as_array().unwrap().len(),
+        7,
+        "the contract requires exactly seven layers, written or not"
+    );
+    assert_eq!(
+        detail["brief"]["options"].as_array().unwrap().len(),
+        2,
+        "the structured options come from the brief_option table: {detail}"
+    );
+    assert_eq!(detail["draft_status"], "ready");
+    assert_eq!(detail["finding_dispositions"]["in_draft"], 1);
+    assert_eq!(detail["finding_dispositions"]["held_back"], 1);
+}
+
+#[test]
+fn a_review_with_nothing_on_it_still_validates() {
+    // No brief, no findings, no draft, no layers written. Every optional thing is null
+    // or empty and the seven layers are all `pending`.
+    let harness = common::start_with_no_github();
+    let bare = harness
+        .store
+        .open_review("acme/bare", 1, "abc1234")
+        .unwrap()
+        .review
+        .id;
+
+    let answer = harness.api("GET", &format!("/reviews/{bare}"), None);
+    assert_eq!(answer.status, 200, "{}", answer.text());
+    assert_valid("ReviewDetail", &answer.json());
+    assert!(answer.json()["brief"].is_null());
+    assert!(answer.json()["draft_status"].is_null());
+    assert_eq!(answer.json()["layers"].as_array().unwrap().len(), 7);
+}
+
+#[test]
+fn the_draft_validates() {
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+
+    let answer = harness.api("GET", &format!("/reviews/{}/draft", seeded.review_id), None);
+    assert_eq!(answer.status, 200, "{}", answer.text());
+    assert_valid("DraftDetail", &answer.json());
+
+    let detail = answer.json();
+    assert_eq!(detail["lint"]["passes"], true);
+    assert_eq!(
+        detail["held_back"].as_array().unwrap().len(),
+        1,
+        "the seeded record holds one nit back"
+    );
+    assert_eq!(
+        detail["edits"].as_array().unwrap().len(),
+        1,
+        "a developer's cut is an edit the screen lists: {detail}"
+    );
+}
+
+#[test]
+fn a_draft_whose_lint_has_not_run_serves_a_null_lint() {
+    let harness = common::start_with_no_github();
+    let review_id = harness
+        .store
+        .open_review("acme/portal", 9, "abc1234")
+        .unwrap()
+        .review
+        .id;
+    harness
+        .store
+        .put_draft(
+            review_id,
+            review_desk_store::NewDraft {
+                body: String::new(),
+                status: review_desk_store::DraftStatus::Drafting,
+                lint: None,
+            },
+        )
+        .unwrap();
+
+    let answer = harness.api("GET", &format!("/reviews/{review_id}/draft"), None);
+    assert_eq!(answer.status, 200, "{}", answer.text());
+    assert_valid("DraftDetail", &answer.json());
+    assert!(
+        answer.json()["lint"].is_null(),
+        "a lint that has not run is null, not passes: false — the contract was changed \
+         in this pull request to allow it"
+    );
+}
+
+#[test]
+fn saving_approving_and_sending_back_a_draft_all_validate() {
+    for (method, suffix, body) in [
+        ("PUT", "", r#"{"body":"An edited review body.","edits":[]}"#),
+        ("POST", "/approve", r#"{"event":"request_changes"}"#),
+        ("POST", "/send-back", r#"{"note":"cut the nits"}"#),
+    ] {
+        let harness = common::start_with_no_github();
+        let seeded = common::seed(&harness.store);
+        let path = format!("/reviews/{}/draft{suffix}", seeded.review_id);
+
+        let answer = harness.api(method, &path, Some(body));
+        assert_eq!(answer.status, 200, "{method} {path}: {}", answer.text());
+        assert_valid("DraftDetail", &answer.json());
+    }
+}
+
+#[test]
+fn the_nit_ticket_validates() {
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+    let path = format!("/reviews/{}/held-back/ticket", seeded.review_id);
+
+    let asked = harness.api("POST", &path, Some("{}"));
+    assert_eq!(asked.status, 200, "{}", asked.text());
+    assert_valid("NitTicket", &asked.json());
+    assert_eq!(asked.json()["status"], "requested");
+
+    let filed = harness.api("POST", &path, Some(r#"{"ticket_id":"ABC-999"}"#));
+    assert_eq!(filed.status, 200, "{}", filed.text());
+    assert_valid("NitTicket", &filed.json());
+    assert_eq!(filed.json()["status"], "filed");
+    assert_eq!(filed.json()["ticket_id"], "ABC-999");
+}
+
+#[test]
+fn the_rules_page_validates() {
+    let harness = common::start_with_no_github();
+    common::seed(&harness.store);
+
+    for path in ["/rules", "/rules?repo=acme/portal"] {
+        let answer = harness.api("GET", path, None);
+        assert_eq!(answer.status, 200, "{path}: {}", answer.text());
+        assert_valid("RulesPage", &answer.json());
+    }
+
+    let all = harness.api("GET", "/rules", None).json();
+    assert_eq!(
+        all["proposed"].as_array().unwrap().len(),
+        1,
+        "the screen's whole purpose is deciding on proposals, so they are included: {all}"
+    );
+    assert_eq!(all["active"].as_array().unwrap().len(), 1);
+    assert!(all["repo"].is_null(), "no repo means every repository");
+    assert_eq!(all["summary"]["active_rules_cap"], 20);
+}
+
+#[test]
+fn every_rule_operation_validates() {
+    for (suffix, body) in [
+        ("promote", r#"{"to_stage":"lint"}"#),
+        ("dismiss", r#"{"reason":"no consequence named"}"#),
+        ("retire", r#"{"reason":"nothing has cited it"}"#),
+        ("defer", r#"{"days":60}"#),
+    ] {
+        let harness = common::start_with_no_github();
+        let seeded = common::seed(&harness.store);
+        let path = format!("/rules/{}/{suffix}", seeded.rule_id);
+
+        let answer = harness.api("POST", &path, Some(body));
+        assert_eq!(answer.status, 200, "{path}: {}", answer.text());
+        assert_valid("Rule", &answer.json());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Every failure, including the thirteen that wait on the store
+// ---------------------------------------------------------------------------
+
+#[test]
+fn every_refusal_validates_as_an_error() {
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+    let review = seeded.review_id;
+
+    let refusals: Vec<(&str, String, Option<&str>)> = vec![
+        // 400, a malformed link
+        (
+            "POST",
+            "/reviews".to_string(),
+            Some(r#"{"pr_url":"nonsense"}"#),
+        ),
+        // 400, a body that is not the right shape
+        ("POST", "/reviews".to_string(), Some(r#"{"nope":1}"#)),
+        // 400, no body at all
+        ("POST", "/reviews".to_string(), None),
+        // 400, a closed set broken
+        (
+            "PATCH",
+            format!("/reviews/{review}/findings/1"),
+            Some(r#"{"disposition":"wontfix"}"#),
+        ),
+        // 400, a reason that is required and absent
+        (
+            "PATCH",
+            format!("/reviews/{review}/findings/1"),
+            Some(r#"{"disposition":"held_back"}"#),
+        ),
+        // 404, no such review
+        ("POST", "/reviews/9001/brief/confirm".to_string(), None),
+        // 404, no such endpoint
+        ("GET", "/nonsense".to_string(), None),
+        // 502, GitHub could not be read
+        (
+            "POST",
+            "/reviews".to_string(),
+            Some(r#"{"pr_url":"https://github.com/acme/portal/pull/77"}"#),
+        ),
+        // 409, a draft that holds back no nits has no ticket to ask for
+        (
+            "POST",
+            format!("/reviews/{}/held-back/ticket", seeded.other_review_id),
+            Some("{}"),
+        ),
+        // 400, a stage that does not follow the rule's current one
+        (
+            "POST",
+            format!("/rules/{}/promote", seeded.rule_id),
+            Some(r#"{"to_stage":"proposed"}"#),
+        ),
+        // 400, a period outside what the contract allows
+        (
+            "POST",
+            format!("/rules/{}/defer", seeded.rule_id),
+            Some(r#"{"days":4000}"#),
+        ),
+        // 400, a repository that is not one
+        ("GET", "/rules?repo=notarepo".to_string(), None),
+    ];
+
+    for (method, path, body) in refusals {
+        let answer = harness.api(method, &path, body);
+        assert!(
+            answer.status >= 400,
+            "{method} {path} with body {body:?} was expected to be refused; \
+             it answered {} with {}",
+            answer.status,
+            answer.text()
+        );
+        assert_valid("Error", &answer.json());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The one conversion the contract asks the server to make
+// ---------------------------------------------------------------------------
+
+#[test]
+fn every_time_on_the_wire_is_rfc_3339_in_utc() {
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+
+    let created = harness
+        .api(
+            "POST",
+            "/reviews",
+            Some(r#"{"pr_url":"https://github.com/acme/portal/pull/500","head_sha":"3f9c2ab"}"#),
+        )
+        .json();
+    let confirmed = harness
+        .api(
+            "POST",
+            &format!("/reviews/{}/brief/confirm", seeded.review_id),
+            None,
+        )
+        .json();
+
+    let mut times = Vec::new();
+    for body in [&created, &confirmed] {
+        collect_times(body, &mut times);
+    }
+
+    assert!(!times.is_empty(), "no times were served to check");
+    for time in times {
+        assert!(
+            looks_like_rfc_3339_utc(&time),
+            "{time:?} is not RFC 3339 in UTC; the store holds epoch seconds and the \
+             server converts at this boundary"
+        );
+    }
+}
+
+/// Every string value under a key the contract declares as a time.
+fn collect_times(body: &Value, found: &mut Vec<String>) {
+    let Some(object) = body.as_object() else {
+        return;
+    };
+    for (key, value) in object {
+        let is_a_time = key.ends_with("_at") || key == "checked_at";
+        match value {
+            Value::String(text) if is_a_time => found.push(text.clone()),
+            Value::Object(_) => collect_times(value, found),
+            Value::Array(items) => items.iter().for_each(|item| collect_times(item, found)),
+            _ => {}
+        }
+    }
+}
+
+/// `YYYY-MM-DDTHH:MM:SSZ`, which is what the contract's `Z` offset means.
+fn looks_like_rfc_3339_utc(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    bytes.len() == 20
+        && bytes[..4].iter().all(u8::is_ascii_digit)
+        && bytes[4] == b'-'
+        && bytes[5..7].iter().all(u8::is_ascii_digit)
+        && bytes[7] == b'-'
+        && bytes[8..10].iter().all(u8::is_ascii_digit)
+        && bytes[10] == b'T'
+        && bytes[11..13].iter().all(u8::is_ascii_digit)
+        && bytes[13] == b':'
+        && bytes[14..16].iter().all(u8::is_ascii_digit)
+        && bytes[16] == b':'
+        && bytes[17..19].iter().all(u8::is_ascii_digit)
+        && bytes[19] == b'Z'
+}

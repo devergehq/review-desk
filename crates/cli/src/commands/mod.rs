@@ -13,6 +13,7 @@ mod layer;
 mod outcome;
 mod review;
 mod rules;
+mod serve;
 
 use clap::{Parser, Subcommand};
 
@@ -79,6 +80,8 @@ enum Command {
     },
     /// Read the outcomes of posted reviews back from GitHub and record them.
     Harvest(harvest::HarvestArgs),
+    /// Serve the JSON API and the dashboard on 127.0.0.1.
+    Serve(serve::ServeArgs),
 }
 
 /// Run whatever was asked for, and hand back what it has to say.
@@ -93,5 +96,6 @@ pub fn run(cli: &Cli) -> Result<Report> {
         Command::Outcome { command } => outcome::run(command),
         Command::Rules { command } => rules::run(command),
         Command::Harvest(args) => harvest::run(args),
+        Command::Serve(args) => serve::run(args, cli.json),
     }
 }

@@ -625,7 +625,30 @@ components:
       enum: [in_draft, held_back, suppressed]
     OutcomeKind:
       type: string
-      enum: [cut, regraded, rewritten, kept, rejected, raised_again, code_changed_after]
+      description: |
+        The same closed set as `OutcomeKind` in `crates/store/src/model.rs`, with the same
+        wire strings.
+
+        `replied` and `thread_resolved` are what the harvester records, and they were
+        missing here until DEV-861. The harvester merged before this contract was written
+        against it: it writes both kinds today, so a conforming server reading a review
+        out of the store would have had to drop them, and the Inbox's "Author replied"
+        group is built from exactly those rows.
+
+        **`replied` is deliberately not `accepted` or `rejected`.** Reading what a reply
+        meant needs judgement, and the harvester is deterministic — it stores the reply as
+        written and leaves the reading to a person or an agent. A client that wants
+        "rejected with a reason" uses `rejected`, which only a person records.
+      enum:
+        - cut
+        - regraded
+        - rewritten
+        - kept
+        - rejected
+        - raised_again
+        - replied
+        - thread_resolved
+        - code_changed_after
     Actor:
       type: string
       enum: [developer, author, harvester]
@@ -1076,7 +1099,20 @@ components:
       properties:
         draft: { $ref: '#/components/schemas/Draft' }
         review: { $ref: '#/components/schemas/Review' }
-        lint: { $ref: '#/components/schemas/DraftLint' }
+        lint:
+          oneOf:
+            - $ref: '#/components/schemas/DraftLint'
+            - type: 'null'
+          description: |
+            Null when the lint has not run over this body yet — a draft still at
+            `drafting`, or one whose body was just replaced.
+
+            `DraftLint` requires `passes` and `checked_at`, so there is no shape of it
+            that means "not measured": serialising a draft with no lint would mean
+            inventing `passes: false` and a time, and a failing lint and an absent one are
+            not the same thing. This contract's own rule is that a count the store cannot
+            answer is null and never zero; the same reasoning applies to the whole object.
+            Made nullable in DEV-861, found by the DEV-860 session.
         edits:
           type: array
           items: { $ref: '#/components/schemas/DraftEdit' }
