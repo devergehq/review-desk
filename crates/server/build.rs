@@ -23,6 +23,15 @@ fn main() {
     // by the next one rather than silently staying unembedded.
     println!("cargo::rerun-if-changed={}", root.display());
 
+    // And the directory above it, because cargo compares modification times and `mv`
+    // preserves them. Moving a previously built `public` back into place leaves every
+    // mtime inside it untouched, so nothing under `root` would look changed and the
+    // binary would keep the empty table — found exactly that way during the hand run for
+    // DEV-861. The parent's own mtime does change when a directory appears inside it.
+    if let Some(parent) = root.parent() {
+        println!("cargo::rerun-if-changed={}", parent.display());
+    }
+
     let mut files = Vec::new();
     if root.is_dir() {
         collect(&root, &root, &mut files);

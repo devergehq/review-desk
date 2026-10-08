@@ -523,6 +523,13 @@ The embedding is a build script: it walks `web/.output/public` if it is there an
 an empty table if it is not. Build the front end after a `cargo build` and the next
 `cargo build` picks it up.
 
+**If `/` shows the "not built" page when you expected the dashboard, check
+`front_end_embedded` and then the modification times.** Cargo decides whether to re-run
+a build script by comparing them, and copying or moving a previously built
+`web/.output/public` into place preserves them — so nothing looks changed. A fresh
+`pnpm run generate` always writes new files and is never affected; `touch -c` over the
+directory fixes a restored one.
+
 ### What it binds, and what that means
 
 **It binds `127.0.0.1` and there is no flag to change that.** There is no
