@@ -416,7 +416,9 @@ fn an_unknown_review_is_refused_not_reported_as_broken() {
     .expect_err("there is no review 4040");
 
     assert!(error.is_refusal(), "an unknown id is exit 1, not exit 2");
-    assert_eq!(error.code(), "refused");
+    // The store's own code, not a second word for the same failure: `harvest --review 99`
+    // and `review show --review 99` are one refusal and report one name.
+    assert_eq!(error.code(), "not_found");
 }
 
 #[test]

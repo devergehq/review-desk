@@ -76,13 +76,11 @@ impl HarvestError {
             HarvestError::Unreadable { .. } => "github_response_unreadable",
             HarvestError::NotRecorded { .. } => "not_recorded",
             HarvestError::Recording { .. } => "recording_unreadable",
-            HarvestError::Store(error) => {
-                if error.is_refusal() {
-                    "refused"
-                } else {
-                    "store_broken"
-                }
-            }
+            // The store names its own refusals, and the command line's JSON contract
+            // documents those names. A second vocabulary for the same failure would
+            // make `harvest --review 99` report a different code from
+            // `review show --review 99`.
+            HarvestError::Store(error) => error.code(),
         }
     }
 }

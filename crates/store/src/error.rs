@@ -84,6 +84,7 @@ impl StoreError {
     pub fn code(&self) -> &'static str {
         match self {
             StoreError::DuplicateReview { .. } => "duplicate_review",
+            StoreError::DuplicateGithubComment { .. } => "duplicate_github_comment",
             StoreError::NotFound { .. } => "not_found",
             StoreError::UnknownParent { .. } => "unknown_parent",
             StoreError::InvalidValue { .. } => "invalid_value",

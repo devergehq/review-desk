@@ -291,3 +291,33 @@ fn only_reviews_whose_pull_request_was_open_are_up_for_harvest() {
         "that repository's only review is closed"
     );
 }
+
+#[test]
+fn the_repository_filter_is_normalised_like_the_column_it_matches() {
+    // The repository is identity and is stored canonical, so a filter that was not
+    // normalised would answer "nothing to harvest" for a caller who typed the name the
+    // way GitHub displays it.
+    let (_dir, store) = temp_store();
+    let review = store
+        .create_review(new_review("DevergeHQ/Locus", 64, "9535132", 1))
+        .unwrap();
+    assert_eq!(review.repo, "devergehq/locus", "stored canonical");
+
+    for spelling in ["devergehq/locus", "DevergeHQ/Locus", "  DEVERGEHQ/LOCUS  "] {
+        let found: Vec<i64> = store
+            .reviews_to_harvest(Some(spelling))
+            .unwrap()
+            .into_iter()
+            .map(|review| review.id)
+            .collect();
+        assert_eq!(found, vec![review.id], "{spelling:?} names that repository");
+    }
+
+    assert!(
+        store
+            .reviews_to_harvest(Some("devergehq/elsewhere"))
+            .unwrap()
+            .is_empty(),
+        "and a different repository is still a different repository"
+    );
+}

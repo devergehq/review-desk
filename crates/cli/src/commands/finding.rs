@@ -1,4 +1,4 @@
-//! `finding add` and `finding set`.
+//! `finding add`, `finding set` and `finding link`.
 
 use std::path::PathBuf;
 
@@ -26,6 +26,23 @@ pub enum FindingCommand {
         /// The JSON document, or `-` for standard input.
         #[arg(long, value_name = "PATH")]
         file: PathBuf,
+    },
+
+    /// Record the GitHub review comment a finding was posted as.
+    ///
+    /// The harvester needs it to find the finding's thread; a finding without one is
+    /// skipped for replies and resolution. Linking the same comment to the same finding
+    /// again changes nothing, so a posting step can be re-run.
+    Link {
+        /// The review's id.
+        #[arg(long, value_name = "ID")]
+        review: i64,
+        /// The finding's sequence number within the review.
+        #[arg(long, value_name = "FID")]
+        finding: i64,
+        /// The id of the GitHub review comment.
+        #[arg(long, value_name = "ID")]
+        github_comment: String,
     },
 
     /// Change what is to become of a finding in this round's draft.
@@ -64,6 +81,25 @@ pub fn run(command: &FindingCommand) -> Result<Report> {
                 // The sequence number alone: it is what the next command needs and what
                 // a person quotes.
                 finding.seq.to_string(),
+            ))
+        }
+
+        FindingCommand::Link {
+            review,
+            finding,
+            github_comment,
+        } => {
+            let store = Store::open_default()?;
+            let linked = store.set_finding_github_comment(*review, *finding, github_comment)?;
+
+            Ok(Report::new(
+                json!({ "finding": linked }),
+                format!(
+                    "finding {} of review {} was posted as GitHub comment {}",
+                    linked.seq,
+                    linked.review_id,
+                    linked.github_comment_id.as_deref().unwrap_or_default()
+                ),
             ))
         }
 

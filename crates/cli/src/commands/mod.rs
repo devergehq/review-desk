@@ -7,6 +7,7 @@
 mod brief;
 mod db;
 mod finding;
+mod harvest;
 mod outcome;
 mod review;
 mod rules;
@@ -64,6 +65,8 @@ enum Command {
         #[command(subcommand)]
         command: rules::RulesCommand,
     },
+    /// Read the outcomes of posted reviews back from GitHub and record them.
+    Harvest(harvest::HarvestArgs),
 }
 
 /// Run whatever was asked for, and hand back what it has to say.
@@ -75,5 +78,6 @@ pub fn run(cli: &Cli) -> Result<Report> {
         Command::Finding { command } => finding::run(command),
         Command::Outcome { command } => outcome::run(command),
         Command::Rules { command } => rules::run(command),
+        Command::Harvest(args) => harvest::run(args),
     }
 }

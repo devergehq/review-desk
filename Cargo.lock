@@ -440,6 +440,18 @@ dependencies = [
  "assert_cmd",
  "clap",
  "predicates",
+ "review-desk-harvest",
+ "review-desk-store",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "review-desk-harvest"
+version = "0.1.0"
+dependencies = [
  "review-desk-store",
  "serde",
  "serde_json",

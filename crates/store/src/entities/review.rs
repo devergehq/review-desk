@@ -264,6 +264,13 @@ impl Store {
     /// nothing further to learn, and fetching it again would cost a GitHub call per
     /// run for ever.
     pub fn reviews_to_harvest(&self, repo: Option<&str>) -> Result<Vec<Review>> {
+        // Normalised, because the column is. A caller who typed `DevergeHQ/Locus` is
+        // naming the repository the record holds as `devergehq/locus`, and an
+        // unnormalised filter here would answer "nothing to harvest" rather than
+        // "no such repository" — the lookup-normalised-differently-from-the-insert bug
+        // `crate::normalise` exists to prevent.
+        let repo = repo.map(normalise::repo);
+
         let mut statement = self.conn.prepare(&format!(
             "SELECT {COLUMNS} FROM reviews
              WHERE (pr_state IS NULL OR pr_state = 'open')
