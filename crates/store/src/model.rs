@@ -115,6 +115,11 @@ string_enum! {
 
 string_enum! {
     /// What happened to a finding.
+    ///
+    /// The last three are what the harvester records. `Replied` is deliberately not
+    /// `Accepted` or `Rejected`: deciding which a reply was needs judgement, and the
+    /// harvester is deterministic. It stores the reply and leaves the reading of it to
+    /// a person or an agent.
     OutcomeKind as "kind" {
         Cut => "cut",
         Regraded => "regraded",
@@ -122,7 +127,25 @@ string_enum! {
         Kept => "kept",
         Rejected => "rejected",
         RaisedAgain => "raised_again",
+        Replied => "replied",
+        ThreadResolved => "thread_resolved",
         CodeChangedAfter => "code_changed_after",
+    }
+}
+
+string_enum! {
+    /// What a pull request was last seen to be.
+    PrState as "pr_state" {
+        Open => "open",
+        Merged => "merged",
+        Closed => "closed",
+    }
+}
+
+impl PrState {
+    /// Whether this pull request is finished with, and so has nothing left to harvest.
+    pub fn is_settled(&self) -> bool {
+        matches!(self, PrState::Merged | PrState::Closed)
     }
 }
 
@@ -212,7 +235,23 @@ pub struct Review {
     pub ledger_id: Option<String>,
     /// The review posted on GitHub.
     pub github_review_id: Option<String>,
+    /// What the pull request was last seen to be. `None` means the harvester has never
+    /// looked.
+    pub pr_state: Option<PrState>,
+    /// When the pull request reached that state: merged or closed at. `None` while it
+    /// is open.
+    pub pr_state_at: Option<Timestamp>,
+    /// When the harvester last read this review's outcomes back from GitHub.
+    pub harvested_at: Option<Timestamp>,
     pub created_at: Timestamp,
+}
+
+impl Review {
+    /// Whether this review's pull request was finished with at the last harvest, and
+    /// so should not be fetched again.
+    pub fn is_settled(&self) -> bool {
+        self.pr_state.is_some_and(|state| state.is_settled())
+    }
 }
 
 /// A review to create.
@@ -311,6 +350,10 @@ pub struct Finding {
     pub disposition: Disposition,
     /// Why it was held back or suppressed.
     pub disposition_reason: Option<String>,
+    /// The GitHub review comment this finding was posted as, set by
+    /// `review-desk finding link`. Without it the harvester cannot find the finding's
+    /// thread, so it is skipped for replies and resolution.
+    pub github_comment_id: Option<String>,
     pub created_at: Timestamp,
 }
 
@@ -354,6 +397,10 @@ pub struct Outcome {
     pub occurred_at: Timestamp,
     /// Anything worth saying beyond the kind.
     pub detail: Option<String>,
+    /// The GitHub fact this was harvested from — a reply comment's id, a thread's root
+    /// comment id, a commit — or `None` for an outcome recorded by hand. It is what
+    /// makes a second harvest write nothing.
+    pub harvest_key: Option<String>,
 }
 
 /// An outcome to record against a finding.

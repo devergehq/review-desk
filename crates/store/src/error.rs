@@ -13,6 +13,14 @@ pub enum StoreError {
     #[error("review already exists for {repo}#{pr} round {round}")]
     DuplicateReview { repo: String, pr: i64, round: i64 },
 
+    /// A GitHub review comment is already linked to a different finding.
+    #[error("GitHub comment {comment_id} is already linked to finding {review_id}/{seq}")]
+    DuplicateGithubComment {
+        comment_id: String,
+        review_id: i64,
+        seq: i64,
+    },
+
     /// A row was requested, or referenced, that is not there.
     #[error("no {entity} with id {id}")]
     NotFound { entity: &'static str, id: String },
@@ -94,6 +102,7 @@ impl StoreError {
         matches!(
             self,
             StoreError::DuplicateReview { .. }
+                | StoreError::DuplicateGithubComment { .. }
                 | StoreError::NotFound { .. }
                 | StoreError::UnknownParent { .. }
                 | StoreError::InvalidValue { .. }

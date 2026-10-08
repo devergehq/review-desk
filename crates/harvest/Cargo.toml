@@ -1,0 +1,20 @@
+[package]
+name = "review-desk-harvest"
+description = "Reads the outcomes of a posted review back from GitHub and records them."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "review_desk_harvest"
+path = "src/lib.rs"
+
+[dependencies]
+review-desk-store = { path = "../store" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

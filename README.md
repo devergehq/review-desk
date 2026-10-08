@@ -7,8 +7,9 @@ pull requests: GitHub and Linear already do that, and its unit is the finding an
 rule, not the PR. It runs locally, owns its own record, and needs nothing else
 installed.
 
-This repository is at the second slice: the store and the commands an agent session
-calls to record a review. There is no dashboard and no HTTP API yet.
+This repository is at the second slice: the store, the commands an agent session
+calls to record a review, and the harvester that reads a posted review's outcomes back
+from GitHub. There is no dashboard and no HTTP API yet.
 
 ## Build and test
 
@@ -140,6 +141,24 @@ Nothing writes a rule yet. Promoting one is the developer's act, and harvesting 
 the harvester's; both are later slices, so `rules list` reads a record this command line
 cannot fill.
 
+### Reading the outcomes back
+
+Once a review has been posted, `finding link` records which GitHub review comment each
+finding became, and `harvest` reads what happened to them back off GitHub.
+
+```sh
+review-desk finding link --review "$REVIEW" --finding "$SEQ" --github-comment 4140231301
+
+review-desk harvest --review "$REVIEW"
+# harvested 1 review: 3 replies, 3 threads resolved, 3 code changed after; 1 finding
+# has no linked comment, skipped for replies and resolution
+```
+
+`harvest` takes no argument and reads every review whose pull request was open at its
+last harvest. `--repo OWNER/REPO` narrows it to one repository; `--review ID` names one
+review and reads it whatever state its pull request is in. What it records, and why
+running it twice records nothing twice, is [below](#harvesting).
+
 ### Input and output
 
 | | |
@@ -187,9 +206,64 @@ With `--json`, the document carries the reason as well:
 | `database_from_the_future` | The database is newer than this build understands |
 | `no_home` | No home directory, so the default path is unknowable |
 | `cannot_serialise` | A record on the database could not be turned into JSON |
+| `duplicate_github_comment` | That GitHub review comment is already linked to another finding |
+| `gh_missing` | `harvest` needs the `gh` command and it is not installed |
+| `gh_not_authenticated` | `gh` is installed but nobody is logged in |
+| `gh_failed` | `gh` ran and failed for some other reason |
+| `github_response_unreadable` | A response from GitHub was not the shape it had to be |
 
 `kind` is `refused` for exit 1 and `broken` for exit 2, so a caller reading only standard
 output learns the same thing the exit code says.
+## Harvesting
+
+**`review-desk harvest` reads four facts back from GitHub and records them without
+judging them.**
+
+| Fact | Where it comes from | Recorded as |
+| -- | -- | -- |
+| The pull request was merged or closed | The pull request | `pr_state` and `pr_state_at` on the review |
+| Someone replied to a finding | The finding's comment thread | An outcome of kind `replied`, with the author and the verbatim text |
+| A finding's thread was resolved | The thread's resolved flag | An outcome of kind `thread_resolved` |
+| The file a finding points at changed later | A comparison of the reviewed commit with the current head | An outcome of kind `code_changed_after`, with the commit and whether the finding's own lines changed |
+
+It does **not** decide whether a reply accepted or rejected a finding. That needs
+judgement; this command is deterministic. The reply is stored as written, and a person
+or an agent reads it later.
+
+A finding's own lines are "changed" when they were removed or replaced. Inserting lines
+above a finding moves it without changing it, so that is recorded as the file changing
+and not the finding's lines. A finding with no line number, or pointing at a file no
+later commit touched, is treated the same way: the record says what changed, not what it
+meant.
+
+### What it needs, and what it skips
+
+* GitHub is reached by running `gh`, as the Locus linters do, so the developer's
+  existing login is used and Review Desk handles no tokens. **Every call is a read; the
+  harvester never posts to GitHub.**
+* A finding with no linked GitHub comment is skipped for replies and resolution — there
+  is no thread to read — and is still checked for a later code change. The run says how
+  many were skipped.
+* Without `--review`, only reviews whose pull request was open at their last harvest are
+  fetched. A merged or closed pull request has nothing further to say. `--review` names
+  one review and reads it whatever state it is in.
+* It is one shot. Scheduling it is somebody else's job.
+
+### Running it twice records nothing twice
+
+Every row the harvester writes carries `harvest_key`: the id of the GitHub fact it came
+from — a reply comment's id, a thread's root comment id, a commit. A unique index on
+`(review_id, finding_seq, kind, harvest_key)` refuses the second write, so a repeat run
+finds every fact already there and reports it as such. The harvester does not remember
+what it has done; the database does.
+
+The index is partial — `WHERE harvest_key IS NOT NULL` — so an outcome recorded by hand
+is never caught by it. Two developers may record "kept" against one finding twice; two
+harvests of one reply may not.
+
+A missing `gh` and a logged-out `gh` are both exit 2, with a message and a `code` saying
+which it was — they are Review Desk unable to run, not a request refused.
+
 
 ## Where the database lives
 
@@ -207,6 +281,7 @@ Tests always use a temporary file and never touch the default path.
 | Path | What it is |
 | -- | -- |
 | `crates/store` | `review-desk-store`: the record store. The only code that opens the database file. |
+| `crates/harvest` | `review-desk-harvest`: reads a posted review's outcomes back from GitHub. GitHub sits behind a trait, so its tests replay responses captured from a real pull request. |
 | `crates/cli` | `review-desk`: the binary. One module per command group under `src/commands`. |
 
 **The store crate is the only thing that opens the database.** The binary, and every
@@ -215,15 +290,15 @@ functions. That is what keeps one way into the record.
 
 ## The record
 
-Five entities, in two schema versions: the review record (version 1) and the learning
-layer (version 2).
+Five entities, in three schema versions: the review record (version 1), the learning
+layer (version 2), and what harvesting needs (version 3).
 
 | Entity | Holds |
 | -- | -- |
-| Review | The repository as `owner/repo`, the pull request, the head commit, the round, and the ids of the Allele session, the dispatcher ledger entry and the posted GitHub review |
+| Review | The repository as `owner/repo`, the pull request, the head commit, the round, the ids of the Allele session, the dispatcher ledger entry and the posted GitHub review, and what the pull request was last seen to be with when it was last harvested |
 | Brief | One per review: the problem, its diagram, the option map, the approach verdict, and whether and when the developer confirmed it |
-| Finding | Lens, severity, location, claim, evidence, and its disposition with a reason |
-| Outcome | What became of a finding, who did it, when, and the detail |
+| Finding | Lens, severity, location, claim, evidence, its disposition with a reason, and the GitHub comment it was posted as |
+| Outcome | What became of a finding, who did it, when, the detail, and the GitHub fact it was harvested from |
 | Rule | A statement, the failure it prevents, its scope, its stage, and the findings and review it came from |
 
 A review is unique on repository, pull request number and round.

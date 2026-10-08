@@ -1,0 +1,25 @@
+{
+  "sha": "46f6ea1645a9bbc9308f791411b2cac1a093367b",
+  "commit": {
+    "committer": {
+      "date": "2026-09-30T07:48:56Z"
+    }
+  },
+  "files": [
+    {
+      "filename": ".github/workflows/ci.yml"
+    },
+    {
+      "filename": "CHANGELOG.md"
+    },
+    {
+      "filename": "scripts/test-dispatcher-poller.sh"
+    },
+    {
+      "filename": "skills/dispatcher/SKILL.md"
+    },
+    {
+      "filename": "skills/dispatcher/dispatcher.py"
+    }
+  ]
+}

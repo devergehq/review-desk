@@ -3,11 +3,11 @@
 use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior};
 
 use crate::error::{Result, StoreError};
-use crate::model::{now, NewReview, OpenedReview, Review, ReviewLinks};
+use crate::model::{now, NewReview, OpenedReview, PrState, Review, ReviewLinks, Timestamp};
 use crate::{is_unique_violation, normalise, Store};
 
 const COLUMNS: &str = "id, repo, pr, head_sha, round, session_id, ledger_id, \
-                       github_review_id, created_at";
+                       github_review_id, pr_state, pr_state_at, harvested_at, created_at";
 
 impl Store {
     /// Create a review.
@@ -223,6 +223,56 @@ impl Store {
 
         self.get_review(id)
     }
+
+    /// Record what the pull request was last seen to be, and when it reached that
+    /// state.
+    ///
+    /// Writing the same state twice is the same as writing it once, which is what lets
+    /// the harvester run again without special-casing a review it has already seen.
+    pub fn set_review_pr_state(
+        &self,
+        id: i64,
+        state: PrState,
+        state_at: Option<Timestamp>,
+    ) -> Result<Review> {
+        self.get_review(id)?;
+
+        self.conn.execute(
+            "UPDATE reviews SET pr_state = ?2, pr_state_at = ?3 WHERE id = ?1",
+            params![id, state, state_at],
+        )?;
+
+        self.get_review(id)
+    }
+
+    /// Record that the harvester has just read this review.
+    pub fn mark_review_harvested(&self, id: i64, at: Timestamp) -> Result<Review> {
+        self.get_review(id)?;
+
+        self.conn.execute(
+            "UPDATE reviews SET harvested_at = ?2 WHERE id = ?1",
+            params![id, at],
+        )?;
+
+        self.get_review(id)
+    }
+
+    /// The reviews whose pull request was open at their last harvest, oldest first.
+    ///
+    /// A review never harvested qualifies: its state is unknown, so it has to be
+    /// looked at. A review whose pull request was merged or closed does not — there is
+    /// nothing further to learn, and fetching it again would cost a GitHub call per
+    /// run for ever.
+    pub fn reviews_to_harvest(&self, repo: Option<&str>) -> Result<Vec<Review>> {
+        let mut statement = self.conn.prepare(&format!(
+            "SELECT {COLUMNS} FROM reviews
+             WHERE (pr_state IS NULL OR pr_state = 'open')
+               AND (?1 IS NULL OR repo = ?1)
+             ORDER BY id ASC"
+        ))?;
+        let rows = statement.query_map(params![repo], row_to_review)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
 }
 
 /// Check and normalise the identity the rest of the store keys on.
@@ -289,6 +339,9 @@ fn row_to_review(row: &Row<'_>) -> rusqlite::Result<Review> {
         session_id: row.get("session_id")?,
         ledger_id: row.get("ledger_id")?,
         github_review_id: row.get("github_review_id")?,
+        pr_state: row.get("pr_state")?,
+        pr_state_at: row.get("pr_state_at")?,
+        harvested_at: row.get("harvested_at")?,
         created_at: row.get("created_at")?,
     })
 }
