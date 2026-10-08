@@ -4,7 +4,7 @@ use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior}
 
 use crate::error::{Result, StoreError};
 use crate::model::{now, FindingRef, NewRule, Rule, RuleScope, RuleStage};
-use crate::{is_foreign_key_violation, Store};
+use crate::{is_foreign_key_violation, normalise, Store};
 
 const COLUMNS: &str = "id, statement, prevents, scope, scope_repo, stage, \
                        origin_review_id, created_at";
@@ -17,16 +17,26 @@ impl Store {
     /// Create a rule, with its links to the findings it came out of.
     pub fn create_rule(&self, new: NewRule) -> Result<Rule> {
         // A rule scoped to a repository that does not name one would be in force and
-        // match nothing, because every lookup keys on the repository string.
-        if let RuleScope::Repo(repo) = &new.scope {
-            if repo.trim().is_empty() {
-                return Err(StoreError::InvalidValue {
-                    field: "scope_repo",
-                    value: repo.clone(),
-                    expected: "a repository as owner/repo".to_string(),
-                });
+        // match nothing, because every lookup keys on the repository string. For the
+        // same reason the name is stored canonical: checking a trimmed string and
+        // inserting the raw one made a rule that `rules_for_repo` could never match.
+        let new = match new.scope {
+            RuleScope::Repo(repo) => {
+                let repo = normalise::repo(&repo);
+                if repo.is_empty() {
+                    return Err(StoreError::InvalidValue {
+                        field: "scope_repo",
+                        value: repo,
+                        expected: "a repository as owner/repo".to_string(),
+                    });
+                }
+                NewRule {
+                    scope: RuleScope::Repo(repo),
+                    ..new
+                }
             }
-        }
+            RuleScope::Global => new,
+        };
 
         // IMMEDIATE for the same reason as add_finding: the insert into rules and the
         // inserts into rule_findings are one step.
@@ -128,6 +138,11 @@ impl Store {
     /// Proposed rules are excluded because the developer has not promoted them, and
     /// retired ones because nothing cites them any more.
     pub fn rules_for_repo(&self, repo: &str) -> Result<Vec<Rule>> {
+        // Normalised through the same helper `create_rule` stores through. A lookup
+        // keyed differently from the insert reports that a repository has learned
+        // nothing, which is indistinguishable from the truth.
+        let repo = normalise::repo(repo);
+
         let mut statement = self.conn.prepare(&format!(
             "SELECT {COLUMNS} FROM rules
              WHERE (scope = 'global' OR (scope = 'repo' AND scope_repo = ?1))

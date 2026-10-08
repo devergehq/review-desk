@@ -230,6 +230,16 @@ pub struct NewReview {
     pub github_review_id: Option<String>,
 }
 
+/// A review opened for a head commit: the one that was already there, or a new round.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OpenedReview {
+    pub review: Review,
+    /// True when this call created the review, false when it was already on the record.
+    /// A caller that needs to know which happened should not have to read the round and
+    /// guess.
+    pub created: bool,
+}
+
 /// The ids of the other systems' records for a review. A field left `None` is left
 /// as it was, so one call can set one id without clearing the others.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -267,7 +277,12 @@ impl Brief {
 }
 
 /// A brief to store, replacing any brief already held for the review.
+///
+/// Unknown fields are refused. Every field but `problem` is optional, so a misspelled
+/// `option_map` would otherwise deserialise to `None` and the record would quietly lose
+/// what the review actually wrote.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NewBrief {
     pub problem: String,
     #[serde(default)]
@@ -300,7 +315,11 @@ pub struct Finding {
 }
 
 /// A finding to add to a review. The sequence number is assigned by the store.
+///
+/// Unknown fields are refused, for the same reason as [`NewBrief`]: a misspelled
+/// `evidence` is a finding with no evidence, which is worse than a refusal.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NewFinding {
     pub lens: String,
     pub severity: Severity,
