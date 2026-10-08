@@ -23,6 +23,7 @@
 import { computed, reactive, type ComputedRef } from 'vue'
 import { isSampleData, loadSource } from '~/data/snapshot'
 import type {
+  DeskError,
   DeskSource,
   Disposition,
   DraftDetail,
@@ -34,6 +35,7 @@ import type {
   RepoName,
   RepoSummary,
   Rule,
+  StartReviewRequest,
   RuleStage,
   RulesPage,
 } from '~/types/desk'
@@ -262,22 +264,67 @@ export function useReviewDesk() {
 
   /* ----------------------------- The writes --------------------------------- */
 
-  /** POST /reviews — the developer pastes a link; the session starts at the brief. */
-  function startReview(link: string): { ok: boolean, message: string } {
+  /**
+   * POST /reviews — the developer pastes a link and nothing else.
+   *
+   * The request carries only `pr_url`: the screen has no head commit to give, and the
+   * server resolves one by reading the pull request before it creates anything. That
+   * read is a read — nothing here writes to GitHub — but it can fail on a machine where
+   * `gh` is missing or logged out, and the screen has to tell that apart from a link it
+   * refused. One is the developer's environment; the other is their typing.
+   */
+  function startReview(
+    link: string,
+  ):
+    | { ok: true, request: StartReviewRequest, message: string }
+    | { ok: false, error: DeskError } {
     const match = link
       .trim()
       .match(/^(?:https?:\/\/github\.com\/)?([\w.-]+\/[\w.-]+)(?:\/pull\/|#)(\d+)\/?$/)
     if (!match) {
-      return { ok: false, message: 'Paste a link like github.com/acme/portal/pull/412.' }
+      return {
+        ok: false,
+        error: {
+          code: 'bad_request',
+          message: 'Paste a link like github.com/acme/portal/pull/412.',
+          field: 'pr_url',
+          expected: 'a GitHub pull request link',
+        },
+      }
     }
     const repo = match[1]!
     const pr = Number(match[2])
+    const request: StartReviewRequest = { pr_url: `https://github.com/${repo}/pull/${pr}` }
+
     if (source.reviews.some(item => item.review.repo === repo && item.review.pr === pr)) {
-      return { ok: false, message: `${repo}#${pr} is already on the desk.` }
+      return {
+        ok: false,
+        error: {
+          code: 'conflict',
+          message: `${repo}#${pr} is already on the desk.`,
+          field: null,
+          expected: null,
+        },
+      }
     }
+
+    /* No head commit was sent, so the server reads the pull request to resolve one. */
+    if (!source.github_available) {
+      return {
+        ok: false,
+        error: {
+          code: 'github_unavailable',
+          message: `Could not read ${repo}#${pr}: gh is not logged in. Run \`gh auth login\`, or pass head_sha.`,
+          field: 'head_sha',
+          expected: null,
+        },
+      }
+    }
+
     return {
       ok: true,
-      message: `${repo}#${pr} queued. The session reads the problem first and stops there.`,
+      request,
+      message: `${repo}#${pr} would start at the problem brief, once the server resolves its head commit. Nothing is recorded while the desk is on sample data.`,
     }
   }
 
@@ -543,7 +590,11 @@ export function useReviewDesk() {
   }
 }
 
-/** Put the desk back as it loaded. Tests use this; no screen does. */
-export function resetDesk() {
-  Object.assign(source, loadSource())
+/**
+ * Put the desk back as it loaded, optionally with some of it replaced. Tests use this to
+ * reach a state no fixture of the record could express — a machine where `gh` cannot be
+ * read, for instance. No screen calls it.
+ */
+export function resetDesk(overrides: Partial<DeskSource> = {}) {
+  Object.assign(source, loadSource(), overrides)
 }

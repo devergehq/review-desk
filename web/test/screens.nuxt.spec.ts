@@ -35,7 +35,7 @@ describe('the shell', () => {
 })
 
 describe('the inbox', () => {
-  beforeEach(resetDesk)
+  beforeEach(() => resetDesk())
 
   it('renders the five waiting groups', async () => {
     const page = await mountSuspended(Inbox)
@@ -88,6 +88,32 @@ describe('the inbox', () => {
     await page.find('input#pr-link').setValue('nonsense')
     await page.findAll('button').find(button => button.text().includes('Understand it first'))!.trigger('click')
     expect(page.text()).toContain('Paste a link like github.com/acme/portal/pull/412.')
+    expect(page.find('.notice--blocked').exists()).toBe(false)
+  })
+
+  it('says differently when GitHub could not be read, and names the fix', async () => {
+    resetDesk({ github_available: false })
+    const page = await mountSuspended(Inbox)
+    await page.find('input#pr-link').setValue('https://github.com/acme/portal/pull/501')
+    await page.findAll('button').find(button => button.text().includes('Understand it first'))!.trigger('click')
+
+    const blocked = page.find('.notice--blocked')
+    expect(blocked.exists()).toBe(true)
+    expect(blocked.text()).toContain('gh auth login')
+    expect(blocked.attributes('role')).toBe('status')
+    /* The link stays in the field: nothing is wrong with it, so retyping it is waste. */
+    expect((page.find('input#pr-link').element as HTMLInputElement).value).toBe(
+      'https://github.com/acme/portal/pull/501',
+    )
+  })
+
+  it('clears the field and reports plainly when the link is accepted', async () => {
+    const page = await mountSuspended(Inbox)
+    await page.find('input#pr-link').setValue('acme/portal#501')
+    await page.findAll('button').find(button => button.text().includes('Understand it first'))!.trigger('click')
+    expect(page.text()).toContain('acme/portal#501')
+    expect(page.find('.notice--blocked').exists()).toBe(false)
+    expect((page.find('input#pr-link').element as HTMLInputElement).value).toBe('')
   })
 
   it('links a reviewer request out to GitHub rather than writing to it', async () => {
@@ -114,7 +140,7 @@ describe('the inbox', () => {
 })
 
 describe('one review', () => {
-  beforeEach(resetDesk)
+  beforeEach(() => resetDesk())
 
   async function open(id: number) {
     return mountSuspended(OneReview, { route: `/reviews/${id}` })
@@ -218,7 +244,7 @@ describe('one review', () => {
 })
 
 describe('the draft preview', () => {
-  beforeEach(resetDesk)
+  beforeEach(() => resetDesk())
 
   async function open(id: number) {
     return mountSuspended(DraftPreview, { route: `/reviews/${id}/draft` })
@@ -350,7 +376,7 @@ describe('the draft preview', () => {
 })
 
 describe('the rules', () => {
-  beforeEach(resetDesk)
+  beforeEach(() => resetDesk())
 
   it('renders the four figures, and leaves the unmeasured one absent', async () => {
     const page = await mountSuspended(Rules)

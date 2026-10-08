@@ -18,7 +18,7 @@ const CACHE = 16 /* #88, round 2 */
 const EXPORT = 12 /* #398, posted, with author replies */
 
 describe('the inbox', () => {
-  beforeEach(resetDesk)
+  beforeEach(() => resetDesk())
 
   it('groups seven waiting items across two repositories', () => {
     const { inbox } = useReviewDesk()
@@ -57,7 +57,7 @@ describe('the inbox', () => {
 })
 
 describe('confirming a brief', () => {
-  beforeEach(resetDesk)
+  beforeEach(() => resetDesk())
 
   it('takes the item out of the inbox and puts the draft in', () => {
     const { inbox, confirmBrief } = useReviewDesk()
@@ -95,7 +95,7 @@ describe('confirming a brief', () => {
 })
 
 describe('moving a finding', () => {
-  beforeEach(resetDesk)
+  beforeEach(() => resetDesk())
 
   it('refuses to hold one back without a reason', () => {
     const { setFindingDisposition, review } = useReviewDesk()
@@ -161,7 +161,7 @@ describe('moving a finding', () => {
 })
 
 describe('the draft', () => {
-  beforeEach(resetDesk)
+  beforeEach(() => resetDesk())
 
   it('serves a body with a mermaid fence and a folded section', () => {
     const { draft } = useReviewDesk()
@@ -282,7 +282,7 @@ describe('the draft', () => {
 })
 
 describe('the rules', () => {
-  beforeEach(resetDesk)
+  beforeEach(() => resetDesk())
 
   it('filters by repository, and keeps global rules in every repository', () => {
     const { rules } = useReviewDesk()
@@ -372,32 +372,82 @@ describe('the rules', () => {
 })
 
 describe('starting a review', () => {
-  beforeEach(resetDesk)
+  beforeEach(() => resetDesk())
 
-  it('accepts a GitHub pull request link', () => {
+  it('sends only the link, which is all the screen has', () => {
     const { startReview } = useReviewDesk()
     const result = startReview('https://github.com/acme/portal/pull/501')
     expect(result.ok).toBe(true)
+    if (!result.ok) return
+    /* `head_sha` is the server's to resolve; sending a guess would be worse than none. */
+    expect(result.request).toEqual({ pr_url: 'https://github.com/acme/portal/pull/501' })
     expect(result.message).toContain('acme/portal#501')
   })
 
-  it('accepts the short form a person types', () => {
+  it('normalises the short form a person types into a link', () => {
     const { startReview } = useReviewDesk()
-    expect(startReview('acme/portal#501').ok).toBe(true)
+    const result = startReview('acme/portal#501')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.request.pr_url).toBe('https://github.com/acme/portal/pull/501')
   })
 
-  it('refuses anything that is not one', () => {
+  it('refuses anything that is not a pull request link', () => {
     const { startReview } = useReviewDesk()
-    expect(startReview('').ok).toBe(false)
-    expect(startReview('not a link').ok).toBe(false)
-    expect(startReview('https://github.com/acme/portal').ok).toBe(false)
+    for (const input of ['', 'not a link', 'https://github.com/acme/portal']) {
+      const result = startReview(input)
+      expect(result.ok).toBe(false)
+      if (result.ok) continue
+      expect(result.error.code).toBe('bad_request')
+      expect(result.error.field).toBe('pr_url')
+    }
   })
 
-  it('refuses a pull request already on the desk', () => {
+  it('refuses a pull request already on the desk, as a conflict', () => {
     const { startReview } = useReviewDesk()
     const result = startReview('https://github.com/acme/portal/pull/412')
     expect(result.ok).toBe(false)
-    expect(result.message).toContain('already on the desk')
+    if (result.ok) return
+    expect(result.error.code).toBe('conflict')
+    expect(result.error.message).toContain('already on the desk')
+  })
+
+  /*
+   * The head commit is read from GitHub when the caller has none, so a machine with no
+   * `gh` fails the request outright and creates nothing. That is the developer's
+   * environment rather than their request, and the screen has to say so differently.
+   */
+  it('reports a GitHub it could not read, and creates nothing', () => {
+    resetDesk({ github_available: false })
+    const { startReview, inbox } = useReviewDesk()
+    const before = inbox.value.totals.items
+
+    const result = startReview('https://github.com/acme/portal/pull/501')
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.code).toBe('github_unavailable')
+    expect(result.error.field).toBe('head_sha')
+    expect(result.error.message).toContain('gh auth login')
+    expect(inbox.value.totals.items).toBe(before)
+  })
+
+  it('refuses a bad link before it ever needs GitHub', () => {
+    resetDesk({ github_available: false })
+    const { startReview } = useReviewDesk()
+    const result = startReview('not a link')
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.code).toBe('bad_request')
+  })
+
+  it('reports a conflict before it needs GitHub, since the review is already here', () => {
+    resetDesk({ github_available: false })
+    const { startReview } = useReviewDesk()
+    const result = startReview('acme/portal#412')
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.code).toBe('conflict')
   })
 })
 
@@ -408,7 +458,7 @@ describe('the sample-data marker', () => {
 })
 
 describe('the fixtures stay inside the contract’s closed sets', () => {
-  beforeEach(resetDesk)
+  beforeEach(() => resetDesk())
 
   const SEVERITIES = ['blocker', 'should', 'nit', 'question']
   const DISPOSITIONS = ['in_draft', 'held_back', 'suppressed']

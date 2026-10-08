@@ -53,6 +53,37 @@ export type ReviewLayerState
 
 export type NitTicketStatus = 'none' | 'requested' | 'filed'
 
+/**
+ * Why a request was refused. `store_unavailable` means Review Desk is broken;
+ * `github_unavailable` means a read it needed could not be made, which is the
+ * developer's environment rather than their request. Everything else means the request
+ * was understood and refused. A caller branches on this, never on the message.
+ */
+export type ErrorCode
+  = | 'bad_request'
+    | 'invalid_value'
+    | 'not_found'
+    | 'conflict'
+    | 'github_unavailable'
+    | 'store_unavailable'
+
+export interface DeskError {
+  code: ErrorCode
+  /** Written for a person to read. The screen shows it; it never parses it. */
+  message: string
+  field?: string | null
+  expected?: string | null
+}
+
+/** POST /reviews. Only the link is required; the server resolves the rest. */
+export interface StartReviewRequest {
+  pr_url: string
+  head_sha?: string | null
+  title?: string | null
+  ticket_id?: string | null
+  changed_lines?: number | null
+}
+
 export interface RuleScope {
   kind: 'global' | 'repo'
   repo?: RepoName | null
@@ -380,4 +411,10 @@ export interface DeskSource {
   handled_without_you: InboxHandled
   /** What Allele would tell the server about each running session, by review id. */
   session_liveness: Record<string, boolean | null>
+  /**
+   * Whether the server could read GitHub. It stands in for the developer's environment —
+   * `gh` present and logged in — which is what `POST /reviews` needs to resolve a head
+   * commit, and which no fixture of the record itself could express.
+   */
+  github_available: boolean
 }

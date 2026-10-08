@@ -6,12 +6,28 @@ const inbox = desk.inbox
 useHead({ title: 'Inbox · Review Desk' })
 
 const link = ref('')
-const notice = ref<{ text: string, ok: boolean } | null>(null)
+
+/*
+ * What the desk said back. `blocked` is reserved for a read Review Desk needed and could
+ * not make: the developer's `gh` is missing or logged out, nothing was created, and the
+ * fix is a command rather than a different link.
+ */
+const notice = ref<{ text: string, tone: 'plain' | 'problem' | 'blocked' } | null>(null)
 
 function start() {
   const result = desk.startReview(link.value)
-  notice.value = { text: result.message, ok: result.ok }
-  if (result.ok) link.value = ''
+  if (result.ok) {
+    notice.value = { text: result.message, tone: 'plain' }
+    link.value = ''
+    return
+  }
+  notice.value = {
+    text: result.error.message,
+    tone:
+      result.error.code === 'github_unavailable' || result.error.code === 'store_unavailable'
+        ? 'blocked'
+        : 'problem',
+  }
 }
 
 const handled = computed(() => {
@@ -238,7 +254,7 @@ const anythingWaiting = computed(() => inbox.value.totals.items > 0)
         </button>
         <DeskNotice
           v-if="notice"
-          :tone="notice.ok ? 'plain' : 'problem'"
+          :tone="notice.tone"
         >
           {{ notice.text }}
         </DeskNotice>

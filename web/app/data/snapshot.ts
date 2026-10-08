@@ -29,5 +29,6 @@ export function loadSource(): DeskSource {
     own_prs: desk.own_prs,
     handled_without_you: desk.handled_without_you,
     session_liveness: desk.session_liveness as Record<string, boolean | null>,
+    github_available: desk.github_available,
   })
 }

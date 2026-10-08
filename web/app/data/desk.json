@@ -53,5 +53,6 @@
   "session_liveness": {
     "18": true,
     "19": null
-  }
+  },
+  "github_available": true
 }
