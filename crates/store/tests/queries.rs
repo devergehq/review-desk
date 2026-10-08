@@ -384,3 +384,103 @@ fn the_store_survives_being_closed_and_reopened() {
     assert_eq!(store.list_findings(review_id).unwrap().len(), 1);
     assert_eq!(store.get_finding(review_id, 1).unwrap().claim, "persisted");
 }
+
+#[test]
+fn opening_a_head_commit_already_reviewed_returns_it_rather_than_starting_a_round() {
+    let (_dir, store) = temp_store();
+
+    let first = store
+        .open_review("devergehq/review-desk", 21, "aaa111")
+        .expect("open");
+    let again = store
+        .open_review("devergehq/review-desk", 21, "aaa111")
+        .expect("open again");
+
+    assert!(first.created, "the first call creates the review");
+    assert!(!again.created, "the second call returns what was there");
+    assert_eq!(first.review.id, again.review.id);
+    assert_eq!(first.review.round, 1);
+    assert_eq!(again.review.round, 1);
+}
+
+#[test]
+fn opening_a_new_head_commit_starts_the_next_round() {
+    let (_dir, store) = temp_store();
+
+    let round_one = store
+        .open_review("devergehq/review-desk", 21, "aaa111")
+        .expect("round one");
+    let round_two = store
+        .open_review("devergehq/review-desk", 21, "bbb222")
+        .expect("round two");
+
+    assert_eq!(round_one.review.round, 1);
+    assert_eq!(round_two.review.round, 2);
+    assert!(round_two.created);
+    assert_ne!(round_one.review.id, round_two.review.id);
+}
+
+#[test]
+fn an_earlier_head_commit_is_still_returned_once_later_rounds_exist() {
+    // The whole point of keying on the head commit: a session that reopens the commit
+    // it reviewed two rounds ago must be handed that round back, not handed a round
+    // three it never asked for.
+    let (_dir, store) = temp_store();
+
+    let first = store
+        .open_review("devergehq/review-desk", 21, "aaa111")
+        .expect("round one");
+    store
+        .open_review("devergehq/review-desk", 21, "bbb222")
+        .expect("round two");
+
+    let reopened = store
+        .open_review("devergehq/review-desk", 21, "aaa111")
+        .expect("reopen round one");
+
+    assert!(!reopened.created);
+    assert_eq!(reopened.review.id, first.review.id);
+    assert_eq!(reopened.review.round, 1);
+    assert_eq!(
+        store.latest_round("devergehq/review-desk", 21).unwrap(),
+        Some(2),
+        "reopening an old commit must not have started a round"
+    );
+}
+
+#[test]
+fn opening_a_review_of_a_malformed_repository_is_refused() {
+    let (_dir, store) = temp_store();
+
+    let error = store
+        .open_review("not-a-repo", 21, "aaa111")
+        .expect_err("a repository must be owner/repo");
+
+    assert!(error.is_refusal());
+    assert_eq!(error.code(), "invalid_value");
+}
+
+#[test]
+fn a_head_commit_with_stray_whitespace_is_the_same_commit() {
+    // Identity, not cosmetics. `find_review_by_head` compares under SQLite's binary
+    // collation, so storing an untrimmed head commit would make `aaa111 ` a different
+    // commit from `aaa111` — and because `latest_round` counts rounds per pull request,
+    // the round it then started would be spent for good.
+    let (_dir, store) = temp_store();
+
+    let opened = store
+        .open_review("devergehq/review-desk", 31, " aaa111 ")
+        .expect("open");
+    assert_eq!(opened.review.head_sha, "aaa111");
+
+    let again = store
+        .open_review(" devergehq/review-desk ", 31, "aaa111")
+        .expect("open again");
+
+    assert!(!again.created, "the same commit must not start a round");
+    assert_eq!(again.review.id, opened.review.id);
+    assert_eq!(
+        store.latest_round("devergehq/review-desk", 31).unwrap(),
+        Some(1)
+    );
+}

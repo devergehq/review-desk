@@ -441,7 +441,10 @@ dependencies = [
  "clap",
  "predicates",
  "review-desk-store",
+ "serde",
+ "serde_json",
  "tempfile",
+ "thiserror",
 ]
 
 [[package]]

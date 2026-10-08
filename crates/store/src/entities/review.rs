@@ -1,9 +1,9 @@
 //! Reviews: one per pull request head commit per round.
 
-use rusqlite::{params, OptionalExtension, Row};
+use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior};
 
 use crate::error::{Result, StoreError};
-use crate::model::{now, NewReview, Review, ReviewLinks};
+use crate::model::{now, NewReview, OpenedReview, Review, ReviewLinks};
 use crate::{is_unique_violation, Store};
 
 const COLUMNS: &str = "id, repo, pr, head_sha, round, session_id, ledger_id, \
@@ -15,7 +15,7 @@ impl Store {
     /// A review is unique on repository, pull request and round; a second one fails
     /// with [`StoreError::DuplicateReview`] rather than an opaque SQLite error.
     pub fn create_review(&self, new: NewReview) -> Result<Review> {
-        validate(&new)?;
+        let new = validate(new)?;
 
         let created_at = now();
         self.conn
@@ -48,6 +48,50 @@ impl Store {
             })?;
 
         self.get_review(self.conn.last_insert_rowid())
+    }
+
+    /// Open the review of this head commit: the one already on the record, or a new
+    /// round if this commit has never been reviewed.
+    ///
+    /// A head commit already reviewed is handed back — the newest round for that commit,
+    /// even when later rounds exist for other commits. A round is only ever started for
+    /// a commit with no review.
+    ///
+    /// The lookup, the round arithmetic and the insert are one step, for the reason
+    /// [`Store::add_finding`] gives: two sessions opening the same pull request at the
+    /// same time on two different new commits would otherwise both read the same latest
+    /// round, and the second would be refused as a duplicate of a round it never asked
+    /// for.
+    pub fn open_review(&self, repo: &str, pr: i64, head_sha: &str) -> Result<OpenedReview> {
+        // Trimmed before the lookup, because `create_review` trims before the insert.
+        // Looking up a string that would be stored differently would miss and then start
+        // a round for a commit already reviewed.
+        let (repo, head_sha) = (repo.trim(), head_sha.trim());
+
+        let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+
+        if let Some(review) = self.find_review_by_head(repo, pr, head_sha)? {
+            tx.commit()?;
+            return Ok(OpenedReview {
+                review,
+                created: false,
+            });
+        }
+
+        let round = self.latest_round(repo, pr)?.unwrap_or(0) + 1;
+        let review = self.create_review(NewReview {
+            repo: repo.to_string(),
+            pr,
+            head_sha: head_sha.to_string(),
+            round,
+            ..Default::default()
+        })?;
+
+        tx.commit()?;
+        Ok(OpenedReview {
+            review,
+            created: true,
+        })
     }
 
     /// Read a review by id. Fails with [`StoreError::NotFound`] if it is not there.
@@ -159,13 +203,21 @@ impl Store {
     }
 }
 
-/// Check the identity the rest of the store keys on.
+/// Check and normalise the identity the rest of the store keys on.
 ///
 /// The store is the only way into the record, so it is the only place that can hold
 /// this line. A review whose repository is empty or malformed would silently partition
 /// the record: rules are scoped by the same string, and `rules_for_repo` would never
 /// match it.
-fn validate(new: &NewReview) -> Result<()> {
+///
+/// The repository and head commit are returned trimmed, and that is not cosmetic. Both
+/// are identity: `reviews` is unique on repository, pull request and round, and
+/// [`Store::find_review_by_head`] compares the head commit under SQLite's binary
+/// collation. Checking a trimmed string and then storing an untrimmed one would make
+/// `abc ` a different commit from `abc`, which does not merely return the wrong review —
+/// it starts a round for a commit already reviewed, and `latest_round` counts rounds per
+/// pull request, so that round number is spent for good.
+fn validate(new: NewReview) -> Result<NewReview> {
     let repo = new.repo.trim();
     let (owner, name) = repo.split_once('/').unwrap_or(("", ""));
     if owner.is_empty() || name.is_empty() || name.contains('/') {
@@ -200,7 +252,11 @@ fn validate(new: &NewReview) -> Result<()> {
         });
     }
 
-    Ok(())
+    Ok(NewReview {
+        repo: repo.to_string(),
+        head_sha: new.head_sha.trim().to_string(),
+        ..new
+    })
 }
 
 /// Build a review from a row selecting [`COLUMNS`].

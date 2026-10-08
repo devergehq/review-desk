@@ -70,3 +70,37 @@ fn two_processes_opening_a_fresh_database_both_succeed() {
     let store = Store::open(&path).unwrap();
     assert_eq!(store.schema_version().unwrap(), newest_version());
 }
+
+#[test]
+fn two_callers_opening_two_new_head_commits_both_get_a_round() {
+    // The race `open_review` exists to close. Composed from `find_review_by_head`,
+    // `latest_round` and `create_review` by a caller, both sides would read the same
+    // latest round, both would ask for the same next one, and the loser would be refused
+    // as a duplicate of a round it never supplied.
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("two-heads.db");
+
+    let first = Store::open(&path).unwrap();
+    let second = Store::open(&path).unwrap();
+    first
+        .create_review(new_review("devergehq/review-desk", 4, "head-one", 1))
+        .unwrap();
+
+    let worker = thread::spawn(move || second.open_review("devergehq/review-desk", 4, "head-two"));
+    let mine = first.open_review("devergehq/review-desk", 4, "head-three");
+    let theirs = worker.join().unwrap();
+
+    let mine = mine.expect("this caller's round");
+    let theirs = theirs.expect("the other caller's round");
+
+    assert!(mine.created && theirs.created);
+    assert_ne!(
+        mine.review.round, theirs.review.round,
+        "two reviews of one pull request cannot share a round"
+    );
+    assert_eq!(
+        first.latest_round("devergehq/review-desk", 4).unwrap(),
+        Some(3),
+        "round one was seeded, so the two new commits are rounds two and three"
+    );
+}

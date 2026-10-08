@@ -240,3 +240,43 @@ fn a_global_rule_round_trips_without_a_repository() {
     assert_eq!(read.scope.repo(), None);
     assert!(read.origin_findings.is_empty());
 }
+
+#[test]
+fn a_brief_with_a_misspelled_field_is_refused_rather_than_losing_it() {
+    // `option_map` is optional, so without `deny_unknown_fields` a typo would
+    // deserialise to None and the record would quietly lose what the review wrote.
+    let error = serde_json::from_str::<NewBrief>(
+        r#"{"problem": "the store is write-only", "optionmap": "a, b or c"}"#,
+    )
+    .expect_err("an unknown field must be refused");
+
+    assert!(
+        error.to_string().contains("optionmap"),
+        "the message must name the field that was not understood: {error}"
+    );
+}
+
+#[test]
+fn a_finding_with_a_misspelled_field_is_refused_rather_than_losing_it() {
+    let error = serde_json::from_str::<NewFinding>(
+        r#"{"lens": "correctness", "severity": "blocker", "claim": "x", "evidenc": "y"}"#,
+    )
+    .expect_err("an unknown field must be refused");
+
+    assert!(error.to_string().contains("evidenc"), "{error}");
+}
+
+#[test]
+fn an_unknown_severity_names_the_valid_severities() {
+    // The command line takes a finding as JSON, so it is serde that reports a bad
+    // severity, not the store's own parser. DEV-851 requires the valid values be named.
+    let error = serde_json::from_str::<NewFinding>(
+        r#"{"lens": "correctness", "severity": "catastrophic", "claim": "x"}"#,
+    )
+    .expect_err("an unknown severity must be refused");
+
+    let message = error.to_string();
+    for valid in ["blocker", "should", "nit", "question"] {
+        assert!(message.contains(valid), "{valid} missing from: {message}");
+    }
+}
