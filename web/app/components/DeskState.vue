@@ -18,6 +18,7 @@
  * |---|---|
  * | First read in flight | Nothing but a reserved space, so the page does not jump when it lands |
  * | Nothing answered at all | Review Desk is not running, and the command that starts it |
+ * | Nothing answered in time | Something is in front of it, or it is stuck — a different fix |
  * | The answer was not this contract's | Something else is answering on this address |
  * | `store_unavailable` | Review Desk is broken, loudly — the brief's "broken is loud" |
  * | `not_found` | This review, draft or rule is not on the desk, in the server's own words |
@@ -26,6 +27,8 @@
  */
 import type { DeskError } from '~/types/desk'
 import type { DeskResource } from '~/composables/useReviewDesk'
+
+const desk = useReviewDesk()
 
 const props = defineProps<{
   /** The read to render. */
@@ -70,9 +73,13 @@ const problem = computed(() => {
   if (error.code === 'unreachable') {
     return {
       heading: 'Review Desk is not answering',
-      body:
-        'Nothing is serving this address. Start the server and retry — the record is '
-        + 'where it was.',
+      /*
+       * The data layer's own sentence, not one written here. There are two ways to not
+       * answer — nothing is listening, or something is and is taking too long — and they
+       * send the developer to different places. Writing the sentence here threw that
+       * distinction away, which is exactly what the distinction was added to avoid.
+       */
+      body: `${sentence(error.message)} The record is where it was.`,
       command: 'review-desk serve',
       tone: 'blocked' as const,
     }
@@ -167,6 +174,18 @@ function retry() {
         v-if="problem.command"
         class="rd-mono command"
       >{{ problem.command }}</code>
+      <!--
+        Only while there are invented records to switch to, which is never in a built
+        dashboard. A developer who has not started the binary can still look at a screen.
+      -->
+      <button
+        v-if="problem.tone === 'blocked' && desk.sampleAvailable.value && !desk.isSampleData.value"
+        type="button"
+        class="rd-btn sample"
+        @click="desk.useSampleRecords()"
+      >
+        Use sample records
+      </button>
       <button
         type="button"
         class="rd-btn retry"
@@ -222,7 +241,19 @@ function retry() {
   font-size: 13px;
 }
 
-.retry {
+.sample {
   margin-left: auto;
+}
+
+.retry {
+  /*
+   * `auto` on whichever of the two comes first, so the pair sits at the right-hand end
+   * whether or not the sample control is there.
+   */
+  margin-left: auto;
+}
+
+.sample + .retry {
+  margin-left: 0;
 }
 </style>

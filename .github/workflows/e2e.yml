@@ -1,0 +1,111 @@
+# Review Desk, end to end: the command line records a review, the binary serves it, and a
+# real browser drives the two acts only the developer may perform.
+#
+# **Its own workflow, and the only one that needs both toolchains.** `ci.yml` runs cargo and
+# `web.yml` runs pnpm, and neither waits on the other — a Rust change should not wait on a
+# Node install to find out it compiles. This one needs Rust, Node and a browser, so it is
+# the slowest of the three and is kept apart rather than making the other two slower.
+#
+# It runs on every pull request and on master, with no path filter. The point of an
+# end-to-end test is that it fails when any of the pieces stops fitting the others, and a
+# filter would be a list of the places a break can come from — which is the thing nobody can
+# write down correctly.
+name: End to end
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  e2e:
+    name: A review, through the binary, in a browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      # SQLite is compiled from source by rusqlite's bundled feature, so caching the build
+      # is worth more here than it would be otherwise.
+      - name: Cache cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-e2e-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-e2e-${{ runner.os }}-
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # Chromium only. The dashboard is served from loopback to one developer who chose
+      # their own browser, so running the suite three times over would cost three times as
+      # much to learn nothing about this app.
+      - name: Cache the browser
+        id: browser
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml') }}
+
+      - name: Install the browser
+        if: steps.browser.outputs.cache-hit != 'true'
+        run: pnpm exec playwright install --with-deps chromium
+
+      # `pnpm run e2e` builds what it tests, in the one order that works: `nuxt generate`
+      # writes web/.output/public, and `cargo build` embeds whatever was there when it ran.
+      # Running the test against a stale binary is the failure this avoids, and it is a
+      # confusing one — the screens are there, they are simply the previous build's.
+      - name: Record a review, serve it, and drive it
+        run: pnpm run e2e
+
+      # The binary really did have the dashboard in it, asserted separately so that a
+      # front-endless build fails here with that sentence rather than as a missing element.
+      - name: The binary under test had the dashboard embedded
+        run: |
+          ../target/debug/review-desk serve --port 0 --json > served.json &
+          server=$!
+          for _ in $(seq 1 50); do
+            [ -s served.json ] && break
+            sleep 0.2
+          done
+          url=$(sed -n 's/.*"url":"\([^"]*\)".*/\1/p' served.json)
+          curl -fsS "${url}api/v1/health" | grep -q '"front_end_embedded":true'
+          kill "$server"
+        env:
+          REVIEW_DESK_DB: ${{ runner.temp }}/e2e-embedded.db
+
+      # Only on a failure: a passing run leaves nothing behind, and a failing one leaves
+      # the trace that says which step of the review it got to.
+      - name: Keep the trace
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: e2e-trace
+          path: web/test-results
+          retention-days: 7

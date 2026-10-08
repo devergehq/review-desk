@@ -7,12 +7,15 @@ pull requests: GitHub and Linear already do that, and its unit is the finding an
 rule, not the PR. It runs locally, owns its own record, and needs nothing else
 installed.
 
-This repository is at the third slice: the store, the commands an agent session calls
-to record a review, the harvester that reads a posted review's outcomes back from
-GitHub, the dashboard's four screens, and the local HTTP server that serves the JSON API
-and the dashboard from one binary. **All sixteen of the contract's operations are
-answered.** The dashboard still runs on sample data and calls no API yet; switching it
-over is the next slice.
+This repository is at the fourth slice: the store, the commands an agent session calls
+to record a review, the harvester that reads a posted review's outcomes back from GitHub,
+the dashboard's four screens, the local HTTP server that serves the JSON API and the
+dashboard from one binary, and **the dashboard reading and writing that API**. All sixteen
+of the contract's operations are answered and all sixteen are called.
+
+**It has been run end to end.** `web/e2e` records a review through the command line, serves
+it from the binary, and drives a browser through confirming the brief and approving the
+draft — see [the end-to-end test](#the-end-to-end-test).
 
 **Only the developer signs off.** Confirming a brief and approving a draft happen in
 the dashboard; the command line that agent sessions call has no command for either. An
@@ -446,42 +449,108 @@ functions. That is what keeps one way into the record.
 
 ## The dashboard
 
-Four screens — the inbox, one review, the draft preview and the rules — in `web/`. It runs
-on sample data and calls no API yet.
+Four screens — the inbox, one review, the draft preview and the rules — in `web/`. They read
+and write the JSON API that `review-desk serve` serves.
 
 ```sh
 cd web
 pnpm install
-pnpm dev        # http://localhost:3000
-pnpm generate   # static files in web/.output/public
+pnpm dev              # http://localhost:3000, forwarding the API to a running server
+pnpm generate         # static files in web/.output/public
 pnpm lint
 pnpm typecheck
 pnpm test
-```
-
-To check the built output the way the binary will serve it, serve the directory with
-anything that serves files:
-
-```sh
-cd web/.output/public && python3 -m http.server 8080
+pnpm run e2e          # the end-to-end test; builds what it tests
+pnpm run types:contract   # regenerate the types from contract/openapi.yaml
 ```
 
 Nuxt runs with server-side rendering off and generates static files, which `cargo build`
-embeds in the binary — see [the local server](#the-local-server). Nuxt's own server routes are not used: the JSON API is the Rust
-server's. Fonts are bundled rather than fetched, so the built app asks nothing of the
-network and works on a machine with no internet.
+embeds in the binary — see [the local server](#the-local-server). Nuxt's own server routes
+are not used: the JSON API is the Rust server's. Fonts are bundled rather than fetched, so
+the built app asks nothing of the network and works on a machine with no internet.
+
+### The development loop
+
+**Two terminals.** The first serves the record; the second serves the screens and forwards
+the API to the first.
+
+```sh
+# one: the record, on 127.0.0.1:7777
+cargo run -- serve
+
+# two: the screens, on localhost:3000
+cd web && pnpm dev
+```
+
+Open <http://localhost:3000>. Edits to `web/` reload; the API is the binary's, so a change
+to a handler needs the first terminal restarted and nothing else.
+
+**The proxy states the `Host` and `Origin` the server's guard expects**, in
+`web/nuxt.config.ts`. The guard refuses a request whose `Host` is not the address it bound
+and whose `Origin`, when sent, is not its own — and a browser on `localhost:3000` sends both
+wrong. `changeOrigin` rewrites one and `headers.origin` replaces the other, so what arrives
+is a request that genuinely names the server. **The guard is not relaxed and knows nothing
+about a proxy**; it would refuse that dev server exactly as it refuses any other origin, and
+`crates/server/tests/cross_origin.rs` fails if it ever grows a way to be turned off.
+
+On another port, or against another database:
+
+```sh
+cargo run -- serve --port 8080
+cd web && REVIEW_DESK_API=http://127.0.0.1:8080 pnpm dev
+```
+
+### Looking at a screen without starting the server
+
+The invented records DEV-855 was built on are still there, behind a switch. Add `?sample`
+to any URL under `pnpm dev`, or press **Use sample records** on the screen that says the
+server is not answering. Every screen then carries a **"Sample data"** marker in its header,
+and the choice is remembered until you ask for the real records again with `?api`.
+
+**A production build cannot show them.** The switch is a compile-time constant, so
+`nuxt generate` removes the branch that loads the fixtures and the chunk they are in —
+`web/test/build-output.spec.ts` measures that against a real build rather than trusting it.
+
+### The data layer
 
 **Every screen reads and writes through one composable**, `web/app/composables/useReviewDesk.ts`,
 whose four reads mirror the four the API offers — one GET per screen, so no screen joins
-anything. It gets its records from `web/app/data/snapshot.ts`, the only file that names a
-fixture. Pointing the dashboard at the real server is a change to that one file. A test
-enforces it rather than trusting it:
+anything. Behind it are `app/data/api.ts`, which is the only file that makes an HTTP
+request, and `app/data/sample.ts`, which is the only file that names a fixture. A test
+enforces that rather than trusting it:
 
 ```sh
 cd web && pnpm exec vitest run test/architecture.spec.ts
 ```
 
-While the fixtures are serving, every screen carries a "Sample data" marker in the header.
+**The shapes are generated, not written.** `web/app/types/contract.ts` comes from
+`contract/openapi.yaml` by `pnpm run types:contract` and is committed;
+`web/app/types/desk.ts` only gives its schemas short names. `test/contract-types.spec.ts`
+regenerates and compares, so the front end cannot drift from the contract — which it had,
+by two outcome kinds, before DEV-862.
+
+## The end-to-end test
+
+**One command, and it builds what it tests.**
+
+```sh
+cd web && pnpm run e2e
+```
+
+It generates the dashboard, builds the binary with it embedded, seeds a database through
+the command line, starts two servers — one seeded, one empty — and drives Chromium through
+the whole path: the Inbox listing a review with an unconfirmed brief, confirming it,
+the agent's draft appearing to approve, editing and approving it, and
+`review-desk draft show` then reporting it approved with the chosen event. It asserts that
+the brief's `confirmed_by` and the draft's `approved_by` are both `developer`, which is the
+sign-off boundary this project rests on.
+
+Sixteen assertions, about four seconds of browser once the build is warm.
+`.github/workflows/e2e.yml` runs it on every pull request.
+
+```sh
+cd web && pnpm run e2e:screenshots   # rewrites docs/screenshots/
+```
 
 
 ## The local server

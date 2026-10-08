@@ -134,20 +134,29 @@ describe('confirming a brief', () => {
     expect(after.totals.items).toBe(7)
   })
 
-  it('moves layer 2 to done and layer 6 to waiting', async () => {
+  it('sets the confirmation and leaves the layer rows alone', async () => {
     const api = desk()
     const review = api.review(WEBHOOKS)
     const before = await settled(review)
     expect(before.layers[1]).toMatchObject({ state: 'waiting_on_you' })
-    expect(before.layers[5]).toMatchObject({ state: 'pending' })
 
     await api.confirmBrief(WEBHOOKS)
 
     const after = await settled(review)
     expect(after.brief!.confirmed).toBe(true)
     expect(after.brief!.confirmed_at).not.toBeNull()
-    expect(after.layers[1]).toMatchObject({ state: 'done', detail: 'confirmed by you' })
-    expect(after.layers[5]).toMatchObject({ state: 'waiting_on_you' })
+
+    /*
+     * **The layer row does not move, and this asserts that rather than wishing otherwise.**
+     * A review's layers are written by the layer that ran, through `review-desk layer set`;
+     * `confirmBrief` on the server writes the confirmation and nothing else. This used to
+     * move layer 2 to `done`, which made sample mode behave better than the thing it stands
+     * in for — so the screen looked right here and showed "2 Understand · waiting on you"
+     * under a confirmed brief against a real database.
+     *
+     * Reported rather than fixed: what writes a layer row is beyond DEV-862.
+     */
+    expect(after.layers[1]).toMatchObject({ state: 'waiting_on_you' })
   })
 
   it('is idempotent, as the contract requires', async () => {
@@ -307,7 +316,7 @@ describe('the draft', () => {
     expect((await settled(draft)).edits).toHaveLength(3)
   })
 
-  it('approving changes the status, the event, and layer 6', async () => {
+  it('approving changes the status and the event, and leaves the layers alone', async () => {
     const api = desk()
     const draft = api.draft(INVOICES)
     const inbox = api.inbox()
@@ -320,10 +329,8 @@ describe('the draft', () => {
     expect(after.draft.status).toBe('approved')
     expect(after.draft.event).toBe('request_changes')
     expect(after.draft.approved_at).not.toBeNull()
-    expect((await settled(api.review(INVOICES))).layers[5]).toMatchObject({
-      state: 'done',
-      detail: 'approved by you',
-    })
+    /* `draft_status` is derived from the draft, so it follows. The layer row does not. */
+    expect((await settled(api.review(INVOICES))).draft_status).toBe('approved')
     expect((await settled(inbox)).drafts_to_approve.map(item => item.review_id))
       .not.toContain(INVOICES)
   })

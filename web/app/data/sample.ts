@@ -154,10 +154,6 @@ function prOf(detail: ReviewDetail): InboxPr {
   }
 }
 
-function layer(detail: ReviewDetail, number: number) {
-  return detail.layers.find(item => item.number === number)
-}
-
 /** Recount the tallies the API serves precomputed, after a disposition has changed. */
 function retally(detail: ReviewDetail) {
   const severities = { blocker: 0, should: 0, nit: 0, question: 0 }
@@ -377,7 +373,21 @@ function startReview(prUrl: string): Review {
   )
 }
 
-/** `POST /reviews/{id}/brief/confirm` — layer 2, and the gate on everything after it. */
+/**
+ * `POST /reviews/{id}/brief/confirm` — layer 2, and the gate on everything after it.
+ *
+ * **It sets the confirmation and touches nothing else**, which is what the server does.
+ * This used to move layer 2 to `done` and layer 6 to `waiting_on_you` as well, and the
+ * server never has: a review's layer rows are written by the layer that ran, through
+ * `review-desk layer set`, and the contract says they are stored rather than derived
+ * precisely so that a skipped layer can be told from one that has not run.
+ *
+ * The visible consequence is that the layer trail still reads "2 Understand · waiting on
+ * you" after the developer has confirmed. That is what the record says, and the screen is
+ * right to show it — the record is what is wrong. Left as it is and reported rather than
+ * fixed here, because fixing it is a change to what `confirmBrief` writes, which is beyond
+ * DEV-862.
+ */
 function confirmBrief(id: number): Brief {
   const detail = reviewById(id)
   if (!detail) throw notFound(`review ${id}`)
@@ -386,27 +396,6 @@ function confirmBrief(id: number): Brief {
 
   detail.brief.confirmed = true
   detail.brief.confirmed_at = nowIso()
-
-  const understand = layer(detail, 2)
-  if (understand) {
-    understand.state = 'done'
-    understand.detail = 'confirmed by you'
-    understand.updated_at = nowIso()
-  }
-
-  const drafted = draftById(id)
-  const draftLayer = layer(detail, 6)
-  if (draftLayer && drafted?.draft.status === 'ready') {
-    draftLayer.state = 'waiting_on_you'
-    draftLayer.detail = 'waiting on you'
-    draftLayer.updated_at = nowIso()
-  }
-  else if (draftLayer) {
-    draftLayer.state = 'running'
-    draftLayer.detail = 'running'
-    draftLayer.updated_at = nowIso()
-  }
-
   return detail.brief
 }
 
@@ -530,20 +519,9 @@ function approveDraft(id: number, event: ReviewEvent): DraftDetail {
   detail.draft.sent_back_note = null
   detail.draft.sent_back_at = null
 
+  /* `draft_status` is derived from the draft, so it follows; the layer rows do not. */
   const owner = reviewById(id)
-  if (owner) {
-    owner.draft_status = 'approved'
-    const draftLayer = layer(owner, 6)
-    if (draftLayer) {
-      draftLayer.state = 'done'
-      draftLayer.detail = 'approved by you'
-      draftLayer.updated_at = nowIso()
-    }
-    const harvest = layer(owner, 7)
-    if (harvest && harvest.state === 'pending') {
-      harvest.detail = 'once the session posts it'
-    }
-  }
+  if (owner) owner.draft_status = 'approved'
 
   return detail
 }
@@ -575,15 +553,7 @@ function sendBackDraft(id: number, note: string): DraftDetail {
   detail.draft.event = null
 
   const owner = reviewById(id)
-  if (owner) {
-    owner.draft_status = 'sent_back'
-    const draftLayer = layer(owner, 6)
-    if (draftLayer) {
-      draftLayer.state = 'running'
-      draftLayer.detail = 'sent back with a note'
-      draftLayer.updated_at = nowIso()
-    }
-  }
+  if (owner) owner.draft_status = 'sent_back'
 
   return detail
 }

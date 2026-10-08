@@ -93,16 +93,22 @@ describe('the built dashboard', () => {
     expect(leaked).toEqual([])
   })
 
-  it('cannot be switched into sample mode', () => {
+  it('has no way to load the invented records, whatever it is asked', () => {
     /*
-     * The switch itself is compiled out, so there is no code path left to flip. Checked by
-     * its own name: if `review-desk:source` is in the bundle then `sampleWanted` survived,
-     * and a bundle that can be asked for fixtures is one that might find them.
+     * The capability, not a string. `loadBackend`'s sample branch is compiled out, so the
+     * module that reads the fixtures is never imported and is not in the build — and these
+     * three names are how you would know if it were.
+     *
+     * **The `review-desk:source` key is still in there, and that is not a hole.** The
+     * function that writes it survives because the "Use sample records" control references
+     * it, and the control cannot render. A bundle that can remember a preference it can
+     * never act on is harmless; what would not be is a bundle that could act on it, which
+     * is what this checks.
      */
-    const leaked = text
-      .filter(file => file.body.includes('review-desk:source'))
-      .map(file => file.path)
-    expect(leaked).toEqual([])
+    for (const name of ['sampleBackend', 'loadSource', 'resetSource']) {
+      const leaked = text.filter(file => file.body.includes(name)).map(file => file.path)
+      expect(leaked, `${name} is in the production build`).toEqual([])
+    }
   })
 
   /*

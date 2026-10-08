@@ -474,7 +474,10 @@ fn the_guard_has_no_way_to_be_turned_off() {
     for (needle, what) in [
         ("env::var", "a read of the environment"),
         ("env!(", "a compile-time environment variable"),
-        ("option_env!", "an optional compile-time environment variable"),
+        (
+            "option_env!",
+            "an optional compile-time environment variable",
+        ),
         ("cfg!(debug_assertions)", "a debug-build branch"),
         ("#[cfg(debug_assertions)]", "a debug-build branch"),
         ("cfg!(feature", "a Cargo feature branch"),

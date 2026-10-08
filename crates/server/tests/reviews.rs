@@ -36,12 +36,14 @@ fn a_link_alone_creates_a_review_from_a_recorded_github_response() {
     // DEV-862 the `GitHub` trait carried no title and this was null for every review the
     // screen started.
     assert_eq!(
-        review["title"], common::RECORDED_TITLE,
+        review["title"],
+        common::RECORDED_TITLE,
         "the title has to be the one GitHub reported: {}",
         answer.text()
     );
     assert_eq!(
-        review["changed_lines"], common::RECORDED_CHANGED_LINES,
+        review["changed_lines"],
+        common::RECORDED_CHANGED_LINES,
         "changed lines are additions plus deletions, as GitHub counted them: {}",
         answer.text()
     );
@@ -96,7 +98,8 @@ fn the_review_a_link_starts_turns_up_in_the_inbox_under_its_title() {
     let waiting = &inbox.json()["briefs_to_confirm"][0];
     assert_eq!(waiting["review_id"].as_i64(), Some(review_id));
     assert_eq!(
-        waiting["pull_request"]["title"], common::RECORDED_TITLE,
+        waiting["pull_request"]["title"],
+        common::RECORDED_TITLE,
         "the Inbox lists a review by its title, and the link is all the screen had: {}",
         inbox.text()
     );

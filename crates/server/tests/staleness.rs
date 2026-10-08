@@ -22,9 +22,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use review_desk_server::wire::{self, STALE_AFTER_DAYS};
-use review_desk_store::{
-    NewFinding, NewRule, RuleScope, RuleStage, Severity, Timestamp,
-};
+use review_desk_store::{NewFinding, NewRule, RuleScope, RuleStage, Severity, Timestamp};
 
 mod common;
 
@@ -50,8 +48,7 @@ fn age(harness: &common::Harness, statement: &str, rule: i64, days: Timestamp) {
 /// `contract/openapi.yaml`, read from the repository rather than copied into this test.
 fn contract() -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../contract/openapi.yaml");
-    fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("reading {}: {error}", path.display()))
+    fs::read_to_string(&path).unwrap_or_else(|error| panic!("reading {}: {error}", path.display()))
 }
 
 #[test]
@@ -141,7 +138,12 @@ fn stale_after(days: Timestamp) -> bool {
     // with now. Aged in the database's own SQL, as `crates/store/tests/rules.rs` does for
     // the same reason: the store has no function for moving a time backwards and should
     // not grow one so that a test can pass.
-    age(&harness, "UPDATE rules SET last_cited_at = ?1 WHERE id = ?2", rule, days);
+    age(
+        &harness,
+        "UPDATE rules SET last_cited_at = ?1 WHERE id = ?2",
+        rule,
+        days,
+    );
 
     let answer = harness.api("GET", "/rules?repo=acme/portal", None);
     assert_eq!(answer.status, 200, "{}", answer.text());
@@ -161,7 +163,8 @@ fn stale_after(days: Timestamp) -> bool {
     // Every rule in force is in exactly one of the two groups. A rule in neither, or in
     // both, would make the answer below meaningless rather than wrong.
     assert_ne!(
-        in_stale, in_active,
+        in_stale,
+        in_active,
         "a rule in force belongs to exactly one of active and stale: {}",
         answer.text()
     );

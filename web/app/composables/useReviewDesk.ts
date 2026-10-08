@@ -217,6 +217,36 @@ export function useReviewDesk() {
    */
   const isSampleData = computed(() => sampleWanted())
 
+  /**
+   * Whether invented records are an option at all.
+   *
+   * A compile-time constant, so it is `false` in a built dashboard and the control that
+   * reads it never renders — there would be nothing to switch to, because the fixtures are
+   * not in the bundle. Exposed from here rather than read in a component, so that no
+   * screen knows which records it is showing: a screen that branched on it would behave
+   * differently on fixtures than on the record, which is the one thing sample mode must
+   * not do.
+   */
+  const sampleAvailable = computed(() => import.meta.env.DEV)
+
+  /**
+   * Read the invented records instead, and reload so every screen does.
+   *
+   * Offered on the screen that says the server is not answering, which is the moment it is
+   * worth anything: a developer who has not started the binary can still see what they
+   * were working on.
+   */
+  function useSampleRecords(): void {
+    chooseSource('sample')
+    backend = null
+    try {
+      window.location.reload()
+    }
+    catch {
+      /* No window. Nothing to reload, and the choice holds for whatever comes next. */
+    }
+  }
+
   /* ------------------------------- The reads ------------------------------- */
 
   /** `GET /inbox` — the five waiting groups, the reviews in progress, the week's figures. */
@@ -410,6 +440,8 @@ export function useReviewDesk() {
 
   return {
     isSampleData,
+    sampleAvailable,
+    useSampleRecords,
     inbox,
     review,
     draft,

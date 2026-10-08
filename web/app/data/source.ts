@@ -32,8 +32,8 @@
  *
  * | How | For |
  * |---|---|
- * | `?sample` on any URL | Looking at a screen without starting the binary |
- * | `localStorage['review-desk:source'] = 'sample'` | Staying in sample mode across reloads; the "not answering" screen sets it |
+ * | `?sample` on any URL, and `?api` to come back | Looking at a screen without starting the binary |
+ * | `localStorage['review-desk:source']` | Staying in sample mode across reloads; the "Use sample records" control on the "not answering" screen sets it |
  * | `chooseSource('sample')` | The component tests, which have no URL and no server |
  */
 
@@ -96,7 +96,14 @@ export function chooseSource(source: DeskSourceName | null): void {
 /** One stored or query value, or `null` when there is no browser to ask. */
 function fromTheBrowser(): DeskSourceName | null {
   try {
-    if (new URLSearchParams(window.location.search).has('sample')) return 'sample'
+    const query = new URLSearchParams(window.location.search)
+    /*
+     * `?api` as well as `?sample`, because the choice is remembered: without a way to say
+     * "the real records" in a URL, getting back out of sample mode would mean clearing the
+     * site's storage, which is a thing nobody should have to be told.
+     */
+    if (query.has('api')) return 'api'
+    if (query.has('sample')) return 'sample'
   }
   catch {
     /* No window. */

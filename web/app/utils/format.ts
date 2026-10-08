@@ -193,7 +193,14 @@ export function sentence(text: string): string {
  */
 export function refusal(error: DeskError): string {
   const said = sentence(error.message)
-  if (error.code === 'unreachable' || error.code === 'unreadable') {
+  if (error.code === 'unreachable') {
+    /*
+     * The command, because a notice has nowhere else to put it — unlike the screen-filling
+     * state, which shows it beside the message as something to copy.
+     */
+    return `${said} Nothing was recorded. Start Review Desk with review-desk serve, then try again.`
+  }
+  if (error.code === 'unreadable') {
     return `${said} Nothing was recorded.`
   }
   return error.expected ? `${said} Accepted: ${error.expected}.` : said

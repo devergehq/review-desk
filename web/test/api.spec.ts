@@ -218,7 +218,7 @@ describe('the two states the contract cannot describe', () => {
      * not started the server would send them to fix the wrong thing.
      */
     expect(desk.code).toBe('unreachable')
-    expect(desk.message).toContain('review-desk serve')
+    expect(desk.message).toBe('Nothing is listening on this address.')
     expect(desk.status).toBeNull()
   })
 
@@ -249,10 +249,67 @@ describe('the two states the contract cannot describe', () => {
     expect(desk.message).not.toContain('teapot')
   })
 
+  it('gives up on a request that never answers, and says so differently', async () => {
+    /*
+     * Measured, not imagined: `nuxt dev` forwards the API to the binary, and with the
+     * binary stopped that forward hangs rather than refusing — thirty seconds and still
+     * waiting. Without a deadline the screen's answer to "the server is not running" is a
+     * loading state that never ends.
+     */
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () =>
+          reject(new DOMException('timed out', 'TimeoutError')))
+      })))
+
+    const reading = api.getInbox().catch(error => asDeskError(error))
+    await vi.advanceTimersByTimeAsync(11_000)
+    const desk = await reading
+    vi.useRealTimers()
+
+    expect(desk.code).toBe('unreachable')
+    expect(desk.message).toContain('Nothing answered within 10 seconds')
+    /* And not "nothing is listening", because something is — it is simply not answering. */
+    expect(desk.message).not.toContain('Nothing is listening')
+  })
+
+  it('waits longer for the one operation that reads GitHub', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () =>
+          reject(new DOMException('timed out', 'TimeoutError')))
+      })))
+
+    const starting = api
+      .startReview('https://github.com/acme/portal/pull/412')
+      .catch(error => asDeskError(error))
+
+    /*
+     * Still waiting at eleven seconds, where a read would have given up: `gh` on a cold
+     * network takes longer than any of the others, and reporting a server that is not
+     * answering while it reads GitHub would be wrong about which thing is slow.
+     */
+    await vi.advanceTimersByTimeAsync(11_000)
+    let settled = false
+    void starting.then(() => {
+      settled = true
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(settled).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(20_000)
+    const desk = await starting
+    vi.useRealTimers()
+
+    expect(desk.message).toContain('Nothing answered within 30 seconds')
+  })
+
   it('turns anything else thrown into an error a screen can render', () => {
     const desk = asDeskError(new Error('something nobody planned for'))
     expect(desk.code).toBe('unreachable')
-    expect(desk.message).toContain('review-desk serve')
+    expect(desk.message).toContain('Nothing is listening')
   })
 })
 

@@ -96,13 +96,49 @@ export function asDeskError(thrown: unknown): DeskError {
    */
   return {
     code: 'unreachable',
-    message:
-      'Review Desk is not answering on this address. Start it with `review-desk serve`, '
-      + 'then retry.',
+    message: 'Nothing is listening on this address.',
     field: null,
     expected: null,
     status: null,
   }
+}
+
+/**
+ * How long a request may take before the screen gives up on it.
+ *
+ * **Not a precaution — a measured failure.** Every operation but one is a handful of SQLite
+ * reads over loopback, so ten seconds is enormous for them. But a request can fail to
+ * *answer* rather than fail: `nuxt dev` forwards the API to the binary, and when the binary
+ * is not running that forward hangs instead of refusing — measured at thirty seconds and
+ * still waiting. Without this, the development loop's answer to "the server is not running"
+ * is a loading state that never ends, which is the worst of the three states a read has.
+ *
+ * It is not only the proxy. A server wedged on a lock answers nothing either, and a page
+ * that waits forever for it tells the developer nothing at all.
+ */
+const WAIT = 10_000
+
+/**
+ * How long `POST /reviews` may take.
+ *
+ * Longer, because it is the one operation that leaves the machine: it runs `gh` to read the
+ * pull request, and a cold network makes that seconds rather than milliseconds. Giving up on
+ * it at ten would report a server that is not answering when it is reading GitHub.
+ */
+const WAIT_FOR_GITHUB = 30_000
+
+/**
+ * A signal that aborts after `wait`.
+ *
+ * `AbortController` and `setTimeout` rather than `AbortSignal.timeout`, which does the same
+ * thing in one line. The one line is not testable: `AbortSignal.timeout` uses a platform
+ * timer that a test's clock cannot move, so the deadline could only be checked by waiting
+ * out ten real seconds — which is not a test anybody runs.
+ */
+function deadline(wait: number): { signal: AbortSignal, done: () => void } {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(new DOMException('timed out', 'TimeoutError')), wait)
+  return { signal: controller.signal, done: () => clearTimeout(timer) }
 }
 
 /** One request, with the contract's refusal shape read back out of the answer. */
@@ -110,8 +146,10 @@ async function send<T>(
   method: string,
   path: string,
   body?: unknown,
+  wait: number = WAIT,
 ): Promise<T> {
   let response: Response
+  const limit = deadline(wait)
 
   try {
     response = await fetch(`${API_BASE}${path}`, {
@@ -131,11 +169,37 @@ async function send<T>(
        * readable from.
        */
       credentials: 'omit',
+      signal: limit.signal,
     })
   }
   catch {
-    // A network-level failure. `asDeskError` turns it into `unreachable`.
-    throw new TypeError('the Review Desk server did not answer')
+    /*
+     * Told apart, because they send the developer to different places. Nothing answering is
+     * a server that is not running; nothing answering *in time* is one that is running and
+     * stuck, or a proxy in front of one that is not.
+     */
+    const timedOut = limit.signal.aborted
+    throw new DeskRequestError({
+      code: 'unreachable',
+      /*
+       * The fact, and nothing about what to do with it. Whatever shows this adds that —
+       * `DeskState` puts the command beside the message as something to copy, and a notice
+       * on a refused write says it in words. Saying it here as well read as a stammer:
+       * "Review Desk is not answering. Review Desk is not answering on this address."
+       */
+      message: timedOut
+        ? `Nothing answered within ${Math.round(wait / 1000)} seconds, so Review Desk may `
+        + 'be stuck — or something in front of it may be waiting on a server that is not '
+        + 'running.'
+        : 'Nothing is listening on this address.',
+      field: null,
+      expected: null,
+      status: null,
+    })
+  }
+  finally {
+    /* The answer arrived, so the deadline has nothing left to interrupt. */
+    limit.done()
   }
 
   const text = await response.text()
@@ -239,7 +303,8 @@ export async function listRepos(): Promise<RepoSummary[]> {
  */
 export function startReview(prUrl: string): Promise<Review> {
   const request: StartReviewRequest = { pr_url: prUrl }
-  return send<Review>('POST', '/reviews', request)
+  /* The one operation that leaves the machine, so the one with a longer wait. */
+  return send<Review>('POST', '/reviews', request, WAIT_FOR_GITHUB)
 }
 
 /** `POST /reviews/{id}/brief/confirm` — the developer's act at layer 2. */

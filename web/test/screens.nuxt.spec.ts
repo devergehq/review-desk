@@ -693,6 +693,7 @@ describe('the server stops while a page is open', () => {
     const text = page.text()
 
     expect(text).toContain('Review Desk is not answering')
+    expect(text).toContain('Nothing is listening on this address')
     expect(text).toContain('review-desk serve')
     /*
      * Not "the database is unreadable". That is `store_unavailable`, and it means Review
@@ -702,6 +703,16 @@ describe('the server stops while a page is open', () => {
     expect(text).not.toContain('could not read its database')
     /* And not a blank page. */
     expect(page.find('.notice--blocked').exists()).toBe(true)
+  })
+
+  it('offers invented records to look at, since the binary is not running', async () => {
+    /*
+     * Only useful at this moment, and only in a development build: a developer who has not
+     * started the binary can still see a screen. A built dashboard has no fixtures to
+     * switch to, so the control is compiled out with them.
+     */
+    const page = await shown(Inbox)
+    expect(button(page, 'Use sample records')).toBeDefined()
   })
 
   it('offers a retry that works once the server is back', async () => {
