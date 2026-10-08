@@ -8,7 +8,7 @@ mod common;
 use common::{new_review, temp_store};
 use review_desk_store::{
     Actor, Disposition, FindingRef, NewBrief, NewFinding, NewOutcome, NewReview, NewRule,
-    OutcomeKind, RuleScope, RuleStage, Severity, StoreError,
+    OutcomeKind, PrState, RuleScope, RuleStage, Severity, StoreError,
 };
 
 fn a_finding(claim: &str) -> NewFinding {
@@ -215,12 +215,14 @@ fn an_unknown_value_names_what_was_expected() {
     assert_eq!(Actor::valid_values(), "developer, author, harvester");
     assert_eq!(
         OutcomeKind::valid_values(),
-        "cut, regraded, rewritten, kept, rejected, raised_again, code_changed_after"
+        "cut, regraded, rewritten, kept, rejected, raised_again, replied, thread_resolved, \
+         code_changed_after"
     );
     assert_eq!(
         RuleStage::valid_values(),
         "proposed, active, lint, ci, retired"
     );
+    assert_eq!(PrState::valid_values(), "open, merged, closed");
 }
 
 #[test]

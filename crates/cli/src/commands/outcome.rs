@@ -17,8 +17,8 @@ pub enum OutcomeCommand {
         /// The finding's sequence number within the review.
         #[arg(long, value_name = "FID")]
         finding: i64,
-        /// One of: cut, regraded, rewritten, kept, rejected, raised_again,
-        /// code_changed_after.
+        /// One of: cut, regraded, rewritten, kept, rejected, raised_again, replied,
+        /// thread_resolved, code_changed_after.
         #[arg(long, value_name = "VALUE")]
         kind: String,
         /// Who brought it about. One of: developer, author, harvester.

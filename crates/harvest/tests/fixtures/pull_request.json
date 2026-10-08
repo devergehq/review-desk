@@ -1,0 +1,13 @@
+{
+  "number": 64,
+  "state": "closed",
+  "merged": true,
+  "merged_at": "2026-09-30T10:54:42Z",
+  "closed_at": "2026-09-30T10:54:42Z",
+  "head": {
+    "sha": "46f6ea1645a9bbc9308f791411b2cac1a093367b"
+  },
+  "user": {
+    "login": "patrickdorival"
+  }
+}

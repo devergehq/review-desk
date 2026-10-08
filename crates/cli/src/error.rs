@@ -7,6 +7,7 @@
 
 use std::fmt;
 
+use review_desk_harvest::HarvestError;
 use review_desk_store::StoreError;
 use serde_json::{json, Value};
 
@@ -19,6 +20,11 @@ pub enum CliError {
     /// The store refused the request, or could not run.
     #[error(transparent)]
     Store(#[from] StoreError),
+
+    /// The harvester refused, or could not read GitHub. An absent or logged-out `gh`
+    /// arrives here, and is Review Desk unable to run rather than a refusal.
+    #[error(transparent)]
+    Harvest(#[from] HarvestError),
 
     /// Input the caller supplied could not be used: an unreadable file, a document that
     /// is not JSON, a field that is not understood, or a flag the command needs.
@@ -60,6 +66,7 @@ impl CliError {
     pub fn code(&self) -> &'static str {
         match self {
             CliError::Store(error) => error.code(),
+            CliError::Harvest(error) => error.code(),
             CliError::BadInput { .. } => "bad_input",
             CliError::Json(_) => "cannot_serialise",
         }
@@ -70,6 +77,7 @@ impl CliError {
     pub fn is_refusal(&self) -> bool {
         match self {
             CliError::Store(error) => error.is_refusal(),
+            CliError::Harvest(error) => error.is_refusal(),
             CliError::BadInput { .. } => true,
             CliError::Json(_) => false,
         }
