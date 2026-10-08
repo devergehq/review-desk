@@ -365,7 +365,7 @@ fn promoting_a_rule_brings_it_into_force() {
     assert!(store.rules_for_repo(REPO).unwrap().is_empty());
 
     let promoted = store
-        .set_rule_stage(proposed.id, RuleStage::Active)
+        .set_rule_stage(proposed.id, RuleStage::Active, None)
         .unwrap();
     assert_eq!(promoted.stage, RuleStage::Active);
     assert_eq!(store.rules_for_repo(REPO).unwrap().len(), 1);
