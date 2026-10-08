@@ -178,6 +178,13 @@ impl RuleScope {
         match (scope, repo) {
             ("global", _) => Ok(RuleScope::Global),
             ("repo", Some(repo)) => Ok(RuleScope::Repo(repo)),
+            // "repo" is a valid scope, so blaming the scope column here would be both
+            // wrong and self-contradictory. The fault is the missing repository.
+            ("repo", None) => Err(StoreError::InvalidValue {
+                field: "scope_repo",
+                value: String::new(),
+                expected: "a repository as owner/repo, because the scope is repo".to_string(),
+            }),
             (other, _) => Err(StoreError::InvalidValue {
                 field: "scope",
                 value: other.to_string(),

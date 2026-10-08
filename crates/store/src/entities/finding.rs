@@ -1,6 +1,6 @@
 //! Findings: what a review found, each with a sequence number stable within its review.
 
-use rusqlite::{params, OptionalExtension, Row};
+use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior};
 
 use crate::error::{Result, StoreError};
 use crate::model::{now, Disposition, Finding, NewFinding};
@@ -15,9 +15,13 @@ impl Store {
     /// Fails with [`StoreError::UnknownParent`] if the review does not exist; the
     /// database enforces that, not this function.
     pub fn add_finding(&self, review_id: i64, new: NewFinding) -> Result<Finding> {
-        // One transaction, so two callers adding findings at once cannot be handed the
-        // same sequence number.
-        let tx = self.conn.unchecked_transaction()?;
+        // The read that picks the sequence number and the insert that claims it must
+        // be one step. A DEFERRED transaction would take a read lock and then try to
+        // upgrade it on the insert, and SQLite refuses that upgrade immediately with
+        // "database is locked" rather than waiting out the busy timeout — it cannot
+        // wait without risking deadlock. IMMEDIATE takes the write lock up front, so a
+        // second caller queues on the busy handler instead of failing.
+        let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
 
         let seq: i64 = tx.query_row(
             "SELECT COALESCE(MAX(seq), 0) + 1 FROM findings WHERE review_id = ?1",

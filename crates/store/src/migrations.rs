@@ -99,7 +99,7 @@ CREATE TABLE rules (
     created_at       INTEGER NOT NULL,
     CHECK (
         (scope = 'global' AND scope_repo IS NULL)
-        OR (scope = 'repo' AND scope_repo IS NOT NULL)
+        OR (scope = 'repo' AND scope_repo IS NOT NULL AND scope_repo <> '')
     )
 );
 
@@ -151,18 +151,33 @@ pub fn migrate_to(conn: &Connection, target: i64) -> Result<i64> {
 }
 
 /// Apply one migration and record its version, atomically.
+///
+/// The version is read again inside the transaction. Two processes opening a fresh
+/// database at the same moment both see version 0 outside it; without the second read
+/// the loser would run a migration that has just been applied and fail on a table that
+/// already exists.
 fn apply(conn: &Connection, migration: &Migration) -> Result<()> {
-    let run = || -> rusqlite::Result<()> {
-        conn.execute_batch("BEGIN")?;
+    let run = || -> rusqlite::Result<bool> {
+        // IMMEDIATE takes the write lock before the read, so the version this reads
+        // cannot change under it and a competing process waits rather than racing.
+        conn.execute_batch("BEGIN IMMEDIATE")?;
+
+        let current: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        if current >= migration.version {
+            // Someone else applied it while we were waiting for the lock.
+            conn.execute_batch("COMMIT")?;
+            return Ok(false);
+        }
+
         conn.execute_batch(migration.sql)?;
         // PRAGMA will not take a bound parameter, so the version is formatted in. It
         // comes from the const table above, never from a caller.
         conn.execute_batch(&format!("PRAGMA user_version = {}", migration.version))?;
         conn.execute_batch("COMMIT")?;
-        Ok(())
+        Ok(true)
     };
 
-    run().map_err(|source| {
+    run().map(|_| ()).map_err(|source| {
         let _ = conn.execute_batch("ROLLBACK");
         StoreError::Migration {
             version: migration.version,

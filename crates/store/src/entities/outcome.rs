@@ -86,13 +86,22 @@ impl Store {
 
     /// A whole review in one read: the review, its brief, its findings and their
     /// outcomes.
+    ///
+    /// The four reads share one transaction, so they see one snapshot. Without it a
+    /// writer landing between them could return outcomes citing a finding the findings
+    /// list does not contain.
     pub fn full_review(&self, review_id: i64) -> Result<FullReview> {
-        Ok(FullReview {
+        let tx = self.conn.unchecked_transaction()?;
+
+        let full = FullReview {
             review: self.get_review(review_id)?,
             brief: self.find_brief(review_id)?,
             findings: self.list_findings(review_id)?,
             outcomes: self.list_outcomes(review_id)?,
-        })
+        };
+
+        tx.commit()?;
+        Ok(full)
     }
 }
 

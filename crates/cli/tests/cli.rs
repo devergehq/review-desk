@@ -99,10 +99,25 @@ fn a_database_that_cannot_be_opened_exits_two() {
 }
 
 #[test]
-fn an_unknown_command_is_rejected() {
+fn an_unknown_command_is_refused_not_reported_as_broken() {
+    // Exit 1, not 2. clap's own default is 2, which is the code this binary reserves
+    // for being unable to run — a typo would have paged whoever treats 2 as broken.
     review_desk()
         .args(["review", "open"])
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("unrecognized subcommand"));
+}
+
+#[test]
+fn a_missing_subcommand_is_refused() {
+    review_desk().arg("db").assert().code(1);
+    review_desk().assert().code(1);
+}
+
+#[test]
+fn help_and_version_are_not_errors() {
+    review_desk().arg("--help").assert().code(0);
+    review_desk().arg("--version").assert().code(0);
+    review_desk().args(["db", "--help"]).assert().code(0);
 }

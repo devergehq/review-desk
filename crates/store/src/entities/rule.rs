@@ -1,6 +1,6 @@
 //! Rules: what was learned, the failure it prevents, and how far it has graduated.
 
-use rusqlite::{params, OptionalExtension, Row};
+use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior};
 
 use crate::error::{Result, StoreError};
 use crate::model::{now, FindingRef, NewRule, Rule, RuleScope, RuleStage};
@@ -16,7 +16,21 @@ const IN_FORCE: &[RuleStage] = &[RuleStage::Active, RuleStage::Lint, RuleStage::
 impl Store {
     /// Create a rule, with its links to the findings it came out of.
     pub fn create_rule(&self, new: NewRule) -> Result<Rule> {
-        let tx = self.conn.unchecked_transaction()?;
+        // A rule scoped to a repository that does not name one would be in force and
+        // match nothing, because every lookup keys on the repository string.
+        if let RuleScope::Repo(repo) = &new.scope {
+            if repo.trim().is_empty() {
+                return Err(StoreError::InvalidValue {
+                    field: "scope_repo",
+                    value: repo.clone(),
+                    expected: "a repository as owner/repo".to_string(),
+                });
+            }
+        }
+
+        // IMMEDIATE for the same reason as add_finding: the insert into rules and the
+        // inserts into rule_findings are one step.
+        let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
 
         tx.execute(
             "INSERT INTO rules
