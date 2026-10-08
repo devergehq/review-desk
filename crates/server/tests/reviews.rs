@@ -30,6 +30,22 @@ fn a_link_alone_creates_a_review_from_a_recorded_github_response() {
     );
     assert_eq!(review["round"], 1);
 
+    // **The title, from the same read.** A review started from the Inbox has nothing but
+    // a pasted link, so if this read does not resolve a title the review has none — and a
+    // title is what both the Inbox and the One review screen list a review under. Until
+    // DEV-862 the `GitHub` trait carried no title and this was null for every review the
+    // screen started.
+    assert_eq!(
+        review["title"], common::RECORDED_TITLE,
+        "the title has to be the one GitHub reported: {}",
+        answer.text()
+    );
+    assert_eq!(
+        review["changed_lines"], common::RECORDED_CHANGED_LINES,
+        "changed lines are additions plus deletions, as GitHub counted them: {}",
+        answer.text()
+    );
+
     // No network was involved: the only GitHub this server had was a directory of files.
     let stored = harness
         .store
@@ -37,6 +53,123 @@ fn a_link_alone_creates_a_review_from_a_recorded_github_response() {
         .unwrap()
         .expect("the review is on the record");
     assert_eq!(stored.head_sha, common::RECORDED_HEAD_SHA);
+    assert_eq!(
+        stored.title.as_deref(),
+        Some(common::RECORDED_TITLE),
+        "and it is on the record, not only in the answer"
+    );
+    assert_eq!(stored.changed_lines, Some(common::RECORDED_CHANGED_LINES));
+}
+
+#[test]
+fn the_review_a_link_starts_turns_up_in_the_inbox_under_its_title() {
+    // The acceptance criterion is about the screen, not the handler: "starting a review
+    // from a link in the inbox creates a review that has a title". The Inbox reads
+    // `GET /inbox`, and a brief is what puts a review in it, so this follows the review
+    // the whole way to the group the screen renders.
+    let harness = common::start(common::recorded_github());
+
+    let started = harness.api(
+        "POST",
+        "/reviews",
+        Some(r#"{"pr_url":"https://github.com/devergehq/locus/pull/64"}"#),
+    );
+    assert_eq!(started.status, 201, "{}", started.text());
+    let review_id = started.json()["id"].as_i64().expect("a review id");
+
+    // A review waits in "Confirm the problem" once a session has written its brief,
+    // which is the state the Inbox lists.
+    harness
+        .store
+        .put_brief(
+            review_id,
+            review_desk_store::NewBrief {
+                problem: "Dispatcher watchers never exit.".to_string(),
+                ..Default::default()
+            },
+        )
+        .expect("writing a brief");
+
+    let inbox = harness.api("GET", "/inbox", None);
+    assert_eq!(inbox.status, 200, "{}", inbox.text());
+
+    let waiting = &inbox.json()["briefs_to_confirm"][0];
+    assert_eq!(waiting["review_id"].as_i64(), Some(review_id));
+    assert_eq!(
+        waiting["pull_request"]["title"], common::RECORDED_TITLE,
+        "the Inbox lists a review by its title, and the link is all the screen had: {}",
+        inbox.text()
+    );
+}
+
+#[test]
+fn a_caller_that_supplies_a_title_keeps_it_and_costs_no_read() {
+    // The bargain the contract offers: pass what you know and save the server a read.
+    // A caller that passes a head commit gets no read at all, so it also gets no resolved
+    // title — which is why the one it passed has to be kept rather than overwritten.
+    let (github, calls) = common::counted(common::recorded_github());
+    let harness = common::start(github);
+
+    let answer = harness.api(
+        "POST",
+        "/reviews",
+        Some(
+            r#"{"pr_url":"https://github.com/devergehq/locus/pull/64",
+                "head_sha":"9535132","title":"A title the caller already knew",
+                "changed_lines":7}"#,
+        ),
+    );
+
+    assert_eq!(answer.status, 201, "{}", answer.text());
+    let review = answer.json();
+    assert_eq!(review["head_sha"], "9535132");
+    assert_eq!(review["title"], "A title the caller already knew");
+    assert_eq!(review["changed_lines"], 7);
+    assert_eq!(
+        calls.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "a caller that supplied the head commit must cost no GitHub read"
+    );
+}
+
+#[test]
+fn a_review_whose_title_cannot_be_read_is_created_with_none() {
+    // A recording captured before DEV-862 widened the read carries no title, and an
+    // installed `gh` could answer the same way. A review with no title is a review the
+    // screen shows without one; it is not a reason to refuse to start the review, because
+    // the head commit — the one fact the record cannot do without — was resolved.
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let narrowed = directory.path().join("pull_request.json");
+    std::fs::write(
+        &narrowed,
+        format!(
+            r#"{{"number":64,"state":"closed","merged":true,
+                 "merged_at":"2026-09-30T10:54:42Z","closed_at":"2026-09-30T10:54:42Z",
+                 "head":{{"sha":"{}"}},"user":{{"login":"patrickdorival"}}}}"#,
+            common::RECORDED_HEAD_SHA
+        ),
+    )
+    .expect("writing a narrowed recording");
+
+    let harness = common::start(
+        review_desk_harvest::recorded::Recorded::nothing().with("pull_request", &narrowed),
+    );
+
+    let answer = harness.api(
+        "POST",
+        "/reviews",
+        Some(r#"{"pr_url":"https://github.com/devergehq/locus/pull/64"}"#),
+    );
+
+    assert_eq!(answer.status, 201, "{}", answer.text());
+    let review = answer.json();
+    assert_eq!(review["head_sha"], common::RECORDED_HEAD_SHA);
+    assert!(
+        review["title"].is_null(),
+        "a title GitHub did not send is null, not an empty string: {}",
+        answer.text()
+    );
+    assert!(review["changed_lines"].is_null());
 }
 
 #[test]

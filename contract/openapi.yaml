@@ -98,10 +98,15 @@ paths:
         and waits for the developer to confirm the brief.
 
         **`head_sha` is optional, because the screen cannot supply one.** The Inbox has
-        only a pasted link, so when `head_sha` is omitted the server resolves the head
-        commit itself, by reading the pull request from GitHub, and stores the resolved
-        value. A caller that already knows the head — the command line, or a review
-        session — passes it and no read happens.
+        only a pasted link, so when `head_sha` is omitted the server reads the pull request
+        from GitHub and stores what that read answers: the head commit, the title, and the
+        changed-line count. A caller that already knows the head — the command line, or a
+        review session — passes it and no read happens.
+
+        **One read, three facts.** `title` and `changed_lines` are resolved by the same read
+        as the head commit, and only for a caller that omitted them. A review on the screen
+        would otherwise have no title to be listed under, which is what the Inbox and the
+        One review screen show it by.
 
         The head is resolved **before the review is created, not afterwards**. A review
         with no head commit could not be deduplicated: the store finds an existing review
@@ -710,12 +715,16 @@ components:
           description: Which round of review this is on that pull request, from 1.
         title:
           type: [string, 'null']
-          description: The pull request's title, as the caller supplied it.
+          description: |
+            The pull request's title, as the caller supplied it — or, for a caller that
+            supplied none, as `POST /reviews` resolved it from the pull request.
         ticket_id: { $ref: '#/components/schemas/ForeignId' }
         changed_lines:
           type: [integer, 'null']
           minimum: 0
-          description: Additions plus deletions, as the caller supplied it.
+          description: |
+            Additions plus deletions, as the caller supplied it — or, for a caller that
+            supplied none, as `POST /reviews` resolved it from the pull request.
         session_id: { $ref: '#/components/schemas/ForeignId' }
         ledger_id: { $ref: '#/components/schemas/ForeignId' }
         github_review_id: { $ref: '#/components/schemas/ForeignId' }
@@ -745,12 +754,14 @@ components:
             specific commit, which is what the command line does.
         title:
           type: [string, 'null']
-          description: Resolved with the head commit when omitted.
+          description: |
+            Resolved by the same read as the head commit when omitted. Pass it to record a
+            title of your own, which nothing then overwrites.
         ticket_id: { $ref: '#/components/schemas/ForeignId' }
         changed_lines:
           type: [integer, 'null']
           minimum: 0
-          description: Resolved with the head commit when omitted.
+          description: Resolved by the same read as the head commit when omitted.
 
     ReviewLayerName:
       type: string
@@ -1199,6 +1210,20 @@ components:
         cited_by_findings:
           type: [integer, 'null']
           minimum: 0
+          description: |
+            Of those, the ones on a review **other than** the rule's `origin_review_id` —
+            the Rules screen's "cited by 6 later findings".
+
+            **Deliberately a different number from `raised`.** `raised` is every finding
+            citing the rule, the ones it was derived from included, so a rule nothing has
+            applied since still has a non-zero `raised`. This counts the times it earned
+            its place on a review it did not come out of, which is the one of the two that
+            answers whether it is worth keeping — and it is what reconciles the example
+            below, where R-09 is raised 7 times and cited by 6.
+
+            *Other* is read by review, not by finding. A rule is created *from* findings
+            that already exist, so none of them could have cited a rule that did not exist
+            when they were written; read by finding the two numbers could never differ.
         caught_by_check:
           type: [integer, 'null']
           minimum: 0
@@ -1280,9 +1305,32 @@ components:
         stale:
           type: boolean
           description: |
-            Whether nothing has cited it for long enough to question it. Derived from
-            `last_cited_at` and `review_again_at`, not a stage: a stale rule is still in
-            force until the developer retires it.
+            Whether nothing has cited it for long enough to question it.
+
+            **A rule is stale when no finding has cited it for 60 days and it has not been
+            deferred past today.** Spelled out, in the order the server evaluates it:
+
+            1. A rule whose `review_again_at` is in the future is **not** stale, whatever
+               the citations say. That is the whole point of "Keep 60 more days": it
+               answers the question for a while without pretending a finding cited the
+               rule.
+            2. A rule at stage `proposed` or `retired` is **not** stale. Staleness is a
+               question about rules in force; a proposal is not in force yet and a retired
+               one no longer is.
+            3. Otherwise the rule is stale when more than 60 days have passed since
+               `last_cited_at` — or, when nothing has ever cited it, since `created_at`,
+               so that a rule made yesterday is not stale on its first day merely for
+               having no citations yet.
+
+            **60 days is part of this contract, not an implementation detail.** The Rules
+            screen says "No finding has cited it in 60 days" and offers "Keep 60 more
+            days", so the threshold and the deferral are the same number and it is written
+            once, here. The server's constant and this sentence are tied by a test —
+            `crates/server/tests/staleness.rs`.
+
+            Derived rather than stored, and not a stage: a stale rule is still in force
+            until the developer retires it, which is why `RulesPage` gives it a group of
+            its own.
         last_cited_at:
           type: [string, 'null']
           format: date-time
@@ -1290,7 +1338,9 @@ components:
         review_again_at:
           type: [string, 'null']
           format: date-time
-          description: Set by "Keep 60 more days". Until then the rule is not shown as stale.
+          description: |
+            Set by "Keep 60 more days". While it is in the future the rule is not stale,
+            whatever `last_cited_at` says — see `stale`.
         counts: { $ref: '#/components/schemas/RuleCounts' }
         created_at: { type: string, format: date-time }
 

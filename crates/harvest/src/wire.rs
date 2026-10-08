@@ -38,11 +38,26 @@ pub fn pull_request(json: &str) -> Result<PullRequest> {
         PrState::Open => None,
     };
 
+    // Additions plus deletions, and only when GitHub sent both. A response carrying one
+    // of the two would make the sum a half-measurement, and `review.changed_lines` is
+    // shown as a figure — "214 changed lines" — so half of one is worse than none.
+    let changed_lines = match (wire.additions, wire.deletions) {
+        (Some(additions), Some(deletions)) => Some(additions + deletions),
+        _ => None,
+    };
+
     Ok(PullRequest {
         state,
         state_at,
         head_sha: wire.head.sha,
         author: wire.user.and_then(|user| user.login),
+        // Trimmed, and an empty title is no title: it would otherwise be shown as a
+        // review with a blank name rather than one with none.
+        title: wire
+            .title
+            .map(|title| title.trim().to_string())
+            .filter(|title| !title.is_empty()),
+        changed_lines,
     })
 }
 
@@ -170,6 +185,9 @@ fn read<T: for<'de> Deserialize<'de>>(json: &str, what: &'static str) -> Result<
     serde_json::from_str(json).map_err(|source| HarvestError::Unreadable { what, source })
 }
 
+/// Every field but `state` and `head` is optional, which is what lets a response captured
+/// before a field was read still parse. `head` is not: a pull request with no head commit
+/// is not one this crate can say anything about.
 #[derive(Debug, Deserialize)]
 struct WirePullRequest {
     state: String,
@@ -178,6 +196,9 @@ struct WirePullRequest {
     closed_at: Option<String>,
     head: WireRef,
     user: Option<WireUser>,
+    title: Option<String>,
+    additions: Option<i64>,
+    deletions: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -311,6 +332,53 @@ mod tests {
         assert_eq!(pr.state, PrState::Merged);
         assert_eq!(pr.state_at, Some(1_790_765_682));
         assert_eq!(pr.author.as_deref(), Some("someone"));
+    }
+
+    #[test]
+    fn the_title_and_the_changed_lines_are_read_as_github_sent_them() {
+        // The fields as `gh api repos/devergehq/locus/pulls/64` printed them on
+        // 9 October 2026, which is also what `tests/fixtures/pull_request.json` holds.
+        let json = r#"{"state":"closed","merged":true,
+                       "title":"DEV-795: give dispatcher watchers an exit condition, and a way to see the ones that have none",
+                       "additions":1097,"deletions":3,
+                       "head":{"sha":"46f6ea1645a9bbc9308f791411b2cac1a093367b"},
+                       "user":{"login":"patrickdorival"}}"#;
+
+        let pr = pull_request(json).unwrap();
+        assert_eq!(
+            pr.title.as_deref(),
+            Some(
+                "DEV-795: give dispatcher watchers an exit condition, \
+                 and a way to see the ones that have none"
+            )
+        );
+        // Additions plus deletions, which is the one figure the record holds.
+        assert_eq!(pr.changed_lines, Some(1100));
+    }
+
+    #[test]
+    fn a_response_from_before_these_fields_were_read_still_parses() {
+        // A recording captured for the harvester alone carries neither field. It has to
+        // keep working: the fields are nullable so that an old recording is a pull
+        // request with no title, not an unreadable response.
+        let json = r#"{"state":"open","head":{"sha":"abc"},"user":{"login":"someone"}}"#;
+
+        let pr = pull_request(json).unwrap();
+        assert_eq!(pr.title, None);
+        assert_eq!(pr.changed_lines, None);
+    }
+
+    #[test]
+    fn a_blank_title_is_no_title_and_half_a_count_is_no_count() {
+        let blank = r#"{"state":"open","title":"   ","additions":10,
+                        "head":{"sha":"abc"},"user":null}"#;
+        let pr = pull_request(blank).unwrap();
+
+        // A review shown with a blank name reads as broken; one shown with no name reads
+        // as what it is.
+        assert_eq!(pr.title, None);
+        // Additions with no deletions is not "10 changed lines".
+        assert_eq!(pr.changed_lines, None);
     }
 
     #[test]

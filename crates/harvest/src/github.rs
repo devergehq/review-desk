@@ -15,6 +15,17 @@ use review_desk_store::{PrState, Timestamp};
 use crate::error::Result;
 
 /// What a pull request is, as GitHub has it now.
+///
+/// Four of these six facts are the harvester's: a review it posted was merged or closed,
+/// at some time, on some head, by some author. `title` and `changed_lines` are not — they
+/// are read by the local server when it starts a review from a pasted link, which is the
+/// only thing the dashboard can give it.
+///
+/// **They are here rather than in a second trait method because they arrive in the same
+/// response.** `gh api repos/OWNER/REPO/pulls/N` carries all six, so a separate method
+/// would be a second identical request to read two more fields off it. `contract/README.md`
+/// item S22 said this read already supplied them; it did not, and DEV-862 is where it
+/// started to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PullRequest {
     pub state: PrState,
@@ -24,6 +35,19 @@ pub struct PullRequest {
     pub head_sha: String,
     /// Who opened it. Used only to tell the author's reply from anyone else's.
     pub author: Option<String>,
+    /// The pull request's title, as GitHub has it.
+    ///
+    /// `None` when the response carried none. A pull request always has a title, so this
+    /// is nullable for the narrower reason that a recorded response captured before
+    /// DEV-862 does not hold one — and an absent title is a fact to record as absent
+    /// rather than a run to fail.
+    pub title: Option<String>,
+    /// Additions plus deletions, as GitHub counts them.
+    ///
+    /// `None` when the response carried neither figure. Summed here rather than kept
+    /// apart because that is the one number the record holds — `review.changed_lines` —
+    /// and the draft's word budget is computed from it.
+    pub changed_lines: Option<i64>,
 }
 
 /// One review comment thread, rooted at the comment a finding was posted as.
@@ -103,9 +127,16 @@ pub struct CommitFiles {
     pub paths: Vec<String>,
 }
 
-/// The reads the harvester makes. Four, all read-only.
+/// The reads Review Desk makes of GitHub. Four, all read-only.
+///
+/// **There is no write here and there will not be one.** "Review Desk never posts to
+/// GitHub" is a property of this trait rather than a promise in a comment: the harvester
+/// reads back what a review already did, and the local server reads a pull request to
+/// start a review from a link. Everything outward — posting the review, asking for a
+/// reviewer, filing a ticket — belongs to whatever drives the session.
 pub trait GitHub {
-    /// The pull request's state, when it reached it, and where its head is now.
+    /// The pull request's state, when it reached it, where its head is now, and the title
+    /// and changed-line count the local server records when it starts a review.
     fn pull_request(&self, repo: &str, pr: i64) -> Result<PullRequest>;
 
     /// Every review comment thread on the pull request.

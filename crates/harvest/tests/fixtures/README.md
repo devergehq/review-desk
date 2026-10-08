@@ -5,12 +5,19 @@ the harvester reads: a merge, six review comment threads each with one reply, ev
 thread resolved, and three commits after the commit the review read.
 
 Nothing here was hand-written. Each file is what `gh` printed, narrowed with `jq` to the
-fields `crates/harvest/src/wire.rs` reads — the patches, bodies, logins, shas and times
-are verbatim.
+fields `crates/harvest/src/wire.rs` reads — the patches, bodies, logins, shas, titles,
+counts and times are verbatim.
+
+**`pull_request.json` was re-captured on 9 October 2026**, when DEV-862 widened that read
+to the title and the changed-line count the local server records for a review started from
+a link. It was re-run against the same pull request rather than having the three fields
+written in: a fixture with invented values would test the parser against whatever the test
+expected instead of against what GitHub sends. The pull request is merged and its title and
+diff are settled, so the re-capture changed nothing else.
 
 | File | Captured with |
 | -- | -- |
-| `pull_request.json` | `gh api repos/devergehq/locus/pulls/64 \| jq '{number, state, merged, merged_at, closed_at, head: {sha: .head.sha}, user: {login: .user.login}}'` |
+| `pull_request.json` | `gh api repos/devergehq/locus/pulls/64 \| jq '{number, title, state, merged, merged_at, closed_at, additions, deletions, head: {sha: .head.sha}, user: {login: .user.login}}'` |
 | `review_threads.json` | `gh api graphql -f query='…reviewThreads(first:50){nodes{isResolved resolvedBy{login} comments(first:20){nodes{databaseId author{login} body createdAt}}}}…'` |
 | `compare.json` | `gh api repos/devergehq/locus/compare/9535132…...46f6ea1… \| jq '{status, ahead_by, total_commits, commits: [.commits[] \| {sha, commit: {committer: {date: .commit.committer.date}}}], files: [.files[] \| {filename, status, patch}]}'` |
 | `commit-SHA.json` | `gh api repos/devergehq/locus/commits/SHA \| jq '{sha, commit: {committer: {date: .commit.committer.date}}, files: [.files[] \| {filename}]}'` |

@@ -55,6 +55,7 @@ goes back on in the same change that adds it.
 | Nothing **posts** to GitHub | No operation writes to GitHub. Approving a draft sets a status; the review session reads it and posts. One operation *reads* GitHub — `POST /reviews` resolves a head commit when the caller omits one — and that is the only one. |
 | Review Desk's own ids are integers | Review id, finding `seq` and rule id, matching `crates/store/src/model.rs`. |
 | Null is not zero | A count the store cannot yet answer is `null`. Zero is a measurement; null is the absence of one. |
+| A derived field states how it is derived | `Rule.stale` is the one with a threshold in it — no finding has cited the rule for 60 days and it has not been deferred past today — so the number is written in `openapi.yaml` and the server's constant is tied to it by `crates/server/tests/staleness.rs`. It was undefined until DEV-862, and the server used 60 days because a mockup said so. |
 
 `F1` and `R-09` are display keys, derived rather than stored: `F` plus the finding's `seq`,
 and `R-` plus the rule's `id` zero-padded to two digits. The server derives them so the
@@ -390,16 +391,30 @@ list without re-deriving it.
       reason, so "Dismiss" and "Retire" cannot record why. A dismissed proposal with no
       reason gets proposed again next week.
 
-- [ ] **S22 — a GitHub read path for the server, for `POST /reviews`.** It needs a pull
-      request's head commit, title and changed-line count from a link. `crates/harvest` on
-      pull request #6 (DEV-859) already provides exactly this, read-only, by running `gh`;
-      its `GitHub` trait returns a `PullRequest` carrying `head_sha`. **This is a
-      dependency on unmerged work**, and it is the only item here that is not a migration
-      or a query. If DEV-859 does not land, `head_sha` has no resolver and the Inbox's
-      "Start a review" cannot work from a link alone.
+- [x] **S22 — a GitHub read path for the server, for `POST /reviews`.** It needs a pull
+      request's head commit, title and changed-line count from a link. `crates/harvest`
+      (DEV-859, merged as pull request #6) is that path: read-only, by running `gh`, with
+      GitHub behind a four-method trait that has no write in it.
 
-      This also answers who supplies S5 (`review.title`) and S7 (`review.changed_lines`),
-      which are still columns the store needs but no longer have an unnamed source.
+      **This item claimed the harvester already provided all three, and it did not.** Its
+      `GitHub` trait returned a `PullRequest` carrying `state`, `state_at`, `head_sha` and
+      `author` — the four facts the *harvester* needs — and no title or line count. So when
+      DEV-861 built `POST /reviews` against it, the head commit resolved and the other two
+      could not: the server wrote `title: null` for every review started from the Inbox,
+      and `crates/server/src/api.rs` carried a comment saying this item was wrong rather
+      than the item being corrected. A review with no title has nothing for the Inbox and
+      the One review screen to list it by, which is every screen it appears on.
+
+      **DEV-862 closed it by widening the read.** `PullRequest` now also carries `title`
+      and `changed_lines` — additions plus deletions, as GitHub reports them on the same
+      response the head commit comes from — and `POST /reviews` stores both for a caller
+      that supplied neither. One `gh api repos/OWNER/REPO/pulls/N`, three facts, still a
+      read. The recorded response in `crates/harvest/tests/fixtures/pull_request.json` was
+      re-captured from `devergehq/locus#64` with the new fields rather than having them
+      written in by hand, so the parsing is still tested against what GitHub actually
+      sent.
+
+      This also answers who supplies S5 (`review.title`) and S7 (`review.changed_lines`).
 
 ### New queries on the store crate
 
@@ -468,12 +483,12 @@ the review now, let a review session fill the head in later — was considered a
 - It would need a nullable column, a new state meaning "head not yet known", and a write to
   resolve it. Resolving at creation needs no store change at all.
 
-**How the server reads it.** By running `gh`, as `crates/harvest/src/gh.rs` already does on
-pull request #6 (DEV-859): Review Desk handles no tokens, uses whatever login the developer
-already has, and reads only. That crate's `GitHub` trait returns a `PullRequest` carrying
-`head_sha`, which is exactly this field. **This contract names no crate** — how the server
-reads is the server's business — but DEV-859 is where the read path comes from, and it is
-not merged yet. See S22.
+**How the server reads it.** By running `gh`, as `crates/harvest/src/gh.rs` does: Review
+Desk handles no tokens, uses whatever login the developer already has, and reads only. That
+crate's `GitHub` trait returns a `PullRequest`, which since DEV-862 carries the title and
+the changed-line count beside the head commit — one response, three facts. **This contract
+names no crate**; how the server reads is the server's business. See S22, which was wrong
+about this until DEV-862 and says how.
 
 **When the read fails**, `POST /reviews` returns `github_unavailable` and creates nothing.
 That code is separate from `store_unavailable` because it is the developer's environment

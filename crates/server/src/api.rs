@@ -309,7 +309,7 @@ impl Api {
         let request: StartReviewRequest = read_body(body)?;
         let link = wire::parse_pr_link(&request.pr_url)?;
 
-        let head_sha = match request.head_sha {
+        let (head_sha, resolved) = match request.head_sha {
             // Supplied, so no read is made at all: the command line and a review session
             // both know the head already, and the contract says they save the server a
             // read by passing it.
@@ -321,24 +321,37 @@ impl Api {
                         "7 to 40 lower-case hexadecimal characters",
                     ));
                 }
-                head_sha
+                (head_sha, None)
             }
             // Omitted, which is what the Inbox screen does: it has only a pasted link.
             // The head is resolved before the review is created, because the store
             // deduplicates on it and a headless review could not be matched on the next
             // click. If the read fails, nothing is created.
-            None => self.github.head_sha(&link.repo, link.pr)?,
+            None => {
+                let read = self.github.pull_request(&link.repo, link.pr)?;
+                (read.head_sha.clone(), Some(read))
+            }
         };
 
-        // The title and the changed-line count are the caller's if they gave them. The
-        // GitHub read resolves a head commit and nothing else: the `GitHub` trait's
-        // `PullRequest` carries no title and no changed-line count, so this server cannot
-        // resolve them however much contract/README.md's S22 says it can. Null is then
-        // the honest answer, and a later `review open --title` fills it in.
+        // The caller's values win, and the read fills in only what they left out.
+        //
+        // **One read, three facts.** `contract/README.md` item S22 always said this read
+        // supplied the title and the changed-line count; until DEV-862 the `GitHub`
+        // trait's `PullRequest` carried neither, so this handler wrote `title: null` for
+        // every review the Inbox started and a comment here said the item was wrong. The
+        // read was widened instead: a review with no title has nothing for the Inbox and
+        // the One review screen to list it under, which is every screen it appears on.
+        //
+        // A caller that passed a head commit gets no read and therefore no resolution,
+        // which is the bargain the contract offers: pass what you know and save the read.
         let facts = ReviewFacts {
-            title: request.title,
+            title: request
+                .title
+                .or_else(|| resolved.as_ref().and_then(|read| read.title.clone())),
             ticket_id: request.ticket_id,
-            changed_lines: request.changed_lines,
+            changed_lines: request
+                .changed_lines
+                .or_else(|| resolved.as_ref().and_then(|read| read.changed_lines)),
             not_checked: None,
         };
 

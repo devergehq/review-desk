@@ -39,6 +39,18 @@ pub fn recorded_github() -> Recorded {
 /// The head commit `pull_request.json` reports, which is what a resolved review holds.
 pub const RECORDED_HEAD_SHA: &str = "46f6ea1645a9bbc9308f791411b2cac1a093367b";
 
+/// The title `pull_request.json` reports, verbatim.
+///
+/// `devergehq/locus#64`'s own title, as `gh` printed it. Written out here rather than read
+/// from the file so that a test asserting the title can be read without opening a fixture
+/// — and so that re-capturing the fixture against a different pull request fails loudly
+/// instead of silently asserting whatever the new one is called.
+pub const RECORDED_TITLE: &str =
+    "DEV-795: give dispatcher watchers an exit condition, and a way to see the ones that have none";
+
+/// Additions plus deletions, as `pull_request.json` reports them: 1097 and 3.
+pub const RECORDED_CHANGED_LINES: i64 = 1100;
+
 /// Any GitHub reader, with its reads counted.
 ///
 /// This is what makes "refused without a GitHub read" an assertion rather than a hope:

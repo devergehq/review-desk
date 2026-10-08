@@ -446,3 +446,57 @@ fn a_header_name_in_another_case_is_still_the_same_header() {
         DraftStatus::Ready
     );
 }
+
+/// **There is no way to turn the guard off, and DEV-862 is where that was put under
+/// pressure.**
+///
+/// That issue points the dashboard at this API, which means a `nuxt dev` server on
+/// `localhost:3000` now talks to it — and the obvious way to make that work is a
+/// development bypass: an allowed-origins list, an environment variable, a `--dev` flag.
+/// Any of them would be one mistake away from being left on in a build that signs off
+/// reviews, and the sign-off decision would then rest on a configuration value.
+///
+/// It was made to work the other way round. `web/nuxt.config.ts` has the proxy state what
+/// it is really talking to — `changeOrigin` rewrites `Host`, and `headers.origin` replaces
+/// the browser's `Origin` with this server's own — so what arrives is a request that
+/// genuinely names this server. The guard is unchanged and knows nothing about a proxy;
+/// it would refuse that dev server exactly as it refuses any other origin.
+///
+/// This test is the tripwire on that. It reads `guard.rs` and fails if the module grows a
+/// way to be configured, which is what every bypass would look like.
+#[test]
+fn the_guard_has_no_way_to_be_turned_off() {
+    let source = std::fs::read_to_string(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/guard.rs"),
+    )
+    .expect("reading the guard");
+
+    for (needle, what) in [
+        ("env::var", "a read of the environment"),
+        ("env!(", "a compile-time environment variable"),
+        ("option_env!", "an optional compile-time environment variable"),
+        ("cfg!(debug_assertions)", "a debug-build branch"),
+        ("#[cfg(debug_assertions)]", "a debug-build branch"),
+        ("cfg!(feature", "a Cargo feature branch"),
+        ("allowed_origins", "a configurable origin list"),
+        ("allow_origin", "a configurable origin list"),
+        ("Access-Control-Allow", "a CORS header"),
+    ] {
+        assert!(
+            !source.contains(needle),
+            "crates/server/src/guard.rs contains {needle:?} — {what}. The guard takes no \
+             configuration: the only thing it is told is the address the listener actually \
+             bound, and everything else it decides from the request. A development loop \
+             that needed this relaxed would be a development loop that could sign off a \
+             review from any page the developer has open."
+        );
+    }
+
+    // And the one thing it *is* told stays the bound address rather than becoming a list
+    // of hosts somebody can add to.
+    assert!(
+        source.contains("pub fn check(bound: SocketAddr, method: &str, headers: Headers<'_>)"),
+        "the guard's signature changed; it takes the bound address, the method and the \
+         headers, and nothing that could carry a policy"
+    );
+}

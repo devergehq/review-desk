@@ -348,11 +348,13 @@ pub fn stage_label(stage: RuleStage, exceptions: Option<i64>) -> String {
 /// **Stale is a question, not a stage.** A stale rule is still in force until the
 /// developer retires it, which is why it is derived here rather than stored as a stage.
 ///
-/// The threshold is the server's to choose: the store holds `last_cited_at` and
-/// `review_again_at` and deliberately declines to say how long is too long. Sixty days
-/// is what the Rules mockup words as "No finding has cited it in 60 days", and
-/// "Keep 60 more days" is the control that answers it — so the two numbers are the same
-/// number and it is written once.
+/// **The threshold is the contract's, not this server's to choose.** It used to be: the
+/// store holds `last_cited_at` and `review_again_at` and declines to say how long is too
+/// long, and sixty days was taken from the Rules mockup's "No finding has cited it in 60
+/// days" because nothing else said. DEV-862 wrote the rule into `Rule.stale` in
+/// `contract/openapi.yaml` — no finding has cited it for sixty days and it has not been
+/// deferred past today — and `crates/server/tests/staleness.rs` fails when this number and
+/// that sentence disagree. Change one and you change both.
 pub const STALE_AFTER_DAYS: i64 = 60;
 
 /// Seconds in a day.

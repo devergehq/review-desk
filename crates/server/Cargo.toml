@@ -39,3 +39,10 @@ jsonschema = { version = "0.58", default-features = false }
 socket2 = "0.6"
 serde_norway = "0.9"
 tempfile.workspace = true
+
+# `tests/staleness.rs` ages a rule's last citation past the sixty-day window. The store
+# has no function for moving a time backwards and should not grow one so that a test can
+# pass — `crates/store/tests/rules.rs` reaches for SQL for the same reason — so the test
+# opens the same file and writes the column itself. Test-only: nothing in `src/` opens the
+# database, which is the project's first rule of interaction.
+rusqlite.workspace = true
