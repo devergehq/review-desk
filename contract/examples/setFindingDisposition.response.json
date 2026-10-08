@@ -1,0 +1,16 @@
+{
+  "review_id": 17,
+  "seq": 4,
+  "key": "F4",
+  "lens": "repetition",
+  "severity": "nit",
+  "file": "config/webhooks.php",
+  "line": 12,
+  "claim": "Backoff schedule is repeated in two files",
+  "evidence": null,
+  "disposition": "held_back",
+  "disposition_reason": "Held for one ticket with the other nits; not worth a review comment.",
+  "rule_id": null,
+  "rule_key": null,
+  "created_at": "2026-10-08T11:15:00Z"
+}
