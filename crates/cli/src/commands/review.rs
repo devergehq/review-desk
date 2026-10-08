@@ -325,6 +325,13 @@ fn finding_line(finding: &Finding) -> String {
     if let Some(reason) = &finding.disposition_reason {
         line.push_str(&format!(" ({reason})"));
     }
+    // The rule it was raised under, in the display key a person quotes. Driving a
+    // whole review through the binary by hand is what showed this missing: the
+    // citation is the most load-bearing field this change adds, and the only view a
+    // person reads was dropping it.
+    if let Some(rule_id) = finding.rule_id {
+        line.push_str(&format!(" · same ruling as R-{rule_id:02}"));
+    }
     line
 }
 

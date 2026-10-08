@@ -505,3 +505,45 @@ fn a_draft_show_on_a_review_with_no_draft_is_not_found() {
     let document = desk.refused_json(&["draft", "show", "--review", &review]);
     assert_eq!(document["error"]["code"], "not_found");
 }
+
+#[test]
+fn the_view_a_person_reads_names_the_rule_a_finding_cites() {
+    // The citation is the field the feedback loop runs through. Printing it only in
+    // the JSON would hide it from the one view a person actually reads — the same
+    // argument as the line number that has no file.
+    let desk = Desk::new();
+    let rule = desk
+        .store()
+        .create_rule(NewRule {
+            statement: "A new test must fail when the fix is reverted".to_string(),
+            prevents: "a regression behind a test that cannot fail".to_string(),
+            scope: RuleScope::Global,
+            stage: RuleStage::Active,
+            origin_review_id: None,
+            origin_findings: vec![],
+            why_proposed: None,
+            note: None,
+        })
+        .expect("a rule");
+    let review = open_review(&desk, "acme/portal", "412", "3f9c2ab");
+
+    desk.command()
+        .args(["finding", "add", "--review", &review, "--file", "-"])
+        .write_stdin(
+            json!({
+                "lens": "can this test fail",
+                "severity": "should",
+                "claim": "the test passes with the fix reverted",
+                "rule_id": rule.id
+            })
+            .to_string(),
+        )
+        .assert()
+        .success();
+
+    let shown = desk.run(&["review", "show", "--review", &review]);
+    assert!(
+        shown.contains(&format!("same ruling as R-{:02}", rule.id)),
+        "the cited rule must survive into the plain view:\n{shown}"
+    );
+}
