@@ -25,6 +25,7 @@ mod entities;
 pub mod error;
 pub mod migrations;
 pub mod model;
+mod normalise;
 pub mod path;
 
 use std::path::{Path, PathBuf};

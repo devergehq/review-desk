@@ -42,7 +42,8 @@ pub fn run(command: &BriefCommand) -> Result<Report> {
         BriefCommand::Put { review, file } => {
             // Read the document before opening the database: a brief that cannot be
             // parsed should not create a database file as a side effect.
-            let new: NewBrief = read_json(file)?;
+            // A brief holds no closed set, so there is nothing to name.
+            let new: NewBrief = read_json(file, None)?;
             let store = Store::open_default()?;
             let brief = store.put_brief(*review, new)?;
 

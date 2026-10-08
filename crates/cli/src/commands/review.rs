@@ -188,12 +188,17 @@ fn finding_line(finding: &Finding) -> String {
     line
 }
 
-/// `src/x.rs:12`, `src/x.rs` or `-`.
+/// `src/x.rs:12`, `src/x.rs`, `line 12` or `-`.
+///
+/// A finding can carry a line without a file — the store makes the two independently
+/// optional — and a line is worth saying even when nothing says where. Printing `-` for
+/// that case threw it away in the only view a person reads.
 fn location(finding: &Finding) -> String {
     match (&finding.file, finding.line) {
         (Some(file), Some(line)) => format!("{file}:{line}"),
         (Some(file), None) => file.clone(),
-        (None, _) => "-".to_string(),
+        (None, Some(line)) => format!("line {line}"),
+        (None, None) => "-".to_string(),
     }
 }
 

@@ -44,6 +44,16 @@ request reviewed before starts the next round.
 REVIEW=$(review-desk review open --repo devergehq/review-desk --pr 851 --head c0ffee1)
 ```
 
+The repository and the head commit are identity, so both are stored canonical — trimmed
+and lowercased. `DevergeHQ/Review-Desk` and `devergehq/review-desk` are one repository,
+as they are on GitHub, and `C0FFEE1` is one commit with `c0ffee1`, because `git rev-parse`
+only ever emits lowercase.
+
+**An abbreviated commit is still a different commit from its full form.** Nothing can
+reconcile `c0ffee1` with `c0ffee1234…` without asking git, so pass the same spelling every
+time — `git rev-parse HEAD` in one caller and `git rev-parse --short HEAD` in another would
+open two reviews and spend two round numbers.
+
 `review link` stores the other systems' ids. An id left out is left as it was, so one
 call can set the session without clearing the posted GitHub review.
 

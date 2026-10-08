@@ -484,3 +484,108 @@ fn a_head_commit_with_stray_whitespace_is_the_same_commit() {
         Some(1)
     );
 }
+
+#[test]
+fn one_repository_spelled_two_ways_is_one_repository() {
+    // GitHub repository names are not case-sensitive identity. Under SQLite's binary
+    // collation they would be: one pull request would get two parallel round sequences,
+    // its findings would be split across two reviews that cannot see each other, and a
+    // repository's own rules would be invisible under the other spelling.
+    let (_dir, store) = temp_store();
+
+    let opened = store
+        .open_review("DevergeHQ/Review-Desk", 41, "aaa111")
+        .expect("open");
+    assert_eq!(opened.review.repo, "devergehq/review-desk");
+
+    let again = store
+        .open_review("devergehq/review-desk", 41, "aaa111")
+        .expect("open again");
+
+    assert!(!again.created, "the same repository must not start a round");
+    assert_eq!(again.review.id, opened.review.id);
+    assert_eq!(
+        store.latest_round("devergehq/review-desk", 41).unwrap(),
+        Some(1)
+    );
+}
+
+#[test]
+fn one_head_commit_spelled_two_ways_is_one_commit() {
+    // A git object name is lowercase hexadecimal; `git rev-parse` never emits anything
+    // else, so an uppercase one is a caller that normalised badly. Treating it as a
+    // different commit would start a round for a commit already reviewed, and
+    // `latest_round` counts per pull request, so that round number is spent for good.
+    let (_dir, store) = temp_store();
+
+    let opened = store
+        .open_review("devergehq/review-desk", 42, "C0FFEE1")
+        .expect("open");
+    assert_eq!(opened.review.head_sha, "c0ffee1");
+
+    let again = store
+        .open_review("devergehq/review-desk", 42, "c0ffee1")
+        .expect("open again");
+
+    assert!(!again.created);
+    assert_eq!(again.review.id, opened.review.id);
+    assert_eq!(
+        store.latest_round("devergehq/review-desk", 42).unwrap(),
+        Some(1),
+        "the same commit in another case must not have started a round"
+    );
+}
+
+#[test]
+fn a_rule_is_stored_under_the_name_a_lookup_will_use() {
+    // `create_rule` checked a trimmed repository and inserted the raw one, so a rule
+    // seeded with stray whitespace or another case could never be matched by
+    // `rules_for_repo` — a rule in force that nothing can ever cite.
+    let (_dir, store) = temp_store();
+
+    store
+        .create_rule(NewRule {
+            statement: "the store is the only code that opens the database".to_string(),
+            prevents: "two ways into the record".to_string(),
+            scope: RuleScope::Repo(" DevergeHQ/Review-Desk ".to_string()),
+            stage: RuleStage::Active,
+            origin_review_id: None,
+            origin_findings: Vec::new(),
+        })
+        .expect("seed rule");
+
+    for spelling in [
+        "devergehq/review-desk",
+        " devergehq/review-desk ",
+        "DevergeHQ/Review-Desk",
+    ] {
+        assert_eq!(
+            store.rules_for_repo(spelling).unwrap().len(),
+            1,
+            "{spelling} must find the rule"
+        );
+    }
+}
+
+#[test]
+fn a_brief_with_no_problem_in_it_is_refused() {
+    // `problem` is required by serde, but an empty string satisfies that, and an empty
+    // brief can still be confirmed — leaving a developer's assent to nothing on record.
+    let (_dir, store) = temp_store();
+    let review = store
+        .create_review(new_review("devergehq/review-desk", 43, "aaa111", 1))
+        .unwrap();
+
+    let error = store
+        .put_brief(
+            review.id,
+            NewBrief {
+                problem: "   ".to_string(),
+                ..Default::default()
+            },
+        )
+        .expect_err("an empty problem is not a brief");
+
+    assert!(error.is_refusal());
+    assert_eq!(error.code(), "invalid_value");
+}

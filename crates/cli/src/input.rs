@@ -14,7 +14,15 @@ use crate::error::{CliError, Result};
 const STDIN: &str = "-";
 
 /// Read one JSON document from `path`, or from standard input when `path` is `-`.
-pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T> {
+///
+/// `closed_sets`, when given, is appended to a refusal from the *parse*, naming what the
+/// document could have said. serde names a closed set's values when the value is an
+/// unknown string, but not when it is the wrong type and not when the field is missing —
+/// and all three are an invalid value the caller has to be told about.
+///
+/// It is not appended to a refusal from the read: naming the valid severities on "no such
+/// file" points the reader at the wrong mistake.
+pub fn read_json<T: DeserializeOwned>(path: &Path, closed_sets: Option<&str>) -> Result<T> {
     let (source, text) = if path == Path::new(STDIN) {
         let mut text = String::new();
         std::io::stdin()
@@ -28,6 +36,11 @@ pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T> {
         (path.display().to_string(), text)
     };
 
-    serde_json::from_str(&text)
-        .map_err(|error| CliError::bad_input(format!("cannot use the JSON in {source}"), error))
+    serde_json::from_str(&text).map_err(|error| {
+        let refusal = CliError::bad_input(format!("cannot use the JSON in {source}"), error);
+        match closed_sets {
+            Some(values) => refusal.naming(values),
+            None => refusal,
+        }
+    })
 }

@@ -48,13 +48,14 @@ pub enum FindingCommand {
 pub fn run(command: &FindingCommand) -> Result<Report> {
     match command {
         FindingCommand::Add { review, file } => {
-            let new: NewFinding = read_json(file).map_err(|error| {
-                error.naming(format!(
+            let new: NewFinding = read_json(
+                file,
+                Some(&format!(
                     "severity is one of: {}; disposition is one of: {}",
                     Severity::valid_values(),
                     Disposition::valid_values()
-                ))
-            })?;
+                )),
+            )?;
             let store = Store::open_default()?;
             let finding = store.add_finding(*review, new)?;
 

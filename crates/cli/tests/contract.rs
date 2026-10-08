@@ -352,3 +352,91 @@ fn a_severity_of_the_wrong_type_still_names_the_valid_severities() {
         }
     }
 }
+
+#[test]
+fn a_file_that_cannot_be_read_is_not_told_about_severities() {
+    // The valid values belong to a refusal from the parse, not from the read. Bolted
+    // onto "no such file or directory" they point the reader at the wrong mistake.
+    let desk = Desk::new();
+    let review = open_review(&desk, "devergehq/review-desk", "7", "c0ffee1");
+
+    let document = desk.refused_json(&[
+        "finding",
+        "add",
+        "--review",
+        &review,
+        "--file",
+        "/nowhere/at/all/finding.json",
+    ]);
+
+    let message = document["error"]["message"].as_str().expect("a message");
+    assert!(
+        message.contains("/nowhere/at/all/finding.json"),
+        "{message}"
+    );
+    assert!(
+        !message.contains("severity is one of"),
+        "a file that cannot be read is not a bad severity: {message}"
+    );
+}
+
+#[test]
+fn a_finding_with_a_line_but_no_file_still_shows_the_line() {
+    // The store makes `file` and `line` independently optional, and a line is worth
+    // saying even when nothing says where. The plain view used to print `-` and lose it.
+    let desk = Desk::new();
+    let review = open_review(&desk, "devergehq/review-desk", "7", "c0ffee1");
+
+    desk.command()
+        .args(["finding", "add", "--review", &review, "--file", "-"])
+        .write_stdin(
+            json!({ "lens": "correctness", "severity": "nit", "claim": "a line with no file", "line": 12 })
+                .to_string(),
+        )
+        .assert()
+        .success();
+
+    let shown = desk.run(&["review", "show", "--review", &review]);
+
+    assert!(
+        shown.contains("line 12"),
+        "the line number must survive into the only view a person reads:\n{shown}"
+    );
+}
+
+#[test]
+fn one_repository_spelled_two_ways_opens_one_review() {
+    // Verified through the binary, because this is what an agent actually does: one
+    // caller runs `gh repo view --json nameWithOwner`, another types the name.
+    let desk = Desk::new();
+
+    let first = open_review(&desk, "devergehq/review-desk", "7", "c0ffee1");
+    let second = open_review(&desk, "DevergeHQ/Review-Desk", "7", "C0FFEE1");
+
+    assert_eq!(
+        first, second,
+        "two spellings of one repository and commit must be one review"
+    );
+
+    let shown = desk.json(&["review", "show", "--review", &first]);
+    assert_eq!(shown["review"]["repo"], "devergehq/review-desk");
+    assert_eq!(shown["review"]["head_sha"], "c0ffee1");
+    assert_eq!(shown["review"]["round"], 1);
+}
+
+#[test]
+fn an_empty_brief_is_refused() {
+    let desk = Desk::new();
+    let review = open_review(&desk, "devergehq/review-desk", "7", "c0ffee1");
+
+    let output = desk
+        .command()
+        .args(["brief", "put", "--review", &review, "--file", "-", "--json"])
+        .write_stdin(json!({ "problem": "" }).to_string())
+        .assert()
+        .code(1);
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.get_output().stdout).expect("one document");
+
+    assert_eq!(document["error"]["code"], "invalid_value");
+}

@@ -4,7 +4,7 @@ use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior}
 
 use crate::error::{Result, StoreError};
 use crate::model::{now, NewReview, OpenedReview, Review, ReviewLinks};
-use crate::{is_unique_violation, Store};
+use crate::{is_unique_violation, normalise, Store};
 
 const COLUMNS: &str = "id, repo, pr, head_sha, round, session_id, ledger_id, \
                        github_review_id, created_at";
@@ -63,14 +63,36 @@ impl Store {
     /// round, and the second would be refused as a duplicate of a round it never asked
     /// for.
     pub fn open_review(&self, repo: &str, pr: i64, head_sha: &str) -> Result<OpenedReview> {
-        // Trimmed before the lookup, because `create_review` trims before the insert.
-        // Looking up a string that would be stored differently would miss and then start
-        // a round for a commit already reviewed.
-        let (repo, head_sha) = (repo.trim(), head_sha.trim());
+        // Normalised before the lookup, through the same helper `create_review` uses
+        // before the insert. A lookup keyed differently from the insert would miss and
+        // then start a round for a commit already reviewed.
+        let (repo, head_sha) = (normalise::repo(repo), normalise::head_sha(head_sha));
 
+        // Looked for before any lock is taken. Reopening a commit already reviewed is
+        // the common call — every session's first one — and putting it behind the write
+        // lock would make every reopen queue behind every writer. Worse, losing that
+        // queue for the whole busy timeout arrives as `StoreError::Sqlite`, which
+        // `is_refusal` calls false, so an ordinary reopen under contention would exit 2:
+        // the code the review worker treats as a loud warning.
+        if let Some(review) = self.find_review_by_head(&repo, pr, &head_sha)? {
+            return Ok(OpenedReview {
+                review,
+                created: false,
+            });
+        }
+
+        // Only a commit with no review needs the write lock, and then the round
+        // arithmetic and the insert have to be one step: two sessions opening the same
+        // pull request on two different new commits would otherwise both read the same
+        // latest round, and the loser would be refused as a duplicate of a round it
+        // never asked for. IMMEDIATE for the reason `add_finding` gives — SQLite will
+        // not upgrade a read lock, so a DEFERRED transaction fails outright instead of
+        // waiting out the busy timeout.
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
 
-        if let Some(review) = self.find_review_by_head(repo, pr, head_sha)? {
+        // Checked again now the lock is held. The miss above was unsynchronised, so
+        // another caller may have created this very review in between.
+        if let Some(review) = self.find_review_by_head(&repo, pr, &head_sha)? {
             tx.commit()?;
             return Ok(OpenedReview {
                 review,
@@ -78,11 +100,11 @@ impl Store {
             });
         }
 
-        let round = self.latest_round(repo, pr)?.unwrap_or(0) + 1;
+        let round = self.latest_round(&repo, pr)?.unwrap_or(0) + 1;
         let review = self.create_review(NewReview {
-            repo: repo.to_string(),
+            repo,
             pr,
-            head_sha: head_sha.to_string(),
+            head_sha,
             round,
             ..Default::default()
         })?;
@@ -210,15 +232,12 @@ impl Store {
 /// the record: rules are scoped by the same string, and `rules_for_repo` would never
 /// match it.
 ///
-/// The repository and head commit are returned trimmed, and that is not cosmetic. Both
-/// are identity: `reviews` is unique on repository, pull request and round, and
-/// [`Store::find_review_by_head`] compares the head commit under SQLite's binary
-/// collation. Checking a trimmed string and then storing an untrimmed one would make
-/// `abc ` a different commit from `abc`, which does not merely return the wrong review —
-/// it starts a round for a commit already reviewed, and `latest_round` counts rounds per
-/// pull request, so that round number is spent for good.
+/// The repository and head commit come back canonical, through [`crate::normalise`],
+/// which is where the argument for that lives. Checking one form and storing another is
+/// the whole bug: it would make `abc ` — or `ABC` — a different commit from `abc`.
 fn validate(new: NewReview) -> Result<NewReview> {
-    let repo = new.repo.trim();
+    let repo = normalise::repo(&new.repo);
+    let repo = repo.as_str();
     let (owner, name) = repo.split_once('/').unwrap_or(("", ""));
     if owner.is_empty() || name.is_empty() || name.contains('/') {
         return Err(StoreError::InvalidValue {
@@ -254,7 +273,7 @@ fn validate(new: NewReview) -> Result<NewReview> {
 
     Ok(NewReview {
         repo: repo.to_string(),
-        head_sha: new.head_sha.trim().to_string(),
+        head_sha: normalise::head_sha(&new.head_sha),
         ..new
     })
 }
