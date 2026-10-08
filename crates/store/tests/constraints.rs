@@ -21,6 +21,7 @@ fn a_finding(claim: &str) -> NewFinding {
         evidence: None,
         disposition: Disposition::InDraft,
         disposition_reason: None,
+        rule_id: None,
     }
 }
 
@@ -145,6 +146,8 @@ fn a_rule_citing_an_absent_finding_is_refused() {
             review_id: 1,
             seq: 1,
         }],
+        why_proposed: None,
+        note: None,
     }) {
         Err(StoreError::UnknownParent { entity, parent, .. }) => {
             assert_eq!(entity, "rule");
@@ -267,6 +270,8 @@ fn a_rule_citing_the_same_finding_twice_cites_it_once() {
             stage: RuleStage::Active,
             origin_review_id: Some(review.id),
             origin_findings: vec![cited, cited, cited],
+            why_proposed: None,
+            note: None,
         })
         .expect("a repeated citation is not a failure");
 
@@ -314,6 +319,8 @@ fn a_rule_scoped_to_a_repository_cannot_name_an_empty_one() {
         stage: RuleStage::Active,
         origin_review_id: None,
         origin_findings: vec![],
+        why_proposed: None,
+        note: None,
     }) {
         Err(StoreError::InvalidValue { field, .. }) => assert_eq!(field, "scope_repo"),
         other => panic!("expected InvalidValue on scope_repo, got {other:?}"),

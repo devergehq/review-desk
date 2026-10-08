@@ -105,6 +105,7 @@ fn add(
                 evidence: None,
                 disposition: Disposition::InDraft,
                 disposition_reason: None,
+                rule_id: None,
             },
         )
         .unwrap();

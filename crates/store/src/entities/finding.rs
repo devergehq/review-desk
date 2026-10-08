@@ -7,7 +7,8 @@ use crate::model::{now, Disposition, Finding, NewFinding};
 use crate::{is_foreign_key_violation, Store};
 
 const COLUMNS: &str = "review_id, seq, lens, severity, file, line, claim, evidence, \
-                       disposition, disposition_reason, github_comment_id, created_at";
+                       disposition, disposition_reason, rule_id, github_comment_id, \
+                       created_at";
 
 impl Store {
     /// Add a finding to a review, assigning the next sequence number within it.
@@ -183,6 +184,7 @@ fn row_to_finding(row: &Row<'_>) -> rusqlite::Result<Finding> {
         evidence: row.get("evidence")?,
         disposition: row.get("disposition")?,
         disposition_reason: row.get("disposition_reason")?,
+        rule_id: row.get("rule_id")?,
         github_comment_id: row.get("github_comment_id")?,
         created_at: row.get("created_at")?,
     })

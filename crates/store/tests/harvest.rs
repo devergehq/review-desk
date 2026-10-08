@@ -19,6 +19,7 @@ fn a_finding(claim: &str, file: Option<&str>, line: Option<i64>) -> NewFinding {
         evidence: None,
         disposition: Disposition::InDraft,
         disposition_reason: None,
+        rule_id: None,
     }
 }
 

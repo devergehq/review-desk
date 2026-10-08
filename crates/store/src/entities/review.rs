@@ -6,8 +6,10 @@ use crate::error::{Result, StoreError};
 use crate::model::{now, NewReview, OpenedReview, PrState, Review, ReviewLinks, Timestamp};
 use crate::{is_unique_violation, normalise, Store};
 
-const COLUMNS: &str = "id, repo, pr, head_sha, round, session_id, ledger_id, \
-                       github_review_id, pr_state, pr_state_at, harvested_at, created_at";
+const COLUMNS: &str = "id, repo, pr, head_sha, round, title, ticket_id, changed_lines, \
+                       not_checked, session_id, ledger_id, github_review_id, pr_state, \
+                       pr_state_at, harvested_at, nit_ticket_status, nit_ticket_id, \
+                       nit_ticket_requested_at, nit_ticket_filed_at, created_at";
 
 impl Store {
     /// Create a review.
@@ -21,14 +23,17 @@ impl Store {
         self.conn
             .execute(
                 "INSERT INTO reviews
-                     (repo, pr, head_sha, round, session_id, ledger_id, github_review_id,
-                      created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                     (repo, pr, head_sha, round, title, ticket_id, changed_lines,
+                      session_id, ledger_id, github_review_id, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 params![
                     new.repo,
                     new.pr,
                     new.head_sha,
                     new.round,
+                    new.title,
+                    new.ticket_id,
+                    new.changed_lines,
                     new.session_id,
                     new.ledger_id,
                     new.github_review_id,
@@ -343,12 +348,20 @@ fn row_to_review(row: &Row<'_>) -> rusqlite::Result<Review> {
         pr: row.get("pr")?,
         head_sha: row.get("head_sha")?,
         round: row.get("round")?,
+        title: row.get("title")?,
+        ticket_id: row.get("ticket_id")?,
+        changed_lines: row.get("changed_lines")?,
+        not_checked: row.get("not_checked")?,
         session_id: row.get("session_id")?,
         ledger_id: row.get("ledger_id")?,
         github_review_id: row.get("github_review_id")?,
         pr_state: row.get("pr_state")?,
         pr_state_at: row.get("pr_state_at")?,
         harvested_at: row.get("harvested_at")?,
+        nit_ticket_status: row.get("nit_ticket_status")?,
+        nit_ticket_id: row.get("nit_ticket_id")?,
+        nit_ticket_requested_at: row.get("nit_ticket_requested_at")?,
+        nit_ticket_filed_at: row.get("nit_ticket_filed_at")?,
         created_at: row.get("created_at")?,
     })
 }

@@ -23,6 +23,7 @@ fn a_finding(claim: &str, severity: Severity) -> NewFinding {
         evidence: Some("the diff".to_string()),
         disposition: Disposition::InDraft,
         disposition_reason: None,
+        rule_id: None,
     }
 }
 
@@ -124,11 +125,11 @@ fn a_brief_is_confirmed_once_and_replacing_it_undoes_that() {
         )
         .unwrap();
 
-    let confirmed = store.confirm_brief(review.id).unwrap();
+    let confirmed = store.confirm_brief(review.id, Actor::Developer).unwrap();
     assert!(confirmed.is_confirmed());
     let at = confirmed.confirmed_at;
 
-    let again = store.confirm_brief(review.id).unwrap();
+    let again = store.confirm_brief(review.id, Actor::Developer).unwrap();
     assert_eq!(
         again.confirmed_at, at,
         "confirming twice keeps the first time"
@@ -224,7 +225,7 @@ fn a_whole_review_reads_back_in_one_call() {
             },
         )
         .unwrap();
-    store.confirm_brief(review.id).unwrap();
+    store.confirm_brief(review.id, Actor::Developer).unwrap();
 
     for claim in ["one", "two", "three"] {
         store
@@ -284,6 +285,8 @@ fn rules_for_a_repository_are_the_global_ones_and_its_own() {
         stage,
         origin_review_id: None,
         origin_findings: vec![],
+        why_proposed: None,
+        note: None,
     };
 
     store
@@ -354,6 +357,8 @@ fn promoting_a_rule_brings_it_into_force() {
             stage: RuleStage::Proposed,
             origin_review_id: None,
             origin_findings: vec![],
+            why_proposed: None,
+            note: None,
         })
         .unwrap();
 
@@ -551,6 +556,8 @@ fn a_rule_is_stored_under_the_name_a_lookup_will_use() {
             stage: RuleStage::Active,
             origin_review_id: None,
             origin_findings: Vec::new(),
+            why_proposed: None,
+            note: None,
         })
         .expect("seed rule");
 

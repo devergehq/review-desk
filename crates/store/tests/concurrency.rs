@@ -21,6 +21,7 @@ fn a_finding(claim: &str) -> NewFinding {
         evidence: None,
         disposition: Disposition::InDraft,
         disposition_reason: None,
+        rule_id: None,
     }
 }
 

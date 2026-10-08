@@ -21,6 +21,18 @@ pub enum StoreError {
         seq: i64,
     },
 
+    /// A draft is not at a status the change asked for can be made from.
+    ///
+    /// Its own variant rather than an `InvalidValue`, because nothing the caller typed
+    /// was invalid: the request was understood and the record is simply not in a state
+    /// that allows it. A caller branching on `code` can tell the two apart.
+    #[error("the draft of review {review_id} is {found}, and {wanted}")]
+    DraftStatus {
+        review_id: i64,
+        found: crate::model::DraftStatus,
+        wanted: &'static str,
+    },
+
     /// A row was requested, or referenced, that is not there.
     #[error("no {entity} with id {id}")]
     NotFound { entity: &'static str, id: String },
@@ -85,6 +97,7 @@ impl StoreError {
         match self {
             StoreError::DuplicateReview { .. } => "duplicate_review",
             StoreError::DuplicateGithubComment { .. } => "duplicate_github_comment",
+            StoreError::DraftStatus { .. } => "draft_status",
             StoreError::NotFound { .. } => "not_found",
             StoreError::UnknownParent { .. } => "unknown_parent",
             StoreError::InvalidValue { .. } => "invalid_value",
@@ -104,6 +117,7 @@ impl StoreError {
             self,
             StoreError::DuplicateReview { .. }
                 | StoreError::DuplicateGithubComment { .. }
+                | StoreError::DraftStatus { .. }
                 | StoreError::NotFound { .. }
                 | StoreError::UnknownParent { .. }
                 | StoreError::InvalidValue { .. }

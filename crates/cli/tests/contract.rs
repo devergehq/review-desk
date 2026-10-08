@@ -233,8 +233,10 @@ fn every_command_prints_exactly_one_json_document() {
         .success();
 
     // Every command that takes no document on standard input. The two that do are
-    // checked above, and `brief put --json` in tests/review.rs.
-    let commands: [&[&str]; 9] = [
+    // checked above, and `brief put --json` in tests/review.rs. `brief confirm` is not
+    // here: it is removed, and tests/signoff.rs checks that its refusal is one document
+    // too.
+    let commands: [&[&str]; 8] = [
         &["db", "path"],
         &["db", "version"],
         &[
@@ -249,7 +251,6 @@ fn every_command_prints_exactly_one_json_document() {
         ],
         &["review", "link", "--review", &review, "--session", "s-1"],
         &["review", "show", "--review", &review],
-        &["brief", "confirm", "--review", &review],
         &[
             "finding",
             "set",

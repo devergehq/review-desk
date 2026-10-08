@@ -169,6 +169,108 @@ string_enum! {
     }
 }
 
+string_enum! {
+    /// Where a draft has got to.
+    ///
+    /// The transitions, and nothing else: `drafting → ready → approved → posted`, with
+    /// `ready ⇄ sent_back`. Only the last one involves GitHub, and the review session
+    /// makes it, not Review Desk.
+    DraftStatus as "status" {
+        Drafting => "drafting",
+        Ready => "ready",
+        Approved => "approved",
+        SentBack => "sent_back",
+        Posted => "posted",
+    }
+}
+
+impl DraftStatus {
+    /// Whether a draft at this status may still be rewritten.
+    ///
+    /// An approved draft is what the review session reads and posts, so editing it
+    /// underneath would change what gets posted.
+    pub fn is_writable(&self) -> bool {
+        !matches!(self, DraftStatus::Approved | DraftStatus::Posted)
+    }
+}
+
+string_enum! {
+    /// The GitHub review event an approved draft is to be posted as.
+    ReviewEvent as "event" {
+        Comment => "comment",
+        RequestChanges => "request_changes",
+        Approve => "approve",
+    }
+}
+
+string_enum! {
+    /// How far the one ticket covering a review's held-back nits has got.
+    NitTicketStatus as "nit_ticket_status" {
+        NotRequested => "none",
+        Requested => "requested",
+        Filed => "filed",
+    }
+}
+
+string_enum! {
+    /// The seven layers of a review, in order. A layer's number fixes its name, which
+    /// is why only the number is stored.
+    ReviewLayerName as "layer" {
+        Lint => "lint",
+        Understand => "understand",
+        Alternatives => "alternatives",
+        SolutionMap => "solution_map",
+        CodeReview => "code_review",
+        Draft => "draft",
+        Harvest => "harvest",
+    }
+}
+
+impl ReviewLayerName {
+    /// How many layers a review has. Stated once, here, so no caller carries a 7 of
+    /// its own.
+    pub const COUNT: i64 = 7;
+
+    /// The layer with this number, from 1.
+    pub fn for_number(number: i64) -> Result<Self, StoreError> {
+        usize::try_from(number)
+            .ok()
+            .and_then(|number| number.checked_sub(1))
+            .and_then(|index| Self::ALL.get(index))
+            .copied()
+            .ok_or_else(|| StoreError::InvalidValue {
+                field: "layer",
+                value: number.to_string(),
+                expected: format!("a layer number from 1 to {}", Self::COUNT),
+            })
+    }
+
+    /// This layer's number, from 1.
+    pub fn number(&self) -> i64 {
+        Self::ALL
+            .iter()
+            .position(|name| name == self)
+            // ALL is this enum's own variants, so the position is always there.
+            .map_or(0, |index| index as i64 + 1)
+    }
+}
+
+string_enum! {
+    /// What a layer is doing.
+    ///
+    /// `waiting_on_you` is the developer's turn, and is what the Inbox groups on.
+    /// `skipped` is a layer deliberately not run, which a derived status could never
+    /// tell apart from one that has not started.
+    ReviewLayerState as "state" {
+        Pending => "pending",
+        Running => "running",
+        Done => "done",
+        WaitingOnYou => "waiting_on_you",
+        Failed => "failed",
+        Skipped => "skipped",
+    }
+}
+
 /// How widely a rule applies.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -229,6 +331,14 @@ pub struct Review {
     pub head_sha: String,
     /// Which round of review this is on that pull request, from 1.
     pub round: i64,
+    /// The pull request's title.
+    pub title: Option<String>,
+    /// The Linear ticket, opaque.
+    pub ticket_id: Option<String>,
+    /// Additions plus deletions, as the caller supplied them.
+    pub changed_lines: Option<i64>,
+    /// What the review did not look at, in the reviewer's own words.
+    pub not_checked: Option<String>,
     /// The Allele session that ran it.
     pub session_id: Option<String>,
     /// The Locus dispatcher ledger entry.
@@ -243,6 +353,12 @@ pub struct Review {
     pub pr_state_at: Option<Timestamp>,
     /// When the harvester last read this review's outcomes back from GitHub.
     pub harvested_at: Option<Timestamp>,
+    /// How far the one ticket covering this review's held-back nits has got.
+    pub nit_ticket_status: NitTicketStatus,
+    /// The ticket those nits were filed as, opaque.
+    pub nit_ticket_id: Option<String>,
+    pub nit_ticket_requested_at: Option<Timestamp>,
+    pub nit_ticket_filed_at: Option<Timestamp>,
     pub created_at: Timestamp,
 }
 
@@ -261,6 +377,12 @@ pub struct NewReview {
     pub pr: i64,
     pub head_sha: String,
     pub round: i64,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub ticket_id: Option<String>,
+    #[serde(default)]
+    pub changed_lines: Option<i64>,
     #[serde(default)]
     pub session_id: Option<String>,
     #[serde(default)]
@@ -299,12 +421,22 @@ pub struct Brief {
     pub problem: String,
     /// The source of the diagram, in whatever notation was used.
     pub diagram: Option<String>,
-    /// The alternatives considered, written before the diff was read.
+    /// The alternatives considered, as one opaque string.
+    ///
+    /// **Superseded by [`Brief::options`]**, which is what a screen can render. It is
+    /// kept, and still written and read, because migration 4 must not destroy what a
+    /// review already wrote here; nothing new should use it.
     pub option_map: Option<String>,
+    /// The alternatives considered, written before the diff was read, in key order.
+    pub options: Vec<BriefOption>,
     /// The verdict on the approach taken.
     pub approach_verdict: Option<String>,
+    /// Where the problem statement came from and what the developer changed about it.
+    pub provenance: Option<String>,
     /// When the developer confirmed it; `None` means they have not.
     pub confirmed_at: Option<Timestamp>,
+    /// Who confirmed it. Only the developer signs off.
+    pub confirmed_by: Option<Actor>,
     pub updated_at: Timestamp,
 }
 
@@ -326,10 +458,16 @@ pub struct NewBrief {
     pub problem: String,
     #[serde(default)]
     pub diagram: Option<String>,
+    /// Superseded by `options`. Giving both is refused rather than merged: they are two
+    /// spellings of one fact, and nothing could say which the review meant.
     #[serde(default)]
     pub option_map: Option<String>,
     #[serde(default)]
+    pub options: Vec<BriefOption>,
+    #[serde(default)]
     pub approach_verdict: Option<String>,
+    #[serde(default)]
+    pub provenance: Option<String>,
 }
 
 /// One thing the review found.
@@ -350,6 +488,9 @@ pub struct Finding {
     pub disposition: Disposition,
     /// Why it was held back or suppressed.
     pub disposition_reason: Option<String>,
+    /// The rule this finding was raised under, if any. The citation the whole feedback
+    /// loop runs through: without it a rule cannot be said to be cited or stale.
+    pub rule_id: Option<i64>,
     /// The GitHub review comment this finding was posted as, set by
     /// `review-desk finding link`. Without it the harvester cannot find the finding's
     /// thread, so it is skipped for replies and resolution.
@@ -378,6 +519,9 @@ pub struct NewFinding {
     pub disposition: Disposition,
     #[serde(default)]
     pub disposition_reason: Option<String>,
+    /// The rule this finding was raised under, if any.
+    #[serde(default)]
+    pub rule_id: Option<i64>,
 }
 
 fn default_disposition() -> Disposition {
@@ -436,7 +580,19 @@ pub struct Rule {
     pub origin_review_id: Option<i64>,
     /// The findings it came out of.
     pub origin_findings: Vec<FindingRef>,
+    /// Why the app proposed it, with the count behind it. Set on proposals.
+    pub why_proposed: Option<String>,
+    /// The free line shown under the statement: a staleness note, an accepted
+    /// exception, or the reason the rule was last moved between stages.
+    pub note: Option<String>,
+    /// When a finding last cited it. `None` means never.
+    pub last_cited_at: Option<Timestamp>,
+    /// When to ask about it again, set by keeping it for longer. Until then it is not
+    /// shown as stale.
+    pub review_again_at: Option<Timestamp>,
     pub created_at: Timestamp,
+    /// When it was last changed: created, promoted, dismissed, retired or deferred.
+    pub updated_at: Timestamp,
 }
 
 /// A rule to create.
@@ -450,13 +606,269 @@ pub struct NewRule {
     pub origin_review_id: Option<i64>,
     #[serde(default)]
     pub origin_findings: Vec<FindingRef>,
+    #[serde(default)]
+    pub why_proposed: Option<String>,
+    #[serde(default)]
+    pub note: Option<String>,
 }
 
 /// A whole review, as a reader wants it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FullReview {
     pub review: Review,
+    /// All seven layers, in order, whether or not each has been written.
+    pub layers: Vec<ReviewLayer>,
     pub brief: Option<Brief>,
     pub findings: Vec<Finding>,
     pub outcomes: Vec<Outcome>,
+    /// The draft, once one has been written.
+    pub draft: Option<Draft>,
 }
+
+/// The facts about a review that are not its identity.
+///
+/// A field left `None` is left as it was, for the reason [`ReviewLinks`] gives: one
+/// call should be able to set the title without clearing what was not checked.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct ReviewFacts {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub ticket_id: Option<String>,
+    #[serde(default)]
+    pub changed_lines: Option<i64>,
+    #[serde(default)]
+    pub not_checked: Option<String>,
+}
+
+impl ReviewFacts {
+    /// Whether this would change anything. A call that sets no fact is a mistake worth
+    /// naming rather than reporting success for.
+    pub fn is_empty(&self) -> bool {
+        self.title.is_none()
+            && self.ticket_id.is_none()
+            && self.changed_lines.is_none()
+            && self.not_checked.is_none()
+    }
+}
+
+/// One alternative the review considered, written before the diff was read.
+///
+/// The same shape going in and coming out: there is nothing the store assigns, so a
+/// second type would only be the first type with the same fields.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BriefOption {
+    /// The letter the option is known by.
+    pub key: String,
+    pub title: String,
+    pub argument_for: String,
+    pub argument_against: String,
+    /// Whether this is what the author built.
+    pub chosen: bool,
+}
+
+/// What one of a review's seven layers is doing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReviewLayer {
+    pub review_id: i64,
+    pub number: i64,
+    /// Fixed by the number, and derived from it rather than stored.
+    pub name: ReviewLayerName,
+    pub state: ReviewLayerState,
+    /// The short phrase shown after the layer's name — "passed", "3 options",
+    /// "6 findings". Written by the layer that ran.
+    pub detail: Option<String>,
+    /// `None` for a layer nothing has written yet.
+    pub updated_at: Option<Timestamp>,
+}
+
+/// A review and the layer it is currently on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReviewAtLayer {
+    pub review: Review,
+    pub layer: ReviewLayer,
+}
+
+/// What running the review-craft lint over a draft body reported.
+///
+/// Every field is optional, and `None` means the lint has not run rather than that it
+/// found nothing: a count Review Desk cannot answer is absent, and zero is a
+/// measurement.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DraftLint {
+    /// Whether the lint reported no errors. Warnings do not fail it.
+    #[serde(default)]
+    pub passes: Option<bool>,
+    #[serde(default)]
+    pub visible_words: Option<i64>,
+    /// The budget for this change's size, so a screen can say "118 of 150".
+    #[serde(default)]
+    pub word_budget: Option<i64>,
+    #[serde(default)]
+    pub findings_in_body: Option<i64>,
+    /// Findings at disposition `in_draft`. A mismatch with `findings_in_body` means one
+    /// was dropped silently.
+    #[serde(default)]
+    pub findings_expected: Option<i64>,
+    /// Findings already raised in an earlier round on the same pull request. Non-zero
+    /// is a review going in a circle.
+    #[serde(default)]
+    pub raised_before_on_pr: Option<i64>,
+    /// The lint's error lines, verbatim, as the lint printed them. One string rather
+    /// than a list, because the store holds what was reported and splitting it is a
+    /// display decision.
+    #[serde(default)]
+    pub errors: Option<String>,
+    #[serde(default)]
+    pub checked_at: Option<Timestamp>,
+}
+
+impl DraftLint {
+    /// Whether anything was reported at all.
+    pub fn is_empty(&self) -> bool {
+        *self == DraftLint::default()
+    }
+}
+
+/// The draft review: one per review, replaced in place.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Draft {
+    pub review_id: i64,
+    /// The review body as GitHub-flavoured markdown, posted verbatim.
+    pub body: String,
+    pub status: DraftStatus,
+    /// The GitHub review event chosen at approval. `None` until then.
+    pub event: Option<ReviewEvent>,
+    pub approved_at: Option<Timestamp>,
+    /// Who approved it. Only the developer signs off.
+    pub approved_by: Option<Actor>,
+    /// The developer's instruction when the draft was returned.
+    pub sent_back_note: Option<String>,
+    pub sent_back_at: Option<Timestamp>,
+    /// When the review session reported it posted. Set with the review's
+    /// `github_review_id`, never by Review Desk acting on GitHub.
+    pub posted_at: Option<Timestamp>,
+    pub lint: DraftLint,
+    pub updated_at: Timestamp,
+}
+
+/// A draft to store, replacing any draft already held for the review.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NewDraft {
+    pub body: String,
+    /// Either `drafting` or `ready`, and nothing else.
+    ///
+    /// **This is the boundary the sign-off decision rests on.** `approved` is reachable
+    /// only through [`crate::Store::approve_draft`] and `posted` only through
+    /// [`crate::Store::post_draft`], so whatever writes a draft cannot sign it off by
+    /// writing a status.
+    pub status: DraftStatus,
+    /// What the lint said about this body, if it was run.
+    pub lint: Option<DraftLint>,
+}
+
+impl NewDraft {
+    /// A finished draft: this body, waiting on the developer.
+    pub fn ready(body: impl Into<String>) -> Self {
+        NewDraft {
+            body: body.into(),
+            status: DraftStatus::Ready,
+            lint: None,
+        }
+    }
+}
+
+/// The one ticket covering every nit held back from a review's draft.
+///
+/// The findings it covers are not stored against it. They are every finding on the
+/// review at disposition `held_back`, read at the time of asking, so the set cannot
+/// drift from the dispositions.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NitTicket {
+    pub review_id: i64,
+    pub status: NitTicketStatus,
+    /// The Linear ticket, opaque.
+    pub ticket_id: Option<String>,
+    /// The held-back findings the ticket covers, in sequence order.
+    pub finding_seqs: Vec<i64>,
+    pub requested_at: Option<Timestamp>,
+    pub filed_at: Option<Timestamp>,
+}
+
+/// An accepted exception to a rule. The rule stays in force.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RuleException {
+    pub id: i64,
+    pub rule_id: i64,
+    pub reason: String,
+    pub created_at: Timestamp,
+}
+
+/// One repository, with what it holds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RepoSummary {
+    /// The repository as `owner/repo`.
+    pub repo: String,
+    /// Reviews on this repository with no posted GitHub review yet.
+    pub open_reviews: i64,
+    /// Rules in force scoped to this repository.
+    pub active_rules: i64,
+}
+
+/// A rule's counts.
+///
+/// Every field is optional because the set shown differs by stage, and because a count
+/// Review Desk has no source for is absent rather than zero. The three fields that are
+/// always `None` say so in their own documentation rather than being quietly dropped.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct RuleCounts {
+    /// Findings raised citing this rule.
+    pub raised: Option<i64>,
+    /// Of those, the ones with a `kept` outcome.
+    pub kept: Option<i64>,
+    /// Of those, the ones with a `rejected` outcome that gave a reason.
+    pub rejected_with_reason: Option<i64>,
+    /// Findings citing this rule other than the ones it came out of — the "cited by 6
+    /// later findings" on the Rules screen.
+    pub cited_by_findings: Option<i64>,
+    /// Accepted exceptions.
+    pub exceptions: Option<i64>,
+    /// **Always `None`.** Catches by a lint or CI check. Review Desk holds no CI data
+    /// and no filed issue gives it any.
+    pub caught_by_check: Option<i64>,
+    /// **Always `None`.** Findings raised by a review since the rule became a check.
+    /// The same absent CI source.
+    pub raised_in_a_review_since: Option<i64>,
+    /// **Always `None`.** When a human reviewer last said this out loud. A GitHub
+    /// harvest would own it; the harvester reads four kinds of outcome and this is not
+    /// one of them.
+    pub last_human_mention_at: Option<Timestamp>,
+}
+
+/// The figures across the top of the Rules screen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RulesSummary {
+    pub active_rules: i64,
+    /// The per-repository cap. A rule set nobody can hold in their head is not a rule
+    /// set.
+    pub active_rules_cap: i64,
+    /// **Always `None`.** The replay consistency check does not exist yet.
+    pub replay_matched: Option<i64>,
+    /// **Always `None`.** As above.
+    pub replay_total: Option<i64>,
+    /// Findings in the window with a `kept` outcome.
+    pub findings_kept: Option<i64>,
+    /// Findings created in the window.
+    pub findings_total: Option<i64>,
+    /// How many days those two figures cover.
+    pub findings_window_days: Option<i64>,
+    /// Pull requests where a finding was raised a second time — a review that went in
+    /// a circle.
+    pub raised_twice_on_one_pr: Option<i64>,
+}
+
+/// How many rules one repository may hold in force before the set stops being one
+/// anybody can remember.
+pub const ACTIVE_RULES_CAP: i64 = 20;

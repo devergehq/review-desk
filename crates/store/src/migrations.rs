@@ -6,8 +6,11 @@
 //! migration that has shipped is never edited; the next change is a new entry.
 //!
 //! The split is not arbitrary: version 1 is the review record, version 2 is the
-//! learning layer the project brief treats as a later concern, and version 3 is what
-//! the harvester needs to read a posted review's outcomes back from GitHub.
+//! learning layer the project brief treats as a later concern, version 3 is what the
+//! harvester needs to read a posted review's outcomes back from GitHub, and version 4
+//! is what the local API contract needs — the draft, the per-layer status, the
+//! structured option map, rule exceptions, and the twelve columns the four screens
+//! read.
 
 use rusqlite::Connection;
 
@@ -152,6 +155,165 @@ ALTER TABLE outcomes ADD COLUMN harvest_key TEXT;
 CREATE UNIQUE INDEX outcomes_by_harvest_key
     ON outcomes (review_id, finding_seq, kind, harvest_key)
     WHERE harvest_key IS NOT NULL;
+"#,
+    },
+    Migration {
+        version: 4,
+        name: "contract",
+        sql: r#"
+-- The draft review: one per review, replaced in place. An approved draft is what the
+-- review session reads and posts, which is why editing one is refused rather than
+-- merged: the characters that get posted must be the characters that were approved.
+CREATE TABLE drafts (
+    review_id                INTEGER PRIMARY KEY REFERENCES reviews (id) ON DELETE CASCADE,
+    body                     TEXT    NOT NULL,
+    status                   TEXT    NOT NULL,
+    event                    TEXT,
+    approved_at              INTEGER,
+    -- Who approved it. Only the developer signs off, so this is the record of whose
+    -- assent was given; the store refuses any other actor.
+    approved_by              TEXT,
+    sent_back_note           TEXT,
+    sent_back_at             INTEGER,
+    posted_at                INTEGER,
+    lint_passes              INTEGER,
+    lint_visible_words       INTEGER,
+    lint_word_budget         INTEGER,
+    lint_findings_in_body    INTEGER,
+    lint_findings_expected   INTEGER,
+    lint_raised_before_on_pr INTEGER,
+    lint_errors              TEXT,
+    lint_checked_at          INTEGER,
+    updated_at               INTEGER NOT NULL,
+    CHECK (status IN ('drafting', 'ready', 'approved', 'sent_back', 'posted')),
+    CHECK (event IS NULL OR event IN ('comment', 'request_changes', 'approve')),
+    -- The state machine, enforced by the database rather than remembered by the code.
+    -- An approved or posted draft names the event it is to be posted as, who approved
+    -- it and when; anything earlier names none of them.
+    CHECK (
+        (status IN ('approved', 'posted'))
+        = (event IS NOT NULL AND approved_at IS NOT NULL AND approved_by IS NOT NULL)
+    ),
+    -- One direction only. A draft that was sent back and then reworked is `ready`
+    -- again and keeps the note, because what the developer asked for is part of the
+    -- record even once it has been done.
+    CHECK (status <> 'sent_back' OR (sent_back_at IS NOT NULL AND sent_back_note IS NOT NULL)),
+    CHECK ((status = 'posted') = (posted_at IS NOT NULL))
+);
+
+-- The Inbox groups on this, across every repository.
+CREATE INDEX drafts_by_status ON drafts (status);
+
+-- One row per layer that ran. Stored rather than derived: layer 1's lint result has
+-- nowhere to be derived from, and a derived status cannot tell a layer that was
+-- skipped from one that has not run — which is the distinction "what was not checked"
+-- exists to make.
+--
+-- The layer's *name* is not a column. It is fixed by its number, so storing both
+-- would let a row say layer 5 is called `lint`.
+CREATE TABLE review_layers (
+    review_id  INTEGER NOT NULL REFERENCES reviews (id) ON DELETE CASCADE,
+    number     INTEGER NOT NULL,
+    state      TEXT    NOT NULL,
+    detail     TEXT,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (review_id, number),
+    CHECK (number BETWEEN 1 AND 7),
+    CHECK (state IN ('pending', 'running', 'done', 'waiting_on_you', 'failed', 'skipped'))
+);
+
+CREATE INDEX review_layers_by_state ON review_layers (state, number);
+
+-- The alternatives considered, written before the diff was read. One row per option,
+-- replacing `briefs.option_map` as the thing a screen reads: an opaque string cannot
+-- serve a card with a title, an argument each way and a badge.
+--
+-- Hung off the brief, not the review: an option map with no brief is a set of
+-- arguments about nothing.
+CREATE TABLE brief_options (
+    review_id        INTEGER NOT NULL REFERENCES briefs (review_id) ON DELETE CASCADE,
+    key              TEXT    NOT NULL,
+    title            TEXT    NOT NULL,
+    argument_for     TEXT    NOT NULL,
+    argument_against TEXT    NOT NULL,
+    chosen           INTEGER NOT NULL,
+    PRIMARY KEY (review_id, key),
+    CHECK (key <> ''),
+    CHECK (title <> '' AND argument_for <> '' AND argument_against <> ''),
+    CHECK (chosen IN (0, 1))
+);
+
+-- An accepted exception to a rule, with the reason it was accepted. A rule with an
+-- exception is still in force; the screen says so next to its stage.
+CREATE TABLE rule_exceptions (
+    id         INTEGER PRIMARY KEY,
+    rule_id    INTEGER NOT NULL REFERENCES rules (id) ON DELETE CASCADE,
+    reason     TEXT    NOT NULL,
+    created_at INTEGER NOT NULL,
+    CHECK (reason <> '')
+);
+
+CREATE INDEX rule_exceptions_by_rule ON rule_exceptions (rule_id);
+
+-- The pull request's own facts. The store had nowhere to put any of them, so every
+-- screen that shows a review showed its number and not its name.
+ALTER TABLE reviews ADD COLUMN title         TEXT;
+ALTER TABLE reviews ADD COLUMN ticket_id     TEXT;
+ALTER TABLE reviews ADD COLUMN changed_lines INTEGER;
+
+-- What the review did not look at, in the reviewer's own words. The one section of a
+-- review with no adversary, so it is stored rather than derived.
+ALTER TABLE reviews ADD COLUMN not_checked   TEXT;
+
+-- The one ticket covering every nit held back from this review's draft. The findings
+-- it covers are not stored against it: they are every finding on the review at
+-- disposition `held_back`, so the set cannot drift from the dispositions.
+--
+-- SQLite cannot add a CHECK to an existing table, so the closed set is enforced on the
+-- way in and on the way out by `NitTicketStatus` rather than by the schema. The
+-- default is what gives every row that already exists an honest value.
+ALTER TABLE reviews ADD COLUMN nit_ticket_status       TEXT NOT NULL DEFAULT 'none';
+ALTER TABLE reviews ADD COLUMN nit_ticket_id           TEXT;
+ALTER TABLE reviews ADD COLUMN nit_ticket_requested_at INTEGER;
+ALTER TABLE reviews ADD COLUMN nit_ticket_filed_at     INTEGER;
+
+-- Where the problem statement came from and what the developer changed about it.
+ALTER TABLE briefs ADD COLUMN provenance   TEXT;
+
+-- Who confirmed the brief. Only the developer signs off; this is the record of it.
+ALTER TABLE briefs ADD COLUMN confirmed_by TEXT;
+
+-- The rule a finding was raised under. The store recorded rule-to-finding and never
+-- finding-to-rule, so "cited by 6 later findings" and a rule's staleness could not be
+-- answered at all. The whole feedback loop runs through this column.
+--
+-- SET NULL rather than CASCADE: deleting a rule must not delete the findings that
+-- cited it. The finding was still raised; it just no longer cites anything.
+ALTER TABLE findings ADD COLUMN rule_id INTEGER REFERENCES rules (id) ON DELETE SET NULL;
+
+-- Partial, because most findings cite no rule.
+CREATE INDEX findings_by_rule ON findings (rule_id) WHERE rule_id IS NOT NULL;
+
+-- The proposal's justification, and the free line the screen shows under the
+-- statement. `note` is also where the reason for a stage change lands, so a dismissed
+-- proposal is not proposed again next week with no memory of having been told no.
+ALTER TABLE rules ADD COLUMN why_proposed    TEXT;
+ALTER TABLE rules ADD COLUMN note            TEXT;
+
+-- When a finding last cited the rule. Stored rather than scanned on every Rules load;
+-- it cannot drift, because a finding is never deleted, only dispositioned.
+ALTER TABLE rules ADD COLUMN last_cited_at   INTEGER;
+
+-- Set by "Keep 60 more days". Without it a deferred rule comes back as stale on the
+-- next load, and the developer's decision to keep it is lost.
+ALTER TABLE rules ADD COLUMN review_again_at INTEGER;
+
+-- A rule had `created_at` only, so a promotion, dismissal or deferral left no trace of
+-- when it happened. The default makes the column NOT NULL on a table that already has
+-- rows; the backfill then gives those rows the only honest answer there is, which is
+-- when they were created. 0 is not a time any rule was created at.
+ALTER TABLE rules ADD COLUMN updated_at      INTEGER NOT NULL DEFAULT 0;
+UPDATE rules SET updated_at = created_at WHERE updated_at = 0;
 "#,
     },
 ];

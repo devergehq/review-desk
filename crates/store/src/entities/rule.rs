@@ -3,11 +3,12 @@
 use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior};
 
 use crate::error::{Result, StoreError};
-use crate::model::{now, FindingRef, NewRule, Rule, RuleScope, RuleStage};
+use crate::model::{now, FindingRef, NewRule, Rule, RuleException, RuleScope, RuleStage};
 use crate::{is_foreign_key_violation, normalise, Store};
 
 const COLUMNS: &str = "id, statement, prevents, scope, scope_repo, stage, \
-                       origin_review_id, created_at";
+                       origin_review_id, why_proposed, note, last_cited_at, \
+                       review_again_at, created_at, updated_at";
 
 /// The stages at which a rule is in force. A proposed rule is not yet a rule, and a
 /// retired one no longer is.
@@ -42,11 +43,15 @@ impl Store {
         // inserts into rule_findings are one step.
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
 
+        // One time for both columns, so a rule nothing has touched yet does not read as
+        // having been changed a microsecond after it was created.
+        let created_at = now();
+
         tx.execute(
             "INSERT INTO rules
                  (statement, prevents, scope, scope_repo, stage, origin_review_id,
-                  created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                  why_proposed, note, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
             params![
                 new.statement,
                 new.prevents,
@@ -54,7 +59,9 @@ impl Store {
                 new.scope.repo(),
                 new.stage,
                 new.origin_review_id,
-                now(),
+                new.why_proposed,
+                new.note,
+                created_at,
             ],
         )
         .map_err(|error| {
@@ -179,6 +186,66 @@ impl Store {
         self.get_rule(id)
     }
 
+    /// Record an accepted exception to a rule, with the reason it was accepted.
+    ///
+    /// The rule stays in force. An exception is the developer saying "not here, and
+    /// here is why", which is a different act from retiring the rule — and the Rules
+    /// screen shows it next to the stage, as "Repository rule · 1 exception".
+    pub fn add_rule_exception(&self, rule_id: i64, reason: &str) -> Result<RuleException> {
+        let reason = reason.trim();
+        if reason.is_empty() {
+            return Err(StoreError::InvalidValue {
+                field: "reason",
+                value: reason.to_string(),
+                expected: "why the exception was accepted".to_string(),
+            });
+        }
+
+        let created_at = now();
+        self.conn
+            .execute(
+                "INSERT INTO rule_exceptions (rule_id, reason, created_at)
+                 VALUES (?1, ?2, ?3)",
+                params![rule_id, reason, created_at],
+            )
+            .map_err(|error| {
+                if is_foreign_key_violation(&error) {
+                    StoreError::UnknownParent {
+                        entity: "rule exception",
+                        parent: "rule",
+                        id: rule_id.to_string(),
+                    }
+                } else {
+                    StoreError::Sqlite(error)
+                }
+            })?;
+
+        let id = self.conn.last_insert_rowid();
+        Ok(RuleException {
+            id,
+            rule_id,
+            reason: reason.to_string(),
+            created_at,
+        })
+    }
+
+    /// The accepted exceptions to a rule, oldest first.
+    pub fn list_rule_exceptions(&self, rule_id: i64) -> Result<Vec<RuleException>> {
+        let mut statement = self.conn.prepare(
+            "SELECT id, rule_id, reason, created_at FROM rule_exceptions
+             WHERE rule_id = ?1 ORDER BY id ASC",
+        )?;
+        let rows = statement.query_map(params![rule_id], |row| {
+            Ok(RuleException {
+                id: row.get("id")?,
+                rule_id: row.get("rule_id")?,
+                reason: row.get("reason")?,
+                created_at: row.get("created_at")?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     /// Turn stored columns into a rule, reading its finding links.
     fn hydrate(&self, raw: RawRule) -> Result<Rule> {
         let mut statement = self.conn.prepare(
@@ -202,7 +269,12 @@ impl Store {
             stage: raw.stage,
             origin_review_id: raw.origin_review_id,
             origin_findings,
+            why_proposed: raw.why_proposed,
+            note: raw.note,
+            last_cited_at: raw.last_cited_at,
+            review_again_at: raw.review_again_at,
             created_at: raw.created_at,
+            updated_at: raw.updated_at,
         })
     }
 }
@@ -227,7 +299,12 @@ struct RawRule {
     scope_repo: Option<String>,
     stage: RuleStage,
     origin_review_id: Option<i64>,
+    why_proposed: Option<String>,
+    note: Option<String>,
+    last_cited_at: Option<i64>,
+    review_again_at: Option<i64>,
     created_at: i64,
+    updated_at: i64,
 }
 
 fn row_to_raw_rule(row: &Row<'_>) -> rusqlite::Result<RawRule> {
@@ -239,7 +316,12 @@ fn row_to_raw_rule(row: &Row<'_>) -> rusqlite::Result<RawRule> {
         scope_repo: row.get("scope_repo")?,
         stage: row.get("stage")?,
         origin_review_id: row.get("origin_review_id")?,
+        why_proposed: row.get("why_proposed")?,
+        note: row.get("note")?,
+        last_cited_at: row.get("last_cited_at")?,
+        review_again_at: row.get("review_again_at")?,
         created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
     })
 }
 

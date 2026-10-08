@@ -151,9 +151,11 @@ impl Store {
 
         let full = FullReview {
             review: self.get_review(review_id)?,
+            layers: self.list_review_layers(review_id)?,
             brief: self.find_brief(review_id)?,
             findings: self.list_findings(review_id)?,
             outcomes: self.list_outcomes(review_id)?,
+            draft: self.find_draft(review_id)?,
         };
 
         tx.commit()?;

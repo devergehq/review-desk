@@ -1,12 +1,17 @@
 //! A whole review, recorded from the command line and read back.
 //!
 //! This is the test DEV-851 asks for: the binary driven through open, link, brief put,
-//! brief confirm, three findings, a changed disposition, an outcome and show, with every
-//! value checked against what was written.
+//! three findings, a changed disposition, an outcome and show, with every value checked
+//! against what was written.
+//!
+//! The developer's confirmation of the brief is written through the store, because
+//! **there is no command for it**: confirming a brief is sign-off, and sign-off happens
+//! in the dashboard. That is what the dashboard will do to the same record.
 
 mod common;
 
 use common::{open_review, Desk};
+use review_desk_store::Actor;
 use serde_json::json;
 
 /// The findings the walk writes, in the order it writes them.
@@ -56,7 +61,8 @@ fn a_whole_review_is_recorded_and_read_back() {
         "gh-review-3312",
     ]);
 
-    // The brief, then the developer's confirmation of it.
+    // The brief, then the developer's confirmation of it — the second through the
+    // store, as the dashboard does it.
     let brief = json!({
         "problem": "nothing outside Rust can write a review",
         "diagram": "agent -> review-desk -> store -> sqlite",
@@ -68,7 +74,9 @@ fn a_whole_review_is_recorded_and_read_back() {
         .write_stdin(brief.to_string())
         .assert()
         .success();
-    desk.run(&["brief", "confirm", "--review", &review]);
+    desk.store()
+        .confirm_brief(review.parse().expect("the review id"), Actor::Developer)
+        .expect("the developer confirms the brief");
 
     // Three findings. Each prints its sequence number within the review.
     let mut sequences = Vec::new();
@@ -281,8 +289,11 @@ fn replacing_a_brief_undoes_its_confirmation() {
         .write_stdin(json!({ "problem": "first" }).to_string())
         .assert()
         .success();
-    let confirmed = desk.json(&["brief", "confirm", "--review", &review]);
-    assert!(confirmed["brief"]["confirmed_at"].is_i64());
+    let confirmed = desk
+        .store()
+        .confirm_brief(review.parse().expect("the review id"), Actor::Developer)
+        .expect("the developer confirms the brief");
+    assert!(confirmed.confirmed_at.is_some());
 
     let replaced = desk
         .command()
