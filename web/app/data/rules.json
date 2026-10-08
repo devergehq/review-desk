@@ -1,0 +1,239 @@
+[
+  {
+    "id": 22,
+    "key": "R-22",
+    "statement": "Do not raise rename-for-clarity suggestions",
+    "prevents": "a review spending the reader's attention on a preference with no consequence.",
+    "scope": {
+      "kind": "repo",
+      "repo": "acme/portal"
+    },
+    "stage": "proposed",
+    "stage_label": "Proposed",
+    "why_proposed": "You cut this kind of finding from 5 of the last 5 drafts that raised it. None named a consequence.",
+    "note": "Would suppress, not delete: the finding is still recorded with its reason.",
+    "origin_review_id": 17,
+    "origin_pr": 412,
+    "origin_findings": [
+      {
+        "review_id": 17,
+        "seq": 6
+      }
+    ],
+    "stale": false,
+    "last_cited_at": null,
+    "review_again_at": null,
+    "counts": {
+      "raised": 5,
+      "kept": 0,
+      "rejected_with_reason": null,
+      "cited_by_findings": null,
+      "caught_by_check": null,
+      "raised_in_a_review_since": null,
+      "exceptions": null,
+      "last_human_mention_at": null
+    },
+    "created_at": "2026-10-08T11:30:00Z"
+  },
+  {
+    "id": 9,
+    "key": "R-09",
+    "statement": "A new test must fail when the fix is reverted",
+    "prevents": "a regression shipping behind a test that cannot fail.",
+    "scope": {
+      "kind": "repo",
+      "repo": "acme/portal"
+    },
+    "stage": "active",
+    "stage_label": "Repository rule",
+    "why_proposed": null,
+    "note": null,
+    "origin_review_id": 7,
+    "origin_pr": 377,
+    "origin_findings": [
+      {
+        "review_id": 7,
+        "seq": 2
+      }
+    ],
+    "stale": false,
+    "last_cited_at": "2026-10-08T11:14:00Z",
+    "review_again_at": null,
+    "counts": {
+      "raised": 7,
+      "kept": 7,
+      "rejected_with_reason": 0,
+      "cited_by_findings": 6,
+      "caught_by_check": null,
+      "raised_in_a_review_since": null,
+      "exceptions": null,
+      "last_human_mention_at": null
+    },
+    "created_at": "2026-08-15T11:30:00Z"
+  },
+  {
+    "id": 3,
+    "key": "R-03",
+    "statement": "A description stays within its budget; working notes go in a comment",
+    "prevents": "a transcript becoming the permanent commit message on squash-merge.",
+    "scope": {
+      "kind": "repo",
+      "repo": "acme/portal"
+    },
+    "stage": "ci",
+    "stage_label": "CI check",
+    "why_proposed": null,
+    "note": "Checked without a model, so no review spends tokens on it.",
+    "origin_review_id": null,
+    "origin_pr": null,
+    "origin_findings": [],
+    "stale": false,
+    "last_cited_at": "2026-09-19T11:30:00Z",
+    "review_again_at": null,
+    "counts": {
+      "raised": null,
+      "kept": null,
+      "rejected_with_reason": null,
+      "cited_by_findings": null,
+      "caught_by_check": 9,
+      "raised_in_a_review_since": 0,
+      "exceptions": null,
+      "last_human_mention_at": "2026-09-19T11:30:00Z"
+    },
+    "created_at": "2026-07-04T11:30:00Z"
+  },
+  {
+    "id": 14,
+    "key": "R-14",
+    "statement": "Money is stored as whole cents",
+    "prevents": "an invoice header and its lines disagreeing by a cent.",
+    "scope": {
+      "kind": "repo",
+      "repo": "acme/portal"
+    },
+    "stage": "active",
+    "stage_label": "Repository rule · 1 exception",
+    "why_proposed": null,
+    "note": "The author disagreed once, with a reason you accepted for reporting tables.",
+    "origin_review_id": 15,
+    "origin_pr": 407,
+    "origin_findings": [
+      {
+        "review_id": 15,
+        "seq": 1
+      }
+    ],
+    "stale": false,
+    "last_cited_at": "2026-10-08T06:30:00Z",
+    "review_again_at": null,
+    "counts": {
+      "raised": 4,
+      "kept": 3,
+      "rejected_with_reason": 1,
+      "cited_by_findings": null,
+      "caught_by_check": null,
+      "raised_in_a_review_since": null,
+      "exceptions": 1,
+      "last_human_mention_at": null
+    },
+    "created_at": "2026-09-17T11:30:00Z"
+  },
+  {
+    "id": 5,
+    "key": "R-05",
+    "statement": "Legacy importer calls need the tenant guard",
+    "prevents": "one tenant's import reading another tenant's rows.",
+    "scope": {
+      "kind": "repo",
+      "repo": "acme/portal"
+    },
+    "stage": "active",
+    "stage_label": "Repository rule",
+    "why_proposed": null,
+    "note": "No finding has cited it in 60 days. The importer is being removed in #415.",
+    "origin_review_id": null,
+    "origin_pr": 214,
+    "origin_findings": [],
+    "stale": true,
+    "last_cited_at": "2026-08-08T11:30:00Z",
+    "review_again_at": null,
+    "counts": {
+      "raised": 3,
+      "kept": 3,
+      "rejected_with_reason": null,
+      "cited_by_findings": 0,
+      "caught_by_check": null,
+      "raised_in_a_review_since": null,
+      "exceptions": null,
+      "last_human_mention_at": null
+    },
+    "created_at": "2026-03-12T11:30:00Z"
+  },
+  {
+    "id": 11,
+    "key": "R-11",
+    "statement": "A cache bust names every key the permission reaches",
+    "prevents": "a revoked permission surviving in one member's cache entry.",
+    "scope": {
+      "kind": "repo",
+      "repo": "acme/billing-api"
+    },
+    "stage": "active",
+    "stage_label": "Repository rule",
+    "why_proposed": null,
+    "note": null,
+    "origin_review_id": 16,
+    "origin_pr": 88,
+    "origin_findings": [
+      {
+        "review_id": 16,
+        "seq": 1
+      }
+    ],
+    "stale": false,
+    "last_cited_at": "2026-10-08T10:10:00Z",
+    "review_again_at": null,
+    "counts": {
+      "raised": 2,
+      "kept": 2,
+      "rejected_with_reason": 0,
+      "cited_by_findings": 1,
+      "caught_by_check": null,
+      "raised_in_a_review_since": null,
+      "exceptions": null,
+      "last_human_mention_at": null
+    },
+    "created_at": "2026-10-05T11:30:00Z"
+  },
+  {
+    "id": 2,
+    "key": "R-02",
+    "statement": "A finding names the failure it causes, not the preference it offends",
+    "prevents": "a review arguing taste, which the author answers with taste, for ever.",
+    "scope": {
+      "kind": "global",
+      "repo": null
+    },
+    "stage": "lint",
+    "stage_label": "Lint check",
+    "why_proposed": null,
+    "note": "Checked by the review lint across both repositories.",
+    "origin_review_id": null,
+    "origin_pr": null,
+    "origin_findings": [],
+    "stale": false,
+    "last_cited_at": "2026-10-06T11:30:00Z",
+    "review_again_at": null,
+    "counts": {
+      "raised": null,
+      "kept": null,
+      "rejected_with_reason": null,
+      "cited_by_findings": null,
+      "caught_by_check": 22,
+      "raised_in_a_review_since": 1,
+      "exceptions": null,
+      "last_human_mention_at": null
+    },
+    "created_at": "2026-05-21T11:30:00Z"
+  }
+]

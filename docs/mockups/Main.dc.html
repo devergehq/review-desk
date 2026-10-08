@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Inbox</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+body{margin:0}
+a{color:#1F4FD8}a:hover{color:#163A9E}
+</style>
+</helmet>
+<div style="min-height: 1000px; background: #F4F5F7; color: #16181D; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; line-height: 1.45">
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 10px 24px; background: #FFFFFF; border-bottom: 1px solid #D9DCE2">
+<div style="font-weight: 600; font-size: 17px">Review Desk</div>
+<span style="font-size: 12px; color: #565B66; border: 1px solid #D9DCE2; border-radius: 4px; padding: 2px 8px">Sample data</span>
+<nav style="display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto">
+<a href="Main.dc.html" style="padding: 12px 14px; border-radius: 6px; text-decoration: none; font-weight: 600; color: #16181D; background: #ECEEF1">Inbox</a>
+<a href="Review.dc.html" style="padding: 12px 14px; border-radius: 6px; text-decoration: none; color: #454A54">Reviews</a>
+<a href="Rules.dc.html" style="padding: 12px 14px; border-radius: 6px; text-decoration: none; color: #454A54">Rules</a>
+<a href="Flow.dc.html" style="padding: 12px 14px; border-radius: 6px; text-decoration: none; color: #454A54">How it flows</a>
+</nav>
+</header>
+<main style="max-width: 1180px; margin: 0 auto; padding: 28px 24px 48px; display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start">
+<div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 24px">
+<div>
+<h1 style="margin: 0; font-size: 26px; font-weight: 600">Waiting on you</h1>
+<div style="color: #565B66; margin-top: 4px">7 items across 2 repositories</div>
+</div>
+
+<section style="display: flex; flex-direction: column; gap: 8px">
+<h2 style="margin: 0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #565B66">Confirm the problem · 1</h2>
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 14px 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center">
+<div style="flex: 1 1 320px; min-width: 0">
+<div style="font-weight: 500"><span style="font-family: 'IBM Plex Mono', monospace; color: #565B66">#412</span> Retry failed webhook deliveries</div>
+<div style="font-size: 13px; color: #565B66; margin-top: 2px">acme/portal · ABC-231 · brief ready 6 min ago · nothing else runs until you confirm</div>
+</div>
+<a href="Review.dc.html" style="padding: 11px 16px; border-radius: 6px; background: #1F4FD8; color: #FFFFFF; text-decoration: none; font-weight: 500">Read brief</a>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 8px">
+<h2 style="margin: 0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #565B66">Approve a draft · 2</h2>
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 14px 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center">
+<div style="flex: 1 1 320px; min-width: 0">
+<div style="font-weight: 500"><span style="font-family: 'IBM Plex Mono', monospace; color: #565B66">#407</span> Invoice totals in cents</div>
+<div style="font-size: 13px; color: #565B66; margin-top: 2px">acme/portal · round 1 · 1 blocker, 2 should · 4 nits held back for a ticket</div>
+</div>
+<a href="Draft.dc.html" style="padding: 11px 16px; border-radius: 6px; background: #1F4FD8; color: #FFFFFF; text-decoration: none; font-weight: 500">Open draft</a>
+</div>
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 14px 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center">
+<div style="flex: 1 1 320px; min-width: 0">
+<div style="font-weight: 500"><span style="font-family: 'IBM Plex Mono', monospace; color: #565B66">#88</span> Cache the permissions lookup</div>
+<div style="font-size: 13px; color: #565B66; margin-top: 2px">acme/billing-api · round 2 · delta since your last review · 1 should</div>
+</div>
+<a href="Draft.dc.html" style="padding: 11px 16px; border-radius: 6px; background: #1F4FD8; color: #FFFFFF; text-decoration: none; font-weight: 500">Open draft</a>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 8px">
+<h2 style="margin: 0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #565B66">Author replied · 1</h2>
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 14px 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center">
+<div style="flex: 1 1 320px; min-width: 0">
+<div style="font-weight: 500"><span style="font-family: 'IBM Plex Mono', monospace; color: #565B66">#398</span> Split the export job</div>
+<div style="font-size: 13px; color: #565B66; margin-top: 2px">acme/portal · finding F2 rejected with a reason · F1 fixed in a later commit</div>
+</div>
+<a href="Review.dc.html" style="padding: 11px 16px; border-radius: 6px; border: 1px solid #AEB3BD; color: #16181D; text-decoration: none; font-weight: 500">See reply</a>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 8px">
+<h2 style="margin: 0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #565B66">Your PRs with no reviewer · 2</h2>
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 14px 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center">
+<div style="flex: 1 1 320px; min-width: 0">
+<div style="font-weight: 500"><span style="font-family: 'IBM Plex Mono', monospace; color: #565B66">#415</span> Remove the legacy importer</div>
+<div style="font-size: 13px; color: #565B66; margin-top: 2px">acme/portal · open 3 days · description lint passes</div>
+</div>
+<button type="button" style="min-height: 44px; padding: 0 16px; border-radius: 6px; border: 1px solid #AEB3BD; background: #FFFFFF; color: #16181D; font: inherit; font-weight: 500">Request review</button>
+</div>
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 14px 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center">
+<div style="flex: 1 1 320px; min-width: 0">
+<div style="font-weight: 500"><span style="font-family: 'IBM Plex Mono', monospace; color: #565B66">#91</span> Rate-limit the token endpoint</div>
+<div style="font-size: 13px; color: #565B66; margin-top: 2px">acme/billing-api · open 1 day · description is 2.3× its budget</div>
+</div>
+<button type="button" style="min-height: 44px; padding: 0 16px; border-radius: 6px; border: 1px solid #AEB3BD; background: #FFFFFF; color: #16181D; font: inherit; font-weight: 500">Request review</button>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 8px">
+<h2 style="margin: 0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #565B66">Proposed rule · 1</h2>
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 14px 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center">
+<div style="flex: 1 1 320px; min-width: 0">
+<div style="font-weight: 500">Stop raising "rename for clarity" nits in acme/portal</div>
+<div style="font-size: 13px; color: #565B66; margin-top: 2px">You cut this kind of finding from 5 of the last 5 drafts that raised it</div>
+</div>
+<a href="Rules.dc.html" style="padding: 11px 16px; border-radius: 6px; border: 1px solid #AEB3BD; color: #16181D; text-decoration: none; font-weight: 500">Decide</a>
+</div>
+</section>
+</div>
+
+<aside style="flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 20px">
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 10px">
+<label for="pr-url" style="font-weight: 600">Start a review</label>
+<input id="pr-url" type="text" placeholder="Paste a pull request link" style="min-height: 44px; box-sizing: border-box; width: 100%; padding: 0 12px; border: 1px solid #AEB3BD; border-radius: 6px; font: inherit">
+<button type="button" style="min-height: 44px; border-radius: 6px; border: 0; background: #16181D; color: #FFFFFF; font: inherit; font-weight: 500">Understand it first</button>
+<div style="font-size: 13px; color: #565B66">Starts with the problem brief. No findings are written until you confirm it.</div>
+</div>
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 14px">
+<div style="font-weight: 600">In progress · 2</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<div style="font-weight: 500"><span style="font-family: 'IBM Plex Mono', monospace; color: #565B66">#409</span> Paginate the audit log</div>
+<div style="font-size: 13px; color: #565B66">Layer 5 of 7 · code review · session alive</div>
+<div style="height: 6px; border-radius: 3px; background: #ECEEF1"><div style="width: 71%; height: 6px; border-radius: 3px; background: #1F4FD8"></div></div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<div style="font-weight: 500"><span style="font-family: 'IBM Plex Mono', monospace; color: #565B66">#93</span> Move secrets to the vault</div>
+<div style="font-size: 13px; color: #565B66">Layer 3 of 7 · alternatives · session alive</div>
+<div style="height: 6px; border-radius: 3px; background: #ECEEF1"><div style="width: 43%; height: 6px; border-radius: 3px; background: #1F4FD8"></div></div>
+</div>
+</div>
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 6px">
+<div style="font-weight: 600">Handled without you this week</div>
+<div style="font-size: 13px; color: #565B66">9 description problems caught by the CI check</div>
+<div style="font-size: 13px; color: #565B66">11 nits filed as 3 tickets for an agent</div>
+</div>
+</aside>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1000}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

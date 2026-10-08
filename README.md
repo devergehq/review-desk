@@ -7,8 +7,9 @@ pull requests: GitHub and Linear already do that, and its unit is the finding an
 rule, not the PR. It runs locally, owns its own record, and needs nothing else
 installed.
 
-This repository is at the first slice: the store and the beginning of the command line.
-There is no dashboard and no HTTP API yet.
+This repository is at the first slice: the store, the beginning of the command line, and
+the dashboard's four screens running on sample data. There is no HTTP API yet, and the
+dashboard is not embedded in the binary yet.
 
 ## Build and test
 
@@ -49,10 +50,51 @@ Tests always use a temporary file and never touch the default path.
 | -- | -- |
 | `crates/store` | `review-desk-store`: the record store. The only code that opens the database file. |
 | `crates/cli` | `review-desk`: the binary. |
+| `web` | The dashboard: a Nuxt app, four screens, built to static files. |
+| `docs/mockups` | The five mockups the dashboard was built from, and where it departs from them. |
 
 **The store crate is the only thing that opens the database.** The binary, and every
 later caller — the HTTP API, the dashboard, the harvester — goes through its typed
 functions. That is what keeps one way into the record.
+
+## The dashboard
+
+Four screens — the inbox, one review, the draft preview and the rules — in `web/`. It runs
+on sample data and calls no API yet.
+
+```sh
+cd web
+pnpm install
+pnpm dev        # http://localhost:3000
+pnpm generate   # static files in web/.output/public
+pnpm lint
+pnpm typecheck
+pnpm test
+```
+
+To check the built output the way the binary will serve it, serve the directory with
+anything that serves files:
+
+```sh
+cd web/.output/public && python3 -m http.server 8080
+```
+
+Nuxt runs with server-side rendering off and generates static files, which a later issue
+embeds in the binary. Nuxt's own server routes are not used: the JSON API is the Rust
+server's. Fonts are bundled rather than fetched, so the built app asks nothing of the
+network and works on a machine with no internet.
+
+**Every screen reads and writes through one composable**, `web/app/composables/useReviewDesk.ts`,
+whose four reads mirror the four the API offers — one GET per screen, so no screen joins
+anything. It gets its records from `web/app/data/snapshot.ts`, the only file that names a
+fixture. Pointing the dashboard at the real server is a change to that one file. A test
+enforces it rather than trusting it:
+
+```sh
+cd web && pnpm exec vitest run test/architecture.spec.ts
+```
+
+While the fixtures are serving, every screen carries a "Sample data" marker in the header.
 
 ## The record
 

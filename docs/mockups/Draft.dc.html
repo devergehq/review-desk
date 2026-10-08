@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Draft preview</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+body{margin:0}
+a{color:#1F4FD8}a:hover{color:#163A9E}
+</style>
+</helmet>
+<div style="min-height: 1150px; background: #F4F5F7; color: #16181D; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; line-height: 1.45">
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 10px 24px; background: #FFFFFF; border-bottom: 1px solid #D9DCE2">
+<div style="font-weight: 600; font-size: 17px">Review Desk</div>
+<span style="font-size: 12px; color: #565B66; border: 1px solid #D9DCE2; border-radius: 4px; padding: 2px 8px">Sample data</span>
+<nav style="display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto">
+<a href="Main.dc.html" style="padding: 12px 14px; border-radius: 6px; text-decoration: none; color: #454A54">Inbox</a>
+<a href="Review.dc.html" style="padding: 12px 14px; border-radius: 6px; text-decoration: none; font-weight: 600; color: #16181D; background: #ECEEF1">Reviews</a>
+<a href="Rules.dc.html" style="padding: 12px 14px; border-radius: 6px; text-decoration: none; color: #454A54">Rules</a>
+<a href="Flow.dc.html" style="padding: 12px 14px; border-radius: 6px; text-decoration: none; color: #454A54">How it flows</a>
+</nav>
+</header>
+<main style="max-width: 1180px; margin: 0 auto; padding: 28px 24px 48px; display: flex; flex-direction: column; gap: 20px">
+<div>
+<a href="Review.dc.html" style="font-size: 14px">Back to the review</a>
+<h1 style="margin: 6px 0 0; font-size: 26px; font-weight: 600"><span style="font-family: 'IBM Plex Mono', monospace; color: #565B66; font-weight: 400">#412</span> Draft review</h1>
+<div style="color: #565B66; margin-top: 4px">Nothing has been posted. This is what GitHub will show.</div>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+<section style="flex: 999 1 560px; min-width: 0; background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px">
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px 8px 20px; border-bottom: 1px solid #D9DCE2">
+<div style="font-weight: 600; margin-right: auto">Preview</div>
+<button type="button" style="min-height: 44px; padding: 0 14px; border-radius: 6px; border: 0; background: #ECEEF1; color: #16181D; font: inherit; font-weight: 500">Rendered</button>
+<button type="button" style="min-height: 44px; padding: 0 14px; border-radius: 6px; border: 0; background: transparent; color: #454A54; font: inherit">Markdown</button>
+<button type="button" style="min-height: 44px; padding: 0 14px; border-radius: 6px; border: 0; background: transparent; color: #454A54; font: inherit">Edit</button>
+</div>
+<div style="padding: 24px 20px; max-width: 760px; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px">
+<div>The queue-with-backoff approach fits the ticket: deliveries are stored, retried for 24 hours and visible to the customer. One thing blocks the merge and two should be fixed with it.</div>
+
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="font-weight: 600; font-size: 17px">Blocker · F1 · A retried delivery is sent without an idempotency key</div>
+<div>A retry re-sends the same payload with no key, so a customer whose endpoint accepted the first attempt slowly receives the event twice. See <a href="Review.dc.html" style="font-family: 'IBM Plex Mono', monospace; font-size: 14px">jobs/DeliverWebhook.php:58</a>.</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px">
+<span style="background: #F4F5F7; border: 1px solid #D9DCE2; border-radius: 4px; padding: 4px 8px">Attempt 1 times out</span>
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#565B66" stroke-width="1.5" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg>
+<span style="background: #F4F5F7; border: 1px solid #D9DCE2; border-radius: 4px; padding: 4px 8px">Endpoint still processes it</span>
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#565B66" stroke-width="1.5" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg>
+<span style="background: #F4F5F7; border: 1px solid #D9DCE2; border-radius: 4px; padding: 4px 8px">Attempt 2 sends again</span>
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#565B66" stroke-width="1.5" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg>
+<span style="background: #FCE9D9; color: #6B2F04; border-radius: 4px; padding: 4px 8px; font-weight: 500">Two events for one</span>
+</div>
+<div style="font-size: 14px; color: #454A54; border: 1px solid #D9DCE2; border-radius: 6px; padding: 8px 12px">Proof: throwaway test, folded</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="font-weight: 600; font-size: 17px">Should · F2 · No way to replay a delivery after the window closes</div>
+<div>After 24 hours a failed delivery is marked dead and nothing can send it again. Acceptance criterion 3 on ABC-231 asks for the customer to recover from a long outage.</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="font-weight: 600; font-size: 17px">Should · F3 · The failure test passes with the retry code reverted</div>
+<div>I reverted the retry and <a href="Review.dc.html" style="font-family: 'IBM Plex Mono', monospace; font-size: 14px">tests/WebhookRetryTest.php:31</a> still passed, so it does not pin the behaviour.</div>
+</div>
+
+<div style="font-size: 14px; color: #454A54"><strong style="font-weight: 600">Not checked:</strong> worker behaviour across a deploy restart; production delivery volumes.</div>
+</div>
+</section>
+
+<aside style="flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 10px">
+<div style="font-weight: 600">Checks</div>
+<div style="display: flex; justify-content: space-between; gap: 12px; font-size: 14px"><span>Visible words</span><span style="font-family: 'IBM Plex Mono', monospace">118 of 150</span></div>
+<div style="display: flex; justify-content: space-between; gap: 12px; font-size: 14px"><span>Findings in the body</span><span style="font-family: 'IBM Plex Mono', monospace">3 of 3</span></div>
+<div style="display: flex; justify-content: space-between; gap: 12px; font-size: 14px"><span>Review lint</span><span style="font-weight: 500">Passes</span></div>
+<div style="display: flex; justify-content: space-between; gap: 12px; font-size: 14px"><span>Raised before on this PR</span><span style="font-weight: 500">None</span></div>
+</div>
+
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 10px">
+<div style="font-weight: 600">Your edits to this draft</div>
+<div style="font-size: 14px"><span style="font-weight: 500">Cut</span> F6 · rename suggestion</div>
+<div style="font-size: 14px"><span style="font-weight: 500">Regraded</span> F3 · Blocker to Should</div>
+<div style="font-size: 14px"><span style="font-weight: 500">Rewrote</span> F1 · first sentence</div>
+<div style="font-size: 13px; color: #565B66; padding-top: 8px; border-top: 1px solid #ECEEF1">Saved as feedback when you approve. Three edits of the same kind become a proposed rule.</div>
+</div>
+
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 10px">
+<div style="font-weight: 600">Held back · 2 nits</div>
+<div style="font-size: 14px; color: #454A54">F4 · Backoff schedule repeated in two files</div>
+<div style="font-size: 14px; color: #454A54">F5 · Unused import in the job class</div>
+<button type="button" style="min-height: 44px; border-radius: 6px; border: 1px solid #AEB3BD; background: #FFFFFF; color: #16181D; font: inherit; font-weight: 500">File as one ticket for an agent</button>
+</div>
+
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 10px">
+<label for="event" style="font-weight: 600">Post as</label>
+<select id="event" style="min-height: 44px; padding: 0 10px; border: 1px solid #AEB3BD; border-radius: 6px; font: inherit; background: #FFFFFF">
+<option>Request changes</option>
+<option>Comment</option>
+<option>Approve</option>
+</select>
+<button type="button" style="min-height: 44px; border-radius: 6px; border: 0; background: #1F4FD8; color: #FFFFFF; font: inherit; font-weight: 600">Approve and post</button>
+<button type="button" style="min-height: 44px; border-radius: 6px; border: 1px solid #AEB3BD; background: #FFFFFF; color: #16181D; font: inherit; font-weight: 500">Send back with a note</button>
+<div style="font-size: 13px; color: #565B66">The review session posts it under your name, with no bot banner.</div>
+</div>
+</aside>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1150}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

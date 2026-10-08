@@ -1,0 +1,273 @@
+[
+  {
+    "draft": {
+      "review_id": 17,
+      "body": "The queue-with-backoff approach fits the ticket: deliveries are stored, retried for 24 hours and visible to the customer. One thing blocks the merge and two should be fixed with it.\n\n### Blocker · F1 · A retried delivery is sent without an idempotency key\n\nA retry re-sends the same payload with no key, so a customer whose endpoint accepted the first attempt slowly receives the event twice. See `jobs/DeliverWebhook.php:58`.\n\n```mermaid\nflowchart LR\n  A[\"Attempt 1 times out\"] --> B[\"Endpoint still processes it\"]\n  B --> C[\"Attempt 2 sends again\"]\n  C --> D[\"Two events for one\"]\n  class D bad\n  classDef bad fill:#FCE9D9,stroke:#6B2F04,color:#6B2F04\n```\n\n<details>\n<summary>Proof: a throwaway test, two deliveries for one event</summary>\n\n```php\n$event = Event::factory()->create();\nDeliverWebhook::dispatchSync($event);   // times out; the endpoint commits anyway\nDeliverWebhook::dispatchSync($event);   // no key, so the endpoint commits again\n$this->assertSame(1, $endpoint->countReceived($event->id));  // got 2\n```\n\n</details>\n\n### Should · F2 · No way to replay a delivery after the window closes\n\nAfter 24 hours a delivery is marked dead and nothing can send it again. Acceptance criterion 3 on ABC-231 asks the customer to recover from a long outage.\n\n### Should · F3 · The failure test passes with the retry code reverted\n\nI reverted the retry and `tests/WebhookRetryTest.php:31` still passed, so it does not pin the behaviour.\n\n**Not checked:** worker behaviour across a deploy restart; production delivery volumes.\n",
+      "status": "ready",
+      "event": null,
+      "approved_at": null,
+      "sent_back_note": null,
+      "sent_back_at": null,
+      "posted_at": null,
+      "updated_at": "2026-10-08T11:21:00Z"
+    },
+    "review": {
+      "id": 17,
+      "repo": "acme/portal",
+      "pr": 412,
+      "head_sha": "3f9c2ab",
+      "round": 1,
+      "title": "Retry failed webhook deliveries",
+      "ticket_id": "ABC-231",
+      "changed_lines": 214,
+      "session_id": "ses_c81f40ad",
+      "ledger_id": "ledger-2026-10-08-412",
+      "github_review_id": null,
+      "created_at": "2026-10-08T10:31:00Z"
+    },
+    "lint": {
+      "passes": true,
+      "visible_words": 143,
+      "word_budget": 150,
+      "findings_in_body": 3,
+      "findings_expected": 3,
+      "raised_before_on_pr": 0,
+      "errors": [],
+      "checked_at": "2026-10-08T11:21:00Z"
+    },
+    "edits": [
+      {
+        "finding_seq": 6,
+        "finding_key": "F6",
+        "kind": "cut",
+        "summary": "rename suggestion",
+        "occurred_at": "2026-10-08T11:19:00Z"
+      },
+      {
+        "finding_seq": 3,
+        "finding_key": "F3",
+        "kind": "regraded",
+        "summary": "Blocker to Should",
+        "occurred_at": "2026-10-08T11:20:00Z"
+      },
+      {
+        "finding_seq": 1,
+        "finding_key": "F1",
+        "kind": "rewritten",
+        "summary": "first sentence",
+        "occurred_at": "2026-10-08T11:21:00Z"
+      }
+    ],
+    "held_back": [
+      {
+        "finding_seq": 4,
+        "finding_key": "F4",
+        "claim": "Backoff schedule is repeated in two files",
+        "severity": "nit"
+      },
+      {
+        "finding_seq": 5,
+        "finding_key": "F5",
+        "claim": "Unused import left in the job class",
+        "severity": "nit"
+      },
+      {
+        "finding_seq": 7,
+        "finding_key": "F7",
+        "claim": "Is the 24-hour ceiling the ticket's number or the queue's?",
+        "severity": "question"
+      }
+    ],
+    "nit_ticket": {
+      "review_id": 17,
+      "status": "none",
+      "ticket_id": null,
+      "finding_seqs": [
+        4,
+        5,
+        7
+      ],
+      "requested_at": null,
+      "filed_at": null
+    }
+  },
+  {
+    "draft": {
+      "review_id": 15,
+      "body": "Whole cents is the right representation and the migration is in the right order. One export path blocks the merge.\n\n### Blocker · F1 · The CSV export still divides by 100 twice\n\n`app/Invoice.php:102` divides the stored cents, and `ExportInvoices` divides the result again. An exported total of `12.34` comes out as `0.1234`.\n\n### Should · F2 · The migration has no down path for the decimal column\n\n`database/migrations/2026_09_30_invoices.php:18` drops the old column without recreating it, so the migration cannot be rolled back on a release that has to go backwards.\n\n### Should · F3 · The rounding test asserts on a value it computed the same way\n\n`tests/InvoiceTotalTest.php:44` builds the expected total with the same helper it is testing, so the test cannot fail if the helper is wrong.\n\n**Not checked:** the reporting warehouse reads the same column and was not looked at.\n",
+      "status": "ready",
+      "event": null,
+      "approved_at": null,
+      "sent_back_note": null,
+      "sent_back_at": null,
+      "posted_at": null,
+      "updated_at": "2026-10-08T06:34:00Z"
+    },
+    "review": {
+      "id": 15,
+      "repo": "acme/portal",
+      "pr": 407,
+      "head_sha": "b71e04c",
+      "round": 1,
+      "title": "Invoice totals in cents",
+      "ticket_id": "ABC-198",
+      "changed_lines": 486,
+      "session_id": "ses_8c0271aa",
+      "ledger_id": "ledger-2026-10-08-407",
+      "github_review_id": null,
+      "created_at": "2026-10-08T06:00:00Z"
+    },
+    "lint": {
+      "passes": true,
+      "visible_words": 138,
+      "word_budget": 150,
+      "findings_in_body": 3,
+      "findings_expected": 3,
+      "raised_before_on_pr": 0,
+      "errors": [],
+      "checked_at": "2026-10-08T06:34:00Z"
+    },
+    "edits": [],
+    "held_back": [
+      {
+        "finding_seq": 4,
+        "finding_key": "F4",
+        "claim": "`amt` could be `amountCents`",
+        "severity": "nit"
+      },
+      {
+        "finding_seq": 5,
+        "finding_key": "F5",
+        "claim": "A stale comment still says dollars",
+        "severity": "nit"
+      },
+      {
+        "finding_seq": 6,
+        "finding_key": "F6",
+        "claim": "Two blank lines where one is the house style",
+        "severity": "nit"
+      },
+      {
+        "finding_seq": 7,
+        "finding_key": "F7",
+        "claim": "`toDecimal` has no caller left",
+        "severity": "nit"
+      }
+    ],
+    "nit_ticket": {
+      "review_id": 15,
+      "status": "none",
+      "ticket_id": null,
+      "finding_seqs": [
+        4,
+        5,
+        6,
+        7
+      ],
+      "requested_at": null,
+      "filed_at": null
+    }
+  },
+  {
+    "draft": {
+      "review_id": 16,
+      "body": "Round 2 adds the explicit bust, which is what round 1 asked for. One thing in the delta should be fixed.\n\n### Should · F1 · The revoke path busts one key, not the group the key belongs to\n\n`src/permissions/cache.rs:77` busts the key for the member whose permission changed. A revoke on a team leaves each member's entry alive until the window closes. Same ruling as `R-11`.\n\n**Not checked:** cache behaviour across two processes; the test runs in one.\n",
+      "status": "ready",
+      "event": null,
+      "approved_at": null,
+      "sent_back_note": null,
+      "sent_back_at": null,
+      "posted_at": null,
+      "updated_at": "2026-10-08T10:12:00Z"
+    },
+    "review": {
+      "id": 16,
+      "repo": "acme/billing-api",
+      "pr": 88,
+      "head_sha": "c04d7e1",
+      "round": 2,
+      "title": "Cache the permissions lookup",
+      "ticket_id": "ABC-240",
+      "changed_lines": 61,
+      "session_id": "ses_9a77f103",
+      "ledger_id": "ledger-2026-10-08-88",
+      "github_review_id": null,
+      "created_at": "2026-10-08T09:50:00Z"
+    },
+    "lint": {
+      "passes": true,
+      "visible_words": 76,
+      "word_budget": 90,
+      "findings_in_body": 1,
+      "findings_expected": 1,
+      "raised_before_on_pr": 1,
+      "errors": [],
+      "checked_at": "2026-10-08T10:12:00Z"
+    },
+    "edits": [],
+    "held_back": [],
+    "nit_ticket": {
+      "review_id": 16,
+      "status": "none",
+      "ticket_id": null,
+      "finding_seqs": [],
+      "requested_at": null,
+      "filed_at": null
+    }
+  },
+  {
+    "draft": {
+      "review_id": 12,
+      "body": "Splitting per tenant with a cursor is the right shape. Two things should be fixed with it.\n\n### Should · F1 · A partial export leaves the previous file in place\n\n`jobs/ExportTenant.php:40` writes in place, so a failed run leaves yesterday's file looking like today's.\n\n### Should · F2 · The cursor is held in memory, so a restart starts the tenant again\n\nA restart re-runs the tenant from the beginning. For the largest tenant that is most of the window.\n\n**Not checked:** the bucket's lifecycle rules were not read, so the stale-file cleanup is assumed.\n",
+      "status": "posted",
+      "event": "request_changes",
+      "approved_at": "2026-10-06T14:25:00Z",
+      "sent_back_note": null,
+      "sent_back_at": null,
+      "posted_at": "2026-10-06T14:30:00Z",
+      "updated_at": "2026-10-06T14:30:00Z"
+    },
+    "review": {
+      "id": 12,
+      "repo": "acme/portal",
+      "pr": 398,
+      "head_sha": "7ab9910",
+      "round": 1,
+      "title": "Split the export job",
+      "ticket_id": "ABC-187",
+      "changed_lines": 338,
+      "session_id": "ses_7b10c2de",
+      "ledger_id": "ledger-2026-10-06-398",
+      "github_review_id": "PRR_kwDOA1",
+      "created_at": "2026-10-06T11:10:00Z"
+    },
+    "lint": {
+      "passes": true,
+      "visible_words": 90,
+      "word_budget": 150,
+      "findings_in_body": 2,
+      "findings_expected": 2,
+      "raised_before_on_pr": 0,
+      "errors": [],
+      "checked_at": "2026-10-06T14:25:00Z"
+    },
+    "edits": [
+      {
+        "finding_seq": 3,
+        "finding_key": "F3",
+        "kind": "cut",
+        "summary": "formatting nit",
+        "occurred_at": "2026-10-06T14:20:00Z"
+      }
+    ],
+    "held_back": [],
+    "nit_ticket": {
+      "review_id": 12,
+      "status": "filed",
+      "ticket_id": "ABC-201",
+      "finding_seqs": [],
+      "requested_at": "2026-10-06T14:25:00Z",
+      "filed_at": "2026-10-06T16:10:00Z"
+    }
+  }
+]

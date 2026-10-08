@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Rules</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+body{margin:0}
+a{color:#1F4FD8}a:hover{color:#163A9E}
+</style>
+</helmet>
+<div style="min-height: 1050px; background: #F4F5F7; color: #16181D; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; line-height: 1.45">
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 10px 24px; background: #FFFFFF; border-bottom: 1px solid #D9DCE2">
+<div style="font-weight: 600; font-size: 17px">Review Desk</div>
+<span style="font-size: 12px; color: #565B66; border: 1px solid #D9DCE2; border-radius: 4px; padding: 2px 8px">Sample data</span>
+<nav style="display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto">
+<a href="Main.dc.html" style="padding: 12px 14px; border-radius: 6px; text-decoration: none; color: #454A54">Inbox</a>
+<a href="Review.dc.html" style="padding: 12px 14px; border-radius: 6px; text-decoration: none; color: #454A54">Reviews</a>
+<a href="Rules.dc.html" style="padding: 12px 14px; border-radius: 6px; text-decoration: none; font-weight: 600; color: #16181D; background: #ECEEF1">Rules</a>
+<a href="Flow.dc.html" style="padding: 12px 14px; border-radius: 6px; text-decoration: none; color: #454A54">How it flows</a>
+</nav>
+</header>
+<main style="max-width: 1180px; margin: 0 auto; padding: 28px 24px 48px; display: flex; flex-direction: column; gap: 24px">
+<div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end">
+<div style="flex: 1 1 360px; min-width: 0">
+<h1 style="margin: 0; font-size: 26px; font-weight: 600">Rules</h1>
+<div style="color: #565B66; margin-top: 4px">Every rule names the failure it prevents. A preference with no consequence does not qualify.</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<label for="repo" style="font-size: 13px; color: #565B66">Repository</label>
+<select id="repo" style="min-height: 44px; padding: 0 10px; border: 1px solid #AEB3BD; border-radius: 6px; font: inherit; background: #FFFFFF">
+<option>acme/portal</option>
+<option>acme/billing-api</option>
+<option>All repositories</option>
+</select>
+</div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px">
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 14px 16px"><div style="font-size: 13px; color: #565B66">Active rules</div><div style="font-size: 26px; font-weight: 600">14</div><div style="font-size: 13px; color: #565B66">cap of 20 per repository</div></div>
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 14px 16px"><div style="font-size: 13px; color: #565B66">Same answer on re-run</div><div style="font-size: 26px; font-weight: 600">9 of 10</div><div style="font-size: 13px; color: #565B66">findings matched on the last replay</div></div>
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 14px 16px"><div style="font-size: 13px; color: #565B66">Findings you kept</div><div style="font-size: 26px; font-weight: 600">31 of 40</div><div style="font-size: 13px; color: #565B66">last 30 days, draft to posted</div></div>
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 14px 16px"><div style="font-size: 13px; color: #565B66">Raised twice on one PR</div><div style="font-size: 26px; font-weight: 600">2</div><div style="font-size: 13px; color: #565B66">reviews that went in a circle</div></div>
+</div>
+
+<section style="display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #565B66">Proposed · 1</h2>
+<div style="background: #FFFFFF; border: 2px solid #1F4FD8; border-radius: 8px; padding: 15px; display: flex; flex-wrap: wrap; gap: 14px; align-items: center">
+<div style="flex: 1 1 420px; min-width: 0">
+<div style="font-weight: 600">Do not raise rename-for-clarity suggestions</div>
+<div style="font-size: 14px; color: #454A54; margin-top: 4px"><strong style="font-weight: 600">Why proposed:</strong> you cut this kind of finding from 5 of the last 5 drafts that raised it. None named a consequence.</div>
+<div style="font-size: 13px; color: #565B66; margin-top: 4px">Would suppress, not delete: the finding is still recorded with its reason.</div>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<button type="button" style="min-height: 44px; padding: 0 16px; border-radius: 6px; border: 0; background: #1F4FD8; color: #FFFFFF; font: inherit; font-weight: 600">Promote</button>
+<button type="button" style="min-height: 44px; padding: 0 16px; border-radius: 6px; border: 1px solid #AEB3BD; background: #FFFFFF; color: #16181D; font: inherit; font-weight: 500">Dismiss</button>
+</div>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #565B66">Active</h2>
+
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 16px; display: flex; flex-wrap: wrap; gap: 16px">
+<div style="flex: 999 1 420px; min-width: 0">
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #565B66">R-09</span><span style="font-weight: 600">A new test must fail when the fix is reverted</span></div>
+<div style="font-size: 14px; color: #454A54; margin-top: 6px"><strong style="font-weight: 600">Prevents:</strong> a regression shipping behind a test that cannot fail.</div>
+<div style="font-size: 13px; color: #565B66; margin-top: 4px">Decided on <a href="Review.dc.html">#377</a> · cited by 6 later findings</div>
+</div>
+<div style="flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px">
+<div style="display: flex; justify-content: space-between; gap: 12px"><span style="color: #565B66">Raised</span><span style="font-family: 'IBM Plex Mono', monospace">7</span></div>
+<div style="display: flex; justify-content: space-between; gap: 12px"><span style="color: #565B66">Kept by you</span><span style="font-family: 'IBM Plex Mono', monospace">7</span></div>
+<div style="display: flex; justify-content: space-between; gap: 12px"><span style="color: #565B66">Rejected with a reason</span><span style="font-family: 'IBM Plex Mono', monospace">0</span></div>
+<div style="display: flex; justify-content: space-between; gap: 12px"><span style="color: #565B66">Stage</span><span style="font-weight: 500">Repository rule</span></div>
+</div>
+</div>
+
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 16px; display: flex; flex-wrap: wrap; gap: 16px">
+<div style="flex: 999 1 420px; min-width: 0">
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #565B66">R-03</span><span style="font-weight: 600">A description stays within its budget; working notes go in a comment</span></div>
+<div style="font-size: 14px; color: #454A54; margin-top: 6px"><strong style="font-weight: 600">Prevents:</strong> a transcript becoming the permanent commit message on squash-merge.</div>
+<div style="font-size: 13px; color: #565B66; margin-top: 4px">Checked without a model · last said by a human reviewer 19 days ago</div>
+</div>
+<div style="flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px">
+<div style="display: flex; justify-content: space-between; gap: 12px"><span style="color: #565B66">Caught by the check</span><span style="font-family: 'IBM Plex Mono', monospace">9</span></div>
+<div style="display: flex; justify-content: space-between; gap: 12px"><span style="color: #565B66">Raised in a review since</span><span style="font-family: 'IBM Plex Mono', monospace">0</span></div>
+<div style="display: flex; justify-content: space-between; gap: 12px"><span style="color: #565B66">Stage</span><span style="font-weight: 500; color: #163A9E">CI check</span></div>
+</div>
+</div>
+
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 16px; display: flex; flex-wrap: wrap; gap: 16px">
+<div style="flex: 999 1 420px; min-width: 0">
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #565B66">R-14</span><span style="font-weight: 600">Money is stored as whole cents</span></div>
+<div style="font-size: 14px; color: #454A54; margin-top: 6px"><strong style="font-weight: 600">Prevents:</strong> an invoice header and its lines disagreeing by a cent.</div>
+<div style="font-size: 13px; color: #565B66; margin-top: 4px">Decided on <a href="Review.dc.html">#407</a> · author disagreed once, with a reason you accepted for reporting tables</div>
+</div>
+<div style="flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px">
+<div style="display: flex; justify-content: space-between; gap: 12px"><span style="color: #565B66">Raised</span><span style="font-family: 'IBM Plex Mono', monospace">4</span></div>
+<div style="display: flex; justify-content: space-between; gap: 12px"><span style="color: #565B66">Kept by you</span><span style="font-family: 'IBM Plex Mono', monospace">3</span></div>
+<div style="display: flex; justify-content: space-between; gap: 12px"><span style="color: #565B66">Rejected with a reason</span><span style="font-family: 'IBM Plex Mono', monospace">1</span></div>
+<div style="display: flex; justify-content: space-between; gap: 12px"><span style="color: #565B66">Stage</span><span style="font-weight: 500">Repository rule · 1 exception</span></div>
+</div>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #565B66">Going stale · 1</h2>
+<div style="background: #FFFFFF; border: 1px dashed #AEB3BD; border-radius: 8px; padding: 16px; display: flex; flex-wrap: wrap; gap: 14px; align-items: center">
+<div style="flex: 1 1 420px; min-width: 0">
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #565B66">R-05</span><span style="font-weight: 600">Legacy importer calls need the tenant guard</span></div>
+<div style="font-size: 14px; color: #454A54; margin-top: 4px">No finding has cited it in 60 days. The importer is being removed in #415.</div>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<button type="button" style="min-height: 44px; padding: 0 16px; border-radius: 6px; border: 1px solid #AEB3BD; background: #FFFFFF; color: #16181D; font: inherit; font-weight: 500">Retire</button>
+<button type="button" style="min-height: 44px; padding: 0 16px; border-radius: 6px; border: 1px solid #AEB3BD; background: #FFFFFF; color: #16181D; font: inherit; font-weight: 500">Keep 60 more days</button>
+</div>
+</div>
+</section>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1050}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>
