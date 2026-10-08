@@ -1,7 +1,3 @@
 {
-  "pr_url": "https://github.com/acme/portal/pull/412",
-  "head_sha": "3f9c2ab",
-  "title": "Retry failed webhook deliveries",
-  "ticket_id": "ABC-231",
-  "changed_lines": 214
+  "pr_url": "https://github.com/acme/portal/pull/412"
 }

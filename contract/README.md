@@ -6,7 +6,7 @@ holds no implementation of either.
 | File | What it is |
 |---|---|
 | `openapi.yaml` | OpenAPI 3.1 for the local JSON API. 16 operations. |
-| `examples/` | One example response per endpoint, one request body per write, and the error shape. |
+| `examples/` | One example response per endpoint, one request body per write, and the error shape. A `.<variant>.` form adds a second shape where one example cannot show an optional field both present and absent. |
 | `validate-examples.mjs` | Checks every example against its schema, and fails when an endpoint has no example. |
 | `redocly.yaml` | Lint configuration, including the one rule turned off and why. |
 | `package.json` | The pinned tooling the checks run on. |
@@ -52,7 +52,7 @@ goes back on in the same change that adds it.
 | Foreign identifiers are opaque | `ForeignId` — the Allele session, ledger entry, GitHub review and Linear ticket are strings Review Desk stores and never parses. |
 | One error shape | `Error`, with `code` from a closed set, a `message` for a person, and `field`/`expected` when one value caused the refusal. |
 | Refused and broken are distinguishable | `store_unavailable` is the only code meaning Review Desk is broken — the HTTP equivalent of DEV-851's exit code 2. Every other code means the request was understood and refused. A caller branches on `code`, never on the message. |
-| Nothing posts to GitHub | No operation calls GitHub. Approving a draft sets a status; the review session reads it and posts. |
+| Nothing **posts** to GitHub | No operation writes to GitHub. Approving a draft sets a status; the review session reads it and posts. One operation *reads* GitHub — `POST /reviews` resolves a head commit when the caller omits one — and that is the only one. |
 | Review Desk's own ids are integers | Review id, finding `seq` and rule id, matching `crates/store/src/model.rs`. |
 | Null is not zero | A count the store cannot yet answer is `null`. Zero is a measurement; null is the absence of one. |
 
@@ -230,7 +230,7 @@ and the screen renders the ones that are present.
 
 | Screen | Control | Endpoint |
 |---|---|---|
-| Inbox | "Understand it first" | `POST /reviews` |
+| Inbox | "Understand it first" | `POST /reviews`, sending only `pr_url` — the screen has no head commit, so the server resolves one |
 | Inbox | "Read brief", "Open draft", "See reply", "Decide" | none — links to another screen |
 | Inbox | "Request review" | **none, deliberately** — see below |
 | One review | "Open draft" | none — a link |
@@ -246,11 +246,12 @@ and the screen renders the ones that are present.
 | Rules | "Keep 60 more days" | `POST /rules/{ruleId}/defer` |
 
 **"Request review" has no endpoint and should not get one.** It asks GitHub to add a
-reviewer to a pull request, which is an outward action on another system's record. DEV-854
-forbids the API posting to GitHub, and the brief gives the same reason: Review Desk owns
-the record, and the review session performs the outward act. The button belongs to
-whatever drives the session, not to this API. Until that exists, the dashboard should
-either link out to the pull request or disable the button.
+reviewer to a pull request — a *write* to another system's record. `POST /reviews` reads
+GitHub, so the objection is not that GitHub is out of reach; it is that DEV-854 forbids
+this API writing there, and the brief gives the reason: Review Desk owns the record, and
+the review session performs the outward act. The button belongs to whatever drives the
+session, not to this API. Until that exists, the dashboard should either link out to the
+pull request or disable the button.
 
 **"Approve and post" does not post.** It sets `draft.status` to `approved`, stores the
 chosen event and `approved_at`, and stops. The review session finds the approved draft and
@@ -389,6 +390,17 @@ list without re-deriving it.
       reason, so "Dismiss" and "Retire" cannot record why. A dismissed proposal with no
       reason gets proposed again next week.
 
+- [ ] **S22 — a GitHub read path for the server, for `POST /reviews`.** It needs a pull
+      request's head commit, title and changed-line count from a link. `crates/harvest` on
+      pull request #6 (DEV-859) already provides exactly this, read-only, by running `gh`;
+      its `GitHub` trait returns a `PullRequest` carrying `head_sha`. **This is a
+      dependency on unmerged work**, and it is the only item here that is not a migration
+      or a query. If DEV-859 does not land, `head_sha` has no resolver and the Inbox's
+      "Start a review" cannot work from a link alone.
+
+      This also answers who supplies S5 (`review.title`) and S7 (`review.changed_lines`),
+      which are still columns the store needs but no longer have an unnamed source.
+
 ### New queries on the store crate
 
 - [ ] **S17 — cross-repository review queries.** The Inbox needs every review waiting on
@@ -426,12 +438,47 @@ null.
 
 | Fact | Where | Who owns it |
 |---|---|---|
-| "Your PRs with no reviewer", and those PRs' description lint | Inbox | GitHub. Review Desk does not read GitHub, by design. |
+| "Your PRs with no reviewer", and those PRs' description lint | Inbox | GitHub. Reachable in principle — see "Reading GitHub" below — but no endpoint or issue covers listing the developer's own pull requests. |
 | "session alive" | Inbox, in progress | Allele. The store holds `session_id` and nothing about liveness. |
 | "9 description problems caught by the CI check" | Inbox | A CI run. The brief puts `pr_lint.py` in CI explicitly outside this project. |
 | "Caught by the check", "Raised in a review since" | Rules | The same CI source. |
-| "last said by a human reviewer 19 days ago" | Rules | A GitHub harvest that does not exist yet (slice 3, not filed). |
+| "last said by a human reviewer 19 days ago" | Rules | A GitHub harvest. DEV-859 harvests four kinds of outcome; this is not one of them. |
 | "Same answer on re-run 9 of 10" | Rules | The replay consistency check (slice 5, not filed). |
+
+## Reading GitHub
+
+**One operation reads GitHub: `POST /reviews`, and only to resolve a head commit the
+caller did not supply.** Nothing in this contract writes to GitHub.
+
+The Inbox's "Start a review" has a pasted pull request link and nothing else, so
+`head_sha` is optional on `StartReviewRequest`. When it is omitted the server reads the
+pull request and resolves the head commit, the title and the changed-line count, then
+creates the review.
+
+**The head is resolved before the review exists, not afterwards.** The alternative — create
+the review now, let a review session fill the head in later — was considered and rejected:
+
+- The store finds an existing review by repository, number and head commit
+  (`find_review_by_head`), and DEV-851 requires `review open` called twice with the same
+  head to return the same review. A review with no head cannot be matched, so a second
+  click of "Understand it first" would create a second review.
+- `round` is "which round of review this is on that pull request". Which round a commit is
+  depends on the commit, so a round assigned before the head is known can turn out to be a
+  second round on the first round's commit.
+- It would need a nullable column, a new state meaning "head not yet known", and a write to
+  resolve it. Resolving at creation needs no store change at all.
+
+**How the server reads it.** By running `gh`, as `crates/harvest/src/gh.rs` already does on
+pull request #6 (DEV-859): Review Desk handles no tokens, uses whatever login the developer
+already has, and reads only. That crate's `GitHub` trait returns a `PullRequest` carrying
+`head_sha`, which is exactly this field. **This contract names no crate** — how the server
+reads is the server's business — but DEV-859 is where the read path comes from, and it is
+not merged yet. See S22.
+
+**When the read fails**, `POST /reviews` returns `github_unavailable` and creates nothing.
+That code is separate from `store_unavailable` because it is the developer's environment
+rather than their request or a broken Review Desk: `gh` missing, or not logged in. The
+screen can then say which, and offer the link again.
 
 ## What looks wrong
 
@@ -443,13 +490,20 @@ Recorded here rather than acted on, because DEV-854 says to specify and not to i
    has to happen here. DEV-855's acceptance criteria require confirming a brief to work.
 2. **DEV-854's screen table gives the Inbox no writes**, but the Inbox mockup has "Start
    a review" with a button, and DEV-855 requires it. The endpoint exists here.
-3. **"Request review" cannot be built as drawn** without something that acts on GitHub,
-   which both DEV-854 and the brief forbid this API.
+3. **"Request review" cannot be built as drawn** without the API *writing* to GitHub,
+   which DEV-854 forbids. Reading is now allowed and does not help here: adding a
+   reviewer is a write.
 4. **The merged `Rule` cannot support the Rules screen** as drawn: no counts, no
    staleness, no reason on a stage change, and no finding-to-rule citation. S11–S16 and
    S19 are the gap. The brief says "Rules carry counts and go stale when nothing cites
    them", so this is a gap against the brief, not only against the mockups.
 5. **`Brief::option_map` as one `String`** cannot serve the option cards. S3.
-6. **Six figures on the mockups have no data source at all** — the table above. The
+6. **I had this wrong, and it is recorded rather than quietly fixed.** Earlier versions
+   of this README said "Review Desk does not read GitHub, by design" and required
+   `head_sha` on `POST /reviews`, which made the Inbox's "Start a review" unbuildable —
+   the screen has only a link. That claim was an inference from the brief's "one owner per
+   fact", not a rule anyone wrote: DEV-854 forbids the API **posting** to GitHub, and
+   DEV-859 reads it. Found by the DEV-855 session, 8 October 2026.
+7. **Six figures on the mockups have no data source at all** — the table above. The
    Inbox and Rules screens will have visible holes on first run, and the brief's "absent
    is silent, broken is loud" suggests they should read as absent rather than as zero.

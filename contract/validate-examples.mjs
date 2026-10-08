@@ -8,7 +8,13 @@
 //
 //   examples/<operationId>.response.json   the success response (2xx)
 //   examples/<operationId>.request.json    the request body, when the operation takes one
+//   examples/<operationId>.request.<v>.json   further forms of that body, optional
+//   examples/<operationId>.response.<v>.json  further forms of that response, optional
 //   examples/errors/<name>.json            any number, each checked against Error
+//
+// The variant forms exist because one example cannot show an optional field both present
+// and absent, and both forms need checking. They are optional and additional: the
+// canonical file is still required, so a variant cannot be used to dodge the rule above.
 //
 // Exit 0 when everything validates and nothing is missing, 1 otherwise.
 
@@ -96,6 +102,19 @@ function validateFile(file, schemaRef, label) {
   }
 }
 
+/**
+ * The optional extra forms of one operation's example — `<id>.request.<variant>.json`.
+ * Returns full paths, sorted, so the run order does not depend on the directory's.
+ */
+function variantsOf(id, direction) {
+  const pattern = new RegExp(`^${id}\\.${direction}\\.[A-Za-z0-9-]+\\.json$`);
+  return fs
+    .readdirSync(examplesDir)
+    .filter((name) => pattern.test(name))
+    .sort()
+    .map((name) => path.join(examplesDir, name));
+}
+
 const METHODS = ['get', 'put', 'post', 'patch', 'delete', 'head', 'options', 'trace'];
 const seenIds = new Set();
 const expected = new Set();
@@ -135,6 +154,10 @@ for (const [route, item] of Object.entries(spec.paths ?? {})) {
         problems.push(`${id}: missing example ${path.relative(here, responseFile)}`);
       } else {
         validateFile(responseFile, pointer, `${id} ${successCode} response`);
+        for (const variant of variantsOf(id, 'response')) {
+          expected.add(path.basename(variant));
+          validateFile(variant, pointer, `${id} ${successCode} response (variant)`);
+        }
       }
     }
 
@@ -150,6 +173,10 @@ for (const [route, item] of Object.entries(spec.paths ?? {})) {
         problems.push(`${id}: missing example ${path.relative(here, requestFile)}`);
       } else {
         validateFile(requestFile, pointer, `${id} request body`);
+        for (const variant of variantsOf(id, 'request')) {
+          expected.add(path.basename(variant));
+          validateFile(variant, pointer, `${id} request body (variant)`);
+        }
       }
     }
 
@@ -180,8 +207,9 @@ for (const name of fs.readdirSync(examplesDir).sort()) {
   if (!name.endsWith('.json')) continue;
   if (!expected.has(name)) {
     problems.push(
-      `examples/${name}: no operation claims this file; name it <operationId>.response.json ` +
-        `or <operationId>.request.json, or move it under examples/errors/`
+      `examples/${name}: no operation claims this file; name it <operationId>.response.json, ` +
+        `<operationId>.request.json, either with a .<variant> before .json, ` +
+        `or move it under examples/errors/`
     );
   }
 }

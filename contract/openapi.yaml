@@ -97,8 +97,21 @@ paths:
         `review open` in DEV-851. No findings are written: the review starts at layer 2
         and waits for the developer to confirm the brief.
 
-        Review Desk does not read GitHub, so `head_sha` is supplied by the caller rather
-        than resolved from the link.
+        **`head_sha` is optional, because the screen cannot supply one.** The Inbox has
+        only a pasted link, so when `head_sha` is omitted the server resolves the head
+        commit itself, by reading the pull request from GitHub, and stores the resolved
+        value. A caller that already knows the head — the command line, or a review
+        session — passes it and no read happens.
+
+        The head is resolved **before the review is created, not afterwards**. A review
+        with no head commit could not be deduplicated: the store finds an existing review
+        by repository, number and head commit, so creating one headless would make a
+        second review on the next click, and its round could not be assigned correctly.
+
+        That read is a read. Nothing here writes to GitHub. If the read cannot be made —
+        `gh` missing, not logged in, or the pull request unreachable — the request fails
+        with `github_unavailable` and no review is created, rather than a review being
+        created in a state nothing can complete.
       requestBody:
         required: true
         content:
@@ -112,6 +125,13 @@ paths:
               schema: { $ref: '#/components/schemas/Review' }
         '400':
           $ref: '#/components/responses/BadRequest'
+        '502':
+          description: |
+            The head commit was not supplied and could not be read from GitHub. No review
+            was created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '500':
           $ref: '#/components/responses/StoreUnavailable'
 
@@ -572,12 +592,15 @@ components:
       type: string
       description: |
         `store_unavailable` means Review Desk is broken and the caller should warn
-        loudly; every other code means the request was understood and refused.
+        loudly. `github_unavailable` means a read Review Desk needed could not be made —
+        `gh` missing or not logged in — which is the developer's environment rather than
+        their request. Every other code means the request was understood and refused.
       enum:
         - bad_request
         - invalid_value
         - not_found
         - conflict
+        - github_unavailable
         - store_unavailable
 
     RepoName:
@@ -678,24 +701,33 @@ components:
     StartReviewRequest:
       type: object
       additionalProperties: false
-      required: [pr_url, head_sha]
+      required: [pr_url]
+      description: |
+        Only the link is required. Every other field is an optimisation: a caller that
+        already knows a value passes it and saves the server a read.
       properties:
         pr_url:
           type: string
           format: uri
           description: |
             The pull request link the developer pasted. The server parses `owner/repo`
-            and the number out of it; it does not fetch it.
+            and the number out of it.
           examples: ['https://github.com/acme/portal/pull/412']
         head_sha:
-          type: string
+          type: [string, 'null']
           pattern: '^[0-9a-f]{7,40}$'
+          description: |
+            The head commit to review. **Omit it and the server resolves it from the pull
+            request**, which is what the Inbox screen does. Pass it to review one
+            specific commit, which is what the command line does.
         title:
           type: [string, 'null']
+          description: Resolved with the head commit when omitted.
         ticket_id: { $ref: '#/components/schemas/ForeignId' }
         changed_lines:
           type: [integer, 'null']
           minimum: 0
+          description: Resolved with the head commit when omitted.
 
     ReviewLayerName:
       type: string
@@ -1412,9 +1444,10 @@ components:
       required: [pull_request]
       description: |
         A pull request of the developer's own with no reviewer. **Review Desk owns none
-        of this**: it is GitHub state, and no issue yet gives the server a way to read
-        it. Every field but `pull_request` is therefore nullable, and the group is empty
-        until something supplies it. See contract/README.md.
+        of this**: it is GitHub state. The server can read GitHub — `POST /reviews` does,
+        to resolve a head commit — but nothing lists the developer's own pull requests,
+        and no issue covers it. Every field but `pull_request` is therefore nullable, and
+        the group is empty until something supplies it. See contract/README.md.
       properties:
         pull_request: { $ref: '#/components/schemas/InboxPr' }
         opened_at: { type: [string, 'null'], format: date-time }
