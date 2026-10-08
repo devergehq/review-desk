@@ -1,0 +1,20 @@
+[package]
+name = "review-desk-store"
+description = "The Review Desk record store: the only code that opens the database file."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "review_desk_store"
+path = "src/lib.rs"
+
+[dependencies]
+rusqlite.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+tempfile.workspace = true
