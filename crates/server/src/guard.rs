@@ -58,6 +58,12 @@ fn header<'a>(headers: Headers<'a>, wanted: &str) -> Option<&'a str> {
 /// cannot make the browser send `localhost`.
 fn own_hosts(bound: SocketAddr) -> [String; 3] {
     let port = bound.port();
+    // Three exact strings, never a suffix match. The exactness does more work than it
+    // looks: it also closes `0.0.0.0:{port}` — which routes to loopback and is the known
+    // bypass for local servers — along with `[::ffff:127.0.0.1]`, `foo.localhost` and
+    // `localhost.` with a trailing dot. `[::1]` cannot currently arrive, because the
+    // listener binds IPv4 loopback only; it is listed so that binding IPv6 later does not
+    // silently become a refusal.
     [
         format!("127.0.0.1:{port}"),
         format!("localhost:{port}"),
@@ -117,12 +123,23 @@ pub fn check(bound: SocketAddr, method: &str, headers: Headers<'_>) -> Result<()
     // --- Content-Type on a write ----------------------------------------------
     //
     // **An absent Origin is allowed, and that is a decision rather than an oversight.**
-    // Nothing that is not a browser sends one: `curl`, a script, a review session. A
-    // browser always sends one on a cross-origin request, including a form submission,
-    // so refusing the absent case would break every non-browser caller and stop no
-    // attacker. This check is what covers the case anyway — a plain HTML form can send
-    // only `application/x-www-form-urlencoded`, `multipart/form-data` or `text/plain`,
-    // and none of them is JSON.
+    //
+    // The guarantee is stronger than "a browser sends one when the origins differ", which
+    // is what an earlier version of this comment claimed. The Fetch standard appends
+    // `Origin` to **every request whose method is not GET or HEAD**, same-origin or not —
+    // so a *write* with no `Origin` at all is not something a browser can be made to
+    // produce. The value may be the string `null`, under `no-referrer` and under the
+    // default `strict-origin-when-cross-origin` whenever an https page targets an http
+    // URL — which is exactly the evil.example-to-127.0.0.1 case — but `null` is present,
+    // and the allowlist above rejects it.
+    //
+    // What the allowance is really for is everything that is not a browser: `curl`, a
+    // script, a review session. Refusing them would stop no attacker.
+    //
+    // This check then covers the form independently, and is the one that does not depend
+    // on browser behaviour staying as it is: a `<form>` can send only
+    // `application/x-www-form-urlencoded`, `multipart/form-data` or `text/plain`, and
+    // none of them is JSON.
     if is_a_write(method) {
         let content_type = header(headers, "content-type").unwrap_or_default();
         let media_type = content_type.split(';').next().unwrap_or_default().trim();

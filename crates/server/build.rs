@@ -69,7 +69,24 @@ fn collect(root: &Path, dir: &Path, found: &mut Vec<(String, PathBuf)>) {
 
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_dir() {
+
+        // `file_type()` does not follow the link; `path.is_dir()` would. A symlinked
+        // directory under the asset root would otherwise be walked and everything behind
+        // it embedded in the binary — `public/etcdir -> /etc` embeds /etc, and
+        // `public/secret.txt -> /etc/hosts` becomes servable at `/secret.txt`.
+        //
+        // Not a security fix, and worth being honest about which it is: planting that
+        // link already needs code execution as the developer, because `pnpm run generate`
+        // runs the Node toolchain and everything it depends on. It is a build script that
+        // should embed the directory it was pointed at and nothing else.
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        if kind.is_symlink() {
+            continue;
+        }
+
+        if kind.is_dir() {
             collect(root, &path, found);
         } else if let Ok(relative) = path.strip_prefix(root) {
             // Served with forward slashes whatever the host separator is: the route is a

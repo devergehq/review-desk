@@ -254,14 +254,18 @@ fn answer(api: &Api, bound: SocketAddr, mut request: Request) {
         .map(|header| (header.field.to_string(), header.value.to_string()))
         .collect();
 
-    let served = if let Some(rest) = api_path(&path) {
-        // Before anything else, and before the body is touched: a request from somewhere
-        // that is not this machine's own browser tab does not get to reach a handler.
-        if let Err(refusal) = guard::check(bound, &method, &headers) {
-            let _ = request.respond(json_response(refusal.status(), &refusal.document()));
-            return;
-        }
+    // Before anything else, and before the body is touched: a request from somewhere that
+    // is not this machine's own browser tab does not get to reach anything.
+    //
+    // **Above the API branch, not inside it.** It began inside, which left the static
+    // branch unguarded — no data leak, since the dashboard bundle is public code, but one
+    // rule for the whole server is a thing a reader can check and two rules is not.
+    if let Err(refusal) = guard::check(bound, &method, &headers) {
+        let _ = request.respond(json_response(refusal.status(), &refusal.document()));
+        return;
+    }
 
+    let served = if let Some(rest) = api_path(&path) {
         let body = match read_body(&mut request) {
             Ok(body) => body,
             Err(error) => {
@@ -328,32 +332,66 @@ fn read_body(request: &mut Request) -> Result<Vec<u8>, ApiError> {
     Ok(body)
 }
 
+/// The headers every response carries, whatever it is.
+///
+/// **Nothing may frame this server.** The guard stops another origin *talking* to the
+/// API; it cannot stop one *embedding* the dashboard, because a click stolen through a
+/// transparent iframe produces a request that genuinely comes from the dashboard's own
+/// origin with the right content type — every check passes, because nothing is wrong with
+/// the request. What is wrong is that the developer did not mean to make it.
+///
+/// That matters here for the same reason the guard does. The draft screen's approve
+/// control posts to `/draft/approve`, and an approved draft is what a review session
+/// publishes to GitHub under the developer's name. One stolen click on a draft at `ready`
+/// publishes a review they never read, and the draft is immutable afterwards.
+///
+/// Both headers, not one: `X-Frame-Options` is what older browsers honour and
+/// `frame-ancestors` is what the CSP-aware ones prefer. Neither costs anything here —
+/// this server has no reason to be embedded anywhere, ever.
+fn framing_headers() -> [Header; 2] {
+    [
+        header("X-Frame-Options", "DENY"),
+        header("Content-Security-Policy", "frame-ancestors 'none'"),
+    ]
+}
+
 /// A JSON response, with the one header a JSON client needs.
 fn json_response(status: u16, document: &serde_json::Value) -> Response<std::io::Cursor<Vec<u8>>> {
     let body = serde_json::to_vec(document).unwrap_or_else(|_| {
         br#"{"code":"store_unavailable","message":"the response could not be serialised"}"#.to_vec()
     });
 
-    Response::from_data(body)
+    let mut response = Response::from_data(body)
         .with_status_code(StatusCode(status))
-        .with_header(header("Content-Type", "application/json; charset=utf-8"))
+        .with_header(header("Content-Type", "application/json; charset=utf-8"));
+    for header in framing_headers() {
+        response.add_header(header);
+    }
+    response
 }
 
 /// A response from the embedded dashboard, or the page that says there is none.
 fn page_response(path: &str) -> Response<std::io::Cursor<Vec<u8>>> {
-    match assets::resolve(path) {
-        assets::Served::File { bytes, mime } => Response::from_data(bytes.to_vec())
-            .with_status_code(StatusCode(200))
-            .with_header(header("Content-Type", mime)),
+    let (status, body, mime) = match assets::resolve(path) {
+        assets::Served::File { bytes, mime } => (200, bytes.to_vec(), mime),
         // 200, not 404: the binary is working exactly as built, and a 404 here would
         // read as a bug in the server rather than a build without a front end.
-        assets::Served::NotBuilt => Response::from_data(assets::NOT_BUILT_PAGE.as_bytes().to_vec())
-            .with_status_code(StatusCode(200))
-            .with_header(header("Content-Type", "text/html; charset=utf-8")),
-        assets::Served::Missing => Response::from_data(b"not found".to_vec())
-            .with_status_code(StatusCode(404))
-            .with_header(header("Content-Type", "text/plain; charset=utf-8")),
+        assets::Served::NotBuilt => (
+            200,
+            assets::NOT_BUILT_PAGE.as_bytes().to_vec(),
+            "text/html; charset=utf-8",
+        ),
+        assets::Served::Missing => (404, b"not found".to_vec(), "text/plain; charset=utf-8"),
+    };
+
+    let mut response = Response::from_data(body)
+        .with_status_code(StatusCode(status))
+        .with_header(header("Content-Type", mime));
+    // The dashboard is the thing worth framing, so this is the branch that most needs it.
+    for header in framing_headers() {
+        response.add_header(header);
     }
+    response
 }
 
 /// One header, or none if the value cannot be one.

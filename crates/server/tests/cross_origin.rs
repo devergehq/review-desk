@@ -304,6 +304,93 @@ fn a_caller_that_is_not_a_browser_still_works() {
 }
 
 #[test]
+fn a_null_origin_is_refused() {
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+    let host = harness
+        .running
+        .base()
+        .trim_start_matches("http://")
+        .to_string();
+
+    // `null` is what a browser sends from a sandboxed frame, from a `file://` page, and —
+    // the case that matters — from an https page targeting an http URL under the default
+    // `strict-origin-when-cross-origin` policy. That is exactly evil.example reaching
+    // 127.0.0.1. It is *present* and it is not this server's origin, so it is refused;
+    // asserted rather than inferred from the allowlist being an allowlist.
+    let answer = harness.raw(
+        "POST",
+        &format!("/api/v1/reviews/{}/draft/approve", seeded.review_id),
+        &[
+            ("Host", host.as_str()),
+            ("Origin", "null"),
+            ("Content-Type", "application/json"),
+        ],
+        Some(r#"{"event":"approve"}"#),
+    );
+
+    assert!(answer.status >= 400, "{}", answer.text());
+    assert_eq!(
+        harness.store.get_draft(seeded.review_id).unwrap().status,
+        DraftStatus::Ready,
+        "an Origin of null approved the draft"
+    );
+}
+
+#[test]
+fn the_dashboard_is_guarded_too_not_only_the_api() {
+    let harness = common::start_with_no_github();
+    common::seed(&harness.store);
+    let port = harness.running.address().port();
+
+    // The guard began inside the API branch, which left the static branch unguarded. No
+    // data leaks that way — the dashboard bundle is public code — but one rule covering
+    // the whole server is a thing a reader can check and two rules is not.
+    let answer = harness.raw(
+        "GET",
+        "/",
+        &[("Host", &format!("evil.example:{port}"))],
+        None,
+    );
+
+    assert!(
+        answer.status >= 400,
+        "a rebound hostname was served the dashboard: {}",
+        answer.status
+    );
+}
+
+#[test]
+fn nothing_may_frame_this_server() {
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+
+    // The guard stops another origin *talking* to the API. It cannot stop one *embedding*
+    // the dashboard: a click stolen through a transparent iframe produces a request that
+    // genuinely comes from the dashboard's own origin with the right content type, so
+    // every check passes. One stolen click on the draft screen publishes a review the
+    // developer never read, under their name, and the draft is immutable afterwards.
+    for (method, path, body) in [
+        ("GET", "/".to_string(), None),
+        ("GET", format!("/reviews/{}/draft", seeded.review_id), None),
+        ("GET", "/api/v1/inbox".to_string(), None),
+        ("GET", "/does-not-exist".to_string(), None),
+    ] {
+        let answer = harness.request(method, &path, body);
+        assert_eq!(
+            answer.header("X-Frame-Options"),
+            Some("DENY"),
+            "{path} can be framed: no X-Frame-Options"
+        );
+        assert_eq!(
+            answer.header("Content-Security-Policy"),
+            Some("frame-ancestors 'none'"),
+            "{path} can be framed: no frame-ancestors"
+        );
+    }
+}
+
+#[test]
 fn the_dashboards_own_origin_is_accepted() {
     let harness = common::start_with_no_github();
     let seeded = common::seed(&harness.store);

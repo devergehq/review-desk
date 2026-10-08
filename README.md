@@ -556,6 +556,13 @@ nothing. So every request to `/api/v1` passes `crates/server/src/guard.rs` first
 | `Origin`, when present, is this server's own | A page on another origin driving `fetch`, or submitting a form |
 | `Content-Type` is `application/json` on a write | A plain HTML form, which cannot send one |
 
+**Every response also carries `X-Frame-Options: DENY` and
+`Content-Security-Policy: frame-ancestors 'none'`.** The guard stops another origin
+*talking* to the API; it cannot stop one *embedding* the dashboard, and a click stolen
+through a transparent iframe produces a request that genuinely comes from the dashboard's
+own origin — every check passes, because nothing is wrong with the request. One stolen
+click on a draft at `ready` publishes a review the developer never read, under their name.
+
 **No CORS headers are sent**, by omission and on purpose; a test asserts none ever appear.
 `localhost:<port>` is accepted beside the literal address, which is safe rather than a
 convenience hole: rebinding points a name *the attacker controls* at 127.0.0.1, so the
