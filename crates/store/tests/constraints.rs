@@ -239,3 +239,34 @@ fn a_rule_scoped_to_a_repository_must_name_one() {
     );
     assert!(RuleScope::from_columns("everywhere", None).is_err());
 }
+
+#[test]
+fn a_rule_citing_the_same_finding_twice_cites_it_once() {
+    let (_dir, store) = temp_store();
+    let review = store
+        .create_review(new_review("devergehq/review-desk", 3, "aaa", 1))
+        .unwrap();
+    let finding = store
+        .add_finding(review.id, a_finding("said twice"))
+        .unwrap();
+    let cited = FindingRef {
+        review_id: review.id,
+        seq: finding.seq,
+    };
+
+    // A set, not a list. Citing one finding twice is a redundant input, not a
+    // breakage — and before this was deduplicated it broke the link table's primary
+    // key and reached the caller as exit 2 rather than a no-op.
+    let rule = store
+        .create_rule(NewRule {
+            statement: "evidence or it is a preference".to_string(),
+            prevents: "preference presented as a defect".to_string(),
+            scope: RuleScope::Global,
+            stage: RuleStage::Active,
+            origin_review_id: Some(review.id),
+            origin_findings: vec![cited, cited, cited],
+        })
+        .expect("a repeated citation is not a failure");
+
+    assert_eq!(rule.origin_findings, vec![cited]);
+}

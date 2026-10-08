@@ -50,7 +50,17 @@ impl Store {
 
         let id = tx.last_insert_rowid();
 
+        // A rule cites a set of findings, so citing one twice means citing it once.
+        // Without this, the duplicate breaks the link table's primary key and the
+        // failure reaches the caller as a breakage rather than as the no-op it is.
+        let mut cited = Vec::with_capacity(new.origin_findings.len());
         for finding in &new.origin_findings {
+            if !cited.contains(finding) {
+                cited.push(*finding);
+            }
+        }
+
+        for finding in &cited {
             tx.execute(
                 "INSERT INTO rule_findings (rule_id, review_id, finding_seq)
                  VALUES (?1, ?2, ?3)",
