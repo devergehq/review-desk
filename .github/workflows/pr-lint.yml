@@ -1,0 +1,26 @@
+name: PR lint
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited]
+  issue_comment:
+    types: [created, edited, deleted]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+concurrency:
+  group: pr-lint-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  description:
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event.issue.pull_request != null && github.event.issue.state == 'open')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: devergehq/locus/.github/actions/pr-lint@8b04f65fe6a38e07f3924f7c1a465b4123a1631a
