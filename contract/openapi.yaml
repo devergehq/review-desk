@@ -594,7 +594,22 @@ components:
         `store_unavailable` means Review Desk is broken and the caller should warn
         loudly. `github_unavailable` means a read Review Desk needed could not be made —
         `gh` missing or not logged in — which is the developer's environment rather than
-        their request. Every other code means the request was understood and refused.
+        their request. `not_implemented` means the operation exists in this contract and
+        this build of the server cannot answer it yet, which is neither a refusal nor a
+        fault: the request was fine and the record has nowhere to hold the answer. Every
+        other code means the request was understood and refused.
+
+        **`not_implemented` is served as HTTP 501, and an operation returning it returns
+        no part of its response body.** An endpoint that answered with the fields it
+        could reach and invented the rest would be worse than one that says it is not
+        built, because the client cannot tell which half to trust. Its `message` names
+        the store item the operation waits on, from the list in contract/README.md.
+
+        Added in DEV-861, which built the server against a store that several operations
+        are still waiting on. Each operation's own `responses` block does not declare a
+        501: the code is a property of a *build*, not of an operation, and declaring it
+        per operation would have to be unwound one operation at a time as the store
+        catches up.
       enum:
         - bad_request
         - invalid_value
@@ -602,6 +617,7 @@ components:
         - conflict
         - github_unavailable
         - store_unavailable
+        - not_implemented
 
     RepoName:
       type: string
