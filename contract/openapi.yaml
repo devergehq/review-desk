@@ -1007,7 +1007,7 @@ components:
       additionalProperties: false
       required: [review_id, body, status, updated_at]
       description: |
-        The draft review. **The store in PR #1 has no table for this**; the record is
+        The draft review. **The merged store has no table for this**; the record is
         specified in contract/README.md and migrated by a later issue. An approved draft
         is what the review session reads and posts.
       properties:

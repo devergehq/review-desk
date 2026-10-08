@@ -12,7 +12,7 @@ holds no implementation of either.
 | `package.json` | The pinned tooling the checks run on. |
 
 Written for DEV-854. The design it serves is in the Review Desk project brief; the store
-it reads from is DEV-850, open as pull request #1.
+it reads from is DEV-850, merged to `master` as pull requests #1 and #2 on 8 October 2026.
 
 ## Running the checks
 
@@ -252,7 +252,7 @@ here. The One review mockup has no button for either — see "What looks wrong" 
 
 ## The draft record
 
-**The store in pull request #1 has no table for the draft or its approval.** This is the
+**The merged store has no table for the draft or its approval.** This is the
 specification; the migration is a later issue. One draft per review, replaced in place.
 
 | Field | Type | Holds |
@@ -323,11 +323,13 @@ nits, which is what the mockup's single "File as one ticket for an agent" button
 are not stored against it; they are every finding on the review at disposition
 `held_back`, which the API returns as `nit_ticket.finding_seqs`.
 
-## Store changes this contract needs beyond pull request #1
+## Store changes this contract needs beyond the merged store
 
-Read against `crates/store/src/model.rs` on `dev-850-scaffold-store` at
-commit `e61137c`. Each item is one migration or one query; a later issue can be written
-from this list without re-deriving it.
+Read against `crates/store/src/model.rs` at `e61137c` on `dev-850-scaffold-store`, then
+re-checked against `master` at `5c7b670` after #1 and #2 merged: `model.rs` gained one
+error branch and no public function in `entities/` changed, so every item below still
+stands. Each item is one migration or one query; a later issue can be written from this
+list without re-deriving it.
 
 ### New tables
 
@@ -357,7 +359,7 @@ from this list without re-deriving it.
       `nit_ticket_filed_at`.** Specified above.
 - [ ] **S10 — `brief.provenance`.** Where the problem statement came from and what the
       developer changed — "from the ticket and the code · you corrected one sentence".
-- [ ] **S11 — `finding.rule_id`.** The rule a finding was raised under. PR #1 records
+- [ ] **S11 — `finding.rule_id`.** The rule a finding was raised under. The store records
       `Rule::origin_findings` — rule to finding — but not finding to rule, so "cited by 6
       later findings" and a rule's staleness cannot be answered. This is the single most
       load-bearing missing column: the whole feedback loop runs through it.
@@ -376,7 +378,7 @@ from this list without re-deriving it.
 ### New queries on the store crate
 
 - [ ] **S17 — cross-repository review queries.** The Inbox needs every review waiting on
-      the developer across all repositories. PR #1 offers `find_review`,
+      the developer across all repositories. The store offers `find_review`,
       `find_review_by_head`, `latest_round` and `list_reviews(repo, pr)` — all scoped to
       one pull request. Needed by: every group in `getInbox`.
 - [ ] **S18 — the repository list.** Distinct repositories across reviews and
@@ -429,11 +431,11 @@ Recorded here rather than acted on, because DEV-854 says to specify and not to i
    a review" with a button, and DEV-855 requires it. The endpoint exists here.
 3. **"Request review" cannot be built as drawn** without something that acts on GitHub,
    which both DEV-854 and the brief forbid this API.
-4. **DEV-850's `Rule` cannot support the Rules screen** as drawn: no counts, no
+4. **The merged `Rule` cannot support the Rules screen** as drawn: no counts, no
    staleness, no reason on a stage change, and no finding-to-rule citation. S11–S16 and
    S19 are the gap. The brief says "Rules carry counts and go stale when nothing cites
    them", so this is a gap against the brief, not only against the mockups.
-5. **DEV-850's `Brief::option_map` as one `String`** cannot serve the option cards. S3.
+5. **`Brief::option_map` as one `String`** cannot serve the option cards. S3.
 6. **Six figures on the mockups have no data source at all** — the table above. The
    Inbox and Rules screens will have visible holes on first run, and the brief's "absent
    is silent, broken is loud" suggests they should read as absent rather than as zero.
