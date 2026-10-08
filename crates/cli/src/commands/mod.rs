@@ -6,8 +6,10 @@
 
 mod brief;
 mod db;
+mod draft;
 mod finding;
 mod harvest;
+mod layer;
 mod outcome;
 mod review;
 mod rules;
@@ -45,10 +47,20 @@ enum Command {
         #[command(subcommand)]
         command: review::ReviewCommand,
     },
-    /// Store and confirm a review's brief.
+    /// Store a review's brief. Confirming one is done in the dashboard.
     Brief {
         #[command(subcommand)]
         command: brief::BriefCommand,
+    },
+    /// Record what one of a review's seven layers is doing.
+    Layer {
+        #[command(subcommand)]
+        command: layer::LayerCommand,
+    },
+    /// Write the review draft, read its status, and report it posted.
+    Draft {
+        #[command(subcommand)]
+        command: draft::DraftCommand,
     },
     /// Add findings and change what is to become of them.
     Finding {
@@ -75,6 +87,8 @@ pub fn run(cli: &Cli) -> Result<Report> {
         Command::Db { command } => db::run(command),
         Command::Review { command } => review::run(command),
         Command::Brief { command } => brief::run(command),
+        Command::Layer { command } => layer::run(command),
+        Command::Draft { command } => draft::run(command),
         Command::Finding { command } => finding::run(command),
         Command::Outcome { command } => outcome::run(command),
         Command::Rules { command } => rules::run(command),

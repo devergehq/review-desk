@@ -1,12 +1,12 @@
-//! `brief put` and `brief confirm`.
+//! `brief put`, and the refusal that is all `brief confirm` is now.
 
 use std::path::PathBuf;
 
 use clap::Subcommand;
-use review_desk_store::{Brief, NewBrief, Store};
+use review_desk_store::{NewBrief, Store};
 use serde_json::json;
 
-use crate::error::Result;
+use crate::error::{CliError, Result};
 use crate::input::read_json;
 use crate::report::Report;
 
@@ -27,13 +27,17 @@ pub enum BriefCommand {
         file: PathBuf,
     },
 
-    /// Mark the review's brief confirmed by the developer.
+    /// Removed: confirming a brief happens in the dashboard.
     ///
-    /// Confirming twice keeps the first confirmation time.
+    /// Kept as a command so that running it says so. Deleting the subcommand outright
+    /// would exit 1 as well — clap's usage error is remapped to 1 — but with clap's
+    /// "unrecognized subcommand" text, which tells a caller nothing about where
+    /// confirmation went. Hidden from `--help` because it is not something to run.
+    #[command(hide = true)]
     Confirm {
         /// The review's id.
         #[arg(long, value_name = "ID")]
-        review: i64,
+        review: Option<i64>,
     },
 }
 
@@ -53,23 +57,18 @@ pub fn run(command: &BriefCommand) -> Result<Report> {
             ))
         }
 
-        BriefCommand::Confirm { review } => {
-            let store = Store::open_default()?;
-            let brief = store.confirm_brief(*review)?;
-
-            Ok(Report::new(
-                json!({ "brief": brief }),
-                confirmed_line(&brief),
-            ))
-        }
-    }
-}
-
-fn confirmed_line(brief: &Brief) -> String {
-    match brief.confirmed_at {
-        Some(at) => format!("brief confirmed for review {} at {at}", brief.review_id),
-        // confirm_brief always sets a time, so this is unreachable in practice. Saying
-        // so beats an unwrap that would turn a surprise into a panic.
-        None => format!("brief for review {} is not confirmed", brief.review_id),
+        // **Only the developer signs off**, decided on 9 October 2026. An agent could
+        // otherwise confirm its own understanding of a problem and release every later
+        // layer of its own review, which is the one thing the brief exists to stop.
+        //
+        // The database is not opened and nothing is read: the answer does not depend on
+        // the record, and a removed command should not create a database as a side
+        // effect.
+        BriefCommand::Confirm { .. } => Err(CliError::bad_input(
+            "brief confirm has been removed",
+            "confirming a brief is the developer's sign-off and is done in the \
+             dashboard; an agent session reads the confirmation instead, through \
+             `review show`",
+        )),
     }
 }

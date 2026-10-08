@@ -7,13 +7,19 @@ use crate::model::{now, Disposition, Finding, NewFinding};
 use crate::{is_foreign_key_violation, Store};
 
 const COLUMNS: &str = "review_id, seq, lens, severity, file, line, claim, evidence, \
-                       disposition, disposition_reason, github_comment_id, created_at";
+                       disposition, disposition_reason, rule_id, github_comment_id, \
+                       created_at";
 
 impl Store {
     /// Add a finding to a review, assigning the next sequence number within it.
     ///
     /// Fails with [`StoreError::UnknownParent`] if the review does not exist; the
     /// database enforces that, not this function.
+    ///
+    /// A finding that names the rule it was raised under also moves that rule's
+    /// `last_cited_at`. **That column is stored rather than scanned for** — the choice
+    /// S12 asks for — and it cannot drift, because a finding is never deleted, only
+    /// dispositioned, so the newest citation only ever moves forward.
     pub fn add_finding(&self, review_id: i64, new: NewFinding) -> Result<Finding> {
         // The read that picks the sequence number and the insert that claims it must
         // be one step. A DEFERRED transaction would take a read lock and then try to
@@ -23,17 +29,32 @@ impl Store {
         // second caller queues on the busy handler instead of failing.
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
 
+        // Checked inside the transaction, so a rule that is not there is named as the
+        // missing parent it is. The foreign key would refuse the row too, but it
+        // arrives as one violation among several and the message would blame the
+        // review.
+        if let Some(rule_id) = new.rule_id {
+            if self.find_rule(rule_id)?.is_none() {
+                return Err(StoreError::UnknownParent {
+                    entity: "finding",
+                    parent: "rule",
+                    id: rule_id.to_string(),
+                });
+            }
+        }
+
         let seq: i64 = tx.query_row(
             "SELECT COALESCE(MAX(seq), 0) + 1 FROM findings WHERE review_id = ?1",
             params![review_id],
             |row| row.get(0),
         )?;
 
+        let created_at = now();
         tx.execute(
             "INSERT INTO findings
                  (review_id, seq, lens, severity, file, line, claim, evidence,
-                  disposition, disposition_reason, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                  disposition, disposition_reason, rule_id, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 review_id,
                 seq,
@@ -45,7 +66,8 @@ impl Store {
                 new.evidence,
                 new.disposition,
                 new.disposition_reason,
-                now(),
+                new.rule_id,
+                created_at,
             ],
         )
         .map_err(|error| {
@@ -59,6 +81,18 @@ impl Store {
                 StoreError::Sqlite(error)
             }
         })?;
+
+        if let Some(rule_id) = new.rule_id {
+            // MAX, not an assignment: findings can be added in any order, and a rule's
+            // last citation is the newest one it has, not the newest one written.
+            tx.execute(
+                "UPDATE rules
+                 SET last_cited_at = MAX(COALESCE(last_cited_at, 0), ?2),
+                     updated_at    = ?2
+                 WHERE id = ?1",
+                params![rule_id, created_at],
+            )?;
+        }
 
         tx.commit()?;
         self.get_finding(review_id, seq)
@@ -183,6 +217,7 @@ fn row_to_finding(row: &Row<'_>) -> rusqlite::Result<Finding> {
         evidence: row.get("evidence")?,
         disposition: row.get("disposition")?,
         disposition_reason: row.get("disposition_reason")?,
+        rule_id: row.get("rule_id")?,
         github_comment_id: row.get("github_comment_id")?,
         created_at: row.get("created_at")?,
     })

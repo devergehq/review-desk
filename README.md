@@ -12,6 +12,11 @@ calls to record a review, the harvester that reads a posted review's outcomes ba
 from GitHub, and the dashboard's four screens running on sample data. There is no HTTP
 API yet, and the dashboard is not embedded in the binary yet.
 
+**Only the developer signs off.** Confirming a brief and approving a draft happen in
+the dashboard; the command line that agent sessions call has no command for either. An
+agent writes a draft and reads its status, and cannot approve it. That is enforced by
+the store rather than promised by the commands — see [Sign-off](#sign-off).
+
 ## Build and test
 
 ```sh
@@ -46,6 +51,27 @@ request reviewed before starts the next round.
 REVIEW=$(review-desk review open --repo devergehq/review-desk --pr 851 --head c0ffee1)
 ```
 
+It also takes what the caller knows about the pull request. A fact given is written and
+a fact left out is left as it was, so running it again on a head commit already
+reviewed records what the review did not check without starting a round:
+
+```sh
+review-desk review open --repo devergehq/review-desk --pr 851 --head c0ffee1 \
+  --title "Bring the store up to the API contract" --ticket DEV-860 --changed-lines 214
+
+review-desk review open --repo devergehq/review-desk --pr 851 --head c0ffee1 \
+  --not-checked "the dashboard against the real API; a database at version 1"
+```
+
+`review find` lists a pull request's rounds, newest first, for an agent that has lost
+an id:
+
+```sh
+review-desk review find --repo devergehq/review-desk --pr 851
+# 2 round 2 head 4f1a9c2 — Bring the store up to the API contract
+# 1 round 1 head c0ffee1 — Bring the store up to the API contract
+```
+
 The repository and the head commit are identity, so both are stored canonical — trimmed
 and lowercased. `DevergeHQ/Review-Desk` and `devergehq/review-desk` are one repository,
 as they are on GitHub, and `C0FFEE1` is one commit with `c0ffee1`, because `git rev-parse`
@@ -76,21 +102,61 @@ review-desk brief put --review "$REVIEW" --file brief.json
 {
   "problem": "nothing outside Rust can write a review",
   "diagram": "agent -> review-desk -> store -> sqlite",
-  "option_map": "a command line, a local HTTP API, or a Rust library only",
-  "approach_verdict": "the command line first: any agent on any platform can call it"
+  "approach_verdict": "the command line first: any agent on any platform can call it",
+  "provenance": "from the ticket and the code · you corrected one sentence",
+  "options": [
+    {
+      "key": "A",
+      "title": "A local HTTP API only",
+      "argument_for": "One way in, and the dashboard needs it anyway",
+      "argument_against": "An agent on another machine cannot reach it",
+      "chosen": false
+    },
+    {
+      "key": "B",
+      "title": "A command line first",
+      "argument_for": "Any agent on any platform can make a shell call",
+      "argument_against": "Two ways into the record once the API lands",
+      "chosen": true
+    }
+  ]
 }
 ```
 
-`brief confirm` marks that brief confirmed by the developer. Confirming twice keeps the
-first confirmation time.
+The options are cards: a key, a title, the argument each way, and which one was built.
+The older `option_map` field — one opaque string — still works and is still read, so
+nothing written before this is lost, but it cannot serve the option cards on the
+dashboard and nothing new should use it. Giving both is refused rather than merged.
+
+**`brief confirm` has been removed.** Confirming a brief is the developer's sign-off
+and is done in the dashboard; running the command exits 1 and says so. An agent
+session reads the confirmation instead, through `review show`.
+
+### The seven layers
+
+`layer set` records what one of a review's seven layers is doing. The number fixes the
+name — 1 lint, 2 understand, 3 alternatives, 4 solution_map, 5 code_review, 6 draft,
+7 harvest — so only the number is given.
 
 ```sh
-review-desk brief confirm --review "$REVIEW"
+review-desk layer set --review "$REVIEW" --layer 1 --state done --detail passed
+review-desk layer set --review "$REVIEW" --layer 4 --state skipped --detail "no diagram needed"
 ```
+
+The states are `pending`, `running`, `done`, `waiting_on_you`, `failed` and `skipped`.
+This is stored rather than worked out from the rest of the record, for two reasons:
+layer 1's lint result has nothing to derive it from, and a derived state cannot tell a
+layer that was **skipped** from one that has not started — which is the distinction
+"what was not checked" exists to make.
+
+A review always has seven layers when read back. One nothing has written reads as
+`pending` with no time, rather than being absent.
 
 `finding add` adds one finding and prints its sequence number within the review — the id
 a person quotes. `lens`, `severity` and `claim` are required; the disposition defaults to
-`in_draft`.
+`in_draft`. `rule_id` names the rule the finding was raised under, which is the citation
+the whole feedback loop runs through: without it a rule cannot be said to be cited, or
+to have gone stale.
 
 ```sh
 SEQ=$(review-desk finding add --review "$REVIEW" --file - <<'JSON'
@@ -100,7 +166,8 @@ SEQ=$(review-desk finding add --review "$REVIEW" --file - <<'JSON'
   "file": "crates/cli/src/main.rs",
   "line": 48,
   "claim": "a refused request exits 2, which pages whoever treats 2 as broken",
-  "evidence": "clap's default exit code is 2 and nothing overrides it"
+  "evidence": "clap's default exit code is 2 and nothing overrides it",
+  "rule_id": 9
 }
 JSON
 )
@@ -122,11 +189,65 @@ review-desk outcome add --review "$REVIEW" --finding "$SEQ" \
   --kind kept --by developer --detail "fixed before the pull request opened"
 ```
 
-`review show` prints the whole review: the brief, the findings and the outcomes.
+`review show` prints the whole review: the layers, the brief with its options, the
+findings, the outcomes and the draft.
 
 ```sh
 review-desk review show --review "$REVIEW" --json
 ```
+
+### The draft
+
+`draft put` stores the review body and marks it ready for the developer. The file is
+GitHub-flavoured markdown taken verbatim, or `-` for standard input — not JSON, because
+a review body carries code fences and quotation marks and escaping them to get them
+through a JSON string would be work for every caller and a chance to mangle what gets
+posted.
+
+```sh
+review-desk draft put --review "$REVIEW" --file draft.md
+review-desk draft put --review "$REVIEW" --file draft.md --lint lint.json
+review-desk draft put --review "$REVIEW" --file draft.md --drafting   # not finished yet
+```
+
+`--lint` is what the review-craft lint said about this body. Every field is optional,
+and a body saved without one has not been linted — so rewriting a draft clears a lint
+that described the old text.
+
+```json
+{
+  "passes": true,
+  "visible_words": 118,
+  "word_budget": 150,
+  "findings_in_body": 3,
+  "findings_expected": 3,
+  "raised_before_on_pr": 0
+}
+```
+
+`draft show` prints the draft, its status and, once it is approved, the event to post it
+as. **This is how a review session learns it may post.**
+
+```sh
+review-desk draft show --review "$REVIEW"
+# draft of review 3: approved
+#   post as: request_changes (approved at 1760000000)
+#   lint: passes, 118 of 150 words, 3 of 3 findings
+#
+# The queue-with-backoff approach fits the ticket…
+```
+
+`draft posted` records that the session has posted it, and which GitHub review it
+became. **Refused unless the draft is approved.** This is the only transition that
+involves GitHub, and the session makes it: Review Desk never posts.
+
+```sh
+review-desk draft posted --review "$REVIEW" --github-review gh-review-3312
+```
+
+A draft goes `drafting → ready → approved → posted`, with `ready ⇄ sent_back`. The
+command line can reach `drafting`, `ready` and `posted`. It cannot reach `approved` or
+`sent_back`: those are the developer's, in the dashboard.
 
 ### Reading the rules
 
@@ -208,6 +329,7 @@ With `--json`, the document carries the reason as well:
 | `no_home` | No home directory, so the default path is unknowable |
 | `cannot_serialise` | A record on the database could not be turned into JSON |
 | `duplicate_github_comment` | That GitHub review comment is already linked to another finding |
+| `draft_status` | The draft is not at a status this change can be made from: an approved draft cannot be rewritten, and an unapproved one cannot be marked posted |
 | `gh_missing` | `harvest` needs the `gh` command and it is not installed |
 | `gh_not_authenticated` | `gh` is installed but nobody is logged in |
 | `gh_failed` | `gh` ran and failed for some other reason |
@@ -265,6 +387,32 @@ harvests of one reply may not.
 A missing `gh` and a logged-out `gh` are both exit 2, with a message and a `code` saying
 which it was — they are Review Desk unable to run, not a request refused.
 
+
+## Sign-off
+
+**Only the developer can sign off.** Decided by Patrick on 9 October 2026: confirming a
+brief and approving a draft happen in the dashboard, and the command line agent sessions
+call has no command for either.
+
+| Act | Who | Where |
+| -- | -- | -- |
+| Write the brief | the review session | `brief put` |
+| Confirm the brief | the developer | the dashboard only |
+| Write the draft | the review session | `draft put` |
+| Approve the draft, choosing the event | the developer | the dashboard only |
+| Send the draft back with a note | the developer | the dashboard only |
+| Post it and report the GitHub review | the review session | `draft posted` |
+
+This is enforced by the store, not promised by the commands. `put_draft` accepts only
+`drafting` and `ready`, so whatever writes a draft cannot sign it off by writing a
+status; `approved` is reachable only through `approve_draft` and `posted` only through
+`post_draft`. Both `confirm_brief` and `approve_draft` take the actor as a required
+argument and refuse anyone but the developer, so the record cannot hold a claim that an
+agent or the harvester signed something off.
+
+`crates/cli/tests/signoff.rs` keeps it true: it fails if any source file in
+`crates/cli` or `crates/harvest` so much as names those two functions, and it also
+checks that they still exist, so renaming them cannot quietly retire the rule.
 
 ## Where the database lives
 
@@ -332,8 +480,9 @@ While the fixtures are serving, every screen carries a "Sample data" marker in t
 
 ## The record
 
-Five entities, in three schema versions: the review record (version 1), the learning
-layer (version 2), and what harvesting needs (version 3).
+Nine entities, in four schema versions: the review record (version 1), the learning
+layer (version 2), what harvesting needs (version 3), and what the local API contract
+needs (version 4).
 
 | Entity | Holds |
 | -- | -- |
@@ -341,9 +490,14 @@ layer (version 2), and what harvesting needs (version 3).
 | Brief | One per review: the problem, its diagram, the option map, the approach verdict, and whether and when the developer confirmed it |
 | Finding | Lens, severity, location, claim, evidence, its disposition with a reason, and the GitHub comment it was posted as |
 | Outcome | What became of a finding, who did it, when, the detail, and the GitHub fact it was harvested from |
-| Rule | A statement, the failure it prevents, its scope, its stage, and the findings and review it came from |
+| Rule | A statement, the failure it prevents, its scope, its stage, the findings and review it came from, why it was proposed, the free line under it, when a finding last cited it, when to ask about it again, and when it was last changed |
+| Review layer | One of a review's seven layers: its state, the phrase shown after its name, and when it was written |
+| Brief option | One alternative considered: a key, a title, the argument each way, and whether it is what was built |
+| Draft | The review body, its status, the event chosen at approval, who approved it and when, the note it was sent back with, when it was posted, and what the lint said |
+| Rule exception | An accepted exception to a rule, with the reason. The rule stays in force |
 
-A review is unique on repository, pull request number and round.
+A review is unique on repository, pull request number and round. A review has one
+brief, one draft and at most seven layers.
 
 ### Migrations
 

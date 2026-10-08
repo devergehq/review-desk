@@ -3,7 +3,10 @@
 mod common;
 
 use common::{db_path, temp_store};
-use review_desk_store::{newest_version, Store, StoreError};
+use review_desk_store::{
+    newest_version, Actor, DraftStatus, NewDraft, NitTicketStatus, ReviewLayerName,
+    ReviewLayerState, Store, StoreError,
+};
 use tempfile::TempDir;
 
 #[test]
@@ -59,7 +62,13 @@ fn an_older_database_is_migrated_forward_and_keeps_its_rows() {
                  (review_id, seq, lens, severity, claim, disposition, created_at)
                  VALUES (1, 1, 'correctness', 'should', 'the old claim', 'in_draft', 1001);
              INSERT INTO outcomes (review_id, finding_seq, kind, actor, occurred_at)
-                 VALUES (1, 1, 'kept', 'developer', 1002);",
+                 VALUES (1, 1, 'kept', 'developer', 1002);
+             INSERT INTO briefs (review_id, problem, option_map, updated_at)
+                 VALUES (1, 'the old problem', 'A or B, written as one string', 1003);
+             INSERT INTO rules
+                 (id, statement, prevents, scope, scope_repo, stage, created_at)
+                 VALUES (4, 'the old rule', 'the old failure', 'repo',
+                         'devergehq/review-desk', 'active', 1004);",
         )
         .expect("write rows under the old schema");
     }
@@ -92,6 +101,71 @@ fn an_older_database_is_migrated_forward_and_keeps_its_rows() {
     assert_eq!(outcomes.len(), 1);
     assert_eq!(outcomes[0].kind.as_str(), "kept");
     assert_eq!(outcomes[0].harvest_key, None);
+
+    // Migration 4's columns on rows that existed before it.
+    assert_eq!(review.title, None, "the new columns start empty");
+    assert_eq!(review.ticket_id, None);
+    assert_eq!(review.changed_lines, None);
+    assert_eq!(review.not_checked, None);
+    assert_eq!(
+        review.nit_ticket_status,
+        NitTicketStatus::NotRequested,
+        "a review nobody has asked a ticket for has not asked for one, rather than \
+         holding no answer at all"
+    );
+    assert_eq!(review.nit_ticket_id, None);
+    assert_eq!(finding.rule_id, None, "an old finding cites no rule");
+
+    let brief = migrated.get_brief(1).expect("the brief survived");
+    assert_eq!(brief.problem, "the old problem");
+    assert_eq!(
+        brief.option_map.as_deref(),
+        Some("A or B, written as one string"),
+        "the superseded option map is kept: a migration must not destroy what a review \
+         already wrote"
+    );
+    assert!(
+        brief.options.is_empty(),
+        "and it is not reinterpreted as options"
+    );
+    assert_eq!(brief.provenance, None);
+    assert_eq!(brief.confirmed_by, None);
+
+    let rule = migrated.get_rule(4).expect("the rule survived");
+    assert_eq!(rule.statement, "the old rule");
+    assert_eq!(
+        rule.updated_at, 1004,
+        "a rule that existed before the column was added was last changed when it was \
+         created, which is the only honest answer"
+    );
+    assert_eq!(rule.created_at, 1004);
+    assert_eq!(rule.last_cited_at, None);
+    assert_eq!(rule.review_again_at, None);
+    assert_eq!(rule.why_proposed, None);
+    assert_eq!(rule.note, None);
+
+    // And the four tables migration 4 adds are usable against the migrated database,
+    // not merely present in it.
+    migrated
+        .set_review_layer(1, 1, ReviewLayerState::Done, Some("passed"))
+        .expect("a layer can be written after the migration");
+    let layers = migrated.list_review_layers(1).expect("seven layers");
+    assert_eq!(layers.len(), ReviewLayerName::COUNT as usize);
+    assert_eq!(layers[0].state, ReviewLayerState::Done);
+    assert_eq!(layers[6].state, ReviewLayerState::Pending);
+
+    let draft = migrated
+        .put_draft(1, NewDraft::ready("the body"))
+        .expect("a draft can be written after the migration");
+    assert_eq!(draft.status, DraftStatus::Ready);
+
+    migrated
+        .add_rule_exception(4, "accepted for the reporting tables")
+        .expect("an exception can be written after the migration");
+
+    migrated
+        .confirm_brief(1, Actor::Developer)
+        .expect("the brief can be confirmed after the migration");
 }
 
 #[test]

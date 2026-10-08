@@ -8,7 +8,7 @@ mod common;
 
 use common::{open_review, Desk};
 use predicates::prelude::*;
-use review_desk_store::{Actor, Disposition, OutcomeKind, Severity};
+use review_desk_store::{Actor, Disposition, OutcomeKind, ReviewLayerState, Severity};
 use serde_json::json;
 use tempfile::TempDir;
 
@@ -233,8 +233,16 @@ fn every_command_prints_exactly_one_json_document() {
         .success();
 
     // Every command that takes no document on standard input. The two that do are
-    // checked above, and `brief put --json` in tests/review.rs.
-    let commands: [&[&str]; 9] = [
+    // checked above, and `brief put --json` in tests/review.rs. `brief confirm` is not
+    // here: it is removed, and tests/signoff.rs checks that its refusal is one document
+    // too.
+    desk.command()
+        .args(["draft", "put", "--review", &review, "--file", "-"])
+        .write_stdin("the draft body")
+        .assert()
+        .success();
+
+    let commands: [&[&str]; 11] = [
         &["db", "path"],
         &["db", "version"],
         &[
@@ -249,7 +257,6 @@ fn every_command_prints_exactly_one_json_document() {
         ],
         &["review", "link", "--review", &review, "--session", "s-1"],
         &["review", "show", "--review", &review],
-        &["brief", "confirm", "--review", &review],
         &[
             "finding",
             "set",
@@ -275,6 +282,18 @@ fn every_command_prints_exactly_one_json_document() {
             "developer",
         ],
         &["rules", "list", "--repo", "devergehq/review-desk"],
+        &[
+            "review",
+            "find",
+            "--repo",
+            "devergehq/review-desk",
+            "--pr",
+            "7",
+        ],
+        &[
+            "layer", "set", "--review", &review, "--layer", "1", "--state", "done",
+        ],
+        &["draft", "show", "--review", &review],
     ];
 
     for command in commands {
@@ -297,6 +316,15 @@ fn the_help_text_names_every_value_the_store_accepts() {
         assert!(
             dispositions.contains(valid.as_str()),
             "finding set --help does not name {}",
+            valid.as_str()
+        );
+    }
+
+    let layers = desk.run(&["layer", "set", "--help"]);
+    for valid in ReviewLayerState::ALL {
+        assert!(
+            layers.contains(valid.as_str()),
+            "layer set --help does not name {}",
             valid.as_str()
         );
     }

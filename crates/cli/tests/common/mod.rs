@@ -7,7 +7,7 @@
 //! of them does not use is dead code there. That is what the allow is for.
 #![allow(dead_code)]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use assert_cmd::Command;
 use review_desk_store::Store;
@@ -30,6 +30,11 @@ impl Desk {
     /// Where this desk's database is.
     pub fn db(&self) -> PathBuf {
         self.dir.path().join("review-desk.db")
+    }
+
+    /// This desk's directory, for a test that has to write a file to hand to a command.
+    pub fn dir(&self) -> &Path {
+        self.dir.path()
     }
 
     /// The binary, pointed at this desk's database.

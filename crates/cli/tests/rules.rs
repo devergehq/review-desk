@@ -18,6 +18,8 @@ fn rule(statement: &str, scope: RuleScope, stage: RuleStage) -> NewRule {
         stage,
         origin_review_id: None,
         origin_findings: Vec::new(),
+        why_proposed: None,
+        note: None,
     }
 }
 
