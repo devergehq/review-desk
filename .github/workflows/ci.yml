@@ -18,7 +18,7 @@ jobs:
     name: Format, lint and test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Show the toolchain
         run: |
@@ -31,7 +31,7 @@ jobs:
       # SQLite is compiled from source by rusqlite's bundled feature, so caching the
       # build is worth more here than it would be otherwise.
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index
