@@ -3,7 +3,10 @@
 use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior};
 
 use crate::error::{Result, StoreError};
-use crate::model::{now, NewReview, OpenedReview, PrState, Review, ReviewLinks, Timestamp};
+use crate::model::{
+    now, Disposition, NewReview, NitTicket, NitTicketStatus, OpenedReview, PrState, Review,
+    ReviewFacts, ReviewLinks, Timestamp,
+};
 use crate::{is_unique_violation, normalise, Store};
 
 const COLUMNS: &str = "id, repo, pr, head_sha, round, title, ticket_id, changed_lines, \
@@ -119,6 +122,136 @@ impl Store {
             review,
             created: true,
         })
+    }
+
+    /// Open the review of this head commit, and record what the caller knows about the
+    /// pull request.
+    ///
+    /// [`Store::open_review`] and then the facts: a fact given is written, a fact left
+    /// `None` is left as it was. That holds whether the review was created by this call
+    /// or found already on the record — which is what lets a session that has finished
+    /// a review report what it did not check by opening the same head commit again,
+    /// rather than needing a command of its own.
+    ///
+    /// **Two steps, not one.** `open_review` takes its own write lock, and SQLite has
+    /// no nested transaction to put around both, so a reader between them sees a review
+    /// whose facts are not yet written. That is the state every review opened by
+    /// `review open` has been in since DEV-851, and it resolves itself; the alternative
+    /// is unpicking `open_review`'s round arithmetic, which is load-bearing for a
+    /// reason its own comment gives.
+    pub fn open_review_with(
+        &self,
+        repo: &str,
+        pr: i64,
+        head_sha: &str,
+        facts: &ReviewFacts,
+    ) -> Result<OpenedReview> {
+        let opened = self.open_review(repo, pr, head_sha)?;
+        if facts.is_empty() {
+            return Ok(opened);
+        }
+
+        let review = self.set_review_facts(opened.review.id, facts)?;
+        Ok(OpenedReview { review, ..opened })
+    }
+
+    /// Record what is known about the pull request: its title, its ticket, how many
+    /// lines it changed and what the review did not look at.
+    ///
+    /// A fact left `None` is left as it was, so one call can set the title without
+    /// clearing what was not checked.
+    pub fn set_review_facts(&self, id: i64, facts: &ReviewFacts) -> Result<Review> {
+        // Checked first, so a bad id is NotFound rather than a silent update of
+        // nothing.
+        self.get_review(id)?;
+
+        self.conn.execute(
+            "UPDATE reviews SET
+                 title         = COALESCE(?2, title),
+                 ticket_id     = COALESCE(?3, ticket_id),
+                 changed_lines = COALESCE(?4, changed_lines),
+                 not_checked   = COALESCE(?5, not_checked)
+             WHERE id = ?1",
+            params![
+                id,
+                facts.title,
+                facts.ticket_id,
+                facts.changed_lines,
+                facts.not_checked
+            ],
+        )?;
+
+        self.get_review(id)
+    }
+
+    /// Ask for, or record, the one ticket covering every nit held back from this
+    /// review's draft.
+    ///
+    /// With no ticket id this is the developer asking for one; with a ticket id it is
+    /// an agent reporting the one it filed. Asking twice keeps the first time asked,
+    /// for the reason confirming a brief twice does: the request was made once.
+    ///
+    /// **Review Desk does not file the ticket.** It records that one was asked for and
+    /// which one answered, and the findings it covers are read from the dispositions
+    /// rather than stored against it, so the set cannot drift.
+    pub fn request_nit_ticket(&self, id: i64, ticket_id: Option<&str>) -> Result<NitTicket> {
+        let ticket_id = ticket_id.map(str::trim);
+        if ticket_id.is_some_and(str::is_empty) {
+            return Err(StoreError::InvalidValue {
+                field: "nit_ticket_id",
+                value: String::new(),
+                expected: "the id of the ticket the nits were filed as".to_string(),
+            });
+        }
+
+        let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+        let review = self.get_review(id)?;
+
+        let at = now();
+        let status = match ticket_id {
+            Some(_) => NitTicketStatus::Filed,
+            None => NitTicketStatus::Requested,
+        };
+
+        self.conn.execute(
+            "UPDATE reviews SET
+                 nit_ticket_status       = ?2,
+                 nit_ticket_id           = COALESCE(?3, nit_ticket_id),
+                 nit_ticket_requested_at = COALESCE(nit_ticket_requested_at, ?4),
+                 nit_ticket_filed_at     = CASE WHEN ?2 = 'filed'
+                                                THEN COALESCE(nit_ticket_filed_at, ?4)
+                                                ELSE nit_ticket_filed_at END
+             WHERE id = ?1",
+            params![review.id, status, ticket_id, at],
+        )?;
+
+        tx.commit()?;
+        self.nit_ticket(id)
+    }
+
+    /// The one ticket covering this review's held-back nits, and which findings those
+    /// are.
+    pub fn nit_ticket(&self, id: i64) -> Result<NitTicket> {
+        let review = self.get_review(id)?;
+
+        Ok(NitTicket {
+            review_id: review.id,
+            status: review.nit_ticket_status,
+            ticket_id: review.nit_ticket_id,
+            finding_seqs: self.held_back_findings(id)?,
+            requested_at: review.nit_ticket_requested_at,
+            filed_at: review.nit_ticket_filed_at,
+        })
+    }
+
+    /// The sequence numbers of this review's findings held back from the draft.
+    pub fn held_back_findings(&self, id: i64) -> Result<Vec<i64>> {
+        let mut statement = self.conn.prepare(
+            "SELECT seq FROM findings
+             WHERE review_id = ?1 AND disposition = ?2 ORDER BY seq ASC",
+        )?;
+        let rows = statement.query_map(params![id, Disposition::HeldBack], |row| row.get(0))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
     /// Read a review by id. Fails with [`StoreError::NotFound`] if it is not there.

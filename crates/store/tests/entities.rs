@@ -5,7 +5,8 @@ mod common;
 use common::{new_review, temp_store};
 use review_desk_store::{
     Actor, BriefOption, Disposition, FindingRef, NewBrief, NewFinding, NewOutcome, NewReview,
-    NewRule, OutcomeKind, Review, RuleScope, RuleStage, Severity, StoreError,
+    NewRule, NitTicketStatus, OutcomeKind, Review, ReviewFacts, RuleScope, RuleStage, Severity,
+    StoreError,
 };
 
 /// A review to hang the other entities off.
@@ -465,5 +466,254 @@ fn a_rule_carries_its_accepted_exceptions() {
             assert_eq!((entity, parent), ("rule exception", "rule"));
         }
         other => panic!("expected UnknownParent, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_review_carries_the_pull_requests_own_facts() {
+    let (_dir, store) = temp_store();
+    let review = seed_review(&store);
+
+    let with_facts = store
+        .set_review_facts(
+            review.id,
+            &ReviewFacts {
+                title: Some("Retry failed webhook deliveries".to_string()),
+                ticket_id: Some("ABC-231".to_string()),
+                changed_lines: Some(214),
+                not_checked: None,
+            },
+        )
+        .expect("set facts");
+
+    assert_eq!(
+        with_facts.title.as_deref(),
+        Some("Retry failed webhook deliveries")
+    );
+    assert_eq!(with_facts.ticket_id.as_deref(), Some("ABC-231"));
+    assert_eq!(with_facts.changed_lines, Some(214));
+    assert_eq!(with_facts.not_checked, None);
+
+    // A fact left out is left alone, so a session can report what it did not check
+    // without having to repeat the title it set an hour ago.
+    let later = store
+        .set_review_facts(
+            review.id,
+            &ReviewFacts {
+                not_checked: Some("the worker's behaviour across a deploy".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    assert_eq!(
+        later.title.as_deref(),
+        Some("Retry failed webhook deliveries"),
+        "setting one fact does not clear the others"
+    );
+    assert_eq!(
+        later.not_checked.as_deref(),
+        Some("the worker's behaviour across a deploy")
+    );
+}
+
+#[test]
+fn opening_a_review_records_what_the_caller_knows_about_it() {
+    let (_dir, store) = temp_store();
+
+    let facts = ReviewFacts {
+        title: Some("Retry failed webhook deliveries".to_string()),
+        ticket_id: Some("ABC-231".to_string()),
+        changed_lines: Some(214),
+        not_checked: None,
+    };
+
+    let opened = store
+        .open_review_with("acme/portal", 412, "3f9c2ab", &facts)
+        .expect("open with facts");
+    assert!(opened.created);
+    assert_eq!(
+        opened.review.title.as_deref(),
+        Some("Retry failed webhook deliveries")
+    );
+
+    // The same head commit again is the same review, and the facts given are written
+    // to it. This is how a finished session reports what it did not check.
+    let again = store
+        .open_review_with(
+            "acme/portal",
+            412,
+            "3f9c2ab",
+            &ReviewFacts {
+                not_checked: Some("production delivery volumes".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    assert!(
+        !again.created,
+        "a head commit already reviewed is handed back"
+    );
+    assert_eq!(again.review.id, opened.review.id);
+    assert_eq!(again.review.round, 1, "and spends no round");
+    assert_eq!(
+        again.review.not_checked.as_deref(),
+        Some("production delivery volumes")
+    );
+    assert_eq!(
+        again.review.changed_lines,
+        Some(214),
+        "the facts it already had are untouched"
+    );
+}
+
+#[test]
+fn a_finding_names_the_rule_it_was_raised_under_and_moves_its_last_citation() {
+    let (_dir, store) = temp_store();
+    let review = seed_review(&store);
+    let rule = store
+        .create_rule(NewRule {
+            statement: "A new test must fail when the fix is reverted".to_string(),
+            prevents: "a regression shipping behind a test that cannot fail".to_string(),
+            scope: RuleScope::Global,
+            stage: RuleStage::Active,
+            origin_review_id: None,
+            origin_findings: vec![],
+            why_proposed: None,
+            note: None,
+        })
+        .unwrap();
+
+    assert_eq!(
+        store.get_rule(rule.id).unwrap().last_cited_at,
+        None,
+        "a rule nothing has cited has never been cited, which is not the same as being \
+         cited at the epoch"
+    );
+
+    let finding = store
+        .add_finding(
+            review.id,
+            NewFinding {
+                lens: "can this test fail".to_string(),
+                severity: Severity::Should,
+                file: None,
+                line: None,
+                claim: "The failure test passes with the retry code reverted".to_string(),
+                evidence: None,
+                disposition: Disposition::InDraft,
+                disposition_reason: None,
+                rule_id: Some(rule.id),
+            },
+        )
+        .expect("add a finding citing a rule");
+
+    assert_eq!(finding.rule_id, Some(rule.id));
+    let cited = store.get_rule(rule.id).unwrap();
+    assert_eq!(
+        cited.last_cited_at,
+        Some(finding.created_at),
+        "the citation moved the rule's last-cited time"
+    );
+    assert_eq!(
+        cited.updated_at, finding.created_at,
+        "and the rule was changed, so it says when"
+    );
+}
+
+#[test]
+fn a_finding_citing_a_rule_that_is_not_there_names_the_rule() {
+    let (_dir, store) = temp_store();
+    let review = seed_review(&store);
+
+    match store.add_finding(
+        review.id,
+        NewFinding {
+            lens: "l".to_string(),
+            severity: Severity::Nit,
+            file: None,
+            line: None,
+            claim: "c".to_string(),
+            evidence: None,
+            disposition: Disposition::InDraft,
+            disposition_reason: None,
+            rule_id: Some(404),
+        },
+    ) {
+        Err(StoreError::UnknownParent { entity, parent, id }) => {
+            assert_eq!((entity, parent), ("finding", "rule"));
+            assert_eq!(id, "404", "the message blames the rule, not the review");
+        }
+        other => panic!("expected UnknownParent, got {other:?}"),
+    }
+
+    assert!(
+        store.list_findings(review.id).unwrap().is_empty(),
+        "and the finding was not written"
+    );
+}
+
+#[test]
+fn one_ticket_covers_every_nit_held_back_from_a_review() {
+    let (_dir, store) = temp_store();
+    let review = seed_review(&store);
+
+    let nit = |claim: &str| NewFinding {
+        lens: "repetition".to_string(),
+        severity: Severity::Nit,
+        file: None,
+        line: None,
+        claim: claim.to_string(),
+        evidence: None,
+        disposition: Disposition::HeldBack,
+        disposition_reason: Some("held for one ticket with the other nits".to_string()),
+        rule_id: None,
+    };
+    store
+        .add_finding(review.id, nit("backoff repeated in two files"))
+        .unwrap();
+    store.add_finding(review.id, nit("unused import")).unwrap();
+    store
+        .add_finding(
+            review.id,
+            NewFinding {
+                disposition: Disposition::InDraft,
+                ..nit("in the draft, not held back")
+            },
+        )
+        .unwrap();
+
+    let before = store.nit_ticket(review.id).unwrap();
+    assert_eq!(before.status, NitTicketStatus::NotRequested);
+    assert_eq!(
+        before.finding_seqs,
+        [1, 2],
+        "the findings it covers are read from the dispositions, not stored against it"
+    );
+    assert_eq!(before.requested_at, None);
+
+    let requested = store
+        .request_nit_ticket(review.id, None)
+        .expect("the developer asks for one");
+    assert_eq!(requested.status, NitTicketStatus::Requested);
+    assert!(requested.requested_at.is_some());
+    assert_eq!(requested.ticket_id, None);
+    assert_eq!(requested.filed_at, None);
+
+    let filed = store
+        .request_nit_ticket(review.id, Some("ABC-240"))
+        .expect("an agent reports the ticket it filed");
+    assert_eq!(filed.status, NitTicketStatus::Filed);
+    assert_eq!(filed.ticket_id.as_deref(), Some("ABC-240"));
+    assert_eq!(
+        filed.requested_at, requested.requested_at,
+        "the time it was asked for is kept: the request was made once"
+    );
+    assert!(filed.filed_at.is_some());
+
+    match store.request_nit_ticket(review.id, Some("   ")) {
+        Err(StoreError::InvalidValue { field, .. }) => assert_eq!(field, "nit_ticket_id"),
+        other => panic!("expected a refusal, got {other:?}"),
     }
 }
