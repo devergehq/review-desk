@@ -1,0 +1,6 @@
+# esbuild and unrs-resolver fetch a platform binary in a postinstall script. Allowing
+# those two by name keeps `pnpm install` non-interactive here and on CI, and nothing else
+# in the tree may run code at install time.
+allowBuilds:
+  esbuild: true
+  unrs-resolver: true

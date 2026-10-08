@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>How a review flows</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+body{margin:0}
+a{color:#1F4FD8}a:hover{color:#163A9E}
+</style>
+</helmet>
+<div style="min-height: 900px; background: #F4F5F7; color: #16181D; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; line-height: 1.45">
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 10px 24px; background: #FFFFFF; border-bottom: 1px solid #D9DCE2">
+<div style="font-weight: 600; font-size: 17px">Review Desk</div>
+<span style="font-size: 12px; color: #565B66; border: 1px solid #D9DCE2; border-radius: 4px; padding: 2px 8px">Sample data</span>
+<nav style="display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto">
+<a href="Main.dc.html" style="padding: 12px 14px; border-radius: 6px; text-decoration: none; color: #454A54">Inbox</a>
+<a href="Review.dc.html" style="padding: 12px 14px; border-radius: 6px; text-decoration: none; color: #454A54">Reviews</a>
+<a href="Rules.dc.html" style="padding: 12px 14px; border-radius: 6px; text-decoration: none; color: #454A54">Rules</a>
+<a href="Flow.dc.html" style="padding: 12px 14px; border-radius: 6px; text-decoration: none; font-weight: 600; color: #16181D; background: #ECEEF1">How it flows</a>
+</nav>
+</header>
+<main style="max-width: 1180px; margin: 0 auto; padding: 28px 24px 48px; display: flex; flex-direction: column; gap: 32px">
+<div>
+<h1 style="margin: 0; font-size: 26px; font-weight: 600">How a review flows</h1>
+<div style="color: #565B66; margin-top: 4px">Seven layers. Each writes one thing to the record. You act at two of them.</div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px">
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 6px">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #565B66">1 · automatic</div>
+<div style="font-weight: 600; font-size: 17px">Lint</div>
+<div style="color: #454A54">Description budget, working notes, template shape. No model.</div>
+<div style="font-size: 13px; color: #565B66; margin-top: auto; padding-top: 8px; border-top: 1px solid #ECEEF1">Writes: lint result</div>
+</div>
+<div style="background: #FFFFFF; border: 2px solid #1F4FD8; border-radius: 8px; padding: 15px; display: flex; flex-direction: column; gap: 6px">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #163A9E">2 · agent, then you</div>
+<div style="font-weight: 600; font-size: 17px">Understand</div>
+<div style="color: #454A54">The problem in plain words from the ticket and the code, with a diagram. No judgement yet.</div>
+<div style="font-size: 13px; color: #163A9E; font-weight: 500; margin-top: auto; padding-top: 8px; border-top: 1px solid #ECEEF1">Writes: brief · you confirm or correct it</div>
+</div>
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 6px">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #565B66">3 · agent</div>
+<div style="font-weight: 600; font-size: 17px">Alternatives</div>
+<div style="color: #454A54">The ways this problem could be solved, written before the diff is read.</div>
+<div style="font-size: 13px; color: #565B66; margin-top: auto; padding-top: 8px; border-top: 1px solid #ECEEF1">Writes: option map</div>
+</div>
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 6px">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #565B66">4 · agent</div>
+<div style="font-weight: 600; font-size: 17px">Solution map</div>
+<div style="color: #454A54">What they built, laid over the options. What it gains and what it gives up.</div>
+<div style="font-size: 13px; color: #565B66; margin-top: auto; padding-top: 8px; border-top: 1px solid #ECEEF1">Writes: approach verdict</div>
+</div>
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 6px">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #565B66">5 · agent</div>
+<div style="font-weight: 600; font-size: 17px">Code review</div>
+<div style="color: #454A54">The eight lenses, the repository's rules, and a blind second reader.</div>
+<div style="font-size: 13px; color: #565B66; margin-top: auto; padding-top: 8px; border-top: 1px solid #ECEEF1">Writes: findings with evidence</div>
+</div>
+<div style="background: #FFFFFF; border: 2px solid #1F4FD8; border-radius: 8px; padding: 15px; display: flex; flex-direction: column; gap: 6px">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #163A9E">6 · agent, then you</div>
+<div style="font-weight: 600; font-size: 17px">Triage and draft</div>
+<div style="color: #454A54">Nits are batched into one ticket. The rest becomes a draft you preview and edit.</div>
+<div style="font-size: 13px; color: #163A9E; font-weight: 500; margin-top: auto; padding-top: 8px; border-top: 1px solid #ECEEF1">Writes: draft · you approve it to post</div>
+</div>
+<div style="background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 6px">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #565B66">7 · automatic</div>
+<div style="font-weight: 600; font-size: 17px">Harvest</div>
+<div style="color: #454A54">Author replies, later commits and repeat findings are read back from GitHub.</div>
+<div style="font-size: 13px; color: #565B66; margin-top: auto; padding-top: 8px; border-top: 1px solid #ECEEF1">Writes: outcomes · proposes rules</div>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 12px">
+<h2 style="margin: 0; font-size: 18px; font-weight: 600">Who talks to whom</h2>
+<div style="display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px">
+<div style="flex: 1 1 200px; background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 14px">
+<div style="font-weight: 600">Dispatcher</div>
+<div style="font-size: 13px; color: #565B66; margin-top: 4px">Sees the review request and starts a session. Unchanged.</div>
+</div>
+<div style="display: flex; align-items: center"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="#565B66" stroke-width="1.5" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></div>
+<div style="flex: 1 1 200px; background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 14px">
+<div style="font-weight: 600">Review session</div>
+<div style="font-size: 13px; color: #565B66; margin-top: 4px">Reads the rules, runs the layers, writes each result through the command line.</div>
+</div>
+<div style="display: flex; align-items: center"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="#565B66" stroke-width="1.5" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></div>
+<div style="flex: 1 1 200px; background: #16181D; color: #FFFFFF; border-radius: 8px; padding: 14px">
+<div style="font-weight: 600">Review Desk</div>
+<div style="font-size: 13px; color: #D9DCE2; margin-top: 4px">Owns the record. Shows you what is waiting. Harvests outcomes.</div>
+</div>
+<div style="display: flex; align-items: center"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="#565B66" stroke-width="1.5" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></div>
+<div style="flex: 1 1 200px; background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 14px">
+<div style="font-weight: 600">You</div>
+<div style="font-size: 13px; color: #565B66; margin-top: 4px">Confirm the brief. Edit and approve the draft. Decide on rules.</div>
+</div>
+</div>
+<div style="font-size: 13px; color: #565B66">Your approval goes back to the review session, which posts to GitHub. Nothing else posts in your name.</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 12px">
+<h2 style="margin: 0; font-size: 18px; font-weight: 600">How a rule grows up</h2>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+<div style="flex: 1 1 180px; background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 12px 14px"><div style="font-weight: 500">Observation</div><div style="font-size: 13px; color: #565B66">A pattern across findings</div></div>
+<svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="#565B66" stroke-width="1.5" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg>
+<div style="flex: 1 1 180px; background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 12px 14px"><div style="font-weight: 500">Repository rule</div><div style="font-size: 13px; color: #565B66">You promote it; the review reads it</div></div>
+<svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="#565B66" stroke-width="1.5" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg>
+<div style="flex: 1 1 180px; background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 12px 14px"><div style="font-weight: 500">Lint check</div><div style="font-size: 13px; color: #565B66">If it can be checked without a model</div></div>
+<svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="#565B66" stroke-width="1.5" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg>
+<div style="flex: 1 1 180px; background: #FFFFFF; border: 1px solid #D9DCE2; border-radius: 8px; padding: 12px 14px"><div style="font-weight: 500">CI check</div><div style="font-size: 13px; color: #565B66">Shared with the team; no reviewer says it again</div></div>
+</div>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

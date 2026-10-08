@@ -1,0 +1,58 @@
+{
+  "summary": {
+    "active_rules": 0,
+    "active_rules_cap": 20,
+    "replay_matched": null,
+    "replay_total": null,
+    "findings_kept": 31,
+    "findings_total": 40,
+    "findings_window_days": 30,
+    "raised_twice_on_one_pr": 2
+  },
+  "repos": [
+    {
+      "repo": "acme/portal",
+      "open_reviews": 4,
+      "active_rules": 4
+    },
+    {
+      "repo": "acme/billing-api",
+      "open_reviews": 2,
+      "active_rules": 2
+    }
+  ],
+  "own_prs": [
+    {
+      "pull_request": {
+        "repo": "acme/portal",
+        "pr": 415,
+        "title": "Remove the legacy importer"
+      },
+      "opened_at": "2026-10-05T11:30:00Z",
+      "description_lint": {
+        "passes": true,
+        "budget_ratio": 0.7
+      }
+    },
+    {
+      "pull_request": {
+        "repo": "acme/billing-api",
+        "pr": 91,
+        "title": "Rate-limit the token endpoint"
+      },
+      "opened_at": null,
+      "description_lint": null
+    }
+  ],
+  "handled_without_you": {
+    "window_days": 7,
+    "description_problems_caught": 9,
+    "nits_filed": 11,
+    "nit_tickets": 3
+  },
+  "session_liveness": {
+    "18": true,
+    "19": null
+  },
+  "github_available": true
+}

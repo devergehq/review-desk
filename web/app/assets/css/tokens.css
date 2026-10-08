@@ -1,0 +1,254 @@
+/*
+ * The whole visual vocabulary of Review Desk, in one place.
+ *
+ * Every value comes from the mockups in `docs/mockups/`. Two things were added that a
+ * mockup does not need and a real app does: `--rd-control-line`, because the mockups'
+ * border grey is 2.1:1 against a white surface and an interactive border has to clear
+ * 3:1; and `--rd-focus`, because a mockup has no keyboard.
+ */
+
+:root {
+  /* Surfaces, from the ground up. */
+  --rd-ground: #f4f5f7;
+  --rd-surface: #ffffff;
+  --rd-rail: #eceef1;
+
+  /* Ink. Every pair below is at or above 4.5:1 on ground, surface and rail. */
+  --rd-ink: #16181d;
+  --rd-ink-dim: #454a54;
+  --rd-ink-muted: #565b66;
+
+  /* Lines. `line` and `line-strong` draw; `control-line` encloses something you touch. */
+  --rd-line: #d9dce2;
+  --rd-line-strong: #aeb3bd;
+  --rd-control-line: #868c99;
+
+  /* The one accent, and its two washes. */
+  --rd-accent: #1f4fd8;
+  --rd-accent-dark: #163a9e;
+  --rd-accent-wash: #e3eafc;
+
+  /* Reserved for one state: a finding that matters but does not block. */
+  --rd-warn-wash: #fce9d9;
+  --rd-warn-ink: #6b2f04;
+
+  --rd-radius: 8px;
+  --rd-radius-sm: 6px;
+  --rd-radius-xs: 4px;
+
+  /* Nothing you can press is shorter than this. */
+  --rd-control-min: 44px;
+
+  --rd-font-sans: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --rd-font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+
+  --rd-shell-max: 1180px;
+  --rd-measure: 760px;
+
+  --rd-focus: 0 0 0 2px var(--rd-surface), 0 0 0 4px var(--rd-accent);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--rd-ground);
+  color: var(--rd-ink);
+  font-family: var(--rd-font-sans);
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--rd-accent);
+}
+
+a:hover {
+  color: var(--rd-accent-dark);
+}
+
+:focus-visible {
+  outline: 2px solid var(--rd-accent);
+  outline-offset: 2px;
+  border-radius: var(--rd-radius-xs);
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 600;
+}
+
+h1 {
+  font-size: 26px;
+}
+
+h2 {
+  font-size: 18px;
+}
+
+/* ---- Primitives. A page composes these; no page restates a colour. ---- */
+
+.rd-mono {
+  font-family: var(--rd-font-mono);
+}
+
+.rd-meta {
+  font-size: 13px;
+  color: var(--rd-ink-muted);
+}
+
+.rd-note {
+  font-size: 14px;
+  color: var(--rd-ink-dim);
+}
+
+.rd-measure {
+  max-width: var(--rd-measure);
+}
+
+.rd-stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.rd-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Buttons and link-buttons share one shape so a link and a button never disagree. */
+.rd-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--rd-control-min);
+  padding: 0 16px;
+  border: 1px solid var(--rd-control-line);
+  border-radius: var(--rd-radius-sm);
+  background: var(--rd-surface);
+  color: var(--rd-ink);
+  font: inherit;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.rd-btn:hover:not(:disabled) {
+  background: var(--rd-rail);
+  color: var(--rd-ink);
+}
+
+.rd-btn:disabled {
+  cursor: not-allowed;
+  color: var(--rd-ink-muted);
+  background: var(--rd-rail);
+  border-color: var(--rd-line);
+}
+
+.rd-btn--primary {
+  border-color: transparent;
+  background: var(--rd-accent);
+  color: var(--rd-surface);
+  font-weight: 600;
+}
+
+.rd-btn--primary:hover:not(:disabled) {
+  background: var(--rd-accent-dark);
+  color: var(--rd-surface);
+}
+
+.rd-btn--ink {
+  border-color: transparent;
+  background: var(--rd-ink);
+  color: var(--rd-surface);
+}
+
+.rd-btn--ink:hover:not(:disabled) {
+  background: #000000;
+  color: var(--rd-surface);
+}
+
+.rd-btn--quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--rd-ink-dim);
+  font-weight: 400;
+  padding: 0 14px;
+}
+
+.rd-btn--quiet[aria-selected='true'],
+.rd-btn--quiet.is-current {
+  background: var(--rd-rail);
+  color: var(--rd-ink);
+  font-weight: 500;
+}
+
+.rd-field {
+  min-height: var(--rd-control-min);
+  width: 100%;
+  padding: 0 12px;
+  border: 1px solid var(--rd-control-line);
+  border-radius: var(--rd-radius-sm);
+  background: var(--rd-surface);
+  color: var(--rd-ink);
+  font: inherit;
+}
+
+textarea.rd-field {
+  padding: 10px 12px;
+  line-height: 1.5;
+  font-family: var(--rd-font-mono);
+  font-size: 13px;
+  resize: vertical;
+}
+
+.rd-label {
+  font-weight: 600;
+}
+
+/* A group heading: the uppercase rubric above a list, with its count. */
+.rd-group-heading {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--rd-ink-muted);
+}
+
+/* What an empty list says. A mockup never has one; an app always does. */
+.rd-empty {
+  padding: 14px 16px;
+  border: 1px dashed var(--rd-line-strong);
+  border-radius: var(--rd-radius);
+  color: var(--rd-ink-muted);
+  font-size: 14px;
+  background: var(--rd-surface);
+}
+
+.rd-callout {
+  background: var(--rd-ground);
+  border-radius: var(--rd-radius-sm);
+  padding: 12px 14px;
+}
+
+.rd-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

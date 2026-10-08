@@ -1,0 +1,95 @@
+# The dashboard's checks. Separate from ci.yml, which runs cargo: the two have no step in
+# common, and a Rust change should not wait on a Node install to find out it compiles.
+name: Web
+
+on:
+  pull_request:
+    paths:
+      - 'web/**'
+      - '.github/workflows/web.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'web/**'
+      - '.github/workflows/web.yml'
+
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: web
+
+jobs:
+  check:
+    name: Lint, types, tests and a static build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # The action reads `packageManager` from a package.json, and `defaults.run` does
+      # not apply to an action's inputs — so it has to be told where ours lives.
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      # --frozen-lockfile so a dependency cannot change without the lockfile changing.
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Types
+        run: pnpm run typecheck
+
+      - name: Tests
+        run: pnpm run test
+
+      - name: Build to static files
+        run: pnpm run generate
+
+      # `nuxt generate` succeeding is not the same as the output being servable: a
+      # parameterised route that was never prerendered 404s on a plain file server, and
+      # nothing earlier would have said so.
+      - name: Every route resolves as a file
+        run: |
+          missing=0
+          for route in \
+            index.html \
+            rules/index.html \
+            reviews/17/index.html \
+            reviews/17/draft/index.html \
+            reviews/15/index.html \
+            reviews/15/draft/index.html
+          do
+            if [ ! -f ".output/public/$route" ]; then
+              echo "missing: $route"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      # The app is embedded in a binary and run from localhost. If the build asks a CDN
+      # for a font or a script, it stops working on a machine with no internet.
+      - name: Nothing is fetched from another origin
+        run: |
+          if grep -rlE '(href|src)="https?://' .output/public --include='*.html'; then
+            echo "the generated HTML loads something from another origin"
+            exit 1
+          fi
+
+      - name: Keep the build
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: web-static
+          path: web/.output/public
+          retention-days: 7
