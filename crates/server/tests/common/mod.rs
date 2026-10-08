@@ -136,6 +136,21 @@ impl Harness {
     pub fn request(&self, method: &str, path: &str, body: Option<&str>) -> Answer {
         request(&self.running.base(), method, path, body)
     }
+
+    /// A request with the headers stated exactly, and nothing added.
+    ///
+    /// This is what lets a test be a browser on another origin, or a form post, or a
+    /// client that left the `Host` off — none of which the ordinary helper can be,
+    /// because it always sends a correct set.
+    pub fn raw(
+        &self,
+        method: &str,
+        path: &str,
+        headers: &[(&str, &str)],
+        body: Option<&str>,
+    ) -> Answer {
+        raw_request(&self.running.base(), method, path, headers, body)
+    }
 }
 
 /// What came back.
@@ -189,18 +204,40 @@ impl Answer {
 /// from having to parse chunked encoding or honour keep-alive.
 pub fn request(base: &str, method: &str, path: &str, body: Option<&str>) -> Answer {
     let address = base.trim_start_matches("http://");
+    raw_request(
+        base,
+        method,
+        path,
+        &[("Host", address), ("Content-Type", "application/json")],
+        body,
+    )
+}
+
+/// One HTTP/1.1 request with exactly these headers, plus the two the transport needs.
+///
+/// `Connection: close` is always sent so the server closes the socket when it has
+/// finished, which makes "read to the end" the right way to read the body; and
+/// `Content-Length` is computed, because a test that lies about it is testing the lie.
+pub fn raw_request(
+    base: &str,
+    method: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: Option<&str>,
+) -> Answer {
+    let address = base.trim_start_matches("http://");
     let mut socket = TcpStream::connect(address).expect("connecting to the server");
 
     let body = body.unwrap_or_default();
-    let request = format!(
-        "{method} {path} HTTP/1.1\r\n\
-         Host: {address}\r\n\
-         Connection: close\r\n\
-         Content-Type: application/json\r\n\
-         Content-Length: {}\r\n\
-         \r\n{body}",
+    let mut request = format!("{method} {path} HTTP/1.1\r\n");
+    for (name, value) in headers {
+        request.push_str(&format!("{name}: {value}\r\n"));
+    }
+    request.push_str(&format!(
+        "Connection: close\r\nContent-Length: {}\r\n\r\n{body}",
         body.len()
-    );
+    ));
+
     socket
         .write_all(request.as_bytes())
         .expect("writing the request");

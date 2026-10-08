@@ -530,18 +530,48 @@ a build script by comparing them, and copying or moving a previously built
 `pnpm run generate` always writes new files and is never affected; `touch -c` over the
 directory fixes a restored one.
 
-### What it binds, and what that means
+### What it binds, and who may talk to it
 
-**It binds `127.0.0.1` and there is no flag to change that.** There is no
-authentication in this version — being able to reach the port is the authorisation,
-which `contract/README.md` states and justifies. That is sound only while the bind
-holds: on `0.0.0.0`, or through a tunnel, the whole record becomes readable and writable
-by anyone who can reach it. The version that adds authentication is the version that may
-add the flag.
+**It binds `127.0.0.1` and there is no flag to change that.** There is no authentication
+in this version — being able to reach the port is the authorisation, which
+`contract/README.md` states and justifies. That is sound only while the bind holds: on
+`0.0.0.0`, or through a tunnel, the whole record becomes readable and writable by anyone
+who can reach it. The version that adds authentication is the version that may add the
+flag.
 
 Two tests hold the line: one asserts the address bound, and one asserts that every
 non-loopback address this machine has refuses a connection on the same port. The second
 exists because a listener on `0.0.0.0` would pass the first.
+
+**Binding loopback is not enough on its own, because a web page is also on this machine.**
+Confirming a brief and approving a draft happen through this API and nowhere else, and an
+approved draft is what a review session posts to GitHub under the developer's name. A page
+on another origin that could `POST` to `127.0.0.1:7777` could approve a draft the
+developer has never read — and "only the developer signs off" would be enforced by
+nothing. So every request to `/api/v1` passes `crates/server/src/guard.rs` first:
+
+| Check | Closes |
+| -- | -- |
+| `Host` is the loopback address and the port actually bound | DNS rebinding: a name the attacker controls, resolved to 127.0.0.1 |
+| `Origin`, when present, is this server's own | A page on another origin driving `fetch`, or submitting a form |
+| `Content-Type` is `application/json` on a write | A plain HTML form, which cannot send one |
+
+**No CORS headers are sent**, by omission and on purpose; a test asserts none ever appear.
+`localhost:<port>` is accepted beside the literal address, which is safe rather than a
+convenience hole: rebinding points a name *the attacker controls* at 127.0.0.1, so the
+browser sends that name and never `localhost`.
+
+**An absent `Origin` is allowed**, deliberately. Nothing that is not a browser sends one —
+`curl`, a script, a review session — and a browser always sends one on a cross-origin
+request, including a form submission. Refusing the absent case would break every
+non-browser caller and stop no attacker; the content-type check is what covers the form.
+
+**What this does not stop: another process on the same machine.** A local program can set
+any header it likes, so none of this defends against code already running as the
+developer. That is the authorisation model the contract states, and closing it needs
+authentication. What these checks buy is the narrower and more valuable thing — a web page
+cannot reach the API, and a web page is the one attacker that arrives without the
+developer installing anything.
 
 ### Which operations are answered
 

@@ -38,6 +38,7 @@ pub mod api;
 pub mod assets;
 pub mod error;
 pub mod github;
+pub mod guard;
 pub mod route;
 pub mod store;
 pub mod wire;
@@ -169,6 +170,7 @@ impl Server {
     }
 
     fn spawn_workers(self) -> Vec<thread::JoinHandle<()>> {
+        let address = self.address;
         (0..WORKERS)
             .map(|worker| {
                 let listener = Arc::clone(&self.listener);
@@ -179,7 +181,7 @@ impl Server {
                     .spawn(move || {
                         while !stop.load(Ordering::SeqCst) {
                             match listener.recv_timeout(ACCEPT_WAIT) {
-                                Ok(Some(request)) => answer(&api, request),
+                                Ok(Some(request)) => answer(&api, address, request),
                                 // Nothing arrived inside the wait, so the flag is checked
                                 // and the wait begins again.
                                 Ok(None) => continue,
@@ -238,13 +240,28 @@ impl Drop for Running {
 
 /// Answer one request: the API under [`API_PREFIX`], the embedded dashboard everywhere
 /// else.
-fn answer(api: &Api, mut request: Request) {
+fn answer(api: &Api, bound: SocketAddr, mut request: Request) {
     let (path, query) = split_url(request.url());
     let path = path.to_string();
     let query = query.to_string();
     let method = request.method().as_str().to_string();
 
+    // Collected before the body is read, because the guard decides whether the body is
+    // read at all.
+    let headers: Vec<(String, String)> = request
+        .headers()
+        .iter()
+        .map(|header| (header.field.to_string(), header.value.to_string()))
+        .collect();
+
     let served = if let Some(rest) = api_path(&path) {
+        // Before anything else, and before the body is touched: a request from somewhere
+        // that is not this machine's own browser tab does not get to reach a handler.
+        if let Err(refusal) = guard::check(bound, &method, &headers) {
+            let _ = request.respond(json_response(refusal.status(), &refusal.document()));
+            return;
+        }
+
         let body = match read_body(&mut request) {
             Ok(body) => body,
             Err(error) => {
