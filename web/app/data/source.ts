@@ -130,7 +130,16 @@ export function sampleWanted(): boolean {
  * has already proved dead — see the top of this file.
  */
 export async function loadBackend(): Promise<DeskBackend> {
-  if (sampleWanted()) {
+  /*
+   * **`import.meta.env.DEV` is tested here, not only inside `sampleWanted`**, and that is
+   * the difference between the fixtures leaving the bundle and not. Measured, after they
+   * did not: a call to a function that happens to return `false` is not a dead branch to
+   * Rollup, so `if (sampleWanted())` kept the dynamic import alive and `nuxt generate`
+   * emitted a 44 kB chunk of invented reviews beside the app. Written as a literal the
+   * bundler replaces, this is `if (false && …)`, the block goes, and the chunk goes with
+   * it. `test/build-output.spec.ts` is the measurement, not this comment.
+   */
+  if (import.meta.env.DEV && sampleWanted()) {
     const { sampleBackend } = await import('./sample')
     return sampleBackend()
   }

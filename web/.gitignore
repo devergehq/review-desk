@@ -4,3 +4,8 @@ node_modules/
 dist/
 .data/
 *.tsbuildinfo
+
+# Written by the end-to-end run: the two servers' addresses, for the specs to read.
+e2e/.addresses.json
+test-results/
+playwright-report/

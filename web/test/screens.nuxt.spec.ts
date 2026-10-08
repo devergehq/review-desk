@@ -100,14 +100,14 @@ describe('the inbox', () => {
     const text = page.text()
     for (const heading of [
       'Confirm the problem · 1',
-      'Approve a draft · 2',
+      'Approve a draft · 3',
       'Author replied · 1',
       'Your PRs with no reviewer · 2',
       'Proposed rule · 1',
     ]) {
       expect(text).toContain(heading)
     }
-    expect(text).toContain('7 items across 2 repositories')
+    expect(text).toContain('8 items across 2 repositories')
   })
 
   it('renders the sessions in progress with their layer and a meter', async () => {
@@ -192,6 +192,7 @@ describe('the inbox', () => {
 
     expect(page.text()).not.toContain('Confirm the problem · 1')
     expect(page.text()).toContain('Approve a draft · 3')
+    expect(page.text()).toContain('7 items across 2 repositories')
   })
 
   it('reads as new, not as broken, on a database with nothing in it', async () => {
@@ -322,7 +323,7 @@ describe('one review', () => {
 
   it('says the desk holds no such review, rather than drawing an empty one', async () => {
     const page = await shown(OneReview, { route: '/reviews/999' })
-    expect(page.text()).toContain('The desk holds no this review')
+    expect(page.text()).toContain('Not on the desk')
     expect(button(page, 'Retry')).toBeDefined()
   })
 })
@@ -475,7 +476,7 @@ describe('the draft preview', () => {
 
   it('says the desk holds no such draft when the session has written none', async () => {
     const page = await shown(DraftPreview, { route: '/reviews/18/draft' })
-    expect(page.text()).toContain('The desk holds no this draft')
+    expect(page.text()).toContain('Not on the desk')
     expect(button(page, 'Retry')).toBeDefined()
   })
 

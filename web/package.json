@@ -12,7 +12,10 @@
     "lint": "eslint .",
     "typecheck": "nuxt typecheck",
     "test": "vitest run",
-    "types:contract": "openapi-typescript ../contract/openapi.yaml -o app/types/contract.ts"
+    "types:contract": "openapi-typescript ../contract/openapi.yaml -o app/types/contract.ts",
+    "e2e": "pnpm run e2e:build && playwright test --config e2e/playwright.config.ts --project desk",
+    "e2e:screenshots": "pnpm run e2e:build && playwright test --config e2e/playwright.config.ts --project screenshots",
+    "e2e:build": "nuxt generate && cargo build --manifest-path ../Cargo.toml"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.3.0",
@@ -25,6 +28,7 @@
   "devDependencies": {
     "@nuxt/eslint": "^1.17.0",
     "@nuxt/test-utils": "^4.3.3",
+    "@playwright/test": "^1.64.0",
     "@types/markdown-it": "^14.2.0",
     "@vue/test-utils": "^2.5.1",
     "eslint": "^10.12.0",

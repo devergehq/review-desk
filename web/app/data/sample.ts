@@ -211,10 +211,20 @@ function inbox(): Inbox {
         .every(item => item.state === 'pending'),
     }))
 
+  /*
+   * **Every ready draft, confirmed brief or not**, which is what the server does and what
+   * this filtered out until DEV-862's end-to-end test caught the two disagreeing.
+   *
+   * The Inbox is what is waiting on the developer, and a draft at `ready` is waiting on
+   * them whatever layer 2 says. A session may run ahead of the confirmation — the contract
+   * gives the brief item `blocks_later_layers` precisely to say whether it did — so hiding
+   * the draft would mean a review whose session ran ahead showed nothing to do while a
+   * finished draft sat behind it.
+   */
   const drafts_to_approve = source.drafts
     .filter(detail => detail.draft.status === 'ready')
     .map(detail => ({ detail, owner: reviewById(detail.draft.review_id) }))
-    .filter(pair => pair.owner?.brief?.confirmed)
+    .filter(pair => pair.owner != null)
     .map(({ owner }) => ({
       review_id: owner!.review.id,
       pull_request: prOf(owner!),

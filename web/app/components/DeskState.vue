@@ -20,7 +20,7 @@
  * | Nothing answered at all | Review Desk is not running, and the command that starts it |
  * | The answer was not this contract's | Something else is answering on this address |
  * | `store_unavailable` | Review Desk is broken, loudly — the brief's "broken is loud" |
- * | `not_found` | This review, draft or rule is not on the desk |
+ * | `not_found` | This review, draft or rule is not on the desk, in the server's own words |
  * | A refusal | What was refused and what would be accepted |
  * | Answered, nothing in it | The screen's own empty slot, which says what is true |
  */
@@ -81,7 +81,7 @@ const problem = computed(() => {
   if (error.code === 'unreadable') {
     return {
       heading: 'Something else is answering',
-      body: error.message,
+      body: sentence(error.message),
       command: null,
       tone: 'blocked' as const,
     }
@@ -90,7 +90,9 @@ const problem = computed(() => {
   if (error.code === 'store_unavailable') {
     return {
       heading: 'Review Desk could not read its database',
-      body: `${error.message} This is Review Desk being unable to run, not a refused request.`,
+      body:
+        `${sentence(error.message)} This is Review Desk being unable to run, `
+        + 'not a refused request.',
       command: 'review-desk db version',
       tone: 'blocked' as const,
     }
@@ -99,7 +101,7 @@ const problem = computed(() => {
   if (error.code === 'github_unavailable') {
     return {
       heading: 'A read of GitHub could not be made',
-      body: `${error.message} Review Desk reads GitHub through your own \`gh\` login.`,
+      body: `${sentence(error.message)} Review Desk reads GitHub through your own gh login.`,
       command: 'gh auth login',
       tone: 'blocked' as const,
     }
@@ -107,8 +109,13 @@ const problem = computed(() => {
 
   if (error.code === 'not_found') {
     return {
-      heading: `The desk holds no ${what.value}`,
-      body: error.message,
+      /*
+       * A heading that reads the same whatever `what` is. "The desk holds no this review"
+       * was what interpolating it produced, and the server's own message already names the
+       * thing — "review 1 has no draft" — so the heading does not have to.
+       */
+      heading: 'Not on the desk',
+      body: `${sentence(error.message)} It may have been opened on another database.`,
       command: null,
       tone: 'problem' as const,
     }
@@ -117,7 +124,7 @@ const problem = computed(() => {
   /* `bad_request`, `invalid_value`, `conflict`: the request was understood and refused. */
   return {
     heading: 'That was refused',
-    body: error.expected ? `${error.message} Accepted: ${error.expected}.` : error.message,
+    body: refusal(error),
     command: null,
     tone: 'problem' as const,
   }

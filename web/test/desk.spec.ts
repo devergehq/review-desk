@@ -69,15 +69,21 @@ beforeEach(async () => {
 })
 
 describe('the inbox', () => {
-  it('groups seven waiting items across two repositories', async () => {
+  it('groups eight waiting items across two repositories', async () => {
     const inbox = await settled(desk().inbox())
-    expect(inbox.totals).toEqual({ items: 7, repos: 2 })
+    /*
+     * Eight, and one review is two of them: #412 has a brief to confirm *and* a draft to
+     * approve, because its session wrote the draft without waiting for the confirmation.
+     * Both are waiting on the developer, so both are items — which is what the server
+     * counts, and what this counted differently until DEV-862's end-to-end test caught it.
+     */
+    expect(inbox.totals).toEqual({ items: 8, repos: 2 })
   })
 
   it('has all five groups filled', async () => {
     const inbox = await settled(desk().inbox())
     expect(inbox.briefs_to_confirm).toHaveLength(1)
-    expect(inbox.drafts_to_approve).toHaveLength(2)
+    expect(inbox.drafts_to_approve).toHaveLength(3)
     expect(inbox.author_replies).toHaveLength(1)
     expect(inbox.own_prs_without_reviewer).toHaveLength(2)
     expect(inbox.proposed_rules).toHaveLength(1)
@@ -106,13 +112,18 @@ describe('the inbox', () => {
 })
 
 describe('confirming a brief', () => {
-  it('takes the item out of the inbox and puts the draft in', async () => {
+  it('takes the brief out of the inbox and leaves the draft', async () => {
     const api = desk()
     const inbox = api.inbox()
-    expect((await settled(inbox)).briefs_to_confirm.map(item => item.review_id))
-      .toContain(WEBHOOKS)
-    expect((await settled(inbox)).drafts_to_approve.map(item => item.review_id))
-      .not.toContain(WEBHOOKS)
+    const before = await settled(inbox)
+    expect(before.briefs_to_confirm.map(item => item.review_id)).toContain(WEBHOOKS)
+    /*
+     * The draft is already there: its session wrote it without waiting. Confirming the
+     * brief takes one item away and leaves the other, which is what "nothing posts until
+     * you confirm" means — the draft can be looked at, and approving it is a second act.
+     */
+    expect(before.drafts_to_approve.map(item => item.review_id)).toContain(WEBHOOKS)
+    expect(before.totals.items).toBe(8)
 
     const result = await api.confirmBrief(WEBHOOKS)
     expect(result.ok).toBe(true)

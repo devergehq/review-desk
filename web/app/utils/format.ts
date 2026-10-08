@@ -165,6 +165,25 @@ export function figure(
 }
 
 /**
+ * One of the server's messages, as a sentence on a screen.
+ *
+ * **The server writes fragments, and deliberately**: "no review with id 1", "this draft is
+ * approved and cannot be edited". They are written to be read after a code — a caller
+ * branches on `code` and shows `message` — and they carry neither a capital nor a full
+ * stop, which is right for a log line and wrong next to another sentence. Joined without
+ * this, the screen read "no review with id 1 It may have been opened on another database."
+ *
+ * Capitalising and closing a sentence is a display decision, so it is made here, once,
+ * rather than asked of every message the server might ever write.
+ */
+export function sentence(text: string): string {
+  const trimmed = text.trim()
+  if (trimmed.length === 0) return trimmed
+  const opened = trimmed[0]!.toUpperCase() + trimmed.slice(1)
+  return /[.!?:]$/.test(opened) ? opened : `${opened}.`
+}
+
+/**
  * A refused write, as the one sentence a screen shows about it.
  *
  * The contract requires `invalid_value` to name what it would have accepted, and a refusal
@@ -173,10 +192,11 @@ export function figure(
  * same refusal read four ways.
  */
 export function refusal(error: DeskError): string {
+  const said = sentence(error.message)
   if (error.code === 'unreachable' || error.code === 'unreadable') {
-    return `${error.message} Nothing was recorded.`
+    return `${said} Nothing was recorded.`
   }
-  return error.expected ? `${error.message} Accepted: ${error.expected}.` : error.message
+  return error.expected ? `${said} Accepted: ${error.expected}.` : said
 }
 
 /**
