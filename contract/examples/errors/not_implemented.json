@@ -1,6 +1,0 @@
-{
-  "code": "not_implemented",
-  "message": "GET /reviews/412/draft (getDraft) is not built yet: it waits on S1 (the draft table).",
-  "field": null,
-  "expected": null
-}

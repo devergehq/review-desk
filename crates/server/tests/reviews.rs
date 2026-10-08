@@ -192,32 +192,59 @@ fn a_bad_head_commit_is_refused() {
 }
 
 #[test]
-fn a_field_the_store_cannot_hold_is_refused_rather_than_dropped() {
+fn the_facts_a_caller_supplies_are_stored_rather_than_dropped() {
     let harness = common::start_with_no_github();
 
-    for (field, body) in [
-        (
-            "title",
-            r#"{"pr_url":"https://github.com/acme/portal/pull/412","head_sha":"3f9c2ab","title":"Retry failed webhook deliveries"}"#,
+    // Before DEV-860 the store had no column for any of these and this operation refused
+    // them rather than accepting and dropping them. It has columns now, so the test is
+    // the one that was always wanted: they come back.
+    let answer = harness.api(
+        "POST",
+        "/reviews",
+        Some(
+            r#"{"pr_url":"https://github.com/acme/portal/pull/412","head_sha":"3f9c2ab",
+                "title":"Retry failed webhook deliveries","ticket_id":"ABC-231",
+                "changed_lines":214}"#,
         ),
-        (
-            "ticket_id",
-            r#"{"pr_url":"https://github.com/acme/portal/pull/412","head_sha":"3f9c2ab","ticket_id":"ABC-231"}"#,
-        ),
-        (
-            "changed_lines",
-            r#"{"pr_url":"https://github.com/acme/portal/pull/412","head_sha":"3f9c2ab","changed_lines":214}"#,
-        ),
+    );
+
+    assert_eq!(answer.status, 201, "{}", answer.text());
+    let review = answer.json();
+    assert_eq!(review["title"], "Retry failed webhook deliveries");
+    assert_eq!(review["ticket_id"], "ABC-231");
+    assert_eq!(review["changed_lines"], 214);
+
+    let stored = harness
+        .store
+        .find_review_by_id(review["id"].as_i64().unwrap())
+        .unwrap()
+        .expect("the review is on the record");
+    assert_eq!(
+        stored.title.as_deref(),
+        Some("Retry failed webhook deliveries")
+    );
+    assert_eq!(stored.ticket_id.as_deref(), Some("ABC-231"));
+    assert_eq!(stored.changed_lines, Some(214));
+}
+
+#[test]
+fn a_link_on_another_host_is_refused() {
+    let harness = common::start_with_no_github();
+
+    // A review is recorded as owner/repo with no host, and the only GitHub this server
+    // can read is github.com. Accepting this would open a review against a GitHub
+    // repository of the same name, which is a different project.
+    for link in [
+        "https://gitlab.com/acme/portal/pull/412",
+        "https://bitbucket.org/acme/portal/pull/412",
+        "https://github.example.com/acme/portal/pull/412",
     ] {
-        let answer = harness.api("POST", "/reviews", Some(body));
-        assert_eq!(
-            answer.status,
-            501,
-            "{field} has no column on master, so it must not be silently dropped: {}",
-            answer.text()
-        );
-        assert_eq!(answer.error_code(), "not_implemented");
-        assert_eq!(answer.json()["field"], field);
+        let body = format!(r#"{{"pr_url":{}}}"#, serde_json::to_string(link).unwrap());
+        let answer = harness.api("POST", "/reviews", Some(&body));
+
+        assert_eq!(answer.status, 400, "{link}: {}", answer.text());
+        assert_eq!(answer.error_code(), "invalid_value");
+        assert_eq!(answer.json()["field"], "pr_url");
     }
 
     assert!(
@@ -226,7 +253,7 @@ fn a_field_the_store_cannot_hold_is_refused_rather_than_dropped() {
             .list_reviews("acme/portal", 412)
             .unwrap()
             .is_empty(),
-        "a refused request must create nothing"
+        "a refused link must create nothing"
     );
 }
 

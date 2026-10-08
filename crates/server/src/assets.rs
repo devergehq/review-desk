@@ -82,11 +82,22 @@ pub fn resolve(path: &str) -> Served<'static> {
         })
 }
 
-/// Whether the last segment of a path has a file extension.
+/// Whether the last segment of a path names a static file this site could hold.
+///
+/// Narrower than "the last segment contains a dot", deliberately. A route segment may
+/// legitimately carry one — a repository is `owner/repo` and `RepoName` permits `.`, so
+/// `/repos/acme/portal.io` is a path the dashboard could produce — and answering it with
+/// a 404 instead of the index would break a link that the client router could have
+/// resolved. An extension this build knows how to serve is the honest test: anything
+/// else is a route.
 fn looks_like_a_file(path: &str) -> bool {
-    path.rsplit('/')
-        .next()
-        .is_some_and(|last| last.contains('.'))
+    let Some(last) = path.rsplit('/').next() else {
+        return false;
+    };
+    let Some((_, extension)) = last.rsplit_once('.') else {
+        return false;
+    };
+    mime_for(last) != "application/octet-stream" || extension.eq_ignore_ascii_case("map")
 }
 
 /// The content type for a file name.

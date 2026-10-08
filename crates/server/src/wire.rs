@@ -15,7 +15,10 @@
 //! name is a validation failure in the conformance test rather than a field the
 //! dashboard silently never sees.
 
-use review_desk_store::{Brief, Finding, Review, Timestamp};
+use review_desk_store::{
+    Brief, BriefOption, Disposition, Draft, DraftLint, Finding, NitTicket, Outcome, RepoSummary,
+    Review, ReviewLayer, Rule, RuleCounts, RuleScope, RuleStage, RulesSummary, Severity, Timestamp,
+};
 use serde_json::{json, Value};
 
 use crate::error::ApiError;
@@ -71,12 +74,6 @@ pub fn finding_key(seq: i64) -> String {
 }
 
 /// The contract's `Review`.
-///
-/// `title`, `ticket_id` and `changed_lines` are null because the store on `master` has
-/// no column for any of them — S5, S6 and S7. They are declared nullable, and null is
-/// the contract's own word for a fact that is absent rather than measured, so nothing
-/// here is invented. A caller that *supplies* one of the three is refused instead of
-/// having it quietly dropped; see `handlers::review`.
 pub fn review(review: &Review) -> Value {
     json!({
         "id": review.id,
@@ -84,9 +81,9 @@ pub fn review(review: &Review) -> Value {
         "pr": review.pr,
         "head_sha": review.head_sha,
         "round": review.round,
-        "title": Value::Null,
-        "ticket_id": Value::Null,
-        "changed_lines": Value::Null,
+        "title": review.title,
+        "ticket_id": review.ticket_id,
+        "changed_lines": review.changed_lines,
         "session_id": review.session_id,
         "ledger_id": review.ledger_id,
         "github_review_id": review.github_review_id,
@@ -94,24 +91,32 @@ pub fn review(review: &Review) -> Value {
     })
 }
 
+/// The contract's `BriefOption`.
+pub fn brief_option(option: &BriefOption) -> Value {
+    json!({
+        "key": option.key,
+        "title": option.title,
+        "argument_for": option.argument_for,
+        "argument_against": option.argument_against,
+        "chosen": option.chosen,
+    })
+}
+
 /// The contract's `Brief`.
 ///
-/// `options` is always empty, and that is a decision rather than an omission. The store
-/// holds the option map as one opaque `String`; `BriefOption` is four structured fields,
-/// and `Brief` has no field for the blob. The contract says as much at
-/// `BriefOption.description` and replaces it with the `brief_option` table in S3. Empty
-/// reads as "no structured options are on record", which is true: there are no rows,
-/// because there is no table.
-///
-/// `provenance` is null for the same reason — S10 has no column.
-pub fn brief(brief: &Brief) -> Value {
+/// `options` comes from the `brief_option` table, not from `Brief::option_map`. The store
+/// still holds that opaque string so migration 4 did not destroy what a review had
+/// already written, but it is four structured fields on the wire and nothing can turn one
+/// into the other — so a brief written before the migration serves an empty list, which
+/// is true, rather than a guess.
+pub fn brief(brief: &Brief, options: &[BriefOption]) -> Value {
     json!({
         "review_id": brief.review_id,
         "problem": brief.problem,
         "diagram": brief.diagram,
-        "options": Value::Array(Vec::new()),
+        "options": options.iter().map(brief_option).collect::<Vec<_>>(),
         "approach_verdict": brief.approach_verdict,
-        "provenance": Value::Null,
+        "provenance": brief.provenance,
         "confirmed": brief.is_confirmed(),
         "confirmed_at": rfc3339_or_null(brief.confirmed_at),
         "updated_at": rfc3339(brief.updated_at),
@@ -119,9 +124,6 @@ pub fn brief(brief: &Brief) -> Value {
 }
 
 /// The contract's `Finding`.
-///
-/// `rule_id` and `rule_key` are null: the store records rule-to-finding and not
-/// finding-to-rule, which is S11 — the citation the whole feedback loop runs through.
 pub fn finding(finding: &Finding) -> Value {
     json!({
         "review_id": finding.review_id,
@@ -135,10 +137,295 @@ pub fn finding(finding: &Finding) -> Value {
         "evidence": finding.evidence,
         "disposition": finding.disposition.as_str(),
         "disposition_reason": finding.disposition_reason,
-        "rule_id": Value::Null,
-        "rule_key": Value::Null,
+        "rule_id": finding.rule_id,
+        "rule_key": finding.rule_id.map(rule_key),
         "created_at": rfc3339(finding.created_at),
     })
+}
+
+/// The contract's `Outcome`.
+pub fn outcome(outcome: &Outcome) -> Value {
+    json!({
+        "id": outcome.id,
+        "review_id": outcome.review_id,
+        "finding_seq": outcome.finding_seq,
+        "finding_key": finding_key(outcome.finding_seq),
+        "kind": outcome.kind.as_str(),
+        "actor": outcome.actor.as_str(),
+        "occurred_at": rfc3339(outcome.occurred_at),
+        "detail": outcome.detail,
+    })
+}
+
+/// The contract's `ReviewLayer`.
+pub fn review_layer(layer: &ReviewLayer) -> Value {
+    json!({
+        "number": layer.number,
+        "name": layer.name.as_str(),
+        "state": layer.state.as_str(),
+        "detail": layer.detail,
+        "updated_at": rfc3339_or_null(layer.updated_at),
+    })
+}
+
+/// The contract's `SeverityCounts`.
+pub fn severity_counts(findings: &[Finding]) -> Value {
+    let count = |wanted: Severity| {
+        findings
+            .iter()
+            .filter(|finding| finding.severity == wanted)
+            .count()
+    };
+    json!({
+        "blocker": count(Severity::Blocker),
+        "should": count(Severity::Should),
+        "nit": count(Severity::Nit),
+        "question": count(Severity::Question),
+    })
+}
+
+/// The contract's `DispositionCounts`.
+pub fn disposition_counts(findings: &[Finding]) -> Value {
+    let count = |wanted: Disposition| {
+        findings
+            .iter()
+            .filter(|finding| finding.disposition == wanted)
+            .count()
+    };
+    json!({
+        "in_draft": count(Disposition::InDraft),
+        "held_back": count(Disposition::HeldBack),
+        "suppressed": count(Disposition::Suppressed),
+    })
+}
+
+/// The contract's `NitTicket`.
+pub fn nit_ticket(ticket: &NitTicket) -> Value {
+    json!({
+        "review_id": ticket.review_id,
+        "status": ticket.status.as_str(),
+        "ticket_id": ticket.ticket_id,
+        "finding_seqs": ticket.finding_seqs,
+        "requested_at": rfc3339_or_null(ticket.requested_at),
+        "filed_at": rfc3339_or_null(ticket.filed_at),
+    })
+}
+
+/// The contract's `DraftLint`, or null when the lint has not run.
+///
+/// Null rather than a `DraftLint` with every field absent. `passes` and `checked_at` are
+/// required by the schema, so there is no shape of the object that means "not measured" —
+/// serialising one would mean inventing `passes: false` and a time, and a failing lint is
+/// not an absent one. The contract was changed in this pull request to allow the null.
+pub fn draft_lint(lint: &DraftLint) -> Value {
+    if lint.is_empty() || lint.passes.is_none() || lint.checked_at.is_none() {
+        return Value::Null;
+    }
+
+    json!({
+        "passes": lint.passes,
+        "visible_words": lint.visible_words,
+        "word_budget": lint.word_budget,
+        "findings_in_body": lint.findings_in_body,
+        "findings_expected": lint.findings_expected,
+        "raised_before_on_pr": lint.raised_before_on_pr,
+        // The store holds what the lint printed, as one string; the contract wants the
+        // error lines. Splitting is a display decision the store declined to make, so it
+        // is made here, once.
+        "errors": lint
+            .errors
+            .as_deref()
+            .map(|errors| {
+                errors
+                    .lines()
+                    .map(str::trim_end)
+                    .filter(|line| !line.is_empty())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default(),
+        "checked_at": rfc3339_or_null(lint.checked_at),
+    })
+}
+
+/// The contract's `Draft`.
+pub fn draft(draft: &Draft) -> Value {
+    json!({
+        "review_id": draft.review_id,
+        "body": draft.body,
+        "status": draft.status.as_str(),
+        "event": draft.event.map(|event| event.as_str()),
+        "approved_at": rfc3339_or_null(draft.approved_at),
+        "sent_back_note": draft.sent_back_note,
+        "sent_back_at": rfc3339_or_null(draft.sent_back_at),
+        "posted_at": rfc3339_or_null(draft.posted_at),
+        "updated_at": rfc3339(draft.updated_at),
+    })
+}
+
+/// The contract's `DraftEdit`: one edit the developer made, as an outcome by them.
+pub fn draft_edit(outcome: &Outcome) -> Value {
+    json!({
+        "finding_seq": outcome.finding_seq,
+        "finding_key": finding_key(outcome.finding_seq),
+        "kind": outcome.kind.as_str(),
+        // `summary` is required and `detail` is not, so an edit recorded without one
+        // falls back to the kind rather than the field being omitted.
+        "summary": outcome
+            .detail
+            .clone()
+            .unwrap_or_else(|| outcome.kind.as_str().to_string()),
+        "occurred_at": rfc3339(outcome.occurred_at),
+    })
+}
+
+/// The contract's `HeldBackFinding`.
+pub fn held_back_finding(finding: &Finding) -> Value {
+    json!({
+        "finding_seq": finding.seq,
+        "finding_key": finding_key(finding.seq),
+        "claim": finding.claim,
+        "severity": finding.severity.as_str(),
+    })
+}
+
+/// The contract's `RepoSummary`.
+pub fn repo_summary(repo: &RepoSummary) -> Value {
+    json!({
+        "repo": repo.repo,
+        "open_reviews": repo.open_reviews,
+        "active_rules": repo.active_rules,
+    })
+}
+
+/// The contract's `RuleScope`.
+pub fn rule_scope(scope: &RuleScope) -> Value {
+    json!({ "kind": scope.as_str(), "repo": scope.repo() })
+}
+
+/// The contract's `RuleCounts`.
+///
+/// Every field is written, and a field with no source is written as null. The contract's
+/// rule is that a count Review Desk cannot answer is absent and never zero; the store
+/// says in its own documentation which three are always absent, and they are the three
+/// that need a CI or harvest source nothing supplies.
+pub fn rule_counts(counts: &RuleCounts) -> Value {
+    json!({
+        "raised": counts.raised,
+        "kept": counts.kept,
+        "rejected_with_reason": counts.rejected_with_reason,
+        "cited_by_findings": counts.cited_by_findings,
+        "exceptions": counts.exceptions,
+        "caught_by_check": counts.caught_by_check,
+        "raised_in_a_review_since": counts.raised_in_a_review_since,
+        "last_human_mention_at": rfc3339_or_null(counts.last_human_mention_at),
+    })
+}
+
+/// A rule's display key: `R-` plus its id, zero-padded to two digits.
+pub fn rule_key(id: i64) -> String {
+    format!("R-{id:02}")
+}
+
+/// How the Rules screen words a stage.
+pub fn stage_label(stage: RuleStage, exceptions: Option<i64>) -> String {
+    let stage = match stage {
+        RuleStage::Proposed => "Proposed",
+        RuleStage::Active => "Repository rule",
+        RuleStage::Lint => "Lint check",
+        RuleStage::Ci => "CI check",
+        RuleStage::Retired => "Retired",
+    };
+
+    match exceptions {
+        Some(1) => format!("{stage} · 1 exception"),
+        Some(many) if many > 1 => format!("{stage} · {many} exceptions"),
+        _ => stage.to_string(),
+    }
+}
+
+/// Whether nothing has cited a rule for long enough to question it.
+///
+/// **Stale is a question, not a stage.** A stale rule is still in force until the
+/// developer retires it, which is why it is derived here rather than stored as a stage.
+///
+/// The threshold is the server's to choose: the store holds `last_cited_at` and
+/// `review_again_at` and deliberately declines to say how long is too long. Sixty days
+/// is what the Rules mockup words as "No finding has cited it in 60 days", and
+/// "Keep 60 more days" is the control that answers it — so the two numbers are the same
+/// number and it is written once.
+pub const STALE_AFTER_DAYS: i64 = 60;
+
+/// Seconds in a day.
+pub const DAY: i64 = 86_400;
+
+/// Whether this rule should be shown as going stale.
+pub fn is_stale(rule: &Rule, now: Timestamp) -> bool {
+    // Deferring answers the question for a while, whatever the citations say. That is the
+    // whole point of "Keep 60 more days": it takes the rule out of the stale group
+    // without pretending a finding cited it.
+    if rule.review_again_at.is_some_and(|until| until > now) {
+        return false;
+    }
+
+    // A proposal is not in force, so it cannot have gone stale; a retired rule is not in
+    // force either. Staleness is a question about rules that are being applied.
+    if matches!(rule.stage, RuleStage::Proposed | RuleStage::Retired) {
+        return false;
+    }
+
+    // Never cited: measured from when the rule was made, so a rule created yesterday is
+    // not stale on its first day merely for having no citations yet.
+    let last = rule.last_cited_at.unwrap_or(rule.created_at);
+    now - last > STALE_AFTER_DAYS * DAY
+}
+
+/// The contract's `Rule`.
+pub fn rule(rule: &Rule, counts: &RuleCounts, now: Timestamp) -> Value {
+    json!({
+        "id": rule.id,
+        "key": rule_key(rule.id),
+        "statement": rule.statement,
+        "prevents": rule.prevents,
+        "scope": rule_scope(&rule.scope),
+        "stage": rule.stage.as_str(),
+        "stage_label": stage_label(rule.stage, counts.exceptions),
+        "why_proposed": rule.why_proposed,
+        "note": rule.note,
+        "origin_review_id": rule.origin_review_id,
+        // The pull request a rule was decided on is the one its origin review was of.
+        // Null when the rule names no origin review; filled in by the caller, which is
+        // the only thing that can read that review.
+        "origin_pr": Value::Null,
+        "origin_findings": rule
+            .origin_findings
+            .iter()
+            .map(|finding| json!({ "review_id": finding.review_id, "seq": finding.seq }))
+            .collect::<Vec<_>>(),
+        "stale": is_stale(rule, now),
+        "last_cited_at": rfc3339_or_null(rule.last_cited_at),
+        "review_again_at": rfc3339_or_null(rule.review_again_at),
+        "counts": rule_counts(counts),
+        "created_at": rfc3339(rule.created_at),
+    })
+}
+
+/// The contract's `RulesSummary`.
+pub fn rules_summary(summary: &RulesSummary) -> Value {
+    json!({
+        "active_rules": summary.active_rules,
+        "active_rules_cap": summary.active_rules_cap,
+        "replay_matched": summary.replay_matched,
+        "replay_total": summary.replay_total,
+        "findings_kept": summary.findings_kept,
+        "findings_total": summary.findings_total,
+        "findings_window_days": summary.findings_window_days,
+        "raised_twice_on_one_pr": summary.raised_twice_on_one_pr,
+    })
+}
+
+/// The contract's `InboxPr`.
+pub fn inbox_pr(review: &Review) -> Value {
+    json!({ "repo": review.repo, "pr": review.pr, "title": review.title })
 }
 
 /// A repository and pull request number read out of a pasted link.
@@ -150,6 +437,19 @@ pub struct PrLink {
 
 /// What a pull request link has to look like, for an error message that says so.
 const PR_LINK_SHAPE: &str = "a pull request link such as https://github.com/acme/portal/pull/412";
+
+/// The host a pull request link has to name.
+///
+/// **Checked, because Review Desk has exactly one GitHub.** The store keys a review on
+/// `owner/repo` with no host, and the only way this server reads a pull request is by
+/// running `gh`, which talks to github.com. So a link to `gitlab.com/acme/portal` is not
+/// a link this server can act on — and accepting it would silently open a review against
+/// *a GitHub repository of the same name*, which is a different project entirely.
+///
+/// A GitHub Enterprise host would need a host on the record and a `gh` told which host to
+/// use. That is a change to the store, so it is refused here and named rather than half
+/// supported.
+const PR_LINK_HOSTS: [&str; 2] = ["github.com", "www.github.com"];
 
 /// Read `owner/repo` and the number out of a pull request link.
 ///
@@ -198,11 +498,28 @@ pub fn parse_pr_link(url: &str) -> Result<PrLink, ApiError> {
 
     // Host, owner, repository, the literal `pull`, the number. Anything after that —
     // `/files`, `/commits` — is still the same pull request and is ignored.
-    let [_host, owner, name, "pull", number, ..] = segments.as_slice() else {
+    let [host, owner, name, "pull", number, ..] = segments.as_slice() else {
         return Err(refused(
             "the link's path is not HOST/owner/repo/pull/NUMBER",
         ));
     };
+
+    // A host and a port, if one is given. The port says nothing about which GitHub this
+    // is, and github.com is never on a non-default one.
+    let bare_host = host.split(':').next().unwrap_or(host);
+    if !PR_LINK_HOSTS
+        .iter()
+        .any(|allowed| bare_host.eq_ignore_ascii_case(allowed))
+    {
+        return Err(ApiError::invalid_value(
+            "pr_url",
+            format!(
+                "{bare_host:?} is not a host Review Desk reads: a review is recorded as \
+                 owner/repo with no host, and GitHub is the only one it can read"
+            ),
+            "a link on github.com",
+        ));
+    }
 
     let repo = format!("{owner}/{name}");
     if !is_repo_name(&repo) {

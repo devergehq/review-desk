@@ -18,7 +18,10 @@ use std::sync::Arc;
 use review_desk_harvest::recorded::Recorded;
 use review_desk_harvest::{CommitFiles, Comparison, GitHub, PullRequest, ReviewThread};
 use review_desk_server::{Github, Records, Running, Server};
-use review_desk_store::{Disposition, NewBrief, NewFinding, Severity, Store};
+use review_desk_store::{
+    BriefOption, Disposition, DraftLint, DraftStatus, NewBrief, NewDraft, NewFinding, NewOutcome,
+    NewRule, OutcomeKind, ReviewLayerState, RuleScope, RuleStage, Severity, Store,
+};
 use serde_json::Value;
 use tempfile::TempDir;
 
@@ -236,21 +239,44 @@ fn parse(raw: &[u8]) -> Answer {
     }
 }
 
-/// A review with a brief and two findings, as the record would hold after layers 2 and 5.
+/// A record with enough in it that every one of the sixteen operations has something
+/// real to answer with.
+///
+/// Built through the store's public API rather than by writing SQL, so it cannot drift
+/// from what the command line would have produced.
 #[derive(Debug)]
 pub struct Seeded {
     pub review_id: i64,
+    /// A second review, on another repository, so cross-repository queries are exercised
+    /// by more than one row.
+    pub other_review_id: i64,
+    pub rule_id: i64,
+    pub proposed_rule_id: i64,
+    /// A review a session is still working on, for the Inbox's "In progress".
+    pub running_review_id: i64,
 }
 
-// The `..Default::default()` on `NewBrief` has no effect today and is kept deliberately:
-// DEV-860 adds `options` and `provenance` to that struct, and the spread is what keeps
-// this seed compiling across that rebase. Clippy is right that it does nothing yet.
 #[allow(clippy::needless_update)]
 pub fn seed(store: &Store) -> Seeded {
-    let opened = store
+    let review_id = store
         .open_review("acme/portal", 412, "3f9c2ab")
-        .expect("opening a review");
-    let review_id = opened.review.id;
+        .expect("opening a review")
+        .review
+        .id;
+
+    store
+        .set_review_facts(
+            review_id,
+            &review_desk_store::ReviewFacts {
+                title: Some("Retry failed webhook deliveries".to_string()),
+                ticket_id: Some("ABC-231".to_string()),
+                changed_lines: Some(214),
+                not_checked: Some(
+                    "The admin screens, which this change does not touch.".to_string(),
+                ),
+            },
+        )
+        .expect("setting the review's facts");
 
     store
         .put_brief(
@@ -258,14 +284,41 @@ pub fn seed(store: &Store) -> Seeded {
             NewBrief {
                 problem: "Failed webhook deliveries are never retried.".to_string(),
                 diagram: Some("flowchart LR\n  A[Event] --> B[Deliver]".to_string()),
-                option_map: Some("A: retry inside the request. B: a queue.".to_string()),
-                approach_verdict: Some("The queue is right for this volume.".to_string()),
-                // Spread, not listed: DEV-860 adds `options` and `provenance` to this
-                // struct, and it derives Default, so this seed survives that rebase.
+                options: vec![
+                    BriefOption {
+                        key: "A".to_string(),
+                        title: "Retry inside the request".to_string(),
+                        argument_for: "Smallest change, no new tables.".to_string(),
+                        argument_against: "Holds the request open.".to_string(),
+                        chosen: false,
+                    },
+                    BriefOption {
+                        key: "B".to_string(),
+                        title: "Queue with backoff".to_string(),
+                        argument_for: "Meets the 24-hour window.".to_string(),
+                        argument_against: "Needs an idempotency key.".to_string(),
+                        chosen: true,
+                    },
+                ],
+                approach_verdict: Some("B is the right shape for this ticket.".to_string()),
+                provenance: Some("from the ticket and the code".to_string()),
                 ..Default::default()
             },
         )
         .expect("writing a brief");
+
+    for number in 1..=7 {
+        let state = match number {
+            1 => ReviewLayerState::Done,
+            2 => ReviewLayerState::WaitingOnYou,
+            3..=5 => ReviewLayerState::Done,
+            6 => ReviewLayerState::WaitingOnYou,
+            _ => ReviewLayerState::Pending,
+        };
+        store
+            .set_review_layer(review_id, number, state, Some("seeded"))
+            .expect("writing a layer");
+    }
 
     store
         .add_finding(
@@ -279,6 +332,7 @@ pub fn seed(store: &Store) -> Seeded {
                 evidence: Some("throwaway test, 2 deliveries for 1 event".to_string()),
                 disposition: Disposition::InDraft,
                 disposition_reason: None,
+                rule_id: None,
             },
         )
         .expect("writing a finding");
@@ -293,11 +347,122 @@ pub fn seed(store: &Store) -> Seeded {
                 line: None,
                 claim: "Backoff schedule repeated in two files.".to_string(),
                 evidence: None,
-                disposition: Disposition::InDraft,
-                disposition_reason: None,
+                disposition: Disposition::HeldBack,
+                disposition_reason: Some("a nit; it goes in the ticket".to_string()),
+                rule_id: None,
             },
         )
         .expect("writing a second finding");
 
-    Seeded { review_id }
+    store
+        .put_draft(
+            review_id,
+            NewDraft {
+                body: "## Review\n\nOne blocker.".to_string(),
+                status: DraftStatus::Ready,
+                lint: Some(DraftLint {
+                    passes: Some(true),
+                    visible_words: Some(118),
+                    word_budget: Some(150),
+                    findings_in_body: Some(1),
+                    findings_expected: Some(1),
+                    raised_before_on_pr: Some(0),
+                    errors: None,
+                    checked_at: Some(review_desk_store::now()),
+                }),
+            },
+        )
+        .expect("writing a draft");
+
+    // A developer edit, which is what the Draft preview screen lists.
+    store
+        .add_outcome(
+            review_desk_store::FindingRef { review_id, seq: 2 },
+            NewOutcome {
+                kind: OutcomeKind::Cut,
+                actor: review_desk_store::Actor::Developer,
+                detail: Some("rename suggestion".to_string()),
+                occurred_at: None,
+            },
+        )
+        .expect("writing a developer outcome");
+
+    let rule_id = store
+        .create_rule(NewRule {
+            statement: "A retry must carry an idempotency key.".to_string(),
+            prevents: "One event delivered twice.".to_string(),
+            scope: RuleScope::Repo("acme/portal".to_string()),
+            stage: RuleStage::Active,
+            origin_review_id: Some(review_id),
+            origin_findings: vec![review_desk_store::FindingRef { review_id, seq: 1 }],
+            why_proposed: None,
+            note: Some("author disagreed once, with a reason you accepted".to_string()),
+        })
+        .expect("writing a rule")
+        .id;
+
+    let proposed_rule_id = store
+        .create_rule(NewRule {
+            statement: "Do not raise rename-for-clarity suggestions.".to_string(),
+            prevents: "Nits that generate more nits.".to_string(),
+            scope: RuleScope::Global,
+            stage: RuleStage::Proposed,
+            origin_review_id: None,
+            origin_findings: Vec::new(),
+            why_proposed: Some("you cut this from 5 of the last 5 drafts".to_string()),
+            note: None,
+        })
+        .expect("writing a proposed rule")
+        .id;
+
+    // A review a session is still working on. In progress means a layer is `running` —
+    // a layer waiting on the developer is the other groups' business — so the Inbox's
+    // "In progress" group is empty without one of these.
+    let running_id = store
+        .open_review("acme/billing-api", 93, "bb28cd0")
+        .expect("opening a running review")
+        .review
+        .id;
+    store
+        .set_review_links(
+            running_id,
+            review_desk_store::ReviewLinks {
+                session_id: Some("allele-ae03f8ce".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("linking the session");
+    store
+        .set_review_layer(
+            running_id,
+            5,
+            ReviewLayerState::Running,
+            Some("code review"),
+        )
+        .expect("writing a running layer");
+
+    // A second review, on another repository, so the cross-repository queries and the
+    // repository list have more than one row to be right about.
+    let other_review_id = store
+        .open_review("acme/billing-api", 88, "aa17bc9")
+        .expect("opening a second review")
+        .review
+        .id;
+    store
+        .put_brief(
+            other_review_id,
+            NewBrief {
+                problem: "Invoice totals round per line.".to_string(),
+                ..Default::default()
+            },
+        )
+        .expect("writing a second brief");
+
+    Seeded {
+        review_id,
+        other_review_id,
+        rule_id,
+        proposed_rule_id,
+        running_review_id: running_id,
+    }
 }

@@ -44,11 +44,17 @@ fn serve(desk: &Desk, json: bool) -> (Child, String) {
     (child, line)
 }
 
-/// Wait until the address answers, or give up.
+/// Wait until the address *answers*, or give up.
+///
+/// A full request, not a bare connect. Connecting and dropping the socket leaves a
+/// worker reading a request that never arrives, which on a loaded machine is one of four
+/// workers tied up for no reason — and "something accepted the connection" is a weaker
+/// claim than "the server answered" anyway.
 fn wait_for(address: &str) -> bool {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < deadline {
-        if TcpStream::connect(address).is_ok() {
+        if TcpStream::connect(address).is_ok() && get(address, "/api/v1/health").contains("200 OK")
+        {
             return true;
         }
         std::thread::sleep(Duration::from_millis(50));

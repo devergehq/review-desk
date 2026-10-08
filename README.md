@@ -10,9 +10,9 @@ installed.
 This repository is at the third slice: the store, the commands an agent session calls
 to record a review, the harvester that reads a posted review's outcomes back from
 GitHub, the dashboard's four screens, and the local HTTP server that serves the JSON API
-and the dashboard from one binary. **Three of the contract's sixteen operations are
-answered; the other thirteen return 501 and name the store change they wait on.** The
-dashboard still runs on sample data and calls no API yet.
+and the dashboard from one binary. **All sixteen of the contract's operations are
+answered.** The dashboard still runs on sample data and calls no API yet; switching it
+over is the next slice.
 
 **Only the developer signs off.** Confirming a brief and approving a draft happen in
 the dashboard; the command line that agent sessions call has no command for either. An
@@ -501,7 +501,7 @@ contract's `servers` entry; everything else is the dashboard.
 
 ```sh
 curl -s http://127.0.0.1:7777/api/v1/health
-# {"front_end_embedded":true,"schema_version":3,"status":"ok"}
+# {"front_end_embedded":true,"schema_version":4,"status":"ok"}
 ```
 
 ### Building a binary with the dashboard in it
@@ -545,23 +545,29 @@ exists because a listener on `0.0.0.0` would pass the first.
 
 ### Which operations are answered
 
-Three, which are the ones the store on `master` can answer in full.
+**All sixteen.** One GET per screen, and every write the four screens make.
 
-| Operation | What it does |
-| -- | -- |
-| `POST /reviews` | Starts a review from a pull request link, resolving the head commit from GitHub when the caller has none |
-| `POST /reviews/{id}/brief/confirm` | Confirms the brief. **A sign-off: only the developer can do it, and this is the only surface where it happens.** |
-| `PATCH /reviews/{id}/findings/{seq}` | Moves a finding between the draft, held back and suppressed, with the reason |
+| Screen | Reads | Writes |
+| -- | -- | -- |
+| Inbox | `GET /inbox` | `POST /reviews` |
+| One review | `GET /reviews/{id}` | `POST …/brief/confirm`, `PATCH …/findings/{seq}` |
+| Draft preview | `GET /reviews/{id}/draft` | `PUT …/draft`, `POST …/draft/approve`, `POST …/draft/send-back`, `POST …/held-back/ticket` |
+| Rules | `GET /rules?repo=`, `GET /repos` | `POST /rules/{id}/promote`, `/dismiss`, `/retire`, `/defer` |
 
-The other thirteen return **501 with `code: "not_implemented"`**, and the message names
-the store item from `contract/README.md` that the operation waits on — `S1` for the draft
-table, `S2` for the per-layer rows, and so on. They are listed in
-`crates/server/src/route.rs`, which is the one place the decision is recorded and is
-walked by a test.
+**Two of them are sign-offs, and only the developer can make one.** Confirming a brief
+and approving a draft happen here and nowhere else: `review-desk brief confirm` does not
+exist, and the store refuses any actor but the developer. The server passes a constant,
+not an argument — a sign-off endpoint that could be told whose signature to record would
+be one that could be told the wrong one.
 
-An operation that cannot be answered in full returns nothing of its response body. One
-that returned the fields it could reach and invented the rest would be worse, because
-the dashboard could not tell which half to trust.
+**Approving does not post.** It sets the draft's status, stores the chosen event and the
+time, and stops. The review session finds the approved draft and posts it under the
+developer's name, then records the GitHub review id through `review link
+--github-review`, which is what moves the status to `posted`.
+
+A field the record has no source for is served as `null`, never as zero: session
+liveness, the developer's own pull requests, the CI figures and the replay figures are
+all absent rather than measured, and the dashboard has to render the absence.
 
 ### It reads GitHub once and never writes to it
 
@@ -582,8 +588,8 @@ The body is the contract's `Error` object itself, not a document wrapping one �
 different from the command line's `--json`, because the two have different contracts.
 
 ```json
-{ "code": "not_implemented",
-  "message": "GET /reviews/412/draft (getDraft) is not built yet: it waits on S1 (the draft table)." }
+{ "code": "conflict",
+  "message": "this draft is approved and only a draft that is ready can be sent back" }
 ```
 
 | `code` | Status | Means |
@@ -593,8 +599,11 @@ different from the command line's `--json`, because the two have different contr
 | `not_found` | 404 | No such review, finding, draft or rule |
 | `conflict` | 409 | The record is not in a state the request can be made against |
 | `store_unavailable` | 500 | Review Desk is broken. The HTTP equivalent of exit 2 |
-| `not_implemented` | 501 | The operation is in the contract and this build cannot answer it yet |
 | `github_unavailable` | 502 | A read Review Desk needed could not be made: `gh` missing or logged out |
+
+**Refused and broken are tellable apart without reading the message**, which is the
+command line's exit-code split carried onto the wire: `store_unavailable` is the only
+code that means Review Desk itself is broken.
 
 ### Conformance
 

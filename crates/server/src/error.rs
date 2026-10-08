@@ -5,9 +5,6 @@
 //! carries and the status is derived from it, rather than the two being chosen
 //! separately at each call site and drifting apart.
 //!
-//! One code is new in this change: `not_implemented`. DEV-861 asks for it, and
-//! `contract/openapi.yaml` gains it in the same pull request — an endpoint that says it
-//! is not built has to say so in a word the client already knows how to branch on.
 
 use review_desk_harvest::HarvestError;
 use review_desk_store::StoreError;
@@ -22,7 +19,6 @@ pub enum Code {
     Conflict,
     GithubUnavailable,
     StoreUnavailable,
-    NotImplemented,
 }
 
 impl Code {
@@ -35,7 +31,6 @@ impl Code {
             Code::Conflict => "conflict",
             Code::GithubUnavailable => "github_unavailable",
             Code::StoreUnavailable => "store_unavailable",
-            Code::NotImplemented => "not_implemented",
         }
     }
 
@@ -50,7 +45,6 @@ impl Code {
             Code::NotFound => 404,
             Code::Conflict => 409,
             Code::StoreUnavailable => 500,
-            Code::NotImplemented => 501,
             Code::GithubUnavailable => 502,
         }
     }
@@ -113,16 +107,6 @@ impl ApiError {
         Self::new(Code::GithubUnavailable, message)
     }
 
-    /// The store on `master` cannot answer this in full. `waits_on` names the item in
-    /// `contract/README.md` that would let it, so a reader of the response does not
-    /// have to go and work out which one.
-    pub fn not_implemented(what: &str, waits_on: &str) -> Self {
-        Self::new(
-            Code::NotImplemented,
-            format!("{what} is not built yet: it waits on {waits_on}."),
-        )
-    }
-
     /// Name the field at fault.
     pub fn about(mut self, field: impl Into<String>) -> Self {
         self.field = Some(field.into());
@@ -163,9 +147,14 @@ impl From<StoreError> for ApiError {
             StoreError::NotFound { .. } | StoreError::UnknownParent { .. } => {
                 ApiError::not_found(message)
             }
-            StoreError::DuplicateReview { .. } | StoreError::DuplicateGithubComment { .. } => {
-                ApiError::conflict(message)
-            }
+            // Every one of these is a statement about the record rather than about the
+            // request: the row is already there, or the draft is not in a state this act
+            // can be performed from. The contract declares 409 for all of them, and the
+            // store's own `is_refusal` cannot make the distinction — it lumps state
+            // conflicts in with bad input, because exit 1 covers both.
+            StoreError::DuplicateReview { .. }
+            | StoreError::DuplicateGithubComment { .. }
+            | StoreError::DraftStatus { .. } => ApiError::conflict(message),
             StoreError::InvalidValue {
                 field, expected, ..
             } => ApiError::invalid_value(*field, message, expected.clone()),

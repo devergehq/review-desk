@@ -1,5 +1,4 @@
-//! Every one of the contract's sixteen operations answers, and each one that cannot be
-//! answered in full says so in the contract's error shape.
+//! Every one of the contract's sixteen operations is routed and answers.
 //!
 //! This walks `Operation::ALL` rather than listing routes by hand, so an operation added
 //! to the contract and not to the server fails here instead of 404ing in a browser.
@@ -15,83 +14,108 @@ fn the_contract_has_sixteen_operations() {
 }
 
 #[test]
-fn every_operation_answers() {
-    let harness = common::start_with_no_github();
-    let seeded = common::seed(&harness.store);
-
+fn every_operation_answers_from_a_seeded_record() {
     for operation in Operation::ALL {
-        let answer = call(&harness, *operation, seeded.review_id);
-        assert_ne!(
-            answer.status,
-            404,
-            "{} ({}) is not routed: the server answered 404 for a well-formed path",
-            operation.route(),
-            operation.id()
-        );
+        // A record of its own per operation. Several of these write — approving a draft,
+        // promoting a rule — so a shared record would make the answers depend on the
+        // order of the loop, and the loop's order is not a thing this test is about.
+        let harness = common::start_with_no_github();
+        let seeded = common::seed(&harness.store);
+
+        let answer = call(&harness, *operation, &seeded);
         assert!(
-            answer.status < 500 || answer.status == 501,
-            "{} answered {}, which is Review Desk being broken rather than an answer",
+            (200..300).contains(&answer.status),
+            "{} ({}) should answer from a seeded record; it answered {} with {}",
             operation.route(),
-            answer.status
-        );
-    }
-}
-
-#[test]
-fn every_unimplemented_operation_returns_501_naming_what_it_waits_on() {
-    let harness = common::start_with_no_github();
-    let seeded = common::seed(&harness.store);
-
-    let mut waiting = 0;
-    for operation in Operation::ALL {
-        let Some(waits_on) = operation.waits_on() else {
-            continue;
-        };
-        waiting += 1;
-
-        let answer = call(&harness, *operation, seeded.review_id);
-        assert_eq!(
-            answer.status,
-            501,
-            "{} waits on {waits_on} and must answer 501; it answered {} with {}",
-            operation.route(),
+            operation.id(),
             answer.status,
             answer.text()
         );
-        assert_eq!(answer.error_code(), "not_implemented");
+    }
+}
 
-        // The message has to name the store item, because the point of the 501 is to say
-        // what would make it work rather than merely that it does not.
-        let message = answer.json()["message"].as_str().unwrap().to_string();
-        let first_item = waits_on.split_whitespace().next().unwrap();
-        assert!(
-            message.contains(first_item),
-            "{} should name {first_item} in its message; it said {message:?}",
-            operation.route()
-        );
-        assert!(
-            message.contains(operation.id()),
-            "{} should name its operationId; it said {message:?}",
-            operation.route()
+/// Nothing answers 501 any more, and that is worth asserting rather than assuming.
+///
+/// This server was built while a sibling issue was still changing the store, and
+/// thirteen operations returned 501 naming the store item they waited on. That issue
+/// merged before this pull request opened. A 501 from any operation now means a handler
+/// was left behind, which is exactly the thing that would otherwise be noticed in a
+/// browser weeks later.
+#[test]
+fn no_operation_says_it_is_not_built() {
+    for operation in Operation::ALL {
+        let harness = common::start_with_no_github();
+        let seeded = common::seed(&harness.store);
+
+        let answer = call(&harness, *operation, &seeded);
+        assert_ne!(
+            answer.status,
+            501,
+            "{} still answers 501: {}",
+            operation.route(),
+            answer.text()
         );
     }
-
-    assert_eq!(
-        waiting, 13,
-        "three operations are implemented against the store on master and thirteen wait"
-    );
 }
 
 #[test]
-fn an_unknown_review_is_not_found_rather_than_not_implemented() {
+fn an_unknown_review_is_not_found_on_every_operation_that_names_one() {
     let harness = common::start_with_no_github();
+    common::seed(&harness.store);
 
-    // Checked on an implemented operation: a 501 would be hiding a 404, and a dashboard
-    // cannot tell "this review is gone" from "this endpoint is not built" if the server
-    // answers the same way for both.
-    let answer = harness.api("POST", "/reviews/9001/brief/confirm", None);
-    assert_eq!(answer.status, 404);
-    assert_eq!(answer.error_code(), "not_found");
+    let missing = [
+        ("GET", "/reviews/9001", None),
+        ("POST", "/reviews/9001/brief/confirm", None),
+        (
+            "PATCH",
+            "/reviews/9001/findings/1",
+            Some(r#"{"disposition":"in_draft"}"#),
+        ),
+        ("GET", "/reviews/9001/draft", None),
+        ("PUT", "/reviews/9001/draft", Some(r#"{"body":"x"}"#)),
+        (
+            "POST",
+            "/reviews/9001/draft/approve",
+            Some(r#"{"event":"comment"}"#),
+        ),
+        (
+            "POST",
+            "/reviews/9001/draft/send-back",
+            Some(r#"{"note":"cut the nits"}"#),
+        ),
+        ("POST", "/reviews/9001/held-back/ticket", Some("{}")),
+    ];
+
+    for (method, path, body) in missing {
+        let answer = harness.api(method, path, body);
+        assert_eq!(
+            answer.status,
+            404,
+            "{method} {path} should be 404, not {}: {}",
+            answer.status,
+            answer.text()
+        );
+        assert_eq!(answer.error_code(), "not_found");
+    }
+}
+
+#[test]
+fn an_unknown_rule_is_not_found_on_every_rule_operation() {
+    let harness = common::start_with_no_github();
+    common::seed(&harness.store);
+
+    let missing = [
+        ("/rules/9001/promote", r#"{"to_stage":"active"}"#),
+        ("/rules/9001/dismiss", r#"{"reason":"no"}"#),
+        ("/rules/9001/retire", r#"{"reason":"stale"}"#),
+        ("/rules/9001/defer", r#"{"days":60}"#),
+    ];
+
+    for (path, body) in missing {
+        let answer = harness.api("POST", path, Some(body));
+        assert_eq!(answer.status, 404, "{path}: {}", answer.text());
+        assert_eq!(answer.error_code(), "not_found");
+    }
 }
 
 #[test]
@@ -119,37 +143,45 @@ fn a_wrong_method_is_refused_rather_than_answered() {
     let harness = common::start_with_no_github();
 
     // `GET /reviews` is `POST /reviews` with the wrong verb. It must not be read as the
-    // inbox, and it must not 501 as though startReview were unbuilt.
+    // inbox, and it must not be answered as though it were a route of its own.
     let answer = harness.api("GET", "/reviews", None);
     assert_eq!(answer.status, 400);
     assert_eq!(answer.error_code(), "bad_request");
 }
 
-/// Call one operation with a body it would accept, so a 400 never stands in for a 501.
-fn call(harness: &common::Harness, operation: Operation, review_id: i64) -> common::Answer {
+/// Call one operation with a body it would accept, so a 400 never stands in for a
+/// handler that is missing.
+pub fn call(
+    harness: &common::Harness,
+    operation: Operation,
+    seeded: &common::Seeded,
+) -> common::Answer {
     let route = operation
         .route()
-        .replace("/reviews/1", &format!("/reviews/{review_id}"));
+        .replace("/reviews/1", &format!("/reviews/{}", seeded.review_id))
+        .replace("/rules/1/", &format!("/rules/{}/", seeded.rule_id));
     let (method, path) = route.split_once(' ').expect("a method and a path");
 
     let body = match operation {
-        Operation::StartReview => {
-            Some(r#"{"pr_url":"https://github.com/acme/portal/pull/412","head_sha":"3f9c2ab"}"#)
-        }
+        Operation::StartReview => Some(
+            r#"{"pr_url":"https://github.com/acme/portal/pull/500","head_sha":"3f9c2ab"}"#
+                .to_string(),
+        ),
         Operation::SetFindingDisposition { .. } => {
-            Some(r#"{"disposition":"held_back","reason":"a nit, for the ticket"}"#)
+            Some(r#"{"disposition":"held_back","reason":"a nit, for the ticket"}"#.to_string())
         }
-        Operation::SaveDraft { .. } => Some(r#"{"body":"A review body."}"#),
-        Operation::ApproveDraft { .. } => Some(r#"{"event":"comment"}"#),
-        Operation::SendBackDraft { .. } => Some(r#"{"note":"cut the nits"}"#),
-        Operation::RequestNitTicket { .. } => Some("{}"),
-        Operation::PromoteRule { .. } => Some(r#"{"to_stage":"active"}"#),
+        Operation::SaveDraft { .. } => Some(r#"{"body":"A review body."}"#.to_string()),
+        Operation::ApproveDraft { .. } => Some(r#"{"event":"comment"}"#.to_string()),
+        Operation::SendBackDraft { .. } => Some(r#"{"note":"cut the nits"}"#.to_string()),
+        Operation::RequestNitTicket { .. } => Some("{}".to_string()),
+        // The seeded rule is `active`, so the stage that follows it is `lint`.
+        Operation::PromoteRule { .. } => Some(r#"{"to_stage":"lint"}"#.to_string()),
         Operation::DismissRule { .. } | Operation::RetireRule { .. } => {
-            Some(r#"{"reason":"no consequence named"}"#)
+            Some(r#"{"reason":"no consequence named"}"#.to_string())
         }
-        Operation::DeferRule { .. } => Some(r#"{"days":60}"#),
+        Operation::DeferRule { .. } => Some(r#"{"days":60}"#.to_string()),
         _ => None,
     };
 
-    harness.api(method, path, body)
+    harness.api(method, path, body.as_deref())
 }

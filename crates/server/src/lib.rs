@@ -239,12 +239,12 @@ impl Drop for Running {
 /// Answer one request: the API under [`API_PREFIX`], the embedded dashboard everywhere
 /// else.
 fn answer(api: &Api, mut request: Request) {
-    let (path, _query) = split_url(request.url());
+    let (path, query) = split_url(request.url());
     let path = path.to_string();
+    let query = query.to_string();
     let method = request.method().as_str().to_string();
 
-    let served = if let Some(rest) = path.strip_prefix(API_PREFIX) {
-        let rest = if rest.is_empty() { "/" } else { rest };
+    let served = if let Some(rest) = api_path(&path) {
         let body = match read_body(&mut request) {
             Ok(body) => body,
             Err(error) => {
@@ -252,7 +252,7 @@ fn answer(api: &Api, mut request: Request) {
                 return;
             }
         };
-        let (status, document) = api.answer(&method, rest, &body);
+        let (status, document) = api.answer(&method, rest, &query, &body);
         json_response(status, &document)
     } else if method == "GET" || method == "HEAD" {
         page_response(&path)
@@ -269,6 +269,20 @@ fn answer(api: &Api, mut request: Request) {
     };
 
     let _ = request.respond(served);
+}
+
+/// The part of a path after the API prefix, when the path is an API path at all.
+///
+/// The boundary matters more than it looks. A bare `strip_prefix` makes any path that
+/// merely *starts with* `/api/v1` an API call, so `POST /api/v1reviews` would strip to
+/// `reviews` and really create a review, and `GET /api/v1health` would answer the health
+/// endpoint. The remainder has to be empty or start with a separator.
+fn api_path(path: &str) -> Option<&str> {
+    match path.strip_prefix(API_PREFIX) {
+        Some("") => Some("/"),
+        Some(rest) if rest.starts_with('/') => Some(rest),
+        _ => None,
+    }
 }
 
 /// The path and the query string, separately.

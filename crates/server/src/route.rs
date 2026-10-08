@@ -1,17 +1,15 @@
-//! The contract's sixteen operations, and which of them the store on `master` can answer.
+//! The contract's sixteen operations, as a type.
 //!
-//! The table below is the whole of DEV-861's "which endpoints, now" decision, in one
-//! place and under test. Each operation is either implemented or it names the item from
-//! `contract/README.md`'s store list that it waits on — and because [`Operation::ALL`]
-//! exists, a test can walk every operation and assert that each one answers, rather than
-//! the set of routes being whatever the handlers happen to have grown.
+//! [`Operation::ALL`] is the point of this module: a test can walk every operation the
+//! contract declares and assert that each one is routed and answers, rather than the set
+//! of routes being whatever the handlers happened to grow. An operation added to
+//! `openapi.yaml` and not to the server fails a test instead of 404ing in a browser.
 //!
-//! An operation that cannot be answered **in full** returns 501 `not_implemented`. It
-//! does not return the fields it can reach and invent the rest: a response that is
-//! partly real is worse than one that says it is not built, because the dashboard cannot
-//! tell which half to trust.
-
-use crate::error::ApiError;
+//! This file briefly carried a second job. DEV-861 was written while a sibling issue was
+//! still changing the store, and thirteen operations could not be answered in full from
+//! what `master` held; each named the store item it was waiting for and returned 501.
+//! That sibling merged before this pull request opened, so every operation is answered
+//! and the mechanism is gone rather than left behind returning `None` for everything.
 
 /// One of the contract's operations, with its path parameters read out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,68 +110,6 @@ impl Operation {
             Operation::DeferRule { rule_id } => format!("POST /rules/{rule_id}/defer"),
         }
     }
-
-    /// What the store on `master` is missing before this operation can be answered in
-    /// full, or `None` when it can be.
-    ///
-    /// Each entry names the item from the "Store changes this contract needs" list in
-    /// `contract/README.md`, and says which **required** response field is unanswerable —
-    /// a nullable field with no column is served as null, which the contract calls the
-    /// honest answer, so it is never a reason to refuse.
-    pub fn waits_on(self) -> Option<&'static str> {
-        match self {
-            // Implemented.
-            Operation::StartReview
-            | Operation::ConfirmBrief { .. }
-            | Operation::SetFindingDisposition { .. } => None,
-
-            // `Inbox.drafts_to_approve` needs the draft table, `in_progress` needs the
-            // per-layer rows, and every group needs reviews across all repositories —
-            // the store's review queries are all scoped to one pull request.
-            Operation::GetInbox => {
-                Some("S1 (draft), S2 (review_layer), S17 (cross-repository review queries)")
-            }
-
-            // Distinct repositories with their open-review and active-rule counts.
-            Operation::ListRepos => Some("S18 (the repository list)"),
-
-            // `ReviewDetail.layers` is required and must hold exactly seven rows;
-            // `nit_ticket` is required and has no columns.
-            Operation::GetReview { .. } => {
-                Some("S2 (review_layer), S9 (the review's nit-ticket columns)")
-            }
-
-            // There is no draft table at all.
-            Operation::GetDraft { .. }
-            | Operation::SaveDraft { .. }
-            | Operation::ApproveDraft { .. }
-            | Operation::SendBackDraft { .. } => Some("S1 (the draft table)"),
-
-            // The ticket's status, id and times live on the review, and do not exist.
-            Operation::RequestNitTicket { .. } => Some("S9 (the review's nit-ticket columns)"),
-
-            // `Rule.stale` is a required, non-nullable boolean derived from
-            // `last_cited_at` and `review_again_at`. Neither column exists, and no value
-            // of a boolean means "not measured".
-            Operation::ListRules | Operation::PromoteRule { .. } | Operation::DeferRule { .. } => {
-                Some("S12 (rule.last_cited_at), S13 (rule.review_again_at)")
-            }
-
-            // The same, plus nowhere to record why the rule was dismissed or retired.
-            Operation::DismissRule { .. } | Operation::RetireRule { .. } => Some(
-                "S12 (rule.last_cited_at), S13 (rule.review_again_at), \
-                 S16 (a reason on a rule's stage change)",
-            ),
-        }
-    }
-
-    /// The 501 this operation answers with while it waits.
-    pub fn not_implemented(self) -> ApiError {
-        let waits_on = self
-            .waits_on()
-            .expect("not_implemented is only for an operation that waits on the store");
-        ApiError::not_implemented(&format!("{} ({})", self.route(), self.id()), waits_on)
-    }
 }
 
 /// What a request was asking for.
@@ -195,9 +131,11 @@ pub fn match_route(method: &str, path: &str) -> Target {
     let segments: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
     let number = |segment: &str| segment.parse::<i64>().ok().filter(|value| *value >= 1);
 
-    // A path shape that exists is separated from one that does not, so a wrong method
-    // answers 405 rather than 404: "no such endpoint" and "not with that verb" are
-    // different things to tell a client.
+    // A path shape that exists is separated from one that does not, so "no such
+    // endpoint" and "not with that verb" are different things to tell a client. Both are
+    // refusals the contract has a code for — `not_found` and `bad_request` — and neither
+    // is a 405: the contract declares no 405 and `ErrorCode` has no word for one, so
+    // inventing a status would be a worse answer than a shape the client already parses.
     let (target, allowed) = match segments.as_slice() {
         ["health"] => (Target::Health, method == "GET"),
         ["inbox"] => (Target::Operation(Operation::GetInbox), method == "GET"),
