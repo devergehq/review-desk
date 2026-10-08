@@ -1,0 +1,242 @@
+{
+  "review": {
+    "id": 17,
+    "repo": "acme/portal",
+    "pr": 412,
+    "head_sha": "3f9c2ab",
+    "round": 1,
+    "title": "Retry failed webhook deliveries",
+    "ticket_id": "ABC-231",
+    "changed_lines": 214,
+    "session_id": "ses_c81f40ad",
+    "ledger_id": "ledger-2026-10-08-412",
+    "github_review_id": null,
+    "created_at": "2026-10-08T10:31:00Z"
+  },
+  "layers": [
+    {
+      "number": 1,
+      "name": "lint",
+      "state": "done",
+      "detail": "passed",
+      "updated_at": "2026-10-08T10:32:00Z"
+    },
+    {
+      "number": 2,
+      "name": "understand",
+      "state": "done",
+      "detail": "confirmed by you",
+      "updated_at": "2026-10-08T10:58:00Z"
+    },
+    {
+      "number": 3,
+      "name": "alternatives",
+      "state": "done",
+      "detail": "3 options",
+      "updated_at": "2026-10-08T11:02:00Z"
+    },
+    {
+      "number": 4,
+      "name": "solution_map",
+      "state": "done",
+      "detail": "done",
+      "updated_at": "2026-10-08T11:05:00Z"
+    },
+    {
+      "number": 5,
+      "name": "code_review",
+      "state": "done",
+      "detail": "6 findings",
+      "updated_at": "2026-10-08T11:18:00Z"
+    },
+    {
+      "number": 6,
+      "name": "draft",
+      "state": "waiting_on_you",
+      "detail": "waiting on you",
+      "updated_at": "2026-10-08T11:21:00Z"
+    },
+    {
+      "number": 7,
+      "name": "harvest",
+      "state": "pending",
+      "detail": "after posting",
+      "updated_at": null
+    }
+  ],
+  "brief": {
+    "review_id": 17,
+    "problem": "When a customer's endpoint is down, a webhook delivery fails once and is never tried again. The customer finds out only when their own records drift. The ticket asks for deliveries to be retried for up to 24 hours and for the customer to see which ones failed.",
+    "diagram": "flowchart LR\n  A[Event happens<br/>Delivery is sent inline] --> B[Endpoint is down<br/>Error is logged, nothing stored]\n  B --> C[Delivery is lost<br/>No retry, no record, no notice]",
+    "options": [
+      {
+        "key": "A",
+        "title": "Retry inside the request",
+        "argument_for": "Smallest change, no new tables.",
+        "argument_against": "Holds the user's request open; cannot span 24 hours.",
+        "chosen": false
+      },
+      {
+        "key": "B",
+        "title": "Queue with backoff",
+        "argument_for": "Meets the 24-hour window; failures are stored and visible.",
+        "argument_against": "Needs an idempotency key so a retry is not a duplicate.",
+        "chosen": true
+      },
+      {
+        "key": "C",
+        "title": "Dead-letter and manual replay",
+        "argument_for": "A person can replay one delivery after fixing an endpoint.",
+        "argument_against": "Nothing happens automatically.",
+        "chosen": false
+      }
+    ],
+    "approach_verdict": "B is the right shape for this ticket. It leaves out the one useful part of C: once the 24 hours run out there is no way to replay a delivery by hand. That is finding F2.",
+    "provenance": "from the ticket and the code · you corrected one sentence",
+    "confirmed": true,
+    "confirmed_at": "2026-10-08T10:58:00Z",
+    "updated_at": "2026-10-08T10:58:00Z"
+  },
+  "findings": [
+    {
+      "review_id": 17,
+      "seq": 1,
+      "key": "F1",
+      "lens": "sibling diff",
+      "severity": "blocker",
+      "file": "jobs/DeliverWebhook.php",
+      "line": 58,
+      "claim": "A retried delivery is sent without an idempotency key",
+      "evidence": "throwaway test, 2 deliveries for 1 event",
+      "disposition": "in_draft",
+      "disposition_reason": null,
+      "rule_id": null,
+      "rule_key": null,
+      "created_at": "2026-10-08T11:11:00Z"
+    },
+    {
+      "review_id": 17,
+      "seq": 2,
+      "key": "F2",
+      "lens": "approach",
+      "severity": "should",
+      "file": null,
+      "line": null,
+      "claim": "No way to replay a delivery after the retry window closes",
+      "evidence": "from the option map · ticket acceptance criterion 3",
+      "disposition": "in_draft",
+      "disposition_reason": null,
+      "rule_id": null,
+      "rule_key": null,
+      "created_at": "2026-10-08T11:12:00Z"
+    },
+    {
+      "review_id": 17,
+      "seq": 3,
+      "key": "F3",
+      "lens": "can this test fail",
+      "severity": "should",
+      "file": "tests/WebhookRetryTest.php",
+      "line": 31,
+      "claim": "The failure test passes with the retry code reverted",
+      "evidence": "Reverted the retry locally; the test still passed.",
+      "disposition": "in_draft",
+      "disposition_reason": null,
+      "rule_id": 9,
+      "rule_key": "R-09",
+      "created_at": "2026-10-08T11:14:00Z"
+    },
+    {
+      "review_id": 17,
+      "seq": 4,
+      "key": "F4",
+      "lens": "repetition",
+      "severity": "nit",
+      "file": "config/webhooks.php",
+      "line": 12,
+      "claim": "Backoff schedule is repeated in two files",
+      "evidence": null,
+      "disposition": "held_back",
+      "disposition_reason": "Held for one ticket with the other nits; not worth a review comment.",
+      "rule_id": null,
+      "rule_key": null,
+      "created_at": "2026-10-08T11:15:00Z"
+    },
+    {
+      "review_id": 17,
+      "seq": 5,
+      "key": "F5",
+      "lens": "repetition",
+      "severity": "nit",
+      "file": "jobs/DeliverWebhook.php",
+      "line": 7,
+      "claim": "Unused import left in the job class",
+      "evidence": null,
+      "disposition": "held_back",
+      "disposition_reason": "Held for one ticket with the other nits; not worth a review comment.",
+      "rule_id": null,
+      "rule_key": null,
+      "created_at": "2026-10-08T11:16:00Z"
+    },
+    {
+      "review_id": 17,
+      "seq": 6,
+      "key": "F6",
+      "lens": "naming",
+      "severity": "nit",
+      "file": "jobs/DeliverWebhook.php",
+      "line": 24,
+      "claim": "Rename `attempt` to `attemptNumber`",
+      "evidence": null,
+      "disposition": "suppressed",
+      "disposition_reason": "No consequence named · matches a proposed rule to stop raising these",
+      "rule_id": 22,
+      "rule_key": "R-22",
+      "created_at": "2026-10-08T11:17:00Z"
+    }
+  ],
+  "outcomes": [
+    {
+      "id": 61,
+      "review_id": 17,
+      "finding_seq": 6,
+      "finding_key": "F6",
+      "kind": "cut",
+      "actor": "developer",
+      "occurred_at": "2026-10-08T11:23:00Z",
+      "detail": "rename suggestion"
+    },
+    {
+      "id": 62,
+      "review_id": 17,
+      "finding_seq": 3,
+      "finding_key": "F3",
+      "kind": "regraded",
+      "actor": "developer",
+      "occurred_at": "2026-10-08T11:24:00Z",
+      "detail": "Blocker to Should"
+    },
+    {
+      "id": 63,
+      "review_id": 17,
+      "finding_seq": 1,
+      "finding_key": "F1",
+      "kind": "rewritten",
+      "actor": "developer",
+      "occurred_at": "2026-10-08T11:25:00Z",
+      "detail": "first sentence"
+    }
+  ],
+  "finding_severities": { "blocker": 1, "should": 2, "nit": 3, "question": 0 },
+  "finding_dispositions": { "in_draft": 3, "held_back": 2, "suppressed": 1 },
+  "not_checked": "The queue worker's behaviour under a deploy restart was not run. Production delivery volumes were not queried, so the backoff schedule's load is unmeasured.",
+  "nit_ticket": {
+    "review_id": 17,
+    "status": "none",
+    "ticket_id": null,
+    "finding_seqs": [4, 5],
+    "requested_at": null,
+    "filed_at": null
+  },
+  "draft_status": "ready"
+}
