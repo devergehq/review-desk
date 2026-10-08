@@ -9,7 +9,7 @@ use crate::model::{
 };
 use crate::{is_unique_violation, normalise, Store};
 
-const COLUMNS: &str = "id, repo, pr, head_sha, round, title, ticket_id, changed_lines, \
+pub(super) const COLUMNS: &str = "id, repo, pr, head_sha, round, title, ticket_id, changed_lines, \
                        not_checked, session_id, ledger_id, github_review_id, pr_state, \
                        pr_state_at, harvested_at, nit_ticket_status, nit_ticket_id, \
                        nit_ticket_requested_at, nit_ticket_filed_at, created_at";

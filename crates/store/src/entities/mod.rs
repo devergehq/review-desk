@@ -1,14 +1,15 @@
 //! The typed create and read functions, one module per entity.
 //!
 //! Each module adds an `impl Store` block, so a caller sees one flat API on `Store`
-//! rather than seven sub-objects.
+//! rather than one sub-object per table.
 
 mod brief;
 mod draft;
 mod finding;
+mod inbox;
 mod layer;
 mod outcome;
-mod review;
+pub(crate) mod review;
 mod rule;
 
 use crate::error::{Result, StoreError};
