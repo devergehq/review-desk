@@ -77,9 +77,23 @@ endpoint exists. Flagged rather than quietly dropped.
 
 ## Every visible datum, by screen
 
-Page chrome — the product name, the "Sample data" badge, the navigation, and fixed
-sentences like "Nothing has been posted. This is what GitHub will show." — is front-end
-copy and intentionally absent from the API. Everything else on the four screens is below.
+The tables map **field kinds**, not the mockups' sample values: "#407" and "#412" are both
+`pull_request.pr`, and "F1 · A retried delivery…" is `findings[].key` and `.claim`.
+
+Page chrome is front-end copy and intentionally absent from the API. So that a deliberate
+omission is distinguishable from an oversight, it is all of: the product name, the "Sample
+data" badge, the navigation, the group and section headings, the summary tiles' captions
+("findings matched on the last replay", "reviews that went in a circle", "cap of 20 per
+repository" apart from its number), and these fixed sentences —
+
+- "Nothing has been posted. This is what GitHub will show."
+- "Starts with the problem brief. No findings are written until you confirm it."
+- "Saved as feedback when you approve. Three edits of the same kind become a proposed rule."
+- "The review session posts it under your name, with no bot banner."
+- "written before the diff was read"
+- "Every rule names the failure it prevents. A preference with no consequence does not qualify."
+
+Everything else on the four screens is below.
 
 ### Inbox — `GET /inbox`, example `examples/getInbox.response.json`
 
