@@ -205,10 +205,11 @@ function save() {
 }
 
 .change {
-  min-height: 32px;
-  padding: 0 10px;
+  /* A secondary control, but still a control: the same 44px as every other one. */
+  min-height: var(--rd-control-min);
+  padding: 0 12px;
   border: 1px solid var(--rd-control-line);
-  border-radius: var(--rd-radius-xs);
+  border-radius: var(--rd-radius-sm);
   background: var(--rd-surface);
   color: var(--rd-ink-dim);
   font: inherit;

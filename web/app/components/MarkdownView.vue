@@ -129,7 +129,12 @@ function render(markdown: string): string {
   cursor: pointer;
   font-size: 14px;
   color: var(--rd-ink-dim);
-  min-height: 28px;
+  /*
+   * A fold's summary is content, not a control of the app's, and it is rendered the
+   * compact way GitHub renders it. It spans the fold's full width and is 32px tall,
+   * which clears WCAG 2.2's 24px target minimum; the app's own controls are 44px.
+   */
+  min-height: 32px;
   display: flex;
   align-items: center;
 }

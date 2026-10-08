@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -92,5 +92,30 @@ describe('nothing you can press is smaller than a finger', () => {
     expect(css).toMatch(/--rd-control-min:\s*44px/)
     expect(css).toMatch(/\.rd-btn\s*\{[^}]*min-height:\s*var\(--rd-control-min\)/)
     expect(css).toMatch(/\.rd-field\s*\{[^}]*min-height:\s*var\(--rd-control-min\)/)
+  })
+
+  /*
+   * One exception, stated rather than silent: a `<summary>` inside a rendered draft is
+   * content, laid out the compact way GitHub lays it out, and clears WCAG 2.2's 24px
+   * target minimum on its own.
+   */
+  it('no component sets a shorter height on something you press', () => {
+    const components = readdirSync(resolve('app/components'))
+      .filter(name => name.endsWith('.vue'))
+      .map(name => ({ name, text: readFileSync(resolve('app/components', name), 'utf8') }))
+    expect(components.length).toBeGreaterThan(10)
+    const offenders = components
+      .filter(file => /cursor:\s*pointer/.test(file.text))
+      .filter(file => !/min-height:\s*var\(--rd-control-min\)/.test(file.text))
+      .filter(file => file.name !== 'MarkdownView.vue')
+      .map(file => file.name)
+    expect(offenders).toEqual([])
+  })
+
+  it('a rendered fold\u2019s summary still clears the 24px target minimum', () => {
+    const markdown = readFileSync(resolve('app/components/MarkdownView.vue'), 'utf8')
+    const height = markdown.match(/summary\)\s*\{[^}]*min-height:\s*(\d+)px/)
+    expect(height).not.toBeNull()
+    expect(Number(height![1])).toBeGreaterThanOrEqual(24)
   })
 })

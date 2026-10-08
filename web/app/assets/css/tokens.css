@@ -54,11 +54,6 @@
   box-sizing: border-box;
 }
 
-html {
-  /* The one place that stops a wide diagram scrolling the page. */
-  overflow-x: hidden;
-}
-
 body {
   margin: 0;
   background: var(--rd-ground);
