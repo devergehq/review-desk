@@ -5,7 +5,11 @@
 
 import type {
   DescriptionLint,
+  DeskError,
+  InboxReplyEvent,
+  Rule,
   Instant,
+  OutcomeKind,
   ReviewLayerName,
   ReviewLayerState,
   SeverityCounts,
@@ -92,18 +96,63 @@ export function descriptionLintLabel(lint: DescriptionLint | null | undefined): 
   return `description is ${lint.budget_ratio}× its budget`
 }
 
+/**
+ * What an outcome kind is called in a sentence about one finding.
+ *
+ * **All nine of them, which is the drift DEV-862 closed.** `replied` and `thread_resolved`
+ * are what the harvester writes — a reply on a finding's comment thread, and that thread
+ * being resolved — and this map had neither, so the One review screen printed the raw wire
+ * string for the two kinds it is most likely to be showing. The map is keyed by
+ * `OutcomeKind` rather than by `string`, so a kind added to the contract is a type error
+ * here instead of a word nobody wrote.
+ */
+const VERBS: Record<OutcomeKind, string> = {
+  cut: 'Cut',
+  regraded: 'Regraded',
+  rewritten: 'Rewrote',
+  kept: 'Kept',
+  rejected: 'Rejected',
+  raised_again: 'Raised again',
+  replied: 'Replied to',
+  thread_resolved: 'Resolved the thread on',
+  code_changed_after: 'Code changed after',
+}
+
 /** What an outcome kind is called in a sentence about an edit. */
-export function editVerb(kind: string): string {
-  const verbs: Record<string, string> = {
-    cut: 'Cut',
-    regraded: 'Regraded',
-    rewritten: 'Rewrote',
-    kept: 'Kept',
-    rejected: 'Rejected',
-    raised_again: 'Raised again',
-    code_changed_after: 'Code changed after',
+export function editVerb(kind: OutcomeKind | string): string {
+  return VERBS[kind as OutcomeKind] ?? kind
+}
+
+/**
+ * One thing an author or the harvester did, as the Inbox words it.
+ *
+ * Moved out of the template it used to be a nested ternary in. That expression handled
+ * `rejected` and `code_changed_after` and fell through to the wire string with its
+ * underscores swapped for spaces — which is how `thread_resolved` would have read as
+ * "thread resolved" on the one group built from exactly that kind.
+ */
+export function replyLabel(event: InboxReplyEvent): string {
+  const key = event.finding_key
+  switch (event.kind) {
+    case 'rejected':
+      return `finding ${key} rejected with a reason`
+    case 'code_changed_after':
+      return `${key} fixed in a later commit`
+    case 'replied':
+      return `the author replied on ${key}`
+    case 'thread_resolved':
+      return `${key}'s thread was resolved`
+    case 'raised_again':
+      return `${key} was raised again`
+    case 'kept':
+      return `${key} was kept`
+    case 'cut':
+      return `${key} was cut`
+    case 'regraded':
+      return `${key} was regraded`
+    case 'rewritten':
+      return `${key} was rewritten`
   }
-  return verbs[kind] ?? kind
 }
 
 /** A count the server has no measurement for is absent, not nought. */
@@ -113,4 +162,50 @@ export function figure(
 ): string | null {
   if (value == null) return null
   return of == null ? String(value) : `${value} of ${of}`
+}
+
+/**
+ * A refused write, as the one sentence a screen shows about it.
+ *
+ * The contract requires `invalid_value` to name what it would have accepted, and a refusal
+ * that showed the complaint without the remedy would waste that. Written once, because
+ * four screens refuse things and a message assembled differently on each would make the
+ * same refusal read four ways.
+ */
+export function refusal(error: DeskError): string {
+  if (error.code === 'unreachable' || error.code === 'unreadable') {
+    return `${error.message} Nothing was recorded.`
+  }
+  return error.expected ? `${error.message} Accepted: ${error.expected}.` : error.message
+}
+
+/**
+ * Which tone a refusal is shown in.
+ *
+ * `blocked` is something Review Desk needed and could not get — the machine rather than
+ * the request — so it is boxed and names a remedy. Everything else is a request the desk
+ * understood and refused, which the developer answers by changing what they typed.
+ */
+export function refusalTone(error: DeskError): 'problem' | 'blocked' {
+  return error.code === 'github_unavailable'
+    || error.code === 'store_unavailable'
+    || error.code === 'unreachable'
+    || error.code === 'unreadable'
+    ? 'blocked'
+    : 'problem'
+}
+
+/**
+ * Why a rule is in the "Going stale" group, when nothing has written a note saying so.
+ *
+ * The contract's rule is that a rule is stale once no finding has cited it for sixty days
+ * and it has not been deferred past today, and `Rule.note` is a free line the server may or
+ * may not have filled in. This is what the screen says when it has not: the measurement the
+ * grouping was made from, rather than the bare fact of the group.
+ */
+export function staleLabel(rule: Rule, now: Date = new Date()): string {
+  if (rule.last_cited_at == null) {
+    return `Nothing has ever cited it. Made ${sinceLabel(rule.created_at, now)}.`
+  }
+  return `No finding has cited it since ${sinceLabel(rule.last_cited_at, now)}.`
 }

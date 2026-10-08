@@ -14,7 +14,27 @@ const emit = defineEmits<{
 const open = ref(false)
 const target = ref<Disposition>(props.finding.disposition)
 const reason = ref(props.finding.disposition_reason ?? '')
-const problem = ref('')
+
+/**
+ * Whether a save has been asked for and not yet come back.
+ *
+ * The panel closes when the finding it is about changes, which is what a successful write
+ * produces: the write re-reads the review, so this component is handed a new finding. A
+ * *refused* write re-reads nothing, so the panel stays open with the reason still typed in
+ * it — which is what DEV-862 asks for, and it needs no second copy of the rule that was
+ * broken.
+ */
+const saving = ref(false)
+
+watch(
+  () => props.finding,
+  () => {
+    if (saving.value) {
+      saving.value = false
+      open.value = false
+    }
+  },
+)
 
 const options: Array<{ value: Disposition, label: string }> = [
   { value: 'in_draft', label: 'In draft' },
@@ -42,21 +62,25 @@ const rest = computed(() => {
 function start() {
   target.value = props.finding.disposition
   reason.value = props.finding.disposition_reason ?? ''
-  problem.value = ''
   open.value = true
 }
 
+/**
+ * Ask for the move, and let the record refuse it.
+ *
+ * **There is no copy of the "say why" rule here**, and there was. The server requires a
+ * reason for `held_back` and `suppressed` — a finding removed from the draft without one
+ * teaches the harvester nothing — and this component used to check the same thing first,
+ * so the real refusal was never reached from the screen and the two wordings could drift.
+ * One rule, in the record, with the screen showing what it said.
+ */
 function save() {
-  if (target.value !== 'in_draft' && reason.value.trim().length === 0) {
-    problem.value = 'Say why it is not going in the draft.'
-    return
-  }
+  saving.value = true
   emit('change', {
     seq: props.finding.seq,
     disposition: target.value,
     reason: target.value === 'in_draft' ? '' : reason.value,
   })
-  open.value = false
 }
 </script>
 
@@ -153,12 +177,6 @@ function save() {
           Cancel
         </button>
       </div>
-      <DeskNotice
-        v-if="problem"
-        tone="problem"
-      >
-        {{ problem }}
-      </DeskNotice>
     </div>
   </li>
 </template>

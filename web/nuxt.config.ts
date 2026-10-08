@@ -18,15 +18,6 @@
  */
 const devApi = process.env.REVIEW_DESK_API ?? 'http://127.0.0.1:7777'
 
-/**
- * Which records the dashboard reads in development: `api` or `sample`.
- *
- * Only honoured by `nuxt dev` and the component tests. A built dashboard always reads the
- * API — `app/data/source.ts` ignores this in a production build, and the fixtures are not
- * in the bundle to read.
- */
-const devSource = process.env.REVIEW_DESK_SOURCE === 'sample' ? 'sample' : 'api'
-
 /*
  * Every route a static file server has to answer.
  *
@@ -68,17 +59,6 @@ export default defineNuxtConfig({
     '@fontsource/ibm-plex-mono/500.css',
     '~/assets/css/tokens.css',
   ],
-
-  /*
-   * Read by `app/data/source.ts`. Baked into the bundle at build time, which is what makes
-   * `sample` unreachable in a built dashboard: `nuxt generate` writes `api` here and the
-   * branch that would have loaded a fixture is removed with it.
-   */
-  runtimeConfig: {
-    public: {
-      deskSource: devSource,
-    },
-  },
 
   compatibilityDate: '2026-10-08',
 

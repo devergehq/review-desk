@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { RulesPage } from '~/types/desk'
+
 /**
  * The rules: what the desk has learned, and what it is proposing to learn.
  *
@@ -11,24 +13,38 @@ const desk = useReviewDesk()
 useHead({ title: 'Rules · Review Desk' })
 
 const repo = ref(ALL_REPOSITORIES)
+const repos = desk.repos()
 const page = desk.rules(repo)
 
 const options = computed(() => [
-  ...desk.repos.value.map(item => ({ value: item.repo, label: item.repo })),
+  ...(repos.data.value ?? []).map(item => ({ value: item.repo, label: item.repo })),
   { value: ALL_REPOSITORIES, label: 'All repositories' },
 ])
 
-onMounted(() => {
-  if (repo.value === ALL_REPOSITORIES && desk.repos.value[0]) {
-    repo.value = desk.repos.value[0].repo
-  }
-})
+/*
+ * The first repository, once the list has arrived, so the screen opens on one repository's
+ * rules rather than on every repository's at once. Watched rather than done on mount: the
+ * list is a read now, and on mount there is nothing to pick from yet.
+ */
+watch(
+  () => repos.data.value,
+  (list) => {
+    if (repo.value === ALL_REPOSITORIES && list && list[0]) repo.value = list[0].repo
+  },
+  { immediate: true },
+)
 
 const asking = ref<{ id: number, kind: 'dismiss' | 'retire' } | null>(null)
-const notice = ref<{ text: string, ok: boolean } | null>(null)
+const working = ref(false)
+const notice = ref<{ text: string, tone: 'plain' | 'problem' | 'blocked' } | null>(null)
 
-const stats = computed(() => {
-  const s = page.value.summary
+/** Whether this repository has no rules at any stage. */
+function isEmpty(data: RulesPage): boolean {
+  return data.proposed.length === 0 && data.active.length === 0 && data.stale.length === 0
+}
+
+function stats(data: RulesPage) {
+  const s = data.summary
   return [
     {
       label: 'Active rules',
@@ -60,30 +76,31 @@ const stats = computed(() => {
           : 'reviews that went in a circle',
     },
   ]
-})
-
-function promote(id: number, key: string) {
-  desk.promoteRule(id)
-  notice.value = { text: `${key} promoted. It applies from the next review.`, ok: true }
-  asking.value = null
 }
 
-function dismiss(id: number, reason: string) {
-  const result = desk.dismissRule(id, reason)
-  notice.value = { text: result.message, ok: result.ok }
-  if (result.ok) asking.value = null
+function said(result: { ok: true, message: string } | { ok: false, error: DeskError }) {
+  notice.value = result.ok
+    ? { text: result.message, tone: 'plain' }
+    : { text: refusal(result.error), tone: refusalTone(result.error) }
+  return result.ok
 }
 
-function retire(id: number, reason: string) {
-  const result = desk.retireRule(id, reason)
-  notice.value = { text: result.message, ok: result.ok }
-  if (result.ok) asking.value = null
+async function act(run: () => Promise<{ ok: true, message: string } | { ok: false, error: DeskError }>) {
+  working.value = true
+  const ok = said(await run())
+  working.value = false
+  /*
+   * The reason prompt stays open on a refusal, with what the developer wrote still in it.
+   * A refusal here is almost always "say why", and clearing the box would be the one
+   * response guaranteed to make them type it twice.
+   */
+  if (ok) asking.value = null
 }
 
-function defer(id: number) {
-  notice.value = { text: desk.deferRule(id, 60), ok: true }
-  asking.value = null
-}
+const promote = (id: number) => act(() => desk.promoteRule(id))
+const dismiss = (id: number, reason: string) => act(() => desk.dismissRule(id, reason))
+const retire = (id: number, reason: string) => act(() => desk.retireRule(id, reason))
+const defer = (id: number) => act(() => desk.deferRule(id, 60))
 </script>
 
 <template>
@@ -105,6 +122,7 @@ function defer(id: number) {
           id="repo"
           v-model="repo"
           class="rd-field"
+          :disabled="repos.pending.value && !repos.loaded.value"
         >
           <option
             v-for="option in options"
@@ -119,142 +137,177 @@ function defer(id: number) {
 
     <DeskNotice
       v-if="notice"
-      :tone="notice.ok ? 'plain' : 'problem'"
+      :tone="notice.tone"
     >
       {{ notice.text }}
     </DeskNotice>
 
-    <div class="stats">
-      <StatTile
-        v-for="stat in stats"
-        :key="stat.label"
-        :label="stat.label"
-        :value="stat.value"
-        :note="stat.note"
-      />
-    </div>
-
-    <DeskSection
-      v-if="page.proposed.length"
-      heading="Proposed"
-      :count="page.proposed.length"
+    <DeskState
+      :resource="page"
+      :is-empty="isEmpty"
+      what="the rules"
     >
-      <DeskCard
-        v-for="rule in page.proposed"
-        :key="rule.id"
-        tone="chosen"
-        class="proposal"
-      >
-        <div class="proposal-body">
-          <div class="head-line">
-            <span class="rd-mono rd-meta">{{ rule.key }}</span>
-            <h3 class="statement">
-              {{ rule.statement }}
-            </h3>
-          </div>
-          <p class="rd-note why">
-            <strong>Why proposed:</strong> {{ rule.why_proposed }}
-          </p>
-          <p class="rd-note why">
-            <strong>Prevents:</strong> {{ rule.prevents }}
-          </p>
-          <p
-            v-if="rule.note"
-            class="rd-meta note"
-          >
-            {{ rule.note }}
-          </p>
-        </div>
-        <div class="actions">
-          <button
-            type="button"
-            class="rd-btn rd-btn--primary"
-            @click="promote(rule.id, rule.key)"
-          >
-            Promote
-          </button>
-          <button
-            type="button"
-            class="rd-btn"
-            @click="asking = { id: rule.id, kind: 'dismiss' }"
-          >
-            Dismiss
-          </button>
-        </div>
-        <ReasonPrompt
-          v-if="asking?.id === rule.id && asking.kind === 'dismiss'"
-          :id="`dismiss-${rule.id}`"
-          label="Why is this not a rule?"
-          action="Dismiss the proposal"
-          @confirm="reason => dismiss(rule.id, reason)"
-          @cancel="asking = null"
-        />
-      </DeskCard>
-    </DeskSection>
-
-    <DeskSection
-      heading="Active"
-      :count="page.active.length"
-    >
-      <RuleCard
-        v-for="rule in page.active"
-        :key="rule.id"
-        :rule="rule"
-      />
-      <p
-        v-if="page.active.length === 0"
-        class="rd-empty"
-      >
-        No rule applies here yet. A rule comes out of a finding you kept, not out of a
-        style guide.
-      </p>
-    </DeskSection>
-
-    <DeskSection
-      v-if="page.stale.length"
-      heading="Going stale"
-      :count="page.stale.length"
-    >
-      <ActionRow
-        v-for="rule in page.stale"
-        :key="rule.id"
-        tone="pending"
-      >
-        <template #title>
-          <span class="rd-mono rd-meta">{{ rule.key }}</span>
-          {{ rule.statement }}
-        </template>
-        <template #meta>
-          {{ rule.note }}
-        </template>
-        <template #extra>
-          <ReasonPrompt
-            v-if="asking?.id === rule.id && asking.kind === 'retire'"
-            :id="`retire-${rule.id}`"
-            label="Why is it being retired?"
-            action="Retire the rule"
-            @confirm="reason => retire(rule.id, reason)"
-            @cancel="asking = null"
+      <template #default="{ data }">
+        <div class="stats">
+          <StatTile
+            v-for="stat in stats(data)"
+            :key="stat.label"
+            :label="stat.label"
+            :value="stat.value"
+            :note="stat.note"
           />
-        </template>
-        <template #actions>
-          <button
-            type="button"
-            class="rd-btn"
-            @click="asking = { id: rule.id, kind: 'retire' }"
+        </div>
+
+        <DeskSection
+          v-if="data.proposed.length"
+          heading="Proposed"
+          :count="data.proposed.length"
+        >
+          <DeskCard
+            v-for="rule in data.proposed"
+            :key="rule.id"
+            tone="chosen"
+            class="proposal"
           >
-            Retire
-          </button>
-          <button
-            type="button"
-            class="rd-btn"
-            @click="defer(rule.id)"
+            <div class="proposal-body">
+              <div class="head-line">
+                <span class="rd-mono rd-meta">{{ rule.key }}</span>
+                <h3 class="statement">
+                  {{ rule.statement }}
+                </h3>
+              </div>
+              <p
+                v-if="rule.why_proposed"
+                class="rd-note why"
+              >
+                <strong>Why proposed:</strong> {{ rule.why_proposed }}
+              </p>
+              <p class="rd-note why">
+                <strong>Prevents:</strong> {{ rule.prevents }}
+              </p>
+              <p
+                v-if="rule.note"
+                class="rd-meta note"
+              >
+                {{ rule.note }}
+              </p>
+            </div>
+            <div class="actions">
+              <button
+                type="button"
+                class="rd-btn rd-btn--primary"
+                :disabled="working"
+                @click="promote(rule.id)"
+              >
+                Promote
+              </button>
+              <button
+                type="button"
+                class="rd-btn"
+                :disabled="working"
+                @click="asking = { id: rule.id, kind: 'dismiss' }"
+              >
+                Dismiss
+              </button>
+            </div>
+            <ReasonPrompt
+              v-if="asking?.id === rule.id && asking.kind === 'dismiss'"
+              :id="`dismiss-${rule.id}`"
+              label="Why is this not a rule?"
+              action="Dismiss the proposal"
+              @confirm="reason => dismiss(rule.id, reason)"
+              @cancel="asking = null"
+            />
+          </DeskCard>
+        </DeskSection>
+
+        <DeskSection
+          heading="Active"
+          :count="data.active.length"
+        >
+          <RuleCard
+            v-for="rule in data.active"
+            :key="rule.id"
+            :rule="rule"
+          />
+          <p
+            v-if="data.active.length === 0"
+            class="rd-empty"
           >
-            Keep 60 more days
-          </button>
-        </template>
-      </ActionRow>
-    </DeskSection>
+            No rule applies here yet. A rule comes out of a finding you kept, not out of a
+            style guide.
+          </p>
+        </DeskSection>
+
+        <DeskSection
+          v-if="data.stale.length"
+          heading="Going stale"
+          :count="data.stale.length"
+        >
+          <ActionRow
+            v-for="rule in data.stale"
+            :key="rule.id"
+            tone="pending"
+          >
+            <template #title>
+              <span class="rd-mono rd-meta">{{ rule.key }}</span>
+              {{ rule.statement }}
+            </template>
+            <template #meta>
+              {{ rule.note ?? staleLabel(rule) }}
+            </template>
+            <template #extra>
+              <ReasonPrompt
+                v-if="asking?.id === rule.id && asking.kind === 'retire'"
+                :id="`retire-${rule.id}`"
+                label="Why is it being retired?"
+                action="Retire the rule"
+                @confirm="reason => retire(rule.id, reason)"
+                @cancel="asking = null"
+              />
+            </template>
+            <template #actions>
+              <button
+                type="button"
+                class="rd-btn"
+                :disabled="working"
+                @click="asking = { id: rule.id, kind: 'retire' }"
+              >
+                Retire
+              </button>
+              <button
+                type="button"
+                class="rd-btn"
+                :disabled="working"
+                @click="defer(rule.id)"
+              >
+                Keep 60 more days
+              </button>
+            </template>
+          </ActionRow>
+        </DeskSection>
+      </template>
+
+      <!--
+        A repository with no rules at any stage. It reads as a desk that has not learned
+        anything yet, which is true of a new database and is also the honest answer for a
+        repository whose reviews have all been clean.
+      -->
+      <template #empty>
+        <DeskCard class="fresh">
+          <h1>No rules yet</h1>
+          <p class="rd-note rd-measure">
+            Nothing has been learned here. A rule comes out of a finding you kept — the
+            harvester proposes one when the same finding keeps being raised, or the same
+            kind keeps being cut, and you decide whether it becomes a rule.
+          </p>
+          <p class="rd-note rd-measure">
+            Every rule names the failure it prevents. A preference with no consequence does
+            not qualify, which is why there is no way to write one here by hand.
+          </p>
+        </DeskCard>
+      </template>
+    </DeskState>
   </div>
 </template>
 
