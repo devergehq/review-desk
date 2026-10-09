@@ -567,6 +567,60 @@ fn a_hunk_with_no_lines_or_no_file_is_refused() {
 }
 
 #[test]
+fn a_start_line_with_no_room_for_the_hunk_after_it_is_refused() {
+    let (_dir, store) = temp_store();
+    let review = a_review(&store);
+
+    // Two lines to number, starting one short of the end of `i64`. The second line has
+    // no number to take. Refused on the way in, rather than served as a line number that
+    // wrapped — and `numbered_lines` saturates as well, so a row somebody put in the
+    // database file by hand cannot panic the server either.
+    let error = store
+        .add_finding(
+            review,
+            NewFinding {
+                lens: "correctness".to_string(),
+                severity: Severity::Nit,
+                claim: "nowhere to count to".to_string(),
+                hunk: Some(FindingHunk {
+                    file: "src/lib.rs".to_string(),
+                    start_line: i64::MAX,
+                    lines: vec![
+                        line(HunkLineMarker::Added, "first"),
+                        line(HunkLineMarker::Added, "second"),
+                    ],
+                }),
+                ..Default::default()
+            },
+        )
+        .expect_err("a start line with no room after it");
+
+    match error {
+        StoreError::InvalidValue { field, .. } => assert_eq!(field, "hunk.start_line"),
+        other => panic!("expected an invalid value, got {other:?}"),
+    }
+
+    // The saturation, shown directly: every line after the ceiling holds it rather than
+    // wrapping to a negative line number.
+    let absurd = FindingHunk {
+        file: "src/lib.rs".to_string(),
+        start_line: i64::MAX,
+        lines: vec![
+            line(HunkLineMarker::Added, "first"),
+            line(HunkLineMarker::Added, "second"),
+        ],
+    };
+    assert_eq!(
+        absurd
+            .numbered_lines()
+            .into_iter()
+            .map(|(number, _)| number)
+            .collect::<Vec<_>>(),
+        [Some(i64::MAX), Some(i64::MAX)]
+    );
+}
+
+#[test]
 fn the_evidence_survives_a_change_of_disposition() {
     let (_dir, store) = temp_store();
     let review = a_review(&store);

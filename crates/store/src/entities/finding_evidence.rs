@@ -23,7 +23,7 @@ use std::collections::BTreeMap;
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::error::{Result, StoreError};
-use crate::model::{Finding, FindingHunk, HunkLine, NewFinding};
+use crate::model::{Finding, FindingHunk, HunkLine, HunkLineMarker, NewFinding};
 use crate::Store;
 
 /// Refuse evidence the record cannot hold or the page cannot draw.
@@ -47,6 +47,25 @@ pub(crate) fn validate(new: &NewFinding) -> Result<()> {
                 expected: "the number the hunk's first numbered line carries, from 1".to_string(),
             });
         }
+        // The last number the hunk would draw has to be a number. Checked rather than
+        // saturated here, because a hunk that cannot be numbered to its end is a hunk
+        // whose later lines would all claim the same line — and the caller is far better
+        // placed to notice a start line near the end of `i64` than a reader of the page
+        // is. `numbered_lines` saturates as well, for a row that did not come through
+        // here.
+        let drawn = hunk
+            .lines
+            .iter()
+            .filter(|line| line.marker != HunkLineMarker::Removed)
+            .count() as i64;
+        if hunk.start_line.checked_add(drawn).is_none() {
+            return Err(StoreError::InvalidValue {
+                field: "hunk.start_line",
+                value: hunk.start_line.to_string(),
+                expected: "a start line with room for the hunk's own lines after it".to_string(),
+            });
+        }
+
         if hunk.lines.is_empty() {
             return Err(StoreError::InvalidValue {
                 field: "hunk.lines",

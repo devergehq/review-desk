@@ -668,7 +668,13 @@ impl FindingHunk {
                 HunkLineMarker::Removed => (None, line),
                 _ => {
                     let number = next;
-                    next += 1;
+                    // Saturating, so that nothing here can panic or wrap. A hunk written
+                    // through this crate cannot reach the end of `i64` —
+                    // `finding_evidence::validate` refuses a start line that high — but
+                    // this function also runs over rows read back from a database file,
+                    // and it is read by a server. It does not get to panic over a number
+                    // somebody put in the file by hand.
+                    next = next.saturating_add(1);
                     (Some(number), line)
                 }
             })
