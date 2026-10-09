@@ -31,9 +31,13 @@ on:
       - 'Cargo.lock'
       - '**/package.json'
       - 'web/pnpm-lock.yaml'
-      - 'web/pnpm-workspace.yaml'
+      - '**/pnpm-workspace.yaml'
       - 'contract/package-lock.json'
       - 'dependency-allowlist.toml'
+      # The native suppression surfaces. A pull request whose only change is silencing an
+      # advisory has to run the scan that refuses it, or the refusal never happens.
+      - '.cargo/audit.toml'
+      - 'audit.toml'
       - 'tools/**'
       - '.github/workflows/dependencies.yml'
       - '.github/dependabot.yml'
@@ -44,9 +48,13 @@ on:
       - 'Cargo.lock'
       - '**/package.json'
       - 'web/pnpm-lock.yaml'
-      - 'web/pnpm-workspace.yaml'
+      - '**/pnpm-workspace.yaml'
       - 'contract/package-lock.json'
       - 'dependency-allowlist.toml'
+      # The native suppression surfaces. A pull request whose only change is silencing an
+      # advisory has to run the scan that refuses it, or the refusal never happens.
+      - '.cargo/audit.toml'
+      - 'audit.toml'
       - 'tools/**'
       - '.github/workflows/dependencies.yml'
       - '.github/dependabot.yml'

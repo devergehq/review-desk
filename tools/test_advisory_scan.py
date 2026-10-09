@@ -15,6 +15,8 @@ from __future__ import annotations
 import datetime
 import json
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import advisory_scan
 import dependency_allowlist
@@ -69,6 +71,67 @@ PNPM_ONE = {
 }
 
 PNPM_CLEAN = {"metadata": {"vulnerabilities": {}}}
+
+# Captured verbatim from `cargo audit --json` against this workspace with `time` 0.1.45
+# added, on 9 October 2026, with only the long prose fields dropped. The point of keeping it
+# real is the two fields a synthetic payload gets wrong: `severity` is null and `cvss` is a
+# VECTOR STRING, not a number. An earlier version of cargo_severity returned "" for every
+# advisory of this shape -- which is every Rust advisory there is -- and "" sorted below
+# `low`. `cargo audit`'s own text output rates this one "6.2 (medium)", which is the
+# known answer the scoring is tested against.
+CARGO_REAL = {
+    "database": {
+        "advisory-count": 1295
+    },
+    "lockfile": {
+        "dependency-count": 166
+    },
+    "vulnerabilities": {
+        "found": True,
+        "count": 1,
+        "list": [
+            {
+                "advisory": {
+                    "id": "RUSTSEC-2020-0071",
+                    "package": "time",
+                    "title": "Potential segfault in the time crate",
+                    "cvss": "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+                    "severity": None,
+                    "categories": [
+                        "code-execution",
+                        "memory-corruption"
+                    ],
+                    "cwe": None,
+                    "informational": None,
+                    "withdrawn": None,
+                    "url": "https://github.com/time-rs/time/issues/293",
+                    "date": "2020-11-18"
+                },
+                "versions": {
+                    "patched": [
+                        ">=0.2.23"
+                    ],
+                    "unaffected": [
+                        "=0.2.0",
+                        "=0.2.1",
+                        "=0.2.2",
+                        "=0.2.3",
+                        "=0.2.4",
+                        "=0.2.5",
+                        "=0.2.6"
+                    ]
+                },
+                "package": {
+                    "name": "time",
+                    "version": "0.1.45",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index"
+                }
+            }
+        ]
+    },
+    "warnings": {}
+}
+
 
 NPM_ONE = {
     "auditReportVersion": 2,
@@ -146,6 +209,190 @@ class ParsingCargoAudit(unittest.TestCase):
         document = dict(CARGO_CLEAN)
         document["warnings"] = {"unmaintained": [{"advisory": {"id": "RUSTSEC-2021-0139"}}]}
         self.assertEqual(advisory_scan.parse_cargo_audit(document), [])
+
+
+class CvssVectorScoring(unittest.TestCase):
+    """Known answers from the CVSS v3.1 specification and from cargo audit itself.
+
+    The first case is the one that matters: `cargo audit` prints "Severity: 6.2 (medium)"
+    for RUSTSEC-2020-0071, so the implementation has an independent answer to meet."""
+
+    KNOWN = [
+        ("CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H", 6.2, "moderate"),
+        ("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", 9.8, "critical"),
+        ("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H", 10.0, "critical"),
+        ("CVSS:3.1/AV:N/AC:H/PR:H/UI:R/S:U/C:N/I:N/A:L", 2.0, "low"),
+        ("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N", 5.3, "moderate"),
+        ("CVSS:3.0/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H", 6.2, "moderate"),
+    ]
+
+    def test_every_known_vector_scores_correctly(self):
+        for vector, expected, band in self.KNOWN:
+            with self.subTest(vector=vector):
+                score = advisory_scan.cvss31_base_score(vector)
+                self.assertIsNotNone(score, "vector did not score at all")
+                self.assertAlmostEqual(score, expected, places=1)
+                self.assertEqual(advisory_scan.band_for(score), band)
+
+    def test_the_impact_metrics_are_high_low_none(self):
+        """CVSS v2 used High/Medium/None. Using that table returned None for every vector
+        with an `L` impact metric, which is most of them."""
+        self.assertIsNotNone(
+            advisory_scan.cvss31_base_score("CVSS:3.1/AV:N/AC:H/PR:H/UI:R/S:U/C:N/I:N/A:L")
+        )
+
+    def test_a_version_four_vector_is_not_scored_with_the_version_three_formula(self):
+        """v4.0 uses a different algorithm. Scoring it with this one would be confidently
+        wrong, so it comes back unknown -- which sorts first."""
+        v4 = "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"
+        self.assertIsNone(advisory_scan.cvss31_base_score(v4))
+        self.assertEqual(advisory_scan.cargo_severity({"cvss": v4}), "")
+
+    def test_an_unrecognised_metric_value_is_unknown_not_a_guess(self):
+        self.assertIsNone(
+            advisory_scan.cvss31_base_score("CVSS:3.1/AV:Z/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H")
+        )
+
+
+class TheRealCargoAuditPayload(unittest.TestCase):
+    def test_it_carries_a_vector_and_no_severity_word(self):
+        """The two facts a synthetic payload gets wrong, asserted so the fixture cannot
+        quietly drift into being synthetic."""
+        advisory = CARGO_REAL["vulnerabilities"]["list"][0]["advisory"]
+        self.assertIsNone(advisory["severity"])
+        self.assertTrue(advisory["cvss"].startswith("CVSS:3."))
+
+    def test_the_real_advisory_is_rated_moderate_as_cargo_audit_rates_it(self):
+        found = advisory_scan.parse_cargo_audit(CARGO_REAL)
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0].identifier, "RUSTSEC-2020-0071")
+        self.assertEqual(found[0].severity, "moderate")
+
+    def test_it_is_no_longer_unrated(self):
+        """The defect: every cargo advisory came out "" and "" sorted below npm `low`."""
+        found = advisory_scan.parse_cargo_audit(CARGO_REAL)
+        self.assertNotEqual(found[0].severity, "")
+
+
+class UnknownSeveritySortsFirst(unittest.TestCase):
+    """An unrated advisory is one nobody has assessed, not one that is harmless."""
+
+    def test_unknown_outranks_critical(self):
+        unknown = advisory_scan.Advisory("X-1", "p", "cargo", "", "t", "u")
+        critical = advisory_scan.Advisory("X-2", "q", "npm", "critical", "t", "u")
+        self.assertLess(unknown.sort_key, critical.sort_key)
+
+    def test_unknown_outranks_low(self):
+        unknown = advisory_scan.Advisory("X-1", "p", "cargo", "", "t", "u")
+        low = advisory_scan.Advisory("X-2", "q", "npm", "low", "t", "u")
+        self.assertLess(unknown.sort_key, low.sort_key)
+
+    def test_critical_still_outranks_low(self):
+        critical = advisory_scan.Advisory("X-1", "p", "npm", "critical", "t", "u")
+        low = advisory_scan.Advisory("X-2", "q", "npm", "low", "t", "u")
+        self.assertLess(critical.sort_key, low.sort_key)
+
+
+class NativeSuppressionsAreRefused(unittest.TestCase):
+    """**The scan is worthless without this.** Each tool reports only what it has not been
+    told to hide, so a scan that reads their output without checking their configuration
+    measures the configuration. Each of these was reproduced live before being written."""
+
+    def setUp(self):
+        self.tmp = TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def write(self, name: str, text: str) -> None:
+        path = self.root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def found(self):
+        return advisory_scan.find_suppressions(
+            self.root, advisory_scan.scanned_npm_manifests(self.root)
+        )
+
+    def test_a_clean_tree_finds_nothing(self):
+        self.write("web/package.json", '{"name":"w"}')
+        self.write("web/pnpm-workspace.yaml", "allowBuilds:\n  esbuild: true\n")
+        self.assertEqual(self.found(), [])
+
+    def test_no_suppression_files_at_all_finds_nothing(self):
+        self.assertEqual(self.found(), [])
+
+    def test_an_ignore_in_pnpm_workspace_yaml_is_found(self):
+        """The surface that actually works on pnpm 11.9.0: this one drops an advisory from
+        the output, measured 7 -> 6."""
+        self.write("web/pnpm-workspace.yaml", "auditConfig:\n  ignoreGhsas:\n    - GHSA-x\n")
+        self.assertEqual(len(self.found()), 1)
+        self.assertIn("web/pnpm-workspace.yaml", self.found()[0])
+
+    def test_ignore_cves_in_pnpm_workspace_yaml_is_found(self):
+        self.write("web/pnpm-workspace.yaml", "auditConfig:\n  ignoreCves:\n    - CVE-1\n")
+        self.assertEqual(len(self.found()), 1)
+
+    def test_an_ignore_in_a_package_json_is_found(self):
+        """Has no effect on pnpm 11.9.0, and is checked anyway: it is what the
+        documentation describes, and which surface works may change again."""
+        self.write("web/package.json", '{"pnpm":{"auditConfig":{"ignoreGhsas":["GHSA-x"]}}}')
+        self.assertEqual(len(self.found()), 1)
+        self.assertIn("web/package.json", self.found()[0])
+
+    def test_a_top_level_audit_config_in_a_package_json_is_found(self):
+        self.write("web/package.json", '{"auditConfig":{"ignoreGhsas":["GHSA-x"]}}')
+        self.assertEqual(len(self.found()), 1)
+
+    def test_an_advisories_ignore_in_audit_toml_is_found(self):
+        self.write("audit.toml", '[advisories]\nignore = ["RUSTSEC-2020-0071"]\n')
+        self.assertEqual(len(self.found()), 1)
+        self.assertIn("audit.toml", self.found()[0])
+
+    def test_an_advisories_ignore_in_dot_cargo_audit_toml_is_found(self):
+        self.write(".cargo/audit.toml", '[advisories]\nignore = ["RUSTSEC-1"]\n')
+        self.assertEqual(len(self.found()), 1)
+        self.assertIn(".cargo/audit.toml", self.found()[0])
+
+    def test_an_audit_toml_with_no_ignore_list_is_fine(self):
+        self.write("audit.toml", "[advisories]\nseverity_threshold = \"low\"\n")
+        self.assertEqual(self.found(), [])
+
+    def test_an_empty_ignore_list_is_fine(self):
+        self.write("audit.toml", "[advisories]\nignore = []\n")
+        self.assertEqual(self.found(), [])
+
+    def test_an_empty_pnpm_audit_config_is_fine(self):
+        self.write("web/package.json", '{"pnpm":{"auditConfig":{"ignoreGhsas":[]}}}')
+        self.assertEqual(self.found(), [])
+
+    def test_the_key_named_in_a_comment_does_not_count(self):
+        """This repository's own files name these keys in comments to explain the rule. A
+        detector that fired on its own documentation would be deleted within a week."""
+        self.write(
+            "web/pnpm-workspace.yaml",
+            "# never set auditConfig.ignoreGhsas here; use dependency-allowlist.toml\n"
+            "allowBuilds:\n  esbuild: true\n",
+        )
+        self.assertEqual(self.found(), [])
+
+    def test_node_modules_is_not_searched(self):
+        self.write("web/node_modules/thing/package.json", '{"pnpm":{"auditConfig":{"ignoreGhsas":["x"]}}}')
+        self.assertEqual(self.found(), [])
+
+    def test_every_scanned_directory_is_covered_not_just_the_two_we_have(self):
+        self.write("e2e/package.json", '{"pnpm":{"auditConfig":{"ignoreCves":["CVE-1"]}}}')
+        self.assertEqual(len(self.found()), 1)
+        self.assertIn("e2e/package.json", self.found()[0])
+
+    def test_two_suppressions_are_both_reported(self):
+        self.write("audit.toml", '[advisories]\nignore = ["RUSTSEC-1"]\n')
+        self.write("web/pnpm-workspace.yaml", "auditConfig:\n  ignoreGhsas:\n    - GHSA-x\n")
+        self.assertEqual(len(self.found()), 2)
+
+    def test_an_unreadable_audit_toml_cannot_run(self):
+        self.write("audit.toml", "[advisories\nbroken")
+        with self.assertRaises(advisory_scan.CouldNotRun):
+            self.found()
 
 
 class RustSecSeverityBands(unittest.TestCase):

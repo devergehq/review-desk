@@ -14,7 +14,10 @@ repository was watching. Three things watch now.
 | Release-age check | Fails when a direct dependency's latest release is over a year old | `tools/release_age.py` |
 | The allowlist | What is knowingly lived with, and until when | `dependency-allowlist.toml` |
 
-All three run in `.github/workflows/dependencies.yml`.
+The advisory scan and the release-age check run in
+`.github/workflows/dependencies.yml`, alongside a job that runs their own tests offline.
+The update bot is Dependabot, which GitHub runs from `.github/dependabot.yml` and not in
+any workflow of ours.
 
 ## Adding a dependency
 
@@ -55,9 +58,12 @@ newer code and nobody to write any.
 
 **It does not measure how far behind you are.** A dependency three majors out of date
 passes if upstream shipped last month. When a manifest pins an exact version, the check
-reports the age of *that* release as a note — `ajv` pinned at `8.17.1` from July 2024 while
-`8.20.0` was current is the case that made this worth saying — but it does not fail on it.
-Keeping up to date is Dependabot's job; being alive is this check's.
+reports the age of *that* release as a note, but it does not fail on it. The case that made
+this worth saying was `contract/`'s own: `ajv` was pinned at `8.17.1` from July 2024, 818
+days old, while `8.20.0` was 168 — and the release-age check passed, because it was reading
+`8.20.0`. The same change that added the check bumped the pin, so the example no longer
+exists in this tree; it is kept here because the gap it describes still can. Keeping up to
+date is Dependabot's job; being alive is this check's.
 
 Three further decisions, written down because each was argued:
 
@@ -96,6 +102,15 @@ housekeeping and the thing it excuses lands in the next, and both are green.
 
 **An allowlist entry is a decision about the product, not a way to get a build green.**
 Where a maintained replacement exists and swapping to it is a small change, swap.
+
+**Do not use the audit tools' own ignore lists.** `pnpm`'s `auditConfig.ignoreGhsas` and
+`ignoreCves`, and `cargo audit`'s `[advisories] ignore`, all hide an advisory from the tool
+that reports it — with no reason, no decider and no expiry. The advisory scan refuses to run
+when it finds one and names the file, because a scan that reads a filtered answer reports
+the configuration rather than the dependencies. Worse, a hidden advisory leaves its
+allowlist entry with nothing to match, so the entry then fails as `ORPHANED` and the fix
+looks like deleting the decision. That whole sequence was reproduced before the refusal was
+written.
 
 ## What runs when, and what that misses
 
