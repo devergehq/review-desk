@@ -13,6 +13,7 @@ would not have shown that.
 from __future__ import annotations
 
 import datetime
+import json
 import unittest
 
 import advisory_scan
@@ -145,6 +146,37 @@ class ParsingCargoAudit(unittest.TestCase):
         document = dict(CARGO_CLEAN)
         document["warnings"] = {"unmaintained": [{"advisory": {"id": "RUSTSEC-2021-0139"}}]}
         self.assertEqual(advisory_scan.parse_cargo_audit(document), [])
+
+
+class RustSecSeverityBands(unittest.TestCase):
+    """`cargo audit` gives a score or a vector, not a word. Reading "has a cvss field" as
+    `high` printed a 9.8 critical as high and sorted it below an npm `critical`."""
+
+    def test_a_high_score_is_critical(self):
+        self.assertEqual(advisory_scan.cargo_severity({"cvss": 9.8}), "critical")
+
+    def test_a_mid_score_is_moderate(self):
+        self.assertEqual(advisory_scan.cargo_severity({"cvss": 6.2}), "moderate")
+
+    def test_a_score_as_a_string_is_read(self):
+        self.assertEqual(advisory_scan.cargo_severity({"cvss": "7.5"}), "high")
+
+    def test_a_vector_string_carries_no_score(self):
+        self.assertEqual(advisory_scan.cargo_severity({"cvss": "CVSS:3.1/AV:N/AC:L"}), "")
+
+    def test_an_explicit_word_wins(self):
+        self.assertEqual(advisory_scan.cargo_severity({"severity": "Critical", "cvss": 1.0}), "critical")
+
+    def test_nothing_at_all_is_unrated(self):
+        self.assertEqual(advisory_scan.cargo_severity({}), "")
+
+    def test_a_scored_cargo_advisory_sorts_above_an_npm_low(self):
+        document = json.loads(json.dumps(CARGO_ONE))
+        document["vulnerabilities"]["list"][0]["advisory"]["cvss"] = 9.8
+        found = advisory_scan.parse_cargo_audit(document)
+        self.assertEqual(found[0].severity, "critical")
+        low = advisory_scan.Advisory("GHSA-low", "katex", "npm", "low", "t", "u")
+        self.assertLess(found[0].sort_key, low.sort_key)
 
 
 class ParsingPnpmAudit(unittest.TestCase):

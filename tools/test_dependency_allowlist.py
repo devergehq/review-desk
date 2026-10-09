@@ -137,6 +137,15 @@ class AMalformedEntry(unittest.TestCase):
         result = parse(GOOD + GOOD.replace("serde_norway", "serde-norway"))
         self.assertTrue(any("allowlisted twice" in p for p in result.problems))
 
+    def test_a_single_bracket_heading_is_rejected_rather_than_crashing(self):
+        """`[release_age]` for `[[release_age]]` is the commonest slip in TOML. Iterating it
+        yields the table's keys as strings, which used to raise AttributeError: a traceback
+        and exit 1, reading as "the check ran and the answer is no"."""
+        self.assert_rejected(GOOD.replace("[[release_age]]", "[release_age]"), "double brackets")
+
+    def test_an_entry_that_is_not_a_table_is_rejected(self):
+        self.assert_rejected('release_age = ["serde_norway"]\n', "not a table")
+
     def test_text_that_is_not_toml_cannot_be_read_at_all(self):
         """Distinct from an invalid entry: a file that is not TOML means the check could
         not run, not that the answer is no."""

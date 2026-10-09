@@ -17,9 +17,17 @@ allowlist rather than of the dependency.
 from __future__ import annotations
 
 import datetime
-import tomllib
+import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+if sys.version_info < (3, 11):  # pragma: no cover - the guard exists so CI says why
+    sys.exit(
+        "the dependency checks need Python 3.11 or newer for tomllib; "
+        f"this is {sys.version.split()[0]}"
+    )
+
+import tomllib  # noqa: E402  (below the guard, deliberately)
 
 ECOSYSTEMS = ("cargo", "npm")
 
@@ -171,7 +179,7 @@ def parse(text: str, today: datetime.date | None = None) -> Allowlist:
         problems.append(f"the allowlist has an unknown top-level table {key!r}")
 
     release_age: list[ReleaseAgeEntry] = []
-    for index, table in enumerate(data.get("release_age", []), start=1):
+    for index, table in enumerate(_entries(data, "release_age", problems), start=1):
         label = f"release_age entry {index} ({table.get('dependency', 'unnamed')})"
         found = _check_keys(table, RELEASE_AGE_KEYS, label) + _check_shared(table, label, today)
         if found:
@@ -188,7 +196,7 @@ def parse(text: str, today: datetime.date | None = None) -> Allowlist:
         )
 
     advisories: list[AdvisoryEntry] = []
-    for index, table in enumerate(data.get("advisory", []), start=1):
+    for index, table in enumerate(_entries(data, "advisory", problems), start=1):
         label = f"advisory entry {index} ({table.get('advisory', 'unnamed')})"
         found = _check_keys(table, ADVISORY_KEYS, label) + _check_shared(table, label, today)
         if found:
@@ -214,6 +222,33 @@ def parse(text: str, today: datetime.date | None = None) -> Allowlist:
         advisories=tuple(advisories),
         problems=tuple(problems + duplicate_problems),
     )
+
+
+def _entries(data: dict, key: str, problems: list[str]) -> list[dict]:
+    """The entries under `[[key]]`, or none plus a problem.
+
+    Writing `[release_age]` instead of `[[release_age]]` is the commonest slip in TOML and
+    exactly the typo class this module exists to catch. Iterating it yields the table's
+    *keys* as strings, and `table.get(...)` then raised AttributeError -- a traceback and
+    exit 1, which reads as "the check ran and the answer is no" rather than "the allowlist
+    could not be read"."""
+    value = data.get(key, [])
+    if isinstance(value, dict):
+        problems.append(
+            f"the allowlist has [{key}] where it needs [[{key}]] — each entry is one of a "
+            "list, so the heading takes double brackets"
+        )
+        return []
+    if not isinstance(value, list):
+        problems.append(f"the allowlist's {key} is {type(value).__name__}, not a list of entries")
+        return []
+    out = []
+    for index, item in enumerate(value, start=1):
+        if isinstance(item, dict):
+            out.append(item)
+        else:
+            problems.append(f"{key} entry {index} is {type(item).__name__}, not a table")
+    return out
 
 
 def _duplicates(keys: list[tuple[str, str]], kind: str) -> list[str]:

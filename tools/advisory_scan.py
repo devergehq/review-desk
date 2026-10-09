@@ -81,6 +81,35 @@ class Scan:
 # advisories, so the tests exercise real captured payloads with no subprocess and no network.
 
 
+def cargo_severity(advisory: dict) -> str:
+    """RustSec's severity band for one advisory.
+
+    `cargo audit` gives a CVSS vector or a score rather than a word. An earlier version
+    read "any `cvss` field at all" as `high`, which printed a 9.8 critical as high and
+    sorted it below a merely-`critical`-labelled npm advisory."""
+    word = advisory.get("severity")
+    if isinstance(word, str) and word.strip():
+        return word.strip().lower()
+
+    score = advisory.get("cvss")
+    if isinstance(score, (int, float)):
+        number = float(score)
+    elif isinstance(score, str):
+        # A vector string like `CVSS:3.1/AV:N/...` carries no score; a bare "6.2" does.
+        try:
+            number = float(score)
+        except ValueError:
+            return ""
+    else:
+        return ""
+
+    # The CVSS v3 qualitative bands.
+    for threshold, band in ((9.0, "critical"), (7.0, "high"), (4.0, "moderate"), (0.1, "low")):
+        if number >= threshold:
+            return band
+    return "info"
+
+
 def parse_cargo_audit(document: dict) -> list[Advisory]:
     """`cargo audit --json`. `vulnerabilities.list[]` carries the advisory and the package
     it was found in. `warnings` holds the unmaintained and yanked notices, which are a
@@ -99,7 +128,7 @@ def parse_cargo_audit(document: dict) -> list[Advisory]:
                 identifier=str(advisory.get("id", "unknown")),
                 package=str(package.get("name", advisory.get("package", "unknown"))),
                 ecosystem="cargo",
-                severity=str((advisory.get("cvss") and "high") or advisory.get("severity") or ""),
+                severity=cargo_severity(advisory),
                 title=str(advisory.get("title", "")).strip(),
                 url=str(advisory.get("url") or f"https://rustsec.org/advisories/{advisory.get('id', '')}"),
                 path=str(package.get("version", "")),

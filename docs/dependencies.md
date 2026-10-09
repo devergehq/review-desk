@@ -42,7 +42,9 @@ python3 tools/release_age.py --format markdown         # the same thing as a tab
 python3 tools/advisory_scan.py                         # cargo, pnpm and npm audit
 ```
 
-Both need Python 3.11 or newer, for `tomllib`. Nothing else.
+Both need Python 3.11 or newer, for `tomllib`. Nothing else. On an older interpreter they
+refuse with that sentence rather than a traceback, and a test asserts the import order that
+makes that true — getting it wrong once meant the guard could never fire.
 
 ## What the release-age check measures, and what it does not
 
@@ -72,7 +74,9 @@ Three further decisions, written down because each was argued:
 ## The allowlist
 
 An entry in `dependency-allowlist.toml` is the only thing that makes either check pass over
-a finding. Every entry carries the same fields:
+a finding, with one exception: **a dependency the registry has never heard of cannot be
+allowlisted.** Every other finding is a judgement call about something old; that one is
+about something that cannot be installed at all, and there is nothing to weigh. Every entry carries the same fields:
 
 | Field | What it is |
 | -- | -- |

@@ -54,18 +54,22 @@ import re
 import ssl
 import sys
 import time
-import tomllib
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+# Before `tomllib` is imported, not after. Importing it first meant this guard could never
+# fire: on 3.10 the script died with `ModuleNotFoundError: No module named 'tomllib'`, a
+# traceback instead of the sentence, while the workflow and the docs both claimed otherwise.
 if sys.version_info < (3, 11):  # pragma: no cover - the guard exists so CI says why
     sys.exit(
         "release_age.py needs Python 3.11 or newer for tomllib; "
         f"this is {sys.version.split()[0]}"
     )
+
+import tomllib  # noqa: E402  (below the guard, deliberately)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -97,7 +101,9 @@ BACKOFF_SECONDS = (1.0, 3.0)
 TIMEOUT_SECONDS = 30
 
 CARGO_SECTIONS = ("dependencies", "dev-dependencies", "build-dependencies")
-NPM_SECTIONS = ("dependencies", "devDependencies", "optionalDependencies")
+# `peerDependencies` is here because leaving it out was a way to declare a direct
+# dependency that nothing watched -- the hole this tool argues against.
+NPM_SECTIONS = ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies")
 
 # npm specifiers naming something inside this repository rather than a published package.
 NPM_LOCAL_PREFIXES = ("workspace:", "file:", "link:", "portal:", "catalog:")
@@ -430,11 +436,13 @@ def http_get(url: str) -> bytes:
             last = f"HTTP {exc.code} {exc.reason}"
             # Retrying will not talk a 403 policy response or a 400 into changing its mind.
             retryable = exc.code == 429 or 500 <= exc.code < 600
-        except (urllib.error.URLError, ssl.SSLError, OSError) as exc:
-            last = str(getattr(exc, "reason", exc)) or exc.__class__.__name__
-            retryable = True
+        # Before the OSError clause: BadGzipFile subclasses OSError, so ordering it after
+        # made it unreachable and reported a corrupt body as an unreachable registry.
         except (gzip.BadGzipFile, EOFError) as exc:
             last = f"malformed response body: {exc}"
+            retryable = True
+        except (urllib.error.URLError, ssl.SSLError, OSError) as exc:
+            last = str(getattr(exc, "reason", exc)) or exc.__class__.__name__
             retryable = True
 
         if not retryable or attempt == ATTEMPTS - 1:
@@ -455,6 +463,11 @@ def ask(fetch, url: str, what: str) -> dict:
         body = fetch(url)
     except (NoSuchPackage, CouldNotRun):
         raise
+    # Before the OSError clause: BadGzipFile subclasses OSError, so ordering it after
+    # reports a corrupt payload as an unreachable registry. The two are different problems
+    # and a reader has to be able to tell them apart.
+    except (gzip.BadGzipFile, EOFError) as exc:
+        raise CouldNotRun(f"{what}: malformed response body: {exc}") from exc
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
             raise NoSuchPackage(f"{url} — the registry has no such package") from exc
@@ -612,10 +625,14 @@ def evaluate(
             continue
 
         if dependency.key in missing:
+            # Deliberately not allowlistable. Every other finding is about a dependency
+            # being old, which is a judgement call; this one is about a dependency that
+            # cannot be installed at all, and there is nothing to weigh.
             failures.append(
                 f"NO SUCH      {dependency.label} from {dependency.where}: "
                 f"{missing[dependency.key]}. Check the spelling, or the package has been "
-                "unpublished or renamed — either way nothing can be installed from it."
+                "unpublished or renamed — either way nothing can be installed from it, so "
+                "no allowlist entry excuses this."
             )
             rows.append(Row(dependency, None, None, entry, "missing", "no such package"))
             continue
@@ -728,13 +745,17 @@ def render_text(
     today: datetime.date,
     max_age_days: int,
     manifests: list[str],
+    enumerated: int | None = None,
 ) -> str:
     width = max((len(r.dependency.label) for r in rows), default=10)
     mark = {"ok": "  ", "allowed": "A ", "too-old": "! ", "expired": "! ", "not-datable": "? ", "missing": "! "}
     lines = [
         f"Release ages as at {today}, limit {max_age_days} days.",
         f"Read {len(manifests)} manifest(s): {', '.join(manifests)}",
-        f"Enumerated {len(rows)} direct dependencies, judged {len(rows)}.",
+        # Two counts from two places. Printing len(rows) twice was tautological: the line
+        # existed to show a discrepancy and could never show one.
+        f"Enumerated {len(rows) if enumerated is None else enumerated} direct "
+        f"dependencies, judged {len(rows)}.",
         "",
     ]
     for row in sorted(rows, key=lambda r: (-(r.age_days if r.age_days is not None else 10**6), r.dependency.label)):
@@ -833,7 +854,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.format == "markdown":
         print(render_markdown(rows, today, args.max_age_days))
     else:
-        print(render_text(rows, failures, notes, today, args.max_age_days, manifests))
+        print(
+            render_text(
+                rows, failures, notes, today, args.max_age_days, manifests, len(dependencies)
+            )
+        )
 
     # Written before the verdict is returned, so a failing run still leaves the table. The
     # path is given by the caller and is outside the repository in CI; nothing is written

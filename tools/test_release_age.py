@@ -10,6 +10,7 @@ reason: a test that depends on the day it runs is a test that starts failing on 
 from __future__ import annotations
 
 import datetime
+import gzip
 import json
 import unittest
 import unittest.mock
@@ -332,6 +333,19 @@ class TheAgeVerdict(unittest.TestCase):
         self.assertTrue(any("pinned at 8.17.1" in n for n in notes))
 
 
+class TheInterpreterGuard(unittest.TestCase):
+    def test_tomllib_is_imported_below_the_version_guard(self):
+        """Importing tomllib above the guard meant the guard could never fire: on 3.10 the
+        script died with ModuleNotFoundError instead of the sentence the workflow and the
+        docs both promise."""
+        for name in ("release_age.py", "dependency_allowlist.py"):
+            source = (Path(__file__).resolve().parent / name).read_text(encoding="utf-8")
+            guard = source.index("sys.version_info < (3, 11)")
+            self.assertGreater(
+                source.index("import tomllib"), guard, f"{name} imports tomllib too early"
+            )
+
+
 class ReadingTheManifests(unittest.TestCase):
     def manifest(self, name: str, text: str) -> Path:
         path = Path(self.tmp.name) / name
@@ -416,6 +430,12 @@ class ReadingTheManifests(unittest.TestCase):
         self.manifest("web/package.json", '{"optionalDependencies":{"fsevents":"^2.3.3"}}')
         self.assertEqual([d.name for d in release_age.read_npm_dependencies(self.root)], ["fsevents"])
 
+    def test_a_peer_dependency_is_read(self):
+        """Leaving peerDependencies out was a way to declare a direct dependency that
+        nothing watched — the hole this tool argues against."""
+        self.manifest("web/package.json", '{"peerDependencies":{"vue":"^3.5.0"}}')
+        self.assertEqual([d.name for d in release_age.read_npm_dependencies(self.root)], ["vue"])
+
     def test_an_npm_exact_pin_is_recognised(self):
         self.manifest("web/package.json", '{"devDependencies":{"ajv":"8.17.1"}}')
         self.assertEqual(release_age.read_npm_dependencies(self.root)[0].exact_pin, "8.17.1")
@@ -449,6 +469,18 @@ class WhenTheRegistryCannotBeReached(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             code = release_age.main(["--root", tmp, "--today", "2026-10-09"])
         self.assertEqual(code, release_age.EXIT_COULD_NOT_RUN)
+
+    def test_a_corrupt_gzip_body_is_reported_as_malformed_not_as_an_outage(self):
+        """BadGzipFile subclasses OSError, so its clause was unreachable and a corrupt body
+        read as an unreachable registry — wrong for a tool whose contract is that a reader
+        can tell an outage from a bad payload."""
+
+        def fetch(url):
+            raise gzip.BadGzipFile("Not a gzipped file")
+
+        with self.assertRaises(release_age.CouldNotRun) as caught:
+            release_age.crates_io_release("x", fetch)
+        self.assertIn("malformed response body", str(caught.exception))
 
     def test_a_404_is_not_an_outage(self):
         """Both registries answer 404 for a name that never existed, a name spelled with
@@ -484,8 +516,22 @@ class TheCountInvariant(unittest.TestCase):
         rows, failures, notes = release_age.evaluate(
             deps, releases, dependency_allowlist.EMPTY, TODAY
         )
-        text = release_age.render_text(rows, failures, notes, TODAY, LIMIT, ["Cargo.toml"])
+        text = release_age.render_text(
+            rows, failures, notes, TODAY, LIMIT, ["Cargo.toml"], len(deps)
+        )
         self.assertIn("Enumerated 1 direct dependencies, judged 1", text)
+
+    def test_the_report_shows_a_discrepancy_between_the_counts(self):
+        """The line existed to show a mismatch and printed the same number twice, so it
+        could never show one. Three enumerated, one judged, and the report has to say so."""
+        rows, _, _ = release_age.evaluate(
+            [dependency()],
+            {("widget", "cargo"): release_age.Release("1.0", datetime.date(2026, 9, 1))},
+            dependency_allowlist.EMPTY,
+            TODAY,
+        )
+        text = release_age.render_text(rows, [], [], TODAY, LIMIT, ["Cargo.toml"], 3)
+        self.assertIn("Enumerated 3 direct dependencies, judged 1", text)
 
 
 class TheMarkdownTable(unittest.TestCase):
