@@ -144,6 +144,43 @@ export default defineNuxtConfig({
 
   typescript: { strict: true },
 
+  hooks: {
+    /**
+     * **Nothing is prefetched, because there is nothing to hide.**
+     *
+     * Nuxt marks every non-entry chunk `prefetch`, and the generated page then carries a
+     * `<link rel="prefetch">` for each — a sound default for an app on the far side of a
+     * network, where guessing the next route saves a round trip.
+     *
+     * This app is on the same machine as its reader. It is served out of the binary's own
+     * memory over loopback — a request is a memcpy — so a prefetch hides no latency and
+     * saves nothing. What it costs is ordering: a chunk carrying a `prefetch` hint is
+     * fetched at the lowest priority Chrome has, and *after* the page is otherwise idle.
+     *
+     * **The app shell cannot mount without one of them.** The layout is a chunk, and so is
+     * every component it renders, so the mount waits on something Chrome has been told is
+     * speculative. Measured locally on a throttled link, the chunk the layout needs arrives
+     * at 7.1s of an 8.2s load — last, just before the mount.
+     *
+     * That is the shape of the end-to-end suite's CI failure: `#__nuxt` empty, every other
+     * asset answered 200, and one chunk still outstanding at ten seconds. It appeared on
+     * the *first* page load against each origin and nowhere else, because every later test
+     * reuses Chrome's cache and the empty database is served on a second port — a second
+     * origin, with a cache of its own.
+     *
+     * **Said plainly: this is the mechanism the evidence points at, and it is not proved.**
+     * The failure has never reproduced outside CI; throttling bandwidth reproduces only
+     * "400 kB at 50 kB/s takes eight seconds", and throttling the CPU twentyfold gets the
+     * app mounted in 1.9s. What is certain is that the hints cost this app nothing to
+     * remove, and that they are the reason a chunk it needs is fetched last.
+     */
+    'build:manifest': (manifest) => {
+      for (const chunk of Object.values(manifest)) {
+        chunk.prefetch = false
+      }
+    },
+  },
+
   eslint: {
     config: { stylistic: true },
   },
