@@ -31,24 +31,72 @@ import Layout from '../app/layouts/default.vue'
 /**
  * Let every pending read and re-read finish.
  *
- * Generous on purpose. Choosing the API backend is itself a dynamic `import()` — the HTTP
- * client is deliberately not in the app shell's static graph — so a first read resolves a
- * module before it resolves a request, and a count tuned to the shape before that change
- * left one of these tests asserting on the loading state.
+ * **Waits for the screens to stop reading, rather than for a number of turns.** It used to
+ * run a fixed twelve rounds of microtasks-plus-a-macrotask and hope that was enough, which
+ * is a race dressed up as a helper: on a slow or loaded runner the first read can take
+ * longer than twelve turns, and the test then asserts on the loading state and reports a
+ * mismatch that has nothing to do with what it was checking. That is what it did, once, in
+ * CI — `expected 'Reading the inbox…' to contain 'Review Desk could not read its
+ * database'`.
+ *
+ * Choosing the API backend is a dynamic `import()`, because the HTTP client is deliberately
+ * not in the app shell's static graph, so a first read resolves a module before it resolves
+ * a request. How long that takes is not something a tick count can know — a cold module
+ * graph makes it slower, and `app/types/contract.ts` being regenerated before every test
+ * run means the graph is reliably cold.
+ *
+ * So this keys on the thing it is actually waiting for: `DeskState` renders
+ * `Reading {what}…` while a resource is in flight, and this returns once no screen on the
+ * page says that and the rendering has stopped changing. The deadline is wall-clock and
+ * generous; blowing it throws with what the page actually said, which is a far better
+ * failure than an assertion about the wrong text.
  */
 async function settle(page: VueWrapper) {
-  for (let round = 0; round < 12; round += 1) {
+  const deadline = Date.now() + 10_000
+  let previous = ''
+  let unchanged = 0
+
+  while (Date.now() < deadline) {
     /*
-     * A macrotask as well as the microtasks. Choosing the API backend is a dynamic
-     * `import()` — the HTTP client is deliberately not in the app shell's static graph — and
-     * the first one in a run has a module to load from disk, which no number of
-     * `flushPromises` can advance. Without this the first test in a describe asserted on the
-     * loading state while every later one passed, which reads like flake and is not.
+     * A macrotask as well as the microtasks: a module being loaded from disk is not
+     * something any number of `flushPromises` can advance.
      */
     await new Promise(resolve => setTimeout(resolve, 0))
     await flushPromises()
     await page.vm.$nextTick()
+
+    const text = page.text()
+    unchanged = text === previous ? unchanged + 1 : 0
+    previous = text
+
+    /* Nothing still reading, and the render has stopped moving. */
+    if (!/Reading .*…/.test(text) && unchanged >= 2) return
   }
+
+  throw new Error(
+    'a screen never finished reading inside ten seconds. It still says:\n'
+    + page.text().slice(0, 400),
+  )
+}
+
+/**
+ * Mount a screen and let it render, without waiting for its read to finish.
+ *
+ * For the one test whose subject *is* the loading state. `settle` waits for every screen to
+ * stop reading, which by construction never happens while a read is being held open on
+ * purpose — so that test needs a mount that stops at "rendered", not "finished".
+ */
+async function mounting(
+  component: Parameters<typeof mountSuspended>[0],
+  options?: Parameters<typeof mountSuspended>[1],
+) {
+  const page = await mountSuspended(component, options)
+  for (let round = 0; round < 4; round += 1) {
+    await new Promise(resolve => setTimeout(resolve, 0))
+    await flushPromises()
+    await page.vm.$nextTick()
+  }
+  return page
 }
 
 /** Mount a screen and wait for its first read. */
@@ -746,7 +794,8 @@ describe('a read that is still in flight', () => {
   })
 
   it('reserves the space and says what it is reading', async () => {
-    const page = await shown(Inbox)
+    /* Not `shown`: that waits for the read to finish, and this read is held open. */
+    const page = await mounting(Inbox)
 
     expect(page.text()).toContain('Reading the inbox…')
     expect(page.find('[role="status"][aria-live="polite"]').exists()).toBe(true)
