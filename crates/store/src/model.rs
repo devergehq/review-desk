@@ -228,9 +228,11 @@ string_enum! {
     /// has at most one. A review waiting on the developer has none, which is the whole
     /// point — this is the list of what an *agent* is to do.
     WorkKind as "kind" {
-        /// No brief has been written and no draft exists. An agent should start
-        /// reviewing. This is the state `POST /reviews` leaves a review in when the
-        /// developer pastes a pull request link into the dashboard.
+        /// No brief has been written, and no draft is waiting on the developer — so
+        /// either there is no draft at all, or one a session left at `drafting`. An agent
+        /// should start reviewing. This is the state `POST /reviews` leaves a review in
+        /// when the developer pastes a pull request link into the dashboard, and the one
+        /// a session that died before writing a brief leaves behind.
         ReviewRequested => "review_requested",
         /// Layer 2 is settled — the developer confirmed the brief, or it was recorded as
         /// needing no confirmation — and no draft is waiting on the developer. An agent

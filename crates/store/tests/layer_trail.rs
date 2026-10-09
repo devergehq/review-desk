@@ -303,3 +303,88 @@ fn a_sign_off_whose_layer_row_fails_writes_neither() {
     );
     assert_eq!(draft.approved_by, None);
 }
+
+#[test]
+fn rewriting_a_confirmed_brief_puts_layer_two_back_to_waiting() {
+    // **The fault this file exists to remove, with the sign reversed.** Replacing a brief
+    // clears its confirmation — the developer confirmed the text that was there — so a
+    // trail still reading "confirmed by the developer" over a brief the Inbox is asking
+    // about again is the record disagreeing with itself in the other direction.
+    //
+    // It is also the commonest path there is: an agent revising a brief after the
+    // developer has looked at it.
+    let (_dir, store) = temp_store();
+    let review = with_brief(&store);
+    store
+        .confirm_brief(review.id, Actor::Developer)
+        .expect("the developer confirms it");
+    assert_eq!(layer(&store, review.id, 2).0, ReviewLayerState::Done);
+
+    store
+        .put_brief(
+            review.id,
+            NewBrief {
+                problem: "a second reading of the same change".to_string(),
+                ..Default::default()
+            },
+        )
+        .expect("the session revises it");
+
+    let brief = store.get_brief(review.id).expect("the brief");
+    assert_eq!(
+        brief.confirmed_at, None,
+        "replacing a brief clears the confirmation"
+    );
+
+    let (state, detail) = layer(&store, review.id, 2);
+    assert_eq!(
+        state,
+        ReviewLayerState::WaitingOnYou,
+        "and the trail has to say so, or the screen shows a confirm button under a \
+         layer claiming the developer already confirmed"
+    );
+    assert_eq!(detail.as_deref(), Some("waiting on you"));
+
+    let queued = store
+        .reviews_with_unconfirmed_brief(None)
+        .expect("the inbox group");
+    assert_eq!(
+        queued.iter().map(|review| review.id).collect::<Vec<_>>(),
+        vec![review.id],
+        "the Inbox and the trail agree about whose turn it is"
+    );
+}
+
+#[test]
+fn reporting_a_draft_posted_twice_does_not_un_harvest_layer_seven() {
+    // Reporting the same GitHub review twice is a supported call — a session that crashed
+    // between posting and reporting retries it — and layer 7 is the one layer whose true
+    // state can be *past* what `post_draft` writes. A second report a week later must not
+    // move a harvested layer 7 back to `pending` and throw away what the harvester said.
+    let (_dir, store) = temp_store();
+    let review = with_ready_draft(&store);
+    store
+        .approve_draft(review.id, ReviewEvent::Comment, Actor::Developer)
+        .expect("approved");
+    store
+        .post_draft(review.id, "gh-review-3312")
+        .expect("posted");
+    assert_eq!(layer(&store, review.id, 7).0, ReviewLayerState::Pending);
+
+    store
+        .set_review_layer(
+            review.id,
+            7,
+            ReviewLayerState::Done,
+            Some("3 outcomes harvested"),
+        )
+        .expect("the harvester runs");
+
+    store
+        .post_draft(review.id, "gh-review-3312")
+        .expect("the same report again changes nothing");
+
+    let (state, detail) = layer(&store, review.id, 7);
+    assert_eq!(state, ReviewLayerState::Done, "the harvest still happened");
+    assert_eq!(detail.as_deref(), Some("3 outcomes harvested"));
+}

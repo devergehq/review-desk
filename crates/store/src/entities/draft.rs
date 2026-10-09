@@ -321,12 +321,24 @@ impl Store {
         // from GitHub, which is the one thing nobody has done yet — and layer 7 is the
         // whole feedback loop, so a layer trail that claimed it was finished would make
         // the record lie about the thing the project exists for.
-        self.set_review_layer(
-            review_id,
-            ReviewLayerName::Harvest.number(),
-            ReviewLayerState::Pending,
-            Some(AWAITING_HARVEST_DETAIL),
-        )?;
+        //
+        // **Unless the harvest has already run.** Reporting the same GitHub review twice
+        // is a supported call — the `Posted` arm above exists so that a session retrying
+        // after a crash succeeds — and layer 7 is the one layer whose true state can be
+        // *past* what this writes. Written unconditionally, a retry a week later would
+        // move a harvested layer 7 back to `pending` and throw away the harvester's own
+        // detail. Nothing else here can regress, because no state is past `done`.
+        let harvested = self
+            .find_review_layer(review_id, ReviewLayerName::Harvest.number())?
+            .is_some_and(|layer| layer.state == ReviewLayerState::Done);
+        if !harvested {
+            self.set_review_layer(
+                review_id,
+                ReviewLayerName::Harvest.number(),
+                ReviewLayerState::Pending,
+                Some(AWAITING_HARVEST_DETAIL),
+            )?;
+        }
 
         tx.commit()?;
         self.get_draft(review_id)

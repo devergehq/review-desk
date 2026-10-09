@@ -189,15 +189,21 @@ impl Store {
         // this function causes:
         //
         // * recorded as needing no confirmation — layer 2 is finished with on write;
-        // * recorded as needing one again, having needed none — the `done` above was
-        //   this function's own, and leaving it would claim layer 2 was settled while
-        //   the developer is being asked.
+        // * written over a brief whose layer 2 was already settled — this write unsettles
+        //   it, because the insert above cleared the confirmation and the waiver with it,
+        //   and leaving the old row would claim layer 2 was settled while the developer
+        //   is being asked.
         //
-        // An ordinary brief, required before and required now, touches no layer: what a
-        // session's layers say about its own progress is the session's to write.
-        let settled_before = held
-            .as_ref()
-            .is_some_and(|held| !held.confirmation_required);
+        // **`is_settled`, not `!confirmation_required`.** Those differ on the commonest
+        // path there is: an agent revising a brief the developer had already confirmed.
+        // The narrower test let that case fall through to the no-op arm, so the Inbox
+        // listed "Confirm the problem" again while the trail directly above the confirm
+        // button still said "confirmed by the developer" — which is the fault DEV-864
+        // exists to remove, with the sign reversed.
+        //
+        // A brief that was *not* settled before and is not settled now touches no layer:
+        // what a session's layers say about its own progress is the session's to write.
+        let settled_before = held.as_ref().is_some_and(Brief::is_settled);
         match (&because, settled_before) {
             (Some(because), _) => {
                 self.set_review_layer(

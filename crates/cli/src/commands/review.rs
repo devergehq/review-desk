@@ -239,11 +239,18 @@ fn show_lines(full: &FullReview) -> String {
 
     match &full.brief {
         Some(brief) => {
+            // Three states, not two. A brief recorded as needing no confirmation is not
+            // outstanding, and this is the surface a session reads: reporting it as "not
+            // confirmed" would have a session wait for an act nobody is going to perform.
             lines.push(format!(
                 "  brief ({}) {}",
-                match brief.confirmed_at {
-                    Some(at) => format!("confirmed at {at}"),
-                    None => "not confirmed".to_string(),
+                match (brief.confirmed_at, brief.confirmation_required) {
+                    (Some(at), _) => format!("confirmed at {at}"),
+                    (None, false) => match &brief.confirmation_not_required_because {
+                        Some(because) => format!("confirmation not required: {because}"),
+                        None => "confirmation not required".to_string(),
+                    },
+                    (None, true) => "not confirmed".to_string(),
                 },
                 brief.problem
             ));
