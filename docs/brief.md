@@ -36,6 +36,7 @@ It is not a list of pull requests. GitHub and Linear already do that. **Its unit
 | **One exception, and it is narrow.** A brief may be written as needing no confirmation, with the reason. A brief is confirmed on pull requests changing more than 200 lines; the threshold is the caller's setting, not Review Desk's. A brief already written as requiring confirmation cannot be rewritten as needing none, and the record says `waived` rather than `developer` wherever it is read. | 9 Oct 2026 | Patrick (DEV-864) |
 | Review Desk reads GitHub (through `gh`, under the developer's login) and never writes to it | 8 Oct 2026 | Settled in the API contract |
 | **Dependencies must be active, maintained and popular, and that is checked before adopting one.** An update bot, an advisory scan and a release-age check enforce it; see [dependencies.md](dependencies.md). | 9 Oct 2026 | Patrick |
+| **On screen, "approve" is the GitHub review event and nothing else.** What the developer does is **sign off**: the draft page's button reads "Sign off and post", the Inbox group reads "Sign off a draft", and the three event options keep GitHub's names. The API, the contract, the store and the command line are unchanged — `approveDraft`, the `approved` status and `draft_approved` keep their names. | 9 Oct 2026 | Patrick (DEV-870) |
 
 ## The shape of the app
 

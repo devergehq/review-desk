@@ -14,12 +14,12 @@ dashboard from one binary, and **the dashboard reading and writing that API**. A
 of the contract's operations are answered and all sixteen are called.
 
 **It has been run end to end.** `web/e2e` records a review through the command line, serves
-it from the binary, and drives a browser through confirming the brief and approving the
+it from the binary, and drives a browser through confirming the brief and signing off the
 draft — see [the end-to-end test](#the-end-to-end-test).
 
-**Only the developer signs off.** Confirming a brief and approving a draft happen in
+**Only the developer signs off.** Confirming a brief and signing off a draft happen in
 the dashboard; the command line that agent sessions call has no command for either. An
-agent writes a draft and reads its status, and cannot approve it. That is enforced by
+agent writes a draft and reads its status, and cannot sign it off. That is enforced by
 the store rather than promised by the commands — see [Sign-off](#sign-off).
 
 **An agent can ask what is waiting for it.** `review-desk work list` is the one command
@@ -615,15 +615,15 @@ which it was — they are Review Desk unable to run, not a request refused.
 ## Sign-off
 
 **Only the developer can sign off.** Decided by Patrick on 9 October 2026: confirming a
-brief and approving a draft happen in the dashboard, and the command line agent sessions
-call has no command for either.
+brief and signing off a draft happen in the dashboard, and the command line agent
+sessions call has no command for either.
 
 | Act | Who | Where |
 | -- | -- | -- |
 | Write the brief | the review session | `brief put` |
 | Confirm the brief | the developer | the dashboard only |
 | Write the draft | the review session | `draft put` |
-| Approve the draft, choosing the event | the developer | the dashboard only |
+| Sign off the draft, choosing the event | the developer | the dashboard only |
 | Send the draft back with a note | the developer | the dashboard only |
 | Post it and report the GitHub review | the review session | `draft posted` |
 
@@ -822,7 +822,7 @@ cd web && pnpm run e2e
 It generates the dashboard, builds the binary with it embedded, seeds a database through
 the command line, starts two servers — one seeded, one empty — and drives Chromium through
 the whole path: the Inbox listing a review with an unconfirmed brief, confirming it,
-the agent's draft appearing to approve, editing and approving it, and
+the agent's draft appearing to sign off, editing and signing it off, and
 `review-desk draft show` then reporting it approved with the chosen event. It asserts that
 the brief's `confirmed_by` and the draft's `approved_by` are both `developer`, which is the
 sign-off boundary this project rests on.

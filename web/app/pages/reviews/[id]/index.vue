@@ -116,7 +116,7 @@ async function changeDisposition(payload: {
             </div>
             <p class="rd-note confirm-note">
               Layer 2 is yours. Read the problem below; if that is what the change is really
-              solving, confirm it and the draft becomes yours to approve.
+              solving, confirm it and the draft becomes yours to sign off.
             </p>
           </div>
           <button

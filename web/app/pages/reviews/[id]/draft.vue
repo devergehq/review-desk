@@ -6,7 +6,7 @@ import type { DeskNotice } from '~/utils/format'
 /**
  * The draft preview: what GitHub will show, before anything is posted.
  *
- * Nothing on this screen posts. The developer approves, and the review session posts it
+ * Nothing on this screen posts. The developer signs off, and the review session posts it
  * under their name with no bot banner — a preview that could post would be a bot.
  */
 const route = useRoute()
@@ -120,7 +120,8 @@ async function fileTicket() {
 function statusLine(data: DraftDetail): string {
   const draft = data.draft
   if (draft.status === 'approved') {
-    return `Approved as "${eventLabel(draft.event)}". Waiting for the session to post it.`
+    return `Signed off. Will be posted as "${eventLabel(draft.event)}" — waiting for the `
+      + 'session to post it.'
   }
   if (draft.status === 'sent_back') return 'Sent back to the session with a note.'
   if (draft.status === 'posted') return 'Posted. Layer 7 reads the author’s replies.'
@@ -228,7 +229,7 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                 class="rd-empty"
               >
                 This draft has no body yet. Layer 6 is where a session writes the review, and
-                it has written nothing — there is nothing here to approve.
+                it has written nothing — there is nothing here to sign off.
               </p>
 
               <pre
@@ -364,7 +365,7 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                 {{ edit.finding_key }} · {{ edit.summary }}
               </p>
               <p class="rd-meta foot">
-                Saved as feedback when you approve. Three edits of the same kind become a
+                Saved as feedback when you sign off. Three edits of the same kind become a
                 proposed rule.
               </p>
             </DeskCard>
@@ -431,7 +432,7 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                 :disabled="decided(data) || dirty || working"
                 @click="approve"
               >
-                {{ working ? 'Working…' : 'Approve and post' }}
+                {{ working ? 'Working…' : 'Sign off and post' }}
               </button>
               <template v-if="!sendingBack">
                 <button
@@ -479,7 +480,7 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                 v-if="dirty"
                 tone="problem"
               >
-                Save or discard your changes before approving.
+                Save or discard your changes before signing off.
               </DeskNotice>
               <DeskNotice
                 v-if="notice"
