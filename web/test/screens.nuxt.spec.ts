@@ -29,18 +29,30 @@ import Layout from '../app/layouts/default.vue'
  */
 
 /**
+ * What `DeskState` renders while a read is in flight — `Reading the inbox…`.
+ *
+ * Named here because `settle` waits for it to go away, and a test helper that waits for a
+ * sentence should say which sentence rather than hiding it in a regular expression.
+ */
+const STILL_READING = /Reading [^…]*…/
+
+/**
  * Let every pending read and re-read finish.
  *
- * **Waits for the screen to stop changing, rather than for a fixed number of rounds.**
- * It used to loop twelve times, which is a count tuned to how long the work happened to
- * take — and a count is the wrong instrument, as this file's own history says: "a count
- * tuned to the shape before that change left one of these tests asserting on the loading
- * state". It did it again on CI, where a slower runner left `store_unavailable` asserting
- * against "Reading the inbox…" while the same test passed locally every time.
+ * **Waits for the loading state to go away, with a bound** — not for a fixed number of
+ * rounds, and not merely for the rendered text to stop changing.
  *
- * Three identical renders in a row is the signal that nothing is still in flight. The
- * ceiling is a backstop, not the mechanism: the common case now settles in four rounds
- * rather than twelve, and a slow one has sixty.
+ * Both of the simpler instruments have now failed here, and the second one is mine. A
+ * fixed twelve rounds is a count tuned to how long the work happened to take, which this
+ * file already recorded failing once: "a count tuned to the shape before that change left
+ * one of these tests asserting on the loading state". Waiting for the text to stop
+ * changing looks like the principled replacement and is worse — the text is *perfectly
+ * stable* at "Reading the inbox…" for as long as the dynamic `import()` takes, so it
+ * returns early with more confidence and no more information. Both failed the same CI test
+ * the same way.
+ *
+ * The condition that actually matters is that the screen is no longer reading. Once it is
+ * not, two more quiet rounds flush whatever the answer renders.
  *
  * A macrotask as well as the microtasks, each round. Choosing the API backend is a dynamic
  * `import()` — the HTTP client is deliberately not in the app shell's static graph — and
@@ -48,18 +60,19 @@ import Layout from '../app/layouts/default.vue'
  * `flushPromises` can advance.
  */
 async function settle(page: VueWrapper) {
-  let previous: string | null = null
-  let unchanged = 0
+  let quiet = 0
 
-  for (let round = 0; round < 60; round += 1) {
+  for (let round = 0; round < 200; round += 1) {
     await new Promise(resolve => setTimeout(resolve, 0))
     await flushPromises()
     await page.vm.$nextTick()
 
-    const now = page.text()
-    unchanged = now === previous ? unchanged + 1 : 0
-    previous = now
-    if (unchanged >= 3) return
+    if (STILL_READING.test(page.text())) {
+      quiet = 0
+      continue
+    }
+    quiet += 1
+    if (quiet >= 2) return
   }
 }
 
