@@ -792,6 +792,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--allowlist", type=Path, default=None)
     parser.add_argument("--format", choices=("text", "markdown"), default="text")
     parser.add_argument(
+        "--summary",
+        type=Path,
+        default=None,
+        help="also write the markdown table here, whatever the verdict. One run, one pass "
+        "over the registries: asking for the table separately would double the requests.",
+    )
+    parser.add_argument(
         "--today",
         type=datetime.date.fromisoformat,
         default=None,
@@ -827,6 +834,16 @@ def main(argv: list[str] | None = None) -> int:
         print(render_markdown(rows, today, args.max_age_days))
     else:
         print(render_text(rows, failures, notes, today, args.max_age_days, manifests))
+
+    # Written before the verdict is returned, so a failing run still leaves the table. The
+    # path is given by the caller and is outside the repository in CI; nothing is written
+    # into the tree, because a generated report is not committed here.
+    if args.summary is not None:
+        try:
+            with args.summary.open("a", encoding="utf-8") as handle:
+                handle.write(render_markdown(rows, today, args.max_age_days) + "\n")
+        except OSError as exc:
+            print(f"could not write the table to {args.summary}: {exc}", file=sys.stderr)
 
     if failures:
         print(

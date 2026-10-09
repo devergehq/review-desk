@@ -149,16 +149,23 @@ jobs:
       - uses: actions/checkout@v7
 
       # The real check, against the real registries. Roughly thirty seconds for
-      # thirty-five dependencies.
+      # thirty-five dependencies, and the audit table goes to the run summary from the same
+      # invocation -- asking for the table in a second step ran the whole check twice and
+      # doubled the requests to two public registries for one answer.
       - name: Check every direct dependency's release age
-        run: python3 tools/release_age.py
+        run: python3 tools/release_age.py --summary "$GITHUB_STEP_SUMMARY"
 
       # The other half of Patrick's third rule, asserted rather than assumed. The step
       # above proves the check can pass; this one proves it cannot pass when it has not
       # run. Pointing the registry at a closed port is a genuine connection failure, and
       # the assertions are on both the exit code and the words, because an exit code of 2
       # for some other reason would otherwise satisfy this.
+      #
+      # `if: always()` so that a tree which legitimately fails the check above still proves
+      # this property. The two are independent: one is about a dependency, this is about
+      # the check itself.
       - name: It fails, with a could-not-run message, when the registry is unreachable
+        if: always()
         env:
           REVIEW_DESK_CRATES_API: http://127.0.0.1:1/crates
           REVIEW_DESK_NPM_REGISTRY: http://127.0.0.1:1
@@ -177,10 +184,3 @@ jobs:
             *) echo "::error::exit 2 but no could-not-run message"; exit 1 ;;
           esac
           echo "Unreachable registry: exit 2 and the could-not-run message. As intended."
-
-      # The audit table, in the log, every run. Not written to a file: a generated report
-      # is not committed in this repository, and a job artefact nobody opens is not an
-      # improvement on a log nobody opens.
-      - name: The audit table
-        if: always()
-        run: python3 tools/release_age.py --format markdown >> "$GITHUB_STEP_SUMMARY"
