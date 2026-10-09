@@ -29,13 +29,14 @@ import datetime
 import json
 import shutil
 import subprocess
-import tomllib
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 if sys.version_info < (3, 11):  # pragma: no cover - the guard exists so CI says why
     sys.exit(f"advisory_scan.py needs Python 3.11 or newer; this is {sys.version.split()[0]}")
+
+import tomllib  # noqa: E402  (below the guard, deliberately)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 

@@ -338,7 +338,9 @@ class TheInterpreterGuard(unittest.TestCase):
         """Importing tomllib above the guard meant the guard could never fire: on 3.10 the
         script died with ModuleNotFoundError instead of the sentence the workflow and the
         docs both promise."""
-        for name in ("release_age.py", "dependency_allowlist.py"):
+        # All three. Covering only two is how this regression came back: a later edit
+        # inserted `import tomllib` above the guard in advisory_scan.py and nothing failed.
+        for name in ("release_age.py", "dependency_allowlist.py", "advisory_scan.py"):
             source = (Path(__file__).resolve().parent / name).read_text(encoding="utf-8")
             guard = source.index("sys.version_info < (3, 11)")
             self.assertGreater(
