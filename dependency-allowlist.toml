@@ -1,0 +1,153 @@
+# What Review Desk is knowingly living with, and until when.
+#
+# Two checks read this file: `tools/release_age.py`, which fails when a direct dependency's
+# latest release is more than a year old, and `tools/advisory_scan.py`, which fails on a
+# known vulnerability. An entry here is the only thing that makes either of them pass over
+# a finding, and every entry carries the same four justifications:
+#
+#   reason      — why this is acceptable. Not "known issue": the failure it does not cause.
+#   decided_by  — who decided. A person, not a team and not an agent.
+#   look_again  — when to look again. In the past, the check fails. More than 550 days
+#                 away, the entry is rejected: a date nobody will reach is an exemption
+#                 wearing the shape of a review.
+#
+# An entry with a missing key, an unknown key, a reason under twenty characters or a date
+# that is not a bare TOML date is rejected and fails the check. That is deliberate — a typo
+# like `look-again` would otherwise read as an entry with no expiry, and the check would
+# still pass. An entry for a dependency or advisory nothing reports any more also fails, so
+# the list cannot quietly accumulate.
+#
+# Adding an entry is a decision about the product. `docs/dependencies.md` has the steps.
+
+# --------------------------------------------------------------------------- release age
+
+[[release_age]]
+dependency = "serde_norway"
+ecosystem = "cargo"
+reason = """
+Test-only, and the best-maintained option that exists. It parses contract/openapi.yaml in \
+the server's conformance test and is not in the shipped binary. Its upstream, serde_yaml, \
+was archived by its author in 2024, and every serde-integrated successor is worse: \
+serde_yaml_ng last released 2024-05-26, 200 days older than this one, and serde_yml is on \
+0.0.x with contested provenance. yaml-rust2 and saphyr are current and popular but are \
+parsers with no serde integration, so moving to one means hand-writing the conversion to \
+serde_json::Value - not a small change for a test. 5.98M recent downloads. Revisit when a \
+maintained serde-integrated YAML crate exists, or drop the test's YAML path entirely.\
+"""
+decided_by = "Patrick"
+look_again = 2027-04-09
+
+[[release_age]]
+dependency = "ajv-formats"
+ecosystem = "npm"
+reason = """
+Finished, not abandoned, and first-party. It is the ajv project's own companion package \
+(github.com/ajv-validator/ajv-formats) and the only way to get format assertions out of \
+ajv 8, which contract/validate-examples.mjs needs. 140M downloads a week against ajv's \
+391M, so better than one ajv user in three installs it. Not deprecated. It is CI-only: it \
+validates the contract's examples and ships in nothing. There is no maintained \
+alternative to move to, because there is nothing else that does this for ajv 8.\
+"""
+decided_by = "Patrick"
+look_again = 2027-10-08
+
+# ---------------------------------------------------------------------------- advisories
+#
+# All seven are in `web/`, all seven are transitive, and none can be fixed from a direct
+# dependency: `nuxt` and `mermaid` are both already at their newest published versions, so
+# there is no in-range update that moves them. They are build-time tooling - the Nuxt dev
+# server's TLS helper, Nuxt devtools' git client, a glob matcher, and mermaid's maths
+# renderer. The dashboard ships as static files served by a Rust binary on 127.0.0.1;
+# `simple-git` and `node-forge` are not in it and never run in the product.
+#
+# The look-again date is short on purpose. These clear when upstream Nuxt and mermaid bump
+# their own trees, which the weekly Dependabot pull request will bring in. If they are
+# still here in December, that is a fact worth seeing rather than a list worth extending.
+
+[[advisory]]
+advisory = "GHSA-v5rq-49vh-5v5c"
+dependency = "@simple-git/argv-parser"
+ecosystem = "npm"
+reason = """
+nuxt > @nuxt/devtools > simple-git > @simple-git/argv-parser. Needs >=2.0.1; no in-range \
+update reaches it because nuxt is already at its newest release. Devtools runs only under \
+`nuxt dev` on a developer's own machine and is not in the static build the binary serves, \
+so the unsafe-editor path is not reachable in the product.\
+"""
+decided_by = "Patrick"
+look_again = 2026-12-11
+
+[[advisory]]
+advisory = "GHSA-x6jw-m9v5-85vh"
+dependency = "simple-git"
+ecosystem = "npm"
+reason = """
+nuxt > @nuxt/devtools > simple-git. Needs >=4.0.1, a major bump of a package two levels \
+inside the Nuxt tree, so only upstream can take it. Devtools is dev-only and absent from \
+the static build; nothing in the shipped binary invokes git.\
+"""
+decided_by = "Patrick"
+look_again = 2026-12-11
+
+[[advisory]]
+advisory = "GHSA-858h-whjf-mvg5"
+dependency = "simple-git"
+ecosystem = "npm"
+reason = """
+nuxt > @nuxt/devtools > simple-git, the residual of CVE-2026-28291. Needs >=3.36.1, and \
+the same reasoning applies as for the other two simple-git advisories: upstream Nuxt owns \
+the bump, and devtools is not in the shipped build.\
+"""
+decided_by = "Patrick"
+look_again = 2026-12-11
+
+[[advisory]]
+advisory = "GHSA-g4wm-2vf7-vfgr"
+dependency = "simple-git"
+ecosystem = "npm"
+reason = """
+nuxt > @nuxt/devtools > simple-git, command execution through unblocked git configuration \
+includes. Needs >=3.36.1. Dev-only, upstream-owned, and not in the static build the Rust \
+binary embeds.\
+"""
+decided_by = "Patrick"
+look_again = 2026-12-11
+
+[[advisory]]
+advisory = "GHSA-86w9-cpqp-85rv"
+dependency = "node-forge"
+ecosystem = "npm"
+reason = """
+nuxt > @nuxt/nitro-server > nitropack > listhen > node-forge. Needs >=1.4.1. listhen uses \
+it to mint a self-signed certificate for `nuxt dev` over HTTPS, which this project never \
+turns on, and none of it reaches the static build. Five levels deep in the Nuxt tree, so \
+upstream owns the fix.\
+"""
+decided_by = "Patrick"
+look_again = 2026-12-11
+
+[[advisory]]
+advisory = "GHSA-vfj7-8cjw-p6xm"
+dependency = "braces"
+ecosystem = "npm"
+reason = """
+nuxt > @nuxt/nitro-server > nitropack > globby > fast-glob > micromatch > braces. Needs \
+>=3.0.4. A stack-exhaustion denial of service reachable only by feeding it a deeply nested \
+glob pattern, and the only patterns it sees are the ones in this repository's own build \
+configuration. Six levels deep; upstream owns the fix.\
+"""
+decided_by = "Patrick"
+look_again = 2026-12-11
+
+[[advisory]]
+advisory = "GHSA-238p-pmpm-9mq7"
+dependency = "katex"
+ecosystem = "npm"
+reason = """
+mermaid > katex, needing >=0.18.2, and mermaid is already at its newest release so no \
+in-range update reaches it. The dashboard renders mermaid diagrams from text the developer \
+and their own agent sessions wrote, and every rendered string already goes through \
+DOMPurify. Rated low. Upstream mermaid owns the bump.\
+"""
+decided_by = "Patrick"
+look_again = 2026-12-11
