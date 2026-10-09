@@ -9,8 +9,8 @@ use crate::{is_foreign_key_violation, Store};
 
 const COLUMNS: &str = "review_id, seq, lens, severity, file, line, claim, evidence, \
                        disposition, disposition_reason, rule_id, github_comment_id, \
-                       flagged_line, inline_comment, why_it_matters, proof, verification, \
-                       suggested_fix, created_at";
+                       flagged_line, inline_comment, why_it_matters, proof, proof_note, \
+                       verification, suggested_fix, created_at";
 
 impl Store {
     /// Add a finding to a review, assigning the next sequence number within it.
@@ -60,9 +60,10 @@ impl Store {
             "INSERT INTO findings
                  (review_id, seq, lens, severity, file, line, claim, evidence,
                   disposition, disposition_reason, rule_id, flagged_line, inline_comment,
-                  why_it_matters, proof, verification, suggested_fix, created_at)
+                  why_it_matters, proof, proof_note, verification, suggested_fix,
+                  created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                     ?16, ?17, ?18)",
+                     ?16, ?17, ?18, ?19)",
             params![
                 review_id,
                 seq,
@@ -82,6 +83,7 @@ impl Store {
                 new.inline_comment,
                 new.why_it_matters,
                 new.proof,
+                new.proof_note,
                 new.verification,
                 new.suggested_fix,
                 created_at,
@@ -259,6 +261,7 @@ fn row_to_finding(row: &Row<'_>) -> rusqlite::Result<Finding> {
         inline_comment: row.get("inline_comment")?,
         why_it_matters: row.get("why_it_matters")?,
         proof: row.get("proof")?,
+        proof_note: row.get("proof_note")?,
         verification: row.get("verification")?,
         suggested_fix: row.get("suggested_fix")?,
         fix_references: Vec::new(),

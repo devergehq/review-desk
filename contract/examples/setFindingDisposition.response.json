@@ -27,6 +27,7 @@
   "inline_comment": null,
   "why_it_matters": "The two copies will drift, and the one that is wrong will be the one nobody reads.",
   "proof": "From reading both files. The schedule was not run, so this is read, not run.",
+  "proof_note": "Read, not run: the schedule was not executed.",
   "verification": "read_not_run",
   "suggested_fix": "Read the schedule from one place.",
   "fix_references": [],

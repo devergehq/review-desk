@@ -87,6 +87,7 @@ fn a_finding_carries_all_six_fields_and_reads_back_unchanged() {
                 proof: Some(
                     "endpoint accepts attempt 1 after 31s\nqueue retries at 30s".to_string(),
                 ),
+                proof_note: Some("A throwaway test, not committed.".to_string()),
                 verification: Verification::Reproduced,
                 suggested_fix: Some("Send the delivery id as the key.".to_string()),
                 fix_references: vec![
@@ -116,6 +117,11 @@ fn a_finding_carries_all_six_fields_and_reads_back_unchanged() {
         read.proof.as_deref(),
         Some("endpoint accepts attempt 1 after 31s\nqueue retries at 30s"),
         "the proof's newline is part of the proof"
+    );
+    assert_eq!(
+        read.proof_note.as_deref(),
+        Some("A throwaway test, not committed."),
+        "the caption both boards draw under the proof block, in its own field"
     );
 }
 
@@ -266,6 +272,7 @@ fn awkward_text_is_stored_exactly_as_it_was_given() {
                 inline_comment: Some(comment.to_string()),
                 why_it_matters: Some(why.to_string()),
                 proof: Some(proof.to_string()),
+                proof_note: Some("  Trailing and leading, kept.  ".to_string()),
                 suggested_fix: Some(fix.to_string()),
                 fix_references: vec![" SendInvoiceEmail.php:44 ".to_string()],
                 ..Default::default()
@@ -291,6 +298,10 @@ fn awkward_text_is_stored_exactly_as_it_was_given() {
     assert_eq!(hunk.lines[6].text, "  \t  mixed \t tabs  ");
 
     assert_eq!(read.proof.as_deref(), Some(proof));
+    assert_eq!(
+        read.proof_note.as_deref(),
+        Some("  Trailing and leading, kept.  ")
+    );
     assert_eq!(read.inline_comment.as_deref(), Some(comment));
     assert_eq!(read.why_it_matters.as_deref(), Some(why));
     assert_eq!(read.suggested_fix.as_deref(), Some(fix));
@@ -332,6 +343,7 @@ fn a_finding_written_without_any_of_it_reads_as_it_did_before() {
     assert_eq!(read.inline_comment, None);
     assert_eq!(read.why_it_matters, None);
     assert_eq!(read.proof, None);
+    assert_eq!(read.proof_note, None);
     assert_eq!(
         read.verification,
         Verification::Unknown,
@@ -482,6 +494,77 @@ fn a_flagged_line_on_its_own_is_kept_because_a_finding_need_not_show_code() {
 
     assert_eq!(written.flagged_line, Some(4096));
     assert_eq!(written.hunk, None);
+}
+
+#[test]
+fn a_hunk_line_holding_more_than_one_file_line_is_refused() {
+    let (_dir, store) = temp_store();
+    let review = a_review(&store);
+
+    // **The numbering is why this matters, not tidiness.** `numbered_lines` gives exactly
+    // one number to each row that is not a removal, so a row holding three file lines
+    // draws three lines under one gutter number and every number after it is short by
+    // two — and `flagged_line` then anchors the comment to the wrong line of the file.
+    // An agent that builds a hunk by joining diff output makes exactly this mistake, and
+    // `proof` and `inline_comment` take newlines legitimately right beside it.
+    for bad in ["a\nb", "a\r\nb", "trailing\n", "\n"] {
+        let error = store
+            .add_finding(
+                review,
+                NewFinding {
+                    lens: "correctness".to_string(),
+                    severity: Severity::Nit,
+                    claim: "a block of text in one line".to_string(),
+                    hunk: Some(FindingHunk {
+                        file: "src/lib.rs".to_string(),
+                        start_line: 1,
+                        lines: vec![
+                            line(HunkLineMarker::Unchanged, "fine"),
+                            line(HunkLineMarker::Added, bad),
+                        ],
+                    }),
+                    ..Default::default()
+                },
+            )
+            .expect_err("a hunk line is one file line");
+
+        match error {
+            StoreError::InvalidValue {
+                field,
+                value,
+                expected,
+            } => {
+                assert_eq!(field, "hunk.lines.text");
+                assert!(value.contains("line 2"), "it names which line: {value}");
+                assert!(expected.contains("one file line"), "{expected}");
+            }
+            other => panic!("expected an invalid value, got {other:?}"),
+        }
+    }
+
+    assert!(
+        store.list_findings(review).unwrap().is_empty(),
+        "and none of the four attempts wrote a finding"
+    );
+
+    // A proof, a comment, a consequence and a fix all take newlines. Only a hunk line
+    // does not, and that distinction is the point rather than an inconsistency.
+    store
+        .add_finding(
+            review,
+            NewFinding {
+                lens: "correctness".to_string(),
+                severity: Severity::Nit,
+                claim: "newlines where they belong".to_string(),
+                proof: Some("one\ntwo\nthree".to_string()),
+                proof_note: Some("a note\nover two lines".to_string()),
+                inline_comment: Some("first\n\nsecond".to_string()),
+                why_it_matters: Some("because\nof this".to_string()),
+                suggested_fix: Some("do\nthis".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("the text fields take newlines; only a hunk line does not");
 }
 
 #[test]

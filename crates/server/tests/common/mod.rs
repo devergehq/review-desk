@@ -475,6 +475,7 @@ pub fn seed(store: &Store) -> Seeded {
                     "A customer whose endpoint answers slowly is charged twice.".to_string(),
                 ),
                 proof: Some("deliveries for evt_1: 2, expected 1\nnaïve ✓".to_string()),
+                proof_note: Some("A throwaway test, not committed.".to_string()),
                 verification: Verification::Reproduced,
                 suggested_fix: Some("Send the delivery id as the key.".to_string()),
                 fix_references: vec!["SendInvoiceEmail.php:44".to_string()],

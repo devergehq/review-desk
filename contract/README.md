@@ -170,6 +170,7 @@ Everything else on the four screens is below.
 | the comment under that line | `findings[].inline_comment` |
 | the "Why it matters" paragraph | `findings[].why_it_matters` |
 | the "How we know" block | `findings[].proof` |
+| the caption under that block | `findings[].proof_note` |
 | the "Reproduced" badge, and its absence | `findings[].verification` |
 | the "What would fix it" sentence | `findings[].suggested_fix` |
 | the monospace lines under it | `findings[].fix_references` |
@@ -203,6 +204,7 @@ with its file and its line, as it always did.**
 | `inline_comment` | The comment as it will be posted on that line. **Not the `claim`**: the claim is what the record says is wrong, this is what the author reads on GitHub. Nothing here posts it. |
 | `why_it_matters` | The consequence, in a sentence or two. |
 | `proof` | How the review knows — test output, two logged keys, a line read. Newlines are part of it. |
+| `proof_note` | The plain caption beneath the proof — "A throwaway test, not committed." Its own field because the proof is drawn as a monospace block and this is a sentence about it. |
 | `verification` | `reproduced`, `read_not_run` or `unknown`, defaulting to `unknown`. |
 | `suggested_fix` | What would fix it. |
 | `fix_references` | Sibling code the fix should look like, in order. `[]` when there are none. |
@@ -214,6 +216,11 @@ is a line of a single space, a tab stays a tab, and a trailing space survives. `
 the empty string. The one piece of text the server looks at before storing is a
 `fix_references` entry, which is a pointer the dashboard draws as one line and is refused
 when it is blank; refusing is not normalising, and nothing stored is altered.
+
+**A hunk line is one file line.** `text` carries no end-of-line character, and the server
+refuses a write whose line text contains one: `hunk.lines[].line` gives exactly one number
+per non-removed entry, so an entry holding three file lines would draw three rows under one
+number and shift every number after it — and `flagged_line` with them.
 
 **A removed line cannot be commented on.** It carries no number, so no value of
 `flagged_line` names it, and a write that tries is refused rather than stored undrawable.

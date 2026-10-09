@@ -376,6 +376,13 @@ ALTER TABLE findings ADD COLUMN why_it_matters  TEXT;
 ALTER TABLE findings ADD COLUMN proof           TEXT;
 ALTER TABLE findings ADD COLUMN suggested_fix   TEXT;
 
+-- The plain caption beneath the proof — "A throwaway test, not committed."
+--
+-- Its own column rather than more of `proof`, because the two are drawn differently: the
+-- proof is a monospace block and this is a sentence about it. Both boards draw both, and
+-- a caption folded into `proof` would render as though it were test output.
+ALTER TABLE findings ADD COLUMN proof_note      TEXT;
+
 -- Whether the proof was reproduced or only read.
 --
 -- `unknown` is the default, and it is the only honest value for a finding written before

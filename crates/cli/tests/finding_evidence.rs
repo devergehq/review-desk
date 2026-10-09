@@ -40,6 +40,7 @@ fn board_a2_finding() -> serde_json::Value {
         "inline_comment": "This retry re-sends the payload with no idempotency key, so an endpoint that accepted the first attempt slowly gets the event twice.",
         "why_it_matters": "A customer whose endpoint answers slowly is charged, emailed or updated twice for one event.",
         "proof": "endpoint accepts attempt 1 after 31s\nqueue retries at 30s\ndeliveries for evt_1: 2, expected 1",
+        "proof_note": "A throwaway test, not committed.",
         "verification": "reproduced",
         "suggested_fix": "Send the delivery id as the key, as the two sibling senders do.",
         "fix_references": ["SendInvoiceEmail.php:44", "SyncToLedger.php:71"]
@@ -76,6 +77,7 @@ fn all_six_fields_go_in_from_one_document_and_come_back_unchanged() {
     assert_eq!(finding["hunk"]["lines"][4]["text"], "");
     assert_eq!(finding["flagged_line"], 58);
     assert_eq!(finding["verification"], "reproduced");
+    assert_eq!(finding["proof_note"], "A throwaway test, not committed.");
     assert_eq!(
         finding["proof"],
         "endpoint accepts attempt 1 after 31s\nqueue retries at 30s\ndeliveries for evt_1: 2, expected 1"
@@ -122,6 +124,7 @@ fn awkward_text_survives_the_round_trip_through_the_command_line() {
                 ]
             },
             "proof": "  leading kept\n\ttab line\n   \nnaïve ✓\ntrailing  ",
+            "proof_note": "  Trailing and leading, kept.  ",
             "inline_comment": "\tIndented, trailing space ",
             "fix_references": [" src/other.rs:4 "]
         }),
@@ -170,6 +173,7 @@ fn a_finding_with_none_of_it_is_still_accepted() {
     assert_eq!(finding["inline_comment"], json!(null));
     assert_eq!(finding["why_it_matters"], json!(null));
     assert_eq!(finding["proof"], json!(null));
+    assert_eq!(finding["proof_note"], json!(null));
     assert_eq!(
         finding["verification"], "unknown",
         "saying nothing about the method is `unknown`, which is a value and not a guess"
@@ -234,6 +238,41 @@ fn a_comment_anchored_outside_the_hunk_is_refused_with_the_lines_it_could_have_b
 }
 
 #[test]
+fn a_hunk_line_with_a_newline_in_it_is_refused_at_the_command_line() {
+    let desk = Desk::new();
+    let review = open_review(&desk, "devergehq/review-desk", "874", "c0ffee1");
+
+    // The mistake this catches: building the hunk by joining diff output, which is easy
+    // to reach for when `proof` beside it legitimately takes newlines.
+    let refused = desk
+        .command()
+        .args([
+            "finding", "add", "--review", &review, "--file", "-", "--json",
+        ])
+        .write_stdin(
+            json!({
+                "lens": "correctness",
+                "severity": "nit",
+                "claim": "a joined diff",
+                "hunk": {
+                    "file": "src/lib.rs",
+                    "start_line": 1,
+                    "lines": [{"marker": "added", "text": "one
+two
+three"}]
+                }
+            })
+            .to_string(),
+        )
+        .assert()
+        .code(1);
+    let text = String::from_utf8(refused.get_output().stdout.clone()).expect("text");
+
+    assert!(text.contains("hunk.lines.text"), "{text}");
+    assert!(text.contains("one file line"), "{text}");
+}
+
+#[test]
 fn the_help_names_the_closed_sets_and_the_verbatim_rule() {
     let desk = Desk::new();
     let help = desk.run(&["finding", "add", "--help"]);
@@ -244,6 +283,7 @@ fn the_help_names_the_closed_sets_and_the_verbatim_rule() {
         "inline_comment",
         "why_it_matters",
         "proof",
+        "proof_note",
         "verification",
         "suggested_fix",
         "fix_references",

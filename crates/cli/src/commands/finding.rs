@@ -37,6 +37,7 @@ pub enum FindingCommand {
     ///   "inline_comment": "This retry re-sends the payload with no idempotency key.",
     ///   "why_it_matters": "A slow endpoint is charged twice for one event.",
     ///   "proof": "deliveries for evt_1: 2, expected 1",
+    ///   "proof_note": "A throwaway test, not committed.",
     ///   "verification": "reproduced",
     ///   "suggested_fix": "Send the delivery id as the key.",
     ///   "fix_references": ["SendInvoiceEmail.php:44"]
@@ -47,8 +48,10 @@ pub enum FindingCommand {
     /// it reads as it always did. **Review Desk does not fetch code**, so the hunk is
     /// stored exactly as it is given here — no trimming, no re-wrapping, no normalising —
     /// and `start_line` is the number the first added or unchanged line carries, a removed
-    /// line carrying none. `flagged_line` has to be a line the hunk draws, when a hunk is
-    /// given. `verification` is one of `reproduced`, `read_not_run` or `unknown`, and it
+    /// line carrying none. A line's `text` is one file line and may not contain an
+    /// end-of-line character, or the numbering beside it is wrong. `flagged_line` has to
+    /// be a line the hunk draws, when a hunk is given. `proof_note` is the plain caption
+    /// drawn beneath the proof, which is drawn as a monospace block. `verification` is one of `reproduced`, `read_not_run` or `unknown`, and it
     /// defaults to `unknown`: saying nothing about the method is not the same as saying
     /// the code was read and not run.
     Add {

@@ -58,12 +58,37 @@ pub(crate) fn validate(new: &NewFinding) -> Result<()> {
             .iter()
             .filter(|line| line.marker != HunkLineMarker::Removed)
             .count() as i64;
-        if hunk.start_line.checked_add(drawn).is_none() {
+        // `drawn - 1`, because the first drawn line takes `start_line` itself. An earlier
+        // version added `drawn` and so refused a hunk whose last line lands exactly on
+        // `i64::MAX` — only ever stricter than it had to be, but wrong about its own rule.
+        if drawn > 0 && hunk.start_line.checked_add(drawn - 1).is_none() {
             return Err(StoreError::InvalidValue {
                 field: "hunk.start_line",
                 value: hunk.start_line.to_string(),
                 expected: "a start line with room for the hunk's own lines after it".to_string(),
             });
+        }
+
+        // **One row is one file line, and that has to be enforced rather than hoped for.**
+        // `numbered_lines` gives exactly one number to each row that is not a removal, so
+        // a row holding three file lines draws three lines under one gutter number and
+        // every number after it is short by two — which also moves what `flagged_line`
+        // points at. An agent that builds a hunk by joining diff output makes exactly this
+        // mistake, and it is an easy one to make when `proof` and `inline_comment` take
+        // newlines legitimately right beside it.
+        //
+        // Refused, not stripped. The contract says `text` carries no end-of-line
+        // character; this is that sentence enforced, and nothing stored is altered.
+        for (index, line) in hunk.lines.iter().enumerate() {
+            if line.text.contains('\n') || line.text.contains('\r') {
+                return Err(StoreError::InvalidValue {
+                    field: "hunk.lines.text",
+                    value: format!("line {} of the hunk", index + 1),
+                    expected: "one file line per entry, with no end-of-line character: \
+                               a hunk is a list of lines, not a block of text"
+                        .to_string(),
+                });
+            }
         }
 
         if hunk.lines.is_empty() {

@@ -312,6 +312,7 @@ fn seed(store: &Store) -> Seeded {
                 "A customer whose endpoint answers slowly is charged twice.".to_string(),
             ),
             proof: Some("deliveries for evt_1: 2, expected 1".to_string()),
+            proof_note: Some("A throwaway test, not committed.".to_string()),
             verification: Verification::Reproduced,
             suggested_fix: Some("Send the delivery id as the key.".to_string()),
             fix_references: vec!["SendInvoiceEmail.php:44".to_string()],
@@ -349,6 +350,7 @@ fn seed(store: &Store) -> Seeded {
             flagged_line: Some(12),
             why_it_matters: Some("The two copies will drift.".to_string()),
             proof: Some("From reading both files.".to_string()),
+            proof_note: Some("Read, not run: the schedule was not executed.".to_string()),
             verification: Verification::ReadNotRun,
             suggested_fix: Some("Read the schedule from one place.".to_string()),
             ..finding(
@@ -679,6 +681,7 @@ fn finding_document(finding: &Finding) -> Value {
         "inline_comment": finding.inline_comment,
         "why_it_matters": finding.why_it_matters,
         "proof": finding.proof,
+        "proof_note": finding.proof_note,
         "verification": finding.verification,
         "suggested_fix": finding.suggested_fix,
         "fix_references": finding.fix_references,

@@ -732,6 +732,12 @@ pub struct Finding {
     pub why_it_matters: Option<String>,
     /// The proof as text — test output, two logged keys — stored verbatim.
     pub proof: Option<String>,
+    /// The plain caption drawn beneath the proof — "A throwaway test, not committed."
+    ///
+    /// Its own field rather than more of [`Finding::proof`], because the two are drawn
+    /// differently: the proof is a monospace block and this is a sentence about it. Folded
+    /// into `proof` it would render as though it were test output.
+    pub proof_note: Option<String>,
     /// Whether that proof was reproduced or only read. `Unknown` when nothing said.
     pub verification: Verification,
     /// What would fix it.
@@ -781,6 +787,9 @@ pub struct NewFinding {
     /// The proof as text. Stored verbatim.
     #[serde(default)]
     pub proof: Option<String>,
+    /// The plain caption drawn beneath the proof. Stored verbatim.
+    #[serde(default)]
+    pub proof_note: Option<String>,
     /// Whether the proof was reproduced or only read. Defaults to unknown.
     #[serde(default = "default_verification")]
     pub verification: Verification,
@@ -829,6 +838,7 @@ impl Default for NewFinding {
             inline_comment: None,
             why_it_matters: None,
             proof: None,
+            proof_note: None,
             verification: default_verification(),
             suggested_fix: None,
             fix_references: Vec::new(),

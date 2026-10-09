@@ -1023,6 +1023,15 @@ components:
           description: |
             How the review knows — test output, two logged keys, a line read. Stored
             verbatim, newlines and all, and the dashboard renders it as written.
+        proof_note:
+          type: [string, 'null']
+          description: |
+            The plain caption beneath the proof — "A throwaway test, not committed.",
+            "Two attempts logged against a local endpoint."
+
+            Its own field rather than more of `proof`, because the two are drawn
+            differently: the proof is a monospace block and this is a sentence about it.
+            A caption folded into `proof` would render as though it were test output.
         verification: { $ref: '#/components/schemas/FindingVerification' }
         suggested_fix:
           type: [string, 'null']

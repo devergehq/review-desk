@@ -168,6 +168,7 @@ fn an_older_database_is_migrated_forward_and_keeps_its_rows() {
     assert_eq!(finding.inline_comment, None);
     assert_eq!(finding.why_it_matters, None);
     assert_eq!(finding.proof, None);
+    assert_eq!(finding.proof_note, None);
     assert_eq!(
         finding.verification,
         Verification::Unknown,
@@ -197,6 +198,7 @@ fn an_older_database_is_migrated_forward_and_keeps_its_rows() {
                 }),
                 flagged_line: Some(9),
                 proof: Some("cargo test: 1 failed".to_string()),
+                proof_note: Some("Run against a throwaway database.".to_string()),
                 verification: Verification::Reproduced,
                 fix_references: vec!["src/other.rs:4".to_string()],
                 ..Default::default()
@@ -208,6 +210,10 @@ fn an_older_database_is_migrated_forward_and_keeps_its_rows() {
         Some(1)
     );
     assert_eq!(with_evidence.verification, Verification::Reproduced);
+    assert_eq!(
+        with_evidence.proof_note.as_deref(),
+        Some("Run against a throwaway database.")
+    );
     assert_eq!(with_evidence.fix_references, ["src/other.rs:4"]);
 
     let rule = migrated.get_rule(4).expect("the rule survived");

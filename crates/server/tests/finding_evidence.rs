@@ -120,6 +120,7 @@ fn the_hunk_text_is_served_exactly_as_it_was_stored() {
                 .collect(),
         }),
         proof: Some("  leading kept\n\ttab line\n   \ntrailing  ".to_string()),
+        proof_note: Some("  A throwaway test, not committed.  ".to_string()),
         inline_comment: Some("\tIndented, trailing space ".to_string()),
         why_it_matters: Some(" spaces either side ".to_string()),
         suggested_fix: Some("Use the delivery id.\n".to_string()),
@@ -172,6 +173,10 @@ fn a_finding_with_no_hunk_serves_null_rather_than_an_invented_one() {
     assert!(finding["inline_comment"].is_null());
     assert!(finding["why_it_matters"].is_null());
     assert!(finding["proof"].is_null());
+    assert!(
+        finding["proof_note"].is_null(),
+        "the caption is absent, not an empty string"
+    );
     assert!(finding["suggested_fix"].is_null());
 
     // The two that are never null, and are not null-shaped either.

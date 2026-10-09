@@ -228,6 +228,12 @@ a person quotes. `lens`, `severity` and `claim` are required; the disposition de
 the whole feedback loop runs through: without it a rule cannot be said to be cited, or
 to have gone stale.
 
+**A finding should also carry what it is about**, which is what the dashboard shows and
+what saves the developer working the finding out for themselves: the code, the comment as
+it will be posted, the consequence, the proof and the fix. All of it is optional and none
+of it depends on the rest, so a finding written with none of it still reads — but a review
+session that can fill these in should.
+
 ```sh
 SEQ=$(review-desk finding add --review "$REVIEW" --file - <<'JSON'
 {
@@ -237,11 +243,41 @@ SEQ=$(review-desk finding add --review "$REVIEW" --file - <<'JSON'
   "line": 48,
   "claim": "a refused request exits 2, which pages whoever treats 2 as broken",
   "evidence": "clap's default exit code is 2 and nothing overrides it",
-  "rule_id": 9
+  "rule_id": 9,
+
+  "hunk": {
+    "file": "crates/cli/src/main.rs",
+    "start_line": 46,
+    "lines": [
+      { "marker": "unchanged", "text": "    match commands::run(&cli) {" },
+      { "marker": "removed",   "text": "        Err(error) => error.report(cli.json)," },
+      { "marker": "added",     "text": "        Err(error) => std::process::exit(2)," }
+    ]
+  },
+  "flagged_line": 47,
+  "inline_comment": "This exits 2 for a refusal, and 2 is what the agent treats as Review Desk being broken.",
+  "why_it_matters": "A caller that pages on 2 gets paged for every refused request.",
+  "proof": "$ review-desk finding add --review 9 --file bad.json; echo $?\n2",
+  "proof_note": "Run against a throwaway database.",
+  "verification": "reproduced",
+  "suggested_fix": "Exit 1 for a refusal and keep 2 for a broken desk.",
+  "fix_references": ["crates/cli/src/error.rs:31"]
 }
 JSON
 )
 ```
+
+**`start_line` is the number the first *numbered* line carries.** A removed line is not in
+the file any more and carries none, so a hunk may open on a removal and still number from
+`start_line`. `flagged_line` has to be one of the lines the hunk draws. `verification` is
+`reproduced`, `read_not_run` or `unknown` and defaults to `unknown` — saying nothing about
+the method is not the same as saying the code was read and not run.
+
+**Review Desk does not fetch code, so the hunk you send is the only copy there is.** It is
+stored exactly as given: nothing trims, re-wraps or normalises a line, a proof or a comment,
+and a line of one space stays a line of one space. The one thing refused is an end-of-line
+character inside a line's `text` — one entry is one file line, or the numbering beside it
+is wrong.
 
 `finding set` changes what is to become of a finding in this round's draft. The reason
 belongs to the disposition, so omitting `--reason` clears the one that was there: the

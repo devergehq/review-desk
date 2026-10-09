@@ -185,6 +185,7 @@ pub fn finding(finding: &Finding) -> Value {
         "inline_comment": finding.inline_comment,
         "why_it_matters": finding.why_it_matters,
         "proof": finding.proof,
+        "proof_note": finding.proof_note,
         // Always written, and `unknown` is a value rather than an absence: a finding that
         // said nothing about its method has said nothing, not that it was read and not run.
         "verification": finding.verification.as_str(),
