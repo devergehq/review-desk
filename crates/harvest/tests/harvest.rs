@@ -106,6 +106,7 @@ fn add(
                 disposition: Disposition::InDraft,
                 disposition_reason: None,
                 rule_id: None,
+                ..Default::default()
             },
         )
         .unwrap();

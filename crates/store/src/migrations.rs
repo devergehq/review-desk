@@ -10,8 +10,17 @@
 //! harvester needs to read a posted review's outcomes back from GitHub, version 4
 //! is what the local API contract needs — the draft, the per-layer status, the
 //! structured option map, rule exceptions, and the twelve columns the four screens
-//! read — and version 5 is the one fact a brief could not hold: whether the developer
-//! has to confirm it at all.
+//! read — version 5 is the one fact a brief could not hold: whether the developer
+//! has to confirm it at all, and version 6 is what a finding needs in order to mean
+//! something on its own: the code it is about, the comment as it will post, the
+//! consequence, the proof and the fix.
+//!
+//! **Version 6 here becomes version 7 on the rebase onto DEV-873**, which takes 6 for
+//! findings across rounds. It is numbered 6 on this branch because
+//! `versions_are_ordered_from_one_with_no_gaps` below refuses a gap, and a branch that
+//! fails its own test is not reviewable. That test is also what makes the renumber safe:
+//! two migrations numbered 6 after the rebase fails exactly as loudly as the gap would
+//! now, so neither mistake can reach `master` quietly.
 
 use rusqlite::Connection;
 
@@ -344,6 +353,100 @@ ALTER TABLE briefs ADD COLUMN confirmation_required INTEGER NOT NULL DEFAULT 1;
 -- with nothing on the record saying who decided that or why, which is the state this
 -- whole field exists to avoid.
 ALTER TABLE briefs ADD COLUMN confirmation_not_required_because TEXT;
+"#,
+    },
+    Migration {
+        version: 6,
+        name: "finding-evidence",
+        sql: r#"
+-- What a finding is about, as the agent wrote it.
+--
+-- A finding held a file, a line, a claim and one line of evidence. Boards A2 and A3 of
+-- the approved design draw the code, the comment as it will post, the consequence, the
+-- proof and the fix — so the developer had to go and work out what a finding meant
+-- before they could decide anything about it. These columns are what it means.
+--
+-- **Every one is optional and they are independent.** A finding with none of them
+-- displays as it does today, with its file and its line. That is a rule of DEV-874, and
+-- it is also what makes this migration safe on a database that already has findings in
+-- it: no backfill, because there is no honest value to backfill.
+ALTER TABLE findings ADD COLUMN flagged_line    INTEGER;
+ALTER TABLE findings ADD COLUMN inline_comment  TEXT;
+ALTER TABLE findings ADD COLUMN why_it_matters  TEXT;
+ALTER TABLE findings ADD COLUMN proof           TEXT;
+ALTER TABLE findings ADD COLUMN suggested_fix   TEXT;
+
+-- Whether the proof was reproduced or only read.
+--
+-- `unknown` is the default, and it is the only honest value for a finding written before
+-- this column existed: such a finding said nothing about its method, which is not the
+-- same as having said it was read and not run. The closed set is enforced on the way in
+-- and on the way out by `Verification` rather than by a CHECK, because SQLite cannot add
+-- one to a table that already exists — the same arrangement migration 4 made for
+-- `reviews.nit_ticket_status`.
+ALTER TABLE findings ADD COLUMN verification TEXT NOT NULL DEFAULT 'unknown';
+
+-- The hunk's own two facts. One row per finding that has a hunk, so that "this finding
+-- has no hunk" is one fact rather than two nullable columns that can disagree: a file
+-- with no start line is not a hunk anybody can draw, and SQLite cannot add a CHECK to
+-- `findings` to forbid it.
+--
+-- `start_line` is the number the hunk's first *numbered* line carries. A removed line
+-- carries none, so board A3's F6 opens on a removed line and still numbers from 58.
+-- The number beside each line is derived from this and the markers below; it is not
+-- stored, because storing both would let a row say line 58 is the fourth line of a hunk
+-- that starts at 56.
+CREATE TABLE finding_hunks (
+    review_id   INTEGER NOT NULL,
+    finding_seq INTEGER NOT NULL,
+    file        TEXT    NOT NULL,
+    start_line  INTEGER NOT NULL,
+    PRIMARY KEY (review_id, finding_seq),
+    FOREIGN KEY (review_id, finding_seq)
+        REFERENCES findings (review_id, seq) ON DELETE CASCADE,
+    CHECK (file <> ''),
+    CHECK (start_line >= 1)
+);
+
+-- The lines, in the order they are to be drawn.
+--
+-- A table rather than one TEXT column holding a unified diff. **The marker has to survive
+-- a line whose own text begins with a `+`, and the text has to survive being nothing but
+-- a space.** In a diff those two facts share one character position and one trailing
+-- newline, and Review Desk does not fetch code — the hunk it serves is the only copy
+-- there is, so a round trip that is merely usually right is not good enough.
+--
+-- `position` is the order. Not the rowid, and not insertion order: a read that depended
+-- on either would be a read whose correctness nothing states.
+CREATE TABLE finding_hunk_lines (
+    review_id   INTEGER NOT NULL,
+    finding_seq INTEGER NOT NULL,
+    position    INTEGER NOT NULL,
+    marker      TEXT    NOT NULL,
+    text        TEXT    NOT NULL,
+    PRIMARY KEY (review_id, finding_seq, position),
+    FOREIGN KEY (review_id, finding_seq)
+        REFERENCES findings (review_id, seq) ON DELETE CASCADE,
+    CHECK (position >= 1),
+    CHECK (marker IN ('added', 'removed', 'unchanged'))
+);
+
+-- Sibling code the fix should look like — "SendInvoiceEmail.php:44" — in the order given.
+--
+-- A reference is a pointer the page draws as one line, so a blank one draws as a blank
+-- line and means nothing. That is the one piece of text in this migration the store looks
+-- at before storing: it is refused by name, and whatever is stored is stored verbatim.
+CREATE TABLE finding_fix_references (
+    review_id   INTEGER NOT NULL,
+    finding_seq INTEGER NOT NULL,
+    position    INTEGER NOT NULL,
+    reference   TEXT    NOT NULL,
+    PRIMARY KEY (review_id, finding_seq, position),
+    FOREIGN KEY (review_id, finding_seq)
+        REFERENCES findings (review_id, seq) ON DELETE CASCADE,
+    CHECK (position >= 1),
+    CHECK (reference <> '')
+);
 "#,
     },
 ];

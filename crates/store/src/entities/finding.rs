@@ -2,13 +2,15 @@
 
 use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior};
 
+use crate::entities::finding_evidence;
 use crate::error::{Result, StoreError};
 use crate::model::{now, Disposition, Finding, NewFinding};
 use crate::{is_foreign_key_violation, Store};
 
 const COLUMNS: &str = "review_id, seq, lens, severity, file, line, claim, evidence, \
                        disposition, disposition_reason, rule_id, github_comment_id, \
-                       created_at";
+                       flagged_line, inline_comment, why_it_matters, proof, verification, \
+                       suggested_fix, created_at";
 
 impl Store {
     /// Add a finding to a review, assigning the next sequence number within it.
@@ -21,6 +23,10 @@ impl Store {
     /// S12 asks for — and it cannot drift, because a finding is never deleted, only
     /// dispositioned, so the newest citation only ever moves forward.
     pub fn add_finding(&self, review_id: i64, new: NewFinding) -> Result<Finding> {
+        // Checked before the transaction opens, so a finding is never half written: the
+        // hunk, its lines, the fix references and the finding itself are one record.
+        finding_evidence::validate(&new)?;
+
         // The read that picks the sequence number and the insert that claims it must
         // be one step. A DEFERRED transaction would take a read lock and then try to
         // upgrade it on the insert, and SQLite refuses that upgrade immediately with
@@ -53,8 +59,10 @@ impl Store {
         tx.execute(
             "INSERT INTO findings
                  (review_id, seq, lens, severity, file, line, claim, evidence,
-                  disposition, disposition_reason, rule_id, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                  disposition, disposition_reason, rule_id, flagged_line, inline_comment,
+                  why_it_matters, proof, verification, suggested_fix, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
+                     ?16, ?17, ?18)",
             params![
                 review_id,
                 seq,
@@ -67,6 +75,15 @@ impl Store {
                 new.disposition,
                 new.disposition_reason,
                 new.rule_id,
+                new.flagged_line,
+                // Bound, not formatted, and never trimmed. The comment, the consequence,
+                // the proof and the fix are stored exactly as the agent wrote them: this
+                // is the only copy of them there is.
+                new.inline_comment,
+                new.why_it_matters,
+                new.proof,
+                new.verification,
+                new.suggested_fix,
                 created_at,
             ],
         )
@@ -81,6 +98,10 @@ impl Store {
                 StoreError::Sqlite(error)
             }
         })?;
+
+        // In the same transaction as the finding, for the reason the module says: a
+        // finding stored with half a hunk attached is a worse record than one with none.
+        finding_evidence::write(&tx, review_id, seq, &new)?;
 
         if let Some(rule_id) = new.rule_id {
             // MAX, not an assignment: findings can be added in any order, and a rule's
@@ -107,25 +128,32 @@ impl Store {
             })
     }
 
-    /// Read one finding, or `None`.
+    /// Read one finding, with its hunk and fix references, or `None`.
     pub fn find_finding(&self, review_id: i64, seq: i64) -> Result<Option<Finding>> {
-        Ok(self
+        let held = self
             .conn
             .query_row(
                 &format!("SELECT {COLUMNS} FROM findings WHERE review_id = ?1 AND seq = ?2"),
                 params![review_id, seq],
                 row_to_finding,
             )
-            .optional()?)
+            .optional()?;
+
+        match held {
+            Some(finding) => Ok(Some(self.with_evidence(finding)?)),
+            None => Ok(None),
+        }
     }
 
-    /// Every finding of a review, in sequence order.
+    /// Every finding of a review, in sequence order, each with its hunk and fix
+    /// references.
     pub fn list_findings(&self, review_id: i64) -> Result<Vec<Finding>> {
         let mut statement = self.conn.prepare(&format!(
             "SELECT {COLUMNS} FROM findings WHERE review_id = ?1 ORDER BY seq ASC"
         ))?;
         let rows = statement.query_map(params![review_id], row_to_finding)?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        let findings = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        self.with_evidence_all(findings)
     }
 
     /// Change a finding's disposition, with the reason it changed.
@@ -193,14 +221,19 @@ impl Store {
 
     /// The finding posted as this GitHub review comment, if any.
     pub fn find_finding_by_github_comment(&self, comment_id: &str) -> Result<Option<Finding>> {
-        Ok(self
+        let held = self
             .conn
             .query_row(
                 &format!("SELECT {COLUMNS} FROM findings WHERE github_comment_id = ?1"),
                 params![comment_id],
                 row_to_finding,
             )
-            .optional()?)
+            .optional()?;
+
+        match held {
+            Some(finding) => Ok(Some(self.with_evidence(finding)?)),
+            None => Ok(None),
+        }
     }
 }
 
@@ -219,6 +252,16 @@ fn row_to_finding(row: &Row<'_>) -> rusqlite::Result<Finding> {
         disposition_reason: row.get("disposition_reason")?,
         rule_id: row.get("rule_id")?,
         github_comment_id: row.get("github_comment_id")?,
+        // Read separately, by the caller that builds the finding: a row builder has no
+        // connection to read them through. The same arrangement as a brief's options.
+        hunk: None,
+        flagged_line: row.get("flagged_line")?,
+        inline_comment: row.get("inline_comment")?,
+        why_it_matters: row.get("why_it_matters")?,
+        proof: row.get("proof")?,
+        verification: row.get("verification")?,
+        suggested_fix: row.get("suggested_fix")?,
+        fix_references: Vec::new(),
         created_at: row.get("created_at")?,
     })
 }

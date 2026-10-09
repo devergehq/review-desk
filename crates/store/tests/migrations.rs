@@ -4,8 +4,9 @@ mod common;
 
 use common::{db_path, temp_store};
 use review_desk_store::{
-    newest_version, Actor, DraftStatus, NewDraft, NitTicketStatus, ReviewLayerName,
-    ReviewLayerState, Store, StoreError, WorkFilter,
+    newest_version, Actor, DraftStatus, FindingHunk, HunkLine, HunkLineMarker, NewDraft,
+    NewFinding, NitTicketStatus, ReviewLayerName, ReviewLayerState, Severity, Store, StoreError,
+    Verification, WorkFilter,
 };
 use tempfile::TempDir;
 
@@ -157,6 +158,57 @@ fn an_older_database_is_migrated_forward_and_keeps_its_rows() {
     );
     assert_eq!(brief.confirmation_not_required_because, None);
     assert!(!brief.is_settled(), "so layer 2 is still the developer's");
+
+    // Migration 6's columns on a finding that predates it. There is no backfill and
+    // there could not be an honest one: a finding written before this existed said
+    // nothing about the code it was about, which is not the same as having said there
+    // was none.
+    assert_eq!(finding.hunk, None, "an old finding carries no hunk");
+    assert_eq!(finding.flagged_line, None);
+    assert_eq!(finding.inline_comment, None);
+    assert_eq!(finding.why_it_matters, None);
+    assert_eq!(finding.proof, None);
+    assert_eq!(
+        finding.verification,
+        Verification::Unknown,
+        "a finding written before the column existed said nothing about its method, \
+         which is `unknown` and not `read_not_run`: defaulting to the latter would put \
+         a claim about how the review was done on every row already in the database"
+    );
+    assert_eq!(finding.suggested_fix, None);
+    assert!(finding.fix_references.is_empty());
+
+    // And the fields are writable against the migrated database, not merely present in
+    // it: the three tables migration 6 adds exist and take rows.
+    let with_evidence = migrated
+        .add_finding(
+            1,
+            NewFinding {
+                lens: "correctness".to_string(),
+                severity: Severity::Blocker,
+                claim: "written after the migration".to_string(),
+                hunk: Some(FindingHunk {
+                    file: "src/lib.rs".to_string(),
+                    start_line: 9,
+                    lines: vec![HunkLine {
+                        marker: HunkLineMarker::Added,
+                        text: "    let x = 1;".to_string(),
+                    }],
+                }),
+                flagged_line: Some(9),
+                proof: Some("cargo test: 1 failed".to_string()),
+                verification: Verification::Reproduced,
+                fix_references: vec!["src/other.rs:4".to_string()],
+                ..Default::default()
+            },
+        )
+        .expect("a finding with a hunk can be written after the migration");
+    assert_eq!(
+        with_evidence.hunk.as_ref().map(|hunk| hunk.lines.len()),
+        Some(1)
+    );
+    assert_eq!(with_evidence.verification, Verification::Reproduced);
+    assert_eq!(with_evidence.fix_references, ["src/other.rs:4"]);
 
     let rule = migrated.get_rule(4).expect("the rule survived");
     assert_eq!(rule.statement, "the old rule");

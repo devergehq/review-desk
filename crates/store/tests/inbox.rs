@@ -138,6 +138,7 @@ fn a_review_an_author_or_the_harvester_acted_on_is_found() {
                     disposition: Disposition::InDraft,
                     disposition_reason: None,
                     rule_id: None,
+                    ..Default::default()
                 },
             )
             .unwrap()
@@ -258,6 +259,7 @@ fn filed_nit_tickets_are_found_with_the_nits_they_cover() {
                         disposition: Disposition::HeldBack,
                         disposition_reason: Some("one ticket for all of them".to_string()),
                         rule_id: None,
+                        ..Default::default()
                     },
                 )
                 .unwrap();
