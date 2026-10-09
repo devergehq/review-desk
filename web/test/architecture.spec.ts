@@ -7,14 +7,30 @@ import { describe, expect, it } from 'vitest'
  * layer". A reviewer should not have to run that search by hand, and discipline is not a
  * mechanism, so it is a test.
  *
- * The data layer is two files: the composable every screen calls, and the source it reads
- * from. Pointing the dashboard at the Rust server is a change to the second one.
+ * **It is what made DEV-862 a change to six files rather than to every screen.** The data
+ * layer is the composable every screen calls, the two sources behind it — the API and the
+ * fixtures — the type that keeps them interchangeable, the error shape they share, and the
+ * file that chooses. Nothing outside them makes a request, names a fixture, or knows which
+ * of the two it is reading.
  */
 
 /* Vitest runs from `web/`, which `package.json` next door confirms. */
 const ROOT = resolve('app')
 
-const DATA_LAYER = ['composables/useReviewDesk.ts', 'data/snapshot.ts']
+const DATA_LAYER = [
+  'composables/useReviewDesk.ts',
+  'data/api.ts',
+  'data/backend.ts',
+  'data/fault.ts',
+  'data/sample.ts',
+  'data/source.ts',
+]
+
+/** The only file that may name a fixture. */
+const FIXTURE_READER = 'data/sample.ts'
+
+/** The only file that may make an HTTP request. */
+const HTTP_CALLER = 'data/api.ts'
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {
@@ -36,17 +52,22 @@ describe('the data layer is the only way to the records', () => {
     expect(sources.map(file => file.path)).toContain(path)
   })
 
-  it('no file outside the data layer imports a fixture', () => {
+  it('only one file names a fixture', () => {
     const offenders = sources
-      .filter(file => !DATA_LAYER.includes(file.path))
+      .filter(file => file.path !== FIXTURE_READER)
       .filter(file => /from\s+['"][^'"]*data\/(reviews|drafts|rules|desk)/.test(file.text))
       .map(file => file.path)
+    /*
+     * One, not five. The fixtures are reachable from exactly the module a production build
+     * drops, which is what makes "a production build shows no sample data" checkable by
+     * reading one import list — see `test/build-output.spec.ts` for the measurement.
+     */
     expect(offenders).toEqual([])
   })
 
-  it('no file outside the data layer makes an HTTP request', () => {
+  it('only one file makes an HTTP request', () => {
     const offenders = sources
-      .filter(file => !DATA_LAYER.includes(file.path))
+      .filter(file => file.path !== HTTP_CALLER)
       .filter(file =>
         /\$fetch\s*\(|\buseFetch\s*\(|\buseAsyncData\s*\(|\bfetch\s*\(|\baxios\b|XMLHttpRequest/.test(
           file.text,
@@ -56,10 +77,41 @@ describe('the data layer is the only way to the records', () => {
     expect(offenders).toEqual([])
   })
 
-  it('no screen reaches past the composable into the reactive source', () => {
+  it('no screen reaches past the composable into either source', () => {
     const offenders = sources
       .filter(file => !DATA_LAYER.includes(file.path))
-      .filter(file => /\bloadSource\b|\bisSampleData\b.*from/.test(file.text))
+      .filter(file =>
+        /\bloadSource\b|\bresetSource\b|\bloadBackend\b|\bsampleBackend\b|\bcurrentSource\b/
+          .test(file.text),
+      )
+      .map(file => file.path)
+    expect(offenders).toEqual([])
+  })
+
+  it('no screen decides where the API is', () => {
+    /*
+     * The dashboard calls `/api/v1` on whatever origin served it, and that one fact lives
+     * in `data/api.ts`. A screen that built a URL would be a screen that could be pointed
+     * somewhere else — and a cross-origin request is one the server's guard refuses, so the
+     * failure would look like a broken screen rather than a misplaced constant.
+     */
+    const offenders = sources
+      .filter(file => file.path !== HTTP_CALLER)
+      .filter(file => /['"`]\/api\/v1|127\.0\.0\.1|localhost:/.test(file.text))
+      .map(file => file.path)
+    expect(offenders).toEqual([])
+  })
+
+  it('no screen reads the development source switch', () => {
+    /*
+     * Which records are being read is the data layer's decision. A screen that branched on
+     * it would behave differently on fixtures than on the record, which is the one thing
+     * sample mode must not do — a component test would then be testing a path the binary
+     * never takes.
+     */
+    const offenders = sources
+      .filter(file => !DATA_LAYER.includes(file.path))
+      .filter(file => /import\.meta\.(dev|env)|REVIEW_DESK_SOURCE/.test(file.text))
       .map(file => file.path)
     expect(offenders).toEqual([])
   })

@@ -1,289 +1,304 @@
 <script setup lang="ts">
-import type { Disposition } from '~/types/desk'
+import type { Disposition, ReviewDetail } from '~/types/desk'
+import type { DeskNotice } from '~/utils/format'
 
 /** One review: what the seven layers found, in the order they found it. */
 const route = useRoute()
 const desk = useReviewDesk()
 
 const reviewId = computed(() => Number(route.params.id))
-const detail = desk.review(reviewId.value)
-const draft = desk.draft(reviewId.value)
+const detail = desk.review(reviewId)
 
 useHead({
-  title: computed(() =>
-    detail.value
-      ? `#${detail.value.review.pr} ${detail.value.review.title} · Review Desk`
-      : 'Review Desk',
-  ),
+  title: computed(() => {
+    const review = detail.data.value?.review
+    return review ? `#${review.pr} ${review.title ?? 'no title'} · Review Desk` : 'Review Desk'
+  }),
 })
 
-const confirmed = computed(() => detail.value?.brief?.confirmed === true)
+const notice = ref<DeskNotice | null>(null)
+const confirming = ref(false)
 
-const dispositionTally = computed(() => {
-  const d = detail.value?.finding_dispositions
-  if (!d) return ''
+function dispositionTally(data: ReviewDetail): string {
+  const d = data.finding_dispositions
   return [
     `${d.in_draft} in the draft`,
     `${d.held_back} held back`,
     `${d.suppressed} suppressed`,
   ].join(' · ')
-})
-
-const authorReplies = computed(
-  () => detail.value?.outcomes.filter(outcome => outcome.actor !== 'developer') ?? [],
-)
-
-const notice = ref<{ text: string, ok: boolean } | null>(null)
-
-/** Layer 2 is the developer's. Confirming it is what lets anything be posted. */
-function confirm() {
-  if (!detail.value) return
-  desk.confirmBrief(detail.value.review.id)
-  notice.value = {
-    text: 'Problem confirmed. The draft is yours to approve.',
-    ok: true,
-  }
 }
 
-function changeDisposition(payload: {
+function authorReplies(data: ReviewDetail) {
+  return data.outcomes.filter(outcome => outcome.actor !== 'developer')
+}
+
+/** Layer 2 is the developer's. Confirming it is what lets anything be posted. */
+async function confirm() {
+  const review = detail.data.value?.review
+  if (!review) return
+  confirming.value = true
+  const result = await desk.confirmBrief(review.id)
+  confirming.value = false
+  notice.value = noticeFor(result)
+}
+
+async function changeDisposition(payload: {
   seq: number
   disposition: Disposition
   reason: string
 }) {
-  if (!detail.value) return
-  const result = desk.setFindingDisposition(
-    detail.value.review.id,
+  const review = detail.data.value?.review
+  if (!review) return
+  const result = await desk.setFindingDisposition(
+    review.id,
     payload.seq,
     payload.disposition,
     payload.reason,
   )
-  notice.value = { text: result.message, ok: result.ok }
+  notice.value = noticeFor(result)
 }
 </script>
 
 <template>
-  <div
-    v-if="detail"
-    class="review"
+  <DeskState
+    :resource="detail"
+    what="this review"
   >
-    <div class="head">
-      <div class="heading">
-        <h1><PrRef :pr="detail.review.pr" /> {{ detail.review.title }}</h1>
-        <p class="rd-meta meta">
-          {{ detail.review.repo }}
-          <template v-if="detail.review.ticket_id">
-            · ticket {{ detail.review.ticket_id }}
-          </template>
-          · round {{ detail.review.round }} · head
-          <span class="rd-mono">{{ detail.review.head_sha }}</span>
-          <template v-if="detail.review.changed_lines != null">
-            · {{ count(detail.review.changed_lines, 'changed line') }}
-          </template>
-        </p>
-      </div>
-      <NuxtLink
-        v-if="draft"
-        :to="`/reviews/${detail.review.id}/draft`"
-        class="rd-btn rd-btn--primary"
-      >
-        Open draft
-      </NuxtLink>
-    </div>
-
-    <LayerTrail :layers="detail.layers" />
-
-    <DeskCard
-      v-if="detail.brief && !confirmed"
-      tone="chosen"
-      class="confirm"
-    >
-      <div class="confirm-body">
-        <div class="rd-label">
-          Confirm the problem before anything is posted
-        </div>
-        <p class="rd-note confirm-note">
-          Layer 2 is yours. Read the problem below; if that is what the change is really
-          solving, confirm it and the draft becomes yours to approve.
-        </p>
-      </div>
-      <button
-        type="button"
-        class="rd-btn rd-btn--primary"
-        @click="confirm"
-      >
-        Confirm the problem
-      </button>
-    </DeskCard>
-
-    <DeskCard
-      v-else-if="detail.brief"
-      as="section"
-      pad="tight"
-      class="confirmed"
-    >
-      <span class="rd-note">
-        <strong>Problem confirmed.</strong>
-        You confirmed it {{ sinceLabel(detail.brief.confirmed_at) }}, which is what lets
-        the draft be posted.
-      </span>
-    </DeskCard>
-
-    <DeskNotice
-      v-if="notice"
-      :tone="notice.ok ? 'plain' : 'problem'"
-    >
-      {{ notice.text }}
-    </DeskNotice>
-
-    <DeskCard
-      v-if="authorReplies.length"
-      as="section"
-      class="panel"
-    >
-      <div class="panel-head">
-        <h2>The author replied</h2>
-        <span class="rd-meta">harvested after posting</span>
-      </div>
-      <ul class="replies">
-        <li
-          v-for="outcome in authorReplies"
-          :key="outcome.id"
-          class="reply"
-        >
-          <span class="rd-mono rd-meta">{{ outcome.finding_key }}</span>
-          <div>
-            <div class="reply-kind">
-              {{ editVerb(outcome.kind) }}
-              <span class="rd-meta">· by the {{ outcome.actor }} · {{ sinceLabel(outcome.occurred_at) }}</span>
-            </div>
-            <p
-              v-if="outcome.detail"
-              class="rd-note reply-detail"
-            >
-              {{ outcome.detail }}
+    <template #default="{ data }">
+      <div class="review">
+        <div class="head">
+          <div class="heading">
+            <h1>
+              <PrRef :pr="data.review.pr" />
+              {{ data.review.title ?? 'no title recorded' }}
+            </h1>
+            <p class="rd-meta meta">
+              {{ data.review.repo }}
+              <template v-if="data.review.ticket_id">
+                · ticket {{ data.review.ticket_id }}
+              </template>
+              · round {{ data.review.round }} · head
+              <span class="rd-mono">{{ data.review.head_sha }}</span>
+              <template v-if="data.review.changed_lines != null">
+                · {{ count(data.review.changed_lines, 'changed line') }}
+              </template>
+              <template v-else>
+                · changed lines not recorded
+              </template>
             </p>
           </div>
-        </li>
-      </ul>
-    </DeskCard>
+          <NuxtLink
+            v-if="data.draft_status"
+            :to="`/reviews/${data.review.id}/draft`"
+            class="rd-btn rd-btn--primary"
+          >
+            Open draft
+          </NuxtLink>
+        </div>
 
-    <DeskCard
-      v-if="detail.brief"
-      as="section"
-      class="panel"
-    >
-      <div class="panel-head">
-        <h2>The problem</h2>
-        <span
-          v-if="detail.brief.provenance"
-          class="rd-meta"
+        <LayerTrail :layers="data.layers" />
+
+        <DeskCard
+          v-if="data.brief && !data.brief.confirmed"
+          tone="chosen"
+          class="confirm"
         >
-          {{ detail.brief.provenance }}
-        </span>
-      </div>
-      <p class="rd-measure problem">
-        {{ detail.brief.problem }}
-      </p>
-      <MermaidFigure
-        v-if="detail.brief.diagram"
-        :source="detail.brief.diagram"
-        label="How the problem happens today"
-      />
-    </DeskCard>
+          <div class="confirm-body">
+            <div class="rd-label">
+              Confirm the problem before anything is posted
+            </div>
+            <p class="rd-note confirm-note">
+              Layer 2 is yours. Read the problem below; if that is what the change is really
+              solving, confirm it and the draft becomes yours to approve.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="rd-btn rd-btn--primary"
+            :disabled="confirming"
+            @click="confirm"
+          >
+            {{ confirming ? 'Confirming…' : 'Confirm the problem' }}
+          </button>
+        </DeskCard>
 
-    <DeskCard
-      v-if="detail.brief?.options?.length"
-      as="section"
-      class="panel"
-    >
-      <div class="panel-head">
-        <h2>Ways to solve it</h2>
-        <span class="rd-meta">written before the diff was read</span>
-      </div>
-      <div class="options">
-        <OptionCard
-          v-for="option in detail.brief.options"
-          :key="option.key"
-          :option="option"
-        />
-      </div>
-      <p
-        v-if="detail.brief.approach_verdict"
-        class="rd-callout rd-measure verdict"
-      >
-        <strong>Verdict:</strong> {{ detail.brief.approach_verdict }}
-      </p>
-    </DeskCard>
+        <DeskCard
+          v-else-if="data.brief"
+          as="section"
+          pad="tight"
+          class="confirmed"
+        >
+          <span class="rd-note">
+            <strong>Problem confirmed.</strong>
+            You confirmed it {{ sinceLabel(data.brief.confirmed_at) }}, which is what lets
+            the draft be posted.
+          </span>
+        </DeskCard>
 
-    <DeskCard
-      as="section"
-      class="panel"
-    >
-      <div class="panel-head">
-        <h2>Findings</h2>
-        <span class="rd-meta">{{ dispositionTally }}</span>
+        <DeskNotice
+          v-if="notice"
+          :tone="notice.tone"
+        >
+          {{ notice.text }}
+        </DeskNotice>
+
+        <DeskCard
+          v-if="authorReplies(data).length"
+          as="section"
+          class="panel"
+        >
+          <div class="panel-head">
+            <h2>The author replied</h2>
+            <span class="rd-meta">harvested after posting</span>
+          </div>
+          <ul class="replies">
+            <li
+              v-for="outcome in authorReplies(data)"
+              :key="outcome.id"
+              class="reply"
+            >
+              <span class="rd-mono rd-meta">{{ outcome.finding_key }}</span>
+              <div>
+                <div class="reply-kind">
+                  {{ editVerb(outcome.kind) }}
+                  <span class="rd-meta">· by the {{ outcome.actor }} · {{ sinceLabel(outcome.occurred_at) }}</span>
+                </div>
+                <p
+                  v-if="outcome.detail"
+                  class="rd-note reply-detail"
+                >
+                  {{ outcome.detail }}
+                </p>
+              </div>
+            </li>
+          </ul>
+        </DeskCard>
+
+        <DeskCard
+          v-if="data.brief"
+          as="section"
+          class="panel"
+        >
+          <div class="panel-head">
+            <h2>The problem</h2>
+            <span
+              v-if="data.brief.provenance"
+              class="rd-meta"
+            >
+              {{ data.brief.provenance }}
+            </span>
+          </div>
+          <p class="rd-measure problem">
+            {{ data.brief.problem }}
+          </p>
+          <MermaidFigure
+            v-if="data.brief.diagram"
+            :source="data.brief.diagram"
+            label="How the problem happens today"
+          />
+        </DeskCard>
+
+        <!--
+          A review with no brief at all. Layer 2 has not run, which is a different thing
+          from a brief waiting to be confirmed, and the screen says which.
+        -->
+        <DeskCard
+          v-else
+          as="section"
+          class="panel"
+        >
+          <h2>The problem</h2>
+          <p class="rd-empty">
+            No brief yet. Layer 2 is where a session writes what the change is solving, and
+            it has not written one — so there is nothing to confirm and nothing later can
+            run.
+          </p>
+        </DeskCard>
+
+        <DeskCard
+          v-if="data.brief?.options?.length"
+          as="section"
+          class="panel"
+        >
+          <div class="panel-head">
+            <h2>Ways to solve it</h2>
+            <span class="rd-meta">written before the diff was read</span>
+          </div>
+          <div class="options">
+            <OptionCard
+              v-for="option in data.brief.options"
+              :key="option.key"
+              :option="option"
+            />
+          </div>
+          <p
+            v-if="data.brief.approach_verdict"
+            class="rd-callout rd-measure verdict"
+          >
+            <strong>Verdict:</strong> {{ data.brief.approach_verdict }}
+          </p>
+        </DeskCard>
+
+        <DeskCard
+          as="section"
+          class="panel"
+        >
+          <div class="panel-head">
+            <h2>Findings</h2>
+            <span class="rd-meta">{{ dispositionTally(data) }}</span>
+          </div>
+          <ul
+            v-if="data.findings.length"
+            class="findings"
+          >
+            <FindingRow
+              v-for="finding in data.findings"
+              :key="finding.seq"
+              :finding="finding"
+              editable
+              @change="changeDisposition"
+            />
+          </ul>
+          <p
+            v-else
+            class="rd-empty"
+          >
+            No findings yet. The code review is layer 5 and has not finished.
+          </p>
+          <p
+            v-if="data.nit_ticket.status !== 'none'"
+            class="rd-meta ticket"
+          >
+            Held-back findings:
+            {{ data.nit_ticket.status === 'filed' ? 'filed as' : 'queued as one ticket' }}
+            <template v-if="data.nit_ticket.ticket_id">
+              {{ data.nit_ticket.ticket_id }}
+            </template>
+          </p>
+        </DeskCard>
+
+        <DeskCard
+          as="section"
+          class="panel"
+        >
+          <h2>Not checked</h2>
+          <p
+            v-if="data.not_checked"
+            class="rd-measure not-checked"
+          >
+            {{ data.not_checked }}
+          </p>
+          <p
+            v-else
+            class="rd-empty"
+          >
+            Nothing is recorded as unchecked. That is not the same as everything having been
+            checked: the code review has not finished.
+          </p>
+        </DeskCard>
       </div>
-      <ul
-        v-if="detail.findings.length"
-        class="findings"
-      >
-        <FindingRow
-          v-for="finding in detail.findings"
-          :key="finding.seq"
-          :finding="finding"
-          editable
-          @change="changeDisposition"
-        />
-      </ul>
-      <p
-        v-else
-        class="rd-empty"
-      >
-        No findings yet. The code review is layer 5 and has not finished.
-      </p>
-      <p
-        v-if="detail.nit_ticket.status !== 'none'"
-        class="rd-meta ticket"
-      >
-        Held-back findings:
-        {{ detail.nit_ticket.status === 'filed' ? 'filed as' : 'queued as one ticket' }}
-        <template v-if="detail.nit_ticket.ticket_id">
-          {{ detail.nit_ticket.ticket_id }}
-        </template>
-      </p>
-    </DeskCard>
-
-    <DeskCard
-      as="section"
-      class="panel"
-    >
-      <h2>Not checked</h2>
-      <p
-        v-if="detail.not_checked"
-        class="rd-measure not-checked"
-      >
-        {{ detail.not_checked }}
-      </p>
-      <p
-        v-else
-        class="rd-empty"
-      >
-        Nothing is recorded as unchecked. That is not the same as everything having been
-        checked: the code review has not finished.
-      </p>
-    </DeskCard>
-  </div>
-
-  <DeskCard
-    v-else
-    class="missing"
-  >
-    <h1>No such review</h1>
-    <p class="rd-note">
-      The desk holds no review with that id.
-      <NuxtLink to="/">Back to the inbox</NuxtLink>.
-    </p>
-  </DeskCard>
+    </template>
+  </DeskState>
 </template>
 
 <style scoped>

@@ -1,406 +1,157 @@
 /*
- * The shapes the dashboard reads, taken from `contract/openapi.yaml` on the
- * `dev-854-api-contract` branch.
+ * The shapes the dashboard reads, **named rather than written**.
+ *
+ * Every type here is an alias over `app/types/contract.ts`, which is generated from
+ * `contract/openapi.yaml` and is **not** committed — it is rebuilt on install and ahead of
+ * every build, type check, lint and test run. Nothing in this file
+ * describes a field; it only gives the contract's schemas the short names the screens use,
+ * so `import type { Inbox } from '~/types/desk'` keeps reading the way it did while the
+ * field list has exactly one source.
+ *
+ * **That is the point, and it is the fix for a drift that had already happened.** This file
+ * used to spell the shapes out by hand, and `OutcomeKind` fell two kinds behind the
+ * contract — the harvester wrote `replied` and `thread_resolved` and the dashboard could
+ * not name either, so the Inbox's "Author replied" group was built from values the type
+ * said were impossible. Hand-written types cannot be made not to drift by being careful;
+ * generated ones cannot drift at all, because there is no second copy to disagree with the
+ * contract. What `test/contract-types.spec.ts` guards now is the generating: that it fails
+ * loudly and leaves nothing stale behind when the contract cannot be read.
+ *
+ * If the generated module is missing, `nuxt.config.ts` says so in one sentence before the
+ * type checker gets a chance to report fifty-one unrelated errors and the real one last.
  *
  * Four reads, one per screen — `GET /inbox`, `GET /reviews/{id}`,
  * `GET /reviews/{id}/draft`, `GET /rules?repo=` — so no screen joins anything. Times are
- * ISO 8601 strings. A nullable count means the server has no measurement, which is not
- * the same as zero, and a screen must say so rather than print a nought.
+ * RFC 3339 strings. A nullable count means the server has no measurement, which is not the
+ * same as zero, and a screen must say so rather than print a nought.
  */
 
-/** An ISO 8601 instant, as the API writes it. */
+import type { components, operations } from '~/types/contract'
+
+type Schema = components['schemas']
+
+/** An RFC 3339 instant in UTC, as the API writes it. */
 export type Instant = string
 
-export type RepoName = string
+export type RepoName = Schema['RepoName']
 
-export type Severity = 'blocker' | 'should' | 'nit' | 'question'
+/* ---- The closed sets, straight off the contract's enums ---- */
 
-export type Disposition = 'in_draft' | 'held_back' | 'suppressed'
-
-export type OutcomeKind
-  = | 'cut'
-    | 'regraded'
-    | 'rewritten'
-    | 'kept'
-    | 'rejected'
-    | 'raised_again'
-    | 'code_changed_after'
-
-export type Actor = 'developer' | 'author' | 'harvester'
-
-export type RuleStage = 'proposed' | 'active' | 'lint' | 'ci' | 'retired'
-
-export type DraftStatus = 'drafting' | 'ready' | 'approved' | 'sent_back' | 'posted'
-
-export type ReviewEvent = 'comment' | 'request_changes' | 'approve'
-
-export type ReviewLayerName
-  = | 'lint'
-    | 'understand'
-    | 'alternatives'
-    | 'solution_map'
-    | 'code_review'
-    | 'draft'
-    | 'harvest'
-
-export type ReviewLayerState
-  = | 'pending'
-    | 'running'
-    | 'done'
-    | 'waiting_on_you'
-    | 'failed'
-    | 'skipped'
-
-export type NitTicketStatus = 'none' | 'requested' | 'filed'
+export type Severity = Schema['Severity']
+export type Disposition = Schema['Disposition']
+export type OutcomeKind = Schema['OutcomeKind']
+export type Actor = Schema['Actor']
+export type RuleStage = Schema['RuleStage']
+export type DraftStatus = Schema['DraftStatus']
+export type ReviewEvent = Schema['ReviewEvent']
+export type ReviewLayerName = Schema['ReviewLayerName']
+export type ReviewLayerState = Schema['ReviewLayerState']
+export type NitTicketStatus = Schema['NitTicketStatus']
 
 /**
  * Why a request was refused. `store_unavailable` means Review Desk is broken;
- * `github_unavailable` means a read it needed could not be made, which is the
- * developer's environment rather than their request. Everything else means the request
- * was understood and refused. A caller branches on this, never on the message.
+ * `github_unavailable` means a read it needed could not be made, which is the developer's
+ * environment rather than their request. Everything else means the request was understood
+ * and refused. A caller branches on this, never on the message.
  */
-export type ErrorCode
-  = | 'bad_request'
-    | 'invalid_value'
-    | 'not_found'
-    | 'conflict'
-    | 'github_unavailable'
-    | 'store_unavailable'
+export type ErrorCode = Schema['ErrorCode']
+
+/**
+ * The contract's one error shape, plus the two codes that never reach the wire.
+ *
+ * `unreachable` and `unreadable` are the data layer's own, and they are not in
+ * `ErrorCode` because the contract cannot describe them: the first is what there is to say
+ * when the server answered nothing at all — it was stopped, or never started — and the
+ * second is an answer that was not the contract's error shape, which means something other
+ * than Review Desk replied. Both are states a screen has to be able to render, and
+ * folding them into `store_unavailable` would tell the developer their database is broken
+ * when their server is simply not running.
+ */
+export type DeskErrorCode = ErrorCode | 'unreachable' | 'unreadable'
 
 export interface DeskError {
-  code: ErrorCode
+  code: DeskErrorCode
   /** Written for a person to read. The screen shows it; it never parses it. */
   message: string
   field?: string | null
   expected?: string | null
+  /** The HTTP status, when there was one. Absent when nothing answered. */
+  status?: number | null
 }
 
-/** POST /reviews. Only the link is required; the server resolves the rest. */
-export interface StartReviewRequest {
-  pr_url: string
-  head_sha?: string | null
-  title?: string | null
-  ticket_id?: string | null
-  changed_lines?: number | null
-}
+/* ---- Request bodies ---- */
 
-export interface RuleScope {
-  kind: 'global' | 'repo'
-  repo?: RepoName | null
-}
-
-export interface SeverityCounts {
-  blocker: number
-  should: number
-  nit: number
-  question: number
-}
-
-export interface DispositionCounts {
-  in_draft: number
-  held_back: number
-  suppressed: number
-}
+export type StartReviewRequest = Schema['StartReviewRequest']
+export type SetFindingDispositionRequest = Schema['SetFindingDispositionRequest']
+export type SaveDraftRequest = Schema['SaveDraftRequest']
+export type SaveDraftEdit = NonNullable<SaveDraftRequest['edits']>[number]
+export type ApproveDraftRequest = Schema['ApproveDraftRequest']
+export type SendBackDraftRequest = Schema['SendBackDraftRequest']
+export type RequestNitTicketRequest = Schema['RequestNitTicketRequest']
+export type PromoteRuleRequest = Schema['PromoteRuleRequest']
+export type RuleReasonRequest = Schema['RuleReasonRequest']
+export type DeferRuleRequest = Schema['DeferRuleRequest']
 
 /* ---- GET /reviews/{id} ---- */
 
-export interface Review {
-  id: number
-  repo: RepoName
-  pr: number
-  head_sha: string
-  round: number
-  title?: string | null
-  ticket_id?: string | null
-  changed_lines?: number | null
-  session_id?: string | null
-  ledger_id?: string | null
-  github_review_id?: string | null
-  created_at: Instant
-}
-
-export interface ReviewLayer {
-  number: number
-  name: ReviewLayerName
-  state: ReviewLayerState
-  detail?: string | null
-  updated_at?: Instant | null
-}
-
-export interface BriefOption {
-  key: string
-  title: string
-  argument_for: string
-  argument_against: string
-  chosen: boolean
-}
-
-export interface Brief {
-  review_id: number
-  problem: string
-  /** Mermaid source. The record keeps whatever notation the layer used. */
-  diagram?: string | null
-  options?: BriefOption[]
-  approach_verdict?: string | null
-  provenance?: string | null
-  confirmed: boolean
-  confirmed_at?: Instant | null
-  updated_at: Instant
-}
-
-export interface Finding {
-  review_id: number
-  seq: number
-  key: string
-  lens: string
-  severity: Severity
-  file?: string | null
-  line?: number | null
-  claim: string
-  evidence?: string | null
-  disposition: Disposition
-  disposition_reason?: string | null
-  rule_id?: number | null
-  rule_key?: string | null
-  created_at: Instant
-}
-
-export interface Outcome {
-  id: number
-  review_id: number
-  finding_seq: number
-  finding_key: string
-  kind: OutcomeKind
-  actor: Actor
-  occurred_at: Instant
-  detail?: string | null
-}
-
-export interface NitTicket {
-  review_id: number
-  status: NitTicketStatus
-  ticket_id?: string | null
-  finding_seqs: number[]
-  requested_at?: Instant | null
-  filed_at?: Instant | null
-}
-
-export interface ReviewDetail {
-  review: Review
-  layers: ReviewLayer[]
-  brief?: Brief | null
-  findings: Finding[]
-  outcomes: Outcome[]
-  finding_severities: SeverityCounts
-  finding_dispositions: DispositionCounts
-  not_checked?: string | null
-  nit_ticket: NitTicket
-  draft_status?: DraftStatus | null
-}
+export type RuleScope = Schema['RuleScope']
+export type SeverityCounts = Schema['SeverityCounts']
+export type DispositionCounts = Schema['DispositionCounts']
+export type Review = Schema['Review']
+export type ReviewLayer = Schema['ReviewLayer']
+export type BriefOption = Schema['BriefOption']
+export type Brief = Schema['Brief']
+export type Finding = Schema['Finding']
+export type Outcome = Schema['Outcome']
+export type NitTicket = Schema['NitTicket']
+export type ReviewDetail = Schema['ReviewDetail']
 
 /* ---- GET /reviews/{id}/draft ---- */
 
-export interface Draft {
-  review_id: number
-  body: string
-  status: DraftStatus
-  event?: ReviewEvent | null
-  approved_at?: Instant | null
-  sent_back_note?: string | null
-  sent_back_at?: Instant | null
-  posted_at?: Instant | null
-  updated_at: Instant
-}
-
-export interface DraftLint {
-  passes: boolean
-  visible_words?: number | null
-  word_budget?: number | null
-  findings_in_body?: number | null
-  findings_expected?: number | null
-  raised_before_on_pr?: number | null
-  errors?: string[]
-  checked_at: Instant
-}
-
-export interface DraftEdit {
-  finding_seq: number
-  finding_key: string
-  kind: OutcomeKind
-  summary: string
-  occurred_at?: Instant | null
-}
-
-export interface HeldBackFinding {
-  finding_seq: number
-  finding_key: string
-  claim: string
-  severity?: Severity
-}
-
-export interface DraftDetail {
-  draft: Draft
-  review: Review
-  lint: DraftLint
-  edits: DraftEdit[]
-  held_back: HeldBackFinding[]
-  nit_ticket: NitTicket
-}
+export type Draft = Schema['Draft']
+export type DraftLint = Schema['DraftLint']
+export type DraftEdit = Schema['DraftEdit']
+export type HeldBackFinding = Schema['HeldBackFinding']
+export type DraftDetail = Schema['DraftDetail']
 
 /* ---- GET /rules?repo= ---- */
 
-export interface RuleCounts {
-  raised?: number | null
-  kept?: number | null
-  rejected_with_reason?: number | null
-  cited_by_findings?: number | null
-  caught_by_check?: number | null
-  raised_in_a_review_since?: number | null
-  exceptions?: number | null
-  last_human_mention_at?: Instant | null
-}
-
-export interface Rule {
-  id: number
-  key: string
-  statement: string
-  prevents: string
-  scope: RuleScope
-  stage: RuleStage
-  stage_label?: string | null
-  why_proposed?: string | null
-  note?: string | null
-  origin_review_id?: number | null
-  origin_pr?: number | null
-  origin_findings: Array<{ review_id: number, seq: number }>
-  stale: boolean
-  last_cited_at?: Instant | null
-  review_again_at?: Instant | null
-  counts: RuleCounts
-  created_at: Instant
-}
-
-export interface RulesSummary {
-  active_rules: number
-  active_rules_cap: number
-  replay_matched?: number | null
-  replay_total?: number | null
-  findings_kept?: number | null
-  findings_total?: number | null
-  findings_window_days?: number | null
-  raised_twice_on_one_pr?: number | null
-}
-
-export interface RulesPage {
-  repo?: RepoName | null
-  summary: RulesSummary
-  proposed: Rule[]
-  active: Rule[]
-  stale: Rule[]
-}
+export type RuleCounts = Schema['RuleCounts']
+export type Rule = Schema['Rule']
+export type RulesSummary = Schema['RulesSummary']
+export type RulesPage = Schema['RulesPage']
 
 /* ---- GET /repos ---- */
 
-export interface RepoSummary {
-  repo: RepoName
-  open_reviews: number
-  active_rules: number
-}
+export type RepoSummary = Schema['RepoSummary']
+
+/** `GET /repos` serves an object, not an array; this is what is inside it. */
+export type RepoList = operations['listRepos']['responses']['200']['content']['application/json']
 
 /* ---- GET /inbox ---- */
 
-export interface InboxPr {
-  repo: RepoName
-  pr: number
-  title?: string | null
-}
+export type InboxPr = Schema['InboxPr']
+export type InboxTotals = Schema['InboxTotals']
+export type InboxBriefItem = Schema['InboxBriefItem']
+export type InboxDraftItem = Schema['InboxDraftItem']
+export type InboxReplyEvent = Schema['InboxReplyEvent']
+export type InboxReplyItem = Schema['InboxReplyItem']
+export type DescriptionLint = Schema['DescriptionLint']
+export type InboxOwnPrItem = Schema['InboxOwnPrItem']
+export type InboxProposedRuleItem = Schema['InboxProposedRuleItem']
+export type InboxInProgressItem = Schema['InboxInProgressItem']
+export type InboxHandled = Schema['InboxHandled']
+export type Inbox = Schema['Inbox']
 
-export interface InboxTotals {
-  items: number
-  repos: number
-}
+/* ---- What sample mode holds. The server holds the same facts in SQLite. ---- */
 
-export interface InboxBriefItem {
-  review_id: number
-  pull_request: InboxPr
-  ticket_id?: string | null
-  brief_ready_at?: Instant | null
-  /** True when the session is held at layer 2 and nothing later has run. */
-  blocks_later_layers: boolean
-}
-
-export interface InboxDraftItem {
-  review_id: number
-  pull_request: InboxPr
-  round: number
-  severities: SeverityCounts
-  held_back: number
-  is_delta: boolean
-}
-
-export interface InboxReplyEvent {
-  finding_seq: number
-  finding_key: string
-  kind: OutcomeKind
-  detail?: string | null
-}
-
-export interface InboxReplyItem {
-  review_id: number
-  pull_request: InboxPr
-  events: InboxReplyEvent[]
-}
-
-export interface DescriptionLint {
-  passes: boolean
-  budget_ratio?: number | null
-}
-
-export interface InboxOwnPrItem {
-  pull_request: InboxPr
-  opened_at?: Instant | null
-  description_lint?: DescriptionLint | null
-}
-
-export interface InboxProposedRuleItem {
-  rule_id: number
-  rule_key: string
-  statement: string
-  why_proposed?: string | null
-  scope: RuleScope
-}
-
-export interface InboxInProgressItem {
-  review_id: number
-  pull_request: InboxPr
-  layer_number: number
-  layer_name: ReviewLayerName
-  layers_total: number
-  session_id?: string | null
-  /** Allele owns this. Null means nothing has said, which the screen must show. */
-  session_alive?: boolean | null
-}
-
-export interface InboxHandled {
-  window_days: number
-  description_problems_caught?: number | null
-  nits_filed?: number | null
-  nit_tickets?: number | null
-}
-
-export interface Inbox {
-  totals: InboxTotals
-  briefs_to_confirm: InboxBriefItem[]
-  drafts_to_approve: InboxDraftItem[]
-  author_replies: InboxReplyItem[]
-  own_prs_without_reviewer: InboxOwnPrItem[]
-  proposed_rules: InboxProposedRuleItem[]
-  in_progress: InboxInProgressItem[]
-  handled_without_you: InboxHandled
-}
-
-/* ---- What the sample source holds. The server holds the same facts in SQLite. ---- */
-
+/**
+ * The whole desk, as one object.
+ *
+ * Only sample mode has such a thing. The API serves four separate documents and joins
+ * nothing, which is the contract's "each screen is one GET"; this is what the fixtures have
+ * to be in order to recompute those four documents in memory as a write patches them.
+ */
 export interface DeskSource {
   reviews: ReviewDetail[]
   drafts: DraftDetail[]

@@ -14,7 +14,26 @@ const emit = defineEmits<{
 const open = ref(false)
 const target = ref<Disposition>(props.finding.disposition)
 const reason = ref(props.finding.disposition_reason ?? '')
-const problem = ref('')
+
+/**
+ * The panel closes when the record agrees with what was asked for, and not before.
+ *
+ * **Watched by value, not by identity.** An earlier version watched `() => props.finding`
+ * and closed on a new object, which is what a successful write produces over HTTP — and
+ * never produced in sample mode, where a read handed back the same mutated record. It also
+ * needed a "saving" flag that a *refused* write left set, so the next unrelated refresh
+ * closed this panel and threw away the reason being typed.
+ *
+ * Watching the two values the move is about has neither problem: a refusal changes nothing,
+ * so the panel stays open with the reason still in it — which is what DEV-862 asks for —
+ * and it needs no second copy of the rule the server owns.
+ */
+watch(
+  () => [props.finding.disposition, props.finding.disposition_reason],
+  () => {
+    if (open.value && props.finding.disposition === target.value) open.value = false
+  },
+)
 
 const options: Array<{ value: Disposition, label: string }> = [
   { value: 'in_draft', label: 'In draft' },
@@ -42,21 +61,24 @@ const rest = computed(() => {
 function start() {
   target.value = props.finding.disposition
   reason.value = props.finding.disposition_reason ?? ''
-  problem.value = ''
   open.value = true
 }
 
+/**
+ * Ask for the move, and let the record refuse it.
+ *
+ * **There is no copy of the "say why" rule here**, and there was. The server requires a
+ * reason for `held_back` and `suppressed` — a finding removed from the draft without one
+ * teaches the harvester nothing — and this component used to check the same thing first,
+ * so the real refusal was never reached from the screen and the two wordings could drift.
+ * One rule, in the record, with the screen showing what it said.
+ */
 function save() {
-  if (target.value !== 'in_draft' && reason.value.trim().length === 0) {
-    problem.value = 'Say why it is not going in the draft.'
-    return
-  }
   emit('change', {
     seq: props.finding.seq,
     disposition: target.value,
     reason: target.value === 'in_draft' ? '' : reason.value,
   })
-  open.value = false
 }
 </script>
 
@@ -153,12 +175,6 @@ function save() {
           Cancel
         </button>
       </div>
-      <DeskNotice
-        v-if="problem"
-        tone="problem"
-      >
-        {{ problem }}
-      </DeskNotice>
     </div>
   </li>
 </template>

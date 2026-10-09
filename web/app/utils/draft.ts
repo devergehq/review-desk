@@ -2,7 +2,7 @@
  * Reading a draft body. No data access; a draft's markdown in, facts out.
  */
 
-import type { Finding, OutcomeKind } from '~/types/desk'
+import type { OutcomeKind } from '~/types/desk'
 
 export interface MarkdownBlock {
   kind: 'markdown' | 'mermaid'
@@ -109,6 +109,44 @@ export interface DetectedEdit {
 }
 
 /**
+ * A finding, as far as reading a draft body is concerned: a number and the key a person
+ * quotes it by.
+ *
+ * Narrower than `Finding` on purpose. A `Finding[]` satisfies it, so a caller that has the
+ * whole review can pass it — and [`findingsInBody`] can produce one from the body alone,
+ * which is what lets the draft screen record its edits without reading the review as well.
+ * The contract's shape is one GET per screen, and the draft screen's GET does not carry
+ * the findings.
+ */
+export interface FindingRef {
+  seq: number
+  key: string
+}
+
+/**
+ * The findings a draft body raises, read out of its own headings.
+ *
+ * Every finding a body can have been edited *away from* has a section in the body as it
+ * was, and a section is a heading carrying the finding's key — `### Blocker · F1 · …`.
+ * So the keys in the old body are exactly the findings an edit could be about, and nothing
+ * else needs to be read to record one.
+ *
+ * `F12` and `F1` are told apart: the number is the whole run of digits, so a body that
+ * raises both does not report two edits against the first.
+ */
+export function findingsInBody(body: string): FindingRef[] {
+  const found = new Map<number, FindingRef>()
+  for (const line of body.split('\n')) {
+    if (!/^#{2,4}\s/.test(line)) continue
+    for (const match of line.matchAll(/\bF(\d+)\b/g)) {
+      const seq = Number(match[1])
+      if (seq >= 1) found.set(seq, { seq, key: `F${seq}` })
+    }
+  }
+  return [...found.values()].sort((a, b) => a.seq - b.seq)
+}
+
+/**
  * What changed between two versions of a draft body, finding by finding.
  *
  * The API records an edit against the finding it is about, so a saved body has to say
@@ -116,7 +154,11 @@ export interface DetectedEdit {
  * changed is a rewrite. This is the signal the harvester weighs most heavily, so it is
  * worth getting from the text rather than asking the developer to label it.
  */
-export function detectEdits(before: string, after: string, findings: Finding[]): DetectedEdit[] {
+export function detectEdits(
+  before: string,
+  after: string,
+  findings: FindingRef[],
+): DetectedEdit[] {
   const edits: DetectedEdit[] = []
   for (const finding of findings) {
     const was = sectionFor(before, finding.key)

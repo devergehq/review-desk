@@ -6,11 +6,15 @@ on:
   pull_request:
     paths:
       - 'web/**'
+      # The dashboard's types are generated from the contract and a test regenerates them
+      # to compare, so a contract change can fail this workflow without touching `web/`.
+      - 'contract/openapi.yaml'
       - '.github/workflows/web.yml'
   push:
     branches: [master]
     paths:
       - 'web/**'
+      - 'contract/openapi.yaml'
       - '.github/workflows/web.yml'
 
 concurrency:
@@ -50,25 +54,24 @@ jobs:
       - name: Types
         run: pnpm run typecheck
 
-      - name: Tests
-        run: pnpm run test
-
+      # Before the tests, not after: `test/build-output.spec.ts` reads the build and
+      # asserts that no fixture reached it, which is DEV-862's "a production build contains
+      # no fixture data, shown by a test on the build output".
       - name: Build to static files
         run: pnpm run generate
 
-      # `nuxt generate` succeeding is not the same as the output being servable: a
-      # parameterised route that was never prerendered 404s on a plain file server, and
-      # nothing earlier would have said so.
-      - name: Every route resolves as a file
+      - name: Tests
+        run: pnpm run test
+
+      # `nuxt generate` succeeding is not the same as the output being servable. Two
+      # routes are prerendered and the rest are the client router's: the Rust server
+      # answers any path that cannot be a file with the index, which
+      # `crates/server/tests/assets.rs` holds. Naming `/reviews/17` here would mean reading
+      # a fixture at build time to find out which ids exist.
+      - name: Every prerendered route resolves as a file
         run: |
           missing=0
-          for route in \
-            index.html \
-            rules/index.html \
-            reviews/17/index.html \
-            reviews/17/draft/index.html \
-            reviews/15/index.html \
-            reviews/15/draft/index.html
+          for route in index.html rules/index.html
           do
             if [ ! -f ".output/public/$route" ]; then
               echo "missing: $route"

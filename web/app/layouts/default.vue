@@ -8,20 +8,25 @@
  * material in `docs/mockups/` rather than a screen.
  */
 const route = useRoute()
-const { inbox } = useReviewDesk()
+const inbox = useReviewDesk().inbox()
 
 /*
  * Whichever review is waiting on the developer, so "Reviews" always lands somewhere
  * worth being: the brief to confirm, else the draft to approve, else the first reply.
+ *
+ * `null` while the inbox has not answered, and on a database with nothing in it. There is
+ * then no review to link to, so the item is a disabled label rather than a link to
+ * `/reviews/1` — which on a fresh database was a link to a review that does not exist.
  */
 const firstReview = computed(() => {
-  const waiting = inbox.value
+  const waiting = inbox.data.value
+  if (!waiting) return null
   return (
     waiting.briefs_to_confirm[0]?.review_id
     ?? waiting.drafts_to_approve[0]?.review_id
     ?? waiting.author_replies[0]?.review_id
     ?? waiting.in_progress[0]?.review_id
-    ?? 1
+    ?? null
   )
 })
 
@@ -29,7 +34,7 @@ const links = computed(() => [
   { label: 'Inbox', to: '/', match: (path: string) => path === '/' },
   {
     label: 'Reviews',
-    to: `/reviews/${firstReview.value}`,
+    to: firstReview.value == null ? null : `/reviews/${firstReview.value}`,
     match: (path: string) => path.startsWith('/reviews'),
   },
   { label: 'Rules', to: '/rules', match: (path: string) => path.startsWith('/rules') },
@@ -51,16 +56,29 @@ const links = computed(() => [
         class="nav"
         aria-label="Review Desk"
       >
-        <NuxtLink
+        <template
           v-for="link in links"
-          :key="link.to"
-          :to="link.to"
-          class="link"
-          :class="{ 'link--current': link.match(route.path) }"
-          :aria-current="link.match(route.path) ? 'page' : undefined"
+          :key="link.label"
         >
-          {{ link.label }}
-        </NuxtLink>
+          <NuxtLink
+            v-if="link.to"
+            :to="link.to"
+            class="link"
+            :class="{ 'link--current': link.match(route.path) }"
+            :aria-current="link.match(route.path) ? 'page' : undefined"
+          >
+            {{ link.label }}
+          </NuxtLink>
+          <!--
+            Nothing to link to. Shown rather than hidden, so the navigation keeps its three
+            places and the one that is empty says it is empty.
+          -->
+          <span
+            v-else
+            class="link link--none"
+            aria-disabled="true"
+          >{{ link.label }}</span>
+        </template>
       </nav>
     </header>
     <main
@@ -132,6 +150,11 @@ const links = computed(() => [
   font-weight: 600;
   color: var(--rd-ink);
   background: var(--rd-rail);
+}
+
+.link--none {
+  color: var(--rd-ink-muted);
+  cursor: default;
 }
 
 .main {

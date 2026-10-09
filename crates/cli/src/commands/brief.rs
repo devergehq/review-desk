@@ -15,9 +15,21 @@ pub enum BriefCommand {
     /// Store the review's brief, replacing any brief already held.
     ///
     /// Replacing clears the confirmation: the developer confirmed the text that was
-    /// there, not whatever replaces it. The document is `{"problem": "...",
-    /// "diagram": "...", "option_map": "...", "approach_verdict": "..."}`; only
-    /// `problem` is required, and a field that is not one of those four is refused.
+    /// there, not whatever replaces it.
+    ///
+    /// The document is `{"problem": "...", "diagram": "...", "options": [...],
+    /// "approach_verdict": "...", "provenance": "..."}`. Only `problem` is required, and a
+    /// field that is not one of those is refused.
+    ///
+    /// `options` is the alternatives the review considered before it read the diff, and is
+    /// what the One review screen's "Ways to solve it" shows — one object per alternative,
+    /// `{"key": "A", "title": "...", "argument_for": "...", "argument_against": "...",
+    /// "chosen": false}`, with `chosen` true on the one the author built.
+    ///
+    /// `option_map` is the same fact as one opaque string and is superseded; giving both is
+    /// refused rather than merged, because nothing could say which the review meant. This
+    /// text listed only `option_map` for longer than it was true, which is how a session
+    /// came to seed a brief with no options at all.
     Put {
         /// The review's id.
         #[arg(long, value_name = "ID")]

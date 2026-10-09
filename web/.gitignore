@@ -4,3 +4,13 @@ node_modules/
 dist/
 .data/
 *.tsbuildinfo
+
+# Written by the end-to-end run: the two servers' addresses, for the specs to read.
+e2e/.addresses.json
+test-results/
+playwright-report/
+
+# Generated from ../contract/openapi.yaml on install and before every build, lint, type
+# check and test run — see `scripts/contract-types.mjs`. Never committed: a generated file
+# in the repository is a second copy of the contract that can disagree with it.
+app/types/contract.ts

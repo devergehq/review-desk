@@ -1,9 +1,12 @@
 {
   "number": 64,
+  "title": "DEV-795: give dispatcher watchers an exit condition, and a way to see the ones that have none",
   "state": "closed",
   "merged": true,
   "merged_at": "2026-09-30T10:54:42Z",
   "closed_at": "2026-09-30T10:54:42Z",
+  "additions": 1097,
+  "deletions": 3,
   "head": {
     "sha": "46f6ea1645a9bbc9308f791411b2cac1a093367b"
   },
