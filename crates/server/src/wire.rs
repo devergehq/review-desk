@@ -16,8 +16,9 @@
 //! dashboard silently never sees.
 
 use review_desk_store::{
-    Brief, BriefOption, Disposition, Draft, DraftLint, Finding, NitTicket, Outcome, RepoSummary,
-    Review, ReviewLayer, Rule, RuleCounts, RuleScope, RuleStage, RulesSummary, Severity, Timestamp,
+    Brief, BriefOption, Disposition, Draft, DraftLint, Finding, FindingHunk, NitTicket, Outcome,
+    RepoSummary, Review, ReviewLayer, Rule, RuleCounts, RuleScope, RuleStage, RulesSummary,
+    Severity, Timestamp,
 };
 use serde_json::{json, Value};
 
@@ -129,6 +130,33 @@ pub fn brief(brief: &Brief, options: &[BriefOption]) -> Value {
     })
 }
 
+/// The contract's `FindingHunk`, with the number the dashboard draws beside each line.
+///
+/// **The numbers are derived here and stored nowhere.** `FindingHunk::numbered_lines` is
+/// the derivation and the store owns it: counting from `start_line`, an added or unchanged
+/// line takes the next number and a removed line takes none, because it is not in the file
+/// any more. Derived at this boundary for the reason `key` and `rule_key` are — the
+/// dashboard renders what it is given and computes no numbers of its own.
+///
+/// **Nothing here touches the text.** Review Desk does not fetch code, so a hunk line is
+/// the only copy of that line there is; it is serialised exactly as it was stored, leading
+/// whitespace, trailing whitespace and all.
+pub fn finding_hunk(hunk: &FindingHunk) -> Value {
+    json!({
+        "file": hunk.file,
+        "start_line": hunk.start_line,
+        "lines": hunk
+            .numbered_lines()
+            .into_iter()
+            .map(|(number, line)| json!({
+                "marker": line.marker.as_str(),
+                "line": number,
+                "text": line.text,
+            }))
+            .collect::<Vec<_>>(),
+    })
+}
+
 /// The contract's `Finding`.
 pub fn finding(finding: &Finding) -> Value {
     json!({
@@ -145,6 +173,25 @@ pub fn finding(finding: &Finding) -> Value {
         "disposition_reason": finding.disposition_reason,
         "rule_id": finding.rule_id,
         "rule_key": finding.rule_id.map(rule_key),
+        // Null, not an empty hunk. A finding written with only a file and a line has no
+        // hunk, and `FindingHunk` requires a file, a start line and at least one line —
+        // so there is no shape of the object that means "none", and inventing one would
+        // be the contract's own rule against a made-up value, broken here.
+        "hunk": finding
+            .hunk
+            .as_ref()
+            .map_or(Value::Null, finding_hunk),
+        "flagged_line": finding.flagged_line,
+        "inline_comment": finding.inline_comment,
+        "why_it_matters": finding.why_it_matters,
+        "proof": finding.proof,
+        // Always written, and `unknown` is a value rather than an absence: a finding that
+        // said nothing about its method has said nothing, not that it was read and not run.
+        "verification": finding.verification.as_str(),
+        "suggested_fix": finding.suggested_fix,
+        // Empty, not null. A finding with no sibling references has none, which is a
+        // measurement; the contract's "null is not zero" rule cuts this way round too.
+        "fix_references": finding.fix_references,
         "created_at": rfc3339(finding.created_at),
     })
 }
