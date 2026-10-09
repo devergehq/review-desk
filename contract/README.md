@@ -163,6 +163,16 @@ Everything else on the four screens is below.
 | "In draft" / "Suppressed" | `findings[].disposition` |
 | "Held back · ticket" | `findings[].disposition` plus `nit_ticket.status` |
 | "No consequence named · matches a proposed rule…" | `findings[].disposition_reason` |
+| "jobs/DeliverWebhook.php · lines 56 to 63, as changed" | `findings[].hunk.file`, and the range derived from `.hunk.start_line` and the markers |
+| the code rows, each with its `+`, `−` or blank gutter | `findings[].hunk.lines[].marker`, `.text` |
+| the number beside each code row, blank on a removal | `findings[].hunk.lines[].line` |
+| "Comment on line 58, as it will post" | `findings[].flagged_line` |
+| the comment under that line | `findings[].inline_comment` |
+| the "Why it matters" paragraph | `findings[].why_it_matters` |
+| the "How we know" block | `findings[].proof` |
+| the "Reproduced" badge, and its absence | `findings[].verification` |
+| the "What would fix it" sentence | `findings[].suggested_fix` |
+| the monospace lines under it | `findings[].fix_references` |
 | the "Not checked" paragraph | `not_checked` |
 | that an "Open draft" link is shown at all | `draft_status` |
 | which of the three layer-2 cards is shown | `brief.confirmed` and `brief.confirmation_required` |
@@ -178,6 +188,37 @@ false with `confirmation_required` false is a brief an agent recorded as needing
 confirmation — settled, unsigned, in nobody's queue, and the screen must say so rather than
 offering the button. The reason is required whenever the flag is false; the threshold behind
 it is the caller's and Review Desk does not hold it.
+
+#### What a finding is about — the hunk, the comment, the proof and the fix
+
+Added by DEV-874, which is where boards A2 and A3 of the approved design draw a finding in
+full. **All eight fields are optional and independent; a finding with none of them displays
+with its file and its line, as it always did.**
+
+| Field | What it is |
+|---|---|
+| `hunk` | The lines around the finding as the pull request changed them: a file, a start line, and each line marked `added`, `removed` or `unchanged`. `null` when the finding has none. |
+| `hunk.lines[].line` | **Derived, not stored.** Counting from `hunk.start_line`, an `added` or `unchanged` line takes the next number and a `removed` line takes `null` — it is not in the file any more, and the design draws no number for it. Board A2's F1 starts at 56 and draws 56, 57, (blank), 58 … 63; board A3's F6 opens *on* a removal and still numbers from 58. |
+| `flagged_line` | The line the inline comment attaches to. When a `hunk` is present this is one of the numbers that hunk draws, and the server refuses a write that anchors a comment anywhere else. |
+| `inline_comment` | The comment as it will be posted on that line. **Not the `claim`**: the claim is what the record says is wrong, this is what the author reads on GitHub. Nothing here posts it. |
+| `why_it_matters` | The consequence, in a sentence or two. |
+| `proof` | How the review knows — test output, two logged keys, a line read. Newlines are part of it. |
+| `verification` | `reproduced`, `read_not_run` or `unknown`, defaulting to `unknown`. |
+| `suggested_fix` | What would fix it. |
+| `fix_references` | Sibling code the fix should look like, in order. `[]` when there are none. |
+
+**Every one of the text fields is stored and served verbatim.** Review Desk does not fetch
+code — the project brief's rule — so the hunk the API serves is the only copy of those lines
+there is. Nothing trims, re-wraps or normalises them at any point: a line of a single space
+is a line of a single space, a tab stays a tab, and a trailing space survives. `text` may be
+the empty string. The one piece of text the server looks at before storing is a
+`fix_references` entry, which is a pointer the dashboard draws as one line and is refused
+when it is blank; refusing is not normalising, and nothing stored is altered.
+
+**A removed line cannot be commented on.** It carries no number, so no value of
+`flagged_line` names it, and a write that tries is refused rather than stored undrawable.
+GitHub can comment on the left-hand side of a diff; this model cannot, and that is a stated
+limit rather than an oversight.
 
 ### Draft preview — `GET /reviews/{reviewId}/draft`, example `examples/getDraft.response.json`
 
