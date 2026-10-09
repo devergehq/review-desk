@@ -4,9 +4,7 @@ mod common;
 
 use common::{db_path, temp_store};
 use review_desk_store::{
-    newest_version, Actor, DraftStatus, FindingHunk, HunkLine, HunkLineMarker, NewDraft,
-    NewFinding, NewRoundCommit, NitTicketStatus, ReviewLayerName, ReviewLayerState, RoundStatus,
-    Severity, Store, StoreError, Verification, WorkFilter,
+    newest_version, Actor, CriterionStatus, DescriptionLintStatus, DraftStatus, FileCheck, FindingHunk, HunkLine, HunkLineMarker, NewAcceptanceCriterion, NewDescriptionLintResult, NewDraft, NewFileChange, NewFinding, NewReviewSource, NewRoundCommit, NitTicketStatus, ReviewLayerName, ReviewLayerState, RoundStatus, Severity, SourceKind, Store, StoreError, Verification, WorkFilter,
 };
 use tempfile::TempDir;
 
@@ -318,6 +316,77 @@ fn an_older_database_is_migrated_forward_and_keeps_its_rows() {
     assert!(
         waiting.is_empty(),
         "a review waiting on the developer is not an agent's work: {waiting:?}"
+    );
+
+    // Migration 6's four tables. A review written before it recorded none of this, and
+    // what it reads back is four empty lists rather than a failure — which is what "a
+    // review with none of it reads as it does today" means for a database that predates
+    // the change entirely.
+    let provenance = migrated
+        .review_provenance(1)
+        .expect("the provenance of a review written before migration 6");
+    assert!(
+        provenance.is_empty(),
+        "a review from before migration 6 recorded none of it: {provenance:?}"
+    );
+    assert_eq!(
+        provenance.description_lint_passes(),
+        None,
+        "and the description lint has not run, which is not the same as failing"
+    );
+
+    // Usable against the migrated database, not merely present in it.
+    migrated
+        .put_review_sources(
+            1,
+            vec![NewReviewSource {
+                kind: SourceKind::Description,
+                label: "The pull request description".to_string(),
+                link: None,
+            }],
+        )
+        .expect("a source can be written after the migration");
+    migrated
+        .put_file_changes(
+            1,
+            vec![NewFileChange {
+                path: "src/old.rs".to_string(),
+                summary: "the old change".to_string(),
+                lines_added: 3,
+                lines_removed: 0,
+                checked: FileCheck::ReadInFull,
+                how_checked: None,
+            }],
+        )
+        .expect("a file entry can be written after the migration");
+    migrated
+        .put_acceptance_criteria(
+            1,
+            vec![NewAcceptanceCriterion {
+                text: "the old thing is done".to_string(),
+                status: CriterionStatus::NotMet,
+                finding_seq: Some(1),
+                file: None,
+                line: None,
+                note: None,
+            }],
+        )
+        .expect("a criterion can point at the finding that survived the migration");
+    migrated
+        .put_description_lint(
+            1,
+            vec![NewDescriptionLintResult {
+                label: "Description length".to_string(),
+                status: DescriptionLintStatus::Pass,
+                detail: Some("1,840 of 2,568 characters".to_string()),
+            }],
+        )
+        .expect("a description lint result can be written after the migration");
+
+    assert_eq!(
+        migrated.findings_on_path(1, "src/old.rs").unwrap(),
+        Vec::<i64>::new(),
+        "the surviving finding names no file, so it is on no file's row"
     );
 }
 

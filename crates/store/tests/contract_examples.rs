@@ -28,10 +28,7 @@ use std::path::{Path, PathBuf};
 
 use common::temp_store;
 use review_desk_store::{
-    now, Actor, Brief, BriefOption, Disposition, Draft, DraftLint, Finding, FindingHunk,
-    FindingRef, HunkLine, HunkLineMarker, NewBrief, NewDraft, NewFinding, NewOutcome, NewReview,
-    NewRule, NitTicket, Outcome, OutcomeKind, Review, ReviewEvent, ReviewFacts, ReviewLayer,
-    ReviewLayerName, Rule, RuleScope, RuleStage, Severity, Store, Verification,
+    now, Actor, Brief, BriefOption, CriterionStatus, DescriptionLintStatus, Disposition, Draft, DraftLint, FileCheck, Finding, FindingHunk, FindingRef, HunkLine, HunkLineMarker, NewAcceptanceCriterion, NewBrief, NewDescriptionLintResult, NewDraft, NewFileChange, NewFinding, NewOutcome, NewReview, NewReviewSource, NewRule, NitTicket, Outcome, OutcomeKind, Review, ReviewEvent, ReviewFacts, ReviewLayer, ReviewLayerName, ReviewProvenance, Rule, RuleScope, RuleStage, Severity, SourceKind, Store, Verification,
 };
 use serde_json::{json, Map, Value};
 
@@ -408,6 +405,116 @@ fn seed(store: &Store) -> Seeded {
             },
         )
         .expect("a reply");
+
+    // Where the review's understanding came from. Written here in the order a session
+    // writes it: the findings above exist already, because a criterion recorded as not
+    // met names one.
+    store
+        .put_review_sources(
+            review.id,
+            vec![
+                NewReviewSource {
+                    kind: SourceKind::Ticket,
+                    label: "ABC-231 · Retry webhook deliveries for 24 hours".to_string(),
+                    link: Some("https://linear.app/acme/issue/ABC-231".to_string()),
+                },
+                NewReviewSource {
+                    kind: SourceKind::Description,
+                    label: "The pull request description".to_string(),
+                    link: None,
+                },
+                NewReviewSource {
+                    kind: SourceKind::Comment,
+                    label: "2 earlier comments on the pull request".to_string(),
+                    link: Some("https://github.com/acme/portal/pull/412".to_string()),
+                },
+            ],
+        )
+        .expect("the sources");
+
+    store
+        .put_description_lint(
+            review.id,
+            vec![
+                NewDescriptionLintResult {
+                    label: "Description length".to_string(),
+                    status: DescriptionLintStatus::Pass,
+                    detail: Some("1,840 of 2,568 characters".to_string()),
+                },
+                NewDescriptionLintResult {
+                    label: "Template".to_string(),
+                    status: DescriptionLintStatus::Warn,
+                    detail: Some("4 of 5 headings present".to_string()),
+                },
+            ],
+        )
+        .expect("the description lint");
+
+    store
+        .put_acceptance_criteria(
+            review.id,
+            vec![
+                NewAcceptanceCriterion {
+                    text: "Failed deliveries are retried for up to 24 hours.".to_string(),
+                    status: CriterionStatus::Met,
+                    finding_seq: None,
+                    file: Some("jobs/DeliverWebhook.php".to_string()),
+                    line: Some(61),
+                    note: None,
+                },
+                NewAcceptanceCriterion {
+                    text: "A customer never processes the same event twice.".to_string(),
+                    status: CriterionStatus::NotMet,
+                    finding_seq: Some(1),
+                    file: None,
+                    line: None,
+                    note: None,
+                },
+                NewAcceptanceCriterion {
+                    text: "The customer can see which deliveries failed.".to_string(),
+                    status: CriterionStatus::NotInThisPr,
+                    finding_seq: None,
+                    file: None,
+                    line: None,
+                    note: Some("The description says it follows in ABC-240".to_string()),
+                },
+            ],
+        )
+        .expect("the criteria");
+
+    store
+        .put_file_changes(
+            review.id,
+            vec![
+                NewFileChange {
+                    path: "jobs/DeliverWebhook.php".to_string(),
+                    summary: "The job releases itself back to the queue on failure.".to_string(),
+                    lines_added: 96,
+                    lines_removed: 22,
+                    checked: FileCheck::ReadInFull,
+                    how_checked: Some("Read in full. Compared with 2 sibling senders.".to_string()),
+                },
+                NewFileChange {
+                    path: "migrations/add_attempts.php".to_string(),
+                    summary: "Adds an attempts column to deliveries.".to_string(),
+                    lines_added: 21,
+                    lines_removed: 0,
+                    checked: FileCheck::ReadInPart,
+                    how_checked: Some("Read the up migration.".to_string()),
+                },
+                NewFileChange {
+                    path: "resources/admin/**".to_string(),
+                    summary: "Not changed by this pull request.".to_string(),
+                    lines_added: 0,
+                    lines_removed: 0,
+                    checked: FileCheck::NotReviewed,
+                    how_checked: Some(
+                        "Not reviewed. The change does not touch the admin screens.".to_string(),
+                    ),
+                },
+            ],
+        )
+        .expect("the change map");
 
     store
         .put_draft(
@@ -898,6 +1005,27 @@ fn rule_document(store: &Store, rule: &Rule) -> Value {
     })
 }
 
+/// Layer 1's result on the pull request description, with the verdict derived from the
+/// results — which is the only place it exists, by design.
+fn description_lint_document(provenance: &ReviewProvenance) -> Value {
+    match provenance.description_lint_passes() {
+        None => Value::Null,
+        Some(passes) => json!({
+            "passes": passes,
+            "results": provenance
+                .description_lint
+                .iter()
+                .map(|result| json!({
+                    "position": result.position,
+                    "label": result.label,
+                    "status": result.status,
+                    "detail": result.detail,
+                }))
+                .collect::<Vec<_>>(),
+        }),
+    }
+}
+
 fn review_detail(store: &Store, review_id: i64) -> Value {
     let full = store.full_review(review_id).expect("the whole review");
     let mut document = Map::new();
@@ -934,9 +1062,98 @@ fn review_detail(store: &Store, review_id: i64) -> Value {
         "finding_dispositions".to_string(),
         disposition_counts(&full.findings),
     );
+    let provenance = store
+        .review_provenance(review_id)
+        .expect("where the review's understanding came from");
+
+    // Which record counts as this review's coverage. The server owns this derivation, and
+    // this is the store's own statement that both halves of it are answerable: the change
+    // map, and the sentence it displaces.
+    let source = if !provenance.files.is_empty() {
+        "files"
+    } else if full.review.not_checked.is_some() {
+        "sentence"
+    } else {
+        "none"
+    };
+
     document.insert(
         "not_checked".to_string(),
-        json!(full.review.not_checked.clone()),
+        match source {
+            "sentence" => json!(full.review.not_checked.clone()),
+            _ => Value::Null,
+        },
+    );
+    document.insert(
+        "sources".to_string(),
+        Value::Array(
+            provenance
+                .sources
+                .iter()
+                .map(|source| {
+                    json!({
+                        "position": source.position,
+                        "kind": source.kind,
+                        "label": source.label,
+                        "link": source.link,
+                    })
+                })
+                .collect(),
+        ),
+    );
+    document.insert(
+        "criteria".to_string(),
+        Value::Array(
+            provenance
+                .criteria
+                .iter()
+                .map(|criterion| {
+                    json!({
+                        "position": criterion.position,
+                        "text": criterion.text,
+                        "status": criterion.status,
+                        "finding_seq": criterion.finding_seq,
+                        "finding_key": criterion.finding_seq.map(|seq| format!("F{seq}")),
+                        "file": criterion.file,
+                        "line": criterion.line,
+                        "note": criterion.note,
+                    })
+                })
+                .collect(),
+        ),
+    );
+    document.insert(
+        "description_lint".to_string(),
+        description_lint_document(&provenance),
+    );
+    document.insert(
+        "coverage".to_string(),
+        json!({
+            "source": source,
+            "files": provenance
+                .files
+                .iter()
+                .map(|file| {
+                    let seqs = store
+                        .findings_on_path(review_id, &file.path)
+                        .expect("the findings on the file");
+                    json!({
+                        "position": file.position,
+                        "path": file.path,
+                        "summary": file.summary,
+                        "lines_added": file.lines_added,
+                        "lines_removed": file.lines_removed,
+                        "checked": file.checked,
+                        "how_checked": file.how_checked,
+                        "finding_seqs": seqs,
+                        "finding_keys": seqs
+                            .iter()
+                            .map(|seq| format!("F{seq}"))
+                            .collect::<Vec<_>>(),
+                    })
+                })
+                .collect::<Vec<_>>(),
+        }),
     );
     document.insert(
         "nit_ticket".to_string(),

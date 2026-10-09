@@ -25,6 +25,9 @@ pub fn now() -> Timestamp {
 /// A variant may carry its own documentation. That is not decoration: `WorkKind`'s four
 /// values are a published interface, and what an agent is supposed to *do* about each one
 /// belongs against the value rather than in a paragraph above the set.
+///
+/// Re-exported to the crate below, so a module that holds its own entity holds its own
+/// closed sets too and still gets the one definition of what a closed set is.
 macro_rules! string_enum {
     (
         $(#[$meta:meta])*
@@ -68,7 +71,10 @@ macro_rules! string_enum {
         impl std::str::FromStr for $name {
             type Err = StoreError;
 
-            fn from_str(text: &str) -> Result<Self, Self::Err> {
+            // Fully qualified, because this macro is used from modules that import the
+            // crate's own one-parameter `Result` alias, where a bare `Result<Self, _>`
+            // resolves to that and fails to compile.
+            fn from_str(text: &str) -> ::std::result::Result<Self, Self::Err> {
                 match text {
                     $($text => Ok($name::$variant),)+
                     other => Err(StoreError::InvalidValue {
@@ -97,6 +103,8 @@ macro_rules! string_enum {
         }
     };
 }
+
+pub(crate) use string_enum;
 
 string_enum! {
     /// How much a finding matters.
