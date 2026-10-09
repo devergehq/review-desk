@@ -65,6 +65,7 @@ fn a_brief_is_created_and_read_back() {
                 ),
                 options: Vec::new(),
                 provenance: Some("from the ticket and the code".to_string()),
+                ..Default::default()
             },
         )
         .expect("put brief");

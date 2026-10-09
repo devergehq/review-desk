@@ -14,6 +14,7 @@ mod outcome;
 mod review;
 mod rules;
 mod serve;
+mod work;
 
 use clap::{Parser, Subcommand};
 
@@ -82,6 +83,11 @@ enum Command {
     Harvest(harvest::HarvestArgs),
     /// Serve the JSON API and the dashboard on 127.0.0.1.
     Serve(serve::ServeArgs),
+    /// Ask what is waiting for an agent.
+    Work {
+        #[command(subcommand)]
+        command: work::WorkCommand,
+    },
 }
 
 /// Run whatever was asked for, and hand back what it has to say.
@@ -97,5 +103,6 @@ pub fn run(cli: &Cli) -> Result<Report> {
         Command::Rules { command } => rules::run(command),
         Command::Harvest(args) => harvest::run(args),
         Command::Serve(args) => serve::run(args, cli.json),
+        Command::Work { command } => work::run(command),
     }
 }

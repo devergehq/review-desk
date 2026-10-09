@@ -680,3 +680,87 @@ fn an_unknown_finding_is_not_found() {
     assert_eq!(answer.status, 404);
     assert_eq!(answer.error_code(), "not_found");
 }
+
+#[test]
+fn a_brief_needing_no_confirmation_is_not_in_the_developers_queue() {
+    // **DEV-864's second part, from the API's side.** `confirmation_required: false` is
+    // the one place an agent decides a developer step was unnecessary, and the Inbox's
+    // "Confirm the problem" group exists to ask for exactly that act — so a brief
+    // recorded as needing no confirmation must not be in it. The brief is still served on
+    // the One review screen, with the two fields that let the screen say which state it
+    // is in.
+    let harness = common::start_with_no_github();
+
+    let asked = harness
+        .store
+        .open_review("acme/portal", 412, "3f9c2ab")
+        .expect("a review")
+        .review
+        .id;
+    harness
+        .store
+        .put_brief(
+            asked,
+            review_desk_store::NewBrief {
+                problem: "A large change nobody has read yet.".to_string(),
+                ..Default::default()
+            },
+        )
+        .expect("a brief requiring confirmation");
+
+    let waived = harness
+        .store
+        .open_review("acme/portal", 413, "c0ffee1")
+        .expect("another review")
+        .review
+        .id;
+    harness
+        .store
+        .put_brief(
+            waived,
+            review_desk_store::NewBrief {
+                problem: "A log line says null where it means not measured.".to_string(),
+                confirmation_required: false,
+                confirmation_not_required_because: Some(
+                    "38 changed lines, under this caller's 200-line threshold".to_string(),
+                ),
+                ..Default::default()
+            },
+        )
+        .expect("a brief needing no confirmation");
+
+    let inbox = harness.api("GET", "/inbox", None);
+    assert_eq!(inbox.status, 200, "{}", inbox.text());
+
+    let queued: Vec<i64> = inbox.json()["briefs_to_confirm"]
+        .as_array()
+        .expect("the group")
+        .iter()
+        .map(|item| item["review_id"].as_i64().expect("a review id"))
+        .collect();
+    assert_eq!(
+        queued,
+        vec![asked],
+        "only the brief that is actually waiting on the developer: {}",
+        inbox.text()
+    );
+
+    // And the One review screen can tell the two states apart, which is what the screen
+    // needs in order to show a brief that is finished with and that nobody signed.
+    let shown = harness.api("GET", &format!("/reviews/{waived}"), None);
+    assert_eq!(shown.status, 200, "{}", shown.text());
+    let brief = &shown.json()["brief"];
+    assert_eq!(brief["confirmed"], false, "nobody confirmed it");
+    assert_eq!(brief["confirmation_required"], false);
+    assert_eq!(
+        brief["confirmation_not_required_because"],
+        "38 changed lines, under this caller's 200-line threshold"
+    );
+
+    let required = harness.api("GET", &format!("/reviews/{asked}"), None);
+    assert_eq!(required.json()["brief"]["confirmation_required"], true);
+    assert_eq!(
+        required.json()["brief"]["confirmation_not_required_because"],
+        serde_json::Value::Null
+    );
+}

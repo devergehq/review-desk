@@ -40,7 +40,7 @@ pub use crate::model::{
     NitTicket, NitTicketStatus, OpenedReview, Outcome, OutcomeKind, PrState, RepoSummary, Review,
     ReviewAtLayer, ReviewEvent, ReviewFacts, ReviewLayer, ReviewLayerName, ReviewLayerState,
     ReviewLinks, Rule, RuleCounts, RuleException, RuleScope, RuleStage, RulesSummary, Severity,
-    Timestamp, ACTIVE_RULES_CAP,
+    SignOff, Timestamp, WorkFilter, WorkItem, WorkKind, ACTIVE_RULES_CAP,
 };
 pub use crate::path::{default_db_path, resolve_db_path, DB_ENV_VAR};
 

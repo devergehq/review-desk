@@ -6,13 +6,33 @@
 //! `posted` through [`Store::post_draft`], and nothing else can set either. An agent
 //! can therefore write a draft and read its status, and cannot sign it off, without
 //! that resting on the agent's good manners.
+//!
+//! **Each of the three transitions below also writes its layer row, in the same
+//! transaction.** Approving finishes layer 6, sending back puts it in progress carrying
+//! the developer's note, and marking a draft posted leaves layer 7 `pending` — waiting
+//! for a harvest that has not happened — rather than `done`. Until DEV-864 none of them
+//! wrote a layer at all, so the trail went stale the moment the developer acted.
 
 use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior};
 
 use crate::entities::only_the_developer;
 use crate::error::{Result, StoreError};
-use crate::model::{now, Actor, Draft, DraftLint, DraftStatus, NewDraft, ReviewEvent, Timestamp};
+use crate::model::{
+    now, Actor, Draft, DraftLint, DraftStatus, NewDraft, ReviewEvent, ReviewLayerName,
+    ReviewLayerState, Timestamp,
+};
 use crate::{is_foreign_key_violation, Store};
+
+/// What layer 6 says once the developer has approved the draft.
+///
+/// The event chosen is on the draft, not here. A layer's detail is the short phrase after
+/// its name, and "who settled this layer" is what the trail is short of.
+pub(crate) const APPROVED_DETAIL: &str = "approved by the developer";
+
+/// What layer 7 says once the session has posted the review.
+///
+/// Layer 7 is the harvest, and posting is its precondition rather than its completion.
+pub(crate) const AWAITING_HARVEST_DETAIL: &str = "posted, waiting for the harvest";
 
 const COLUMNS: &str = "review_id, body, status, event, approved_at, approved_by, \
                        sent_back_note, sent_back_at, posted_at, lint_passes, \
@@ -145,12 +165,15 @@ impl Store {
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
         let draft = self.get_draft(review_id)?;
 
-        match draft.status {
-            DraftStatus::Ready => {}
-            // The same approval twice is one approval. A *different* event is not: it
-            // would change what gets posted, and the first choice has already been
-            // reported as made.
-            DraftStatus::Approved if draft.event == Some(event) => return Ok(draft),
+        // The same approval twice is one approval, so the second one writes no draft
+        // columns — but it still writes layer 6, for the reason `confirm_brief` gives:
+        // a draft approved before this behaviour existed has a trail that says layer 6
+        // is waiting, and approving again is the only call that can put it right. A
+        // *different* event is not the same approval: it would change what gets posted,
+        // and the first choice has already been reported as made.
+        let already_approved = match draft.status {
+            DraftStatus::Ready => false,
+            DraftStatus::Approved if draft.event == Some(event) => true,
             found => {
                 return Err(StoreError::DraftStatus {
                     review_id,
@@ -158,17 +181,26 @@ impl Store {
                     wanted: "only a draft that is ready can be approved",
                 })
             }
+        };
+
+        if !already_approved {
+            self.conn.execute(
+                "UPDATE drafts SET
+                     status      = ?2,
+                     event       = ?3,
+                     approved_at = ?4,
+                     approved_by = ?5,
+                     updated_at  = ?4
+                 WHERE review_id = ?1",
+                params![review_id, DraftStatus::Approved, event, now(), by],
+            )?;
         }
 
-        self.conn.execute(
-            "UPDATE drafts SET
-                 status      = ?2,
-                 event       = ?3,
-                 approved_at = ?4,
-                 approved_by = ?5,
-                 updated_at  = ?4
-             WHERE review_id = ?1",
-            params![review_id, DraftStatus::Approved, event, now(), by],
+        self.set_review_layer(
+            review_id,
+            ReviewLayerName::Draft.number(),
+            ReviewLayerState::Done,
+            Some(APPROVED_DETAIL),
         )?;
 
         tx.commit()?;
@@ -192,11 +224,9 @@ impl Store {
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
         let draft = self.get_draft(review_id)?;
 
-        match draft.status {
-            DraftStatus::Ready => {}
-            DraftStatus::SentBack if draft.sent_back_note.as_deref() == Some(note) => {
-                return Ok(draft)
-            }
+        let already_sent_back = match draft.status {
+            DraftStatus::Ready => false,
+            DraftStatus::SentBack if draft.sent_back_note.as_deref() == Some(note) => true,
             found => {
                 return Err(StoreError::DraftStatus {
                     review_id,
@@ -204,17 +234,31 @@ impl Store {
                     wanted: "only a draft that is ready can be sent back",
                 })
             }
+        };
+
+        if !already_sent_back {
+            let at = now();
+            self.conn.execute(
+                "UPDATE drafts SET
+                     status         = ?2,
+                     sent_back_note = ?3,
+                     sent_back_at   = ?4,
+                     updated_at     = ?4
+                 WHERE review_id = ?1",
+                params![review_id, DraftStatus::SentBack, note, at],
+            )?;
         }
 
-        let at = now();
-        self.conn.execute(
-            "UPDATE drafts SET
-                 status         = ?2,
-                 sent_back_note = ?3,
-                 sent_back_at   = ?4,
-                 updated_at     = ?4
-             WHERE review_id = ?1",
-            params![review_id, DraftStatus::SentBack, note, at],
+        // **Back in progress, carrying the note.** Not `waiting_on_you`: the developer
+        // has acted and it is the session's turn again. The note is the detail verbatim
+        // rather than a count or a phrase, because what the developer asked for is the
+        // only thing that makes "layer 6, in progress" mean anything to whoever reads
+        // the trail next.
+        self.set_review_layer(
+            review_id,
+            ReviewLayerName::Draft.number(),
+            ReviewLayerState::Running,
+            Some(note),
         )?;
 
         tx.commit()?;
@@ -245,10 +289,10 @@ impl Store {
         let draft = self.get_draft(review_id)?;
         let review = self.get_review(review_id)?;
 
-        match draft.status {
-            DraftStatus::Approved => {}
+        let already_posted = match draft.status {
+            DraftStatus::Approved => false,
             DraftStatus::Posted if review.github_review_id.as_deref() == Some(github_review_id) => {
-                return Ok(draft)
+                true
             }
             found => {
                 return Err(StoreError::DraftStatus {
@@ -257,17 +301,31 @@ impl Store {
                     wanted: "only an approved draft can be marked posted",
                 })
             }
+        };
+
+        if !already_posted {
+            let at = now();
+            self.conn.execute(
+                "UPDATE drafts SET status = ?2, posted_at = ?3, updated_at = ?3
+                 WHERE review_id = ?1",
+                params![review_id, DraftStatus::Posted, at],
+            )?;
+            self.conn.execute(
+                "UPDATE reviews SET github_review_id = ?2 WHERE id = ?1",
+                params![review_id, github_review_id],
+            )?;
         }
 
-        let at = now();
-        self.conn.execute(
-            "UPDATE drafts SET status = ?2, posted_at = ?3, updated_at = ?3
-             WHERE review_id = ?1",
-            params![review_id, DraftStatus::Posted, at],
-        )?;
-        self.conn.execute(
-            "UPDATE reviews SET github_review_id = ?2 WHERE id = ?1",
-            params![review_id, github_review_id],
+        // **Layer 7 is `pending`, not `done`.** Posting is what makes a harvest possible;
+        // it is not the harvest. `done` here would say the outcomes had been read back
+        // from GitHub, which is the one thing nobody has done yet — and layer 7 is the
+        // whole feedback loop, so a layer trail that claimed it was finished would make
+        // the record lie about the thing the project exists for.
+        self.set_review_layer(
+            review_id,
+            ReviewLayerName::Harvest.number(),
+            ReviewLayerState::Pending,
+            Some(AWAITING_HARVEST_DETAIL),
         )?;
 
         tx.commit()?;

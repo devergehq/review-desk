@@ -816,7 +816,8 @@ components:
     Brief:
       type: object
       additionalProperties: false
-      required: [review_id, problem, options, confirmed, updated_at]
+      required:
+        [review_id, problem, options, confirmed, confirmation_required, updated_at]
       description: What the review understood before it read the diff. One per review.
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
@@ -840,6 +841,27 @@ components:
         confirmed_at:
           type: [string, 'null']
           format: date-time
+        confirmation_required:
+          type: boolean
+          description: |
+            Whether the developer has to confirm this brief at all. True unless the agent
+            that wrote it recorded otherwise, which it may do only on the first write — a
+            brief already written as requiring confirmation cannot be rewritten as needing
+            none.
+
+            **False is the one place an agent decides a developer step was unnecessary.**
+            The threshold behind that decision is the caller's: a brief is confirmed on
+            pull requests changing more than 200 lines (Patrick, 9 October 2026), and
+            Review Desk holds neither the number nor the measurement. A brief needing no
+            confirmation is absent from the Inbox's `briefs_to_confirm`, and the One
+            review screen shows it with no confirm button. The developer can still read
+            it and can still send the draft back.
+        confirmation_not_required_because:
+          type: [string, 'null']
+          description: |
+            Why the caller said no confirmation was needed, in its own words. Non-null
+            exactly when `confirmation_required` is false, and the only record of why a
+            developer step was skipped. It is also layer 2's detail.
         updated_at: { type: string, format: date-time }
 
     Finding:

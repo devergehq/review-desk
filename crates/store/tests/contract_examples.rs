@@ -255,6 +255,7 @@ fn seed(store: &Store) -> Seeded {
                     })
                     .collect(),
                 option_map: None,
+                ..Default::default()
             },
         )
         .expect("a brief");
@@ -582,6 +583,8 @@ fn brief_document(brief: &Brief) -> Value {
         // Derived: true exactly when there is a confirmation time.
         "confirmed": brief.confirmed_at.is_some(),
         "confirmed_at": brief.confirmed_at,
+        "confirmation_required": brief.confirmation_required,
+        "confirmation_not_required_because": brief.confirmation_not_required_because,
         "updated_at": brief.updated_at,
     })
 }

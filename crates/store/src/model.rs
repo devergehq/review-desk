@@ -21,17 +21,21 @@ pub fn now() -> Timestamp {
 
 /// Defines a closed set of values stored as text, with parsing, display, the full list
 /// of valid values, and SQLite conversion.
+///
+/// A variant may carry its own documentation. That is not decoration: `WorkKind`'s four
+/// values are a published interface, and what an agent is supposed to *do* about each one
+/// belongs against the value rather than in a paragraph above the set.
 macro_rules! string_enum {
     (
         $(#[$meta:meta])*
         $name:ident as $field:literal {
-            $($variant:ident => $text:literal),+ $(,)?
+            $($(#[$variant_meta:meta])* $variant:ident => $text:literal),+ $(,)?
         }
     ) => {
         $(#[$meta])*
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
         pub enum $name {
-            $(#[serde(rename = $text)] $variant),+
+            $($(#[$variant_meta])* #[serde(rename = $text)] $variant),+
         }
 
         impl $name {
@@ -209,6 +213,51 @@ string_enum! {
         NotRequested => "none",
         Requested => "requested",
         Filed => "filed",
+    }
+}
+
+string_enum! {
+    /// What a review needs an agent to do next.
+    ///
+    /// **This is a published interface.** The Locus dispatcher polls `work list` and is
+    /// written against these four strings, so they are named here once and nothing
+    /// formats one by hand.
+    ///
+    /// The four are exhaustive and mutually exclusive by construction: [`WorkKind`] is
+    /// decided by one total function over the draft's status and layer 2, so a review
+    /// has at most one. A review waiting on the developer has none, which is the whole
+    /// point — this is the list of what an *agent* is to do.
+    WorkKind as "kind" {
+        /// No brief has been written and no draft exists. An agent should start
+        /// reviewing. This is the state `POST /reviews` leaves a review in when the
+        /// developer pastes a pull request link into the dashboard.
+        ReviewRequested => "review_requested",
+        /// Layer 2 is settled — the developer confirmed the brief, or it was recorded as
+        /// needing no confirmation — and no draft is waiting on the developer. An agent
+        /// should carry on past layer 2.
+        BriefConfirmed => "brief_confirmed",
+        /// The developer sent the draft back. An agent should revise it, reading the
+        /// note.
+        DraftSentBack => "draft_sent_back",
+        /// The developer approved the draft and nothing has reported it posted. An agent
+        /// should post it and then run `draft posted`.
+        DraftApproved => "draft_approved",
+    }
+}
+
+string_enum! {
+    /// How layer 2 came to be settled.
+    ///
+    /// **`Waived` exists so that nothing downstream can mistake one for the other.** A
+    /// brief recorded as needing no confirmation produces the same `brief_confirmed` item
+    /// as one the developer confirmed, and without this field a dispatcher's ledger, and
+    /// every log after it, would say the developer confirmed a review nobody looked at.
+    /// The reason the caller gave is on the brief.
+    SignOff as "sign_off" {
+        /// The developer confirmed the brief.
+        Developer => "developer",
+        /// An agent recorded the brief as needing no confirmation, and said why.
+        Waived => "waived",
     }
 }
 
@@ -437,6 +486,18 @@ pub struct Brief {
     pub confirmed_at: Option<Timestamp>,
     /// Who confirmed it. Only the developer signs off.
     pub confirmed_by: Option<Actor>,
+    /// Whether the developer has to confirm this brief at all.
+    ///
+    /// True for every brief unless the caller said otherwise when it was written. It is
+    /// the one place an agent decides a developer step is unnecessary, which is why
+    /// [`crate::Store::put_brief`] refuses to move it from true to false.
+    pub confirmation_required: bool,
+    /// Why the caller said no confirmation was needed, in the caller's own words.
+    ///
+    /// `Some` exactly when `confirmation_required` is false. The threshold that decided
+    /// it is the caller's — Review Desk does not hold one — so the reason is the only
+    /// record of why a developer step was skipped.
+    pub confirmation_not_required_because: Option<String>,
     pub updated_at: Timestamp,
 }
 
@@ -445,6 +506,17 @@ impl Brief {
     pub fn is_confirmed(&self) -> bool {
         self.confirmed_at.is_some()
     }
+
+    /// Whether layer 2 is finished with: confirmed, or recorded as needing no
+    /// confirmation.
+    ///
+    /// **Not the same question as [`Brief::is_confirmed`], and the difference is the
+    /// point.** A screen asks whether the developer said yes. A review session, and the
+    /// dispatcher reading `work list`, ask whether anything is still waiting at layer 2 —
+    /// and a brief that needed no confirmation never was.
+    pub fn is_settled(&self) -> bool {
+        self.is_confirmed() || !self.confirmation_required
+    }
 }
 
 /// A brief to store, replacing any brief already held for the review.
@@ -452,7 +524,7 @@ impl Brief {
 /// Unknown fields are refused. Every field but `problem` is optional, so a misspelled
 /// `option_map` would otherwise deserialise to `None` and the record would quietly lose
 /// what the review actually wrote.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NewBrief {
     pub problem: String,
@@ -468,6 +540,46 @@ pub struct NewBrief {
     pub approach_verdict: Option<String>,
     #[serde(default)]
     pub provenance: Option<String>,
+    /// Whether the developer has to confirm this brief. **Defaults to true**, and a
+    /// brief already written as requiring confirmation cannot be rewritten as not
+    /// requiring it.
+    #[serde(default = "confirmation_is_required")]
+    pub confirmation_required: bool,
+    /// Why the caller says no confirmation is needed. Required when
+    /// `confirmation_required` is false, and refused when it is true.
+    #[serde(default)]
+    pub confirmation_not_required_because: Option<String>,
+}
+
+/// What `confirmation_required` is when a caller does not mention it.
+///
+/// A function rather than serde's `bool` default, which is `false`. A brief that silently
+/// needed no confirmation because the field was misspelled — or because a caller on an
+/// older version never sent it — would skip the developer's one act at layer 2, which is
+/// the opposite of the safe answer.
+fn confirmation_is_required() -> bool {
+    true
+}
+
+/// **Hand-written, because `derive(Default)` would give `confirmation_required: false`.**
+///
+/// Nineteen call sites in this crate's tests build a `NewBrief` with
+/// `..Default::default()`, and a derived default would quietly make every one of them a
+/// brief needing no confirmation. The field whose whole purpose is to be hard to set must
+/// not be settable by leaving something out.
+impl Default for NewBrief {
+    fn default() -> Self {
+        NewBrief {
+            problem: String::new(),
+            diagram: None,
+            option_map: None,
+            options: Vec::new(),
+            approach_verdict: None,
+            provenance: None,
+            confirmation_required: true,
+            confirmation_not_required_because: None,
+        }
+    }
 }
 
 /// One thing the review found.
@@ -867,6 +979,39 @@ pub struct RulesSummary {
     /// Pull requests where a finding was raised a second time — a review that went in
     /// a circle.
     pub raised_twice_on_one_pr: Option<i64>,
+}
+
+/// One thing a review needs an agent to do.
+///
+/// The review is carried whole rather than flattened, so the command line decides which
+/// of its fields reach the wire and the store does not hold a second opinion about the
+/// shape of its own records.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkItem {
+    pub kind: WorkKind,
+    pub review: Review,
+    /// How layer 2 was settled, or `None` while it is not.
+    pub sign_off: Option<SignOff>,
+    /// When the review entered this state: its creation for `review_requested`, the
+    /// confirmation or the brief's write for `brief_confirmed`, and the draft's
+    /// `sent_back_at` or `approved_at` for the other two.
+    ///
+    /// **`(kind, review.id, entered_at)` is the item's identity**, which is what a caller
+    /// keyed on to avoid acting twice. It moves when a review re-enters a state: a draft
+    /// sent back, revised and sent back again is `ready` in between, so the second
+    /// send-back rewrites `sent_back_at` and the item is a new one.
+    pub entered_at: Timestamp,
+    /// The developer's instruction, on `draft_sent_back` and nothing else.
+    pub note: Option<String>,
+}
+
+/// Which reviews a caller is asking about.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct WorkFilter {
+    /// One review, for a session watching its own.
+    pub review_id: Option<i64>,
+    /// One repository, for a dispatcher that serves one.
+    pub repo: Option<String>,
 }
 
 /// How many rules one repository may hold in force before the set stops being one

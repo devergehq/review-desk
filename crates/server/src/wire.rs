@@ -119,6 +119,12 @@ pub fn brief(brief: &Brief, options: &[BriefOption]) -> Value {
         "provenance": brief.provenance,
         "confirmed": brief.is_confirmed(),
         "confirmed_at": rfc3339_or_null(brief.confirmed_at),
+        // Two fields rather than one, because "the developer has not confirmed it" and
+        // "nobody has to" are different states and the screen renders them differently.
+        // `confirmed` false with `confirmation_required` false is a brief that is
+        // finished with and that nobody signed.
+        "confirmation_required": brief.confirmation_required,
+        "confirmation_not_required_because": brief.confirmation_not_required_because,
         "updated_at": rfc3339(brief.updated_at),
     })
 }
