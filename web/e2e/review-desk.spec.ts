@@ -163,7 +163,7 @@ test.describe('the whole path, on a seeded database', () => {
      * answer and worth asserting rather than assuming. This session ran ahead and wrote
      * its draft before the confirmation, so the draft is `ready` — waiting on the
      * developer to approve it — and a review waiting on the developer is not an agent's
-     * work whatever layer 2 now says. `brief_confirmed` is for a review with no draft
+     * work whatever layer 2 now says. `brief_settled` is for a review with no draft
      * yet, which is the waived one further down.
      */
     expect(workList().some(item => item.review_id === reviewId)).toBe(false)
@@ -427,7 +427,7 @@ test.describe('the whole path, on a seeded database', () => {
      * on past layer 2, and the item says the sign-off was waived rather than given.
      */
     const waiting = workList().find(item => item.review_id === waivedReviewId)
-    expect(waiting?.kind).toBe('brief_confirmed')
+    expect(waiting?.kind).toBe('brief_settled')
     expect(waiting?.sign_off).toBe('waived')
   })
 

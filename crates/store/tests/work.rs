@@ -140,7 +140,7 @@ fn a_confirmed_brief_tells_an_agent_to_carry_on_and_says_who_settled_it() {
         .expect("the developer confirms it");
 
     let item = item_for(&store, review.id).expect("an item");
-    assert_eq!(item.kind, WorkKind::BriefConfirmed);
+    assert_eq!(item.kind, WorkKind::BriefSettled);
     assert_eq!(item.sign_off, Some(review_desk_store::SignOff::Developer));
     assert_eq!(item.entered_at, confirmed.confirmed_at.expect("a time"));
 }
@@ -164,7 +164,7 @@ fn a_waived_brief_is_marked_waived_rather_than_passing_as_confirmed() {
         .expect("a waived brief");
 
     let item = item_for(&store, review.id).expect("an item");
-    assert_eq!(item.kind, WorkKind::BriefConfirmed);
+    assert_eq!(item.kind, WorkKind::BriefSettled);
     assert_eq!(
         item.sign_off,
         Some(review_desk_store::SignOff::Waived),
@@ -315,7 +315,7 @@ fn a_review_a_session_abandoned_is_still_listed() {
         .expect("a drafting draft");
     assert_eq!(
         kind_for(&store, unfinished_draft.id),
-        Some(WorkKind::BriefConfirmed),
+        Some(WorkKind::BriefSettled),
         "a draft nobody finished has not been handed to the developer"
     );
 
@@ -336,7 +336,7 @@ fn a_review_a_session_abandoned_is_still_listed() {
         .expect("layer 3");
     assert_eq!(
         kind_for(&store, skipped.id),
-        Some(WorkKind::BriefConfirmed),
+        Some(WorkKind::BriefSettled),
         "a layer deliberately skipped must not suppress the review for ever"
     );
 }
@@ -492,10 +492,7 @@ fn every_reachable_state_has_one_kind_or_none() {
     store
         .confirm_brief(review.id, Actor::Developer)
         .expect("confirmed");
-    seen(
-        Some(WorkKind::BriefConfirmed),
-        "confirmed, and no draft yet",
-    );
+    seen(Some(WorkKind::BriefSettled), "confirmed, and no draft yet");
 
     store
         .put_draft(review.id, NewDraft::ready("the body"))

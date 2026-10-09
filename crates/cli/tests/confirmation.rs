@@ -89,7 +89,7 @@ fn a_brief_may_be_recorded_as_needing_no_confirmation_with_a_reason() {
 
     // And an agent may carry on past it.
     let items = desk.json(&["work", "list"]);
-    assert_eq!(items["work"][0]["kind"], "brief_confirmed");
+    assert_eq!(items["work"][0]["kind"], "brief_settled");
     assert_eq!(
         items["work"][0]["sign_off"], "waived",
         "nobody confirmed it, and nothing downstream may be allowed to think they did"

@@ -237,7 +237,7 @@ string_enum! {
         /// Layer 2 is settled — the developer confirmed the brief, or it was recorded as
         /// needing no confirmation — and no draft is waiting on the developer. An agent
         /// should carry on past layer 2.
-        BriefConfirmed => "brief_confirmed",
+        BriefSettled => "brief_settled",
         /// The developer sent the draft back. An agent should revise it, reading the
         /// note.
         DraftSentBack => "draft_sent_back",
@@ -251,7 +251,7 @@ string_enum! {
     /// How layer 2 came to be settled.
     ///
     /// **`Waived` exists so that nothing downstream can mistake one for the other.** A
-    /// brief recorded as needing no confirmation produces the same `brief_confirmed` item
+    /// brief recorded as needing no confirmation produces the same `brief_settled` item
     /// as one the developer confirmed, and without this field a dispatcher's ledger, and
     /// every log after it, would say the developer confirmed a review nobody looked at.
     /// The reason the caller gave is on the brief.
@@ -995,7 +995,7 @@ pub struct WorkItem {
     /// How layer 2 was settled, or `None` while it is not.
     pub sign_off: Option<SignOff>,
     /// When the review entered this state: its creation for `review_requested`, the
-    /// confirmation or the brief's write for `brief_confirmed`, and the draft's
+    /// confirmation or the brief's write for `brief_settled`, and the draft's
     /// `sent_back_at` or `approved_at` for the other two.
     ///
     /// **`(kind, review.id, entered_at)` is the item's identity**, which is what a caller

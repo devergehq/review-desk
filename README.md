@@ -328,9 +328,14 @@ contradictory instructions.
 | Kind | Fires when | The agent should |
 | -- | -- | -- |
 | `review_requested` | No brief has been written, and no draft is waiting on the developer | Start reviewing |
-| `brief_confirmed` | Layer 2 is settled — the developer confirmed the brief, or it was recorded as needing none — and no draft is waiting on the developer | Carry on past layer 2 |
+| `brief_settled` | Layer 2 is settled — the developer confirmed the brief, or it was recorded as needing none — and no draft is waiting on the developer | Carry on past layer 2 |
 | `draft_sent_back` | The developer sent the draft back | Revise it, reading `note` |
 | `draft_approved` | The developer approved it and nothing has reported it posted | Post it, then `draft posted` |
+
+**`brief_settled`, not `brief_confirmed`.** It fires for a brief the developer confirmed
+*and* for one recorded as needing no confirmation, because an agent's next move is the same
+either way — and a kind named for a confirmation would have every ledger and log downstream
+record an act that, half the time, nobody performed. Which it was is `sign_off`.
 
 **A review waiting on the developer is absent.** This is the list of what an *agent* is to
 do; the dashboard's inbox is the list of what the developer is to do. A brief written and
@@ -360,7 +365,7 @@ two polls of an unchanged record would make a caller's progress look like churn.
       "note": null
     },
     {
-      "kind": "brief_confirmed",
+      "kind": "brief_settled",
       "review_id": 4,
       "repo": "acme/billing",
       "pr": 77,

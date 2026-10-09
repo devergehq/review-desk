@@ -20,7 +20,7 @@
 //! # Why it is level-triggered
 //!
 //! An earlier draft asked whether anything had *started*: `review_requested` wanted no
-//! layer past `pending`, `brief_confirmed` wanted layers 3 to 7 untouched. That reads
+//! layer past `pending`, `brief_settled` wanted layers 3 to 7 untouched. That reads
 //! naturally and is wrong, because the agent's own first write falsifies it. A session
 //! dispatched for `review_requested` that wrote layer 1 and then died matched no kind
 //! afterwards and was invisible for ever.
@@ -212,7 +212,7 @@ fn decide(candidate: Candidate) -> Option<WorkItem> {
         // Layer 2 is finished with, by a confirmation or by a waiver, and no draft is
         // waiting on the developer. An agent carries on.
         Some(brief) => match brief.settled_at() {
-            Some(settled_at) => item(WorkKind::BriefConfirmed, settled_at, None),
+            Some(settled_at) => item(WorkKind::BriefSettled, settled_at, None),
             // Written and not settled: the developer is being asked, and nothing an agent
             // does should pre-empt that.
             None => None,

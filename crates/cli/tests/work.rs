@@ -194,7 +194,7 @@ fn each_of_the_four_kinds_comes_back_from_a_seeded_database() {
         kinds,
         vec![
             ("review_requested", id(&requested)),
-            ("brief_confirmed", id(&confirmed)),
+            ("brief_settled", id(&confirmed)),
             ("draft_sent_back", id(&sent_back)),
             ("draft_approved", id(&approved)),
         ],

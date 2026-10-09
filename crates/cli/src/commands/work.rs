@@ -28,7 +28,7 @@ pub enum WorkCommand {
     /// Four kinds, and a review has at most one of them:
     ///
     /// * `review_requested` — no brief has been written. Start reviewing.
-    /// * `brief_confirmed` — layer 2 is settled, by the developer's confirmation or by a
+    /// * `brief_settled` — layer 2 is settled, by the developer's confirmation or by a
     ///   brief recorded as needing none. Carry on past layer 2.
     /// * `draft_sent_back` — the developer sent the draft back. Revise it, reading
     ///   `note`.
