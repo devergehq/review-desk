@@ -32,7 +32,24 @@ export default defineConfig({
   retries: 0,
   forbidOnly: !!process.env.CI,
   timeout: 60_000,
-  expect: { timeout: 10_000 },
+
+  /*
+   * **Thirty seconds, and the ten it replaced is why.**
+   *
+   * Two CI runs failed with `#__nuxt` empty — the Vue app had not mounted — while every
+   * blocking asset had answered 200. What had not answered were the two the generated
+   * index loads as `<link rel="prefetch">`, one of which is the data layer the app shell
+   * imports. Chrome runs a prefetch at the lowest priority and in no hurry, and the mount
+   * waits on the same URL; on a runner four times slower than this machine, that race can
+   * outlast ten seconds.
+   *
+   * It is calibration rather than suppression: the assertion is still that the element
+   * appears, the test budget is still 60s, and `retries` is still 0 — a run that passes
+   * only on the second attempt is not a pass. The coupling itself is the better fix and is
+   * written up in the pull request; it is a change to how the bundle is split, which is a
+   * different kind of change from this one.
+   */
+  expect: { timeout: 30_000 },
 
   reporter: process.env.CI ? [['github'], ['list']] : [['list']],
 
