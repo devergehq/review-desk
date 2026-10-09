@@ -32,7 +32,8 @@ serde_yaml_ng last released 2024-05-26, 200 days older than this one, and serde_
 0.0.x with contested provenance. yaml-rust2 and saphyr are current and popular but are \
 parsers with no serde integration, so moving to one means hand-writing the conversion to \
 serde_json::Value - not a small change for a test. 5.98M recent downloads. Revisit when a \
-maintained serde-integrated YAML crate exists, or drop the test's YAML path entirely.\
+maintained serde-integrated YAML crate exists, or drop the test's YAML path entirely. \
+Decided by Patrick on 9 October 2026.\
 """
 decided_by = "Patrick"
 look_again = 2027-04-09
@@ -46,7 +47,8 @@ Finished, not abandoned, and first-party. It is the ajv project's own companion 
 ajv 8, which contract/validate-examples.mjs needs. 140M downloads a week against ajv's \
 391M, so better than one ajv user in three installs it. Not deprecated. It is CI-only: it \
 validates the contract's examples and ships in nothing. There is no maintained \
-alternative to move to, because there is nothing else that does this for ajv 8.\
+alternative to move to, because there is nothing else that does this for ajv 8. \
+Decided by Patrick on 9 October 2026.\
 """
 decided_by = "Patrick"
 look_again = 2027-10-08
@@ -55,10 +57,28 @@ look_again = 2027-10-08
 #
 # All seven are in `web/`, all seven are transitive, and none can be fixed from a direct
 # dependency: `nuxt` and `mermaid` are both already at their newest published versions, so
-# there is no in-range update that moves them. They are build-time tooling - the Nuxt dev
-# server's TLS helper, Nuxt devtools' git client, a glob matcher, and mermaid's maths
-# renderer. The dashboard ships as static files served by a Rust binary on 127.0.0.1;
-# `simple-git` and `node-forge` are not in it and never run in the product.
+# there is no in-range update that moves them.
+#
+# **Six of the seven are build-time only, and that is measured rather than asserted.** An
+# earlier version of this comment called all seven "build-time tooling", which was wrong,
+# and the wrong half was the one that mattered. `web/.output/public` was built from the
+# committed lockfile with `pnpm run generate` - 6.3 MB, 189 files, exactly what the Rust
+# binary embeds - and searched for each package by its own license banners, error strings
+# and API symbols rather than by its name, because `braces` and `katex` both occur as
+# ordinary English:
+#
+#   simple-git                absent
+#   @simple-git/argv-parser   absent
+#   node-forge                absent
+#   braces                    absent - the one hit on the word is mermaid's own UI label,
+#                             `shortName: "braces"`; micromatch, expand-brackets and
+#                             fill-range are all absent, as is every braces API symbol
+#   katex                     PRESENT - _nuxt/ZlcWpGUi.js, 258,685 bytes
+#
+# So `katex` ships. `MermaidFigure.vue` awaits `import('mermaid')` on mount and the mermaid
+# chunk in turn awaits `import('./ZlcWpGUi.js')`, so katex is in the output and is fetched
+# when a diagram contains maths. Its entry below is the one whose justification has to stand
+# on what the code does, not on the package being absent - see the entry.
 #
 # The look-again date is short on purpose. These clear when upstream Nuxt and mermaid bump
 # their own trees, which the weekly Dependabot pull request will bring in. If they are
@@ -72,7 +92,8 @@ reason = """
 nuxt > @nuxt/devtools > simple-git > @simple-git/argv-parser. Needs >=2.0.1; no in-range \
 update reaches it because nuxt is already at its newest release. Devtools runs only under \
 `nuxt dev` on a developer's own machine and is not in the static build the binary serves, \
-so the unsafe-editor path is not reachable in the product.\
+so the unsafe-editor path is not reachable in the product. \
+Verified absent from the static build. Decided by Patrick on 9 October 2026.\
 """
 decided_by = "Patrick"
 look_again = 2026-12-11
@@ -84,7 +105,8 @@ ecosystem = "npm"
 reason = """
 nuxt > @nuxt/devtools > simple-git. Needs >=4.0.1, a major bump of a package two levels \
 inside the Nuxt tree, so only upstream can take it. Devtools is dev-only and absent from \
-the static build; nothing in the shipped binary invokes git.\
+the static build; nothing in the shipped binary invokes git. \
+Verified absent from the static build. Decided by Patrick on 9 October 2026.\
 """
 decided_by = "Patrick"
 look_again = 2026-12-11
@@ -96,7 +118,8 @@ ecosystem = "npm"
 reason = """
 nuxt > @nuxt/devtools > simple-git, the residual of CVE-2026-28291. Needs >=3.36.1, and \
 the same reasoning applies as for the other two simple-git advisories: upstream Nuxt owns \
-the bump, and devtools is not in the shipped build.\
+the bump, and devtools is not in the shipped build. \
+Verified absent from the static build. Decided by Patrick on 9 October 2026.\
 """
 decided_by = "Patrick"
 look_again = 2026-12-11
@@ -108,7 +131,8 @@ ecosystem = "npm"
 reason = """
 nuxt > @nuxt/devtools > simple-git, command execution through unblocked git configuration \
 includes. Needs >=3.36.1. Dev-only, upstream-owned, and not in the static build the Rust \
-binary embeds.\
+binary embeds. \
+Verified absent from the static build. Decided by Patrick on 9 October 2026.\
 """
 decided_by = "Patrick"
 look_again = 2026-12-11
@@ -121,7 +145,8 @@ reason = """
 nuxt > @nuxt/nitro-server > nitropack > listhen > node-forge. Needs >=1.4.1. listhen uses \
 it to mint a self-signed certificate for `nuxt dev` over HTTPS, which this project never \
 turns on, and none of it reaches the static build. Five levels deep in the Nuxt tree, so \
-upstream owns the fix.\
+upstream owns the fix. \
+Verified absent from the static build. Decided by Patrick on 9 October 2026.\
 """
 decided_by = "Patrick"
 look_again = 2026-12-11
@@ -134,7 +159,8 @@ reason = """
 nuxt > @nuxt/nitro-server > nitropack > globby > fast-glob > micromatch > braces. Needs \
 >=3.0.4. A stack-exhaustion denial of service reachable only by feeding it a deeply nested \
 glob pattern, and the only patterns it sees are the ones in this repository's own build \
-configuration. Six levels deep; upstream owns the fix.\
+configuration. Six levels deep; upstream owns the fix. \
+Verified absent from the static build. Decided by Patrick on 9 October 2026.\
 """
 decided_by = "Patrick"
 look_again = 2026-12-11
@@ -144,10 +170,17 @@ advisory = "GHSA-238p-pmpm-9mq7"
 dependency = "katex"
 ecosystem = "npm"
 reason = """
-mermaid > katex, needing >=0.18.2, and mermaid is already at its newest release so no \
-in-range update reaches it. The dashboard renders mermaid diagrams from text the developer \
-and their own agent sessions wrote, and every rendered string already goes through \
-DOMPurify. Rated low. Upstream mermaid owns the bump.\
+katex IS in the shipped build - this is the one package of the seven that is, and an \
+earlier version of this file wrongly implied otherwise. `_nuxt/ZlcWpGUi.js`, 258,685 bytes: \
+`MermaidFigure.vue` awaits `import('mermaid')` on mount and the mermaid chunk in turn \
+awaits `import('./ZlcWpGUi.js')`, so it is fetched when a diagram contains maths. Accepted \
+anyway, on three grounds: the app is private and runs only on Patrick's own machine; the \
+input is diagram source written by review sessions reading his colleagues' pull requests, \
+so it is his own team's work rather than anything from outside; and the fix has to come \
+from upstream mermaid, since mermaid 12.1.0 is already its newest release and nothing in \
+range reaches katex >=0.18.2. No override is to be attempted. The advisory is rated low and \
+is a prototype-pollution bypass of trust restrictions, and every rendered string goes \
+through DOMPurify. Re-decided by Patrick on the corrected facts, 9 October 2026.\
 """
 decided_by = "Patrick"
 look_again = 2026-12-11

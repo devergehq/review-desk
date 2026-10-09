@@ -57,6 +57,20 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: Update
+    # TypeScript 7.0 ships no programmatic compiler API, so `vue-tsc` -- and therefore
+    # `nuxt typecheck` -- cannot run on it: nuxt/nuxt#36440 is this exact command failing
+    # with ERR_PACKAGE_PATH_NOT_EXPORTED, closed not_planned on 30 September 2026. Without
+    # this, Dependabot opens a TypeScript 7 pull request every week that cannot pass CI.
+    #
+    # Patrick decided to stay on 6 on 9 October 2026. **Remove this block after the
+    # early-December 2026 re-check**, once TypeScript 7.1 (planned 24 November 2026) has
+    # shipped the API AND `vue-tsc` declares support -- both, not either. It is here so
+    # that staying on 6 is a decision with a date on it rather than something forgotten;
+    # `docs/dependencies.md` carries the same date.
+    ignore:
+      - dependency-name: typescript
+        update-types:
+          - version-update:semver-major
     groups:
       web:
         patterns:

@@ -144,10 +144,18 @@ alongside it, and why removing the release-age check as redundant would be a mis
 
 | Dependency | Decision | Why | Date |
 | -- | -- | -- | -- |
-| `typescript` | Stay on `^6.0.3` | TypeScript 7.0 ships no programmatic compiler API, so `vue-tsc` — and therefore `nuxt typecheck` — cannot run on it. Microsoft's own 7.0 announcement tells Vue projects to stay on 6.0, and `typescript-eslint` 8.71.1 declares `>=4.8.4 <6.1.0`. Revisit after TypeScript 7.1 (planned 24 November 2026) ships the API and `vue-tsc` declares support. | 9 Oct 2026 |
+| `typescript` | **Stay on `^6.0.3`.** Decided by Patrick, 9 October 2026. **Re-check early December 2026.** | TypeScript 7.0 ships no programmatic compiler API, so `vue-tsc` — and therefore `nuxt typecheck` — cannot run on it at all: `nuxt/nuxt#36440` is this exact command failing with `ERR_PACKAGE_PATH_NOT_EXPORTED ('./lib/tsc')`, closed `not_planned` on 30 September 2026. Microsoft's own 7.0 announcement tells Vue projects to stay on 6.0, and `typescript-eslint` 8.71.1 declares `>=4.8.4 <6.1.0`, which excludes 7. The pin is deliberate, not drift. Re-check once TypeScript 7.1 (planned 24 November 2026) has shipped the API **and** `vue-tsc` declares support — both, not either. `.github/dependabot.yml` ignores the major until then, with the same date on it. | 9 Oct 2026 |
 | `serde_norway` | Allowlisted, not replaced | Test-only, and the best-maintained serde-integrated YAML crate that exists: upstream `serde_yaml` is archived, `serde_yaml_ng` is 200 days older, `serde_yml` is on `0.0.x`, and `yaml-rust2`/`saphyr` are parsers with no serde integration. | 9 Oct 2026 |
 | `ajv-formats` | Allowlisted, not replaced | Finished rather than abandoned, first-party to `ajv`, 140M downloads a week, and the only way to get format assertions out of `ajv` 8. CI-only. | 9 Oct 2026 |
 | `cargo-audit` over `rustsec/audit-check` | The binary, pinned | The action's most recent release is 2024-09-23, 746 days old. It would fail the check this repository now runs. | 9 Oct 2026 |
 
-`dependency-allowlist.toml` holds the two allowlist entries in full, with their look-again
-dates.
+`dependency-allowlist.toml` holds the two release-age entries in full, with their look-again
+dates, and the advisory entries alongside them.
+
+**One advisory entry is not settled.** `katex` (`GHSA-238p-pmpm-9mq7`) is the only package of
+the seven that is actually present in the shipped build — `_nuxt/ZlcWpGUi.js`, 258,685 bytes,
+fetched when a diagram contains maths. An earlier version of the allowlist called all seven
+"build-time tooling", which was wrong for that one. Its entry says so and awaits a decision
+on the corrected facts. The lesson is in the allowlist's own comment: `braces` and `katex`
+both occur as ordinary English, so presence in a bundle is established by license banners,
+error strings and API symbols, never by grepping the package name.
