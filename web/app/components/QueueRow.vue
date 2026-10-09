@@ -22,6 +22,16 @@
  * **The whole row is the link**, not a link inside it, so the thing you click is the thing
  * you read. At 390px the cells wrap onto their own lines in the order they are read.
  */
+/*
+ * **`NuxtLink` resolved to the component, not named as a string.** Measured in the built
+ * binary: `:is="to ? 'NuxtLink' : …"` resolved the string to nothing in the static build,
+ * the row came out as an unknown element, and the whole row stopped being a link — which
+ * the end-to-end run found by waiting sixty seconds for a link that was not there. A
+ * string is fine for `a` and `div`, which are real tags; a component has to be the
+ * component.
+ */
+const NuxtLink = resolveComponent('NuxtLink')
+
 withDefaults(
   defineProps<{
     pr: number
@@ -56,7 +66,7 @@ withDefaults(
 
 <template>
   <component
-    :is="to ? 'NuxtLink' : href ? 'a' : 'div'"
+    :is="to ? NuxtLink : href ? 'a' : 'div'"
     :to="to ?? undefined"
     :href="href ?? undefined"
     :target="href ? '_blank' : undefined"

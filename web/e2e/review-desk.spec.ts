@@ -73,34 +73,45 @@ test.beforeEach(() => stillServing(serversUnderTest()))
 test.describe.configure({ mode: 'serial' })
 
 test.describe('the whole path, on a seeded database', () => {
-  test('the inbox lists the review, with its title and nothing from a fixture', async ({ page }) => {
+  test('the queue lists the review once, with its title and nothing from a fixture', async ({ page }) => {
     await page.goto(seeded)
 
-    await expect(page.getByRole('heading', { name: 'Waiting on you' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '1 review needs you' })).toBeVisible()
 
     /*
-     * The seeded review, under the title the command line gave it. "That database's data",
-     * which is the first half of the criterion.
+     * **DEV-876's first acceptance criterion, on a real database.** This session wrote the
+     * draft without waiting for the brief to be confirmed, so the review is waiting on the
+     * developer for two things at once — and `GET /inbox` really does serve it in two of
+     * its five arrays. One row, showing the earlier layer's action, saying the other is
+     * behind it. The screen this replaced drew the title twice.
      */
-    await expect(page.getByText('Confirm the problem · 1')).toBeVisible()
-    await expect(page.getByText('ABC-231')).toBeVisible()
-    /*
-     * The session wrote the draft without waiting, so the review is two items: a brief to
-     * confirm and a draft to approve. Both are waiting on the developer, which is why the
-     * title is on screen twice and the brief item says "nothing posts" rather than
-     * "nothing else runs".
-     */
-    await expect(page.getByText('Retry failed webhook deliveries')).toHaveCount(2)
+    await expect(page.getByText('Retry failed webhook deliveries')).toHaveCount(1)
+    await expect(page.locator('.row')).toHaveCount(1)
+    await expect(page.getByText('Problem brief ready')).toBeVisible()
     await expect(page.getByText('nothing posts until you confirm')).toBeVisible()
-    await expect(page.getByText('2 items across 1 repository')).toBeVisible()
+    await expect(page.getByText('a draft is ready behind it')).toBeVisible()
+    await expect(page.getByText('Read the brief')).toBeVisible()
+    await expect(page.getByText('ABC-231')).toBeVisible()
 
     /*
-     * And the second half: no marker, because these are real records. The marker is the one
-     * thing on screen that says otherwise, and a production build has no fixtures for it to
-     * be about.
+     * The groups with nothing in them are not drawn: no session is running on this
+     * database and the server has no source for the developer's own pull requests.
+     */
+    await expect(page.getByRole('heading', { name: 'With the agent' })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: 'Your pull requests' })).toHaveCount(0)
+
+    /* The one group the board draws that the API cannot fill says so, in those words. */
+    await expect(page.getByRole('heading', { name: 'Waiting on the author' })).toBeVisible()
+    await expect(
+      page.getByText('serves no group for a posted review awaiting a reply'),
+    ).toBeVisible()
+
+    /*
+     * And no marker, because these are real records. The marker is the one thing on screen
+     * that says otherwise, and a production build has no fixtures for it to be about.
      */
     await expect(page.getByText('Sample data')).toHaveCount(0)
-    await expect(page.getByText('acme/portal')).toHaveCount(2)
+    await expect(page.getByText('acme/portal', { exact: false }).first()).toBeVisible()
   })
 
   test('the brief is confirmed in the browser, and the record says the developer did it', async ({
@@ -176,13 +187,19 @@ test.describe('the whole path, on a seeded database', () => {
      * sign it off; this is the group that says so.
      */
     await page.goto(seeded)
-    await expect(page.getByText('Sign off a draft · 1')).toBeVisible()
-    await expect(page.getByText('Confirm the problem · 1')).toHaveCount(0)
-    await expect(page.getByText('1 item across 1 repository')).toBeVisible()
+    /*
+     * Still one row — the same row. Its next action has moved from the brief to the draft,
+     * because layer 2 is settled and layer 6 is not, and nothing else about the queue
+     * changed. That is what "one row showing its next action" buys.
+     */
+    await expect(page.locator('.row')).toHaveCount(1)
+    await expect(page.getByText('Draft ready')).toBeVisible()
+    await expect(page.getByText('Problem brief ready')).toHaveCount(0)
+    await expect(page.getByText('a draft is ready behind it')).toHaveCount(0)
     await expect(page.getByText('1 blocker, 1 should')).toBeVisible()
-    await expect(page.getByText('1 finding held back for a ticket')).toBeVisible()
+    await expect(page.getByText('1 nit to a ticket')).toBeVisible()
 
-    await page.getByRole('link', { name: 'Open draft' }).first().click()
+    await page.getByRole('link', { name: 'Read and sign off' }).first().click()
     await expect(page).toHaveURL(`${seeded}reviews/${reviewId}/draft`)
     await expect(
       page.getByText('Nothing has been posted. This is what GitHub will show.'),
@@ -474,7 +491,7 @@ test.describe('the whole path, on a seeded database', () => {
      * than drawing an empty list: the command line has no way to write one, which is
      * recorded in the pull request as a gap rather than worked around here.
      */
-    await expect(page.locator('select#repo')).toContainText('acme/portal')
+    await expect(page.getByRole('radio', { name: /acme\/portal/ })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'No rules yet' })).toBeVisible()
     await expect(page.getByText('Sample data')).toHaveCount(0)
   })
@@ -486,7 +503,7 @@ test.describe('a database with nothing in it', () => {
     await expect(page.getByRole('heading', { name: 'Nothing here yet' })).toBeVisible()
     await expect(page.getByText('This database holds no reviews')).toBeVisible()
     /* The one thing that fills it, with the field to do it from. */
-    await expect(page.locator('input#pr-link-empty')).toBeVisible()
+    await expect(page.locator('input#start-empty')).toBeVisible()
 
     await page.goto(`${empty}rules`)
     await expect(page.getByRole('heading', { name: 'No rules yet' })).toBeVisible()
@@ -558,7 +575,7 @@ test.describe('the server stops while a page is open', () => {
     await expect(page.getByRole('heading', { name: 'No rules yet' })).toBeVisible()
 
     await page.route('**/api/v1/**', route => route.abort('connectionrefused'))
-    await page.locator('select#repo').selectOption('all')
+    await page.getByRole('radio', { name: 'All repositories' }).click()
 
     await expect(page.getByText('Review Desk is not answering')).toBeVisible()
     /* And what it had read is still on screen under it. */

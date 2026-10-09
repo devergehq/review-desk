@@ -185,10 +185,11 @@ describe('the queue', () => {
     expect(text).toContain('Waiting on the author')
     expect(text).toContain('Your pull requests')
 
-    /* With no own pull requests and no running session, those two groups are not drawn. */
-    await resetDesk({ own_prs: [], session_liveness: {} })
-    const empty = await shown(Inbox)
-    expect(empty.text()).not.toContain('Your pull requests')
+    /* With no own pull requests, that group is not drawn at all. */
+    await resetDesk({ own_prs: [] })
+    const fewer = await shown(Inbox)
+    expect(fewer.findAll('h2').map(one => one.text())).not.toContain('Your pull requests')
+    expect(fewer.findAll('h2').map(one => one.text())).toContain('With the agent')
   })
 
   /*

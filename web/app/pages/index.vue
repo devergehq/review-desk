@@ -285,6 +285,20 @@ function prUrl(repo: string, pr: number): string {
   return `https://github.com/${repo}/pull/${pr}`
 }
 
+/**
+ * The line under the headline: what is on the desk that is not waiting on the developer.
+ *
+ * The board reads "2 with the agent · 2 waiting on the author · 2 of your own". Only the
+ * parts with something in them are said — "0 with the agent · 0 of your own" is noise on a
+ * database with one review — and the author group is left out because nothing can count it.
+ */
+const besides = computed(() => {
+  const said: string[] = []
+  if (rows.value.withAgent.length) said.push(`${rows.value.withAgent.length} with the agent`)
+  if (rows.value.ownPrs.length) said.push(`${rows.value.ownPrs.length} of your own`)
+  return said.join(' · ')
+})
+
 /** What the right-hand cell says about a session Allele owns and may not have reported. */
 function sessionAction(alive: boolean | null | undefined): string {
   if (alive === true) return 'Session running'
@@ -356,9 +370,11 @@ function handledLine(data: Inbox): string {
             <h1 class="rd-display">
               {{ rows.needsYou.length === 1 ? '1 review needs you' : `${rows.needsYou.length} reviews need you` }}
             </h1>
-            <p class="rd-meta aside-line">
-              {{ rows.withAgent.length }} with the agent ·
-              {{ rows.ownPrs.length }} of your own
+            <p
+              v-if="besides"
+              class="rd-meta aside-line"
+            >
+              {{ besides }}
             </p>
           </div>
           <LinkField
