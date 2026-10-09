@@ -14,6 +14,7 @@ use std::net::TcpStream;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use review_desk_harvest::recorded::Recorded;
 use review_desk_harvest::{CommitFiles, Comparison, GitHub, PullRequest, ReviewThread};
@@ -229,22 +230,78 @@ pub fn raw_request(
     let mut socket = TcpStream::connect(address).expect("connecting to the server");
 
     let body = body.unwrap_or_default();
-    let mut request = format!("{method} {path} HTTP/1.1\r\n");
+    let mut head = format!("{method} {path} HTTP/1.1\r\n");
     for (name, value) in headers {
-        request.push_str(&format!("{name}: {value}\r\n"));
+        head.push_str(&format!("{name}: {value}\r\n"));
     }
-    request.push_str(&format!(
-        "Connection: close\r\nContent-Length: {}\r\n\r\n{body}",
+    head.push_str(&format!(
+        "Connection: close\r\nContent-Length: {}\r\n\r\n",
         body.len()
     ));
 
-    socket
-        .write_all(request.as_bytes())
-        .expect("writing the request");
+    if body.len() <= WRITE_BLIND {
+        // One write, as before, and no cost: everything the contract sends is small.
+        socket
+            .write_all(format!("{head}{body}").as_bytes())
+            .expect("writing the request");
+    } else {
+        // **A big body is sent while watching for an answer, and the body-size limit is
+        // why.** A server that refuses a request for the length it announced answers from
+        // the head alone — which is the entire point of having a limit — and then closes.
+        // Writing on past that gets a broken pipe, and the write after *that* earns a
+        // reset, which throws away the receive buffer and with it the very answer the test
+        // came for. RFC 9110 asks a client sending a large body to watch for an early
+        // error response rather than plough on; this one now does.
+        //
+        // It took a change of transport to notice. The previous one drained a body it had
+        // already refused, so writing blind always worked and nobody had to decide whether
+        // reading five megabytes in order to discard them was wanted. It is not.
+        socket
+            .write_all(head.as_bytes())
+            .expect("writing the request head");
+
+        if let Some(early) = answered_already(&mut socket) {
+            return parse(&early);
+        }
+
+        // Not checked: by here the server has had its chance to refuse and did not, but a
+        // refusal landing mid-write is still its right rather than this client's business.
+        let _ = socket.write_all(body.as_bytes());
+    }
 
     let mut raw = Vec::new();
     socket.read_to_end(&mut raw).expect("reading the answer");
     parse(&raw)
+}
+
+/// A body this size or smaller is written in one go, head and all.
+///
+/// Comfortably over anything the contract sends and comfortably under the server's limit,
+/// so the careful path below is taken only by the test that deliberately goes over.
+const WRITE_BLIND: usize = 64 * 1024;
+
+/// Whatever the server has already said, if it has said anything.
+///
+/// Used between the head and a large body. `None` means nothing arrived in the window and
+/// the body should be sent; the read timeout is cleared either way, so the caller is
+/// handed back a socket that blocks normally.
+fn answered_already(socket: &mut TcpStream) -> Option<Vec<u8>> {
+    socket
+        .set_read_timeout(Some(Duration::from_millis(500)))
+        .ok();
+
+    let mut first = [0_u8; 4096];
+    let read = socket.read(&mut first);
+    socket.set_read_timeout(None).ok();
+
+    match read {
+        Ok(got) if got > 0 => {
+            let mut raw = first[..got].to_vec();
+            let _ = socket.read_to_end(&mut raw);
+            Some(raw)
+        }
+        _ => None,
+    }
 }
 
 /// Split a raw HTTP answer into a status, headers and a body.

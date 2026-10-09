@@ -656,6 +656,48 @@ cargo test -p review-desk-server
 It includes a test that a deliberately wrong body **fails** validation, because a
 conformance test that silently validates nothing passes every time.
 
+### The transport, and why it is not `tiny_http` any more
+
+**The server used to lose requests, silently and for ever, and that is why it runs on
+`axum` now.**
+
+It was built on `tiny_http` for a reason that still reads well: the store is one blocking
+SQLite connection, so an async runtime buys nothing and costs a thread hop; the library is
+tiny; and a `Server` that four threads call `recv()` on is exactly a small worker pool.
+What that argument missed is what happens when the pool runs out. Each of its threads
+parks on a keep-alive connection for as long as the browser holds it open, and when they
+were all parked its queue did not merely wait — a connection could be left in it with
+nothing able to pick the connection up. The request on it was then never answered and
+never refused.
+
+A browser opens several connections to one origin, six in Chromium, and asks for the
+dashboard's assets down all of them at once. So this landed on the dashboard's **first
+page load**: measured at a silent request in roughly one cold start in five, with `load`
+never firing and the screen staying blank with no error on it. Nothing recovered it. The
+server even went on answering `/health` perfectly, because a fresh connection always got
+a thread, which is what made the fault so hard to see.
+
+It could not be fixed from here: the pool is internal, the crate sets no socket read
+timeout and offers no way to ask for one, and its last release was October 2022. The
+choice was to maintain a fork of an abandoned HTTP server or to move to a maintained one.
+
+| | Before | After |
+| -- | -- | -- |
+| Library | `tiny_http` 0.12.0, last released October 2022 | `axum` 0.8.9 and `tokio`, both `tokio-rs` |
+| Serving | 4 threads, one parked per open connection | connections are futures on one thread |
+| Blocking store work | on the serving thread | `tokio::task::spawn_blocking`, at one call site |
+| Production crates | 30 | 53 |
+
+**Twenty-three more crates is the real cost.** What it buys is a transport that does not
+lose requests and no fixed worker count to get wrong. `crates/server/tests/concurrency.rs`
+is the fault written down — it opens 5, 6 and 10 connections in one burst against twenty
+freshly started servers and insists every request is answered. It fails on the old
+transport within the first few trials and passes on this one.
+
+Nothing above `crates/server/src/lib.rs` knows any of this. `Server::bind`, `serve`,
+`spawn` and `Running` kept their signatures, `review-desk serve` is unchanged and still
+synchronous, and no test was rewritten to suit the new library.
+
 ## The record
 
 Nine entities, in four schema versions: the review record (version 1), the learning
