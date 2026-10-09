@@ -3,7 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { flushPromises, type VueWrapper } from '@vue/test-utils'
 
-import { resetDesk, useDeskSource, useReviewDesk } from '../app/composables/useReviewDesk'
+import {
+  ALL_REPOSITORIES,
+  resetDesk,
+  useDeskSource,
+  useReviewDesk,
+} from '../app/composables/useReviewDesk'
 import { loadSource } from '../app/data/sample'
 
 import Inbox from '../app/pages/index.vue'
@@ -301,15 +306,43 @@ describe('one review', () => {
     expect(page.text()).toContain('Covered by the ticket')
   })
 
-  it('will not move a finding out of the draft with no reason', async () => {
+  it('will not move a finding out of the draft with no reason, and keeps the panel open', async () => {
     const page = await open(17)
     await page.findAll('button').find(item => item.text().startsWith('Change'))!.trigger('click')
     await settle(page)
     await page.find('select#disposition-1').setValue('suppressed')
+    await page.find('input#reason-1').setValue('')
     await click(page, 'Save')
 
     expect(page.text()).toContain('Say why it is not going in the draft.')
     expect(page.text()).toContain('Accepted: a sentence saying why.')
+
+    /*
+     * The panel stays open so the developer can answer the refusal where they are. A
+     * refused write changes nothing on the record, so nothing tells the row to close —
+     * which is why the row watches the finding's *values* rather than its identity.
+     */
+    expect(page.find('select#disposition-1').exists()).toBe(true)
+    expect(page.find('input#reason-1').exists()).toBe(true)
+  })
+
+  it('closes the panel once the record agrees, in sample mode as over HTTP', async () => {
+    /*
+     * The failure this pins: the row used to close on a *new finding object*, which HTTP
+     * produces on every read and sample mode never did — so in the dev loop and in every
+     * component test a successful move left the panel open for ever.
+     */
+    const page = await open(17)
+    await page.findAll('button').find(item => item.text().startsWith('Change'))!.trigger('click')
+    await settle(page)
+    expect(page.find('select#disposition-1').exists()).toBe(true)
+
+    await page.find('select#disposition-1').setValue('held_back')
+    await page.find('input#reason-1').setValue('Covered by the ticket')
+    await click(page, 'Save')
+
+    expect(page.text()).toContain('F1 is now held back for a ticket')
+    expect(page.find('select#disposition-1').exists()).toBe(false)
   })
 
   it('shows the author’s replies on a posted review', async () => {
@@ -589,6 +622,25 @@ describe('the rules', () => {
     expect(page.text()).toContain('R-05 kept for 60 days')
     expect(page.text()).not.toContain('Going stale')
     expect(page.text()).toContain('Active · 5')
+  })
+
+  it('keeps the chosen repository when a rule action refreshes the screen', async () => {
+    /*
+     * A write refreshes every open read, and `listRepos` hands back a freshly mapped array
+     * each time. The watcher that picks a first repository on load used to re-run on that,
+     * so pressing Promote while "All repositories" was selected moved the developer back to
+     * the first repository — reading a different page of rules than the one they acted on.
+     */
+    const page = await shown(Rules)
+    await page.find('select#repo').setValue(ALL_REPOSITORIES)
+    await settle(page)
+    expect(page.text()).toContain('Active · 5')
+
+    await click(page, 'Promote')
+
+    expect((page.find('select#repo').element as HTMLSelectElement).value)
+      .toBe(ALL_REPOSITORIES)
+    expect(page.text()).toContain('R-22 promoted')
   })
 
   it('reads as nothing learned yet when there are no rules at all', async () => {

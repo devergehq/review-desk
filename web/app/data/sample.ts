@@ -671,49 +671,72 @@ function deferRule(id: number, days: number): Rule {
 }
 
 /**
+ * A read's answer, as a plain object nothing else holds a reference to.
+ *
+ * **The API hands back a fresh object every read, because it parses fresh JSON, and this
+ * has to as well.** Without the clone a read returned the live reactive record the writes
+ * mutate in place, which made sample mode behave differently from the server in a way no
+ * test was looking at: a component watching `() => props.finding` to notice that its
+ * finding had changed never fired, because the object was the same one. The two backends
+ * are meant to be indistinguishable, and identity is part of that.
+ *
+ * It also closes a second hole. A screen handed the live record could have written to it —
+ * reaching past the data layer into the fixtures, which is the one thing
+ * `test/architecture.spec.ts` exists to prevent and could not have caught.
+ *
+ * **A JSON round trip rather than `structuredClone`**, and not only because the latter
+ * throws on a Vue proxy: this is precisely what the real answer goes through, so sample
+ * mode now differs from the API in no way a caller could detect — including on the fields
+ * the wire cannot carry.
+ */
+function answered<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+/**
  * The sixteen operations over the records in memory.
  *
  * Every one is `async` so that the composable above cannot tell which backend it has. They
  * resolve immediately — there is nothing to wait for — which means a loading state is not
- * exercised here; `test/desk.spec.ts` exercises that against `api.ts` with a stubbed
+ * exercised here; `test/api.spec.ts` exercises that against `api.ts` with a stubbed
  * `fetch`, where it is real.
  */
 export function sampleBackend(): DeskBackend {
   return {
     isSampleData: true,
 
-    getInbox: async () => inbox(),
+    getInbox: async () => answered(inbox()),
     getReview: async (id) => {
       const detail = reviewById(id)
       if (!detail) throw notFound(`review ${id}`)
-      return detail
+      return answered(detail)
     },
     getDraft: async (id) => {
       const detail = draftById(id)
       if (!detail) throw notFound(`draft on review ${id}`)
-      return detail
+      return answered(detail)
     },
-    listRules: async repo => rulesPage(repo),
+    listRules: async repo => answered(rulesPage(repo)),
     listRepos: async (): Promise<RepoSummary[]> =>
-      source.repos.map(repo => ({
+      answered(source.repos.map(repo => ({
         ...repo,
         active_rules: source.rules.filter(
           rule => isActive(rule) && (rule.scope.kind === 'global' || rule.scope.repo === repo.repo),
         ).length,
-      })),
+      }))),
 
-    startReview: async link => startReview(link),
-    confirmBrief: async id => confirmBrief(id),
+    startReview: async link => answered(startReview(link)),
+    confirmBrief: async id => answered(confirmBrief(id)),
     setFindingDisposition: async (reviewId, seq, disposition, reason) =>
-      setFindingDisposition(reviewId, seq, disposition, reason),
-    saveDraft: async (id, body, edits) => saveDraft(id, body, edits),
-    approveDraft: async (id, event) => approveDraft(id, event),
-    sendBackDraft: async (id, note) => sendBackDraft(id, note),
-    requestNitTicket: async (id, ticketId = null) => requestNitTicket(id, ticketId),
-    promoteRule: async (id, toStage) => promoteRule(id, toStage),
-    dismissRule: async (id, reason) => retireWithReason(id, reason, 'dismissed'),
-    retireRule: async (id, reason) => retireWithReason(id, reason, 'retired'),
-    deferRule: async (id, days) => deferRule(id, days),
+      answered(setFindingDisposition(reviewId, seq, disposition, reason)),
+    saveDraft: async (id, body, edits) => answered(saveDraft(id, body, edits)),
+    approveDraft: async (id, event) => answered(approveDraft(id, event)),
+    sendBackDraft: async (id, note) => answered(sendBackDraft(id, note)),
+    requestNitTicket: async (id, ticketId = null) => answered(requestNitTicket(id, ticketId)),
+    promoteRule: async (id, toStage) => answered(promoteRule(id, toStage)),
+    dismissRule: async (id, reason) => answered(retireWithReason(id, reason, 'dismissed')),
+    retireRule: async (id, reason) => answered(retireWithReason(id, reason, 'retired')),
+    deferRule: async (id, days) => answered(deferRule(id, days)),
 
     /* Nothing to be unreachable. Sample mode is always answering. */
     health: async () => ({ status: 'ok', schema_version: 0 }),

@@ -313,12 +313,19 @@ describe('the two states the contract cannot describe', () => {
      * half of the request the first version of it did not cover.
      */
     vi.useFakeTimers()
-    vi.stubGlobal('fetch', vi.fn(() =>
+    /*
+     * The body rejects **when the signal aborts**, not on a timer of its own. A stub that
+     * rejected on its own schedule would prove that a body-read failure is reported and
+     * nothing about whether the deadline is still armed to cause one — which is the whole
+     * claim.
+     */
+    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) =>
       Promise.resolve({
         ok: true,
         status: 200,
         text: () => new Promise<string>((_resolve, reject) => {
-          setTimeout(() => reject(new DOMException('aborted', 'AbortError')), 11_000)
+          init.signal?.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError')))
         }),
       } as Response)))
 

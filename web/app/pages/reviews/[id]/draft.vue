@@ -51,8 +51,13 @@ watch(
      * The editor is only re-seeded while it has nothing unsaved in it. A write refreshes
      * every open read, so a refused save re-runs this — and overwriting the textarea here
      * would discard the edit the refusal was about.
+     *
+     * One condition, not two. An `editing.value === ''` arm looked like it covered the
+     * first load, which the comparison below already does — both start empty — and what it
+     * really covered was a textarea the developer had deliberately cleared before pasting a
+     * rewrite. Any write from elsewhere on the screen then refilled it with the old body.
      */
-    if (editing.value === '' || editing.value === loadedBody.value) {
+    if (editing.value === loadedBody.value) {
       editing.value = value.draft.body
     }
     loadedBody.value = value.draft.body

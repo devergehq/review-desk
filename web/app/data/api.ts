@@ -179,6 +179,7 @@ async function send<T>(
      * stuck, or a proxy in front of one that is not.
      */
     const timedOut = limit.signal.aborted
+    limit.done()
     throw new DeskRequestError({
       code: 'unreachable',
       /*
@@ -203,6 +204,10 @@ async function send<T>(
    * sends nothing, and clearing the timer here would have let that one hang forever —
    * which is the failure the deadline was added for, surviving in the half of the request
    * nobody was looking at.
+   *
+   * Cleared on **both** ways out of the fetch above, not only on the one that reaches here:
+   * a failed request that left its timer armed would leak one per read, and a page opened
+   * against a server that is not running makes several at once.
    */
   let text: string
   try {

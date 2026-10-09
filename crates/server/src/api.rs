@@ -333,8 +333,6 @@ impl Api {
             }
         };
 
-        // The caller's values win, and the read fills in only what they left out.
-        //
         // **One read, three facts.** `contract/README.md` item S22 always said this read
         // supplied the title and the changed-line count; until DEV-862 the `GitHub`
         // trait's `PullRequest` carried neither, so this handler wrote `title: null` for
@@ -344,21 +342,59 @@ impl Api {
         //
         // A caller that passed a head commit gets no read and therefore no resolution,
         // which is the bargain the contract offers: pass what you know and save the read.
-        let facts = ReviewFacts {
-            title: request
-                .title
-                .or_else(|| resolved.as_ref().and_then(|read| read.title.clone())),
+        //
+        // What the caller sent is written whatever is already there — stating a value is
+        // asking for it to be recorded. What was *resolved* is not, and the next call is
+        // where the difference shows.
+        let stated = ReviewFacts {
+            title: request.title,
             ticket_id: request.ticket_id,
-            changed_lines: request
-                .changed_lines
-                .or_else(|| resolved.as_ref().and_then(|read| read.changed_lines)),
+            changed_lines: request.changed_lines,
             not_checked: None,
         };
 
         let opened = self
             .records
-            .open_review(&link.repo, link.pr, &head_sha, &facts)?;
-        Ok((201, wire::review(&opened.review)))
+            .open_review(&link.repo, link.pr, &head_sha, &stated)?;
+
+        // **A resolved value fills a gap; it never replaces an answer.**
+        //
+        // `POST /reviews` is deduplicating — the same head commit hands back the review
+        // already on the record — so pasting a link twice reaches this a second time. With
+        // the resolved facts written unconditionally, the second call overwrote the first's
+        // with GitHub's: a session that opened round 2 with the delta it actually reviewed
+        // (`review open --changed-lines 180`) had that replaced by the whole pull request's
+        // additions plus deletions the moment the developer pasted the link. That figure is
+        // what the draft's word budget is computed from, so the overwrite was not cosmetic —
+        // and it contradicted this contract's own sentence, that a title you pass is one
+        // nothing then overwrites.
+        //
+        // Only a field the record has no answer for is filled, which is also the only case
+        // the read was widened for.
+        let gaps = ReviewFacts {
+            title: opened
+                .review
+                .title
+                .is_none()
+                .then(|| resolved.as_ref().and_then(|read| read.title.clone()))
+                .flatten(),
+            ticket_id: None,
+            changed_lines: opened
+                .review
+                .changed_lines
+                .is_none()
+                .then(|| resolved.as_ref().and_then(|read| read.changed_lines))
+                .flatten(),
+            not_checked: None,
+        };
+
+        let review = if gaps.is_empty() {
+            opened.review
+        } else {
+            self.records.set_review_facts(opened.review.id, &gaps)?
+        };
+
+        Ok((201, wire::review(&review)))
     }
 
     /// `GET /reviews/{reviewId}`: one review whole, as the One review screen shows it.

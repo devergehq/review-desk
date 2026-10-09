@@ -25,11 +25,22 @@ const options = computed(() => [
  * The first repository, once the list has arrived, so the screen opens on one repository's
  * rules rather than on every repository's at once. Watched rather than done on mount: the
  * list is a read now, and on mount there is nothing to pick from yet.
+ *
+ * **It happens once, and the latch is what makes that true.** Without it the condition is
+ * standing rather than initial, and every rule action re-ran it: a write refreshes every
+ * open read, `listRepos` hands back a freshly mapped array each time, so the watcher fired
+ * again — and a developer who had chosen "All repositories" and pressed Promote was moved
+ * back to the first repository, reading a different page of rules than the one they acted on.
  */
+const picked = ref(false)
+
 watch(
   () => repos.data.value,
   (list) => {
-    if (repo.value === ALL_REPOSITORIES && list && list[0]) repo.value = list[0].repo
+    if (picked.value) return
+    if (!list) return
+    picked.value = true
+    if (repo.value === ALL_REPOSITORIES && list[0]) repo.value = list[0].repo
   },
   { immediate: true },
 )

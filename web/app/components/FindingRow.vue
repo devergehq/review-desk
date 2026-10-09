@@ -16,23 +16,22 @@ const target = ref<Disposition>(props.finding.disposition)
 const reason = ref(props.finding.disposition_reason ?? '')
 
 /**
- * Whether a save has been asked for and not yet come back.
+ * The panel closes when the record agrees with what was asked for, and not before.
  *
- * The panel closes when the finding it is about changes, which is what a successful write
- * produces: the write re-reads the review, so this component is handed a new finding. A
- * *refused* write re-reads nothing, so the panel stays open with the reason still typed in
- * it — which is what DEV-862 asks for, and it needs no second copy of the rule that was
- * broken.
+ * **Watched by value, not by identity.** An earlier version watched `() => props.finding`
+ * and closed on a new object, which is what a successful write produces over HTTP — and
+ * never produced in sample mode, where a read handed back the same mutated record. It also
+ * needed a "saving" flag that a *refused* write left set, so the next unrelated refresh
+ * closed this panel and threw away the reason being typed.
+ *
+ * Watching the two values the move is about has neither problem: a refusal changes nothing,
+ * so the panel stays open with the reason still in it — which is what DEV-862 asks for —
+ * and it needs no second copy of the rule the server owns.
  */
-const saving = ref(false)
-
 watch(
-  () => props.finding,
+  () => [props.finding.disposition, props.finding.disposition_reason],
   () => {
-    if (saving.value) {
-      saving.value = false
-      open.value = false
-    }
+    if (open.value && props.finding.disposition === target.value) open.value = false
   },
 )
 
@@ -75,7 +74,6 @@ function start() {
  * One rule, in the record, with the screen showing what it said.
  */
 function save() {
-  saving.value = true
   emit('change', {
     seq: props.finding.seq,
     disposition: target.value,

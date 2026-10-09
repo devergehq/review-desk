@@ -86,6 +86,16 @@ impl Records {
         self.with(|store| store.open_review_with(repo, pr, head_sha, facts))
     }
 
+    /// Record what is known about the pull request, leaving a fact left `None` as it was.
+    ///
+    /// Used by `POST /reviews` to fill in only what the record has no answer for, after
+    /// the review has been opened. Separate from `open_review` because the two cases are
+    /// different: what the caller stated is written whatever is there, and what was
+    /// resolved from GitHub fills a gap and never replaces an answer.
+    pub fn set_review_facts(&self, id: i64, facts: &ReviewFacts) -> Result<Review, ApiError> {
+        self.with(|store| store.set_review_facts(id, facts))
+    }
+
     /// One review by id, as a refusal when it is not there.
     pub fn review(&self, id: i64) -> Result<Review, ApiError> {
         self.with(|store| store.find_review_by_id(id))?

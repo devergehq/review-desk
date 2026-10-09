@@ -136,6 +136,110 @@ fn a_caller_that_supplies_a_title_keeps_it_and_costs_no_read() {
 }
 
 #[test]
+fn pasting_the_same_link_twice_does_not_overwrite_what_a_session_recorded() {
+    // **`POST /reviews` deduplicates**, so a developer pasting the same link twice reaches
+    // this handler a second time with the review already on the record.
+    //
+    // The read must not replace what is there. A session opens round 2 with the delta it
+    // actually reviewed — `review open --changed-lines 180` — and GitHub's figure is the
+    // whole pull request's additions plus deletions, 1100. `changed_lines` is what the
+    // draft's word budget is computed from, so replacing one with the other is not
+    // cosmetic; and the contract says a title you pass is one nothing then overwrites.
+    let harness = common::start(common::recorded_github());
+
+    let session = harness.api(
+        "POST",
+        "/reviews",
+        Some(&format!(
+            r#"{{"pr_url":"https://github.com/devergehq/locus/pull/64",
+                     "head_sha":"{}","title":"The delta this round reviewed",
+                     "changed_lines":180}}"#,
+            common::RECORDED_HEAD_SHA
+        )),
+    );
+    assert_eq!(session.status, 201, "{}", session.text());
+    let review_id = session.json()["id"].as_i64().expect("a review id");
+
+    // The developer pastes the link. No head commit, so GitHub is read — and the review
+    // for that head commit already exists.
+    let pasted = harness.api(
+        "POST",
+        "/reviews",
+        Some(r#"{"pr_url":"https://github.com/devergehq/locus/pull/64"}"#),
+    );
+    assert_eq!(pasted.status, 201, "{}", pasted.text());
+    assert_eq!(
+        pasted.json()["id"].as_i64(),
+        Some(review_id),
+        "the same head commit has to hand back the same review"
+    );
+
+    assert_eq!(
+        pasted.json()["title"],
+        "The delta this round reviewed",
+        "a title the caller recorded is not replaced by GitHub's: {}",
+        pasted.text()
+    );
+    assert_eq!(
+        pasted.json()["changed_lines"],
+        180,
+        "180 is the delta this round reviewed; {} is the whole pull request: {}",
+        common::RECORDED_CHANGED_LINES,
+        pasted.text()
+    );
+
+    // And it is the record that says so, not only the answer.
+    let stored = harness
+        .store
+        .find_review_by_id(review_id)
+        .unwrap()
+        .expect("the review is on the record");
+    assert_eq!(
+        stored.title.as_deref(),
+        Some("The delta this round reviewed")
+    );
+    assert_eq!(stored.changed_lines, Some(180));
+}
+
+#[test]
+fn a_resolved_fact_still_fills_a_gap_the_record_has_no_answer_for() {
+    // The other half of the same rule. A review opened with no title — `review open` does
+    // not require one — gains GitHub's when the developer pastes the link, because filling
+    // a gap is the whole reason the read was widened.
+    let harness = common::start(common::recorded_github());
+
+    let opened = harness.api(
+        "POST",
+        "/reviews",
+        Some(&format!(
+            r#"{{"pr_url":"https://github.com/devergehq/locus/pull/64","head_sha":"{}"}}"#,
+            common::RECORDED_HEAD_SHA
+        )),
+    );
+    assert_eq!(opened.status, 201, "{}", opened.text());
+    assert!(
+        opened.json()["title"].is_null(),
+        "no read was made, so no title"
+    );
+
+    let pasted = harness.api(
+        "POST",
+        "/reviews",
+        Some(r#"{"pr_url":"https://github.com/devergehq/locus/pull/64"}"#),
+    );
+    assert_eq!(
+        pasted.json()["title"],
+        common::RECORDED_TITLE,
+        "{}",
+        pasted.text()
+    );
+    assert_eq!(
+        pasted.json()["changed_lines"],
+        common::RECORDED_CHANGED_LINES
+    );
+}
+
+#[test]
 fn a_review_whose_title_cannot_be_read_is_created_with_none() {
     // A recording captured before DEV-862 widened the read carries no title, and an
     // installed `gh` could answer the same way. A review with no title is a review the
