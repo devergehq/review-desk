@@ -9,8 +9,8 @@
  * the order it would run them.
  */
 
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -27,6 +27,8 @@ export interface Serving {
   url: string
   database: string
   process: ChildProcess
+  /** Everything it has printed, so a death has its last words rather than none. */
+  said: () => string
 }
 
 /** Run one `review-desk` command against a database, and hand back what it printed. */
@@ -232,25 +234,57 @@ export async function serve(database: string): Promise<Serving> {
     stdio: ['ignore', 'pipe', 'pipe'],
   })
 
-  const url = await new Promise<string>((done, failed) => {
-    let printed = ''
-    const timer = setTimeout(
-      () => failed(new Error(`the server printed no address: ${printed}`)),
-      20_000,
-    )
+  /*
+   * **Both pipes are drained and kept, which they were not.**
+   *
+   * A CI run of this suite failed with three asset requests dying at the transport level
+   * and no API request made at all: the server had stopped answering partway through a
+   * page load, and there was nothing to say why, because its stderr went into a pipe
+   * nothing read. A test harness that discards the one artefact that would explain a death
+   * turns a diagnosable failure into a ten-second timeout on a blank page.
+   *
+   * Draining matters on its own, too. An unread pipe fills, and a child that blocks writing
+   * to it stops serving — which is the shape of the bug `fdb0b40` fixed in the serve test
+   * for DEV-861, where the test killed the server it had started.
+   */
+  let printed = ''
+  child.stdout?.on('data', (chunk: Buffer) => {
+    printed += chunk.toString()
+  })
+  child.stderr?.on('data', (chunk: Buffer) => {
+    printed += chunk.toString()
+  })
 
-    child.stdout?.on('data', (chunk: Buffer) => {
-      printed += chunk.toString()
+  const said = () => printed.trim()
+
+  /*
+   * **An exit is noticed and remembered**, so that a server which dies mid-run fails the
+   * next thing that touches it with its own words rather than with a timeout.
+   */
+  let died: string | null = null
+  child.on('exit', (code, signal) => {
+    died = `the server exited (code ${code}, signal ${signal}). It said:\n${said()}`
+  })
+
+  const url = await new Promise<string>((done, failed) => {
+    const timer = setInterval(() => {
       const match = printed.match(/"url":"([^"]+)"/)
       if (match) {
-        clearTimeout(timer)
+        clearInterval(timer)
         done(match[1]!)
       }
-    })
+      else if (died) {
+        clearInterval(timer)
+        failed(new Error(`${died}`))
+      }
+    }, 50)
+
+    setTimeout(() => {
+      clearInterval(timer)
+      failed(new Error(`the server printed no address in 20s. It said:\n${said()}`))
+    }, 20_000)
+
     child.on('error', failed)
-    child.on('exit', code =>
-      failed(new Error(`the server exited with ${code} before printing an address`)),
-    )
   })
 
   /*
@@ -258,9 +292,10 @@ export async function serve(database: string): Promise<Serving> {
    * migrated, which is what the first screen read needs to be true.
    */
   for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (died) throw new Error(died)
     try {
       const answer = await fetch(`${url}api/v1/health`)
-      if (answer.ok) return { url, database, process: child }
+      if (answer.ok) return { url, database, process: child, said }
     }
     catch {
       /* Not up yet. */
@@ -269,7 +304,46 @@ export async function serve(database: string): Promise<Serving> {
   }
 
   child.kill()
-  throw new Error(`${url} never answered its health endpoint`)
+  throw new Error(`${url} never answered its health endpoint. It said:\n${said()}`)
+}
+
+/**
+ * The servers this process started, for the checks below.
+ *
+ * Each spec file runs in its own process and the servers were started in `globalSetup`'s,
+ * so a spec cannot hold their handles. What it can do is ask whether the addresses still
+ * answer, which is what `stillServing` does when it has no handle to inspect.
+ */
+export function serversUnderTest(): Array<{ url: string }> {
+  const addresses = JSON.parse(readFileSync(ADDRESSES, 'utf8')) as {
+    seeded: string
+    empty: string
+  }
+  return [{ url: addresses.seeded }, { url: addresses.empty }]
+}
+
+/**
+ * Fail now, with the server's own words, if either server has died.
+ *
+ * Called at the top of each spec. A dead server otherwise shows up as a browser timing out
+ * on a blank page ten seconds later, which says nothing about what happened and points at
+ * the assertion rather than at the cause.
+ */
+export function stillServing(servers: Array<{ url: string }>): void {
+  for (const server of servers) {
+    const answered = spawnSync(
+      'curl',
+      ['-s', '-o', '/dev/null', '-m', '5', '-w', '%{http_code}', `${server.url}api/v1/health`],
+      { encoding: 'utf8' },
+    )
+    if (answered.stdout.trim() !== '200') {
+      throw new Error(
+        `${server.url} is not answering its health endpoint (curl said `
+        + `${answered.stdout.trim() || 'nothing'}). A server under test has died; the run's `
+        + 'log carries what it printed.',
+      )
+    }
+  }
 }
 
 /** Stop a server, and wait for it to be gone. */

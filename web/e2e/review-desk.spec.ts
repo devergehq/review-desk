@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 
 import { expect, test } from '@playwright/test'
 
-import { ADDRESSES, cli, cliJson } from './harness'
+import { ADDRESSES, cli, cliJson, serversUnderTest, stillServing } from './harness'
 
 /*
  * **Review Desk, end to end.** The command line records a review, the binary serves it,
@@ -35,6 +35,18 @@ function reviewRecord() {
     draft: { status: string, event: string | null, approved_by: string | null }
   }
 }
+
+/*
+ * **Both servers are checked before each test, so a death is reported where it happens.**
+ *
+ * One CI run failed with three asset requests dying at the transport level, no API request
+ * made at all, and a blank page — a server that had stopped answering mid-page-load. The
+ * assertion that timed out ten seconds later pointed at the Inbox's empty state, which was
+ * not what was wrong. This turns that into an immediate failure carrying the server's own
+ * output. It has not reproduced in four runs since; what it buys is that the next one will
+ * say something.
+ */
+test.beforeEach(() => stillServing(serversUnderTest()))
 
 test.describe.configure({ mode: 'serial' })
 
