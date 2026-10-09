@@ -15,12 +15,15 @@
 //! something on its own: the code it is about, the comment as it will post, the
 //! consequence, the proof and the fix.
 //!
-//! **Version 6 here becomes version 7 on the rebase onto DEV-873**, which takes 6 for
-//! findings across rounds. It is numbered 6 on this branch because
-//! `versions_are_ordered_from_one_with_no_gaps` below refuses a gap, and a branch that
-//! fails its own test is not reviewable. That test is also what makes the renumber safe:
-//! two migrations numbered 6 after the rebase fails exactly as loudly as the gap would
-//! now, so neither mistake can reach `master` quietly.
+//! **A migration takes the next free version at the time it merges, and nothing here
+//! predicts which number that will be.** Three branches were adding a migration at once
+//! when version 6 was written, so an earlier draft of this comment named the branch it
+//! expected to merge first and the number it expected to end up with — and the merge
+//! order changed under it, which is the whole argument for stating the rule instead of
+//! the outcome. `versions_are_ordered_from_one_with_no_gaps` below is the rule: it refuses
+//! a gap and refuses a repeat, so a rebase that leaves this number wrong in either
+//! direction fails loudly rather than reaching `master` quietly. Renumber to whatever is
+//! free and let the test confirm it.
 
 use rusqlite::Connection;
 

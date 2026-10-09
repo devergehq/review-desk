@@ -8,6 +8,13 @@ holds no implementation of either.
 | `openapi.yaml` | OpenAPI 3.1 for the local JSON API. 16 operations. |
 | `examples/` | One example response per endpoint, one request body per write, and the error shape. A `.<variant>.` form adds a second shape where one example cannot show an optional field both present and absent. |
 | `validate-examples.mjs` | Checks every example against its schema, and fails when an endpoint has no example. |
+
+**Every example that carries `findings[]` carries the whole of a finding**, the canonical
+file and each `.<variant>.` form alike, because `Finding` is `additionalProperties: false`
+and `validate-examples.mjs` checks a variant against the same schema. A variant added for
+one optional field still has to show every other — a `getReview` variant written to
+demonstrate an absent `brief.provenance` needs the finding fields too, or the check goes
+red on a file whose own subject never changed.
 | `redocly.yaml` | Lint configuration, including the one rule turned off and why. |
 | `package.json` | The pinned tooling the checks run on. |
 
