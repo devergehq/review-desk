@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Controls — softer and tactile</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap">
+<style>
+body{margin:0}
+a{color:#0E6E5C}a:hover{color:#094A3E}
+button{cursor:pointer;transition:background-color .14s ease,box-shadow .14s ease,transform .08s ease,color .14s ease}
+button:active{transform:translateY(1px)}
+button:focus-visible{outline:3px solid #9AD3C3;outline-offset:2px}
+</style>
+</helmet>
+<div style="min-height: 1900px; background: #FFFFFF; color: #14171A; font-family: 'Instrument Sans', 'Helvetica Neue', sans-serif; font-size: 15px; line-height: 1.5">
+<div style="max-width: 1280px; margin: 0 auto; padding: 56px 40px 96px; display: flex; flex-direction: column; gap: 56px">
+
+<div style="display: flex; flex-direction: column; gap: 10px">
+<div style="font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: #5A626B">Controls · sample data</div>
+<h1 style="margin: 0; font-family: 'Newsreader', Georgia, serif; font-weight: 400; font-size: 48px; line-height: 1.06; letter-spacing: -0.02em">Softer, and they answer back</h1>
+<p style="margin: 0; max-width: 720px; color: #2C3238">The first three work. Click them.</p>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(520px, 100%), 1fr)); gap: 28px">
+
+<section style="background: #F6F7F6; border-radius: 20px; padding: 32px; display: flex; flex-direction: column; gap: 20px">
+<div style="font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: #5A626B">Deciding on a finding</div>
+<div style="display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: baseline">
+<span style="display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; background: #14171A; color: #FFFFFF; padding: 4px 10px 4px 8px; border-radius: 7px"><span style="width: 8px; height: 8px; background: #FFFFFF; border-radius: 2px"></span>Blocker</span>
+<span style="flex: 1 1 260px; min-width: 0; font-family: 'Newsreader', Georgia, serif; font-size: 24px; line-height: 1.2"><span style="color: #8A9199">F1</span> A retried delivery is sent without an idempotency key</span>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 4px; background: #E8EAE9; border-radius: 14px; padding: 4px; align-self: flex-start">
+<sc-for list="{{ decisions }}" as="item" hint-placeholder-count="4">
+<button type="button" onClick="{{ item.pick }}" style="min-height: 46px; padding: 0 16px 0 13px; border: 0; border-radius: 10px; font: inherit; font-weight: {{ item.weight }}; display: flex; align-items: center; gap: 9px; background: {{ item.bg }}; color: {{ item.fg }}; box-shadow: {{ item.shadow }}">
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ item.icon }}"/></svg>
+<span>{{ item.label }}</span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #5A626B; border: 1px solid #C9CED3; border-radius: 5px; padding: 0 5px; background: #FFFFFF">{{ item.key }}</span>
+</button>
+</sc-for>
+</div>
+
+<sc-if value="{{ isRegrade }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="font-size: 13px; font-weight: 500; color: #2C3238">Regrade to</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<sc-for list="{{ severities }}" as="sev" hint-placeholder-count="4">
+<button type="button" onClick="{{ sev.pick }}" style="min-height: 44px; padding: 0 16px; border-radius: 12px; font: inherit; font-weight: {{ sev.weight }}; border: 1.5px solid {{ sev.border }}; background: {{ sev.bg }}; color: #14171A; box-shadow: {{ sev.shadow }}">{{ sev.label }}</button>
+</sc-for>
+</div>
+</div>
+</sc-if>
+
+<div style="display: flex; align-items: flex-start; gap: 10px; background: #FFFFFF; border-radius: 14px; padding: 14px 16px; box-shadow: 0 1px 2px rgba(20, 23, 26, 0.08)">
+<span style="width: 8px; height: 8px; border-radius: 50%; background: #0E6E5C; margin-top: 7px; flex: 0 0 auto"></span>
+<span>{{ summary }}</span>
+</div>
+</section>
+
+<section style="background: #F6F7F6; border-radius: 20px; padding: 32px; display: flex; flex-direction: column; gap: 20px">
+<div style="font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: #5A626B">Signing off</div>
+<div style="background: #FFFFFF; border-radius: 18px; padding: 26px; box-shadow: 0 1px 2px rgba(20, 23, 26, 0.08), 0 12px 32px -18px rgba(20, 23, 26, 0.35); display: flex; flex-direction: column; gap: 18px">
+
+<sc-if value="{{ isReady }}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-direction: column; gap: 18px">
+<div>
+<div style="font-family: 'Newsreader', Georgia, serif; font-size: 26px; line-height: 1.15">Ready for your sign-off</div>
+<div style="font-size: 14px; color: #2C3238; margin-top: 6px">2 findings and 2 comments will be posted. Nothing has been posted yet.</div>
+</div>
+<div style="display: flex; flex-wrap: wrap; border-radius: 14px; overflow: hidden; box-shadow: 0 1px 0 #094A3E, 0 10px 22px -12px rgba(14, 110, 92, 0.7)">
+<button type="button" onClick="{{ toggleMenu }}" aria-label="Choose how to post" style="flex: 1 1 170px; min-height: 56px; padding: 0 16px; border: 0; background: #0B5A4B; color: #FFFFFF; font: inherit; font-weight: 500; display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left"><span style="display: flex; flex-direction: column; line-height: 1.2"><span style="font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: #BFE3DA">Post as</span><span>{{ eventLabel }}</span></span><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg></button>
+<button type="button" onClick="{{ signOff }}" style="flex: 2 1 220px; min-height: 56px; padding: 0 20px; border: 0; border-left: 1px solid #094A3E; background: #0E6E5C; color: #FFFFFF; font: inherit; font-size: 16px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 12px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18)"><span>Sign off and post</span><svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="#FFFFFF" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 7h15M11 1.5L16.5 7 11 12.5"/></svg></button>
+</div>
+<sc-if value="{{ menuOpen }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 4px; background: #F6F7F6; border-radius: 14px; padding: 6px">
+<sc-for list="{{ events }}" as="ev" hint-placeholder-count="3">
+<button type="button" onClick="{{ ev.pick }}" style="min-height: 46px; padding: 0 14px; border: 0; border-radius: 10px; font: inherit; font-weight: {{ ev.weight }}; text-align: left; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: {{ ev.bg }}; color: #14171A; box-shadow: {{ ev.shadow }}"><span>{{ ev.label }}</span><span style="font-size: 13px; color: #5A626B; font-weight: 400">{{ ev.hint }}</span></button>
+</sc-for>
+</div>
+</sc-if>
+<button type="button" style="align-self: flex-start; min-height: 46px; padding: 0 18px; border: 1px solid #D5D9DC; border-radius: 12px; background: #FFFFFF; color: #14171A; font: inherit; font-weight: 500; box-shadow: 0 1px 0 #E3E6E8">Send back with a note</button>
+</div>
+</sc-if>
+
+<sc-if value="{{ isSigned }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; align-items: center; gap: 12px">
+<span style="width: 36px; height: 36px; border-radius: 50%; background: #E3F2EE; display: flex; align-items: center; justify-content: center; flex: 0 0 auto"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="#0E6E5C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 5"/></svg></span>
+<div><div style="font-family: 'Newsreader', Georgia, serif; font-size: 24px; line-height: 1.15">Signed off</div><div style="font-size: 14px; color: #2C3238">It will be posted as {{ eventLabel }}.</div></div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="height: 6px; border-radius: 3px; background: #E8EAE9; overflow: hidden"><div style="width: 38%; height: 6px; border-radius: 3px; background: #0E6E5C"></div></div>
+<div style="font-size: 13px; color: #5A626B">Waiting for the review session to pick it up. It checks every 90 seconds.</div>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 10px">
+<button type="button" onClick="{{ showPosted }}" style="min-height: 44px; padding: 0 16px; border: 1px solid #D5D9DC; border-radius: 12px; background: #FFFFFF; color: #14171A; font: inherit; font-weight: 500; box-shadow: 0 1px 0 #E3E6E8">Demo: skip to posted</button>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isPosted }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; align-items: center; gap: 12px">
+<span style="width: 36px; height: 36px; border-radius: 50%; background: #0E6E5C; display: flex; align-items: center; justify-content: center; flex: 0 0 auto"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 5"/></svg></span>
+<div><div style="font-family: 'Newsreader', Georgia, serif; font-size: 24px; line-height: 1.15">Posted</div><div style="font-size: 14px; color: #2C3238">As {{ eventLabel }}, 40 seconds after you signed off.</div></div>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center">
+<a href="Controls.dc.html" style="font-weight: 500">See it on GitHub</a>
+<button type="button" onClick="{{ reset }}" style="min-height: 44px; padding: 0 16px; border: 1px solid #D5D9DC; border-radius: 12px; background: #FFFFFF; color: #14171A; font: inherit; font-weight: 500; box-shadow: 0 1px 0 #E3E6E8">Demo: start again</button>
+</div>
+</div>
+</sc-if>
+</div>
+</section>
+
+<section style="background: #F6F7F6; border-radius: 20px; padding: 32px; display: flex; flex-direction: column; gap: 20px">
+<div style="font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: #5A626B">Answering the author, in a later round</div>
+<div style="background: #FFFFFF; border-radius: 14px; padding: 14px 16px; box-shadow: 0 1px 2px rgba(20, 23, 26, 0.08); display: flex; flex-direction: column; gap: 4px">
+<span style="font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; color: #5A626B">The author replied to F2</span>
+<span>"Agreed, but I'd like to do it with the dashboard work in ABC-240."</span>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px; background: #E8EAE9; border-radius: 14px; padding: 4px; align-self: flex-start">
+<sc-for list="{{ replies }}" as="rep" hint-placeholder-count="3">
+<button type="button" onClick="{{ rep.pick }}" style="min-height: 46px; padding: 0 18px; border: 0; border-radius: 10px; font: inherit; font-weight: {{ rep.weight }}; background: {{ rep.bg }}; color: {{ rep.fg }}; box-shadow: {{ rep.shadow }}">{{ rep.label }}</button>
+</sc-for>
+</div>
+<div style="display: flex; align-items: flex-start; gap: 10px; background: #FFFFFF; border-radius: 14px; padding: 14px 16px; box-shadow: 0 1px 2px rgba(20, 23, 26, 0.08)">
+<span style="width: 8px; height: 8px; border-radius: 50%; background: #0E6E5C; margin-top: 7px; flex: 0 0 auto"></span>
+<span>{{ replySummary }}</span>
+</div>
+</section>
+
+<section style="background: #F6F7F6; border-radius: 20px; padding: 32px; display: flex; flex-direction: column; gap: 20px">
+<div style="font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: #5A626B">Starting a review</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<label for="c-start-1" style="font-size: 13px; font-weight: 500">Resting</label>
+<div style="display: flex; align-items: center; gap: 10px; background: #FFFFFF; border: 1px solid #D5D9DC; border-radius: 14px; padding: 5px 5px 5px 16px; box-shadow: 0 1px 0 #E3E6E8">
+<svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="#5A626B" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 9.5l3-3M7 5l1.3-1.3a2.6 2.6 0 013.7 3.7L10.7 8.7M9 11l-1.3 1.3a2.6 2.6 0 01-3.7-3.7L5.3 7.3"/></svg>
+<input id="c-start-1" type="text" placeholder="Paste a pull request link" style="flex: 1 1 auto; min-width: 0; min-height: 44px; border: 0; outline: 0; background: transparent; font: inherit; color: #14171A">
+<button type="button" style="min-height: 44px; padding: 0 18px; border: 0; border-radius: 10px; background: #14171A; color: #FFFFFF; font: inherit; font-weight: 600">Start</button>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<label for="c-start-2" style="font-size: 13px; font-weight: 500">In use</label>
+<div style="display: flex; align-items: center; gap: 10px; background: #FFFFFF; border: 1.5px solid #0E6E5C; border-radius: 14px; padding: 5px 5px 5px 16px; box-shadow: 0 0 0 4px #D9EFE9">
+<svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="#0E6E5C" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 9.5l3-3M7 5l1.3-1.3a2.6 2.6 0 013.7 3.7L10.7 8.7M9 11l-1.3 1.3a2.6 2.6 0 01-3.7-3.7L5.3 7.3"/></svg>
+<input id="c-start-2" type="text" defaultValue="github.com/acme/portal/pull/412" style="flex: 1 1 auto; min-width: 0; min-height: 44px; border: 0; outline: 0; background: transparent; font: inherit; color: #14171A">
+<button type="button" style="min-height: 44px; padding: 0 18px; border: 0; border-radius: 10px; background: #0E6E5C; color: #FFFFFF; font: inherit; font-weight: 600; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18)">Start</button>
+</div>
+<div style="font-size: 13px; color: #5A626B">acme/portal #412 · Retry failed webhook deliveries</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<label for="c-start-3" style="font-size: 13px; font-weight: 500">Refused</label>
+<div style="display: flex; align-items: center; gap: 10px; background: #FFFFFF; border: 1.5px solid #8A4B00; border-radius: 14px; padding: 5px 5px 5px 16px; box-shadow: 0 0 0 4px #FFE9BF">
+<svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="#8A4B00" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 9.5l3-3M7 5l1.3-1.3a2.6 2.6 0 013.7 3.7L10.7 8.7M9 11l-1.3 1.3a2.6 2.6 0 01-3.7-3.7L5.3 7.3"/></svg>
+<input id="c-start-3" type="text" defaultValue="github.com/acme/portal/issues/90" style="flex: 1 1 auto; min-width: 0; min-height: 44px; border: 0; outline: 0; background: transparent; font: inherit; color: #14171A">
+<button type="button" style="min-height: 44px; padding: 0 18px; border: 0; border-radius: 10px; background: #E8EAE9; color: #5A626B; font: inherit; font-weight: 600">Start</button>
+</div>
+<div style="font-size: 13px; color: #6B3A00; font-weight: 500">That link is an issue, not a pull request.</div>
+</div>
+</section>
+</div>
+
+<section style="display: flex; flex-direction: column; gap: 22px">
+<div style="font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: #5A626B">Buttons, in each state</div>
+<div style="overflow-x: auto">
+<div style="min-width: 860px; display: grid; grid-template-columns: 130px repeat(5, minmax(0, 1fr)); gap: 18px 16px; align-items: center">
+<div></div><div style="font-size: 13px; color: #5A626B">Resting</div><div style="font-size: 13px; color: #5A626B">Pointer over it</div><div style="font-size: 13px; color: #5A626B">Pressed</div><div style="font-size: 13px; color: #5A626B">Working</div><div style="font-size: 13px; color: #5A626B">Not available</div>
+
+<div style="font-weight: 600">The one action</div>
+<button type="button" style="min-height: 50px; padding: 0 18px; border: 0; border-radius: 13px; background: #0E6E5C; color: #FFFFFF; font: inherit; font-weight: 600; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 0 #094A3E, 0 10px 20px -12px rgba(14, 110, 92, 0.7)">Sign off</button>
+<button type="button" style="min-height: 50px; padding: 0 18px; border: 0; border-radius: 13px; background: #128470; color: #FFFFFF; font: inherit; font-weight: 600; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 1px 0 #094A3E, 0 14px 24px -12px rgba(14, 110, 92, 0.8)">Sign off</button>
+<button type="button" style="min-height: 50px; padding: 0 18px; border: 0; border-radius: 13px; background: #0B5A4B; color: #FFFFFF; font: inherit; font-weight: 600; box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.25)">Sign off</button>
+<button type="button" style="min-height: 50px; padding: 0 18px; border: 0; border-radius: 13px; background: #0E6E5C; color: #FFFFFF; font: inherit; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 10px"><span style="width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.4); border-top-color: #FFFFFF; box-sizing: border-box"></span>Signing off</button>
+<button type="button" disabled="{{ true }}" style="min-height: 50px; padding: 0 18px; border: 0; border-radius: 13px; background: #E8EAE9; color: #5A626B; font: inherit; font-weight: 600">Sign off</button>
+
+<div style="font-weight: 600">Everything else</div>
+<button type="button" style="min-height: 46px; padding: 0 18px; border: 1px solid #D5D9DC; border-radius: 12px; background: #FFFFFF; color: #14171A; font: inherit; font-weight: 500; box-shadow: 0 1px 0 #E3E6E8">Send back</button>
+<button type="button" style="min-height: 46px; padding: 0 18px; border: 1px solid #14171A; border-radius: 12px; background: #FFFFFF; color: #14171A; font: inherit; font-weight: 500; box-shadow: 0 4px 10px -6px rgba(20, 23, 26, 0.4)">Send back</button>
+<button type="button" style="min-height: 46px; padding: 0 18px; border: 1px solid #14171A; border-radius: 12px; background: #F1F2F3; color: #14171A; font: inherit; font-weight: 500; box-shadow: inset 0 2px 3px rgba(20, 23, 26, 0.12)">Send back</button>
+<button type="button" style="min-height: 46px; padding: 0 18px; border: 1px solid #D5D9DC; border-radius: 12px; background: #FFFFFF; color: #14171A; font: inherit; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 10px"><span style="width: 14px; height: 14px; border-radius: 50%; border: 2px solid #D5D9DC; border-top-color: #14171A; box-sizing: border-box"></span>Sending</button>
+<button type="button" disabled="{{ true }}" style="min-height: 46px; padding: 0 18px; border: 1px solid #E3E6E8; border-radius: 12px; background: #F6F7F6; color: #5A626B; font: inherit; font-weight: 500">Send back</button>
+</div>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 22px">
+<div style="font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: #5A626B">Labels · told apart by shape as well as colour</div>
+<div style="display: flex; flex-wrap: wrap; gap: 12px">
+<span style="display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; background: #14171A; color: #FFFFFF; padding: 5px 11px 5px 9px; border-radius: 8px"><span style="width: 8px; height: 8px; background: #FFFFFF; border-radius: 2px"></span>Blocker</span>
+<span style="display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; background: #FFE9BF; color: #6B3A00; padding: 5px 11px 5px 9px; border-radius: 8px"><span style="width: 8px; height: 8px; border-radius: 2px; box-sizing: border-box; border: 2px solid #6B3A00; border-right-width: 5px"></span>Should</span>
+<span style="display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; background: #ECEEEF; color: #3C434A; padding: 5px 11px 5px 9px; border-radius: 8px"><span style="width: 8px; height: 8px; border-radius: 2px; box-sizing: border-box; border: 2px solid #3C434A"></span>Nit</span>
+<span style="display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; background: #E4EBFA; color: #1F3F8F; padding: 5px 11px 5px 9px; border-radius: 8px"><span style="width: 8px; height: 8px; border-radius: 50%; box-sizing: border-box; border: 2px solid #1F3F8F"></span>Question</span>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 12px">
+<span style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; background: #E3F2EE; color: #094A3E; padding: 6px 13px 6px 10px; border-radius: 999px"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 5"/></svg>Fixed</span>
+<span style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; background: #FFE9BF; color: #6B3A00; padding: 6px 13px 6px 10px; border-radius: 999px"><span style="width: 7px; height: 7px; border-radius: 50%; background: #6B3A00"></span>Still open · round 2</span>
+<span style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; background: #ECEEEF; color: #2C3238; padding: 6px 13px 6px 10px; border-radius: 999px"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>New this round</span>
+<span style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; background: #14171A; color: #FFFFFF; padding: 6px 13px 6px 10px; border-radius: 999px"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h7a3 3 0 010 6H6M5.5 2.5L3 5l2.5 2.5"/></svg>Introduced by a fix</span>
+<span style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; background: #FFFFFF; color: #0E6E5C; padding: 5px 12px 5px 9px; border-radius: 999px; border: 1.5px solid #0E6E5C"><span style="width: 7px; height: 7px; border-radius: 50%; background: #0E6E5C"></span>Waiting on you</span>
+</div>
+</section>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1900}}'>
+class Component extends DCLogic {
+renderVals() {
+var s = Object.assign({ decision: 'keep', severity: 'blocker', event: 'request', menu: false, phase: 'ready', reply: 'accept' }, this.state || {});
+var self = this;
+var set = function (patch) { return function () { self.setState(patch); }; };
+var on = { bg: '#FFFFFF', fg: '#14171A', shadow: '0 1px 2px rgba(20, 23, 26, 0.22), 0 4px 10px -6px rgba(20, 23, 26, 0.35)', weight: 600 };
+var off = { bg: 'transparent', fg: '#2C3238', shadow: 'none', weight: 500 };
+var sevLabels = { blocker: 'Blocker', should: 'Should', nit: 'Nit', question: 'Question' };
+var decisions = [
+['keep', 'Keep', 'Y', 'M3 8.5l3.2 3.2L13 5'],
+['cut', 'Cut', 'X', 'M4 4l8 8M12 4l-8 8'],
+['regrade', 'Regrade', 'G', 'M5 13V3M5 3L2.5 5.5M5 3l2.5 2.5M11 3v10M11 13l-2.5-2.5M11 13l2.5-2.5'],
+['rewrite', 'Rewrite', 'E', 'M3 13l1-3.5L10.5 3l2.5 2.5L6.5 12 3 13z']
+].map(function (d) {
+var look = s.decision === d[0] ? on : off;
+return { label: d[1], key: d[2], icon: d[3], bg: look.bg, fg: look.fg, shadow: look.shadow, weight: look.weight, pick: set({ decision: d[0] }) };
+});
+var severities = ['blocker', 'should', 'nit', 'question'].map(function (k) {
+var picked = s.severity === k;
+return { label: sevLabels[k], weight: picked ? 600 : 500, border: picked ? '#14171A' : '#D5D9DC', bg: picked ? '#FFFFFF' : '#F6F7F6', shadow: picked ? '0 4px 10px -6px rgba(20, 23, 26, 0.4)' : 'none', pick: set({ severity: k }) };
+});
+var eventLabels = { request: 'Request changes', comment: 'Comment', approve: 'Approve' };
+var eventHints = { request: 'Blocks the merge until answered', comment: 'Says it without blocking', approve: 'Good to merge' };
+var events = ['request', 'comment', 'approve'].map(function (k) {
+var picked = s.event === k;
+return { label: eventLabels[k], hint: eventHints[k], weight: picked ? 600 : 500, bg: picked ? '#FFFFFF' : 'transparent', shadow: picked ? '0 1px 2px rgba(20, 23, 26, 0.18)' : 'none', pick: set({ event: k, menu: false }) };
+});
+var replyText = {
+again: 'F2 goes back in this round’s review as still open.',
+accept: 'F2 is closed as accepted follow-up. Your acceptance is saved as feedback.',
+ticket: 'F2 moves to a ticket for an agent and leaves this review.'
+};
+var replies = [['again', 'Raise it again'], ['accept', 'Accept their reason'], ['ticket', 'Move to a ticket']].map(function (r) {
+var look = s.reply === r[0] ? on : off;
+return { label: r[1], bg: look.bg, fg: look.fg, shadow: look.shadow, weight: look.weight, pick: set({ reply: r[0] }) };
+});
+var summary = {
+keep: 'F1 will be posted as a Blocker, with its comment on line 58.',
+cut: 'F1 will not be posted. It stays in the record, marked as cut by you.',
+regrade: 'F1 will be posted as a ' + sevLabels[s.severity] + '.',
+rewrite: 'F1 opens for editing. Your wording is what gets posted.'
+}[s.decision];
+return {
+decisions: decisions,
+severities: severities,
+events: events,
+replies: replies,
+summary: summary,
+replySummary: replyText[s.reply],
+eventLabel: eventLabels[s.event],
+isRegrade: s.decision === 'regrade',
+menuOpen: s.menu === true,
+isReady: s.phase === 'ready',
+isSigned: s.phase === 'signed',
+isPosted: s.phase === 'posted',
+toggleMenu: set({ menu: !s.menu }),
+signOff: set({ phase: 'signed', menu: false }),
+showPosted: set({ phase: 'posted' }),
+reset: set({ phase: 'ready' })
+};
+}
+}
+</script>
+</body>
+</html>

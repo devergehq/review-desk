@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>B — The workbench</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+body{margin:0}
+a{color:#8AB8FF}a:hover{color:#B7D3FF}
+</style>
+</helmet>
+<div style="min-height: 1080px; background: #0D1014; color: #E7EAEE; font-family: 'Geist', 'Helvetica Neue', sans-serif; font-size: 14px; line-height: 1.45; display: flex; flex-direction: column">
+
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; padding: 8px 16px; border-bottom: 1px solid #272E38; background: #13171D">
+<div style="font-family: 'Geist Mono', monospace; font-weight: 500; font-size: 13px; background: #F5B544; color: #1A1300; padding: 4px 8px">RD</div>
+<nav style="display: flex; gap: 2px">
+<a href="Queue.dc.html" style="padding: 12px 10px; color: #9BA5B1; text-decoration: none">Queue</a>
+<a href="Workbench.dc.html" style="padding: 12px 10px; color: #E7EAEE; text-decoration: none; font-weight: 600">Reviews</a>
+<a href="Workbench.dc.html" style="padding: 12px 10px; color: #9BA5B1; text-decoration: none">Rules</a>
+</nav>
+<div style="flex: 1 1 320px; min-width: 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline">
+<span style="font-family: 'Geist Mono', monospace; font-size: 13px; color: #9BA5B1">acme/portal #412</span>
+<span style="font-weight: 600; font-size: 15px">Retry failed webhook deliveries</span>
+<span style="font-family: 'Geist Mono', monospace; font-size: 12px; color: #9BA5B1">ABC-231 · r1 · 214 lines · 3f9c2ab</span>
+</div>
+<div style="display: flex; align-items: center; gap: 10px">
+<div style="display: flex; gap: 3px" aria-label="Layer 6 of 7">
+<span style="width: 18px; height: 6px; background: #E7EAEE"></span><span style="width: 18px; height: 6px; background: #E7EAEE"></span><span style="width: 18px; height: 6px; background: #E7EAEE"></span><span style="width: 18px; height: 6px; background: #E7EAEE"></span><span style="width: 18px; height: 6px; background: #E7EAEE"></span><span style="width: 18px; height: 6px; background: #F5B544"></span><span style="width: 18px; height: 6px; background: #272E38"></span>
+</div>
+<span style="font-family: 'Geist Mono', monospace; font-size: 12px; color: #F5B544">6/7 draft · yours</span>
+</div>
+<span style="font-family: 'Geist Mono', monospace; font-size: 12px; color: #9BA5B1">sample data</span>
+</header>
+
+<div style="flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: stretch">
+
+<aside style="flex: 1 1 250px; min-width: 0; background: #13171D; border-right: 1px solid #272E38; display: flex; flex-direction: column">
+<div style="padding: 14px 14px 6px; font-family: 'Geist Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #9BA5B1">Understand</div>
+<a href="Workbench.dc.html" style="display: flex; gap: 10px; align-items: center; min-height: 44px; padding: 0 14px; color: #E7EAEE; text-decoration: none"><span style="font-family: 'Geist Mono', monospace; font-size: 12px; color: #9BA5B1; width: 14px">1</span><span>The problem</span></a>
+<a href="Workbench.dc.html" style="display: flex; gap: 10px; align-items: center; min-height: 44px; padding: 0 14px; color: #E7EAEE; text-decoration: none"><span style="font-family: 'Geist Mono', monospace; font-size: 12px; color: #9BA5B1; width: 14px">2</span><span style="flex: 1 1 auto">3 options</span><span style="font-family: 'Geist Mono', monospace; font-size: 11px; color: #9BA5B1">built: B</span></a>
+
+<div style="padding: 16px 14px 6px; font-family: 'Geist Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #9BA5B1">Findings · 3</div>
+<a href="Workbench.dc.html" style="display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; color: #E7EAEE; text-decoration: none; background: #1F2731; box-shadow: inset 0 0 0 1px #F5B544">
+<span style="font-family: 'Geist Mono', monospace; font-size: 11px; font-weight: 500; background: #E7EAEE; color: #0D1014; padding: 2px 5px; margin-top: 1px">BLK</span>
+<span style="flex: 1 1 auto; min-width: 0"><span style="display: block; font-weight: 500">F1 Retry sent without an idempotency key</span><span style="display: block; font-family: 'Geist Mono', monospace; font-size: 11px; color: #9BA5B1">DeliverWebhook.php:58 · keep</span></span>
+</a>
+<a href="Workbench.dc.html" style="display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; color: #E7EAEE; text-decoration: none">
+<span style="font-family: 'Geist Mono', monospace; font-size: 11px; font-weight: 500; border: 1px solid #F5B544; color: #F5B544; padding: 1px 4px; margin-top: 1px">SHD</span>
+<span style="flex: 1 1 auto; min-width: 0"><span style="display: block; font-weight: 500">F2 Backoff schedule has no ceiling</span><span style="display: block; font-family: 'Geist Mono', monospace; font-size: 11px; color: #F5B544">:91 · keep · regraded by you</span></span>
+</a>
+<a href="Workbench.dc.html" style="display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; color: #9BA5B1; text-decoration: none">
+<span style="font-family: 'Geist Mono', monospace; font-size: 11px; font-weight: 500; border: 1px solid #5B6572; color: #9BA5B1; padding: 1px 4px; margin-top: 1px">NIT</span>
+<span style="flex: 1 1 auto; min-width: 0"><span style="display: block">F3 Backoff schedule repeated in two files</span><span style="display: block; font-family: 'Geist Mono', monospace; font-size: 11px">config/webhooks.php · to ticket</span></span>
+</a>
+
+<div style="padding: 16px 14px 6px; font-family: 'Geist Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #9BA5B1">Coverage · 4 of 5</div>
+<div style="padding: 0 14px 4px; display: flex; flex-direction: column; gap: 6px; font-family: 'Geist Mono', monospace; font-size: 12px">
+<div style="display: flex; gap: 8px; align-items: center"><span style="width: 8px; height: 8px; background: #E7EAEE"></span><span style="flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">jobs/DeliverWebhook.php</span><span style="color: #9BA5B1">2</span></div>
+<div style="display: flex; gap: 8px; align-items: center"><span style="width: 8px; height: 8px; background: #E7EAEE"></span><span style="flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">tests/WebhookRetryTest.php</span><span style="color: #9BA5B1">ran</span></div>
+<div style="display: flex; gap: 8px; align-items: center"><span style="width: 8px; height: 8px; background: #E7EAEE"></span><span style="flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">config/webhooks.php</span><span style="color: #9BA5B1">1</span></div>
+<div style="display: flex; gap: 8px; align-items: center"><span style="width: 8px; height: 8px; background: #E7EAEE"></span><span style="flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">migrations/add_attempts.php</span><span style="color: #9BA5B1">0</span></div>
+<div style="display: flex; gap: 8px; align-items: center; color: #F5B544"><span style="width: 8px; height: 8px; border: 1px solid #F5B544; box-sizing: border-box"></span><span style="flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">resources/admin/**</span><span>not read</span></div>
+</div>
+
+<div style="margin-top: auto; padding: 14px; border-top: 1px solid #272E38; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; font-size: 12px; color: #9BA5B1">
+<div><span style="font-family: 'Geist Mono', monospace; border: 1px solid #3A434F; padding: 0 5px; color: #E7EAEE">J</span> <span style="font-family: 'Geist Mono', monospace; border: 1px solid #3A434F; padding: 0 5px; color: #E7EAEE">K</span> move</div>
+<div><span style="font-family: 'Geist Mono', monospace; border: 1px solid #3A434F; padding: 0 5px; color: #E7EAEE">Y</span> keep</div>
+<div><span style="font-family: 'Geist Mono', monospace; border: 1px solid #3A434F; padding: 0 5px; color: #E7EAEE">X</span> cut</div>
+<div><span style="font-family: 'Geist Mono', monospace; border: 1px solid #3A434F; padding: 0 5px; color: #E7EAEE">G</span> regrade</div>
+<div><span style="font-family: 'Geist Mono', monospace; border: 1px solid #3A434F; padding: 0 5px; color: #E7EAEE">E</span> rewrite</div>
+<div><span style="font-family: 'Geist Mono', monospace; border: 1px solid #3A434F; padding: 0 5px; color: #E7EAEE">Cmd Enter</span> sign off</div>
+</div>
+</aside>
+
+<main style="flex: 999 1 560px; min-width: 0; padding: 22px 26px 26px; display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center">
+<span style="font-family: 'Geist Mono', monospace; font-size: 12px; font-weight: 500; background: #E7EAEE; color: #0D1014; padding: 3px 8px">BLOCKER</span>
+<h1 style="margin: 0; flex: 1 1 320px; font-size: 22px; font-weight: 600; letter-spacing: -0.01em">F1 · A retried delivery is sent without an idempotency key</h1>
+<span style="font-family: 'Geist Mono', monospace; font-size: 12px; color: #9BA5B1">1 of 3</span>
+</div>
+<p style="margin: 0; font-size: 15px; color: #C9D0D8; max-width: 760px">A second delivery of the same event is indistinguishable from a new one, so a customer who was briefly down receives it twice.</p>
+
+<div style="border: 1px solid #272E38; background: #13171D">
+<div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 8px 14px; border-bottom: 1px solid #272E38; font-family: 'Geist Mono', monospace; font-size: 12px; color: #9BA5B1"><span style="color: #E7EAEE">jobs/DeliverWebhook.php</span><span>lines 54–63</span><span style="margin-left: auto">as changed in this PR</span></div>
+<div style="font-family: 'Geist Mono', monospace; font-size: 13px; line-height: 1.75; overflow-x: auto; padding: 8px 0">
+<div style="display: flex; gap: 18px; padding: 0 14px; white-space: pre"><span style="color: #6F7985">54</span><span style="color: #9BA5B1">/** Sends one delivery. Retried by the queue on failure. */</span></div>
+<div style="display: flex; gap: 18px; padding: 0 14px; white-space: pre"><span style="color: #6F7985">55</span><span> </span></div>
+<div style="display: flex; gap: 18px; padding: 0 14px; white-space: pre"><span style="color: #6F7985">56</span><span>public function handle(WebhookClient $client): void</span></div>
+<div style="display: flex; gap: 18px; padding: 0 14px; white-space: pre"><span style="color: #6F7985">57</span><span>{</span></div>
+<div style="display: flex; gap: 18px; padding: 0 14px; white-space: pre; background: #3A2E12; box-shadow: inset 3px 0 0 #F5B544"><span style="color: #F5B544">58</span><span>    $response = $client-&gt;post($this-&gt;endpoint-&gt;url, $this-&gt;payload);</span></div>
+<div style="margin: 4px 14px 8px 54px; border: 1px solid #F5B544; background: #1A2028; padding: 10px 12px; font-family: 'Geist', sans-serif; font-size: 14px; line-height: 1.45; display: flex; flex-direction: column; gap: 4px">
+<span style="font-family: 'Geist Mono', monospace; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: #F5B544">Inline comment, as it will post</span>
+<span>This retry re-sends the payload with no idempotency key, so an endpoint that accepted the first attempt slowly gets the event twice. The other two senders set <span style="font-family: 'Geist Mono', monospace; font-size: 13px">Idempotency-Key</span> from the delivery id.</span>
+</div>
+<div style="display: flex; gap: 18px; padding: 0 14px; white-space: pre"><span style="color: #6F7985">59</span><span> </span></div>
+<div style="display: flex; gap: 18px; padding: 0 14px; white-space: pre"><span style="color: #6F7985">60</span><span>    if ($response-&gt;failed()) {</span></div>
+<div style="display: flex; gap: 18px; padding: 0 14px; white-space: pre"><span style="color: #6F7985">61</span><span>        $this-&gt;release($this-&gt;delayFor($this-&gt;attempts()));</span></div>
+<div style="display: flex; gap: 18px; padding: 0 14px; white-space: pre"><span style="color: #6F7985">62</span><span>    }</span></div>
+<div style="display: flex; gap: 18px; padding: 0 14px; white-space: pre"><span style="color: #6F7985">63</span><span>}</span></div>
+</div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 14px">
+<div style="border: 1px solid #272E38; background: #13171D; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px">
+<div style="font-family: 'Geist Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #9BA5B1">Evidence · throwaway test, not committed</div>
+<div style="font-family: 'Geist Mono', monospace; font-size: 12px; line-height: 1.7; white-space: pre-wrap; color: #C9D0D8">endpoint accepts attempt 1 after 31s
+queue retries at 30s
+deliveries received for event evt_1: 2
+expected: 1</div>
+</div>
+<div style="border: 1px solid #272E38; background: #13171D; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px">
+<div style="font-family: 'Geist Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #9BA5B1">Lens · sibling diff</div>
+<div style="font-size: 13px; color: #C9D0D8">The two other senders both set a key.</div>
+<div style="font-family: 'Geist Mono', monospace; font-size: 12px; line-height: 1.7; color: #C9D0D8"><div>jobs/SendInvoiceEmail.php:44</div><div>jobs/SyncToLedger.php:71</div></div>
+</div>
+</div>
+
+<div style="margin-top: auto; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-top: 16px; border-top: 1px solid #272E38">
+<button type="button" style="min-height: 44px; padding: 0 16px; border: 1px solid #E7EAEE; background: #E7EAEE; color: #0D1014; font: inherit; font-weight: 600">Keep <span style="font-family: 'Geist Mono', monospace; font-size: 11px; margin-left: 6px">Y</span></button>
+<button type="button" style="min-height: 44px; padding: 0 16px; border: 1px solid #3A434F; background: transparent; color: #E7EAEE; font: inherit">Cut <span style="font-family: 'Geist Mono', monospace; font-size: 11px; margin-left: 6px; color: #9BA5B1">X</span></button>
+<button type="button" style="min-height: 44px; padding: 0 16px; border: 1px solid #3A434F; background: transparent; color: #E7EAEE; font: inherit">Regrade <span style="font-family: 'Geist Mono', monospace; font-size: 11px; margin-left: 6px; color: #9BA5B1">G</span></button>
+<button type="button" style="min-height: 44px; padding: 0 16px; border: 1px solid #3A434F; background: transparent; color: #E7EAEE; font: inherit">Rewrite <span style="font-family: 'Geist Mono', monospace; font-size: 11px; margin-left: 6px; color: #9BA5B1">E</span></button>
+<span style="margin-left: auto; font-family: 'Geist Mono', monospace; font-size: 12px; color: #9BA5B1">next: F2 <span style="border: 1px solid #3A434F; padding: 0 5px; color: #E7EAEE">J</span></span>
+</div>
+</main>
+
+<aside style="flex: 1 1 320px; min-width: 0; background: #13171D; border-left: 1px solid #272E38; display: flex; flex-direction: column">
+<div style="padding: 14px 16px 8px; display: flex; align-items: baseline; gap: 10px"><span style="font-family: 'Geist Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #9BA5B1">Outgoing</span><span style="margin-left: auto; font-family: 'Geist Mono', monospace; font-size: 12px; color: #9BA5B1">96/150 words</span></div>
+<div style="margin: 0 16px; padding: 14px; background: #0D1014; border: 1px solid #272E38; display: flex; flex-direction: column; gap: 10px; font-size: 13px; color: #C9D0D8">
+<p style="margin: 0">The queue-with-backoff approach fits the ticket, and the two findings below are about the retry path rather than the choice.</p>
+<div style="font-weight: 600; color: #E7EAEE">Blocker · F1 · A retried delivery is sent without an idempotency key</div>
+<p style="margin: 0">A second delivery of the same event is indistinguishable from a new one, so a customer who was briefly down receives it twice.</p>
+<div style="font-weight: 600; color: #E7EAEE">Should · F2 · The backoff schedule has no ceiling</div>
+<p style="margin: 0">A permanently dead endpoint is retried forever, which keeps the queue busy with deliveries nobody will receive.</p>
+<div style="font-family: 'Geist Mono', monospace; font-size: 12px; color: #9BA5B1; border-top: 1px solid #272E38; padding-top: 8px">+ 2 inline comments · :58, :91</div>
+</div>
+
+<div style="padding: 16px; display: flex; flex-direction: column; gap: 8px; font-size: 13px">
+<div style="display: flex; justify-content: space-between; gap: 10px"><span style="color: #9BA5B1">Review lint</span><span>passes</span></div>
+<div style="display: flex; justify-content: space-between; gap: 10px"><span style="color: #9BA5B1">Raised before on this PR</span><span>none</span></div>
+<div style="display: flex; justify-content: space-between; gap: 10px"><span style="color: #9BA5B1">Your edits</span><span>2 · regraded F2, F3 to ticket</span></div>
+<div style="display: flex; justify-content: space-between; gap: 10px"><span style="color: #9BA5B1">Session</span><span>linked · checks every 90s</span></div>
+</div>
+
+<div style="margin-top: auto; padding: 16px; border-top: 1px solid #272E38; display: flex; flex-direction: column; gap: 10px">
+<label for="post-as-b" style="font-family: 'Geist Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #9BA5B1">Post as</label>
+<select id="post-as-b" style="min-height: 44px; padding: 0 10px; border: 1px solid #3A434F; background: #0D1014; color: #E7EAEE; font: inherit">
+<option>Request changes</option><option>Comment</option><option>Approve</option>
+</select>
+<button type="button" style="min-height: 52px; border: 0; background: #F5B544; color: #1A1300; font: inherit; font-size: 15px; font-weight: 600">Sign off and post <span style="font-family: 'Geist Mono', monospace; font-size: 11px; margin-left: 8px">Cmd Enter</span></button>
+<button type="button" style="min-height: 44px; border: 1px solid #3A434F; background: transparent; color: #E7EAEE; font: inherit">Send back with a note</button>
+</div>
+</aside>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1080}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>
