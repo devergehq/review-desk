@@ -46,3 +46,4 @@ tempfile.workspace = true
 # opens the same file and writes the column itself. Test-only: nothing in `src/` opens the
 # database, which is the project's first rule of interaction.
 rusqlite.workspace = true
+tiny_http = "0.12"
