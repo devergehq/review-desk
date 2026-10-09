@@ -1,0 +1,106 @@
+# Dependabot: the update bot. One pull request per ecosystem per week, not one per package.
+#
+# Four ecosystems, because this repository has four places a dependency can be declared:
+# the Cargo workspace, `web/` (pnpm), `contract/` (npm) and the workflows themselves.
+# Leaving any of them out would mean a whole class of dependency nobody watches, which is
+# the state this file replaces.
+#
+# **Nothing here auto-merges.** Patrick reviews every one. That is deliberate and it is
+# why the grouping matters: an ungrouped bot on this dependency set would open something
+# like ten pull requests a week into a queue of one person.
+#
+# **Grouped by ecosystem for minor and patch, ungrouped for major.** A single group per
+# ecosystem covering everything looked tidier and was worse: by the third month the `web`
+# group arrives with eleven members and one breaking change among them, Dependabot cannot
+# merge a group partially, and the whole weekly stream sits behind the one pull request
+# nobody can take. A major arriving on its own can be read, tested and decided on its own.
+#
+# **Expect two to four pull requests in a typical week** — the Cargo group and the `web`
+# group most weeks, `contract` and the actions roughly monthly — plus the occasional
+# single-package major. `docs/dependencies.md` has the arithmetic.
+#
+# **Dependabot cannot catch the bug this was written for.** `tiny_http` was abandoned, and
+# abandonment means no new releases, so there was never a pull request for Dependabot to
+# open. That is the release-age check's job, in `.github/workflows/dependencies.yml`.
+
+version: 2
+
+updates:
+  # ----------------------------------------------------------------- the Rust workspace
+  # One entry covers the whole workspace: Cargo resolves `crates/*` through the root
+  # manifest and the single `Cargo.lock`, so pointing Dependabot at `/` reaches every crate.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: Update
+    groups:
+      cargo:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # --------------------------------------------------------------------- the dashboard
+  # pnpm, read from `web/package.json` and `web/pnpm-lock.yaml`. The largest and liveliest
+  # of the four: eighteen direct dependencies spanning Nuxt, ESLint, Vitest and Playwright,
+  # which publish continuously.
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: Update
+    groups:
+      web:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # ------------------------------------------------------------- the contract's tooling
+  # npm, read from `contract/package.json` and `contract/package-lock.json`. Four exactly
+  # pinned tools, so every update here is a deliberate version change rather than a range
+  # being re-resolved.
+  - package-ecosystem: npm
+    directory: /contract
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: Update
+    groups:
+      contract:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # --------------------------------------------------------------------- the workflows
+  # The ecosystem with exactly the shape of the `tiny_http` problem: a pinned major that
+  # nothing watches. `pnpm/action-setup` sits on v4 here while v6.1.0 is current, and it
+  # runs with the repository token. An update bot is the only thing that notices.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: Update
+    groups:
+      actions:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
