@@ -2346,6 +2346,11 @@ components:
             true by construction: there is no second copy of the join to go stale. A
             finding added after the change map was written appears here without the map
             being rewritten, and an area recorded as `not_reviewed` has none.
+            **Matched on the finding's own `file`**, which is where the finding is, not
+            where any code shown beside it comes from. The distinction is worth stating
+            because a finding may point at one file and draw its evidence from another — a
+            call site, a sibling implementation — so a reader otherwise has two plausible
+            columns to guess between. This row lists the findings *about* this path.
         finding_keys:
           type: array
           items: { type: string, pattern: '^F[0-9]+$' }
