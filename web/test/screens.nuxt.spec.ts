@@ -31,23 +31,35 @@ import Layout from '../app/layouts/default.vue'
 /**
  * Let every pending read and re-read finish.
  *
- * Generous on purpose. Choosing the API backend is itself a dynamic `import()` — the HTTP
- * client is deliberately not in the app shell's static graph — so a first read resolves a
- * module before it resolves a request, and a count tuned to the shape before that change
- * left one of these tests asserting on the loading state.
+ * **Waits for the screen to stop changing, rather than for a fixed number of rounds.**
+ * It used to loop twelve times, which is a count tuned to how long the work happened to
+ * take — and a count is the wrong instrument, as this file's own history says: "a count
+ * tuned to the shape before that change left one of these tests asserting on the loading
+ * state". It did it again on CI, where a slower runner left `store_unavailable` asserting
+ * against "Reading the inbox…" while the same test passed locally every time.
+ *
+ * Three identical renders in a row is the signal that nothing is still in flight. The
+ * ceiling is a backstop, not the mechanism: the common case now settles in four rounds
+ * rather than twelve, and a slow one has sixty.
+ *
+ * A macrotask as well as the microtasks, each round. Choosing the API backend is a dynamic
+ * `import()` — the HTTP client is deliberately not in the app shell's static graph — and
+ * the first one in a run has a module to load from disk, which no number of
+ * `flushPromises` can advance.
  */
 async function settle(page: VueWrapper) {
-  for (let round = 0; round < 12; round += 1) {
-    /*
-     * A macrotask as well as the microtasks. Choosing the API backend is a dynamic
-     * `import()` — the HTTP client is deliberately not in the app shell's static graph — and
-     * the first one in a run has a module to load from disk, which no number of
-     * `flushPromises` can advance. Without this the first test in a describe asserted on the
-     * loading state while every later one passed, which reads like flake and is not.
-     */
+  let previous: string | null = null
+  let unchanged = 0
+
+  for (let round = 0; round < 60; round += 1) {
     await new Promise(resolve => setTimeout(resolve, 0))
     await flushPromises()
     await page.vm.$nextTick()
+
+    const now = page.text()
+    unchanged = now === previous ? unchanged + 1 : 0
+    previous = now
+    if (unchanged >= 3) return
   }
 }
 
