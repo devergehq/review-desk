@@ -394,10 +394,28 @@ impl Api {
     }
 
     /// `GET /reviews/{reviewId}`: one review whole, as the One review screen shows it.
+    ///
+    /// **Where the coverage answer is decided.** A review can record two things about what
+    /// it did not look at: one sentence (`reviews.not_checked`, since DEV-854) and a
+    /// per-file change map with a row per unreviewed area (since DEV-875). Two records a
+    /// screen could render side by side are two records that will eventually say different
+    /// things, so this handler picks one — `coverage.source` — and serves the other as
+    /// null. See [`wire::coverage_source`] and [`wire::not_checked`].
     fn review(&self, review_id: i64) -> Result<(u16, Value), ApiError> {
         let full = self.records.full_review(review_id)?;
         let options = self.records.brief_options(review_id)?;
         let ticket = self.records.nit_ticket(review_id)?;
+        let provenance = self.records.review_provenance(review_id)?;
+
+        // The findings on each file, read from the findings by path. The change map stores
+        // no finding column, so this is the only copy of the join and it cannot go stale.
+        let mut rows = Vec::with_capacity(provenance.files.len());
+        for file in &provenance.files {
+            let seqs = self.records.findings_on_path(review_id, &file.path)?;
+            rows.push(wire::file_change(file, &seqs));
+        }
+
+        let source = wire::coverage_source(&provenance.files, full.review.not_checked.as_deref());
 
         // The round-two page's three questions: which rounds there have been, what changed
         // since the last one, and where each finding stands in this one. All three in this
@@ -419,12 +437,24 @@ impl Api {
                 "outcomes": full.outcomes.iter().map(wire::outcome).collect::<Vec<_>>(),
                 "finding_severities": wire::severity_counts(&full.findings),
                 "finding_dispositions": wire::disposition_counts(&full.findings),
-                "not_checked": full.review.not_checked,
+                "not_checked": wire::not_checked(source, full.review.not_checked.as_deref()),
                 "nit_ticket": wire::nit_ticket(&ticket),
                 "draft_status": full
                     .draft
                     .as_ref()
                     .map_or(Value::Null, |draft| json!(draft.status.as_str())),
+                "sources": provenance
+                    .sources
+                    .iter()
+                    .map(wire::review_source)
+                    .collect::<Vec<_>>(),
+                "criteria": provenance
+                    .criteria
+                    .iter()
+                    .map(wire::acceptance_criterion)
+                    .collect::<Vec<_>>(),
+                "description_lint": wire::description_lint(&provenance),
+                "coverage": wire::coverage(source, rows),
                 "rounds": rounds.iter().map(wire::round_summary).collect::<Vec<_>>(),
                 "commits_since_previous_round": commits
                     .iter()

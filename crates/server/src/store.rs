@@ -14,10 +14,7 @@
 use std::sync::{Arc, Mutex};
 
 use review_desk_store::{
-    Actor, Brief, BriefOption, Disposition, Draft, Finding, FindingInRound, FullReview, NewDraft,
-    NewOutcome, NitTicket, OpenedReview, RepoSummary, Review, ReviewAtLayer, ReviewEvent,
-    ReviewFacts, ReviewLayer, RoundCommit, RoundSummary, Rule, RuleCounts, RuleStage, RulesSummary,
-    Store, StoreError, Timestamp,
+    Actor, Brief, BriefOption, Disposition, Draft, Finding, FindingInRound, FullReview, NewDraft, NewOutcome, NitTicket, OpenedReview, RepoSummary, Review, ReviewAtLayer, ReviewEvent, ReviewFacts, ReviewLayer, ReviewProvenance, RoundCommit, RoundSummary, Rule, RuleCounts, RuleStage, RulesSummary, Store, StoreError, Timestamp,
 };
 
 use crate::error::{ApiError, Code};
@@ -108,6 +105,23 @@ impl Records {
     pub fn full_review(&self, id: i64) -> Result<FullReview, ApiError> {
         self.review(id)?;
         self.with(|store| store.full_review(id))
+    }
+
+    /// Where the review's understanding came from: its sources, the ticket's criteria, the
+    /// description lint's results and the change map, in one read.
+    ///
+    /// Written only by the command line. The dashboard reads it and decides nothing about
+    /// it, which is why no operation in the contract writes it.
+    pub fn review_provenance(&self, id: i64) -> Result<ReviewProvenance, ApiError> {
+        self.with(|store| store.review_provenance(id))
+    }
+
+    /// The sequence numbers of a review's findings on one path.
+    ///
+    /// The change map's `finding_seqs`, read from the findings rather than stored against
+    /// the entry — so a finding listed on a file is one that exists and names that file.
+    pub fn findings_on_path(&self, id: i64, path: &str) -> Result<Vec<i64>, ApiError> {
+        self.with(|store| store.findings_on_path(id, path))
     }
 
     /// The state of the one ticket covering this review's held-back nits.

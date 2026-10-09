@@ -16,9 +16,7 @@
 //! dashboard silently never sees.
 
 use review_desk_store::{
-    Brief, BriefOption, Disposition, Draft, DraftLint, Finding, FindingHunk, FindingInRound,
-    NitTicket, Outcome, RepoSummary, Review, ReviewLayer, RoundCommit, RoundStatusCounts,
-    RoundSummary, Rule, RuleCounts, RuleScope, RuleStage, RulesSummary, Severity, Timestamp,
+    AcceptanceCriterion, Brief, BriefOption, DescriptionLintResult, Disposition, Draft, DraftLint, FileChange, Finding, FindingHunk, FindingInRound, NitTicket, Outcome, RepoSummary, Review, ReviewLayer, ReviewProvenance, ReviewSource, RoundCommit, RoundStatusCounts, RoundSummary, Rule, RuleCounts, RuleScope, RuleStage, RulesSummary, Severity, Timestamp,
 };
 use serde_json::{json, Value};
 
@@ -700,4 +698,121 @@ pub fn is_head_sha(sha: &str) -> bool {
         && sha
             .chars()
             .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase())
+}
+
+/* -------------------------------------------------------------------------------------
+ * Where a review's understanding came from. DEV-875, board A2 sections 1 to 4.
+ *
+ * None of these is written through this API: the command line writes all of it, and the
+ * dashboard reads it. What the server adds on the way out is the three derived facts the
+ * contract says it owns — the findings on each file, the description lint's verdict, and
+ * which record counts as the review's coverage.
+ * ----------------------------------------------------------------------------------- */
+
+/// One row of "Read from".
+pub fn review_source(source: &ReviewSource) -> Value {
+    json!({
+        "position": source.position,
+        "kind": source.kind.as_str(),
+        "label": source.label,
+        "link": source.link,
+    })
+}
+
+/// One row of "What the ticket asks for".
+pub fn acceptance_criterion(criterion: &AcceptanceCriterion) -> Value {
+    json!({
+        "position": criterion.position,
+        "text": criterion.text,
+        "status": criterion.status.as_str(),
+        "finding_seq": criterion.finding_seq,
+        // Derived here, like every other display key, so the dashboard never builds an
+        // identifier of its own.
+        "finding_key": criterion
+            .finding_seq
+            .map_or(Value::Null, |seq| json!(finding_key(seq))),
+        "file": criterion.file,
+        "line": criterion.line,
+        "note": criterion.note,
+    })
+}
+
+/// One line of the Lint section.
+pub fn description_lint_result(result: &DescriptionLintResult) -> Value {
+    json!({
+        "position": result.position,
+        "label": result.label,
+        "status": result.status.as_str(),
+        "detail": result.detail,
+    })
+}
+
+/// Layer 1's result on the pull request description, or null when it has not run.
+///
+/// `passes` is "no result failed", computed from the list served beside it. Nothing stores
+/// it, so the verdict and the list it summarises cannot disagree.
+pub fn description_lint(provenance: &ReviewProvenance) -> Value {
+    match provenance.description_lint_passes() {
+        None => Value::Null,
+        Some(passes) => json!({
+            "passes": passes,
+            "results": provenance
+                .description_lint
+                .iter()
+                .map(description_lint_result)
+                .collect::<Vec<_>>(),
+        }),
+    }
+}
+
+/// One row of "What they built", with the findings on it.
+///
+/// `seqs` is read from the review's findings by path, by the caller — this module does not
+/// reach the store. That is the whole of why the change map holds no finding column: there
+/// is no second copy of the join to go stale.
+pub fn file_change(file: &FileChange, seqs: &[i64]) -> Value {
+    json!({
+        "position": file.position,
+        "path": file.path,
+        "summary": file.summary,
+        "lines_added": file.lines_added,
+        "lines_removed": file.lines_removed,
+        "checked": file.checked.as_str(),
+        "how_checked": file.how_checked,
+        "finding_seqs": seqs,
+        "finding_keys": seqs.iter().map(|seq| finding_key(*seq)).collect::<Vec<_>>(),
+    })
+}
+
+/// Which record counts as this review's coverage.
+///
+/// **The one place the question is answered**, which is what stops a screen rendering two
+/// coverage answers. `files` when the review has a change map, `sentence` when it has none
+/// and the single "not checked" sentence is set, `none` when it has neither.
+pub fn coverage_source(files: &[FileChange], not_checked: Option<&str>) -> &'static str {
+    if !files.is_empty() {
+        "files"
+    } else if not_checked.is_some_and(|sentence| !sentence.trim().is_empty()) {
+        "sentence"
+    } else {
+        "none"
+    }
+}
+
+/// What the review looked at and what it did not, as one answer.
+pub fn coverage(source: &'static str, rows: Vec<Value>) -> Value {
+    json!({ "source": source, "files": rows })
+}
+
+/// The sentence the posted review carries, served **only when it is the coverage record**.
+///
+/// Null when the review has a change map. The sentence is still on the record and the
+/// session reads it back through `review-desk review show`; what it is not, once the table
+/// exists, is this review's coverage — and a field served in both cases is a field a page
+/// could render beside a table that says something else.
+pub fn not_checked(source: &str, sentence: Option<&str>) -> Value {
+    match source {
+        "sentence" => json!(sentence),
+        _ => Value::Null,
+    }
 }

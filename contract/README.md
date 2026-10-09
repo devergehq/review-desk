@@ -199,6 +199,87 @@ Everything else on the four screens is below.
 | "Late" | `findings[].late` |
 | "Went to ticket ABC-246 in round 1. Not part of this round." | `findings[].round_status` of `ticketed`, with `.round_status_checked` |
 
+Board A2 of the approved designs (DEV-875) adds four sections to this screen, and every
+datum on them is below. **All four are written by the agent through the command line** —
+`review-desk provenance sources|criteria|changes|lint` — and no operation in this contract
+writes any of them, because none of them is the developer's to decide. Review Desk reads no
+ticket: what is served is what the session said it read.
+
+| On board A2 | Field |
+|---|---|
+| "Read from" under the title | `sources[]` |
+| "Ticket ABC-231, Retry webhook deliveries for 24 hours" | `sources[].kind: ticket`, `.label`, `.link` |
+| "The pull request description" | `sources[].kind: description` |
+| "2 earlier comments on the pull request" | `sources[].kind: comment` |
+| the three lines of the Lint section | `description_lint.results[]` |
+| "Description length / 1,840 of 2,568 characters" | `description_lint.results[].label`, `.detail` |
+| "1 Lint · Description passes" on the chip | `description_lint.passes`, derived from the results |
+| "What the ticket asks for" | `criteria[]` |
+| "ABC-231 on Linear" above it | `review.ticket_id` |
+| the criterion's sentence | `criteria[].text` |
+| "Met" / "Not met" / "Not in this PR" | `criteria[].status` |
+| "DeliverWebhook.php:61" | `criteria[].file`, `.line` |
+| "Finding F1" | `criteria[].finding_seq`, `.finding_key` |
+| "The description says it follows in ABC-240" | `criteria[].note` |
+| the "What they built" table | `coverage.files[]` |
+| "jobs/DeliverWebhook.php" | `coverage.files[].path` |
+| "The job now releases itself back to the queue…" | `coverage.files[].summary` |
+| "+96 −22" | `coverage.files[].lines_added`, `.lines_removed` |
+| "Read in full. Compared with 2 sibling senders." | `coverage.files[].checked`, `.how_checked` |
+| "F1 , F2" in the Findings column | `coverage.files[].finding_seqs`, `.finding_keys` |
+| the highlighted "resources/admin/** · Not reviewed." row | `coverage.files[].checked: not_reviewed`, with `.how_checked` as the reason |
+| each chip's outcome line — "They built B, in 4 files" | `layers[].detail`, which already carried it |
+
+**"A short outcome line per layer" needed no new field.** DEV-875 lists it among what a
+review gains; `layers[].detail` has been exactly that line since DEV-854, is written by
+`review-desk layer set --detail`, and is served here. A second field for one fact is the
+disagreement the next section exists to prevent, so there is one, and
+`crates/server/tests/provenance.rs` asserts the round trip rather than a comment claiming
+it.
+
+### What was not looked at: one answer, never two
+
+A review can hold two records of its coverage. `review.not_checked` is one sentence,
+stored since DEV-854 and carried into the posted review. `coverage.files` is the per-file
+change map, with a row per area that was not reviewed. **DEV-875 makes the table the source
+for coverage and keeps the sentence for the posted review**, and a document that served
+both as coverage would let a screen render them side by side saying different things.
+
+So the contract answers the question once, in `coverage.source`:
+
+| `coverage.source` | What the review has | What a screen renders | `not_checked` |
+|---|---|---|---|
+| `files` | a change map | `coverage.files`, with the `not_reviewed` rows highlighted | **null** |
+| `sentence` | no change map, a sentence | `not_checked` | the sentence |
+| `none` | neither | no coverage section | null |
+
+Three things make this hold rather than merely ask for it:
+
+1. **`coverage.source` is derived, never stored**, by one function in
+   `crates/server/src/wire.rs`. There is nowhere for a second opinion to live.
+2. **`not_checked` is served only when it *is* the coverage record.** When the change map
+   exists the field is null — not deleted, not emptied; it is still in the store and the
+   session that writes the draft body reads it back through `review-desk review show`. A
+   page that ignores `coverage.source` and renders both fields anyway still cannot show a
+   contradiction, because exactly one of them is ever populated.
+3. **The highlighted rows are not a second list.** A screen filters `coverage.files` on
+   `checked == "not_reviewed"`. A `coverage.not_reviewed` array would be a copy, and a copy
+   is a thing that can differ.
+
+`crates/server/tests/provenance.rs` holds the three states and the transition between them.
+
+### Where the per-file findings come from
+
+`coverage.files[].finding_seqs` is **derived from the review's findings by path**, not
+stored against the entry. That is what makes DEV-875's "the per-file entries and the
+review's findings agree: a finding listed on a file exists and points at that file" true by
+construction: there is one copy of the join and it is the findings themselves. A finding
+added after the change map was written appears on its file's row without the map being
+rewritten, and an area recorded as `not_reviewed` has none.
+
+It is the same argument `nit_ticket.finding_seqs` makes for reading the held-back nits from
+the dispositions rather than storing them against the ticket.
+
 `finding_severities` is also served, for a caller that wants the Inbox's "1 blocker, 2
 should" wording on this screen.
 
@@ -626,6 +707,36 @@ list without re-deriving it.
       wrong for this screen, whose purpose is deciding on proposals. `list_rules` returns
       every stage but is not scoped to a repository, so neither function serves
       `listRules`. Add a stage filter argument rather than changing either default.
+
+### Added by DEV-875, for board A2 sections 1 to 4
+
+Migration 6 on this branch — **8 once DEV-873 and DEV-874 land ahead of it**; the number is
+always the next free one, because a database migrated to 8 with 6 and 7 absent would never
+run them.
+
+- [x] **S23 — `review_sources`.** `(review_id, position)` plus `kind`, `label`, `link`.
+      Needed by: `getReview.sources`.
+- [x] **S24 — `review_criteria`.** `(review_id, position)` plus `text`, `status`, and one
+      pointer of `finding_seq` / `file` and `line` / `note`. The composite foreign key to
+      `findings (review_id, seq)` is what keeps a criterion from pointing at another
+      review's F1. Needed by: `getReview.criteria`.
+- [x] **S25 — `review_files`.** `(review_id, path)` plus `position`, `summary`,
+      `lines_added`, `lines_removed`, `checked`, `how_checked`. Needed by:
+      `getReview.coverage.files`.
+- [x] **S26 — `description_lint_results`.** `(review_id, position)` plus `label`, `status`,
+      `detail`. Needed by: `getReview.description_lint`.
+- [x] **S27 — findings by path.** `findings_on_path(review_id, path)`, which is the join
+      S25 deliberately does not store. Needed by: `coverage.files[].finding_seqs`.
+
+Four new closed sets, as `string_enum!` sets so they name their own valid values in a
+refusal: `SourceKind`, `CriterionStatus`, `FileCheck`, `DescriptionLintStatus`. The fifth,
+`CoverageSource`, is the server's and is derived rather than stored, so it has no enum in
+the store.
+
+**Three rules the store enforces rather than documents.** A criterion recorded as `not_met`
+must name a finding on the same review; a file entry recorded as `not_reviewed` must say
+why; one path gets one entry. Each is a refusal with the alternative named, and
+`crates/store/tests/provenance.rs` has one test per rule.
 
 ### Not a store change, but do not miss it
 

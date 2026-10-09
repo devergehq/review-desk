@@ -92,7 +92,7 @@
       }
     ],
     "approach_verdict": "B is the right shape for this ticket. It leaves out the one useful part of C: once the 24 hours run out there is no way to replay a delivery by hand. That is finding F2.",
-    "provenance": "from the ticket and the code \u00b7 you corrected one sentence",
+    "provenance": "from the ticket and the code · you corrected one sentence",
     "confirmed": true,
     "confirmed_at": "2026-10-08T10:58:00Z",
     "confirmation_required": true,
@@ -199,7 +199,7 @@
       "file": null,
       "line": null,
       "claim": "No way to replay a delivery after the retry window closes",
-      "evidence": "from the option map \u00b7 ticket acceptance criterion 3",
+      "evidence": "from the option map · ticket acceptance criterion 3",
       "disposition": "in_draft",
       "disposition_reason": null,
       "rule_id": null,
@@ -359,7 +359,7 @@
       "claim": "Rename `attempt` to `attemptNumber`",
       "evidence": null,
       "disposition": "suppressed",
-      "disposition_reason": "No consequence named \u00b7 matches a proposed rule to stop raising these",
+      "disposition_reason": "No consequence named · matches a proposed rule to stop raising these",
       "rule_id": 22,
       "rule_key": "R-22",
       "hunk": null,
@@ -429,7 +429,7 @@
     "held_back": 2,
     "suppressed": 1
   },
-  "not_checked": "The queue worker's behaviour under a deploy restart was not run. Production delivery volumes were not queried, so the backoff schedule's load is unmeasured.",
+  "not_checked": null,
   "nit_ticket": {
     "review_id": 17,
     "status": "none",
@@ -464,5 +464,156 @@
       }
     }
   ],
-  "commits_since_previous_round": []
+  "commits_since_previous_round": [],
+  "sources": [
+    {
+      "position": 1,
+      "kind": "ticket",
+      "label": "ABC-231 · Retry webhook deliveries for 24 hours",
+      "link": "https://linear.app/acme/issue/ABC-231"
+    },
+    {
+      "position": 2,
+      "kind": "description",
+      "label": "The pull request description",
+      "link": null
+    },
+    {
+      "position": 3,
+      "kind": "comment",
+      "label": "2 earlier comments on the pull request",
+      "link": "https://github.com/acme/portal/pull/412"
+    }
+  ],
+  "criteria": [
+    {
+      "position": 1,
+      "text": "Failed deliveries are retried for up to 24 hours.",
+      "status": "met",
+      "finding_seq": null,
+      "finding_key": null,
+      "file": "jobs/DeliverWebhook.php",
+      "line": 61,
+      "note": null
+    },
+    {
+      "position": 2,
+      "text": "A customer never processes the same event twice.",
+      "status": "not_met",
+      "finding_seq": 1,
+      "finding_key": "F1",
+      "file": null,
+      "line": null,
+      "note": null
+    },
+    {
+      "position": 3,
+      "text": "The customer can see which deliveries failed.",
+      "status": "not_in_this_pr",
+      "finding_seq": null,
+      "finding_key": null,
+      "file": null,
+      "line": null,
+      "note": "The description says it follows in ABC-240"
+    }
+  ],
+  "description_lint": {
+    "passes": true,
+    "results": [
+      {
+        "position": 1,
+        "label": "Description length",
+        "status": "pass",
+        "detail": "1,840 of 2,568 characters"
+      },
+      {
+        "position": 2,
+        "label": "Working notes",
+        "status": "pass",
+        "detail": "In a comment, linked from the description"
+      },
+      {
+        "position": 3,
+        "label": "Template",
+        "status": "warn",
+        "detail": "4 of 5 headings present"
+      }
+    ]
+  },
+  "coverage": {
+    "source": "files",
+    "files": [
+      {
+        "position": 1,
+        "path": "jobs/DeliverWebhook.php",
+        "summary": "The job now releases itself back to the queue when a delivery fails.",
+        "lines_added": 96,
+        "lines_removed": 22,
+        "checked": "read_in_full",
+        "how_checked": "Read in full. Compared with 2 sibling senders.",
+        "finding_seqs": [
+          1,
+          5,
+          6
+        ],
+        "finding_keys": [
+          "F1",
+          "F5",
+          "F6"
+        ]
+      },
+      {
+        "position": 2,
+        "path": "tests/WebhookRetryTest.php",
+        "summary": "A new test: a failed delivery is sent again.",
+        "lines_added": 61,
+        "lines_removed": 0,
+        "checked": "run",
+        "how_checked": "Run. Run again with the fix reverted, and it failed.",
+        "finding_seqs": [
+          3
+        ],
+        "finding_keys": [
+          "F3"
+        ]
+      },
+      {
+        "position": 3,
+        "path": "config/webhooks.php",
+        "summary": "Adds the backoff schedule.",
+        "lines_added": 14,
+        "lines_removed": 0,
+        "checked": "read_in_full",
+        "how_checked": "Read in full.",
+        "finding_seqs": [
+          4
+        ],
+        "finding_keys": [
+          "F4"
+        ]
+      },
+      {
+        "position": 4,
+        "path": "migrations/add_attempts.php",
+        "summary": "Adds an attempts column to deliveries.",
+        "lines_added": 21,
+        "lines_removed": 0,
+        "checked": "read_in_part",
+        "how_checked": "Read the up migration. The down migration was not read.",
+        "finding_seqs": [],
+        "finding_keys": []
+      },
+      {
+        "position": 5,
+        "path": "resources/admin/**",
+        "summary": "Not changed by this pull request.",
+        "lines_added": 0,
+        "lines_removed": 0,
+        "checked": "not_reviewed",
+        "how_checked": "Not reviewed. The change does not touch the admin screens.",
+        "finding_seqs": [],
+        "finding_keys": []
+      }
+    ]
+  }
 }

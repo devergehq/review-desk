@@ -25,28 +25,28 @@
       "number": 2,
       "name": "understand",
       "state": "done",
-      "detail": "unchanged \u00b7 settled in round 1",
+      "detail": "unchanged · settled in round 1",
       "updated_at": "2026-10-10T09:38:00Z"
     },
     {
       "number": 3,
       "name": "alternatives",
       "state": "done",
-      "detail": "unchanged \u00b7 3 options",
+      "detail": "unchanged · 3 options",
       "updated_at": "2026-10-10T09:38:00Z"
     },
     {
       "number": 4,
       "name": "solution_map",
       "state": "done",
-      "detail": "unchanged \u00b7 still the right shape",
+      "detail": "unchanged · still the right shape",
       "updated_at": "2026-10-10T09:38:00Z"
     },
     {
       "number": 5,
       "name": "code_review",
       "state": "done",
-      "detail": "8 findings \u00b7 2 fixed, 2 still open, 2 new",
+      "detail": "8 findings · 2 fixed, 2 still open, 2 new",
       "updated_at": "2026-10-10T09:38:00Z"
     },
     {
@@ -92,7 +92,7 @@
       }
     ],
     "approach_verdict": "B is the right shape for this ticket. It leaves out the one useful part of C: once the 24 hours run out there is no way to replay a delivery by hand. That is finding F2.",
-    "provenance": "from the ticket and the code \u00b7 you corrected one sentence",
+    "provenance": "from the ticket and the code · you corrected one sentence",
     "confirmed": true,
     "confirmed_at": "2026-10-08T10:58:00Z",
     "confirmation_required": true,
@@ -303,7 +303,7 @@
       "file": "jobs/DeliverWebhook.php",
       "line": 59,
       "claim": "The idempotency key is different on every retry",
-      "evidence": "attempt 1 key 6f1c\u2026e2, attempt 2 key b83a\u202607, against a local endpoint",
+      "evidence": "attempt 1 key 6f1c…e2, attempt 2 key b83a…07, against a local endpoint",
       "disposition": "in_draft",
       "disposition_reason": null,
       "rule_id": null,
@@ -447,5 +447,12 @@
         "tests/WebhookRetryTest.php"
       ]
     }
-  ]
+  ],
+  "sources": [],
+  "criteria": [],
+  "description_lint": null,
+  "coverage": {
+    "source": "sentence",
+    "files": []
+  }
 }
