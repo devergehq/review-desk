@@ -34,7 +34,7 @@ jobs:
 
       # The action reads `packageManager` from a package.json, and `defaults.run` does
       # not apply to an action's inputs — so it has to be told where ours lives.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           package_json_file: web/package.json
 
