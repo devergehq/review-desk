@@ -601,6 +601,62 @@ describe('the rules', () => {
   })
 })
 
+describe('every error code in the contract has its own state on screen', () => {
+  /*
+   * DEV-862 asks that no code be swallowed. `test/api.spec.ts` reaches all eight — the
+   * contract's six, plus the two it cannot describe — and this is what each one becomes on
+   * a screen. The three that mean different things to the developer read differently: one
+   * is their machine, one is the record, one is what they typed.
+   */
+  const CODES: Array<[string, number, string, string]> = [
+    ['store_unavailable', 500, 'the database could not be opened',
+      'Review Desk could not read its database'],
+    ['github_unavailable', 502, 'gh is not installed',
+      'A read of GitHub could not be made'],
+    ['not_found', 404, 'no review with id 1', 'Not on the desk'],
+    ['conflict', 409, 'this draft is approved', 'The record is not in that state'],
+    ['bad_request', 400, 'this operation needs a JSON body', 'That was refused'],
+    ['invalid_value', 400, '"nonsense" is not a commit hash', 'That was refused'],
+  ]
+
+  beforeEach(() => {
+    useDeskSource('api')
+  })
+
+  afterEach(async () => {
+    vi.unstubAllGlobals()
+    await resetDesk()
+  })
+
+  it.each(CODES)('%s reads as "%s"', async (code, status, message, heading) => {
+    vi.stubGlobal('fetch', vi.fn(() =>
+      Promise.resolve({
+        ok: false,
+        status,
+        text: () => Promise.resolve(JSON.stringify({ code, message })),
+      } as Response)))
+
+    const page = await shown(Inbox)
+    expect(page.text()).toContain(heading)
+    /* The server's own words, never swallowed in favour of a heading. */
+    expect(page.text()).toContain(message.replace(/^./, first => first.toUpperCase()))
+    expect(button(page, 'Retry')).toBeDefined()
+  })
+
+  it('refuses to trust a code the contract does not declare', async () => {
+    vi.stubGlobal('fetch', vi.fn(() =>
+      Promise.resolve({
+        ok: false,
+        status: 418,
+        text: () => Promise.resolve(JSON.stringify({ code: 'teapot', message: 'I am a teapot' })),
+      } as Response)))
+
+    const page = await shown(Inbox)
+    expect(page.text()).toContain('Something else is answering')
+    expect(page.text()).not.toContain('teapot')
+  })
+})
+
 describe('a read that is still in flight', () => {
   /*
    * A read that never answers, which is what a slow one looks like for as long as it

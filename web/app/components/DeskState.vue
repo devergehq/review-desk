@@ -22,7 +22,8 @@
  * | The answer was not this contract's | Something else is answering on this address |
  * | `store_unavailable` | Review Desk is broken, loudly — the brief's "broken is loud" |
  * | `not_found` | This review, draft or rule is not on the desk, in the server's own words |
- * | A refusal | What was refused and what would be accepted |
+ * | `conflict` | A statement about the record: retyping will not change it |
+ * | `bad_request`, `invalid_value` | What was sent, and what would have been accepted |
  * | Answered, nothing in it | The screen's own empty slot, which says what is true |
  */
 import type { DeskError } from '~/types/desk'
@@ -128,7 +129,24 @@ const problem = computed(() => {
     }
   }
 
-  /* `bad_request`, `invalid_value`, `conflict`: the request was understood and refused. */
+  if (error.code === 'conflict') {
+    return {
+      /*
+       * **Not the same sentence as a refused request, and the contract draws the line.** A
+       * `conflict` is a statement about the record — this draft is approved, this review
+       * holds back no nits — and nothing the developer retypes will change it. A
+       * `bad_request` or an `invalid_value` is about what they sent, and retyping is
+       * exactly the answer. One heading for both would have told them to try again at the
+       * moment trying again is pointless.
+       */
+      heading: 'The record is not in that state',
+      body: refusal(error),
+      command: null,
+      tone: 'problem' as const,
+    }
+  }
+
+  /* `bad_request` and `invalid_value`: what was sent, which the developer can change. */
   return {
     heading: 'That was refused',
     body: refusal(error),
