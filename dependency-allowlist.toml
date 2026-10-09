@@ -151,3 +151,12 @@ DOMPurify. Rated low. Upstream mermaid owns the bump.\
 """
 decided_by = "Patrick"
 look_again = 2026-12-11
+
+# VERIFICATION ONLY, do not merge. Proves the allowlist criterion: an entry with a reason
+# makes the check pass, and the same entry with a past look-again date fails it.
+[[release_age]]
+dependency = "tiny_http"
+ecosystem = "cargo"
+reason = "verification of DEV-863's allowlist criterion only; this branch is never merged"
+decided_by = "Patrick"
+look_again = 2027-04-09
