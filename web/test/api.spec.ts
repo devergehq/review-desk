@@ -306,6 +306,32 @@ describe('the two states the contract cannot describe', () => {
     expect(desk.message).toContain('Nothing answered within 30 seconds')
   })
 
+  it('gives up on a body that starts and then stops', async () => {
+    /*
+     * A server that sends a status line and then stalls is exactly as unhelpful as one
+     * that sends nothing. The deadline stays armed until the body is read, so this is the
+     * half of the request the first version of it did not cover.
+     */
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        text: () => new Promise<string>((_resolve, reject) => {
+          setTimeout(() => reject(new DOMException('aborted', 'AbortError')), 11_000)
+        }),
+      } as Response)))
+
+    const reading = api.getInbox().catch(error => asDeskError(error))
+    await vi.advanceTimersByTimeAsync(12_000)
+    const desk = await reading
+    vi.useRealTimers()
+
+    expect(desk.code).toBe('unreachable')
+    expect(desk.message).toContain('stopped sending within 10 seconds')
+    expect(desk.status).toBe(200)
+  })
+
   it('turns anything else thrown into an error a screen can render', () => {
     const desk = asDeskError(new Error('something nobody planned for'))
     expect(desk.code).toBe('unreachable')

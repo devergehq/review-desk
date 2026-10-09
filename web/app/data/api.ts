@@ -197,12 +197,31 @@ async function send<T>(
       status: null,
     })
   }
+  /*
+   * **The deadline stays armed until the body is read, not until the headers arrive.** A
+   * server that sends a status line and then stalls is exactly as unhelpful as one that
+   * sends nothing, and clearing the timer here would have let that one hang forever —
+   * which is the failure the deadline was added for, surviving in the half of the request
+   * nobody was looking at.
+   */
+  let text: string
+  try {
+    text = await response.text()
+  }
+  catch {
+    throw new DeskRequestError({
+      code: 'unreachable',
+      message:
+        `Review Desk answered ${response.status} and then stopped sending within `
+        + `${Math.round(wait / 1000)} seconds.`,
+      field: null,
+      expected: null,
+      status: response.status,
+    })
+  }
   finally {
-    /* The answer arrived, so the deadline has nothing left to interrupt. */
     limit.done()
   }
-
-  const text = await response.text()
 
   if (response.ok) {
     if (text.length === 0) return undefined as T
