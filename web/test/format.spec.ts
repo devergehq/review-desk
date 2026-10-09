@@ -4,6 +4,7 @@ import {
   descriptionLintLabel,
   editVerb,
   figure,
+  layerDetail,
   layerLabel,
   layerTone,
   openForLabel,
@@ -98,6 +99,22 @@ describe('the seven layers', () => {
   it('writes a layer key as a person reads it', () => {
     expect(layerLabel('solution_map')).toBe('Solution map')
     expect(layerLabel('code_review')).toBe('Code review')
+  })
+
+  /*
+   * DEV-870: the store writes layer 6's detail and calls it `approved by the developer`.
+   * On screen "approve" is GitHub's word for one of three review kinds, so the developer's
+   * act is said in the screen's own vocabulary — and said here, because the store, the API
+   * and the command line keep theirs.
+   */
+  it('says the developer signed off, whatever the store calls it', () => {
+    expect(layerDetail('approved by the developer')).toBe('signed off by the developer')
+  })
+
+  it('shows a detail it has no word of its own for exactly as the store wrote it', () => {
+    expect(layerDetail('confirmed by the developer')).toBe('confirmed by the developer')
+    expect(layerDetail('posted, waiting for the harvest')).toBe('posted, waiting for the harvest')
+    expect(layerDetail(null)).toBe('')
   })
 
   it('treats waiting and running as the layer you are on', () => {

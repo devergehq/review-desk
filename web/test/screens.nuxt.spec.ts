@@ -531,11 +531,23 @@ describe('the draft preview', () => {
    * button said "Approve and post" above a control offering "Approve" — signing off a
    * comment review read as "approve as Comment".
    *
-   * Asserted over the whole screen minus the event control, rather than over the strings
-   * that were changed: a sentence added later with the wrong word in it is exactly what
-   * this is for, and a list of known strings would not see it.
+   * Asserted over the screen's own copy rather than over the strings that were changed: a
+   * sentence added later with the wrong word in it is exactly what this is for, and a list
+   * of known strings would not see it.
+   *
+   * **Two regions are subtracted, and both are deliberate.** The event control holds
+   * GitHub's three names, which is the whole point. The preview pane holds the agent's
+   * review body, which comes from the record and is not this screen's wording — a fixture
+   * that said "approve once F1 is fixed" would otherwise fail here and send whoever reads
+   * the failure to the wrong file.
+   *
+   * **It covers the `ready` draft, which is the state this screen is for.** The notice
+   * shown when a write is refused quotes the server, which says "an approved draft is what
+   * the review session reads and posts" (`crates/server/src/api.rs`); DEV-870 leaves the
+   * server's own prose alone, so a state that shows it is out of this assertion's reach
+   * rather than silently passing it.
    */
-  it('uses "approve" nowhere on the draft page but inside the event control', async () => {
+  it('uses "approve" nowhere in the draft page’s own copy but in the event control', async () => {
     const page = await open(17)
     const control = page.find('select#event')
 
@@ -545,9 +557,11 @@ describe('the draft preview', () => {
     expect(control.text()).toContain('Comment')
     expect(page.find('label[for="event"]').text()).toBe('Post as')
 
-    const elsewhere = page.text().replace(control.text(), '')
-    expect(elsewhere).not.toMatch(/approv/i)
-    expect(elsewhere).toContain('Sign off and post')
+    const copy = page.text()
+      .replace(control.text(), '')
+      .replace(page.find('.pane').text(), '')
+    expect(copy).not.toMatch(/approv/i)
+    expect(copy).toContain('Sign off and post')
   })
 
   it('asks for a note before sending a draft back, and keeps it when refused', async () => {

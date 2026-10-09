@@ -302,7 +302,7 @@ test.describe('the whole path, on a seeded database', () => {
     /* Layer 6 is finished with, and the note the developer wrote earlier is gone from it. */
     await page.goto(`${seeded}reviews/${reviewId}`)
     const layers = await trail(page)
-    expect(layers[5]).toContain('approved by the developer')
+    expect(layers[5]).toContain('signed off by the developer')
 
     /*
      * **And this is the link DEV-864 exists to make.** The dispatcher polls one command

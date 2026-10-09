@@ -70,6 +70,28 @@ export function layerLabel(name: ReviewLayerName): string {
   return LAYER_LABELS[name] ?? name
 }
 
+/**
+ * One of the store's layer details, as the screen words it.
+ *
+ * **Layer 6 is the developer's own act, and the store calls it `approved by the
+ * developer`.** DEV-870 reserves "approve" for the GitHub review event, so the word is
+ * changed here rather than in the store: `approve_draft`, the `approved` status and
+ * `draft_approved` are the record's vocabulary and keep their names, and the screen's
+ * vocabulary is this file's business.
+ *
+ * Deliberately one entry. A screen that reworded every detail would be a second source of
+ * truth for them, so anything with no entry is shown exactly as the store wrote it.
+ */
+const LAYER_DETAILS: Record<string, string> = {
+  'approved by the developer': 'signed off by the developer',
+}
+
+/** A layer's detail as the screen writes it, or as the store wrote it. */
+export function layerDetail(detail: string | null | undefined): string {
+  if (!detail) return ''
+  return LAYER_DETAILS[detail] ?? detail
+}
+
 /** Which of the three ways a layer pill is drawn. */
 export function layerTone(state: ReviewLayerState): 'done' | 'current' | 'pending' | 'failed' {
   if (state === 'done') return 'done'
