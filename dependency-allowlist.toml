@@ -159,4 +159,4 @@ dependency = "tiny_http"
 ecosystem = "cargo"
 reason = "verification of DEV-863's allowlist criterion only; this branch is never merged"
 decided_by = "Patrick"
-look_again = 2027-04-09
+look_again = 2026-09-01
