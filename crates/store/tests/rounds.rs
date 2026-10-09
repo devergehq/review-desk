@@ -1044,3 +1044,63 @@ fn a_carried_finding_still_says_which_fix_introduced_it() {
     );
     assert_eq!(still.introduced_by_seq, Some(f1));
 }
+
+#[test]
+fn two_rounds_written_before_the_migration_are_not_joined_by_their_numbers() {
+    // **The case a wrong inference would be visible in.** Before migration 6 each round
+    // numbered its findings from 1, so a pull request reviewed twice holds two findings
+    // called F1 that have nothing to do with each other. Deriving the chain from a
+    // matching number — rather than from the link `carry_finding` writes — would join
+    // them, and then report the second as "open for 2 rounds" and the first as the
+    // finding it continues.
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("review-desk.db");
+
+    {
+        let old = Store::open_at_version(&path, 5).expect("a database at version 5");
+        assert_eq!(old.schema_version().unwrap(), 5);
+    }
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "INSERT INTO reviews (id, repo, pr, head_sha, round, created_at)
+                 VALUES (1, 'acme/portal', 412, 'aaaaaaa', 1, 1000),
+                        (2, 'acme/portal', 412, 'bbbbbbb', 2, 2000);
+             INSERT INTO findings
+                 (review_id, seq, lens, severity, claim, disposition, created_at)
+                 VALUES (1, 1, 'correctness', 'blocker', 'round one''s own F1',
+                         'in_draft', 1001),
+                        (2, 1, 'clarity', 'nit', 'round two''s unrelated F1',
+                         'in_draft', 2001);",
+        )
+        .expect("two rounds, each numbering from 1");
+    }
+
+    let store = Store::open(&path).expect("reopen migrates");
+
+    let second = store.get_finding(2, 1).expect("round two's F1");
+    assert_eq!(second.claim, "round two's unrelated F1");
+    assert_eq!(
+        second.continues_review_id, None,
+        "it continues nothing, because nothing said it did"
+    );
+    assert_eq!(
+        store.rounds_open(2, 1).unwrap(),
+        1,
+        "open since round 2, not since round 1: the two F1s are different findings"
+    );
+
+    // And round 1's findings are still *offered* for carrying, which is a different thing
+    // from being linked: an agent may decide the two are the same finding and carry it.
+    let carryable = store.carryable(2).unwrap().expect("round 1 is behind it");
+    assert_eq!(carryable.findings.len(), 1);
+    assert_eq!(carryable.findings[0].claim, "round one's own F1");
+
+    // The next new finding on the pull request takes 2, not 1 — the numbers already used
+    // are read across the pull request even though the old rows were numbered per round.
+    let fresh = raise(&store, 2, "the first finding numbered the new way", None);
+    assert_eq!(
+        fresh, 2,
+        "one finding, one number, from here on; the old rows are left as they are"
+    );
+}
