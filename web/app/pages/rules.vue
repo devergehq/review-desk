@@ -1,14 +1,32 @@
 <script setup lang="ts">
-import type { RulesPage } from '~/types/desk'
+import type { Rule, RulesPage } from '~/types/desk'
 import type { WriteResult } from '~/composables/useReviewDesk'
 import type { DeskNotice } from '~/utils/format'
 
 /**
- * The rules: what the desk has learned, and what it is proposing to learn.
+ * The rules: what the reviewer has learned, and what it is proposing to learn.
  *
- * The app proposes and the developer promotes. Nothing here promotes itself, and
- * dismissing or retiring asks why — a rule turned down with no reason is proposed again
- * next week by something with no memory of having been told no.
+ * The app proposes and the developer promotes. Nothing here promotes itself, and dismissing
+ * or retiring asks why — a rule turned down with no reason is proposed again next week by
+ * something with no memory of having been told no.
+ *
+ * ## Three of the four headline figures have no source, and the board draws all four
+ *
+ * | Figure | Contract field | Today |
+ * |---|---|---|
+ * | rules in force, of at most 20 | `active_rules`, `active_rules_cap` | **measured** |
+ * | findings you kept | `findings_kept` / `findings_total` | null until a posted review is harvested |
+ * | same answer on a re-run | `replay_matched` / `replay_total` | null until the replay check exists |
+ * | reviews that went in a circle | `raised_twice_on_one_pr` | null until a second round can be compared |
+ *
+ * Each is drawn where the board draws it, in the words "Not measured yet" with the reason
+ * behind them, rather than as a nought. The contract was written for this: every one of
+ * those fields is nullable precisely so that the absence of a measurement can be told from
+ * a measurement of zero.
+ *
+ * The four-stage bar, which the dispatch brief listed as having no source, **does** have
+ * one: `Rule.stage` is the contract's enum and `RuleRow` maps it onto the board's four
+ * stages. It is drawn from the record.
  */
 const desk = useReviewDesk()
 
@@ -18,9 +36,13 @@ const repo = ref(ALL_REPOSITORIES)
 const repos = desk.repos()
 const page = desk.rules(repo)
 
-const options = computed(() => [
-  ...(repos.data.value ?? []).map(item => ({ value: item.repo, label: item.repo })),
+const tabs = computed(() => [
   { value: ALL_REPOSITORIES, label: 'All repositories' },
+  ...(repos.data.value ?? []).map(item => ({
+    value: item.repo,
+    label: item.repo,
+    count: item.active_rules,
+  })),
 ])
 
 /*
@@ -56,39 +78,57 @@ function isEmpty(data: RulesPage): boolean {
   return data.proposed.length === 0 && data.active.length === 0 && data.stale.length === 0
 }
 
-function stats(data: RulesPage) {
+/** The four figures across the top, each with what to say when nothing measured it. */
+function figures(data: RulesPage) {
   const s = data.summary
   return [
     {
-      label: 'Active rules',
       value: String(s.active_rules),
-      note: `cap of ${s.active_rules_cap} per repository`,
+      label: s.active_rules === 1 ? 'rule in force' : 'rules in force',
+      note: `of at most ${s.active_rules_cap} for a repository`,
+      because: '',
+      tone: 'plain' as const,
     },
     {
-      label: 'Same answer on re-run',
-      value: figure(s.replay_matched, s.replay_total) ?? 'Not measured yet',
-      note:
-        s.replay_matched == null
-          ? 'the replay check is a later slice'
-          : 'findings matched on the last replay',
-    },
-    {
-      label: 'Findings you kept',
-      value: figure(s.findings_kept, s.findings_total) ?? 'Not measured yet',
+      value: figure(s.findings_kept, s.findings_total),
+      label: 'findings you kept',
       note:
         s.findings_kept == null
           ? 'nothing has harvested a posted review yet'
           : `last ${count(s.findings_window_days ?? 30, 'day')}, draft to posted`,
+      because: 'no posted review has been harvested, so no draft-to-posted pair exists yet',
+      tone: 'plain' as const,
     },
     {
-      label: 'Raised twice on one PR',
-      value: figure(s.raised_twice_on_one_pr) ?? 'Not measured yet',
+      value: figure(s.replay_matched, s.replay_total),
+      label: 'same answer on a re-run',
+      note:
+        s.replay_matched == null
+          ? 'the replay consistency check is a later slice'
+          : 'the last replay of one review',
+      because: 'Review Desk has no replay yet, so nothing has been re-run to compare',
+      tone: 'plain' as const,
+    },
+    {
+      value: figure(s.raised_twice_on_one_pr),
+      label: 'reviews went in a circle',
       note:
         s.raised_twice_on_one_pr == null
-          ? 'needs a second round to compare'
-          : 'reviews that went in a circle',
+          ? 'needs a second round to compare against the first'
+          : 'a finding open for 3 rounds or more',
+      because: 'no review here has a second round to compare against the first',
+      tone: 'warn' as const,
     },
   ]
+}
+
+/** The findings a proposal came out of, as the chips the board draws. */
+function citations(rule: Rule) {
+  /* Not in the contract's `required` list, so a rule may arrive without the array. */
+  return (rule.origin_findings ?? []).map(one => ({
+    label: `F${one.seq}`,
+    to: `/reviews/${one.review_id}`,
+  }))
 }
 
 async function act(run: () => Promise<WriteResult>) {
@@ -112,34 +152,22 @@ const defer = (id: number) => act(() => desk.deferRule(id, 60))
 
 <template>
   <div class="rules">
-    <div class="head">
-      <div class="heading">
-        <h1>Rules</h1>
-        <p class="rd-meta blurb">
-          Every rule names the failure it prevents. A preference with no consequence does
-          not qualify.
+    <div class="top">
+      <div class="headline">
+        <h1 class="rd-display">
+          What the reviewer has learned
+        </h1>
+        <p class="blurb rd-measure">
+          Every rule names the failure it prevents. The app proposes them from what you keep
+          and cut; only you promote one.
         </p>
       </div>
-      <div class="filter">
-        <label
-          class="rd-meta"
-          for="repo"
-        >Repository</label>
-        <select
-          id="repo"
-          v-model="repo"
-          class="rd-field"
-          :disabled="repos.pending.value && !repos.loaded.value"
-        >
-          <option
-            v-for="option in options"
-            :key="option.value"
-            :value="option.value"
-          >
-            {{ option.label }}
-          </option>
-        </select>
-      </div>
+      <DecisionTrack
+        v-model="repo"
+        label="Which repository's rules to show"
+        :options="tabs"
+        :disabled="repos.pending.value && !repos.loaded.value"
+      />
     </div>
 
     <DeskNotice
@@ -155,143 +183,108 @@ const defer = (id: number) => act(() => desk.deferRule(id, 60))
       what="the rules"
     >
       <template #default="{ data }">
-        <div class="stats">
-          <StatTile
-            v-for="stat in stats(data)"
-            :key="stat.label"
-            :label="stat.label"
-            :value="stat.value"
-            :note="stat.note"
+        <div class="figures">
+          <StatFigure
+            v-for="one in figures(data)"
+            :key="one.label"
+            :value="one.value"
+            :label="one.label"
+            :note="one.note"
+            :unknown-because="one.because"
+            :tone="one.tone"
           />
         </div>
 
         <DeskSection
           v-if="data.proposed.length"
           heading="Proposed"
+          tone="open"
           :count="data.proposed.length"
+          note="waiting on you"
         >
-          <DeskCard
-            v-for="rule in data.proposed"
-            :key="rule.id"
-            tone="chosen"
-            class="proposal"
-          >
-            <div class="proposal-body">
-              <div class="head-line">
-                <span class="rd-mono rd-meta">{{ rule.key }}</span>
-                <h3 class="statement">
-                  {{ rule.statement }}
-                </h3>
-              </div>
-              <p
-                v-if="rule.why_proposed"
-                class="rd-note why"
+          <div class="proposals">
+            <RuleProposal
+              v-for="rule in data.proposed"
+              :key="rule.id"
+              :rule="rule"
+              :citations="citations(rule)"
+              :working="working"
+              @promote="promote(rule.id)"
+              @dismiss="asking = { id: rule.id, kind: 'dismiss' }"
+            >
+              <template
+                v-if="asking?.id === rule.id && asking.kind === 'dismiss'"
+                #reason
               >
-                <strong>Why proposed:</strong> {{ rule.why_proposed }}
-              </p>
-              <p class="rd-note why">
-                <strong>Prevents:</strong> {{ rule.prevents }}
-              </p>
-              <p
-                v-if="rule.note"
-                class="rd-meta note"
-              >
-                {{ rule.note }}
-              </p>
-            </div>
-            <div class="actions">
-              <button
-                type="button"
-                class="rd-btn rd-btn--primary"
-                :disabled="working"
-                @click="promote(rule.id)"
-              >
-                Promote
-              </button>
-              <button
-                type="button"
-                class="rd-btn"
-                :disabled="working"
-                @click="asking = { id: rule.id, kind: 'dismiss' }"
-              >
-                Dismiss
-              </button>
-            </div>
-            <ReasonPrompt
-              v-if="asking?.id === rule.id && asking.kind === 'dismiss'"
-              :id="`dismiss-${rule.id}`"
-              label="Why is this not a rule?"
-              action="Dismiss the proposal"
-              @confirm="reason => dismiss(rule.id, reason)"
-              @cancel="asking = null"
-            />
-          </DeskCard>
+                <ReasonPrompt
+                  :id="`dismiss-${rule.id}`"
+                  label="Why is this not a rule?"
+                  action="Dismiss the proposal"
+                  @confirm="reason => dismiss(rule.id, reason)"
+                  @cancel="asking = null"
+                />
+              </template>
+            </RuleProposal>
+          </div>
         </DeskSection>
 
         <DeskSection
-          heading="Active"
+          heading="In force"
           :count="data.active.length"
+          :note="data.active.length === data.summary.active_rules
+            ? null
+            : `${data.active.length} of ${data.summary.active_rules} shown`"
         >
-          <RuleCard
+          <RuleRow
             v-for="rule in data.active"
             :key="rule.id"
             :rule="rule"
           />
           <p
             v-if="data.active.length === 0"
-            class="rd-empty"
+            class="rd-empty gap"
           >
             No rule applies here yet. A rule comes out of a finding you kept, not out of a
             style guide.
+          </p>
+          <p
+            v-else
+            class="rd-meta legend"
+          >
+            The four bars are the stages a rule moves through: noticed, repository rule,
+            lint check, CI check.
           </p>
         </DeskSection>
 
         <DeskSection
           v-if="data.stale.length"
           heading="Going stale"
+          tone="open"
           :count="data.stale.length"
         >
-          <ActionRow
-            v-for="rule in data.stale"
-            :key="rule.id"
-            tone="pending"
-          >
-            <template #title>
-              <span class="rd-mono rd-meta">{{ rule.key }}</span>
-              {{ rule.statement }}
-            </template>
-            <template #meta>
-              {{ rule.note ?? staleLabel(rule) }}
-            </template>
-            <template #extra>
-              <ReasonPrompt
+          <div class="stale">
+            <StaleRule
+              v-for="rule in data.stale"
+              :key="rule.id"
+              :rule="rule"
+              :working="working"
+              @retire="asking = { id: rule.id, kind: 'retire' }"
+              @defer="defer(rule.id)"
+            >
+              <template
                 v-if="asking?.id === rule.id && asking.kind === 'retire'"
-                :id="`retire-${rule.id}`"
-                label="Why is it being retired?"
-                action="Retire the rule"
-                @confirm="reason => retire(rule.id, reason)"
-                @cancel="asking = null"
-              />
-            </template>
-            <template #actions>
-              <button
-                type="button"
-                class="rd-btn"
-                :disabled="working"
-                @click="asking = { id: rule.id, kind: 'retire' }"
+                #reason
               >
-                Retire
-              </button>
-              <button
-                type="button"
-                class="rd-btn"
-                :disabled="working"
-                @click="defer(rule.id)"
-              >
-                Keep 60 more days
-              </button>
-            </template>
-          </ActionRow>
+                <ReasonPrompt
+                  :id="`retire-${rule.id}`"
+                  label="Why is it being retired?"
+                  action="Retire the rule"
+                  @confirm="reason => retire(rule.id, reason)"
+                  @cancel="asking = null"
+                />
+              </template>
+            </StaleRule>
+          </div>
         </DeskSection>
       </template>
 
@@ -301,8 +294,13 @@ const defer = (id: number) => act(() => desk.deferRule(id, 60))
         repository whose reviews have all been clean.
       -->
       <template #empty>
-        <DeskCard class="fresh">
-          <h1>No rules yet</h1>
+        <DeskCard
+          tone="raised"
+          class="fresh"
+        >
+          <h1 class="rd-display">
+            No rules yet
+          </h1>
           <p class="rd-note rd-measure">
             Nothing has been learned here. A rule comes out of a finding you kept — the
             harvester proposes one when the same finding keeps being raised, or the same
@@ -322,82 +320,55 @@ const defer = (id: number) => act(() => desk.deferRule(id, 60))
 .rules {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 48px;
 }
 
-.head {
+.top {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 20px 40px;
   align-items: flex-end;
 }
 
-.heading {
-  flex: 1 1 360px;
-  min-width: 0;
-}
-
-.blurb {
-  margin: 4px 0 0;
-}
-
-.filter {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.filter .rd-field {
-  width: auto;
-  min-width: 200px;
-}
-
-.stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
-}
-
-.proposal {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  align-items: center;
-}
-
-.proposal-body {
+.headline {
   flex: 1 1 420px;
   min-width: 0;
 }
 
-.head-line {
+.blurb {
+  margin: 10px 0 0;
+  color: var(--rd-ink-dim);
+}
+
+/*
+ * Four figures across, each with its own rule above it. `auto-fit` with a floor of 220px
+ * so they become two and then one without anything being told a breakpoint.
+ */
+.figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: 0 32px;
+}
+
+.proposals,
+.stale {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.statement {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
+.legend {
+  padding-top: 14px;
 }
 
-.why {
-  margin: 4px 0 0;
+.gap {
+  margin-top: 16px;
 }
 
-.why strong {
-  font-weight: 600;
-}
-
-.note {
-  margin: 4px 0 0;
-}
-
-.actions {
+.fresh {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  gap: 12px;
+  padding: 32px;
 }
 </style>

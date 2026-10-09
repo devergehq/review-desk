@@ -1,18 +1,23 @@
 <script setup lang="ts">
 /**
- * The shell every screen sits in: the name, the marker that says these records are
- * invented, and the three places you can be.
+ * The shell every screen sits in: the name, the three places you can be, and the marker
+ * that says these records are invented.
+ *
+ * The boards all carry the same header — the name in Newsreader at 22px, the three items
+ * underlined when current, a 1px ink rule under the lot — and they name the first item
+ * **Queue** rather than Inbox. That is the word this app now uses for the screen at `/`:
+ * it is a queue of reviews, one row each, and "inbox" was the name of the thing that
+ * listed one review three times.
  *
  * "Reviews" has no index of its own in this slice, so it goes to the review that is
- * waiting; the mockups' fourth item pointed at the flow diagram, which is reference
- * material in `docs/mockups/` rather than a screen.
+ * waiting; the boards' own Reviews link points at the review page, which is a later issue.
  */
 const route = useRoute()
 const inbox = useReviewDesk().inbox()
 
 /*
- * Whichever review is waiting on the developer, so "Reviews" always lands somewhere
- * worth being: the brief to confirm, else the draft to approve, else the first reply.
+ * Whichever review is waiting on the developer, so "Reviews" always lands somewhere worth
+ * being: the brief to confirm, else the draft to approve, else the first reply.
  *
  * `null` while the inbox has not answered, and on a database with nothing in it. There is
  * then no review to link to, so the item is a disabled label rather than a link to
@@ -31,7 +36,7 @@ const firstReview = computed(() => {
 })
 
 const links = computed(() => [
-  { label: 'Inbox', to: '/', match: (path: string) => path === '/' },
+  { label: 'Queue', to: '/', match: (path: string) => path === '/' },
   {
     label: 'Reviews',
     to: firstReview.value == null ? null : `/reviews/${firstReview.value}`,
@@ -51,7 +56,6 @@ const links = computed(() => [
       <div class="name">
         Review Desk
       </div>
-      <SampleDataBadge />
       <nav
         class="nav"
         aria-label="Review Desk"
@@ -80,6 +84,7 @@ const links = computed(() => [
           >{{ link.label }}</span>
         </template>
       </nav>
+      <SampleDataBadge />
     </header>
     <main
       id="main"
@@ -114,67 +119,66 @@ const links = computed(() => [
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
-  padding: 10px 24px;
-  background: var(--rd-surface);
-  border-bottom: 1px solid var(--rd-line);
+  gap: 12px 28px;
+  padding: 14px 40px;
+  /* Ink, not the row grey: this is the line that separates the app from the page. */
+  border-bottom: 1px solid var(--rd-ink);
 }
 
 .name {
-  font-weight: 600;
-  font-size: 17px;
+  font-family: var(--rd-font-display);
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
 }
 
 .nav {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin-left: auto;
 }
 
 .link {
   display: flex;
   align-items: center;
-  padding: 12px 14px;
-  border-radius: var(--rd-radius-sm);
+  padding: 12px;
+  color: var(--rd-ink-muted);
   text-decoration: none;
-  color: var(--rd-ink-dim);
 }
 
 .link:hover {
-  background: var(--rd-ground);
   color: var(--rd-ink);
 }
 
 .link--current {
-  font-weight: 600;
   color: var(--rd-ink);
-  background: var(--rd-rail);
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--rd-ink);
 }
 
 .link--none {
-  color: var(--rd-ink-muted);
+  color: var(--rd-line-strong);
   cursor: default;
+}
+
+/* The marker sits at the far end, which is where every board puts it. */
+.bar :deep(.badge) {
+  margin-left: auto;
 }
 
 .main {
   max-width: var(--rd-shell-max);
   margin: 0 auto;
-  padding: 28px 24px 48px;
+  padding: 44px 40px 80px;
 }
 
-@media (max-width: 520px) {
+@media (max-width: 560px) {
   .bar {
-    padding: 10px 16px;
+    padding: 12px 16px;
   }
 
   .main {
-    padding: 20px 16px 40px;
-  }
-
-  .nav {
-    margin-left: 0;
-    width: 100%;
+    padding: 28px 16px 48px;
   }
 }
 </style>

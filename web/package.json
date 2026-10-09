@@ -18,8 +18,9 @@
     "contract:types": "node scripts/contract-types.mjs"
   },
   "dependencies": {
-    "@fontsource/ibm-plex-mono": "^5.3.0",
-    "@fontsource/ibm-plex-sans": "^5.3.0",
+    "@fontsource/instrument-sans": "5.3.0",
+    "@fontsource/jetbrains-mono": "5.3.0",
+    "@fontsource/newsreader": "5.3.0",
     "dompurify": "^3.4.16",
     "markdown-it": "^15.0.2",
     "mermaid": "^12.1.0",

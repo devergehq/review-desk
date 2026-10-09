@@ -87,7 +87,25 @@ describe('the edge of a control clears 3:1', () => {
   })
 })
 
+/**
+ * The tokens a control may set its own height from, and the floor each one has to clear.
+ *
+ * The approved boards draw controls at four heights — a 44px input inside a field shell, a
+ * 46px item in a segmented track, a 50px action, a 56px action that is the point of its
+ * card — so "44px" is no longer the only allowed value and a check that insisted on the
+ * literal `--rd-control-min` would have pushed a component into declaring a height it does
+ * not use. What has to stay true is the floor, which is read out of the stylesheet here
+ * rather than asserted of one name.
+ */
+const HEIGHT_TOKENS = ['control-min', 'control-item', 'action-min', 'action-tall']
+
 describe('nothing you can press is smaller than a finger', () => {
+  it.each(HEIGHT_TOKENS)('--rd-%s is at least 44px', (name) => {
+    const match = css.match(new RegExp(`--rd-${name}:\\s*(\\d+)px`))
+    expect(match, `token --rd-${name} is not defined`).not.toBeNull()
+    expect(Number(match![1])).toBeGreaterThanOrEqual(44)
+  })
+
   it('controls are at least 44px tall', () => {
     expect(css).toMatch(/--rd-control-min:\s*44px/)
     expect(css).toMatch(/\.rd-btn\s*\{[^}]*min-height:\s*var\(--rd-control-min\)/)
@@ -104,9 +122,12 @@ describe('nothing you can press is smaller than a finger', () => {
       .filter(name => name.endsWith('.vue'))
       .map(name => ({ name, text: readFileSync(resolve('app/components', name), 'utf8') }))
     expect(components.length).toBeGreaterThan(10)
+    const allowed = new RegExp(
+      `min-height:\\s*var\\(--rd-(${HEIGHT_TOKENS.map(name => name.replace('-', '\\-')).join('|')})\\)`,
+    )
     const offenders = components
       .filter(file => /cursor:\s*pointer/.test(file.text))
-      .filter(file => !/min-height:\s*var\(--rd-control-min\)/.test(file.text))
+      .filter(file => !allowed.test(file.text))
       .filter(file => file.name !== 'MarkdownView.vue')
       .map(file => file.name)
     expect(offenders).toEqual([])

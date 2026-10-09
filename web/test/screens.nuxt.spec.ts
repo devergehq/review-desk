@@ -4,7 +4,6 @@ import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { flushPromises, type VueWrapper } from '@vue/test-utils'
 
 import {
-  ALL_REPOSITORIES,
   resetDesk,
   useDeskSource,
   useReviewDesk,
@@ -118,7 +117,12 @@ describe('the shell', () => {
   it('names the three places you can be', async () => {
     const page = await shown(Layout)
     const places = page.findAll('nav a, nav span').map(link => link.text())
-    expect(places).toEqual(['Inbox', 'Reviews', 'Rules'])
+    /*
+     * "Queue", not "Inbox". The approved boards name it that, and so does DEV-876: it is a
+     * queue of reviews with one row each, and "inbox" was the name of the screen that
+     * listed one review three times.
+     */
+    expect(places).toEqual(['Queue', 'Reviews', 'Rules'])
   })
 
   it('does not link to a review when the desk holds none', async () => {
@@ -135,85 +139,159 @@ describe('the shell', () => {
   })
 })
 
-describe('the inbox', () => {
+describe('the queue', () => {
   beforeEach(async () => {
     await resetDesk()
   })
 
-  it('renders the five waiting groups', async () => {
+  /*
+   * **The defect DEV-876 names, and the fixture that has it.** Review 17 is
+   * `acme/portal#412`: its brief is unconfirmed, its session wrote a draft anyway, and it
+   * is therefore in two of the Inbox's five arrays at once. The screen this replaces drew
+   * one group per array and showed it twice.
+   */
+  it('shows one row for a review with two pending actions', async () => {
+    const page = await shown(Inbox)
+    const rows = page.findAll('.row')
+    const forFour12 = rows.filter(row => row.text().includes('#412'))
+    expect(forFour12).toHaveLength(1)
+  })
+
+  it('shows that row’s next action, and says what is behind it', async () => {
+    const page = await shown(Inbox)
+    const row = page.findAll('.row').find(one => one.text().includes('#412'))!
+    /* Layer 2 comes before layer 6, so the brief is the next thing the developer does. */
+    expect(row.text()).toContain('Problem brief ready')
+    expect(row.text()).toContain('nothing posts until you confirm')
+    expect(row.text()).toContain('Read the brief')
+    /* And the thing that is not the next action is still on the row, not lost. */
+    expect(row.text()).toContain('a draft is ready behind it')
+    expect(row.text()).not.toContain('Read and sign off')
+  })
+
+  it('leads with how many reviews need the developer, counting each once', async () => {
+    const page = await shown(Inbox)
+    /* 17 (brief and draft), 15 (draft), 16 (draft), 12 (the author replied). Four. */
+    expect(page.text()).toContain('4 reviews need you')
+    expect(page.text()).toContain('2 with the agent')
+    expect(page.text()).toContain('2 of your own')
+  })
+
+  it('draws the board’s four groups, and hides a group with nothing in it', async () => {
     const page = await shown(Inbox)
     const text = page.text()
-    for (const heading of [
-      'Confirm the problem · 1',
-      'Sign off a draft · 3',
-      'Author replied · 1',
-      'Your PRs with no reviewer · 2',
-      'Proposed rule · 1',
-    ]) {
-      expect(text).toContain(heading)
-    }
-    expect(text).toContain('8 items across 2 repositories')
+    expect(text).toContain('Needs you')
+    expect(text).toContain('With the agent')
+    expect(text).toContain('Waiting on the author')
+    expect(text).toContain('Your pull requests')
+
+    /* With no own pull requests and no running session, those two groups are not drawn. */
+    await resetDesk({ own_prs: [], session_liveness: {} })
+    const empty = await shown(Inbox)
+    expect(empty.text()).not.toContain('Your pull requests')
   })
 
-  it('renders the sessions in progress with their layer and a meter', async () => {
+  /*
+   * The board draws this group; `GET /inbox` has no source for it, and DEV-876 adds no API
+   * field. Drawn in the unmeasured state rather than hidden: hiding it would say no review
+   * is waiting on an author, which is a claim nothing here can make.
+   */
+  it('says that reviews waiting on the author are not measured, rather than showing none', async () => {
     const page = await shown(Inbox)
-    expect(page.text()).toContain('In progress · 2')
-    expect(page.text()).toContain('Layer 5 of 7 · code review')
-    const meters = page.findAll('[role="progressbar"]')
-    expect(meters).toHaveLength(2)
-    expect(meters[0]!.attributes('aria-valuenow')).toBe('5')
-    expect(meters[0]!.attributes('aria-valuemax')).toBe('7')
+    expect(page.text()).toContain('Waiting on the author')
+    expect(page.text()).toContain('Not measured yet')
+    expect(page.text()).toContain('serves no group for a posted review awaiting a reply')
   })
 
-  it('says when nothing has reported a session as alive', async () => {
+  it('shows which layer each running session is on, as a bar and in words', async () => {
     const page = await shown(Inbox)
-    expect(page.text()).toContain('session alive')
-    expect(page.text()).toContain('session state unknown')
+    expect(page.text()).toContain('Code review')
+    const bars = page.findAll('[role="img"]')
+    const layers = bars.filter(bar => bar.attributes('aria-label')?.startsWith('Layer '))
+    expect(layers).toHaveLength(2)
+    expect(layers[0]!.attributes('aria-label')).toBe('Layer 5 of 7, code review')
+    expect(layers[0]!.findAll('.seg')).toHaveLength(7)
   })
 
-  it('says when GitHub has told it nothing about a pull request', async () => {
+  it('says what it knows about each session, and says when it knows nothing', async () => {
     const page = await shown(Inbox)
-    expect(page.text()).toContain('description lint passes')
-    expect(page.text()).toContain('description not checked')
-    expect(page.text()).toContain('open for an unrecorded time')
+    expect(page.text()).toContain('Session running')
+    expect(page.text()).toContain('Session state unknown')
+  })
+
+  it('says a row has no recorded time rather than inventing one', async () => {
+    const page = await shown(Inbox)
+    /* Only a brief carries a ready time. A draft, a reply and a session carry none. */
+    expect(page.text()).toContain('no time recorded')
+    expect(page.text()).toContain('and the rows with no recorded time last')
+  })
+
+  it('filters by repository, and each tab carries the rows it would show', async () => {
+    const page = await shown(Inbox)
+    const tabs = page.findAll('[role="radiogroup"] [role="radio"]').map(tab => tab.text())
+    expect(tabs[0]).toBe('All repositories')
+    expect(tabs).toContain('acme/portal5')
+    expect(tabs).toContain('acme/billing-api3')
+
+    const billing = page
+      .findAll('[role="radio"]')
+      .find(tab => tab.text().startsWith('acme/billing-api'))!
+    await billing.trigger('click')
+    await settle(page)
+
+    expect(page.text()).toContain('1 review needs you')
+    expect(page.text()).not.toContain('#412')
+    expect(page.text()).toContain('#88')
+  })
+
+  /*
+   * The three typefaces, where the boards put them: Newsreader for a review's title,
+   * JetBrains Mono for a pull request number. Asserted on the elements rather than on the
+   * stylesheet, because what matters is which words wear which face.
+   */
+  it('sets a review’s title in the display face and its number in the mono one', async () => {
+    const page = await shown(Inbox)
+    const row = page.findAll('.row').find(one => one.text().includes('#412'))!
+    expect(row.find('.rd-display-row').text()).toBe('Retry failed webhook deliveries')
+    expect(row.find('.pr').classes()).toContain('rd-mono')
+    expect(row.find('.pr').text()).toBe('#412')
   })
 
   it('has a labelled field for starting a review', async () => {
     const page = await shown(Inbox)
-    const field = page.find('input#pr-link')
+    const field = page.find('input#start')
     expect(field.exists()).toBe(true)
-    expect(page.find('label[for="pr-link"]').text()).toBe('Start a review')
-    expect(field.attributes('aria-describedby')).toBe('pr-link-help')
+    expect(page.find('label[for="start"]').text()).toBe('Start a review')
   })
 
   it('refuses a link that is not a pull request, and says what it wanted', async () => {
     const page = await shown(Inbox)
-    await page.find('input#pr-link').setValue('nonsense')
-    await click(page, 'Understand it first')
+    await page.find('input#start').setValue('nonsense')
+    await page.find('.go').trigger('click')
+    await settle(page)
 
     expect(page.text()).toContain('Paste a link like github.com/acme/portal/pull/412.')
     expect(page.text()).toContain('Accepted: a pull request link')
-    /* A refused link is the developer's typing, not their machine. */
+    /* A refused link is the developer's typing, so the field says so rather than a box. */
+    expect(page.find('.shell--refused').exists()).toBe(true)
     expect(page.find('.notice--blocked').exists()).toBe(false)
   })
 
   it('says differently when GitHub could not be read, and names the fix', async () => {
     await resetDesk({ github_available: false })
     const page = await shown(Inbox)
-    await page.find('input#pr-link').setValue('https://github.com/acme/portal/pull/501')
-    await click(page, 'Understand it first')
+    await page.find('input#start').setValue('https://github.com/acme/portal/pull/501')
+    await page.find('.go').trigger('click')
+    await settle(page)
 
-    const blocked = page.find('.notice--blocked')
-    expect(blocked.exists()).toBe(true)
-    expect(blocked.text()).toContain('gh auth login')
-    expect(blocked.attributes('role')).toBe('status')
+    expect(page.text()).toContain('gh auth login')
     /* The link stays in the field: nothing is wrong with it, so retyping it is waste. */
-    expect((page.find('input#pr-link').element as HTMLInputElement).value).toBe(
+    expect((page.find('input#start').element as HTMLInputElement).value).toBe(
       'https://github.com/acme/portal/pull/501',
     )
   })
 
-  it('links a reviewer request out to GitHub rather than writing to it', async () => {
+  it('links a pull request of the developer’s own out to GitHub rather than writing to it', async () => {
     const page = await shown(Inbox)
     const out = page
       .findAll('a')
@@ -221,23 +299,36 @@ describe('the inbox', () => {
     expect(out).toBeDefined()
     expect(out!.attributes('href')).toBe('https://github.com/acme/portal/pull/415')
     expect(out!.attributes('rel')).toContain('noopener')
+    expect(out!.text()).toContain('Open on GitHub')
   })
 
-  it('takes the brief out of the inbox once it is confirmed', async () => {
+  it('merges a review out of the queue once its brief is confirmed', async () => {
     const page = await shown(Inbox)
-    expect(page.text()).toContain('Confirm the problem · 1')
+    expect(page.text()).toContain('Problem brief ready')
 
     /*
      * Confirmed from the data layer rather than from this screen, which has no control for
      * it — and then the screen re-reads itself, because a write refreshes every open read.
-     * That is the one behaviour this test is about: the Inbox is not patched in place.
      */
     await useReviewDesk().confirmBrief(17)
     await settle(page)
 
-    expect(page.text()).not.toContain('Confirm the problem · 1')
-    expect(page.text()).toContain('Sign off a draft · 3')
-    expect(page.text()).toContain('7 items across 2 repositories')
+    expect(page.text()).not.toContain('Problem brief ready')
+    /* Still four rows: #412's next action is now the draft its session had written. */
+    expect(page.text()).toContain('4 reviews need you')
+    const row = page.findAll('.row').find(one => one.text().includes('#412'))!
+    expect(row.text()).toContain('Draft ready')
+    expect(row.text()).toContain('Read and sign off')
+    expect(page.findAll('.row').filter(one => one.text().includes('#412'))).toHaveLength(1)
+  })
+
+  it('keeps the figures the boards do not draw, rather than dropping them', async () => {
+    const page = await shown(Inbox)
+    /* `handled_without_you` and a waiting rule proposal both reach the screen. */
+    expect(page.text()).toContain('Handled without you this week')
+    expect(page.text()).toContain('9 description problems caught by the CI check')
+    expect(page.text()).toContain('11 nits filed as 3 tickets')
+    expect(page.text()).toContain('1 rule proposal waiting on you')
   })
 
   it('reads as new, not as broken, on a database with nothing in it', async () => {
@@ -256,10 +347,10 @@ describe('the inbox', () => {
     expect(text).toContain('This database holds no reviews')
     /* And it says the one thing that fills it, with the field to do it from. */
     expect(text).toContain('review-desk')
-    expect(page.find('input#pr-link-empty').exists()).toBe(true)
-    /* Not an error, and not a count of nought items. */
+    expect(page.find('input#start-empty').exists()).toBe(true)
+    /* Not an error, and not a count of nought reviews. */
     expect(page.find('.notice--blocked').exists()).toBe(false)
-    expect(text).not.toContain('0 items across')
+    expect(text).not.toContain('0 reviews need you')
   })
 })
 
@@ -639,63 +730,180 @@ describe('the rules', () => {
     await resetDesk()
   })
 
-  it('renders the four figures, and leaves the unmeasured one absent', async () => {
+  /** The repository tab with this label, from the board's own filter. */
+  function tab(page: VueWrapper, startsWith: string) {
+    return page.findAll('[role="radio"]').find(one => one.text().startsWith(startsWith))
+  }
+
+  it('renders the one headline figure that has a source', async () => {
     const page = await shown(Rules)
     const text = page.text()
-    expect(text).toContain('Active rules')
-    expect(text).toContain('cap of 20 per repository')
-    expect(text).toContain('Same answer on re-run')
-    expect(text).toContain('Not measured yet')
-    expect(text).toContain('the replay check is a later slice')
-    expect(text).toContain('31 of 40')
+    expect(text).toContain('rules in force')
+    expect(text).toContain('of at most 20 for a repository')
   })
 
-  it('renders the proposed, active and stale groups', async () => {
+  /*
+   * **Three of the board's four figures are null on the server today** — the replay check
+   * does not exist, nothing has harvested a posted review, and no review has a second round
+   * to compare. The contract made every one of them nullable for exactly this reason, and
+   * the fixtures only fill two, so both states are reachable here.
+   */
+  it('shows a figure with no measurement as words, with the reason, never as a nought', async () => {
+    const page = await shown(Rules)
+    expect(page.text()).toContain('same answer on a re-run')
+    expect(page.text()).toContain('Not measured yet')
+    const unknown = page.findAll('.unknown').map(one => one.attributes('title'))
+    expect(unknown.some(title => title?.includes('Review Desk has no replay yet'))).toBe(true)
+  })
+
+  it('says it of all three when the server answers null for all three, as it does today', async () => {
+    const summary = loadSource().summary
+    await resetDesk({
+      summary: {
+        ...summary,
+        replay_matched: null,
+        replay_total: null,
+        findings_kept: null,
+        findings_total: null,
+        findings_window_days: null,
+        raised_twice_on_one_pr: null,
+      },
+    })
     const page = await shown(Rules)
     const text = page.text()
-    expect(text).toContain('Proposed · 1')
+
+    /* Three unmeasured, and the one that is measured is still a number. */
+    expect(page.findAll('.unknown')).toHaveLength(3)
+    expect(text).toContain('rules in force')
+    for (const reason of [
+      'no posted review has been harvested',
+      'Review Desk has no replay yet',
+      'no review here has a second round',
+    ]) {
+      expect(page.findAll('.unknown').some(one => one.attributes('title')?.includes(reason)))
+        .toBe(true)
+    }
+    /* And nowhere does an absent measurement read as nought. */
+    expect(text).not.toContain('0 of 0')
+  })
+
+  it('shows a figure the fixtures do measure as the figure', async () => {
+    const page = await shown(Rules)
+    /* `findings_kept` is 31 of 40 in the fixtures, so it is a number rather than a shrug. */
+    expect(page.text()).toContain('31 of 40')
+    expect(page.text()).toContain('findings you kept')
+  })
+
+  it('renders the proposed, in-force and going-stale groups', async () => {
+    const page = await shown(Rules)
+    const text = page.text()
+    expect(text).toContain('Proposed')
+    expect(text).toContain('waiting on you')
     expect(text).toContain('Do not raise rename-for-clarity suggestions')
-    expect(text).toContain('Why proposed:')
-    expect(text).toContain('Active · 4')
+    expect(text).toContain('Why it is proposed.')
+    expect(text).toContain('In force')
     expect(text).toContain('A new test must fail when the fix is reverted')
-    expect(text).toContain('Prevents:')
-    expect(text).toContain('Going stale · 1')
+    expect(text).toContain('Prevents.')
+    expect(text).toContain('Going stale')
     expect(text).toContain('Legacy importer calls need the tenant guard')
   })
 
-  it('shows a rule’s counts and leaves out the ones nothing measured', async () => {
+  it('sets a rule’s statement in the display face and its key in the mono one', async () => {
+    const page = await shown(Rules)
+    const statement = page.findAll('.rd-display-statement')[0]!
+    expect(statement.find('.rd-mono').text()).toMatch(/^R-\d+$/)
+    expect(statement.text()).toContain('A new test must fail when the fix is reverted')
+    /* And the headline figure is the display face too, which is what the board draws. */
+    expect(page.find('.value').classes()).toContain('value')
+  })
+
+  it('names the findings a proposal came out of, each as a place to go and look', async () => {
+    const page = await shown(Rules)
+    const chips = page.findAll('.chip').map(chip => chip.text())
+    expect(chips.length).toBeGreaterThan(0)
+    expect(chips[0]).toMatch(/^F\d+$/)
+  })
+
+  /*
+   * The four-stage bar. The dispatch brief listed it as having no source; `Rule.stage` is
+   * the contract's enum and this is it being drawn from the record.
+   */
+  it('draws how far each rule has graduated, from its stage', async () => {
+    const page = await shown(Rules)
+    const bars = page
+      .findAll('[role="img"]')
+      .filter(bar => bar.attributes('aria-label')?.includes('of 4'))
+    expect(bars.length).toBeGreaterThan(0)
+    expect(bars[0]!.findAll('.seg')).toHaveLength(4)
+
+    /* R-09 is `active`: two of four, in ink. */
+    const active = bars.find(bar => bar.attributes('aria-label')?.startsWith('Repository rule'))!
+    expect(active.attributes('aria-label')).toContain('stage 2 of 4')
+    expect(active.findAll('.seg--done')).toHaveLength(2)
+    expect(active.findAll('.seg--todo')).toHaveLength(2)
+
+    /* R-03 is `ci`: all four, and in the accent, because no model is spending tokens. */
+    const check = bars.find(bar => bar.attributes('aria-label')?.startsWith('CI check'))!
+    expect(check.attributes('aria-label')).toContain('stage 4 of 4')
+    expect(check.findAll('.seg--now')).toHaveLength(4)
+
+    expect(page.text()).toContain(
+      'The four bars are the stages a rule moves through: noticed, repository rule, lint '
+      + 'check, CI check.',
+    )
+  })
+
+  it('shows the counts the stage has, and leaves out the ones nothing measured', async () => {
     const page = await shown(Rules)
     const text = page.text()
-    expect(text).toContain('Caught by the check')
-    expect(text).toContain('Repository rule · 1 exception')
+    /* A rule a review applies: raised, kept, rejected. */
+    expect(text).toContain('7 raised')
+    expect(text).toContain('7 kept by you')
+    expect(text).toContain('0 rejected')
+    /* A rule that graduated: what the check caught instead. */
+    expect(text).toContain('9 caught by the check')
     expect(text).toContain('CI check')
-    expect(text).toContain('Last said by a human')
+    expect(text).toContain('Repository rule · 1 exception')
   })
 
-  it('has a labelled repository picker that changes the list', async () => {
+  it('says when a check has graduated and a model is still raising it', async () => {
     const page = await shown(Rules)
-    expect(page.find('label[for="repo"]').text()).toBe('Repository')
-    expect(page.text()).toContain('Active · 4')
+    expect(page.text()).toContain('1 raised in a review since')
+    expect(page.text()).toContain('a model is still spending tokens on it')
+  })
 
-    await page.find('select#repo').setValue('acme/billing-api')
+  it('reads the provenance line as one sentence, with no gaps before its separators', async () => {
+    const page = await shown(Rules)
+    const line = page.findAll('.provenance').map(one => one.text())
+    expect(line.length).toBeGreaterThan(0)
+    for (const said of line) {
+      expect(said).not.toMatch(/\s{2,}/)
+      expect(said).not.toMatch(/\s·\s*$/)
+    }
+  })
+
+  it('has a repository filter that changes the list', async () => {
+    const page = await shown(Rules)
+    expect(page.text()).toContain('In force')
+    expect(page.text()).toContain('A new test must fail when the fix is reverted')
+
+    await tab(page, 'acme/billing-api')!.trigger('click')
     await settle(page)
 
-    expect(page.text()).toContain('Active · 2')
     expect(page.text()).toContain('A cache bust names every key the permission reaches')
-    expect(page.text()).not.toContain('Proposed · 1')
+    expect(page.text()).not.toContain('Do not raise rename-for-clarity suggestions')
   })
 
-  it('promotes a proposal into the active list', async () => {
+  it('promotes a proposal into the in-force list', async () => {
     const page = await shown(Rules)
-    await click(page, 'Promote')
+    await click(page, 'Make it a rule')
     expect(page.text()).toContain('R-22 promoted')
-    expect(page.text()).toContain('Active · 5')
-    expect(page.text()).not.toContain('Proposed · 1')
+    expect(page.text()).not.toContain('Why it is proposed.')
   })
 
   it('asks why before dismissing a proposal', async () => {
     const page = await shown(Rules)
-    await click(page, 'Dismiss')
+    await click(page, 'Dismiss, and say why')
 
     const field = page.find('input#dismiss-22')
     expect(field.exists()).toBe(true)
@@ -708,7 +916,7 @@ describe('the rules', () => {
 
   it('asks why before retiring a stale rule', async () => {
     const page = await shown(Rules)
-    await click(page, 'Retire')
+    await click(page, 'Retire it')
     expect(page.find('input#retire-5').exists()).toBe(true)
 
     await page.find('input#retire-5').setValue('The importer is gone in #415.')
@@ -722,7 +930,6 @@ describe('the rules', () => {
     await click(page, 'Keep 60 more days')
     expect(page.text()).toContain('R-05 kept for 60 days')
     expect(page.text()).not.toContain('Going stale')
-    expect(page.text()).toContain('Active · 5')
   })
 
   it('keeps the chosen repository when a rule action refreshes the screen', async () => {
@@ -733,14 +940,13 @@ describe('the rules', () => {
      * the first repository — reading a different page of rules than the one they acted on.
      */
     const page = await shown(Rules)
-    await page.find('select#repo').setValue(ALL_REPOSITORIES)
+    await tab(page, 'All repositories')!.trigger('click')
     await settle(page)
-    expect(page.text()).toContain('Active · 5')
+    expect(page.text()).toContain('A cache bust names every key the permission reaches')
 
-    await click(page, 'Promote')
+    await click(page, 'Make it a rule')
 
-    expect((page.find('select#repo').element as HTMLSelectElement).value)
-      .toBe(ALL_REPOSITORIES)
+    expect(tab(page, 'All repositories')!.attributes('aria-checked')).toBe('true')
     expect(page.text()).toContain('R-22 promoted')
   })
 
@@ -834,7 +1040,7 @@ describe('a read that is still in flight', () => {
   it('reserves the space and says what it is reading', async () => {
     const page = await shown(Inbox)
 
-    expect(page.text()).toContain('Reading the inbox…')
+    expect(page.text()).toContain('Reading the queue…')
     expect(page.find('[role="status"][aria-live="polite"]').exists()).toBe(true)
     /*
      * The reserved height is the point: without it the content lands and everything below
