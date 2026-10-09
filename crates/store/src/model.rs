@@ -696,7 +696,17 @@ impl FindingHunk {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Finding {
     pub review_id: i64,
-    /// Stable within its review, from 1. This is the id a person quotes.
+    /// **Stable across every round of the pull request, from 1. This is the id a person
+    /// quotes, and it is the finding's identity.**
+    ///
+    /// A carried finding keeps the number it had — F2 in round 1 is F2 in round 3 — and a
+    /// new finding takes the next number unused on the pull request, so no two findings of
+    /// one pull request share a number. That is what makes [`Finding::introduced_by_seq`]
+    /// able to name a finding with a number alone.
+    ///
+    /// Findings written before migration 6 were numbered within their review, so two
+    /// rounds of one pull request may hold the same number. Such a round has no links and
+    /// reads as a first round.
     pub seq: i64,
     /// Which lens found it.
     pub lens: String,
@@ -744,6 +754,30 @@ pub struct Finding {
     pub suggested_fix: Option<String>,
     /// Sibling code the fix should look like, in the order given.
     pub fix_references: Vec<String>,
+    /// The earlier round this finding was carried from. `None` for a finding raised fresh
+    /// in this round, and for every finding written before migration 6.
+    ///
+    /// The seq is not repeated here, because it cannot differ: a carried finding keeps its
+    /// number, so this plus [`Finding::seq`] names the finding it continues.
+    pub continues_review_id: Option<i64>,
+    /// What became of this finding **in this round**.
+    ///
+    /// Not the same question as [`Finding::disposition`], which is what is to become of it
+    /// in this round's draft. A finding can be `fixed` and so in no draft at all.
+    pub round_status: RoundStatus,
+    /// Who decided that status. `None` while nothing has been decided.
+    pub round_status_by: Option<DecidedBy>,
+    /// How it was checked, in the checker's own words — "their new test fails with the fix
+    /// reverted".
+    pub round_status_checked: Option<String>,
+    pub round_status_at: Option<Timestamp>,
+    /// The commit the status rests on: for a fixed finding, the commit that fixed it.
+    pub round_status_commit: Option<String>,
+    /// The commit a new finding is attributed to.
+    pub introduced_by_commit: Option<String>,
+    /// The earlier finding whose fix caused this one, by its number. A number alone is
+    /// enough: after migration 6 a number is an identity across the whole pull request.
+    pub introduced_by_seq: Option<i64>,
     pub created_at: Timestamp,
 }
 
@@ -799,6 +833,15 @@ pub struct NewFinding {
     /// Sibling code the fix should look like. A blank reference is refused.
     #[serde(default)]
     pub fix_references: Vec<String>,
+    /// The commit this finding is attributed to — "introduced by a41c9e2".
+    #[serde(default)]
+    pub introduced_by_commit: Option<String>,
+    /// The earlier finding whose fix caused this one, by its number.
+    ///
+    /// Checked against the pull request's findings on the way in, so a typo is a refusal
+    /// naming the number rather than a finding attributed to one that was never raised.
+    #[serde(default)]
+    pub introduced_by_seq: Option<i64>,
 }
 
 fn default_disposition() -> Disposition {
@@ -842,6 +885,8 @@ impl Default for NewFinding {
             verification: default_verification(),
             suggested_fix: None,
             fix_references: Vec::new(),
+            introduced_by_commit: None,
+            introduced_by_seq: None,
         }
     }
 }
@@ -1223,3 +1268,203 @@ pub struct WorkFilter {
 /// How many rules one repository may hold in force before the set stops being one
 /// anybody can remember.
 pub const ACTIVE_RULES_CAP: i64 = 20;
+
+// ---------------------------------------------------------------------------------------
+// A finding's identity across rounds, and what changed between them. DEV-873.
+//
+// Appended rather than slotted in beside the sets above, deliberately: three sessions are
+// editing this file at once, and an append conflicts with nothing.
+// ---------------------------------------------------------------------------------------
+
+string_enum! {
+    /// What became of a finding **in one round**.
+    ///
+    /// **Not the same set as [`Disposition`], and the two answer different questions.** A
+    /// disposition says what is to become of the finding in this round's draft; this says
+    /// what happened to the finding itself. A fixed finding has nothing to post, so it is
+    /// `fixed` here and absent from the draft — which a disposition could not express
+    /// without `suppressed` coming to mean two different things.
+    ///
+    /// Nothing derives one of these. DEV-873 puts deciding the status out of scope on
+    /// purpose: an agent or the developer sets it, and says how they checked.
+    RoundStatus as "round_status" {
+        /// Raised in this round. Every finding starts here, including every finding
+        /// written before migration 6.
+        New => "new",
+        /// The author fixed it, and somebody checked that they had.
+        Fixed => "fixed",
+        /// Still there. This is the status that makes a round go in a circle, and
+        /// [`RoundStatus::is_open`] is what counts the rounds it has stayed in.
+        StillOpen => "still_open",
+        /// The author gave a reason and it was accepted. The reason is the checked note.
+        Accepted => "accepted",
+        /// Withdrawn by the reviewer: it should not have been raised, or no longer holds.
+        Withdrawn => "withdrawn",
+        /// Moved to a ticket, and so not part of this round.
+        Ticketed => "ticketed",
+    }
+}
+
+impl RoundStatus {
+    /// Whether the finding is still outstanding at this status.
+    ///
+    /// `new` and `still_open` only. The other four are settled one way or another, which
+    /// is what "2 fixed · 2 still open · 1 new" counts and what stops the consecutive-round
+    /// count carrying on past the round a finding was answered in.
+    pub fn is_open(&self) -> bool {
+        matches!(self, RoundStatus::New | RoundStatus::StillOpen)
+    }
+}
+
+string_enum! {
+    /// Who decided a finding's status in a round.
+    ///
+    /// **Deliberately not [`Actor`].** `Actor` is who brought an *outcome* about —
+    /// developer, author or harvester — and it is on the wire in `Outcome`, so widening it
+    /// would change a published shape. More to the point it has no value for an agent, and
+    /// an agent decides most of these: recording that as `developer` would put the
+    /// developer's name against a check nobody showed them, which is exactly what
+    /// [`SignOff::Waived`] was added to stop.
+    ///
+    /// **This is not a sign-off.** Only the developer signs off, in the dashboard. Saying
+    /// a finding is fixed is not approving a review, and `agent` is here so that the record
+    /// can tell the two apart.
+    DecidedBy as "round_status_by" {
+        /// The developer, in the dashboard.
+        Developer => "developer",
+        /// A review session.
+        Agent => "agent",
+        /// The pull request's author, through a reply the harvester read.
+        Author => "author",
+    }
+}
+
+/// A finding's status in a round, with who decided it and how.
+///
+/// One shape for carrying a finding forward and for changing the status of one already
+/// carried, because they record the same four facts. A second type would be the first with
+/// the same fields.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FindingCarry {
+    pub status: RoundStatus,
+    /// Who decided. Required: "each change records who decided" is the whole point, and a
+    /// default would make it the record's guess rather than the caller's statement.
+    pub by: DecidedBy,
+    /// How it was checked, in the checker's own words.
+    #[serde(default)]
+    pub checked: Option<String>,
+    /// The commit the status rests on — for a fixed finding, the commit that fixed it.
+    #[serde(default)]
+    pub commit: Option<String>,
+}
+
+/// The previous round's findings, ready to be carried into this one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Carryable {
+    /// The review of the previous round.
+    pub from_review_id: i64,
+    pub from_round: i64,
+    /// Every finding that round held, in number order — settled ones included.
+    ///
+    /// Settled ones are not filtered out. A finding ticketed in round 1 is not part of
+    /// round 2, and the page says so in those words; deciding that here would hide from
+    /// the caller the one fact it needs to say it.
+    pub findings: Vec<Finding>,
+}
+
+/// One commit between two rounds' head commits.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoundCommit {
+    pub review_id: i64,
+    /// The commit, as GitHub gave it. Never parsed.
+    pub sha: String,
+    /// Where GitHub listed it, from 0, oldest first.
+    pub position: i64,
+    /// The commit message's first line.
+    pub summary: String,
+    pub committed_at: Option<Timestamp>,
+    /// The files it touched, in path order.
+    pub files: Vec<String>,
+}
+
+/// A commit to record against a round.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NewRoundCommit {
+    pub sha: String,
+    pub summary: String,
+    #[serde(default)]
+    pub committed_at: Option<Timestamp>,
+    #[serde(default)]
+    pub files: Vec<String>,
+}
+
+/// How a round's findings stand, by status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct RoundStatusCounts {
+    pub new: i64,
+    pub fixed: i64,
+    pub still_open: i64,
+    pub accepted: i64,
+    pub withdrawn: i64,
+    pub ticketed: i64,
+}
+
+impl RoundStatusCounts {
+    /// Count one finding's status.
+    pub fn add(&mut self, status: RoundStatus) {
+        let field = match status {
+            RoundStatus::New => &mut self.new,
+            RoundStatus::Fixed => &mut self.fixed,
+            RoundStatus::StillOpen => &mut self.still_open,
+            RoundStatus::Accepted => &mut self.accepted,
+            RoundStatus::Withdrawn => &mut self.withdrawn,
+            RoundStatus::Ticketed => &mut self.ticketed,
+        };
+        *field += 1;
+    }
+}
+
+/// One round of a pull request, as the timeline across the top of the page reads it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoundSummary {
+    pub review_id: i64,
+    pub round: i64,
+    pub head_sha: String,
+    pub created_at: Timestamp,
+    /// When this round's draft was posted. `None` for a round that has not been.
+    pub posted_at: Option<Timestamp>,
+    /// The GitHub review event it was posted as, or is to be posted as.
+    pub event: Option<ReviewEvent>,
+    pub findings: i64,
+    /// Commits recorded between the previous round's head and this one's.
+    pub commits: i64,
+    /// Replies the harvester read on this round's findings.
+    pub replies: i64,
+    pub threads_resolved: i64,
+    pub statuses: RoundStatusCounts,
+}
+
+/// A finding with the three things about it that are derived from the carry chain rather
+/// than stored.
+///
+/// Derived, so none of them can drift. The chain and the round's commits are the source,
+/// and both are written by something else.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FindingInRound {
+    pub finding: Finding,
+    /// Which round it was carried from, by number. `None` when it was raised in this one.
+    pub continues_round: Option<i64>,
+    /// How many consecutive rounds it has been open, counting this one. 0 when it is not
+    /// open now — "open for 2 rounds" is a sentence about a finding that still is.
+    pub rounds_open: i64,
+    /// Whether this is a new finding on code that has not changed since the previous
+    /// round — a thing the earlier round could have caught and did not.
+    ///
+    /// `None` when the question cannot be answered: a first round, a finding that is not
+    /// new, a finding that names no file, or a round whose commits have not been recorded.
+    /// Three-valued on purpose — reporting `false` for "nobody looked" would read as "this
+    /// was not missed".
+    pub late: Option<bool>,
+}

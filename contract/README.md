@@ -6,7 +6,7 @@ holds no implementation of either.
 | File | What it is |
 |---|---|
 | `openapi.yaml` | OpenAPI 3.1 for the local JSON API. 16 operations. |
-| `examples/` | One example response per endpoint, one request body per write, and the error shape. A `.<variant>.` form adds a second shape where one example cannot show an optional field both present and absent. |
+| `examples/` | One example response per endpoint, one request body per write, and the error shape. A `.<variant>.` form adds a second shape where one example cannot show an optional field both present and absent. `getReview.response.round-two.json` is the second round of the same pull request as the canonical one. |
 | `validate-examples.mjs` | Checks every example against its schema, and fails when an endpoint has no example. |
 
 **Every example that carries `findings[]` carries the whole of a finding**, the canonical
@@ -185,6 +185,19 @@ Everything else on the four screens is below.
 | that an "Open draft" link is shown at all | `draft_status` |
 | which of the three layer-2 cards is shown | `brief.confirmed` and `brief.confirmation_required` |
 | "Confirmation not required. The session recorded this brief as needing none: …" | `brief.confirmation_not_required_because` |
+| "Round 1 · posted 6 Oct as Request changes · 5 findings" | `rounds[].round`, `.posted_at`, `.event`, `.findings` |
+| "The author came back · 3 commits · 3 replies · 2 threads resolved" | `rounds[].replies`, `.threads_resolved`, and the **next** round's `.commits` — see below |
+| "Round 2 · this draft · 2 fixed · 2 still open · 1 new" | `rounds[].statuses` |
+| "What changed since round 1" | `commits_since_previous_round[].sha`, `.summary`, `.files` |
+| "Fixed · 2 · nothing to post" | `findings[].round_status` |
+| "Checked. Their new test fails with the fix reverted." | `findings[].round_status_checked` |
+| the `a41c9e2` chip on a fixed finding | `findings[].round_status_commit` |
+| who decided a status | `findings[].round_status_by` |
+| "raised in round 1" | `findings[].continues_round`, linked by `.continues_review_id` |
+| "open for 2 rounds" | `findings[].rounds_open` |
+| "Introduced by a41c9e2, the commit that fixed F1" | `findings[].introduced_by_commit`, `.introduced_by_seq`, `.introduced_by_key` |
+| "Late" | `findings[].late` |
+| "Went to ticket ABC-246 in round 1. Not part of this round." | `findings[].round_status` of `ticketed`, with `.round_status_checked` |
 
 `finding_severities` is also served, for a caller that wants the Inbox's "1 blocker, 2
 should" wording on this screen.
@@ -233,6 +246,60 @@ number and shift every number after it — and `flagged_line` with them.
 `flagged_line` names it, and a write that tries is refused rather than stored undrawable.
 GitHub can comment on the left-hand side of a diff; this model cannot, and that is a stated
 limit rather than an oversight.
+### A finding across rounds
+
+**A finding's number is its identity.** F2 in round 1 is F2 in round 3: `seq` is allocated
+once for the whole pull request, a carried finding keeps the number it had, and a new one
+takes the next number unused on the pull request. Before this, each round numbered its
+findings from 1, so round 1's F2 and round 2's F2 were unrelated rows and "two fixed, two
+still open, one new" was unanswerable.
+
+| Fact | Where |
+|---|---|
+| Which earlier round a finding continues | `Finding.continues_review_id`, and `.continues_round` for the number |
+| What became of it in this round | `Finding.round_status`, with `.round_status_by`, `.round_status_checked`, `.round_status_at`, `.round_status_commit` |
+| What a new finding is attributed to | `Finding.introduced_by_commit`, `.introduced_by_seq` |
+| The rounds so far | `ReviewDetail.rounds` |
+| What changed between two rounds | `ReviewDetail.commits_since_previous_round` |
+
+**Three fields are derived, not stored**, so none of them can drift from the chain they
+come from: `continues_round`, `rounds_open` and `late`. They are served by `getReview` only,
+because each needs a read the other operations have no reason to make — the contract
+declares all three nullable, and `setFindingDisposition` returns a `Finding` without them.
+
+**`round_status` is not `disposition`, and both are served.** A disposition says what is to
+become of a finding in this round's draft; a round status says what happened to the finding.
+A fixed finding has nothing to post, so it is `fixed` with whatever disposition the agent
+gave it. **Nothing derives a round status**: an agent or the developer sets it and says how
+they checked, which is what `round_status_by` and `round_status_checked` hold.
+
+**`DecidedBy` is a separate set from `Actor`, deliberately.** `Actor` is developer, author or
+harvester, and has no value for an agent — which decides most round statuses. Recording an
+agent's decision as `developer` would put the developer's name against a check nobody showed
+them, which is the mistake `SignOff.waived` was added to stop. Saying a finding is fixed is
+not a sign-off: only the developer signs off, and only through `confirmBrief` and
+`approveDraft`.
+
+**`late` is three-valued.** True is a new finding on code the round's commits did not touch
+— something the earlier round could have caught. Null means the question cannot be answered:
+a first round, a finding that is not new, a finding that names no file, or a round whose
+commits have not been recorded. `false` would read as "this was not missed", which is a
+claim nothing is in a position to make.
+
+**`rounds[].commits` counts the commits recorded *for* that round — the ones since the round
+before it.** The mockup shows the figure under the *earlier* round's card, as "the author
+came back · 3 commits", so the page reads round *n*'s comeback from `rounds[n + 1].commits`.
+It is one index rather than a second copy of the number, and the number has one meaning.
+
+**The commits are read from GitHub and written nowhere.** `review-desk round commits` reads
+`repos/OWNER/REPO/compare/BASE...HEAD` and one `repos/OWNER/REPO/commits/SHA` per commit,
+through the harvest crate's four read-only methods. No operation in this contract fetches
+them; the API serves what was recorded.
+
+**A review from before this change reads as a first round.** Its findings have no links and
+every `round_status` is `new`, which is true: nothing before migration 6 could carry one, and
+inferring a link from a matching number would join two findings that have nothing to do with
+each other.
 
 ### Draft preview — `GET /reviews/{reviewId}/draft`, example `examples/getDraft.response.json`
 
@@ -403,6 +470,37 @@ nits, which is what the mockup's single "File as one ticket for an agent" button
 `nit_ticket_id` is a `ForeignId` — a Linear ticket, opaque. The findings the ticket covers
 are not stored against it; they are every finding on the review at disposition
 `held_back`, which the API returns as `nit_ticket.finding_seqs`.
+
+### What migration 6 added, for a finding's identity across rounds
+
+Eight columns on `findings` and two tables. DEV-873.
+
+| Column on `findings` | Holds |
+|---|---|
+| `continues_review_id` | The earlier round this finding was carried from. The number is not repeated beside it, because it cannot differ: a carried finding keeps its number, so this plus `seq` names the finding it continues. SQLite cannot add a composite foreign key by `ALTER TABLE` either way. |
+| `round_status` | `new`, `fixed`, `still_open`, `accepted`, `withdrawn`, `ticketed`. `NOT NULL DEFAULT 'new'`, which is the honest value for every finding already on the record. |
+| `round_status_by` | `developer`, `agent` or `author` — a `DecidedBy`, not an `Actor`. |
+| `round_status_checked` | How it was checked, in the checker's own words. |
+| `round_status_at` | When. |
+| `round_status_commit` | The commit the status rests on: for a fixed finding, the one that fixed it. |
+| `introduced_by_commit` | The commit a new finding is attributed to. |
+| `introduced_by_seq` | The earlier finding whose fix caused it, by number. A number alone, because after this migration a number is an identity across the pull request. |
+
+| Table | Holds |
+|---|---|
+| `round_commits` | `(review_id, sha)` plus `position`, `summary`, `committed_at`. Stored against the round that reviewed them. `position` is GitHub's order rather than a sort on `committed_at`, because a rebased commit can carry a date out of order. |
+| `round_commit_files` | `(review_id, sha, path)`. A table rather than a joined string, because "was this finding's file changed since round 1" is a lookup rather than a substring search — it is what `late` is answered from. |
+
+The closed sets `RoundStatus` and `DecidedBy` are `string_enum!` sets in
+`crates/store/src/model.rs`, so they name their own valid values in a refusal, as the note
+under "Not a store change" asks of the others.
+
+**Writing all of it is the command line's**, and none of it signs anything off:
+`review-desk finding carry` records what became of a carried finding,
+`review-desk finding became` changes it, `review-desk finding add` takes a new finding's
+attribution, `review-desk round commits` reads GitHub and records the commits, and
+`review-desk round list` reads the timeline back. `review-desk review open` hands back the
+previous round's findings, ready to be carried.
 
 ## Store changes this contract needs beyond the merged store
 
@@ -587,3 +685,21 @@ Recorded here rather than acted on, because DEV-854 says to specify and not to i
 7. **Six figures on the mockups have no data source at all** — the table above. The
    Inbox and Rules screens will have visible holes on first run, and the brief's "absent
    is silent, broken is loud" suggests they should read as absent rather than as zero.
+8. **Board A3's "Touches F1, F6" column against each commit cannot be derived from what
+   DEV-873 asks for.** Two of the three commits on the board are matched to a finding by
+   attribution — `round_status_commit` and `introduced_by_commit` — and the third, which
+   only adds a test, is shown against F3 by nothing the record holds. The page can match
+   `commits_since_previous_round[].files` against `findings[].file`, which is what the
+   `late` flag does; that does not produce the board's third row. Recorded rather than
+   invented: DEV-873's own table asks for "id, a one-line summary, files touched" and
+   nothing more.
+9. **Board A3's "Across both rounds" panel — raised, fixed, accepted or ticketed, open,
+   introduced by a fix — is five pull-request-wide totals that DEV-873 does not ask for.**
+   Four of the five are summable from `rounds[].statuses`; "introduced by a fix" is not,
+   because `rounds[].statuses` counts statuses and not attributions. Left out rather than
+   guessed at, and it overlaps DEV-875.
+10. **A fixed finding keeps whatever disposition it was carried with.** `lint.findings_expected`
+   counts findings at `in_draft`, so a fixed finding carried as `in_draft` is still expected
+   in the draft body — and the board says "Fixed · 2 · nothing to post". Nothing in DEV-873
+   decides a disposition from a status, deliberately: that is the draft's composition, and
+   an agent sets it with `finding set`. Worth a line in whichever issue owns the draft.

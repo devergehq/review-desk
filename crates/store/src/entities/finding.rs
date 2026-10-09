@@ -1,19 +1,36 @@
-//! Findings: what a review found, each with a sequence number stable within its review.
+//! Findings: what a review found, each numbered once for the whole pull request.
+//!
+//! A finding's number is its identity across rounds — see [`Finding::seq`] — so the
+//! carrying, the attribution and the per-round status live next door in
+//! [`super::round`], and this module holds raising one and dispositioning it.
 
 use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior};
 
 use crate::entities::finding_evidence;
 use crate::error::{Result, StoreError};
 use crate::model::{now, Disposition, Finding, NewFinding};
-use crate::{is_foreign_key_violation, Store};
+use crate::{is_foreign_key_violation, normalise, Store};
 
-const COLUMNS: &str = "review_id, seq, lens, severity, file, line, claim, evidence, \
+pub(super) const COLUMNS: &str = "review_id, seq, lens, severity, file, line, claim, evidence, \
                        disposition, disposition_reason, rule_id, github_comment_id, \
                        flagged_line, inline_comment, why_it_matters, proof, proof_note, \
-                       verification, suggested_fix, created_at";
+                       verification, suggested_fix, continues_review_id, round_status, \
+                       round_status_by, round_status_checked, round_status_at, \
+                       round_status_commit, introduced_by_commit, introduced_by_seq, \
+                       created_at";
 
 impl Store {
-    /// Add a finding to a review, assigning the next sequence number within it.
+    /// Add a finding to a review, assigning the next sequence number **unused on the pull
+    /// request**.
+    ///
+    /// Not within the review, which is what it used to be. A finding's number is its
+    /// identity across rounds — F2 in round 1 is F2 in round 3 — so a number has to mean
+    /// one finding on the pull request and not one finding per round. Restarting at 1 each
+    /// round was what made "two fixed, two still open, one new" unanswerable.
+    ///
+    /// For a first round the two are the same number, which is why no review already on
+    /// the record is renumbered: the column is untouched and only the *next* allocation
+    /// changes.
     ///
     /// Fails with [`StoreError::UnknownParent`] if the review does not exist; the
     /// database enforces that, not this function.
@@ -49,8 +66,29 @@ impl Store {
             }
         }
 
+        // Checked inside the transaction, like the rule above, so an attribution naming a
+        // finding nobody raised is a refusal that says which number rather than a row
+        // pointing at nothing. Scoped to the pull request, because that is the scope a
+        // number is an identity in.
+        if let Some(introduced_by) = new.introduced_by_seq {
+            if !self.pull_request_holds_finding(review_id, introduced_by)? {
+                return Err(StoreError::UnknownParent {
+                    entity: "finding",
+                    parent: "finding it was introduced by",
+                    id: introduced_by.to_string(),
+                });
+            }
+        }
+
+        // The highest number used anywhere on this pull request, not on this review. The
+        // subquery is the join the identity rests on: `reviews_by_head` indexes
+        // `(repo, pr, head_sha)`, so the `(repo, pr)` prefix serves it.
         let seq: i64 = tx.query_row(
-            "SELECT COALESCE(MAX(seq), 0) + 1 FROM findings WHERE review_id = ?1",
+            "SELECT COALESCE(MAX(f.seq), 0) + 1
+             FROM findings f
+             JOIN reviews r    ON r.id = f.review_id
+             JOIN reviews this ON this.id = ?1
+             WHERE r.repo = this.repo AND r.pr = this.pr",
             params![review_id],
             |row| row.get(0),
         )?;
@@ -61,9 +99,9 @@ impl Store {
                  (review_id, seq, lens, severity, file, line, claim, evidence,
                   disposition, disposition_reason, rule_id, flagged_line, inline_comment,
                   why_it_matters, proof, proof_note, verification, suggested_fix,
-                  created_at)
+                  introduced_by_commit, introduced_by_seq, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                     ?16, ?17, ?18, ?19)",
+                     ?16, ?17, ?18, ?19, ?20, ?21)",
             params![
                 review_id,
                 seq,
@@ -86,6 +124,8 @@ impl Store {
                 new.proof_note,
                 new.verification,
                 new.suggested_fix,
+                normalise::optional_commit(new.introduced_by_commit.as_deref()),
+                new.introduced_by_seq,
                 created_at,
             ],
         )
@@ -240,7 +280,7 @@ impl Store {
 }
 
 /// Build a finding from a row selecting [`COLUMNS`].
-fn row_to_finding(row: &Row<'_>) -> rusqlite::Result<Finding> {
+pub(super) fn row_to_finding(row: &Row<'_>) -> rusqlite::Result<Finding> {
     Ok(Finding {
         review_id: row.get("review_id")?,
         seq: row.get("seq")?,
@@ -265,6 +305,14 @@ fn row_to_finding(row: &Row<'_>) -> rusqlite::Result<Finding> {
         verification: row.get("verification")?,
         suggested_fix: row.get("suggested_fix")?,
         fix_references: Vec::new(),
+        continues_review_id: row.get("continues_review_id")?,
+        round_status: row.get("round_status")?,
+        round_status_by: row.get("round_status_by")?,
+        round_status_checked: row.get("round_status_checked")?,
+        round_status_at: row.get("round_status_at")?,
+        round_status_commit: row.get("round_status_commit")?,
+        introduced_by_commit: row.get("introduced_by_commit")?,
+        introduced_by_seq: row.get("introduced_by_seq")?,
         created_at: row.get("created_at")?,
     })
 }

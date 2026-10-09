@@ -474,7 +474,7 @@ fn validate(new: NewReview) -> Result<NewReview> {
 }
 
 /// Build a review from a row selecting [`COLUMNS`].
-fn row_to_review(row: &Row<'_>) -> rusqlite::Result<Review> {
+pub(super) fn row_to_review(row: &Row<'_>) -> rusqlite::Result<Review> {
     Ok(Review {
         id: row.get("id")?,
         repo: row.get("repo")?,

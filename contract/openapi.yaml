@@ -953,14 +953,30 @@ components:
       type: object
       additionalProperties: false
       required: [review_id, seq, key, lens, severity, claim, disposition, created_at]
-      description: One thing the review found. Never deleted, only dispositioned.
+      description: |
+        One thing the review found. Never deleted, only dispositioned.
+
+        **`seq` is the finding's identity across every round of the pull request.** The
+        round fields at the end of this object are what makes a second-round review
+        answerable: which earlier finding this one continues, what became of it in this
+        round, and what a new one is attributed to. They are nullable and not required,
+        like `rule_id` and `rule_key` above — the server serves them on every finding, and
+        a client reading a response from before DEV-873 sees them absent rather than wrong.
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         seq:
           type: integer
           format: int64
           minimum: 1
-          description: Stable within its review, from 1.
+          description: |
+            **Stable across every round of the pull request, from 1.** A carried finding
+            keeps the number it had — F2 in round 1 is F2 in round 3 — and a new finding
+            takes the next number unused on the pull request, so no two findings of one
+            pull request share a number.
+
+            Findings written before migration 6 were numbered within their review, so two
+            rounds of one pull request may hold the same number. Such a round has no links
+            and reads as a first round.
         key:
           type: string
           pattern: '^F[0-9]+$'
@@ -1044,6 +1060,91 @@ components:
             order the review gave them. Empty, not null, when there are none: a finding
             with no references has none, which is a measurement.
         created_at: { type: string, format: date-time }
+
+        # -- the finding across rounds (DEV-873) -------------------------------------
+        round_status:
+          oneOf:
+            - $ref: '#/components/schemas/RoundStatus'
+            - type: 'null'
+          description: |
+            What became of this finding in this round. Absent only from a response written
+            before DEV-873; the server always serves it.
+        round_status_by:
+          oneOf:
+            - $ref: '#/components/schemas/DecidedBy'
+            - type: 'null'
+          description: Who decided that status. Null while nothing has been decided.
+        round_status_checked:
+          type: [string, 'null']
+          description: |
+            How it was checked, in the checker's own words — "their new test fails with the
+            fix reverted". The page shows it under "Checked."
+        round_status_at:
+          type: [string, 'null']
+          format: date-time
+        round_status_commit:
+          type: [string, 'null']
+          pattern: '^[0-9a-f]{7,40}$'
+          description: |
+            The commit the status rests on: for a fixed finding, the commit that fixed it.
+            The chip beside a fixed finding on the page.
+        continues_review_id:
+          type: [integer, 'null']
+          format: int64
+          minimum: 1
+          description: |
+            The review of the earlier round this finding was carried from. Null for a
+            finding raised in this round, and for every finding written before DEV-873.
+
+            The number is not repeated beside it, because it cannot differ: a carried
+            finding keeps its number, so this plus `seq` names the finding it continues.
+        continues_round:
+          type: [integer, 'null']
+          format: int64
+          minimum: 1
+          description: |
+            Which round that was, by number — "raised in round 1". Derived from
+            `continues_review_id`, so the dashboard does not have to join the timeline to
+            answer it. Served by `getReview` only.
+        rounds_open:
+          type: [integer, 'null']
+          minimum: 0
+          description: |
+            How many consecutive rounds this finding has been open, counting this one —
+            "open for 2 rounds". 0 when it is not open now: the sentence is about a finding
+            that still is, and a fixed finding counting the rounds it used to be open for
+            would read as a complaint.
+
+            Derived by walking `continues_review_id` back, so it cannot drift from the
+            chain. Served by `getReview` only.
+        introduced_by_commit:
+          type: [string, 'null']
+          pattern: '^[0-9a-f]{7,40}$'
+          description: |
+            The commit a new finding is attributed to — "introduced by a41c9e2".
+        introduced_by_seq:
+          type: [integer, 'null']
+          format: int64
+          minimum: 1
+          description: |
+            The earlier finding whose fix caused this one, by its number — "the commit that
+            fixed F1". A number alone is enough, because after DEV-873 a number is an
+            identity across the whole pull request.
+        introduced_by_key:
+          type: [string, 'null']
+          pattern: '^F[0-9]+$'
+          description: That finding's display key, derived as `F` plus the number.
+        late:
+          type: [boolean, 'null']
+          description: |
+            Whether this is a new finding on code that has not changed since the previous
+            round — something the earlier round could have caught and did not.
+
+            **Three-valued on purpose.** Null means the question cannot be answered: a
+            first round, a finding that is not new, a finding that names no file, or a
+            round whose commits have not been recorded. Reporting `false` for any of those
+            would read as "this was not missed", which is a claim nothing is in a position
+            to make. Served by `getReview` only.
 
     SetFindingDispositionRequest:
       type: object
@@ -1160,6 +1261,31 @@ components:
             - $ref: '#/components/schemas/DraftStatus'
             - type: 'null'
           description: Null when no draft has been written yet.
+
+        # -- the review's place in the pull request (DEV-873) ------------------------
+        rounds:
+          type: array
+          items: { $ref: '#/components/schemas/RoundSummary' }
+          description: |
+            **Every round of this pull request, oldest first, including this one.** The
+            timeline across the top of the round-two page: what each round posted, as which
+            event, how many findings it held, and what came back.
+
+            Always served and never empty — a review is itself a round. It is not required
+            here, for the reason the `Finding` round fields are not: a response written
+            before DEV-873 is missing it rather than wrong.
+          minItems: 1
+        commits_since_previous_round:
+          type: array
+          items: { $ref: '#/components/schemas/RoundCommit' }
+          description: |
+            **The commits between the previous round's head commit and this one's**, oldest
+            first — "what changed since round 1".
+
+            Empty for a first round, and empty for a round whose commits have not been
+            recorded yet; the two are not distinguishable here, which is why `Finding.late`
+            is null rather than false in the second case. Recorded by
+            `review-desk round commits`, which reads GitHub and writes nothing to it.
 
     DraftLint:
       type: object
@@ -1792,3 +1918,148 @@ components:
           type: array
           items: { $ref: '#/components/schemas/InboxInProgressItem' }
         handled_without_you: { $ref: '#/components/schemas/InboxHandled' }
+
+    # ----------------------------------------------------------------------------------
+    # Rounds: a finding's identity across them, and what changed between them. DEV-873.
+    #
+    # One section rather than fields scattered through the document, so that the three
+    # sessions adding to this contract at once stay out of each other's way. The two
+    # additions outside it are `Finding`'s round fields and `ReviewDetail`'s two arrays,
+    # both of which have to sit with what they describe.
+    # ----------------------------------------------------------------------------------
+
+    RoundStatus:
+      type: string
+      description: |
+        What became of a finding **in one round**. The same closed set as `RoundStatus` in
+        `crates/store/src/model.rs`, with the same wire strings.
+
+        **Not the same question as `Disposition`**, and the two are both served. A
+        disposition says what is to become of the finding in this round's draft; this says
+        what happened to the finding itself. A fixed finding has nothing to post, so it is
+        `fixed` here and absent from the draft.
+
+        `new` is every finding in the round it was raised in, and every finding written
+        before migration 6 — nothing before that migration could carry one, so `new` is
+        the honest reading of a review from before this change.
+
+        **Nothing derives one of these.** An agent or the developer sets it and says how
+        they checked; DEV-873 puts deciding it automatically out of scope.
+      enum: [new, fixed, still_open, accepted, withdrawn, ticketed]
+
+    DecidedBy:
+      type: string
+      description: |
+        Who decided a finding's status in a round.
+
+        **Deliberately not `Actor`.** That set is developer, author or harvester, and it has
+        no value for an agent — which decides most of these. Recording an agent's decision
+        as `developer` would put the developer's name against a check nobody showed them.
+
+        **This is not a sign-off.** Only the developer signs off, and only in the dashboard:
+        `confirmBrief` and `approveDraft` are the two operations that do it, and both record
+        `Actor.developer`. Saying a finding is fixed is a statement about the code.
+      enum: [developer, agent, author]
+
+    RoundStatusCounts:
+      type: object
+      additionalProperties: false
+      required: [new, fixed, still_open, accepted, withdrawn, ticketed]
+      description: |
+        How a round's findings stand — "2 fixed · 2 still open · 1 new". Zero is a
+        measurement here, not an absence: the counts are of findings the record holds.
+      properties:
+        new: { type: integer, minimum: 0 }
+        fixed: { type: integer, minimum: 0 }
+        still_open: { type: integer, minimum: 0 }
+        accepted: { type: integer, minimum: 0 }
+        withdrawn: { type: integer, minimum: 0 }
+        ticketed: { type: integer, minimum: 0 }
+
+    RoundCommit:
+      type: object
+      additionalProperties: false
+      required: [sha, position, summary, files]
+      description: |
+        One commit between the previous round's head commit and this round's — a row of
+        "what changed since round 1".
+
+        Read from GitHub through the harvest crate and stored. Nothing is written to
+        GitHub.
+      properties:
+        sha:
+          type: string
+          pattern: '^[0-9a-f]{7,40}$'
+          description: The commit, as GitHub gave it. Opaque; never parsed.
+        position:
+          type: integer
+          minimum: 0
+          description: |
+            Where GitHub listed it, from 0, oldest first. Stored rather than sorted by
+            `committed_at`: a rebased or amended commit can carry a committer date out of
+            order, and the order the page shows is the order the pull request has.
+        summary:
+          type: string
+          minLength: 1
+          description: The commit message's first line, as GitHub sent it.
+        committed_at:
+          type: [string, 'null']
+          format: date-time
+        files:
+          type: array
+          items: { type: string, minLength: 1 }
+          description: |
+            The files it touched, in path order. Empty when GitHub would not answer for
+            this commit, which is why `Finding.late` is null rather than false in that
+            case.
+
+    RoundSummary:
+      type: object
+      additionalProperties: false
+      required:
+        [review_id, round, head_sha, created_at, findings, commits, replies,
+         threads_resolved, statuses]
+      description: |
+        One round of a pull request, as the timeline across the top of the round-two page
+        reads it: when it was posted, as which event, how many findings it held, and what
+        came back.
+      properties:
+        review_id: { type: integer, format: int64, minimum: 1 }
+        round: { type: integer, format: int64, minimum: 1 }
+        head_sha:
+          type: string
+          pattern: '^[0-9a-f]{7,40}$'
+        created_at: { type: string, format: date-time }
+        posted_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When this round's draft was reported posted. Null for a round that has not
+            been — including the round being worked on now.
+        event:
+          oneOf:
+            - $ref: '#/components/schemas/ReviewEvent'
+            - type: 'null'
+          description: |
+            What it was posted as, or is to be posted as once approved. Null while no draft
+            has been approved.
+        findings:
+          type: integer
+          minimum: 0
+          description: How many findings the round held, carried ones included.
+        commits:
+          type: integer
+          minimum: 0
+          description: |
+            Commits recorded between the previous round's head and this one's. Zero can
+            mean "none recorded" as well as "nothing changed"; the two are told apart by
+            `commits_since_previous_round` being empty either way, which is why `late` is
+            three-valued.
+        replies:
+          type: integer
+          minimum: 0
+          description: Replies the harvester read on this round's findings.
+        threads_resolved:
+          type: integer
+          minimum: 0
+        statuses: { $ref: '#/components/schemas/RoundStatusCounts' }

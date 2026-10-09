@@ -108,6 +108,7 @@ pub fn comparison(json: &str) -> Result<Comparison> {
             .into_iter()
             .map(|commit| Commit {
                 committed_at: commit.committed_at(),
+                summary: commit.summary(),
                 sha: commit.sha,
             })
             .collect(),
@@ -274,6 +275,19 @@ struct WireCommit {
 }
 
 impl WireCommit {
+    /// The commit message's first line, trimmed. A blank message is no summary.
+    fn summary(&self) -> Option<String> {
+        self.commit
+            .as_ref()?
+            .message
+            .as_deref()?
+            .lines()
+            .next()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_string)
+    }
+
     fn committed_at(&self) -> Option<Timestamp> {
         self.commit
             .as_ref()?
@@ -288,6 +302,8 @@ impl WireCommit {
 #[derive(Debug, Deserialize)]
 struct WireCommitDetail {
     committer: Option<WireCommitter>,
+    /// The whole message. Only its first line is kept.
+    message: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

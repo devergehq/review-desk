@@ -20,6 +20,12 @@ pub enum ReviewCommand {
     /// Running this again on a head commit already reviewed hands back the same review
     /// without spending a round, so it is also how a finished session records what it
     /// did not check.
+    ///
+    /// **Opening a later round hands back the previous round's findings**, ready to be
+    /// carried with `finding carry`. A second-round review that cannot see round 1's
+    /// findings cannot say "two fixed, two still open, one new", which is the whole of a
+    /// second-round review — so they come back with the review rather than needing a
+    /// command of their own. A first round has none, and `carryable` is then null.
     Open {
         /// The repository, as owner/repo.
         #[arg(long, value_name = "OWNER/REPO")]
@@ -109,11 +115,19 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
                 },
             )?;
 
+            let carryable = store.carryable(opened.review.id)?;
+
             Ok(Report::new(
-                json!({ "review": opened.review, "created": opened.created }),
+                json!({
+                    "review": opened.review,
+                    "created": opened.created,
+                    "carryable": carryable,
+                }),
                 // The id alone, so `ID=$(review-desk review open ...)` is the whole of
                 // what a shell caller has to do. Whether it was created is in the
-                // document for a caller that needs to know.
+                // document for a caller that needs to know, and so are the findings
+                // waiting to be carried: a line of prose about them here would break
+                // every caller that reads this output as an id.
                 opened.review.id.to_string(),
             ))
         }
@@ -338,6 +352,23 @@ fn finding_line(finding: &Finding) -> String {
     // person reads was dropping it.
     if let Some(rule_id) = finding.rule_id {
         line.push_str(&format!(" · same ruling as R-{rule_id:02}"));
+    }
+    // What became of it in this round, who said so, and where it came from. The same
+    // argument as the rule citation above: this is the only view a person reads, and a
+    // round-two review whose findings all read as `new` would hide the one fact DEV-873
+    // added.
+    line.push_str(&format!(" · {}", finding.round_status));
+    if let Some(by) = finding.round_status_by {
+        line.push_str(&format!(" by {by}"));
+    }
+    if let Some(continues) = finding.continues_review_id {
+        line.push_str(&format!(" · continues review {continues}"));
+    }
+    if let Some(commit) = &finding.introduced_by_commit {
+        line.push_str(&format!(" · introduced by {commit}"));
+        if let Some(seq) = finding.introduced_by_seq {
+            line.push_str(&format!(", which fixed F{seq}"));
+        }
     }
     line
 }

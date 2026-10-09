@@ -500,3 +500,77 @@ fn the_trait_is_the_only_way_the_harvester_reaches_github() {
     fn takes_any(_github: &dyn GitHub) {}
     takes_any(&Recorded::nothing());
 }
+
+// -- the commits between two rounds (DEV-873) ----------------------------------------
+
+/// The commits between two rounds, read through the same recorded responses the rest of
+/// this file uses. `compare.json` was captured before DEV-873 read a commit message, which
+/// makes it the regression case: an old recording must still parse.
+#[test]
+fn the_commits_between_two_rounds_are_read_with_their_summaries_and_files() {
+    let github = recording();
+    let commits = review_desk_harvest::commits_between(
+        &github,
+        "devergehq/locus",
+        "9535132",
+        "46f6ea1645a9bbc9308f791411b2cac1a093367b",
+    )
+    .expect("read the comparison");
+
+    assert_eq!(commits.len(), 4, "the four commits the comparison holds");
+    assert_eq!(
+        commits[0].sha, "cf4f69c6466e3f6d1f83eb864c15e5be94f7db57",
+        "oldest first, in GitHub's own order"
+    );
+    assert_eq!(
+        commits[0].summary, commits[0].sha,
+        "a recording captured before the message was read has no summary, so the sha \
+         stands in for it — the commit is still in the pull request, and the store \
+         refuses a blank summary"
+    );
+    assert!(
+        commits.iter().any(|commit| !commit.files.is_empty()),
+        "and the per-commit files were read: {commits:?}"
+    );
+}
+
+#[test]
+fn a_commit_message_is_read_as_its_first_line() {
+    // The shape `gh api repos/OWNER/REPO/compare/BASE...HEAD` returns, with the message
+    // DEV-873 reads. One line out of a message with a body, which is what the page shows.
+    let json = r#"{"status":"ahead","commits":[{"sha":"a41c9e2",
+                    "commit":{"message":"Send an idempotency key with each delivery\n\nThe endpoint cannot tell a retry from a new event otherwise.",
+                              "committer":{"date":"2026-10-09T22:14:00Z"}}}],"files":[]}"#;
+
+    let comparison = review_desk_harvest::wire::comparison(json).expect("read it");
+
+    assert_eq!(comparison.commits.len(), 1);
+    assert_eq!(
+        comparison.commits[0].summary.as_deref(),
+        Some("Send an idempotency key with each delivery"),
+        "the first line, and not the body"
+    );
+    assert_eq!(comparison.commits[0].committed_at, Some(1_791_584_040));
+}
+
+#[test]
+fn a_commit_whose_files_cannot_be_read_keeps_its_place_with_no_files() {
+    // A recording that holds the comparison and not the commits. Losing the commit would
+    // take a line off "what changed since round 1"; losing its files costs the `late`
+    // flag, which is already three-valued for exactly this case.
+    let github = Recorded::nothing().with("compare", fixtures().join("compare.json"));
+
+    let commits = review_desk_harvest::commits_between(
+        &github,
+        "devergehq/locus",
+        "9535132",
+        "46f6ea1645a9bbc9308f791411b2cac1a093367b",
+    )
+    .expect("the comparison alone is enough");
+
+    assert_eq!(commits.len(), 4);
+    assert!(
+        commits.iter().all(|commit| commit.files.is_empty()),
+        "every commit is there, with no files"
+    );
+}

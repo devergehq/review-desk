@@ -95,6 +95,13 @@ impl Comparison {
 pub struct Commit {
     pub sha: String,
     pub committed_at: Option<Timestamp>,
+    /// The commit message's first line, as GitHub sent it.
+    ///
+    /// `None` when the response carried no message. A commit always has one, so this is
+    /// nullable for the narrower reason `PullRequest::title` is: a response captured
+    /// before DEV-873 read it does not hold one, and an absent summary is a fact to
+    /// record as absent rather than a run to fail.
+    pub summary: Option<String>,
 }
 
 /// One file that changed between the two commits.

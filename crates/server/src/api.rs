@@ -399,6 +399,13 @@ impl Api {
         let options = self.records.brief_options(review_id)?;
         let ticket = self.records.nit_ticket(review_id)?;
 
+        // The round-two page's three questions: which rounds there have been, what changed
+        // since the last one, and where each finding stands in this one. All three in this
+        // one response, because the contract's rule is that each screen is one GET.
+        let rounds = self.records.rounds(&full.review.repo, full.review.pr)?;
+        let commits = self.records.round_commits(review_id)?;
+        let findings = self.records.findings_in_round(review_id)?;
+
         Ok((
             200,
             json!({
@@ -408,7 +415,7 @@ impl Api {
                     .brief
                     .as_ref()
                     .map_or(Value::Null, |brief| wire::brief(brief, &options)),
-                "findings": full.findings.iter().map(wire::finding).collect::<Vec<_>>(),
+                "findings": findings.iter().map(wire::finding_in_round).collect::<Vec<_>>(),
                 "outcomes": full.outcomes.iter().map(wire::outcome).collect::<Vec<_>>(),
                 "finding_severities": wire::severity_counts(&full.findings),
                 "finding_dispositions": wire::disposition_counts(&full.findings),
@@ -418,6 +425,11 @@ impl Api {
                     .draft
                     .as_ref()
                     .map_or(Value::Null, |draft| json!(draft.status.as_str())),
+                "rounds": rounds.iter().map(wire::round_summary).collect::<Vec<_>>(),
+                "commits_since_previous_round": commits
+                    .iter()
+                    .map(wire::round_commit)
+                    .collect::<Vec<_>>(),
             }),
         ))
     }

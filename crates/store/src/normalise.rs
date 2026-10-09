@@ -39,3 +39,14 @@ pub(crate) fn repo(repo: &str) -> String {
 pub(crate) fn head_sha(head_sha: &str) -> String {
     head_sha.trim().to_ascii_lowercase()
 }
+
+/// A commit a record merely points at — the one that fixed a finding, the one that
+/// introduced it, one of the commits between two rounds.
+///
+/// The same canonical form as [`head_sha`], because they name the same kind of thing and a
+/// round's commit list is matched against a review's head. A blank one is no commit rather
+/// than a commit named by the empty string, which is what a caller passing `--commit ""`
+/// would otherwise write.
+pub(crate) fn optional_commit(sha: Option<&str>) -> Option<String> {
+    sha.map(head_sha).filter(|sha| !sha.is_empty())
+}

@@ -16,9 +16,7 @@
 //! dashboard silently never sees.
 
 use review_desk_store::{
-    Brief, BriefOption, Disposition, Draft, DraftLint, Finding, FindingHunk, NitTicket, Outcome,
-    RepoSummary, Review, ReviewLayer, Rule, RuleCounts, RuleScope, RuleStage, RulesSummary,
-    Severity, Timestamp,
+    Brief, BriefOption, Disposition, Draft, DraftLint, Finding, FindingHunk, FindingInRound, NitTicket, Outcome, RepoSummary, Review, ReviewLayer, RoundCommit, RoundStatusCounts, RoundSummary, Rule, RuleCounts, RuleScope, RuleStage, RulesSummary, Severity, Timestamp,
 };
 use serde_json::{json, Value};
 
@@ -157,7 +155,12 @@ pub fn finding_hunk(hunk: &FindingHunk) -> Value {
     })
 }
 
-/// The contract's `Finding`.
+/// The contract's `Finding`, without the three fields derived from the carry chain.
+///
+/// `continues_round`, `rounds_open` and `late` are left out rather than guessed at: each
+/// needs a read this function has no store to make. The contract declares all three
+/// nullable and not required, and says this operation serves them — `getReview` does,
+/// through [`finding_in_round`].
 pub fn finding(finding: &Finding) -> Value {
     json!({
         "review_id": finding.review_id,
@@ -194,6 +197,76 @@ pub fn finding(finding: &Finding) -> Value {
         // measurement; the contract's "null is not zero" rule cuts this way round too.
         "fix_references": finding.fix_references,
         "created_at": rfc3339(finding.created_at),
+        "round_status": finding.round_status.as_str(),
+        "round_status_by": finding.round_status_by.map(|by| by.as_str()),
+        "round_status_checked": finding.round_status_checked,
+        "round_status_at": rfc3339_or_null(finding.round_status_at),
+        "round_status_commit": finding.round_status_commit,
+        "continues_review_id": finding.continues_review_id,
+        "introduced_by_commit": finding.introduced_by_commit,
+        "introduced_by_seq": finding.introduced_by_seq,
+        "introduced_by_key": finding.introduced_by_seq.map(finding_key),
+    })
+}
+
+/// The contract's `Finding` whole: the row, plus the three facts derived from the carry
+/// chain and the round's commits.
+///
+/// What `GET /reviews/{reviewId}` serves. The three are derived rather than stored so they
+/// cannot drift from the chain they come from, which is also why they are computed in the
+/// store and merely copied here.
+pub fn finding_in_round(found: &FindingInRound) -> Value {
+    let mut document = finding(&found.finding);
+
+    // `finding` above builds an object literal, so this always matches. Adding to it
+    // rather than writing the whole object out twice keeps the two shapes from drifting:
+    // a field added to `Finding` reaches both.
+    if let Value::Object(object) = &mut document {
+        object.insert("continues_round".to_string(), json!(found.continues_round));
+        object.insert("rounds_open".to_string(), json!(found.rounds_open));
+        object.insert("late".to_string(), json!(found.late));
+    }
+
+    document
+}
+
+/// The contract's `RoundStatusCounts`.
+pub fn round_status_counts(counts: &RoundStatusCounts) -> Value {
+    json!({
+        "new": counts.new,
+        "fixed": counts.fixed,
+        "still_open": counts.still_open,
+        "accepted": counts.accepted,
+        "withdrawn": counts.withdrawn,
+        "ticketed": counts.ticketed,
+    })
+}
+
+/// The contract's `RoundSummary`.
+pub fn round_summary(round: &RoundSummary) -> Value {
+    json!({
+        "review_id": round.review_id,
+        "round": round.round,
+        "head_sha": round.head_sha,
+        "created_at": rfc3339(round.created_at),
+        "posted_at": rfc3339_or_null(round.posted_at),
+        "event": round.event.map(|event| event.as_str()),
+        "findings": round.findings,
+        "commits": round.commits,
+        "replies": round.replies,
+        "threads_resolved": round.threads_resolved,
+        "statuses": round_status_counts(&round.statuses),
+    })
+}
+
+/// The contract's `RoundCommit`.
+pub fn round_commit(commit: &RoundCommit) -> Value {
+    json!({
+        "sha": commit.sha,
+        "position": commit.position,
+        "summary": commit.summary,
+        "committed_at": rfc3339_or_null(commit.committed_at),
+        "files": commit.files,
     })
 }
 

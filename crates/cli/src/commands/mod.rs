@@ -12,6 +12,7 @@ mod harvest;
 mod layer;
 mod outcome;
 mod review;
+mod round;
 mod rules;
 mod serve;
 mod work;
@@ -74,6 +75,11 @@ enum Command {
         #[command(subcommand)]
         command: outcome::OutcomeCommand,
     },
+    /// Record what changed between two rounds, and read the rounds so far.
+    Round {
+        #[command(subcommand)]
+        command: round::RoundCommand,
+    },
     /// Read the rules in force.
     Rules {
         #[command(subcommand)]
@@ -100,6 +106,7 @@ pub fn run(cli: &Cli) -> Result<Report> {
         Command::Draft { command } => draft::run(command),
         Command::Finding { command } => finding::run(command),
         Command::Outcome { command } => outcome::run(command),
+        Command::Round { command } => round::run(command),
         Command::Rules { command } => rules::run(command),
         Command::Harvest(args) => harvest::run(args),
         Command::Serve(args) => serve::run(args, cli.json),

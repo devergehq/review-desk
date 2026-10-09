@@ -92,7 +92,7 @@
       }
     ],
     "approach_verdict": "B is the right shape for this ticket. It leaves out the one useful part of C: once the 24 hours run out there is no way to replay a delivery by hand. That is finding F2.",
-    "provenance": "from the ticket and the code · you corrected one sentence",
+    "provenance": "from the ticket and the code \u00b7 you corrected one sentence",
     "confirmed": true,
     "confirmed_at": "2026-10-08T10:58:00Z",
     "confirmation_required": true,
@@ -176,7 +176,19 @@
         "SendInvoiceEmail.php:44",
         "SyncToLedger.php:71"
       ],
-      "created_at": "2026-10-08T11:11:00Z"
+      "created_at": "2026-10-08T11:11:00Z",
+      "round_status": "new",
+      "round_status_by": null,
+      "round_status_checked": null,
+      "round_status_at": null,
+      "round_status_commit": null,
+      "continues_review_id": null,
+      "introduced_by_commit": null,
+      "introduced_by_seq": null,
+      "introduced_by_key": null,
+      "continues_round": null,
+      "rounds_open": 1,
+      "late": null
     },
     {
       "review_id": 17,
@@ -187,7 +199,7 @@
       "file": null,
       "line": null,
       "claim": "No way to replay a delivery after the retry window closes",
-      "evidence": "from the option map · ticket acceptance criterion 3",
+      "evidence": "from the option map \u00b7 ticket acceptance criterion 3",
       "disposition": "in_draft",
       "disposition_reason": null,
       "rule_id": null,
@@ -201,7 +213,19 @@
       "verification": "unknown",
       "suggested_fix": null,
       "fix_references": [],
-      "created_at": "2026-10-08T11:12:00Z"
+      "created_at": "2026-10-08T11:12:00Z",
+      "round_status": "new",
+      "round_status_by": null,
+      "round_status_checked": null,
+      "round_status_at": null,
+      "round_status_commit": null,
+      "continues_review_id": null,
+      "introduced_by_commit": null,
+      "introduced_by_seq": null,
+      "introduced_by_key": null,
+      "continues_round": null,
+      "rounds_open": 1,
+      "late": null
     },
     {
       "review_id": 17,
@@ -226,7 +250,19 @@
       "verification": "unknown",
       "suggested_fix": null,
       "fix_references": [],
-      "created_at": "2026-10-08T11:14:00Z"
+      "created_at": "2026-10-08T11:14:00Z",
+      "round_status": "new",
+      "round_status_by": null,
+      "round_status_checked": null,
+      "round_status_at": null,
+      "round_status_commit": null,
+      "continues_review_id": null,
+      "introduced_by_commit": null,
+      "introduced_by_seq": null,
+      "introduced_by_key": null,
+      "continues_round": null,
+      "rounds_open": 1,
+      "late": null
     },
     {
       "review_id": 17,
@@ -261,7 +297,19 @@
       "verification": "read_not_run",
       "suggested_fix": "Read the schedule from one place.",
       "fix_references": [],
-      "created_at": "2026-10-08T11:15:00Z"
+      "created_at": "2026-10-08T11:15:00Z",
+      "round_status": "new",
+      "round_status_by": null,
+      "round_status_checked": null,
+      "round_status_at": null,
+      "round_status_commit": null,
+      "continues_review_id": null,
+      "introduced_by_commit": null,
+      "introduced_by_seq": null,
+      "introduced_by_key": null,
+      "continues_round": null,
+      "rounds_open": 1,
+      "late": null
     },
     {
       "review_id": 17,
@@ -286,7 +334,19 @@
       "verification": "unknown",
       "suggested_fix": null,
       "fix_references": [],
-      "created_at": "2026-10-08T11:16:00Z"
+      "created_at": "2026-10-08T11:16:00Z",
+      "round_status": "new",
+      "round_status_by": null,
+      "round_status_checked": null,
+      "round_status_at": null,
+      "round_status_commit": null,
+      "continues_review_id": null,
+      "introduced_by_commit": null,
+      "introduced_by_seq": null,
+      "introduced_by_key": null,
+      "continues_round": null,
+      "rounds_open": 1,
+      "late": null
     },
     {
       "review_id": 17,
@@ -299,7 +359,7 @@
       "claim": "Rename `attempt` to `attemptNumber`",
       "evidence": null,
       "disposition": "suppressed",
-      "disposition_reason": "No consequence named · matches a proposed rule to stop raising these",
+      "disposition_reason": "No consequence named \u00b7 matches a proposed rule to stop raising these",
       "rule_id": 22,
       "rule_key": "R-22",
       "hunk": null,
@@ -311,7 +371,19 @@
       "verification": "unknown",
       "suggested_fix": null,
       "fix_references": [],
-      "created_at": "2026-10-08T11:17:00Z"
+      "created_at": "2026-10-08T11:17:00Z",
+      "round_status": "new",
+      "round_status_by": null,
+      "round_status_checked": null,
+      "round_status_at": null,
+      "round_status_commit": null,
+      "continues_review_id": null,
+      "introduced_by_commit": null,
+      "introduced_by_seq": null,
+      "introduced_by_key": null,
+      "continues_round": null,
+      "rounds_open": 1,
+      "late": null
     }
   ],
   "outcomes": [
@@ -369,5 +441,28 @@
     "requested_at": null,
     "filed_at": null
   },
-  "draft_status": "ready"
+  "draft_status": "ready",
+  "rounds": [
+    {
+      "review_id": 17,
+      "round": 1,
+      "head_sha": "3f9c2ab",
+      "created_at": "2026-10-08T10:31:00Z",
+      "posted_at": null,
+      "event": null,
+      "findings": 6,
+      "commits": 0,
+      "replies": 0,
+      "threads_resolved": 0,
+      "statuses": {
+        "new": 6,
+        "fixed": 0,
+        "still_open": 0,
+        "accepted": 0,
+        "withdrawn": 0,
+        "ticketed": 0
+      }
+    }
+  ],
+  "commits_since_previous_round": []
 }

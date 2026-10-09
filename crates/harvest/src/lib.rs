@@ -34,6 +34,7 @@ pub mod gh;
 pub mod github;
 pub mod patch;
 pub mod recorded;
+pub mod rounds;
 pub mod run;
 pub mod wire;
 
@@ -43,4 +44,5 @@ pub use crate::error::{HarvestError, Result};
 pub use crate::github::{
     ChangedFile, Commit, CommitFiles, Comparison, GitHub, PullRequest, Reply, ReviewThread,
 };
+pub use crate::rounds::commits_between;
 pub use crate::run::{harvest, Report, ReviewReport, Selection};

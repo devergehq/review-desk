@@ -24,6 +24,12 @@
 //! a gap and refuses a repeat, so a rebase that leaves this number wrong in either
 //! direction fails loudly rather than reaching `master` quietly. Renumber to whatever is
 //! free and let the test confirm it.
+//!
+//! Version 7 is what gives a finding an identity that outlives the round it was raised
+//! in: the round it continues, what became of it in this one, what a new one is
+//! attributed to, and the commits between two rounds. It was written as 6 while version
+//! 6 was being written too, and renumbered on the rebase — which is the rule above doing
+//! exactly what it is for.
 
 use rusqlite::Connection;
 
@@ -457,6 +463,109 @@ CREATE TABLE finding_fix_references (
     CHECK (position >= 1),
     CHECK (reference <> '')
 );
+"#,
+    },
+    Migration {
+        version: 7,
+        name: "rounds",
+        sql: r#"
+-- The earlier round whose finding this one continues. **The seq is not stored beside it,
+-- because it cannot differ**: a carried finding keeps the number it had, so the link is
+-- "the finding with this same seq, on that review". `carry_finding` is the only thing
+-- that writes the column and it reuses the number by construction, which is a stronger
+-- guarantee than two columns that could disagree — and SQLite cannot add the composite
+-- foreign key that would police them anyway.
+--
+-- SET NULL rather than CASCADE, for the reason `findings.rule_id` gives: deleting an
+-- earlier round must not delete the finding that continued from it. The finding was
+-- still raised; it just no longer says where it came from.
+--
+-- NULL is the honest value for every finding already on the record. A review from before
+-- this migration has no links and reads as a first round, which is what DEV-873 asks for:
+-- its rounds were numbered independently, so inferring a link from a matching seq would
+-- connect two findings that have nothing to do with each other.
+ALTER TABLE findings ADD COLUMN continues_review_id INTEGER
+    REFERENCES reviews (id) ON DELETE SET NULL;
+
+CREATE INDEX findings_by_continues
+    ON findings (continues_review_id)
+    WHERE continues_review_id IS NOT NULL;
+
+-- What became of the finding *in this round*: new, fixed, still_open, accepted,
+-- withdrawn, ticketed. Distinct from `disposition`, which is what is to become of it in
+-- this round's draft — a finding can be `fixed` and so in no draft at all.
+--
+-- The default is what gives every finding already on the record an honest value: each one
+-- was new in the round it was raised in, because nothing before this migration could
+-- carry one. SQLite cannot add a CHECK to a table that already exists, so the closed set
+-- is enforced on the way in and out by `RoundStatus`, as `NitTicketStatus` is for the
+-- column migration 4 added to `reviews`.
+ALTER TABLE findings ADD COLUMN round_status TEXT NOT NULL DEFAULT 'new';
+
+CREATE INDEX findings_by_round_status ON findings (review_id, round_status);
+
+-- Who decided that status, how they checked it, when, and the commit it is attributed to.
+--
+-- `round_status_by` is a `DecidedBy` — developer, agent or author — and **deliberately not
+-- an `Actor`**. An agent decides most of these, `Actor` has no value for one, and
+-- recording an agent's decision as `developer` is the mistake `SignOff::Waived` was added
+-- to stop: a record that says the developer checked something nobody showed them.
+--
+-- `round_status_commit` is the commit the status rests on: for a fixed finding, the commit
+-- that fixed it. It is a plain string, never parsed — Review Desk reads GitHub and stores
+-- what it read.
+ALTER TABLE findings ADD COLUMN round_status_by      TEXT;
+ALTER TABLE findings ADD COLUMN round_status_checked TEXT;
+ALTER TABLE findings ADD COLUMN round_status_at      INTEGER;
+ALTER TABLE findings ADD COLUMN round_status_commit  TEXT;
+
+-- What a new finding is attributed to: the commit that introduced it, and the earlier
+-- finding whose fix caused it — "introduced by a41c9e2, the commit that fixed F1".
+--
+-- `introduced_by_seq` is a seq and no review id, and that is the point of this migration:
+-- after it, a finding's number is its identity across every round of the pull request, so
+-- the number alone names the finding. Which round it was raised in is a separate question,
+-- answered by walking `continues_review_id`.
+ALTER TABLE findings ADD COLUMN introduced_by_commit TEXT;
+ALTER TABLE findings ADD COLUMN introduced_by_seq    INTEGER;
+
+-- The commits between the previous round's head and this round's — "what changed since
+-- round 1". Stored against the round that reviewed them, so a round's commits are the ones
+-- it was answerable for.
+--
+-- Read from GitHub through the harvest crate and written here. Nothing is written to
+-- GitHub. `summary` is the commit message's first line, as GitHub sent it.
+--
+-- `position` is the order GitHub listed them in, oldest first. Stored rather than sorted
+-- by `committed_at`: a rebased or amended commit can carry a committer date out of order,
+-- and the order the page shows is the order the pull request has.
+CREATE TABLE round_commits (
+    review_id    INTEGER NOT NULL REFERENCES reviews (id) ON DELETE CASCADE,
+    sha          TEXT    NOT NULL,
+    position     INTEGER NOT NULL,
+    summary      TEXT    NOT NULL,
+    committed_at INTEGER,
+    PRIMARY KEY (review_id, sha),
+    CHECK (sha <> ''),
+    CHECK (position >= 0)
+);
+
+CREATE INDEX round_commits_by_position ON round_commits (review_id, position);
+
+-- The files one of those commits touched. A table rather than a joined string, because
+-- "was this finding's file changed since round 1" is the question the `late` flag is
+-- answered from, and that is a lookup rather than a substring search.
+CREATE TABLE round_commit_files (
+    review_id INTEGER NOT NULL,
+    sha       TEXT    NOT NULL,
+    path      TEXT    NOT NULL,
+    PRIMARY KEY (review_id, sha, path),
+    CHECK (path <> ''),
+    FOREIGN KEY (review_id, sha)
+        REFERENCES round_commits (review_id, sha) ON DELETE CASCADE
+);
+
+CREATE INDEX round_commit_files_by_path ON round_commit_files (review_id, path);
 "#,
     },
 ];
