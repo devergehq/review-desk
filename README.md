@@ -34,6 +34,16 @@ cargo clippy --all-targets -- -D warnings
 SQLite is compiled in through `rusqlite`'s `bundled` feature, so a clean clone needs
 nothing on the machine but a Rust toolchain.
 
+**Before adding a dependency, read [docs/dependencies.md](docs/dependencies.md).** The bar
+is that a dependency is active, maintained and popular, and it is checked before adopting
+rather than after. Two checks enforce it in CI, and both run locally:
+
+```sh
+python3 -m unittest discover --start-directory tools   # the checks' own logic, offline
+python3 tools/release_age.py                           # no direct dependency over a year old
+python3 tools/advisory_scan.py                         # cargo, pnpm and npm audit, with reasons
+```
+
 ## The commands
 
 **The command line is the single way into the record.** An agent on any platform can make
@@ -440,7 +450,10 @@ Tests always use a temporary file and never touch the default path.
 | `crates/cli` | `review-desk`: the binary. One module per command group under `src/commands`. |
 | `web` | The dashboard: a Nuxt app, four screens, built to static files. |
 | `contract` | The OpenAPI file both sides are built to, its examples, and the checks over them. |
+| `tools` | The dependency checks: release age and known advisories. Standard-library Python, no dependencies of their own. |
+| `dependency-allowlist.toml` | What the two checks knowingly let through, with a reason, who decided and a date to look again. |
 | `docs/brief.md` | The project's design record. When it and the Linear project disagree, it is right. |
+| `docs/dependencies.md` | The bar a dependency has to meet, and the steps to add one. |
 | `docs/mockups` | The five mockups the dashboard was built from, and where it departs from them. |
 
 **The store crate is the only thing that opens the database.** The binary, and every

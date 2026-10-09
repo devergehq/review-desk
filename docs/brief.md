@@ -34,6 +34,7 @@ It is not a list of pull requests. GitHub and Linear already do that. **Its unit
 | The interface is a browser app in Vue, built with Nuxt in static mode and embedded in the binary. Nuxt's server features are not used. | 8 Oct 2026 | Patrick |
 | **Only the developer can sign off.** Confirming a brief and approving a draft happen in the dashboard only. The command line that agents use has no command for either. | 9 Oct 2026 | Patrick |
 | Review Desk reads GitHub (through `gh`, under the developer's login) and never writes to it | 8 Oct 2026 | Settled in the API contract |
+| **Dependencies must be active, maintained and popular, and that is checked before adopting one.** An update bot, an advisory scan and a release-age check enforce it; see [dependencies.md](dependencies.md). | 9 Oct 2026 | Patrick |
 
 ## The shape of the app
 
