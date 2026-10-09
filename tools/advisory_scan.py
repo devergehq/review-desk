@@ -274,8 +274,14 @@ def evaluate(
                     f"allowed by {entry.decided_by} until {entry.look_again}: {entry.reason}"
                 )
 
+    # An orphan can only be judged for an ecosystem this run actually scanned. With
+    # `--only cargo` the npm scans do not run, and without this every npm entry would read
+    # as orphaned -- a partial run inventing failures about dependencies nothing looked at.
+    scanned = {scan.ecosystem for scan in scans}
     seen = {(a.identifier.upper(), a.ecosystem) for scan in scans for a in scan.advisories}
     for entry in allowlist.advisories:
+        if entry.ecosystem not in scanned:
+            continue
         if (entry.advisory.upper(), entry.ecosystem) not in seen:
             failures.append(
                 f"ORPHANED     the allowlist excuses {entry.advisory} ({entry.ecosystem}), which "

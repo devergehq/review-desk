@@ -243,6 +243,13 @@ class TheAdvisoryVerdict(unittest.TestCase):
         failures, _ = self.judge([scan()], ENTRY.format(id="GHSA-dead-beef", date="2026-12-11"))
         self.assertTrue(any("ORPHANED" in f for f in failures))
 
+    def test_an_entry_for_an_ecosystem_this_run_did_not_scan_is_not_orphaned(self):
+        """With `--only cargo` the npm scans do not run. Calling every npm entry orphaned
+        would be a partial run inventing failures about things nothing looked at."""
+        cargo_only = scan(name="cargo audit", ecosystem="cargo")
+        failures, _ = self.judge([cargo_only], ENTRY.format(id="GHSA-86w9-cpqp-85rv", date="2026-12-11"))
+        self.assertEqual(failures, [])
+
     def test_a_malformed_entry_fails_the_scan(self):
         text = ENTRY.format(id="GHSA-86w9-cpqp-85rv", date="2026-12-11").replace("reason", "why")
         found = advisory_scan.parse_pnpm_audit(PNPM_ONE)
