@@ -6,11 +6,12 @@
 mod brief;
 mod draft;
 mod finding;
-mod inbox;
+pub(crate) mod inbox;
 mod layer;
 mod outcome;
 pub(crate) mod review;
 mod rule;
+mod work;
 
 use crate::error::{Result, StoreError};
 use crate::model::Actor;

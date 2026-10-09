@@ -5,7 +5,7 @@ mod common;
 use common::{db_path, temp_store};
 use review_desk_store::{
     newest_version, Actor, DraftStatus, NewDraft, NitTicketStatus, ReviewLayerName,
-    ReviewLayerState, Store, StoreError,
+    ReviewLayerState, Store, StoreError, WorkFilter,
 };
 use tempfile::TempDir;
 
@@ -41,17 +41,36 @@ fn opening_creates_missing_parent_directories() {
 fn an_older_database_is_migrated_forward_and_keeps_its_rows() {
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir);
-    let previous = newest_version() - 1;
-    assert!(previous >= 1, "this test needs a migration to come from");
 
-    // A database held deliberately at the previous version, with rows written the way
-    // the previous version of the code wrote them — in its own SQL, not through
-    // today's typed functions. Those select the columns the newest schema has, so a
-    // migration that adds one makes them unable to speak an older schema at all. That
-    // is the store's rule, not a defect: one way into the record, at one version.
+    // **Version 2 is where the rows below belong**, and the database is migrated from
+    // there all the way to the newest version rather than from one step back.
+    //
+    // It used to come from `newest_version() - 1`, which read as the stricter choice and
+    // quietly stopped being one. The claims further down are about what each migration
+    // does to rows that predate it — that migration 4's backfill gives a rule with no
+    // `updated_at` the only honest answer there is, that migration 5 leaves an existing
+    // brief requiring confirmation — and a backfill only runs on the step that
+    // introduces it. Coming from one version back, migration 5's step was the only one
+    // exercised and migration 4's backfill had already run before the row existed, so
+    // the rule assertion was checking a default rather than a backfill.
+    //
+    // Coming from 2 exercises every migration from 3 onward, which is more than the
+    // previous arrangement ever did, and every assertion below is then about a row that
+    // really did predate the migration it is making a claim about.
+    const FROM: i64 = 2;
+    assert!(
+        newest_version() > FROM,
+        "this test needs a migration to come from"
+    );
+
+    // A database held deliberately at that version, with rows written the way the code
+    // wrote them then — in its own SQL, not through today's typed functions. Those
+    // select the columns the newest schema has, so a migration that adds one makes them
+    // unable to speak an older schema at all. That is the store's rule, not a defect:
+    // one way into the record, at one version.
     {
-        let old = Store::open_at_version(&path, previous).expect("open at the previous version");
-        assert_eq!(old.schema_version().unwrap(), previous);
+        let old = Store::open_at_version(&path, FROM).expect("open at the older version");
+        assert_eq!(old.schema_version().unwrap(), FROM);
     }
     {
         let conn = rusqlite::Connection::open(&path).unwrap();
@@ -130,6 +149,14 @@ fn an_older_database_is_migrated_forward_and_keeps_its_rows() {
     );
     assert_eq!(brief.provenance, None);
     assert_eq!(brief.confirmed_by, None);
+    assert!(
+        brief.confirmation_required,
+        "a brief written before migration 5 was written under a rule that said the \
+         developer confirms it, and backfilling it to need no confirmation would \
+         retroactively excuse a confirmation that was actually waited for"
+    );
+    assert_eq!(brief.confirmation_not_required_because, None);
+    assert!(!brief.is_settled(), "so layer 2 is still the developer's");
 
     let rule = migrated.get_rule(4).expect("the rule survived");
     assert_eq!(rule.statement, "the old rule");
@@ -166,6 +193,17 @@ fn an_older_database_is_migrated_forward_and_keeps_its_rows() {
     migrated
         .confirm_brief(1, Actor::Developer)
         .expect("the brief can be confirmed after the migration");
+
+    // And the one query migration 5 made answerable runs against the migrated database.
+    // The brief is confirmed now and the draft above is `ready`, so the review is waiting
+    // on the developer and nothing is waiting on an agent.
+    let waiting = migrated
+        .work_list(&WorkFilter::default())
+        .expect("the work list can be read after the migration");
+    assert!(
+        waiting.is_empty(),
+        "a review waiting on the developer is not an agent's work: {waiting:?}"
+    );
 }
 
 #[test]

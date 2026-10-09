@@ -192,8 +192,15 @@ function inScope(rule: Rule, repo: string | null): boolean {
 
 /** The whole Inbox, recomputed from the desk — the shape `GET /inbox` serves. */
 function inbox(): Inbox {
+  /*
+   * **A brief recorded as needing no confirmation is not in this group**, which is what
+   * the server does: the group exists to ask the developer for the one act that field
+   * says was unnecessary, so listing it would be asking for it anyway. The review is
+   * still on the One review screen, where the developer can read it and still send the
+   * draft back.
+   */
   const briefs_to_confirm = source.reviews
-    .filter(detail => detail.brief && !detail.brief.confirmed)
+    .filter(detail => detail.brief && !detail.brief.confirmed && detail.brief.confirmation_required)
     .map(detail => ({
       review_id: detail.review.id,
       pull_request: prOf(detail),

@@ -7,10 +7,11 @@
 //!
 //! The split is not arbitrary: version 1 is the review record, version 2 is the
 //! learning layer the project brief treats as a later concern, version 3 is what the
-//! harvester needs to read a posted review's outcomes back from GitHub, and version 4
+//! harvester needs to read a posted review's outcomes back from GitHub, version 4
 //! is what the local API contract needs — the draft, the per-layer status, the
 //! structured option map, rule exceptions, and the twelve columns the four screens
-//! read.
+//! read — and version 5 is the one fact a brief could not hold: whether the developer
+//! has to confirm it at all.
 
 use rusqlite::Connection;
 
@@ -314,6 +315,35 @@ ALTER TABLE rules ADD COLUMN review_again_at INTEGER;
 -- when they were created. 0 is not a time any rule was created at.
 ALTER TABLE rules ADD COLUMN updated_at      INTEGER NOT NULL DEFAULT 0;
 UPDATE rules SET updated_at = created_at WHERE updated_at = 0;
+"#,
+    },
+    Migration {
+        version: 5,
+        name: "optional-confirmation",
+        sql: r#"
+-- Whether the developer has to confirm this brief at all.
+--
+-- **This is the one place an agent decides a developer step is unnecessary**, so the
+-- default is the strict answer and it is what every brief already written gets: a brief
+-- stored before this migration was stored under a rule that said the developer confirms,
+-- and backfilling it to "not required" would retroactively excuse confirmations that
+-- were actually waited for.
+--
+-- The caller owns the threshold. Patrick's decision of 9 October 2026 is that a brief is
+-- confirmed only on pull requests changing more than 200 lines, and Review Desk does not
+-- hold that number: it records that the caller said no confirmation was needed, and the
+-- reason the caller gave.
+ALTER TABLE briefs ADD COLUMN confirmation_required INTEGER NOT NULL DEFAULT 1;
+
+-- Why the caller said so, in the caller's own words. Required when confirmation is not
+-- required and refused when it is, which SQLite cannot express as a CHECK on a table
+-- that already exists — so `put_brief` enforces it on the way in, the way
+-- `NitTicketStatus` does for the column migration 4 added to `reviews`.
+--
+-- A brief that needs no confirmation with no reason attached would put layer 2 at `done`
+-- with nothing on the record saying who decided that or why, which is the state this
+-- whole field exists to avoid.
+ALTER TABLE briefs ADD COLUMN confirmation_not_required_because TEXT;
 "#,
     },
 ];

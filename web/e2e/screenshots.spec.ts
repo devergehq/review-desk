@@ -21,7 +21,7 @@ import { readAddresses } from './harness'
 
 const addresses = readAddresses()
 
-const { seeded, empty, reviewId } = addresses
+const { seeded, empty, reviewId, waivedReviewId } = addresses
 
 const INTO = resolve('../docs/screenshots')
 
@@ -63,6 +63,17 @@ test.describe('a seeded database', () => {
     await page.goto(`${seeded}rules`)
     await expect(page.getByRole('heading', { name: 'No rules yet' })).toBeVisible()
     await shot(page, 'seeded-4-rules')
+
+    /*
+     * The third state of layer 2, which no screenshot could show before DEV-864: a brief
+     * the session recorded as needing no confirmation. It is the one review state that is
+     * settled without anybody having signed it, and the card says which — a developer
+     * looking at this screen has to be able to tell it from one they confirmed
+     * themselves.
+     */
+    await page.goto(`${seeded}reviews/${waivedReviewId}`)
+    await expect(page.getByText('Confirmation not required.')).toBeVisible()
+    await shot(page, 'seeded-5-review-no-confirmation')
   })
 })
 

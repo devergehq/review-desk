@@ -1,3 +1,6 @@
+import { rmSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
 import { expect, test } from '@playwright/test'
 
 import { cli, cliJson, readAddresses, serversUnderTest, stillServing } from './harness'
@@ -18,7 +21,33 @@ import { cli, cliJson, readAddresses, serversUnderTest, stillServing } from './h
 
 const addresses = readAddresses()
 
-const { seeded, empty, seededDatabase, reviewId } = addresses
+const { seeded, empty, seededDatabase, reviewId, waivedReviewId } = addresses
+
+/**
+ * The layer trail on the One review screen, one string per layer.
+ *
+ * Waited for rather than read straight away. The screen's first read is a request, so a
+ * `goto` followed immediately by `allTextContents` returns an empty list — which fails as
+ * `undefined` on an index and points at the trail rather than at the timing.
+ */
+async function trail(page: import('@playwright/test').Page): Promise<string[]> {
+  const layers = page.locator('ol[aria-label="The seven layers of this review"] li')
+  await expect(layers).toHaveCount(7)
+  return layers.allTextContents()
+}
+
+/** What `work list` says is waiting for an agent, read through the binary. */
+function workList(): Array<{
+  kind: string
+  review_id: number
+  sign_off: string | null
+  note: string | null
+}> {
+  const document = cliJson(seededDatabase, ['work', 'list']) as unknown as {
+    work: Array<{ kind: string, review_id: number, sign_off: string | null, note: string | null }>
+  }
+  return document.work
+}
 
 /** The review as the command line reads it, which is how a session reads it. */
 function reviewRecord() {
@@ -117,6 +146,27 @@ test.describe('the whole path, on a seeded database', () => {
     const record = reviewRecord()
     expect(record.brief.confirmed_at).not.toBeNull()
     expect(record.brief.confirmed_by).toBe('developer')
+
+    /*
+     * **And the trail moved with it.** DEV-862 shipped this screen reading
+     * "2 Understand · waiting on you" under a brief that had just been confirmed, and
+     * recorded it as a known risk. This is the assertion that says it no longer does —
+     * from the screen, which is where the fault was visible.
+     */
+    const layers = await trail(page)
+    expect(layers[1]).toContain('Understand')
+    expect(layers[1]).toContain('confirmed by the developer')
+    expect(layers[1]).not.toContain('waiting on you')
+
+    /*
+     * **And `work list` still says nothing about this review**, which is the right
+     * answer and worth asserting rather than assuming. This session ran ahead and wrote
+     * its draft before the confirmation, so the draft is `ready` — waiting on the
+     * developer to approve it — and a review waiting on the developer is not an agent's
+     * work whatever layer 2 now says. `brief_settled` is for a review with no draft
+     * yet, which is the waived one further down.
+     */
+    expect(workList().some(item => item.review_id === reviewId)).toBe(false)
   })
 
   test('the agent’s draft is what is left waiting to be approved', async ({ page }) => {
@@ -174,6 +224,54 @@ test.describe('the whole path, on a seeded database', () => {
     expect(outcomes).toContain('rewritten')
   })
 
+  test('the draft is sent back in the browser, and layer 6 goes back to in progress', async ({
+    page,
+  }) => {
+    /*
+     * The developer's other act at layer 6, and the one that had never been performed end
+     * to end. Sending a draft back is not a rejection: it is the layer going back to the
+     * session with an instruction, which is why the trail reads `in progress` carrying the
+     * note rather than `waiting on you`.
+     */
+    await page.goto(`${seeded}reviews/${reviewId}/draft`)
+    await page.getByRole('button', { name: 'Send back with a note' }).click()
+
+    const note = 'F2 is the same point as F1; cut one of them'
+    await page.locator('textarea#send-back-note').fill(note)
+    await page.getByRole('button', { name: 'Send back', exact: true }).click()
+
+    await expect(page.getByText(note)).toBeVisible()
+
+    await page.goto(`${seeded}reviews/${reviewId}`)
+    const layers = await trail(page)
+    expect(layers[5]).toContain('Draft')
+    expect(layers[5]).toContain(note)
+
+    /* And the session is told what to do about it, with the note travelling as data. */
+    const waiting = workList().find(item => item.review_id === reviewId)
+    expect(waiting?.kind).toBe('draft_sent_back')
+    expect(waiting?.note).toBe(note)
+
+    /*
+     * The session revises it, which is what puts it back to `ready`. The body is read off
+     * the record and written back unchanged, so the edit the previous test made is still
+     * what the later tests find — a draft the dashboard saves stays `drafting`, because
+     * returning a sent-back draft to `ready` is the session saying it has finished.
+     */
+    const shown = cliJson(seededDatabase, [
+      'draft',
+      'show',
+      '--review',
+      String(reviewId),
+    ]) as unknown as { draft: { body: string } }
+    const revised = resolve('e2e/.revised-draft.md')
+    writeFileSync(revised, shown.draft.body)
+    cli(seededDatabase, ['draft', 'put', '--review', String(reviewId), '--file', revised])
+    rmSync(revised, { force: true })
+
+    expect(workList().some(item => item.review_id === reviewId)).toBe(false)
+  })
+
   test('the draft is approved in the browser, and the record says the developer did it', async ({
     page,
   }) => {
@@ -198,6 +296,20 @@ test.describe('the whole path, on a seeded database', () => {
     expect(record.draft.event).toBe('request_changes')
     /* The second sign-off, and the second actor the record now has to be right about. */
     expect(record.draft.approved_by).toBe('developer')
+
+    /* Layer 6 is finished with, and the note the developer wrote earlier is gone from it. */
+    await page.goto(`${seeded}reviews/${reviewId}`)
+    const layers = await trail(page)
+    expect(layers[5]).toContain('approved by the developer')
+
+    /*
+     * **And this is the link DEV-864 exists to make.** The dispatcher polls one command
+     * and is told that a review it has never heard of needs an agent to post a draft the
+     * developer approved in a browser.
+     */
+    const waiting = workList().find(item => item.review_id === reviewId)
+    expect(waiting?.kind).toBe('draft_approved')
+    expect(waiting?.note).toBeNull()
   })
 
   test('`review-desk draft show` reports it approved, with the chosen event', async () => {
@@ -266,6 +378,89 @@ test.describe('the whole path, on a seeded database', () => {
 
     /* The seven layers, as the command line set them. */
     await expect(page.locator('ol li')).toHaveCount(7)
+  })
+
+  test('a brief that needed no confirmation is in nobody’s queue, and says so', async ({
+    page,
+  }) => {
+    /*
+     * **DEV-864's second part, end to end.** `confirmation_required: false` is the one
+     * place an agent decides a developer step was unnecessary, and this review's brief was
+     * written that way by the same command line an agent calls.
+     *
+     * The Inbox is the developer's queue, so the review is not in it. The One review
+     * screen is where the developer reads a review, so it is there — with a third
+     * sentence that is neither "confirm this" nor "you confirmed this", and no button.
+     */
+    await page.goto(seeded)
+    await expect(page.getByText('Confirm the problem')).toHaveCount(0)
+    await expect(
+      page.getByText('Say "not measured" rather than null in the delivery log'),
+    ).toHaveCount(0)
+
+    await page.goto(`${seeded}reviews/${waivedReviewId}`)
+    await expect(page.getByText('Confirmation not required.')).toBeVisible()
+    /*
+     * `.first()`, because the reason is legitimately in two places on this screen: the
+     * card the developer reads, and layer 2's detail in the trail. Both are asserted —
+     * the trail further down — and a bare locator matches both, which is a strict-mode
+     * failure rather than a missing string.
+     */
+    await expect(
+      page.getByText('61 changed lines, under this caller\'s 200-line threshold').first(),
+    ).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Confirm the problem' })).toHaveCount(0)
+    await expect(page.getByText('Problem confirmed.')).toHaveCount(0)
+
+    /* The brief itself is on screen: the developer can still read it. */
+    await expect(
+      page.getByText('The delivery log prints `null` for a latency it never measured'),
+    ).toBeVisible()
+
+    /* Layer 2 is finished with on write, and the trail carries why. */
+    const layers = await trail(page)
+    expect(layers[1]).toContain('confirmation not required')
+    expect(layers[1]).toContain('200-line threshold')
+
+    /*
+     * **And nothing in the record claims the developer confirmed it.** An agent may carry
+     * on past layer 2, and the item says the sign-off was waived rather than given.
+     */
+    const waiting = workList().find(item => item.review_id === waivedReviewId)
+    expect(waiting?.kind).toBe('brief_settled')
+    expect(waiting?.sign_off).toBe('waived')
+  })
+
+  test('the command line refuses to withdraw a confirmation already asked for', async () => {
+    /*
+     * The other half of the waiver, and the whole reason it is safe to have. The main
+     * review's brief was written as requiring confirmation — and was confirmed in a
+     * browser earlier in this run — so an agent cannot rewrite it as needing none.
+     */
+    let refused = ''
+    const brief = resolve('e2e/.waiver-attempt.json')
+    writeFileSync(
+      brief,
+      JSON.stringify({
+        problem: 'A webhook delivery that fails once is never tried again.',
+        confirmation_required: false,
+        confirmation_not_required_because: 'on reflection it is small',
+      }),
+    )
+    try {
+      cli(seededDatabase, ['brief', 'put', '--review', String(reviewId), '--file', brief])
+    }
+    catch (thrown) {
+      const failure = thrown as { stderr?: Buffer, status?: number }
+      refused = String(failure.stderr ?? thrown)
+      expect(failure.status).toBe(1)
+    }
+    finally {
+      rmSync(brief, { force: true })
+    }
+
+    expect(refused).toContain('confirmation_required')
+    expect(refused).toContain('cannot be withdrawn')
   })
 
   test('the rules screen reads from the database too', async ({ page }) => {

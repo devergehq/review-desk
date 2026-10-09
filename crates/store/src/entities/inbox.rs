@@ -22,7 +22,7 @@ use crate::{normalise, Store};
 
 /// The reviews' columns, as `entities::review` selects them, qualified for the joins
 /// below.
-const REVIEW_COLUMNS: &str = "v.id, v.repo, v.pr, v.head_sha, v.round, v.title, \
+pub(super) const REVIEW_COLUMNS: &str = "v.id, v.repo, v.pr, v.head_sha, v.round, v.title, \
                               v.ticket_id, v.changed_lines, v.not_checked, v.session_id, \
                               v.ledger_id, v.github_review_id, v.pr_state, v.pr_state_at, \
                               v.harvested_at, v.nit_ticket_status, v.nit_ticket_id, \
@@ -30,16 +30,24 @@ const REVIEW_COLUMNS: &str = "v.id, v.repo, v.pr, v.head_sha, v.round, v.title, 
                               v.created_at";
 
 impl Store {
-    /// Every review whose brief is written and not yet confirmed, newest first.
+    /// Every review whose brief is written, needs confirming, and has not been
+    /// confirmed; newest first.
     ///
     /// The Inbox's "Confirm the problem". A review with no brief at all is not here:
     /// there is nothing to confirm, and the session has not reached layer 2.
+    ///
+    /// **Nor is a brief recorded as needing no confirmation.** The group is the
+    /// developer's queue, and a brief the caller said needed no confirmation is not in
+    /// anybody's queue — listing it would be asking for the act the field exists to say
+    /// was unnecessary. It is still on the One review screen, where the developer can
+    /// read it and still send the draft back.
     pub fn reviews_with_unconfirmed_brief(&self, repo: Option<&str>) -> Result<Vec<Review>> {
         let repo = repo.map(normalise::repo);
         let mut statement = self.conn.prepare(&format!(
             "SELECT {REVIEW_COLUMNS} FROM reviews v
              JOIN briefs b ON b.review_id = v.id
              WHERE b.confirmed_at IS NULL
+               AND b.confirmation_required = 1
                AND (?1 IS NULL OR v.repo = ?1)
              ORDER BY v.id DESC"
         ))?;
@@ -217,7 +225,10 @@ impl Store {
 /// are checked against each other by `the_two_review_column_lists_agree`, because a
 /// column added to one and not the other would make a review read through the Inbox a
 /// different record from the same review read by id.
-fn row_to_review(row: &Row<'_>) -> rusqlite::Result<Review> {
+///
+/// `entities::work` joins the same way and reads reviews through this rather than keeping
+/// a third copy of the list, which is the very drift that test exists to catch.
+pub(super) fn row_to_review(row: &Row<'_>) -> rusqlite::Result<Review> {
     Ok(Review {
         id: row.get("id")?,
         repo: row.get("repo")?,

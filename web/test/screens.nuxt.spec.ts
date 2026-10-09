@@ -29,25 +29,50 @@ import Layout from '../app/layouts/default.vue'
  */
 
 /**
+ * What `DeskState` renders while a read is in flight — `Reading the inbox…`.
+ *
+ * Named here because `settle` waits for it to go away, and a test helper that waits for a
+ * sentence should say which sentence rather than hiding it in a regular expression.
+ */
+const STILL_READING = /Reading [^…]*…/
+
+/**
  * Let every pending read and re-read finish.
  *
- * Generous on purpose. Choosing the API backend is itself a dynamic `import()` — the HTTP
- * client is deliberately not in the app shell's static graph — so a first read resolves a
- * module before it resolves a request, and a count tuned to the shape before that change
- * left one of these tests asserting on the loading state.
+ * **Waits for the loading state to go away, with a bound** — not for a fixed number of
+ * rounds, and not merely for the rendered text to stop changing.
+ *
+ * Both of the simpler instruments have now failed here, and the second one is mine. A
+ * fixed twelve rounds is a count tuned to how long the work happened to take, which this
+ * file already recorded failing once: "a count tuned to the shape before that change left
+ * one of these tests asserting on the loading state". Waiting for the text to stop
+ * changing looks like the principled replacement and is worse — the text is *perfectly
+ * stable* at "Reading the inbox…" for as long as the dynamic `import()` takes, so it
+ * returns early with more confidence and no more information. Both failed the same CI test
+ * the same way.
+ *
+ * The condition that actually matters is that the screen is no longer reading. Once it is
+ * not, two more quiet rounds flush whatever the answer renders.
+ *
+ * A macrotask as well as the microtasks, each round. Choosing the API backend is a dynamic
+ * `import()` — the HTTP client is deliberately not in the app shell's static graph — and
+ * the first one in a run has a module to load from disk, which no number of
+ * `flushPromises` can advance.
  */
 async function settle(page: VueWrapper) {
-  for (let round = 0; round < 12; round += 1) {
-    /*
-     * A macrotask as well as the microtasks. Choosing the API backend is a dynamic
-     * `import()` — the HTTP client is deliberately not in the app shell's static graph — and
-     * the first one in a run has a module to load from disk, which no number of
-     * `flushPromises` can advance. Without this the first test in a describe asserted on the
-     * loading state while every later one passed, which reads like flake and is not.
-     */
+  let quiet = 0
+
+  for (let round = 0; round < 200; round += 1) {
     await new Promise(resolve => setTimeout(resolve, 0))
     await flushPromises()
     await page.vm.$nextTick()
+
+    if (STILL_READING.test(page.text())) {
+      quiet = 0
+      continue
+    }
+    quiet += 1
+    if (quiet >= 2) return
   }
 }
 
@@ -304,6 +329,26 @@ describe('one review', () => {
     const page = await open(15)
     expect(page.text()).toContain('Problem confirmed')
     expect(button(page, 'Confirm the problem')).toBeUndefined()
+  })
+
+  /*
+   * **The third state of layer 2.** A brief recorded as needing no confirmation is not
+   * waiting on the developer and was not signed by them either, so the screen must say
+   * something other than both of the two sentences above — and must not offer the button,
+   * because there is nothing for it to do.
+   */
+  it('says confirmation was not required, and why, without offering the button', async () => {
+    const page = await open(16)
+    const text = page.text()
+
+    expect(text).toContain('Confirmation not required')
+    expect(text).toContain('61 changed lines, under this caller\'s 200-line threshold')
+    expect(text).not.toContain('Problem confirmed')
+    expect(text).not.toContain('Confirm the problem before anything is posted')
+    expect(button(page, 'Confirm the problem')).toBeUndefined()
+
+    /* And the brief itself is still on screen: the developer can read it. */
+    expect(page.text()).toContain('The problem')
   })
 
   it('moves a finding between the draft and held back, with a reason', async () => {

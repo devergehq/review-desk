@@ -165,9 +165,19 @@ Everything else on the four screens is below.
 | "No consequence named · matches a proposed rule…" | `findings[].disposition_reason` |
 | the "Not checked" paragraph | `not_checked` |
 | that an "Open draft" link is shown at all | `draft_status` |
+| which of the three layer-2 cards is shown | `brief.confirmed` and `brief.confirmation_required` |
+| "Confirmation not required. The session recorded this brief as needing none: …" | `brief.confirmation_not_required_because` |
 
 `finding_severities` is also served, for a caller that wants the Inbox's "1 blocker, 2
 should" wording on this screen.
+
+**Layer 2 has three states, not two.** `confirmed` true is a brief the developer signed.
+`confirmed` false with `confirmation_required` true is one they are being asked to sign, and
+is the only one of the three that appears in the Inbox's `briefs_to_confirm`. `confirmed`
+false with `confirmation_required` false is a brief an agent recorded as needing no
+confirmation — settled, unsigned, in nobody's queue, and the screen must say so rather than
+offering the button. The reason is required whenever the flag is false; the threshold behind
+it is the caller's and Review Desk does not hold it.
 
 ### Draft preview — `GET /reviews/{reviewId}/draft`, example `examples/getDraft.response.json`
 

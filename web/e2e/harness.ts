@@ -34,6 +34,13 @@ export interface Addresses {
   seededDatabase: string
   empty: string
   reviewId: number
+  /**
+   * A second review on the same repository whose brief was recorded as needing no
+   * confirmation. It is deliberately not in anybody's queue: no brief to confirm and no
+   * draft to approve, so it changes none of the Inbox's counts and is only reachable by
+   * going to it.
+   */
+  waivedReviewId: number
 }
 
 /** The addresses, as the setup wrote them. */
@@ -80,7 +87,9 @@ export function scratch(): string {
  * two acts — confirming the brief and approving the draft — are deliberately absent,
  * because there is no command for either. That is the boundary this test exists to exercise.
  */
-export function seed(directory: string): { database: string, reviewId: number } {
+export function seed(
+  directory: string,
+): { database: string, reviewId: number, waivedReviewId: number } {
   const database = join(directory, 'seeded.db')
 
   const opened = cli(database, [
@@ -262,7 +271,56 @@ Ran the job twice against a local endpoint that 500s once, and counted the deliv
     lint,
   ])
 
-  return { database, reviewId }
+  /*
+   * **A second review whose brief needs no confirmation**, written by the same command
+   * line an agent uses. DEV-864 asks for this state end to end, and it is the one place
+   * an agent decides a developer step was unnecessary — so the test that it is absent
+   * from the Inbox needs a real record to be absent from, not a stub.
+   *
+   * 61 changed lines, which is why the reason reads the way it does: the 200-line
+   * threshold belongs to the caller and Review Desk does not hold it.
+   */
+  const waivedOpened = cli(database, [
+    'review',
+    'open',
+    '--repo',
+    'acme/portal',
+    '--pr',
+    '418',
+    '--head',
+    'bb41e07',
+    '--title',
+    'Say "not measured" rather than null in the delivery log',
+    '--changed-lines',
+    '61',
+  ])
+  const waivedReviewId = Number(waivedOpened.match(/\d+/)?.[0])
+  if (!Number.isInteger(waivedReviewId)) {
+    throw new Error(`review open printed no id: ${waivedOpened}`)
+  }
+
+  const waivedBrief = join(directory, 'waived-brief.json')
+  writeFileSync(
+    waivedBrief,
+    JSON.stringify({
+      problem:
+        'The delivery log prints `null` for a latency it never measured, which reads as '
+        + 'a measurement of zero.',
+      confirmation_required: false,
+      confirmation_not_required_because:
+        '61 changed lines, under this caller\'s 200-line threshold',
+    }),
+  )
+  cli(database, [
+    'brief',
+    'put',
+    '--review',
+    String(waivedReviewId),
+    '--file',
+    waivedBrief,
+  ])
+
+  return { database, reviewId, waivedReviewId }
 }
 
 /** A database with nothing in it: what the first `review-desk serve` serves. */

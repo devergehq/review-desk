@@ -4,11 +4,19 @@ use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior}
 
 use crate::entities::only_the_developer;
 use crate::error::{Result, StoreError};
-use crate::model::{now, Actor, Brief, BriefOption, NewBrief};
+use crate::model::{now, Actor, Brief, BriefOption, NewBrief, ReviewLayerName, ReviewLayerState};
 use crate::{is_foreign_key_violation, Store};
 
+/// What layer 2 says once the developer has confirmed the brief.
+///
+/// The *when* is the layer row's own `updated_at`; this is the *who*. Only the developer
+/// can confirm a brief, so there is one value it can take — and the row saying so is what
+/// makes the trail readable without joining it back to the brief.
+pub(crate) const CONFIRMED_DETAIL: &str = "confirmed by the developer";
+
 const COLUMNS: &str = "review_id, problem, diagram, option_map, approach_verdict, \
-                       provenance, confirmed_at, confirmed_by, updated_at";
+                       provenance, confirmed_at, confirmed_by, confirmation_required, \
+                       confirmation_not_required_because, updated_at";
 
 impl Store {
     /// Store the review's brief, replacing any brief already held.
@@ -17,6 +25,22 @@ impl Store {
     /// there, not whatever replaces it. The options replace the options already held,
     /// for the same reason — a brief whose problem changed under half of its old
     /// option cards is not a brief anybody wrote.
+    ///
+    /// # Confirmation
+    ///
+    /// `confirmation_required` defaults to true. Set false, with a reason, it records
+    /// that the caller decided the developer's act at layer 2 was unnecessary — a small
+    /// pull request, under a threshold the caller owns and Review Desk does not hold.
+    /// Layer 2 is then set `done` in this same transaction, carrying the reason, because
+    /// the brief's write is what settles it and a trail that still said "waiting on you"
+    /// would be describing a wait nobody is in.
+    ///
+    /// **A brief already written as requiring confirmation cannot be rewritten as needing
+    /// none.** That is the whole of the protection: the flag is safe to have because it
+    /// can only ever be set before the developer was asked, not after. The other
+    /// direction is allowed — asking for a confirmation that was not needed costs the
+    /// developer a click and the record nothing — and it puts layer 2 back to
+    /// `waiting_on_you`, undoing the only layer row this function ever wrote.
     pub fn put_brief(&self, review_id: i64, new: NewBrief) -> Result<Brief> {
         // `problem` is required by serde, but an empty string satisfies that. A brief
         // with no problem in it can still be confirmed, and then the record holds a
@@ -40,6 +64,37 @@ impl Store {
             });
         }
 
+        let because = new
+            .confirmation_not_required_because
+            .as_deref()
+            .map(str::trim)
+            .filter(|because| !because.is_empty())
+            .map(str::to_string);
+
+        // Required when confirmation is not, and refused when it is. A brief that needed
+        // no confirmation with nothing saying why would put layer 2 at `done` with no
+        // record of who decided that or on what grounds, and the reason is the only thing
+        // standing between this flag and an agent quietly excusing itself.
+        match (new.confirmation_required, &because) {
+            (false, None) => {
+                return Err(StoreError::InvalidValue {
+                    field: "confirmation_not_required_because",
+                    value: String::new(),
+                    expected: "why no confirmation is needed, such as the change being \
+                               under the caller's own threshold"
+                        .to_string(),
+                })
+            }
+            (true, Some(because)) => {
+                return Err(StoreError::InvalidValue {
+                    field: "confirmation_not_required_because",
+                    value: because.clone(),
+                    expected: "nothing; this brief does require confirmation".to_string(),
+                })
+            }
+            _ => {}
+        }
+
         for option in &new.options {
             validate_option(option)?;
         }
@@ -56,13 +111,32 @@ impl Store {
         // worse record than no brief at all.
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
 
+        // **Read inside the transaction, because this is a read-then-write rule.** Two
+        // callers racing on one review would otherwise both see a brief that required
+        // confirmation, both be allowed to proceed, and the second write would win —
+        // which is the flip this refuses, arrived at by two legal-looking calls.
+        let held = self.find_brief(review_id)?;
+        if let Some(held) = &held {
+            if held.confirmation_required && !new.confirmation_required {
+                return Err(StoreError::InvalidValue {
+                    field: "confirmation_required",
+                    value: "false".to_string(),
+                    expected: "true; this brief was written as requiring the developer's \
+                               confirmation, and a confirmation already asked for cannot \
+                               be withdrawn by rewriting the brief"
+                        .to_string(),
+                });
+            }
+        }
+
         let updated_at = now();
         self.conn
             .execute(
                 "INSERT INTO briefs
                      (review_id, problem, diagram, option_map, approach_verdict,
-                      provenance, confirmed_at, confirmed_by, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, NULL, ?7)
+                      provenance, confirmed_at, confirmed_by, confirmation_required,
+                      confirmation_not_required_because, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, NULL, ?7, ?8, ?9)
                  ON CONFLICT (review_id) DO UPDATE SET
                      problem          = excluded.problem,
                      diagram          = excluded.diagram,
@@ -71,6 +145,9 @@ impl Store {
                      provenance       = excluded.provenance,
                      confirmed_at     = NULL,
                      confirmed_by     = NULL,
+                     confirmation_required = excluded.confirmation_required,
+                     confirmation_not_required_because
+                         = excluded.confirmation_not_required_because,
                      updated_at       = excluded.updated_at",
                 params![
                     review_id,
@@ -79,6 +156,8 @@ impl Store {
                     new.option_map,
                     new.approach_verdict,
                     new.provenance,
+                    new.confirmation_required,
+                    because,
                     updated_at,
                 ],
             )
@@ -104,11 +183,52 @@ impl Store {
             )?;
         }
 
+        // **Layer 2 in the same transaction as the brief**, for the reason the options
+        // are: a trail that disagrees with the record is worse than a trail that is
+        // merely behind. Only these two transitions are written, and they are the two
+        // this function causes:
+        //
+        // * recorded as needing no confirmation — layer 2 is finished with on write;
+        // * written over a brief whose layer 2 was already settled — this write unsettles
+        //   it, because the insert above cleared the confirmation and the waiver with it,
+        //   and leaving the old row would claim layer 2 was settled while the developer
+        //   is being asked.
+        //
+        // **`is_settled`, not `!confirmation_required`.** Those differ on the commonest
+        // path there is: an agent revising a brief the developer had already confirmed.
+        // The narrower test let that case fall through to the no-op arm, so the Inbox
+        // listed "Confirm the problem" again while the trail directly above the confirm
+        // button still said "confirmed by the developer" — which is the fault DEV-864
+        // exists to remove, with the sign reversed.
+        //
+        // A brief that was *not* settled before and is not settled now touches no layer:
+        // what a session's layers say about its own progress is the session's to write.
+        let settled_before = held.as_ref().is_some_and(Brief::is_settled);
+        match (&because, settled_before) {
+            (Some(because), _) => {
+                self.set_review_layer(
+                    review_id,
+                    ReviewLayerName::Understand.number(),
+                    ReviewLayerState::Done,
+                    Some(&format!("confirmation not required: {because}")),
+                )?;
+            }
+            (None, true) => {
+                self.set_review_layer(
+                    review_id,
+                    ReviewLayerName::Understand.number(),
+                    ReviewLayerState::WaitingOnYou,
+                    Some("waiting on you"),
+                )?;
+            }
+            (None, false) => {}
+        }
+
         tx.commit()?;
         self.get_brief(review_id)
     }
 
-    /// Mark the review's brief confirmed, if it is not already.
+    /// Mark the review's brief confirmed, if it is not already, and finish layer 2.
     ///
     /// Confirming twice keeps the first confirmation time and the first actor.
     ///
@@ -116,19 +236,38 @@ impl Store {
     /// developer's act** — decided on 9 October 2026 — and it is what releases the
     /// later layers, so the record has to say whose assent released them. There is no
     /// command-line command for this: it happens in the dashboard.
+    ///
+    /// **The confirmation and layer 2 are written in one transaction.** Until DEV-864
+    /// this function wrote the confirmation and nothing else, and layer rows were the
+    /// command line's to write — so the One review screen read "2 Understand · waiting
+    /// on you" underneath a brief the developer had confirmed minutes earlier. The
+    /// screen was faithful; the record was wrong. Two writes that can disagree are two
+    /// writes that eventually will, so they are now one.
+    ///
+    /// Layer 2 is written on a repeat confirmation too, which is deliberate: a brief
+    /// confirmed before this behaviour existed has a trail that still says it is waiting,
+    /// and confirming again is the only call that can put it right.
     pub fn confirm_brief(&self, review_id: i64, by: Actor) -> Result<Brief> {
         only_the_developer(by, "confirm a brief")?;
 
+        let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
         let brief = self.get_brief(review_id)?;
-        if brief.is_confirmed() {
-            return Ok(brief);
+
+        if !brief.is_confirmed() {
+            self.conn.execute(
+                "UPDATE briefs SET confirmed_at = ?2, confirmed_by = ?3 WHERE review_id = ?1",
+                params![review_id, now(), by],
+            )?;
         }
 
-        self.conn.execute(
-            "UPDATE briefs SET confirmed_at = ?2, confirmed_by = ?3 WHERE review_id = ?1",
-            params![review_id, now(), by],
+        self.set_review_layer(
+            review_id,
+            ReviewLayerName::Understand.number(),
+            ReviewLayerState::Done,
+            Some(CONFIRMED_DETAIL),
         )?;
 
+        tx.commit()?;
         self.get_brief(review_id)
     }
 
@@ -206,6 +345,8 @@ fn row_to_brief(row: &Row<'_>) -> rusqlite::Result<Brief> {
         provenance: row.get("provenance")?,
         confirmed_at: row.get("confirmed_at")?,
         confirmed_by: row.get("confirmed_by")?,
+        confirmation_required: row.get("confirmation_required")?,
+        confirmation_not_required_because: row.get("confirmation_not_required_because")?,
         updated_at: row.get("updated_at")?,
     })
 }

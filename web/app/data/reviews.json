@@ -96,6 +96,8 @@
       "provenance": "from the ticket and the code · you corrected one sentence",
       "confirmed": false,
       "confirmed_at": null,
+      "confirmation_required": true,
+      "confirmation_not_required_because": null,
       "updated_at": "2026-10-08T10:58:00Z"
     },
     "findings": [
@@ -360,6 +362,8 @@
       "provenance": "from the ticket and the code",
       "confirmed": true,
       "confirmed_at": "2026-10-08T06:10:00Z",
+      "confirmation_required": true,
+      "confirmation_not_required_because": null,
       "updated_at": "2026-10-08T06:10:00Z"
     },
     "findings": [
@@ -531,7 +535,7 @@
         "number": 2,
         "name": "understand",
         "state": "done",
-        "detail": "carried from round 1",
+        "detail": "confirmation not required: 61 changed lines, under this caller's 200-line threshold",
         "updated_at": "2026-10-08T09:53:00Z"
       },
       {
@@ -592,8 +596,10 @@
       ],
       "approach_verdict": "A short time-to-live plus an explicit bust on revoke. Round 2 adds the bust.",
       "provenance": "carried from round 1 · you confirmed it then",
-      "confirmed": true,
-      "confirmed_at": "2026-10-08T09:53:00Z",
+      "confirmed": false,
+      "confirmed_at": null,
+      "confirmation_required": false,
+      "confirmation_not_required_because": "61 changed lines, under this caller's 200-line threshold",
       "updated_at": "2026-10-08T09:53:00Z"
     },
     "findings": [
@@ -734,6 +740,8 @@
       "provenance": "from the ticket and the code",
       "confirmed": true,
       "confirmed_at": "2026-10-06T11:30:00Z",
+      "confirmation_required": true,
+      "confirmation_not_required_because": null,
       "updated_at": "2026-10-06T11:30:00Z"
     },
     "findings": [
@@ -915,6 +923,8 @@
       "provenance": "from the ticket and the code",
       "confirmed": true,
       "confirmed_at": "2026-10-08T11:18:00Z",
+      "confirmation_required": true,
+      "confirmation_not_required_because": null,
       "updated_at": "2026-10-08T11:18:00Z"
     },
     "findings": [],
@@ -1016,6 +1026,8 @@
       "provenance": "from the ticket and the code",
       "confirmed": true,
       "confirmed_at": "2026-10-08T11:24:00Z",
+      "confirmation_required": true,
+      "confirmation_not_required_because": null,
       "updated_at": "2026-10-08T11:24:00Z"
     },
     "findings": [],

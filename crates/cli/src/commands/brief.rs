@@ -18,8 +18,19 @@ pub enum BriefCommand {
     /// there, not whatever replaces it.
     ///
     /// The document is `{"problem": "...", "diagram": "...", "options": [...],
-    /// "approach_verdict": "...", "provenance": "..."}`. Only `problem` is required, and a
+    /// "approach_verdict": "...", "provenance": "...", "confirmation_required": true,
+    /// "confirmation_not_required_because": "..."}`. Only `problem` is required, and a
     /// field that is not one of those is refused.
+    ///
+    /// `confirmation_required` defaults to true. Set false — with
+    /// `confirmation_not_required_because` saying why, which is then required — it records
+    /// that the caller decided the developer's act at layer 2 was unnecessary, typically a
+    /// change under the caller's own size threshold. Layer 2 is `done` on write and the
+    /// review does not appear in the developer's inbox.
+    ///
+    /// **A brief already written as requiring confirmation cannot be rewritten as needing
+    /// none**, and that refusal is the whole of what makes the field safe to have: it can
+    /// only ever be set before the developer was asked. The other direction is allowed.
     ///
     /// `options` is the alternatives the review considered before it read the diff, and is
     /// what the One review screen's "Ways to solve it" shows — one object per alternative,

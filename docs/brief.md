@@ -33,6 +33,7 @@ It is not a list of pull requests. GitHub and Linear already do that. **Its unit
 | Rust for the store, the command line and the local server; one binary; SQLite | 8 Oct 2026 | Proposed by Claude, confirmed by Patrick |
 | The interface is a browser app in Vue, built with Nuxt in static mode and embedded in the binary. Nuxt's server features are not used. | 8 Oct 2026 | Patrick |
 | **Only the developer can sign off.** Confirming a brief and approving a draft happen in the dashboard only. The command line that agents use has no command for either. | 9 Oct 2026 | Patrick |
+| **One exception, and it is narrow.** A brief may be written as needing no confirmation, with the reason. A brief is confirmed on pull requests changing more than 200 lines; the threshold is the caller's setting, not Review Desk's. A brief already written as requiring confirmation cannot be rewritten as needing none, and the record says `waived` rather than `developer` wherever it is read. | 9 Oct 2026 | Patrick (DEV-864) |
 | Review Desk reads GitHub (through `gh`, under the developer's login) and never writes to it | 8 Oct 2026 | Settled in the API contract |
 
 ## The shape of the app
