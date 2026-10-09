@@ -15,6 +15,7 @@ cd web && pnpm run e2e:screenshots
 | `seeded-2-review.png` | One review, with the brief unconfirmed — the control only the dashboard has. |
 | `seeded-3-draft.png` | The draft preview, before anything is posted: the checks, the nit held back, and the event it would be posted as. |
 | `seeded-4-rules.png` | Rules, on a database with reviews and no rules. The repository came from the review; the command line cannot write a rule, which is a gap rather than an empty screen. |
+| `seeded-5-review-no-confirmation.png` | One review whose brief the session recorded as needing no confirmation, with the reason it gave. Layer 2 is finished with and nobody signed it, so the card is dashed and offers no button. |
 | `fresh-1-inbox.png` | The Inbox on a database with nothing in it. It reads as new rather than as broken, and says the one thing that fills it. |
 | `fresh-2-review.png` | A review that is not there. `not_found` and an empty review are different answers. |
 | `fresh-3-draft.png` | A draft that is not there. |

@@ -306,6 +306,26 @@ describe('one review', () => {
     expect(button(page, 'Confirm the problem')).toBeUndefined()
   })
 
+  /*
+   * **The third state of layer 2.** A brief recorded as needing no confirmation is not
+   * waiting on the developer and was not signed by them either, so the screen must say
+   * something other than both of the two sentences above — and must not offer the button,
+   * because there is nothing for it to do.
+   */
+  it('says confirmation was not required, and why, without offering the button', async () => {
+    const page = await open(16)
+    const text = page.text()
+
+    expect(text).toContain('Confirmation not required')
+    expect(text).toContain('61 changed lines, under this caller\'s 200-line threshold')
+    expect(text).not.toContain('Problem confirmed')
+    expect(text).not.toContain('Confirm the problem before anything is posted')
+    expect(button(page, 'Confirm the problem')).toBeUndefined()
+
+    /* And the brief itself is still on screen: the developer can read it. */
+    expect(page.text()).toContain('The problem')
+  })
+
   it('moves a finding between the draft and held back, with a reason', async () => {
     const page = await open(17)
     await page.findAll('button').find(item => item.text().startsWith('Change'))!.trigger('click')

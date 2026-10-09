@@ -98,8 +98,15 @@ async function changeDisposition(payload: {
 
         <LayerTrail :layers="data.layers" />
 
+        <!--
+          Layer 2 has three states, not two, and the screen has to be able to say which.
+          A brief waiting to be confirmed asks for the developer's act; a confirmed one
+          records that they gave it; and one recorded as needing no confirmation records
+          that an agent decided they did not have to — which is a different thing from
+          either, and the one state with nothing for the developer to do.
+        -->
         <DeskCard
-          v-if="data.brief && !data.brief.confirmed"
+          v-if="data.brief && !data.brief.confirmed && data.brief.confirmation_required"
           tone="chosen"
           class="confirm"
         >
@@ -123,7 +130,7 @@ async function changeDisposition(payload: {
         </DeskCard>
 
         <DeskCard
-          v-else-if="data.brief"
+          v-else-if="data.brief && data.brief.confirmed"
           as="section"
           pad="tight"
           class="confirmed"
@@ -132,6 +139,21 @@ async function changeDisposition(payload: {
             <strong>Problem confirmed.</strong>
             You confirmed it {{ sinceLabel(data.brief.confirmed_at) }}, which is what lets
             the draft be posted.
+          </span>
+        </DeskCard>
+
+        <DeskCard
+          v-else-if="data.brief"
+          as="section"
+          pad="tight"
+          class="confirmed waived"
+        >
+          <span class="rd-note">
+            <strong>Confirmation not required.</strong>
+            The session recorded this brief as needing none:
+            {{ data.brief.confirmation_not_required_because ?? 'no reason was given' }}.
+            Nothing is waiting on you here — you can still read the problem below, and you
+            can still send the draft back.
           </span>
         </DeskCard>
 
@@ -411,6 +433,15 @@ async function changeDisposition(payload: {
 
 .confirmed strong {
   font-weight: 600;
+}
+
+/*
+ * Dashed, like a `pending` layer in the trail, because this is the one brief state that
+ * is settled without anybody having signed it. A solid card would read as an assurance.
+ */
+.waived {
+  border-style: dashed;
+  border-color: var(--rd-line-strong);
 }
 
 .missing {

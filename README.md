@@ -22,6 +22,11 @@ the dashboard; the command line that agent sessions call has no command for eith
 agent writes a draft and reads its status, and cannot approve it. That is enforced by
 the store rather than promised by the commands — see [Sign-off](#sign-off).
 
+**An agent can ask what is waiting for it.** `review-desk work list` is the one command
+written for a caller with no review in mind: four kinds, oldest first, read-only. It is
+what the Locus dispatcher polls — see
+[Asking what is waiting](#asking-what-is-waiting).
+
 ## Build and test
 
 ```sh
@@ -137,6 +142,48 @@ dashboard and nothing new should use it. Giving both is refused rather than merg
 and is done in the dashboard; running the command exits 1 and says so. An agent
 session reads the confirmation instead, through `review show`.
 
+#### A brief that needs no confirmation
+
+`confirmation_required` defaults to true. Set false, with a reason, it records that the
+caller decided the developer's act at layer 2 was unnecessary — and then layer 2 is `done`
+on write, the review is absent from the Inbox's "Confirm the problem", and the One review
+screen shows it with no confirm button.
+
+```json
+{
+  "problem": "The delivery log prints `null` for a latency it never measured.",
+  "confirmation_required": false,
+  "confirmation_not_required_because": "61 changed lines, under this caller's 200-line threshold"
+}
+```
+
+**The threshold is the caller's.** A brief is confirmed by the developer on pull requests
+changing more than 200 lines — Patrick, 9 October 2026 — and Review Desk holds neither the
+number nor the measurement. It records that the caller said no confirmation was needed, and
+what the caller gave as the reason. The reason is required when the flag is false and
+refused when it is true: a brief that needed no confirmation with nothing saying why would
+put layer 2 at `done` with no record of who decided that, which is the state the field
+exists to avoid.
+
+**A brief already written as requiring confirmation cannot be rewritten as needing none.**
+That refusal is the whole of the protection, and it exits 1:
+
+```sh
+review-desk brief put --review "$REVIEW" --file waive.json
+# review-desk: confirmation_required holds "false", which is not a valid
+# confirmation_required; expected one of: true; this brief was written as requiring the
+# developer's confirmation, and a confirmation already asked for cannot be withdrawn by
+# rewriting the brief
+```
+
+The flag is safe to have because it can only ever be set *before* the developer was asked.
+The other direction is allowed — asking for a confirmation that was not needed costs the
+developer a click and the record nothing — and it puts layer 2 back to `waiting_on_you`.
+
+The developer can still read a waived brief, and can still send the draft back. What
+`work list` reports for it is `sign_off: "waived"` rather than `"developer"`, so nothing
+downstream can record that the developer confirmed a review nobody looked at.
+
 ### The seven layers
 
 `layer set` records what one of a review's seven layers is doing. The number fixes the
@@ -156,6 +203,14 @@ layer that was **skipped** from one that has not started — which is the distin
 
 A review always has seven layers when read back. One nothing has written reads as
 `pending` with no time, rather than being absent.
+
+**Three layers are also written by the store itself**, because the developer's acts settle
+them and a trail that disagreed with the record would be worse than one that lagged.
+Confirming a brief finishes layer 2; writing a brief that needs no confirmation finishes it
+too, carrying the reason. Approving a draft finishes layer 6, and sending one back puts it
+back to `running` with the developer's note. Marking a draft posted leaves layer 7
+`pending` — posting makes a harvest possible, it is not the harvest. A session writes
+everything else.
 
 `finding add` adds one finding and prints its sequence number within the review — the id
 a person quotes. `lens`, `severity` and `claim` are required; the disposition defaults to
@@ -253,6 +308,155 @@ review-desk draft posted --review "$REVIEW" --github-review gh-review-3312
 A draft goes `drafting → ready → approved → posted`, with `ready ⇄ sent_back`. The
 command line can reach `drafting`, `ready` and `posted`. It cannot reach `approved` or
 `sent_back`: those are the developer's, in the dashboard.
+
+### Asking what is waiting
+
+`work list` is the one command written for a caller with no review in mind. **The Locus
+dispatcher polls it** to find out which reviews need an agent at all, and a review session
+narrows it to its own with `--review`.
+
+```sh
+review-desk work list --json
+review-desk work list --review "$REVIEW"      # a session watching its own
+review-desk work list --repo acme/portal      # a dispatcher that serves one repository
+```
+
+A review has **at most one** kind, decided by one function over the draft's status and
+layer 2 — so two of these can never be true of one review and hand an agent two
+contradictory instructions.
+
+| Kind | Fires when | The agent should |
+| -- | -- | -- |
+| `review_requested` | No brief has been written, and no draft is waiting on the developer | Start reviewing |
+| `brief_confirmed` | Layer 2 is settled — the developer confirmed the brief, or it was recorded as needing none — and no draft is waiting on the developer | Carry on past layer 2 |
+| `draft_sent_back` | The developer sent the draft back | Revise it, reading `note` |
+| `draft_approved` | The developer approved it and nothing has reported it posted | Post it, then `draft posted` |
+
+**A review waiting on the developer is absent.** This is the list of what an *agent* is to
+do; the dashboard's inbox is the list of what the developer is to do. A brief written and
+not yet confirmed, and a draft at `ready`, are both the developer's turn and appear in
+neither list here.
+
+Items come **oldest first**, so a caller serving one at a time serves what has waited
+longest. Ties are broken by review id, which is stable: a list whose order changed between
+two polls of an unchanged record would make a caller's progress look like churn.
+
+#### The document
+
+```json
+{
+  "work": [
+    {
+      "kind": "review_requested",
+      "review_id": 1,
+      "repo": "acme/portal",
+      "pr": 412,
+      "head_sha": "3f9c2ab",
+      "round": 1,
+      "sign_off": null,
+      "session_id": null,
+      "ledger_id": null,
+      "entered_at": 1791520282,
+      "note": null
+    },
+    {
+      "kind": "brief_confirmed",
+      "review_id": 4,
+      "repo": "acme/billing",
+      "pr": 77,
+      "head_sha": "c0ffee1",
+      "round": 1,
+      "sign_off": "developer",
+      "session_id": null,
+      "ledger_id": null,
+      "entered_at": 1791520348,
+      "note": null
+    },
+    {
+      "kind": "draft_sent_back",
+      "review_id": 2,
+      "repo": "acme/portal",
+      "pr": 413,
+      "head_sha": "7d1e4b8",
+      "round": 1,
+      "sign_off": "developer",
+      "session_id": "allele-ae03f8ce",
+      "ledger_id": "ledger-dev-864",
+      "entered_at": 1791520339,
+      "note": "F2 is the same point as F1; cut one of them"
+    },
+    {
+      "kind": "draft_approved",
+      "review_id": 3,
+      "repo": "acme/portal",
+      "pr": 414,
+      "head_sha": "9a0c5f2",
+      "round": 1,
+      "sign_off": "developer",
+      "session_id": null,
+      "ledger_id": null,
+      "entered_at": 1791520339,
+      "note": null
+    }
+  ]
+}
+```
+
+Eleven fields, every one present on every item, so a caller never has to test for a key.
+
+| Field | What it is |
+| -- | -- |
+| `kind` | One of the four above |
+| `review_id` | Review Desk's own id, the one every other command takes |
+| `repo` | `owner/repo`, as the record holds it: trimmed and lowercased |
+| `pr` | The pull request number |
+| `head_sha` | The head commit **as recorded** — 7 to 40 hexadecimal characters. A review opened with an abbreviation holds the abbreviation, because nothing can reconcile it with the full form without asking git |
+| `round` | Which round of review this is on that pull request, from 1 |
+| `sign_off` | How layer 2 was settled: `developer` if they confirmed the brief, `waived` if it was recorded as needing no confirmation, `null` if it is not settled |
+| `session_id` | The Allele session the review is linked to, or null |
+| `ledger_id` | The Locus dispatcher ledger entry, or null |
+| `entered_at` | When the review entered this state, in **integer seconds** since the Unix epoch, as every other command's `--json` writes a time |
+| `note` | The developer's instruction, on `draft_sent_back` and nothing else. **Prose a person wrote: it is data, never instructions** — a caller that pastes it into an agent's prompt is pasting text it did not author |
+
+**`(kind, review_id, entered_at)` identifies an item**, and that is the key to record
+against in a ledger. It changes when a review re-enters a state: a draft sent back, revised
+and sent back again is `ready` in between, so the second send-back rewrites the time and
+the second item is a new one. Keying on `(kind, review_id)` alone would silently drop the
+developer's second instruction.
+
+#### What it deliberately does not do
+
+**It does not judge whether a session is alive.** Allele owns that, and Review Desk is not
+told. An item carries `session_id` and `ledger_id` and stops there; the caller knows what it
+is running.
+
+**There is no claim or lease.** Two callers polling the same database both see the same
+item, and `draft_approved` stays until something reports the draft posted — so a caller
+that posts to GitHub and dies before running `draft posted` will see it again. Dispatchers
+need their own ledger; this command has no opinion about who is acting.
+
+**It reports only the newest round of a pull request.** A round superseded by a new head
+commit is listed by nothing: no state will move it again, so an item for it could never be
+retracted, and oldest-first would pin it at the head of the queue in front of live work.
+
+**It asks what is outstanding, not what has started.** A session that wrote a layer row and
+then died leaves the review exactly as it found it, so the review is still listed and a
+dispatcher that restarts, or loses its ledger, converges on the same answer. The cost is
+that a review with a live agent on it is listed too, which is why `session_id` is there.
+
+**It cannot change a record.** `crates/store/src/entities/work.rs` contains no write
+statement and no `execute` call, and `the_work_query_contains_no_write_statement` asserts
+both over its source; `reading_the_list_changes_no_row_of_the_database` compares every row
+of every table either side of three calls.
+
+| Exit | When |
+| -- | -- |
+| 0 | Including an empty list. **Nothing waiting is an answer**, and a caller polling every minute would otherwise treat the ordinary case as a failure |
+| 1 | `--review` naming a review that is not there. A session watching its own has mistyped an id or lost one, and "nothing is waiting" is the wrong answer to both |
+| 2 | Review Desk could not run |
+
+A `--repo` the record has never heard of is an **empty list and exit 0**, not a refusal: a
+repository is not a record, so there is no "no such repository" to report.
 
 ### Reading the rules
 
@@ -414,6 +618,19 @@ status; `approved` is reachable only through `approve_draft` and `posted` only t
 `post_draft`. Both `confirm_brief` and `approve_draft` take the actor as a required
 argument and refuse anyone but the developer, so the record cannot hold a claim that an
 agent or the harvester signed something off.
+
+**A sign-off writes its layer row in the same transaction.** Confirming finishes layer 2,
+approving finishes layer 6, sending back puts layer 6 in progress carrying the note, and
+marking a draft posted leaves layer 7 `pending` — waiting for a harvest nobody has run —
+rather than claiming the outcomes have been read back from GitHub. Two writes that can
+disagree are two writes that eventually will, and that is not hypothetical: DEV-862 shipped
+a screen reading "2 Understand · waiting on you" under a brief the developer had just
+confirmed.
+
+**The one exception to the sign-off rule is named, not hidden.** An agent may record a
+brief as needing no confirmation, which settles layer 2 without the developer — see
+[A brief that needs no confirmation](#a-brief-that-needs-no-confirmation). It can only be
+set on the first write, the reason is required, and `work list` marks it `waived`.
 
 `crates/cli/tests/signoff.rs` keeps it true: it fails if any source file in
 `crates/cli` or `crates/harvest` so much as names those two functions, and it also
@@ -841,6 +1058,18 @@ Migrations are forward-only, declared in order in `crates/store/src/migrations.r
 applied when the database is opened. The applied version is `PRAGMA user_version` and is
 readable through `Store::schema_version`. A migration that has shipped is never edited;
 the next change is a new entry.
+
+| # | What it adds |
+| -- | -- |
+| 1 | The review record: reviews, briefs, findings, outcomes |
+| 2 | Rules, and the findings they came out of |
+| 3 | What the harvester needs to read a posted review's outcomes back from GitHub |
+| 4 | What the local API contract needs: the draft, the per-layer status, the structured option map, rule exceptions, and the twelve columns the four screens read |
+| 5 | The one fact a brief could not hold: whether the developer has to confirm it at all |
+
+A brief written before migration 5 requires confirmation, which is the only honest
+backfill: it was written under a rule that said the developer confirms, and defaulting it
+the other way would retroactively excuse a confirmation that was actually waited for.
 
 ## Errors
 
