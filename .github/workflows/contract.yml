@@ -28,11 +28,15 @@ jobs:
         working-directory: contract
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v5
+      # Node 24 and setup-node v6, matching ci.yml, web.yml and e2e.yml. The three
+      # toolchain workflows had drifted to checkout@v5/setup-node@v5 on Node 22 here, which
+      # meant the contract's tooling ran on a different Node than everything else for no
+      # reason anybody had decided. `contract/package.json` now declares both.
+      - uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version: 24
           cache: npm
           cache-dependency-path: contract/package-lock.json
 

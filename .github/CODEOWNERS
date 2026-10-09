@@ -1,0 +1,27 @@
+# Who has to review a change to the dependency watch.
+#
+# **This file does nothing on its own.** CODEOWNERS makes GitHub request a review
+# automatically, but it only *requires* one when branch protection on `master` has
+# "Require review from Code Owners" turned on. That setting is Patrick's to make, in the
+# repository settings, and until he does this file is a request rather than a rule.
+#
+# Why these paths and not others. A pull request is checked by its own copy of the tools and
+# its own copy of the allowlist, so a pull request can weaken the gate it is being judged by:
+# raise the age limit, add its own allowlist entry, or edit the check. The weekly run on
+# `master` catches that a week later, and a required review catches it before it merges.
+# These four paths are the whole of that surface.
+
+# The checks themselves, and their tests.
+/tools/                         @patrickdorival
+
+# What the checks knowingly let through, and until when.
+/dependency-allowlist.toml      @patrickdorival
+
+# The workflows, including the one the dependency watch runs in.
+/.github/workflows/             @patrickdorival
+
+# The update bot's configuration, including the TypeScript major-version ignore.
+/.github/dependabot.yml         @patrickdorival
+
+# This file.
+/.github/CODEOWNERS             @patrickdorival

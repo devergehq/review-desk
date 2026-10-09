@@ -3,3 +3,8 @@ target/
 
 # Tooling for the contract checks (contract/package.json pins the versions).
 contract/node_modules/
+
+# Python's bytecode cache for the dependency checks in tools/. Generated, so not committed;
+# the checks themselves write no report and no cache of their own -- `release_age.py`
+# prints its table and keeps nothing.
+__pycache__/

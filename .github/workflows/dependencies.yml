@@ -1,0 +1,194 @@
+# The dependency watch: an advisory scan and a release-age check.
+#
+# **Separate from ci.yml, web.yml, contract.yml and e2e.yml** for the same reason those are
+# separate from each other: nothing here shares a step with any of them, and a Rust change
+# should not wait on two registries to find out it compiles. It is also the only workflow
+# that is useful on a schedule, because its inputs change without anybody pushing — a new
+# advisory lands against an untouched lockfile, and a dependency goes a year without a
+# release simply by the calendar moving.
+#
+# **Three triggers, and the schedule is the authoritative one.** A pull request runs this
+# against its own tree, which means a pull request can also change the check — raise the
+# limit, add its own allowlist entry, edit the tool. The weekly run on `master` is what
+# catches that, a week later. `docs/dependencies.md` says so out loud rather than leaving
+# it as a property nobody wrote down.
+#
+# **A note on the schedule, which is a real weakness and not a hypothetical one.** GitHub
+# disables scheduled workflows after 60 days with no repository activity, and this is a
+# one-developer repository whose history arrives in bursts. The quiet stretch after a burst
+# is exactly when a dependency rots, so `workflow_dispatch` is here to be run by hand, and
+# the docs say to check that the schedule is still enabled after a quiet spell. A check
+# that stops running is a check that passes without information.
+name: Dependencies
+
+on:
+  pull_request:
+    paths:
+      # Every file through which a dependency can arrive or be excused, plus the tools that
+      # do the judging and this workflow itself. A narrower filter would be a list of the
+      # places a dependency can come from, which is the thing nobody writes down correctly.
+      - '**/Cargo.toml'
+      - 'Cargo.lock'
+      - '**/package.json'
+      - 'web/pnpm-lock.yaml'
+      - '**/pnpm-workspace.yaml'
+      - 'contract/package-lock.json'
+      - 'dependency-allowlist.toml'
+      # The native suppression surfaces. A pull request whose only change is silencing an
+      # advisory has to run the scan that refuses it, or the refusal never happens.
+      - '.cargo/audit.toml'
+      - 'audit.toml'
+      - 'tools/**'
+      - '.github/workflows/dependencies.yml'
+      - '.github/dependabot.yml'
+  push:
+    branches: [master]
+    paths:
+      - '**/Cargo.toml'
+      - 'Cargo.lock'
+      - '**/package.json'
+      - 'web/pnpm-lock.yaml'
+      - '**/pnpm-workspace.yaml'
+      - 'contract/package-lock.json'
+      - 'dependency-allowlist.toml'
+      # The native suppression surfaces. A pull request whose only change is silencing an
+      # advisory has to run the scan that refuses it, or the refusal never happens.
+      - '.cargo/audit.toml'
+      - 'audit.toml'
+      - 'tools/**'
+      - '.github/workflows/dependencies.yml'
+      - '.github/dependabot.yml'
+  # 07:17 Monday UTC, after Dependabot's own Monday run, so a failure and the pull request
+  # that fixes it arrive together. Not on the hour: a cron on the hour is the one GitHub
+  # delays longest.
+  schedule:
+    - cron: '17 7 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: dependencies-${{ github.ref }}
+  cancel-in-progress: true
+
+# Read-only. Neither job writes anything anywhere.
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Pinned so the scan is reproducible and so the version is a thing a reader can check
+  # against the bar this repository sets. 0.22.2, released 2026-06-05, from
+  # https://github.com/rustsec/rustsec — the RustSec project's own tool.
+  CARGO_AUDIT_VERSION: 0.22.2
+
+jobs:
+  # The checks' own logic, tested with no network at all. First, and cheap: if the judging
+  # is broken there is no point asking two registries about thirty-five dependencies.
+  logic:
+    name: The checks' own logic, offline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Show the interpreter
+        run: python3 -VV
+
+      # No `actions/setup-python`: the runner ships 3.12 and the tools are standard library
+      # only, so pinning an interpreter would be a dependency added to a check whose whole
+      # argument is that dependencies should be justified. `release_age.py` asserts its own
+      # minimum version and exits with a sentence rather than a traceback if it is not met.
+      - name: Test the release-age and advisory logic
+        run: python3 -m unittest discover --start-directory tools --verbose
+
+  advisories:
+    name: Known vulnerabilities, Rust and npm
+    runs-on: ubuntu-latest
+    needs: logic
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      # cargo-audit is a compiled binary, so it is cached by the version pinned above
+      # rather than rebuilt every Monday. Keyed on the version: a cache that outlives the
+      # pin would quietly run a different tool than the one this file names.
+      - name: Cache cargo-audit
+        id: audit-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-${{ env.CARGO_AUDIT_VERSION }}-${{ runner.os }}
+
+      # `cargo install` rather than an action. `rustsec/audit-check` was the obvious
+      # candidate and its most recent release is 2024-09-23, 746 days old at the time of
+      # writing — it would fail the release-age check this same workflow runs. The RustSec
+      # project's own binary is current, so it is what runs.
+      - name: Install cargo-audit
+        if: steps.audit-cache.outputs.cache-hit != 'true'
+        run: cargo install cargo-audit --locked --version ${{ env.CARGO_AUDIT_VERSION }}
+
+      - name: Show the tools
+        run: |
+          cargo audit --version
+          pnpm --version
+          npm --version
+          python3 -VV
+
+      # One wrapper over all three native tools, rather than three separate steps, so that
+      # a known advisory being lived with carries a reason, a decider and a date to look
+      # again — which `audit.toml`, `pnpm.auditConfig` and `npm audit` between them have no
+      # field for. The wrapper fails if any of the three cannot run: a partial scan that
+      # reported a clean bill of health would be the worst outcome available.
+      - name: Scan for known vulnerabilities
+        run: python3 tools/advisory_scan.py
+
+  release-age:
+    name: No direct dependency over a year old
+    runs-on: ubuntu-latest
+    needs: logic
+    steps:
+      - uses: actions/checkout@v7
+
+      # The real check, against the real registries. Roughly thirty seconds for
+      # thirty-five dependencies, and the audit table goes to the run summary from the same
+      # invocation -- asking for the table in a second step ran the whole check twice and
+      # doubled the requests to two public registries for one answer.
+      - name: Check every direct dependency's release age
+        run: python3 tools/release_age.py --summary "$GITHUB_STEP_SUMMARY"
+
+      # The other half of Patrick's third rule, asserted rather than assumed. The step
+      # above proves the check can pass; this one proves it cannot pass when it has not
+      # run. Pointing the registry at a closed port is a genuine connection failure, and
+      # the assertions are on both the exit code and the words, because an exit code of 2
+      # for some other reason would otherwise satisfy this.
+      #
+      # `if: always()` so that a tree which legitimately fails the check above still proves
+      # this property. The two are independent: one is about a dependency, this is about
+      # the check itself.
+      - name: It fails, with a could-not-run message, when the registry is unreachable
+        if: always()
+        env:
+          REVIEW_DESK_CRATES_API: http://127.0.0.1:1/crates
+          REVIEW_DESK_NPM_REGISTRY: http://127.0.0.1:1
+        run: |
+          set +e
+          output=$(python3 tools/release_age.py 2>&1)
+          code=$?
+          set -e
+          echo "$output"
+          if [ "$code" -ne 2 ]; then
+            echo "::error::expected exit 2 (could not run), got $code"
+            exit 1
+          fi
+          case "$output" in
+            *"could not run"*) ;;
+            *) echo "::error::exit 2 but no could-not-run message"; exit 1 ;;
+          esac
+          echo "Unreachable registry: exit 2 and the could-not-run message. As intended."
