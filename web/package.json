@@ -4,18 +4,18 @@
   "type": "module",
   "packageManager": "pnpm@11.9.0",
   "scripts": {
-    "dev": "nuxt dev",
-    "build": "nuxt build",
-    "generate": "nuxt generate",
+    "dev": "node scripts/contract-types.mjs && nuxt dev",
+    "build": "node scripts/contract-types.mjs && nuxt build",
+    "generate": "node scripts/contract-types.mjs && nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare",
-    "lint": "eslint .",
-    "typecheck": "nuxt typecheck",
-    "test": "vitest run",
-    "types:contract": "openapi-typescript ../contract/openapi.yaml -o app/types/contract.ts",
+    "postinstall": "node scripts/contract-types.mjs && nuxt prepare",
+    "lint": "node scripts/contract-types.mjs && eslint .",
+    "typecheck": "node scripts/contract-types.mjs && nuxt typecheck",
+    "test": "node scripts/contract-types.mjs && vitest run",
     "e2e": "pnpm run e2e:build && playwright test --config e2e/playwright.config.ts --project desk",
     "e2e:screenshots": "pnpm run e2e:build && playwright test --config e2e/playwright.config.ts --project screenshots",
-    "e2e:build": "nuxt generate && cargo build --manifest-path ../Cargo.toml"
+    "e2e:build": "pnpm run generate && cargo build --manifest-path ../Cargo.toml",
+    "contract:types": "node scripts/contract-types.mjs"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.3.0",

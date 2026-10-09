@@ -461,7 +461,7 @@ pnpm lint
 pnpm typecheck
 pnpm test
 pnpm run e2e          # the end-to-end test; builds what it tests
-pnpm run types:contract   # regenerate the types from contract/openapi.yaml
+pnpm run contract:types   # regenerate the contract types by hand (rarely needed)
 ```
 
 Nuxt runs with server-side rendering off and generates static files, which `cargo build`
@@ -548,11 +548,33 @@ enforces that rather than trusting it:
 cd web && pnpm exec vitest run test/architecture.spec.ts
 ```
 
-**The shapes are generated, not written.** `web/app/types/contract.ts` comes from
-`contract/openapi.yaml` by `pnpm run types:contract` and is committed;
-`web/app/types/desk.ts` only gives its schemas short names. `test/contract-types.spec.ts`
-regenerates and compares, so the front end cannot drift from the contract — which it had,
-by two outcome kinds, before DEV-862.
+**The shapes are generated, not written, and the generated file is not committed.**
+`web/app/types/contract.ts` comes from `contract/openapi.yaml`, and `web/.gitignore`
+keeps it out of the repository: a generated file in version control is a second copy of
+the contract that can disagree with it.
+
+Nothing has to be remembered. `web/scripts/contract-types.mjs` runs on `pnpm install` and
+ahead of `dev`, `build`, `generate`, `typecheck`, `lint` and `test`, so a fresh clone plus
+`pnpm install` type-checks with no extra step. It is wired by prefixing each script rather
+than through pnpm's `pre`/`post` hooks, because `enable-pre-post-scripts` has changed
+default between pnpm versions and a hook that silently stops running is the failure this
+arrangement exists to remove.
+
+**It deletes its output before it writes.** A generator that fails after its output exists
+leaves the previous types on disk, and the build then succeeds against a contract that has
+moved — a silent wrong answer, and worse than committing the file, because at least a
+committed file shows up in a diff. So if the script did not finish, there is no file, and
+every command that needs one fails. Measured by moving `contract/openapi.yaml` aside:
+`contract:types`, `generate`, `typecheck`, `lint`, `test` and `build` all exit 1 with the
+same sentence, and no stale file is left.
+
+`cargo build` needs none of this. It embeds `web/.output/public` if it is there and says so
+at `/` if it is not; building the Rust workspace with no Node on `PATH` and no generated
+file works, which `ci.yml` checks.
+
+`web/app/types/desk.ts` only gives those schemas short names, so the front end cannot
+drift from the contract — which it had, by two outcome kinds, before DEV-862: the harvester
+wrote `replied` and `thread_resolved` and the dashboard could not name either.
 
 ## The end-to-end test
 

@@ -1,4 +1,29 @@
+import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
+
 import { mayForward } from './dev-proxy'
+
+/*
+ * **The generated contract types have to be there, and saying so first is the point.**
+ *
+ * `app/types/contract.ts` is generated from `contract/openapi.yaml` and is not committed.
+ * Every documented command generates it first — see `package.json` — so this should never
+ * fire. It exists for the person who runs `nuxt typecheck` or `nuxt build` directly.
+ *
+ * Without it, the type checker reports the real cause *last*: measured at fifty-two errors,
+ * of which fifty-one were `implicitly has an 'any' type` in `app/data/sample.ts` and the
+ * missing module was number fifty-two. Nobody reads to the bottom of that. This config is
+ * evaluated by every `nuxt` command, so one clear sentence arrives before any of them.
+ */
+const contractTypes = resolve(__dirname, 'app/types/contract.ts')
+if (!existsSync(contractTypes)) {
+  throw new Error(
+    'app/types/contract.ts has not been generated.\n'
+    + '  It comes from ../contract/openapi.yaml and is deliberately not committed.\n'
+    + '  Run `pnpm install`, or `pnpm run contract:types` to generate it on its own.\n'
+    + '  Every pnpm script here generates it first; a bare `nuxt` command does not.',
+  )
+}
 
 /*
  * Review Desk's dashboard.

@@ -2,7 +2,8 @@
  * The shapes the dashboard reads, **named rather than written**.
  *
  * Every type here is an alias over `app/types/contract.ts`, which is generated from
- * `contract/openapi.yaml` by `pnpm run types:contract` and committed. Nothing in this file
+ * `contract/openapi.yaml` and is **not** committed — it is rebuilt on install and ahead of
+ * every build, type check, lint and test run. Nothing in this file
  * describes a field; it only gives the contract's schemas the short names the screens use,
  * so `import type { Inbox } from '~/types/desk'` keeps reading the way it did while the
  * field list has exactly one source.
@@ -12,8 +13,12 @@
  * contract — the harvester wrote `replied` and `thread_resolved` and the dashboard could
  * not name either, so the Inbox's "Author replied" group was built from values the type
  * said were impossible. Hand-written types cannot be made not to drift by being careful;
- * generated ones cannot drift at all, and `test/contract-types.spec.ts` fails when the
- * committed file and the contract disagree.
+ * generated ones cannot drift at all, because there is no second copy to disagree with the
+ * contract. What `test/contract-types.spec.ts` guards now is the generating: that it fails
+ * loudly and leaves nothing stale behind when the contract cannot be read.
+ *
+ * If the generated module is missing, `nuxt.config.ts` says so in one sentence before the
+ * type checker gets a chance to report fifty-one unrelated errors and the real one last.
  *
  * Four reads, one per screen — `GET /inbox`, `GET /reviews/{id}`,
  * `GET /reviews/{id}/draft`, `GET /rules?repo=` — so no screen joins anything. Times are
