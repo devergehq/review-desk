@@ -106,6 +106,15 @@ export function seed(directory: string): { database: string, reviewId: number } 
     throw new Error(`review open printed no id: ${opened}`)
   }
 
+  /*
+   * **With its options, which `brief put` does take.** `NewBrief` carries
+   * `options: Vec<BriefOption>` and `option_map` is marked superseded; the command's own
+   * `--help` still lists the four older fields and says anything else is refused, which is
+   * what this seed believed until it was checked. Layer 3 is where a review writes the
+   * alternatives it considered before it read the diff, and the One review screen's "Ways
+   * to solve it" is the only place they are shown — so a seed without them leaves a panel
+   * untested and a screenshot that does not show the screen.
+   */
   const brief = join(directory, 'brief.json')
   writeFileSync(
     brief,
@@ -114,7 +123,30 @@ export function seed(directory: string): { database: string, reviewId: number } 
         'A webhook delivery that fails once is never tried again, so a customer whose '
         + 'endpoint was briefly down loses the event entirely.',
       diagram: 'flowchart LR\n  A[Event] --> B[Deliver]\n  B -->|fails| C[Dropped]',
-      approach_verdict: 'The queue-with-backoff approach fits the ticket.',
+      options: [
+        {
+          key: 'A',
+          title: 'Retry inside the request',
+          argument_for: 'The smallest change, and no new table.',
+          argument_against: 'Holds the request open for as long as the endpoint is down.',
+          chosen: false,
+        },
+        {
+          key: 'B',
+          title: 'Queue with backoff',
+          argument_for: 'Meets the 24-hour window the ticket asks for.',
+          argument_against: 'Needs an idempotency key, which is finding F1.',
+          chosen: true,
+        },
+        {
+          key: 'C',
+          title: 'Dead-letter and replay by hand',
+          argument_for: 'Nothing is ever delivered twice.',
+          argument_against: 'Somebody has to notice, which is the failure being fixed.',
+          chosen: false,
+        },
+      ],
+      approach_verdict: 'B is the right shape for this ticket.',
     }),
   )
   cli(database, ['brief', 'put', '--review', String(reviewId), '--file', brief])

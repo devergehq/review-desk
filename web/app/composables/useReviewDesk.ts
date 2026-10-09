@@ -47,7 +47,7 @@ import {
 
 import type { DeskBackend, DraftEditToRecord } from '~/data/backend'
 
-import { asDeskError } from '~/data/api'
+import { asDeskError } from '~/data/fault'
 import { chooseSource, loadBackend, sampleWanted, type DeskSourceName } from '~/data/source'
 import { detectEdits, findingsInBody } from '~/utils/draft'
 import { count } from '~/utils/format'

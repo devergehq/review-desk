@@ -30,7 +30,7 @@ import { reactive } from 'vue'
 
 import type { DeskBackend, DraftEditToRecord } from './backend'
 
-import { DeskRequestError } from './api'
+import { DeskRequestError } from './fault'
 import desk from './desk.json'
 import drafts from './drafts.json'
 import reviews from './reviews.json'

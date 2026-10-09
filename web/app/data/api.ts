@@ -27,6 +27,8 @@
 
 import type { DraftEditToRecord } from './backend'
 
+import { DeskRequestError, NOT_LISTENING, fault } from './fault'
+
 import type {
   ApproveDraftRequest,
   Brief,
@@ -67,55 +69,6 @@ const CONTRACT_CODES = new Set([
 ])
 
 /**
- * A refusal, thrown so that a read and a write report failure the same way.
- *
- * It carries the contract's `Error` object rather than a message, because the screens
- * branch on `code` and never on wording — a `github_unavailable` is the developer's
- * environment and names a command that fixes it, while a `conflict` is about the record and
- * names what state it is in.
- */
-export class DeskRequestError extends Error {
-  readonly desk: DeskError
-
-  constructor(desk: DeskError) {
-    super(desk.message)
-    this.name = 'DeskRequestError'
-    this.desk = desk
-  }
-}
-
-/**
- * One `DeskError`, built in one place.
- *
- * Four literals carried the same `field: null, expected: null` and two of them carried the
- * same sentence, so a field added to `DeskError` meant four edits and the two sentences
- * could drift apart while meaning the same thing.
- */
-function fault(
-  code: DeskError['code'],
-  message: string,
-  status: number | null = null,
-): DeskError {
-  return { code, message, field: null, expected: null, status }
-}
-
-/** There is nothing on the other end. The one sentence for it, written once. */
-const NOT_LISTENING = 'Nothing is listening on this address.'
-
-/** Whatever went wrong, as the one error shape the screens render. */
-export function asDeskError(thrown: unknown): DeskError {
-  if (thrown instanceof DeskRequestError) return thrown.desk
-
-  /*
-   * Nothing answered. The server was stopped, or never started, or the port moved — which
-   * is a state DEV-862 requires a screen to handle with a message and a retry, and which
-   * no contract code describes. Calling it `store_unavailable` would tell the developer
-   * their database is broken when their server is simply not running.
-   */
-  return fault('unreachable', NOT_LISTENING)
-}
-
-/**
  * How long a request may take before the screen gives up on it.
  *
  * **Not a precaution — a measured failure.** Every operation but one is a handful of SQLite
@@ -149,7 +102,10 @@ const WAIT_FOR_GITHUB = 30_000
  */
 function deadline(wait: number): { signal: AbortSignal, done: () => void } {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(new DOMException('timed out', 'TimeoutError')), wait)
+  const timer = setTimeout(
+    () => controller.abort(new DOMException('timed out', 'TimeoutError')),
+    wait,
+  )
   return { signal: controller.signal, done: () => clearTimeout(timer) }
 }
 

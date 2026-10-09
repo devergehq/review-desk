@@ -7,11 +7,11 @@ import { describe, expect, it } from 'vitest'
  * layer". A reviewer should not have to run that search by hand, and discipline is not a
  * mechanism, so it is a test.
  *
- * **It is what made DEV-862 a change to five files rather than to every screen.** The data
- * layer is now five: the composable every screen calls, the two sources behind it — the
- * API and the fixtures — the type that keeps them interchangeable, and the file that
- * chooses. Nothing outside them makes a request, names a fixture, or knows which of the
- * two it is reading.
+ * **It is what made DEV-862 a change to six files rather than to every screen.** The data
+ * layer is the composable every screen calls, the two sources behind it — the API and the
+ * fixtures — the type that keeps them interchangeable, the error shape they share, and the
+ * file that chooses. Nothing outside them makes a request, names a fixture, or knows which
+ * of the two it is reading.
  */
 
 /* Vitest runs from `web/`, which `package.json` next door confirms. */
@@ -21,6 +21,7 @@ const DATA_LAYER = [
   'composables/useReviewDesk.ts',
   'data/api.ts',
   'data/backend.ts',
+  'data/fault.ts',
   'data/sample.ts',
   'data/source.ts',
 ]

@@ -34,22 +34,19 @@ export default defineConfig({
   timeout: 60_000,
 
   /*
-   * **Thirty seconds, and the ten it replaced is why.**
+   * **Ten seconds, which is as long as anything here should ever take.** Every read is a
+   * handful of SQLite reads over loopback and the assets come out of the binary's own
+   * memory; the browser's work is rendering four screens.
    *
-   * Two CI runs failed with `#__nuxt` empty — the Vue app had not mounted — while every
-   * blocking asset had answered 200. What had not answered were the two the generated
-   * index loads as `<link rel="prefetch">`, one of which is the data layer the app shell
-   * imports. Chrome runs a prefetch at the lowest priority and in no hurry, and the mount
-   * waits on the same URL; on a runner four times slower than this machine, that race can
-   * outlast ten seconds.
-   *
-   * It is calibration rather than suppression: the assertion is still that the element
-   * appears, the test budget is still 60s, and `retries` is still 0 — a run that passes
-   * only on the second attempt is not a pass. The coupling itself is the better fix and is
-   * written up in the pull request; it is a change to how the bundle is split, which is a
-   * different kind of change from this one.
+   * It was raised to thirty for two CI failures where `#__nuxt` was empty — the app had not
+   * mounted, because the shell's static graph held a chunk Nuxt emitted only as a
+   * `<link rel="prefetch">` and Chrome runs those last. That is fixed where it was caused,
+   * in `app/data/source.ts`: the HTTP client is a dynamic import now, nothing the app needs
+   * before mounting is prefetch-only, and `index.html` preloads the entry's whole static
+   * graph. A longer wait would have left the cause in place and the test red on a slower
+   * runner than the one that found it.
    */
-  expect: { timeout: 30_000 },
+  expect: { timeout: 10_000 },
 
   reporter: process.env.CI ? [['github'], ['list']] : [['list']],
 

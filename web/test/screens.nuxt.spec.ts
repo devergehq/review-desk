@@ -28,9 +28,24 @@ import Layout from '../app/layouts/default.vue'
  * the loading state and say so clearly, which is why that state has a test of its own.
  */
 
-/** Let every pending read and re-read finish. */
+/**
+ * Let every pending read and re-read finish.
+ *
+ * Generous on purpose. Choosing the API backend is itself a dynamic `import()` — the HTTP
+ * client is deliberately not in the app shell's static graph — so a first read resolves a
+ * module before it resolves a request, and a count tuned to the shape before that change
+ * left one of these tests asserting on the loading state.
+ */
 async function settle(page: VueWrapper) {
-  for (let round = 0; round < 8; round += 1) {
+  for (let round = 0; round < 12; round += 1) {
+    /*
+     * A macrotask as well as the microtasks. Choosing the API backend is a dynamic
+     * `import()` — the HTTP client is deliberately not in the app shell's static graph — and
+     * the first one in a run has a module to load from disk, which no number of
+     * `flushPromises` can advance. Without this the first test in a describe asserted on the
+     * loading state while every later one passed, which reads like flake and is not.
+     */
+    await new Promise(resolve => setTimeout(resolve, 0))
     await flushPromises()
     await page.vm.$nextTick()
   }

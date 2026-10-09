@@ -1,3 +1,5 @@
+import { mayForward } from './dev-proxy'
+
 /*
  * Review Desk's dashboard.
  *
@@ -90,6 +92,47 @@ export default defineNuxtConfig({
      * flag, an allowed-origins list or an environment switch that relaxes the check is one
      * mistake away from leaving it relaxed in a build that signs off reviews.
      */
+    /*
+     * **Before the proxy, and that ordering is the whole point.** Nitro registers
+     * `devHandlers` ahead of `devProxy`, so this runs first and the proxy never sees a
+     * request it refuses.
+     *
+     * It is here because the proxy opened a hole: rewriting `Host` and `Origin` satisfies
+     * two of the guard's three checks on behalf of whoever sent the request, and a
+     * cross-origin form post from `https://example.com` was measured reaching the binary
+     * with only the `Content-Type` check left between it and approving a draft. The proxy
+     * now declines to speak for a caller it should not, so what it substitutes is true of
+     * the request as well as of itself.
+     *
+     * The decision is in `dev-proxy.ts` rather than inline, so that
+     * `test/dev-proxy.spec.ts` can fail if it is removed.
+     */
+    devHandlers: [
+      {
+        route: '/api/v1',
+        handler: (event: {
+          node: {
+            req: { headers: Record<string, string | string[] | undefined> }
+            res: { statusCode: number, setHeader: (name: string, value: string) => void }
+          }
+        }) => {
+          const headers = event.node.req.headers
+          const one = (value: string | string[] | undefined) =>
+            Array.isArray(value) ? value[0] : value
+
+          const decision = mayForward(one(headers.origin), one(headers.host))
+          if (decision.forward) return undefined
+
+          event.node.res.statusCode = 403
+          event.node.res.setHeader('content-type', 'application/json; charset=utf-8')
+          return {
+            code: 'bad_request',
+            message: decision.reason,
+          }
+        },
+      },
+    ],
+
     devProxy: {
       '/api/v1': {
         target: `${devApi}/api/v1`,

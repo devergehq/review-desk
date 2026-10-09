@@ -39,26 +39,6 @@
 
 import type { DeskBackend } from './backend'
 
-import {
-  approveDraft,
-  confirmBrief,
-  deferRule,
-  dismissRule,
-  getDraft,
-  getInbox,
-  getReview,
-  health,
-  listRepos,
-  listRules,
-  promoteRule,
-  requestNitTicket,
-  retireRule,
-  saveDraft,
-  sendBackDraft,
-  setFindingDisposition,
-  startReview,
-} from './api'
-
 /** Where the choice is remembered across reloads. */
 const SOURCE_KEY = 'review-desk:source'
 
@@ -152,29 +132,38 @@ export async function loadBackend(): Promise<DeskBackend> {
   }
 
   /*
-   * Named one by one rather than spread from the module. Sixteen lines buys a compile
-   * error when an operation is added to `api.ts` and not to `DeskBackend`, or named
-   * differently in the two — which a spread would have accepted silently, leaving sample
-   * mode and the API with different surfaces.
+   * **The HTTP client is imported here and not at the top of this file**, so that it is not
+   * in the app shell's static graph. It used to be, and Nuxt then emitted it as a
+   * `<link rel="prefetch">` — a chunk the app cannot mount without, fetched at the lowest
+   * priority Chrome has. On a slow runner the mount waited on it and the end-to-end test
+   * timed out against an empty `<div id="__nuxt">`, twice. Loaded here, it is fetched when
+   * the first read is made, which is after the shell has rendered its loading state.
+   *
+   * Named one by one rather than spread from the module. Sixteen lines buys a compile error
+   * when an operation is added to `api.ts` and not to `DeskBackend`, or named differently in
+   * the two — which a spread would have accepted silently, leaving sample mode and the API
+   * with different surfaces.
    */
+  const api = await import('./api')
+
   return {
     isSampleData: false,
-    getInbox,
-    getReview,
-    getDraft,
-    listRules,
-    listRepos,
-    startReview,
-    confirmBrief,
-    setFindingDisposition,
-    saveDraft,
-    approveDraft,
-    sendBackDraft,
-    requestNitTicket,
-    promoteRule,
-    dismissRule,
-    retireRule,
-    deferRule,
-    health,
+    getInbox: api.getInbox,
+    getReview: api.getReview,
+    getDraft: api.getDraft,
+    listRules: api.listRules,
+    listRepos: api.listRepos,
+    startReview: api.startReview,
+    confirmBrief: api.confirmBrief,
+    setFindingDisposition: api.setFindingDisposition,
+    saveDraft: api.saveDraft,
+    approveDraft: api.approveDraft,
+    sendBackDraft: api.sendBackDraft,
+    requestNitTicket: api.requestNitTicket,
+    promoteRule: api.promoteRule,
+    dismissRule: api.dismissRule,
+    retireRule: api.retireRule,
+    deferRule: api.deferRule,
+    health: api.health,
   }
 }

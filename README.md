@@ -493,6 +493,31 @@ is a request that genuinely names the server. **The guard is not relaxed and kno
 about a proxy**; it would refuse that dev server exactly as it refuses any other origin, and
 `crates/server/tests/cross_origin.rs` fails if it ever grows a way to be turned off.
 
+**The proxy will only speak for the dashboard.** Rewriting those two headers is a
+substitution made on behalf of whoever sent the request, and that was measured as a hole: a
+page on `https://example.com`, in a real Chrome, posted a cross-origin form at
+`localhost:3000/api/v1/reviews/1/draft/approve` and got past two of the guard's three
+checks, leaving only "a write is `application/json`" between it and approving a draft. So a
+handler ahead of the proxy — `web/dev-proxy.ts`, registered as a `devHandler`, which Nitro
+runs before `devProxy` — forwards a request only when its `Origin` is absent or is the dev
+server's own, and refuses everything else with a 403. Repeating that attack now gets the
+refusal from the proxy and the binary never sees it. `web/test/dev-proxy.spec.ts` fails if
+the filter is removed.
+
+### What is still exposed while `nuxt dev` is running
+
+Less than before, and not nothing.
+
+| Reachable | Because |
+|---|---|
+| Any program on this machine | It can set any header, so it can present the dashboard's own `Origin` — or talk to `127.0.0.1:7777` directly. This is the authorisation model the contract states, and closing it needs authentication. |
+| A page that sends no `Origin` at all | Forwarded deliberately: `curl`, a script and a review session send none, and the Fetch standard appends one to every request that is not `GET` or `HEAD`, so a *write* with none is not something a browser produces. |
+| The dashboard's own origin | The point of the proxy. |
+
+**The binary on `127.0.0.1:7777` is also still listening while you develop**, with its own
+guard in front of it and no proxy involved. Nothing here widens that; the dev server is one
+more door and it is now bolted from the same side.
+
 On another port, or against another database:
 
 ```sh

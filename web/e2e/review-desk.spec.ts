@@ -88,6 +88,20 @@ test.describe('the whole path, on a seeded database', () => {
       page.getByText('A webhook delivery that fails once is never tried again'),
     ).toBeVisible()
 
+    /*
+     * Layer 3's one thing: the alternatives, written before the diff was read, with the one
+     * the author built marked. `brief put` writes them — `NewBrief` carries
+     * `options: Vec<BriefOption>` — and this is the only screen that shows them.
+     */
+    await expect(page.getByRole('heading', { name: 'Ways to solve it' })).toBeVisible()
+    await expect(page.getByText('written before the diff was read')).toBeVisible()
+    await expect(page.getByText('A · Retry inside the request')).toBeVisible()
+    await expect(page.getByText('B · Queue with backoff')).toBeVisible()
+    await expect(page.getByText('C · Dead-letter and replay by hand')).toBeVisible()
+    /* One of the three is what they built, and exactly one. */
+    await expect(page.getByText('What they built')).toHaveCount(1)
+    await expect(page.getByText('B is the right shape for this ticket.')).toBeVisible()
+
     await page.getByRole('button', { name: 'Confirm the problem' }).click()
 
     /* On the banner and in the notice, which are two different sentences about it. */

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as api from '../app/data/api'
-import { DeskRequestError, asDeskError } from '../app/data/api'
+import { DeskRequestError, asDeskError } from '../app/data/fault'
 import type { ErrorCode } from '../app/types/desk'
 
 /*
