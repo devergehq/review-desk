@@ -9,7 +9,7 @@ use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior}
 use crate::entities::finding_evidence;
 use crate::error::{Result, StoreError};
 use crate::model::{now, Disposition, Finding, NewFinding};
-use crate::{is_foreign_key_violation, normalise, Store};
+use crate::{is_foreign_key_violation, Store};
 
 pub(super) const COLUMNS: &str = "review_id, seq, lens, severity, file, line, claim, evidence, \
                        disposition, disposition_reason, rule_id, github_comment_id, \
@@ -65,6 +65,14 @@ impl Store {
                 });
             }
         }
+
+        // Checked before anything is written, so a commit that is a word rather than an
+        // object name is a refusal naming it. The API serves this column as
+        // `^[0-9a-f]{7,40}$`, and `--commit HEAD` is a plausible thing to type.
+        let introduced_by = super::round::commit_sha_for(
+            "introduced_by_commit",
+            new.introduced_by_commit.as_deref(),
+        )?;
 
         // Checked inside the transaction, like the rule above, so an attribution naming a
         // finding nobody raised is a refusal that says which number rather than a row
@@ -124,7 +132,7 @@ impl Store {
                 new.proof_note,
                 new.verification,
                 new.suggested_fix,
-                normalise::optional_commit(new.introduced_by_commit.as_deref()),
+                introduced_by,
                 new.introduced_by_seq,
                 created_at,
             ],

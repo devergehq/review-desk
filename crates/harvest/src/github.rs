@@ -79,7 +79,14 @@ pub struct Comparison {
     /// GitHub's comparison status: `ahead`, `behind`, `identical` or `diverged`.
     pub status: String,
     /// The commits after the base, oldest first.
+    ///
+    /// **GitHub returns at most 250 of them on this endpoint**, so this can be shorter
+    /// than [`Comparison::total_commits`]. A caller that needs the whole range has to say
+    /// so rather than treat a truncated list as the answer.
     pub commits: Vec<Commit>,
+    /// How many commits the range holds, as GitHub counts it. `None` when the response
+    /// carried no count — a recording captured before it was read.
+    pub total_commits: Option<i64>,
     pub files: Vec<ChangedFile>,
 }
 

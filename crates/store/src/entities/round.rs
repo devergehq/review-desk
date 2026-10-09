@@ -103,7 +103,7 @@ impl Store {
         let earlier = self.get_finding(from_review_id, seq)?;
 
         let at = now();
-        let commit = normalise::optional_commit(carry.commit.as_deref());
+        let commit = commit_sha_for("commit", carry.commit.as_deref())?;
 
         // One statement for "insert the carried finding, or update the one already here".
         // Two statements with a read between them would let a second session carrying the
@@ -184,7 +184,7 @@ impl Store {
                 carry.by,
                 trimmed(carry.checked.as_deref()),
                 at,
-                normalise::optional_commit(carry.commit.as_deref()),
+                commit_sha_for("commit", carry.commit.as_deref())?,
             ],
         )?;
 
@@ -492,7 +492,7 @@ impl Store {
                 };
 
                 Ok(FindingInRound {
-                    late: late(&review, &finding, &changed, !commits.is_empty()),
+                    late: late(&review, &finding, &changed),
                     rounds_open: self.rounds_open(review_id, finding.seq)?,
                     continues_round,
                     finding,
@@ -570,19 +570,27 @@ impl Store {
 /// rather than "no":
 ///
 /// - a first round has nothing to be late against;
-/// - a finding that is not new was not raised in this round;
+/// - a finding carried from an earlier round was not raised in this one;
 /// - a finding with no file names no code to compare;
-/// - a round whose commits have not been recorded has nothing to compare against.
+/// - a round where nothing is known about what the commits touched.
 ///
 /// Reporting `false` for any of them would read as "this was not missed", which is a claim
 /// nothing here is in a position to make.
-fn late(
-    review: &Review,
-    finding: &Finding,
-    changed: &BTreeSet<&str>,
-    commits_recorded: bool,
-) -> Option<bool> {
-    if review.round < 2 || finding.round_status != RoundStatus::New || !commits_recorded {
+///
+/// **Two of those four were wrong first time, and both were found by reviewing this
+/// change.**
+///
+/// The second used to read `round_status != New`. A status is a separate, mutable axis:
+/// accepting the author's reason on a finding raised in round 2 flipped its lateness to
+/// `None` and lost the one fact DEV-873 added about it. What says "raised in this round" is
+/// `continues_review_id` being absent, and nothing else does.
+///
+/// The fourth used to be "no commits recorded". A round's commits can be recorded with no
+/// file lists — a GitHub read that failed partway — and `changed` is then empty, so every
+/// new finding read as late. The question is whether anything is *known* about what
+/// changed, not whether a commit list exists.
+fn late(review: &Review, finding: &Finding, changed: &BTreeSet<&str>) -> Option<bool> {
+    if review.round < 2 || finding.continues_review_id.is_some() || changed.is_empty() {
         return None;
     }
 
@@ -592,7 +600,7 @@ fn late(
 
 /// A commit checked and put in the form the record keys on.
 fn prepare_commit(commit: &NewRoundCommit) -> Result<NewRoundCommit> {
-    let sha = normalise::optional_commit(Some(&commit.sha)).ok_or(StoreError::InvalidValue {
+    let sha = commit_sha_for("sha", Some(&commit.sha))?.ok_or(StoreError::InvalidValue {
         field: "sha",
         value: commit.sha.clone(),
         expected: "the commit, as GitHub gave it".to_string(),
@@ -641,4 +649,27 @@ fn trimmed(text: Option<&str>) -> Option<String> {
     text.map(str::trim)
         .filter(|text| !text.is_empty())
         .map(str::to_string)
+}
+
+/// A commit a record points at, canonical and checked, or nothing.
+///
+/// **Checked rather than merely tidied**, because these are typed: `--commit HEAD` and a
+/// four-character abbreviation are both plausible, and the API serves the column as
+/// `^[0-9a-f]{7,40}$` — so an unchecked value is a response that fails its own contract.
+/// Found by reviewing DEV-873 rather than by a test, which is why there is one now.
+pub(super) fn commit_sha_for(field: &'static str, sha: Option<&str>) -> Result<Option<String>> {
+    let Some(sha) = normalise::optional_commit(sha) else {
+        return Ok(None);
+    };
+
+    if !normalise::is_commit_sha(&sha) {
+        return Err(StoreError::InvalidValue {
+            field,
+            value: sha,
+            expected: "a commit as 7 to 40 hexadecimal characters, as git abbreviates one"
+                .to_string(),
+        });
+    }
+
+    Ok(Some(sha))
 }

@@ -280,11 +280,22 @@ them, which is the mistake `SignOff.waived` was added to stop. Saying a finding 
 not a sign-off: only the developer signs off, and only through `confirmBrief` and
 `approveDraft`.
 
-**`late` is three-valued.** True is a new finding on code the round's commits did not touch
-— something the earlier round could have caught. Null means the question cannot be answered:
-a first round, a finding that is not new, a finding that names no file, or a round whose
-commits have not been recorded. `false` would read as "this was not missed", which is a
-claim nothing is in a position to make.
+**`late` is three-valued.** True is a finding raised in this round, on code the round's
+commits did not touch — something the earlier round could have caught. Null means the
+question cannot be answered: a first round, a finding carried from an earlier round, a
+finding that names no file, or a round where nothing is known about what its commits
+touched. `false` would read as "this was not missed", which is a claim nothing is in a
+position to make.
+
+Two of those four were wrong first time and both were found by reviewing the change rather
+than by a test. It keyed on `round_status` being `new`, so accepting the author's reason on
+a finding raised in this round erased its lateness; it now keys on `continues_review_id`,
+which is the fact that says where a finding came from. And it gated on "commits recorded"
+rather than "anything known about what they touched", so a round whose commit list arrived
+with no file lists reported every new finding as late. `review-desk round commits` now fails
+rather than recording a commit whose files it could not read, and refuses a range longer
+than GitHub will list in one comparison — its cap is 250 — because a truncated list that
+nothing says is truncated feeds the same flag.
 
 **`rounds[].commits` counts the commits recorded *for* that round — the ones since the round
 before it.** The mockup shows the figure under the *earlier* round's card, as "the author
@@ -703,3 +714,5 @@ Recorded here rather than acted on, because DEV-854 says to specify and not to i
    in the draft body — and the board says "Fixed · 2 · nothing to post". Nothing in DEV-873
    decides a disposition from a status, deliberately: that is the draft's composition, and
    an agent sets it with `finding set`. Worth a line in whichever issue owns the draft.
+   `RoundStatus`'s own description in `openapi.yaml` claimed a fixed finding was "absent
+   from the draft", which was this gap written up as though it were closed; corrected.

@@ -222,8 +222,12 @@ impl Records {
     /// Every finding of a round, with the round it was carried from, how many consecutive
     /// rounds it has been open, and whether it is late.
     ///
-    /// One read rather than three per finding, so "each screen is one GET" survives the
-    /// round-two page: a review with seven findings would otherwise be twenty-two reads.
+    /// **One call, not one query.** It walks each carried finding's chain to count the
+    /// rounds it has been open, so it is a handful of primary-key reads per finding rather
+    /// than a single statement. That is deliberate: the count is derived so it cannot
+    /// drift, and one developer's SQLite file serves a page in well under the time a
+    /// stored copy would cost in correctness. What it does keep is the contract's rule
+    /// that each screen is one *GET* — the handler makes this call once.
     pub fn findings_in_round(&self, review_id: i64) -> Result<Vec<FindingInRound>, ApiError> {
         self.with(|store| store.findings_in_round(review_id))
     }

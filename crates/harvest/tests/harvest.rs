@@ -554,23 +554,51 @@ fn a_commit_message_is_read_as_its_first_line() {
 }
 
 #[test]
-fn a_commit_whose_files_cannot_be_read_keeps_its_place_with_no_files() {
-    // A recording that holds the comparison and not the commits. Losing the commit would
-    // take a line off "what changed since round 1"; losing its files costs the `late`
-    // flag, which is already three-valued for exactly this case.
+fn a_commit_whose_files_cannot_be_read_fails_the_call() {
+    // **This asserted the opposite until reviewing DEV-873 showed why it was wrong.** It
+    // used to keep the commit with an empty file list, on the argument that losing the
+    // commit would take a line off "what changed since round 1". But `Finding.late` is
+    // computed from exactly these paths, so a commit recorded with no files turns a
+    // transient GitHub failure into "the previous round could have caught this and did
+    // not" — a false accusation on the page. `round commits` replaces what it recorded, so
+    // failing leaves the previous answer intact.
     let github = Recorded::nothing().with("compare", fixtures().join("compare.json"));
 
-    let commits = review_desk_harvest::commits_between(
+    let error = review_desk_harvest::commits_between(
         &github,
         "devergehq/locus",
         "9535132",
         "46f6ea1645a9bbc9308f791411b2cac1a093367b",
     )
-    .expect("the comparison alone is enough");
+    .expect_err("the comparison alone is not enough");
 
-    assert_eq!(commits.len(), 4);
     assert!(
-        commits.iter().all(|commit| commit.files.is_empty()),
-        "every commit is there, with no files"
+        !error.is_refusal(),
+        "a GitHub read that failed is Review Desk unable to run, not a refused request"
     );
+}
+
+#[test]
+fn a_range_longer_than_github_will_list_is_refused_rather_than_truncated() {
+    // GitHub's comparison endpoint caps at 250 commits and says so in `total_commits`.
+    // Recording the 250 it sent would make "what changed since round 1" a truncated list
+    // that nothing says is truncated — and `late` is computed from that list.
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("compare-long.json");
+    std::fs::write(
+        &path,
+        r#"{"status":"ahead","total_commits":312,"commits":[
+             {"sha":"a41c9e2","commit":{"message":"One of three hundred","committer":{"date":"2026-10-09T22:14:00Z"}}}
+           ],"files":[]}"#,
+    )
+    .unwrap();
+    let github = Recorded::nothing().with("compare", &path);
+
+    let error = review_desk_harvest::commits_between(&github, "acme/portal", "3f9c2ab", "9d02e71")
+        .expect_err("a truncated range is not an answer");
+
+    assert_eq!(error.code(), "commit_range_too_long");
+    let said = error.to_string();
+    assert!(said.contains("312"), "it says how many there are: {said}");
+    assert!(said.contains("--base"), "and the way out: {said}");
 }

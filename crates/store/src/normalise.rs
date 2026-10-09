@@ -50,3 +50,17 @@ pub(crate) fn head_sha(head_sha: &str) -> String {
 pub(crate) fn optional_commit(sha: Option<&str>) -> Option<String> {
     sha.map(head_sha).filter(|sha| !sha.is_empty())
 }
+
+/// Whether this is a git object name and not a word.
+///
+/// **Checked, and not merely trimmed, because these columns are typed rather than
+/// resolved.** A review's `head_sha` comes from git by way of `review open`; the commit
+/// that fixed a finding comes from `--commit`, where `HEAD` or a four-character
+/// abbreviation is a plausible thing for a person or an agent to type. The API serves these
+/// as `^[0-9a-f]{7,40}$`, so an unchecked value is a response that fails its own contract —
+/// found by reviewing DEV-873.
+///
+/// Seven is git's own shortest abbreviation and forty is a full object name.
+pub(crate) fn is_commit_sha(sha: &str) -> bool {
+    (7..=40).contains(&sha.len()) && sha.bytes().all(|byte| byte.is_ascii_hexdigit())
+}

@@ -1104,3 +1104,220 @@ fn two_rounds_written_before_the_migration_are_not_joined_by_their_numbers() {
         "one finding, one number, from here on; the old rows are left as they are"
     );
 }
+
+#[test]
+fn late_is_unanswerable_when_a_rounds_commits_were_read_but_their_files_were_not() {
+    // **A GitHub read that failed halfway used to produce a false accusation.** The gate
+    // was "are there commits", not "is anything known about what they touched", so a
+    // round whose commit list arrived with no file lists made every new finding read as
+    // "the previous round could have caught this and did not".
+    let (_dir, store) = temp_store();
+    let first = round(&store, "aaaaaaa");
+    raise(&store, first, "round one", None);
+
+    let second = round(&store, "9d02e71");
+    store
+        .put_round_commits(
+            second,
+            &[NewRoundCommit {
+                sha: "a41c9e2".to_string(),
+                summary: "Send an idempotency key with each delivery".to_string(),
+                committed_at: None,
+                files: Vec::new(),
+            }],
+        )
+        .expect("a commit whose files nobody could read");
+
+    let seq = raise(
+        &store,
+        second,
+        "a new finding",
+        Some("jobs/DeliverWebhook.php"),
+    );
+    assert_eq!(
+        store.findings_in_round(second).unwrap()[..]
+            .iter()
+            .find(|f| f.finding.seq == seq)
+            .unwrap()
+            .late,
+        None,
+        "nothing is known about what changed, so nothing can be said about what was missed"
+    );
+}
+
+#[test]
+fn deciding_a_new_findings_status_does_not_erase_that_it_was_raised_late() {
+    // **`round_status` is a mutable axis and was being used as a proxy for "raised in this
+    // round".** Accepting the author's reason on a finding raised in round 2 used to flip
+    // its lateness to null, losing the one fact DEV-873 added about it.
+    let (_dir, store) = temp_store();
+    let first = round(&store, "aaaaaaa");
+    raise(&store, first, "round one", None);
+
+    let second = round(&store, "9d02e71");
+    store.put_round_commits(second, &three_commits()).unwrap();
+    let seq = raise(
+        &store,
+        second,
+        "on untouched code",
+        Some("config/webhooks.php"),
+    );
+
+    let late_of = |store: &Store| {
+        store.findings_in_round(second).unwrap()[..]
+            .iter()
+            .find(|f| f.finding.seq == seq)
+            .unwrap()
+            .late
+    };
+
+    assert_eq!(
+        late_of(&store),
+        Some(true),
+        "raised in round 2 on untouched code"
+    );
+
+    store
+        .set_finding_round_status(
+            second,
+            seq,
+            &FindingCarry {
+                status: RoundStatus::Accepted,
+                by: DecidedBy::Developer,
+                checked: Some("Their reason stands.".to_string()),
+                commit: None,
+            },
+        )
+        .expect("the developer accepts the author's reason");
+
+    assert_eq!(
+        late_of(&store),
+        Some(true),
+        "deciding what became of it does not change when it was raised"
+    );
+}
+
+#[test]
+fn a_finding_carried_with_the_status_new_is_still_not_judged_for_lateness() {
+    // The converse. `new` is a legal status to carry with, and a carried finding was not
+    // raised in this round whatever status it holds.
+    let (_dir, store) = temp_store();
+    let first = round(&store, "aaaaaaa");
+    let f1 = raise(
+        &store,
+        first,
+        "on untouched code",
+        Some("config/webhooks.php"),
+    );
+
+    let second = round(&store, "9d02e71");
+    store.put_round_commits(second, &three_commits()).unwrap();
+    store
+        .carry_finding(first, second, f1, &as_(RoundStatus::New))
+        .expect("carried, oddly, as new");
+
+    assert_eq!(
+        store.findings_in_round(second).unwrap()[0].late,
+        None,
+        "it came from round 1, so round 1 cannot have missed it"
+    );
+}
+
+#[test]
+fn a_commit_that_is_a_word_rather_than_an_object_name_is_refused() {
+    // **The API serves these columns as `^[0-9a-f]{7,40}$`**, and `--commit HEAD` is a
+    // plausible thing for a person or an agent to type. Unchecked, it was a response that
+    // failed its own contract — found by reviewing DEV-873.
+    let (_dir, store) = temp_store();
+    let first = round(&store, "aaaaaaa");
+    let f1 = raise(&store, first, "a finding", None);
+
+    for typed in ["HEAD", "main", "a41c9e", "zzzzzzz"] {
+        match store.set_finding_round_status(
+            first,
+            f1,
+            &FindingCarry {
+                status: RoundStatus::Fixed,
+                by: DecidedBy::Agent,
+                checked: None,
+                commit: Some(typed.to_string()),
+            },
+        ) {
+            Err(StoreError::InvalidValue {
+                field, expected, ..
+            }) => {
+                assert_eq!(field, "commit");
+                assert!(expected.contains("hexadecimal"), "{expected}");
+            }
+            other => panic!("`{typed}` is not a commit: {other:?}"),
+        }
+    }
+
+    // And a real abbreviation is taken, in either case.
+    let fixed = store
+        .set_finding_round_status(
+            first,
+            f1,
+            &FindingCarry {
+                status: RoundStatus::Fixed,
+                by: DecidedBy::Agent,
+                checked: None,
+                commit: Some("A41C9E2".to_string()),
+            },
+        )
+        .expect("seven hexadecimal characters is what git abbreviates to");
+    assert_eq!(fixed.round_status_commit.as_deref(), Some("a41c9e2"));
+}
+
+#[test]
+fn an_attributed_commit_that_is_a_word_is_refused_too() {
+    let (_dir, store) = temp_store();
+    let first = round(&store, "aaaaaaa");
+
+    let refused = store.add_finding(
+        first,
+        NewFinding {
+            lens: "l".to_string(),
+            severity: Severity::Should,
+            file: None,
+            line: None,
+            claim: "attributed to a branch name".to_string(),
+            evidence: None,
+            disposition: Disposition::InDraft,
+            disposition_reason: None,
+            rule_id: None,
+            introduced_by_commit: Some("HEAD~1".to_string()),
+            introduced_by_seq: None,
+        },
+    );
+
+    match refused {
+        Err(StoreError::InvalidValue { field, .. }) => {
+            assert_eq!(field, "introduced_by_commit")
+        }
+        other => panic!("a branch name is not a commit: {other:?}"),
+    }
+    assert!(
+        store.list_findings(first).unwrap().is_empty(),
+        "and nothing was written"
+    );
+}
+
+#[test]
+fn a_rounds_commit_that_is_not_an_object_name_is_refused() {
+    let (_dir, store) = temp_store();
+    let second = round(&store, "9d02e71");
+
+    match store.put_round_commits(
+        second,
+        &[NewRoundCommit {
+            sha: "not-a-sha".to_string(),
+            summary: "Whatever this is".to_string(),
+            committed_at: None,
+            files: Vec::new(),
+        }],
+    ) {
+        Err(StoreError::InvalidValue { field, .. }) => assert_eq!(field, "sha"),
+        other => panic!("the record keys on object names: {other:?}"),
+    }
+}

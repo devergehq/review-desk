@@ -103,6 +103,7 @@ pub fn comparison(json: &str) -> Result<Comparison> {
 
     Ok(Comparison {
         status: wire.status,
+        total_commits: wire.total_commits,
         commits: wire
             .commits
             .into_iter()
@@ -261,6 +262,9 @@ struct WireComment {
 #[derive(Debug, Deserialize)]
 struct WireComparison {
     status: String,
+    /// GitHub's own count of the range, which exceeds `commits` once the range passes 250.
+    #[serde(default)]
+    total_commits: Option<i64>,
     #[serde(default)]
     commits: Vec<WireCommit>,
     #[serde(default)]

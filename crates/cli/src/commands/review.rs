@@ -364,11 +364,16 @@ fn finding_line(finding: &Finding) -> String {
     if let Some(continues) = finding.continues_review_id {
         line.push_str(&format!(" · continues review {continues}"));
     }
-    if let Some(commit) = &finding.introduced_by_commit {
-        line.push_str(&format!(" · introduced by {commit}"));
-        if let Some(seq) = finding.introduced_by_seq {
-            line.push_str(&format!(", which fixed F{seq}"));
+    // The two are independent fields and are checked independently, so each is printed on
+    // its own. Nesting the number inside the commit hid a finding attributed to an earlier
+    // finding and no commit from the only view a person reads.
+    match (&finding.introduced_by_commit, finding.introduced_by_seq) {
+        (Some(commit), Some(seq)) => {
+            line.push_str(&format!(" · introduced by {commit}, which fixed F{seq}"))
         }
+        (Some(commit), None) => line.push_str(&format!(" · introduced by {commit}")),
+        (None, Some(seq)) => line.push_str(&format!(" · introduced by the fix for F{seq}")),
+        (None, None) => {}
     }
     line
 }

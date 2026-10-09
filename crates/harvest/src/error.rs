@@ -52,6 +52,24 @@ pub enum HarvestError {
         source: std::io::Error,
     },
 
+    /// GitHub holds more commits between two rounds than it will list in one comparison.
+    ///
+    /// Its own cap is 250. Recording the 250 it sent would make "what changed since round
+    /// 1" a truncated list that nothing says is truncated, and the `late` flag is computed
+    /// from exactly that list — so a missing commit becomes a false accusation on the
+    /// page. Loud rather than silent, with the number and the way out in the message.
+    #[error(
+        "{repo}: {total} commits between {base} and {head}, and GitHub lists only {listed} \
+         in one comparison; narrow the range with --base"
+    )]
+    RangeTooLong {
+        repo: String,
+        base: String,
+        head: String,
+        total: i64,
+        listed: usize,
+    },
+
     /// The store refused, or broke.
     #[error(transparent)]
     Store(#[from] StoreError),
@@ -76,6 +94,7 @@ impl HarvestError {
             HarvestError::Unreadable { .. } => "github_response_unreadable",
             HarvestError::NotRecorded { .. } => "not_recorded",
             HarvestError::Recording { .. } => "recording_unreadable",
+            HarvestError::RangeTooLong { .. } => "commit_range_too_long",
             // The store names its own refusals, and the command line's JSON contract
             // documents those names. A second vocabulary for the same failure would
             // make `harvest --review 99` report a different code from

@@ -1141,10 +1141,15 @@ components:
             round — something the earlier round could have caught and did not.
 
             **Three-valued on purpose.** Null means the question cannot be answered: a
-            first round, a finding that is not new, a finding that names no file, or a
-            round whose commits have not been recorded. Reporting `false` for any of those
-            would read as "this was not missed", which is a claim nothing is in a position
-            to make. Served by `getReview` only.
+            first round, a finding carried from an earlier round, a finding that names no
+            file, or a round where nothing is known about what its commits touched —
+            including one whose commits are recorded with no file lists. Reporting `false`
+            for any of those would read as "this was not missed", which is a claim nothing
+            is in a position to make.
+
+            **It is keyed on `continues_review_id`, not on `round_status`.** A status is a
+            separate and mutable axis: accepting the author's reason on a finding raised in
+            this round must not change when it was raised. Served by `getReview` only.
 
     SetFindingDispositionRequest:
       type: object
@@ -1936,8 +1941,14 @@ components:
 
         **Not the same question as `Disposition`**, and the two are both served. A
         disposition says what is to become of the finding in this round's draft; this says
-        what happened to the finding itself. A fixed finding has nothing to post, so it is
-        `fixed` here and absent from the draft.
+        what happened to the finding itself — so a finding can be `fixed` and still carry
+        whatever disposition it was carried with.
+
+        **Nothing here changes a disposition from a status**, deliberately: what goes in the
+        draft is the draft's composition, which an agent decides with
+        `review-desk finding set`. A fixed finding therefore still counts toward
+        `DraftLint.findings_expected` until something moves it, which `contract/README.md`
+        records as a known gap rather than a thing this field fixes.
 
         `new` is every finding in the round it was raised in, and every finding written
         before migration 6 — nothing before that migration could carry one, so `new` is
