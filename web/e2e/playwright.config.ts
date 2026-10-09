@@ -38,13 +38,13 @@ export default defineConfig({
    * handful of SQLite reads over loopback and the assets come out of the binary's own
    * memory; the browser's work is rendering four screens.
    *
-   * It was raised to thirty for two CI failures where `#__nuxt` was empty — the app had not
-   * mounted, because the shell's static graph held a chunk Nuxt emitted only as a
-   * `<link rel="prefetch">` and Chrome runs those last. That is fixed where it was caused,
-   * in `app/data/source.ts`: the HTTP client is a dynamic import now, nothing the app needs
-   * before mounting is prefetch-only, and `index.html` preloads the entry's whole static
-   * graph. A longer wait would have left the cause in place and the test red on a slower
-   * runner than the one that found it.
+   * It was raised to thirty once, for CI failures where `#__nuxt` was empty, and put back.
+   * Those failures were real and were not slowness: the server could accept a connection and
+   * never read it, so two of the page's assets were never answered at all and `load` never
+   * fired. The trace showed them pending sixty seconds later. That is fixed in the server —
+   * it serves on `axum` now, and `crates/server/tests/concurrency.rs` is the fault written
+   * down — so there is nothing here for a longer wait to paper over. Raising a timeout to
+   * cover a hanging request only buys a slower red.
    */
   expect: { timeout: 10_000 },
 

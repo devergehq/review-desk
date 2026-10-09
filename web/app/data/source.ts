@@ -133,11 +133,13 @@ export async function loadBackend(): Promise<DeskBackend> {
 
   /*
    * **The HTTP client is imported here and not at the top of this file**, so that it is not
-   * in the app shell's static graph. It used to be, and Nuxt then emitted it as a
-   * `<link rel="prefetch">` — a chunk the app cannot mount without, fetched at the lowest
-   * priority Chrome has. On a slow runner the mount waited on it and the end-to-end test
-   * timed out against an empty `<div id="__nuxt">`, twice. Loaded here, it is fetched when
-   * the first read is made, which is after the shell has rendered its loading state.
+   * in the app shell's static graph. Loaded here, it is fetched when the first read is made,
+   * which is after the shell has rendered its loading state — and a build that runs in
+   * sample mode never fetches it at all.
+   *
+   * This was done while chasing an end-to-end failure that turned out to be the HTTP
+   * transport losing requests, not anything about chunk ordering. It is kept for the reason
+   * above and not as a fix.
    *
    * Named one by one rather than spread from the module. Sixteen lines buys a compile error
    * when an operation is added to `api.ts` and not to `DeskBackend`, or named differently in

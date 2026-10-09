@@ -4,13 +4,17 @@
  * **A module of its own, and the reason is the bundle rather than tidiness.** The composable
  * needs `asDeskError` on every write, and sample mode needs `DeskRequestError` to refuse the
  * way the server refuses — so both used to import `api.ts`, which put the whole HTTP client
- * in the app shell's static graph. Nuxt then emitted it as a `<link rel="prefetch">`: a
- * chunk the app cannot mount without, fetched at the lowest priority Chrome has. On a slow
- * runner the mount waited on it and the end-to-end test timed out against an empty
- * `<div id="__nuxt">`, twice.
+ * in the app shell's static graph. Sample mode in particular had no business pulling in the
+ * client it exists to stand in for.
  *
  * This file imports nothing but types, so everything that needs the error shape can have it
  * without the client that produces most of them.
+ *
+ * **It was split out while chasing a hang it turned out to have nothing to do with.** The
+ * end-to-end job was failing with an empty `<div id="__nuxt">` and the bundle was blamed
+ * three times; the cause was the HTTP transport losing requests, and it is fixed in the
+ * server. The split is kept because the reason above stands on its own, not because it
+ * fixed anything.
  */
 
 import type { DeskError } from '~/types/desk'
