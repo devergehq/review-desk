@@ -22,6 +22,25 @@ export const BINARY = resolve(
 /** Where the two servers' addresses are left for the specs to read. */
 export const ADDRESSES = resolve('e2e/.addresses.json')
 
+/**
+ * What `global-setup.ts` leaves for the specs.
+ *
+ * Declared once and used by the writer and both readers, which is what keeps the three in
+ * step: each spec runs in its own process, so the file is the only thing they share, and
+ * each spec used to describe its shape again with a different subset of the fields.
+ */
+export interface Addresses {
+  seeded: string
+  seededDatabase: string
+  empty: string
+  reviewId: number
+}
+
+/** The addresses, as the setup wrote them. */
+export function readAddresses(): Addresses {
+  return JSON.parse(readFileSync(ADDRESSES, 'utf8')) as Addresses
+}
+
 /** One running server, and the database it is serving. */
 export interface Serving {
   url: string
@@ -267,20 +286,27 @@ export async function serve(database: string): Promise<Serving> {
   })
 
   const url = await new Promise<string>((done, failed) => {
-    const timer = setInterval(() => {
+    /*
+     * Polled rather than matched on every chunk. The regular expression runs over
+     * everything printed so far, and the server prints for the life of the run — matching
+     * per chunk would re-scan an ever-growing string for an address found in its first line.
+     */
+    const looking = setInterval(() => {
       const match = printed.match(/"url":"([^"]+)"/)
       if (match) {
-        clearInterval(timer)
+        clearInterval(looking)
+        clearTimeout(giveUp)
         done(match[1]!)
       }
       else if (died) {
-        clearInterval(timer)
+        clearInterval(looking)
+        clearTimeout(giveUp)
         failed(new Error(`${died}`))
       }
     }, 50)
 
-    setTimeout(() => {
-      clearInterval(timer)
+    const giveUp = setTimeout(() => {
+      clearInterval(looking)
       failed(new Error(`the server printed no address in 20s. It said:\n${said()}`))
     }, 20_000)
 
@@ -315,10 +341,7 @@ export async function serve(database: string): Promise<Serving> {
  * answer, which is what `stillServing` does when it has no handle to inspect.
  */
 export function serversUnderTest(): Array<{ url: string }> {
-  const addresses = JSON.parse(readFileSync(ADDRESSES, 'utf8')) as {
-    seeded: string
-    empty: string
-  }
+  const addresses = readAddresses()
   return [{ url: addresses.seeded }, { url: addresses.empty }]
 }
 

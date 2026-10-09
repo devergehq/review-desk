@@ -372,19 +372,15 @@ impl Api {
         // Only a field the record has no answer for is filled, which is also the only case
         // the read was widened for.
         let gaps = ReviewFacts {
-            title: opened
-                .review
-                .title
-                .is_none()
-                .then(|| resolved.as_ref().and_then(|read| read.title.clone()))
-                .flatten(),
+            title: resolved
+                .as_ref()
+                .and_then(|read| read.title.clone())
+                .filter(|_| opened.review.title.is_none()),
             ticket_id: None,
-            changed_lines: opened
-                .review
-                .changed_lines
-                .is_none()
-                .then(|| resolved.as_ref().and_then(|read| read.changed_lines))
-                .flatten(),
+            changed_lines: resolved
+                .as_ref()
+                .and_then(|read| read.changed_lines)
+                .filter(|_| opened.review.changed_lines.is_none()),
             not_checked: None,
         };
 

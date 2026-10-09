@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Inbox } from '~/types/desk'
+import type { DeskNotice } from '~/utils/format'
 
 /** The inbox: everything waiting on the developer, and nothing else. */
 const desk = useReviewDesk()
@@ -15,21 +16,16 @@ const starting = ref(false)
  * get — the developer's `gh` is missing or logged out, or its own database is unreadable:
  * nothing was created, and the fix is a command rather than a different link.
  */
-const notice = ref<{ text: string, tone: 'plain' | 'problem' | 'blocked' } | null>(null)
+const notice = ref<DeskNotice | null>(null)
 
 async function start() {
   starting.value = true
   const result = await desk.startReview(link.value)
   starting.value = false
 
-  if (result.ok) {
-    notice.value = { text: result.message, tone: 'plain' }
-    link.value = ''
-    return
-  }
-
-  /* The link stays in the field: nothing is wrong with it, so retyping it is waste. */
-  notice.value = { text: refusal(result.error), tone: refusalTone(result.error) }
+  notice.value = noticeFor(result)
+  /* The link stays in the field when it is refused: retyping what was right is waste. */
+  if (result.ok) link.value = ''
 }
 
 /**

@@ -14,32 +14,29 @@
 
 import { writeFileSync } from 'node:fs'
 
-import { ADDRESSES, fresh, scratch, seed, serve, stop, type Serving } from './harness'
+import { ADDRESSES, fresh, scratch, seed, serve, stop, type Addresses, type Serving } from './harness'
 
 export default async function globalSetup() {
   const directory = scratch()
 
   const { database, reviewId } = seed(directory)
-  const seeded = await serve(database)
-  const empty = await serve(fresh(directory))
+  /* The two share nothing, so they boot together rather than one after the other. */
+  const [seeded, empty] = await Promise.all([serve(database), serve(fresh(directory))])
 
-  writeFileSync(
-    ADDRESSES,
-    JSON.stringify(
-      {
-        seeded: seeded.url,
-        seededDatabase: seeded.database,
-        empty: empty.url,
-        reviewId,
-        binary: process.env.REVIEW_DESK_BIN ?? '../target/debug/review-desk',
-      },
-      null,
-      2,
-    ),
-  )
+  /*
+   * Typed as `Addresses`, which both specs read it back as — so a field renamed here stops
+   * compiling there rather than becoming `undefined` at run time.
+   */
+  const addresses: Addresses = {
+    seeded: seeded.url,
+    seededDatabase: seeded.database,
+    empty: empty.url,
+    reviewId,
+  }
+  writeFileSync(ADDRESSES, JSON.stringify(addresses, null, 2))
 
-  const running: Serving[] = [seeded, empty]
+  const running: Serving[] = [seeded!, empty!]
   return async () => {
-    for (const server of running) await stop(server)
+    await Promise.all(running.map(stop))
   }
 }

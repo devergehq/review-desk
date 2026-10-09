@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Disposition, ReviewDetail } from '~/types/desk'
+import type { DeskNotice } from '~/utils/format'
 
 /** One review: what the seven layers found, in the order they found it. */
 const route = useRoute()
@@ -15,7 +16,7 @@ useHead({
   }),
 })
 
-const notice = ref<{ text: string, ok: boolean } | null>(null)
+const notice = ref<DeskNotice | null>(null)
 const confirming = ref(false)
 
 function dispositionTally(data: ReviewDetail): string {
@@ -38,9 +39,7 @@ async function confirm() {
   confirming.value = true
   const result = await desk.confirmBrief(review.id)
   confirming.value = false
-  notice.value = result.ok
-    ? { text: result.message, ok: true }
-    : { text: refusal(result.error), ok: false }
+  notice.value = noticeFor(result)
 }
 
 async function changeDisposition(payload: {
@@ -56,9 +55,7 @@ async function changeDisposition(payload: {
     payload.disposition,
     payload.reason,
   )
-  notice.value = result.ok
-    ? { text: result.message, ok: true }
-    : { text: refusal(result.error), ok: false }
+  notice.value = noticeFor(result)
 }
 </script>
 
@@ -140,7 +137,7 @@ async function changeDisposition(payload: {
 
         <DeskNotice
           v-if="notice"
-          :tone="notice.ok ? 'plain' : 'problem'"
+          :tone="notice.tone"
         >
           {{ notice.text }}
         </DeskNotice>

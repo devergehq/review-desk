@@ -1,9 +1,8 @@
-import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
-import { ADDRESSES } from './harness'
+import { readAddresses } from './harness'
 
 /*
  * The screenshots in `docs/screenshots/`, produced rather than taken by hand.
@@ -20,11 +19,7 @@ import { ADDRESSES } from './harness'
  * committed files on every build.
  */
 
-const addresses = JSON.parse(readFileSync(ADDRESSES, 'utf8')) as {
-  seeded: string
-  empty: string
-  reviewId: number
-}
+const addresses = readAddresses()
 
 const { seeded, empty, reviewId } = addresses
 

@@ -236,3 +236,24 @@ export function staleLabel(rule: Rule, now: Date = new Date()): string {
   }
   return `No finding has cited it since ${sinceLabel(rule.last_cited_at, now)}.`
 }
+
+/**
+ * What a write's answer becomes on screen.
+ *
+ * **One rule, one place, because it had already drifted.** Four screens turned a
+ * `WriteResult` into a notice and three of them agreed; the One review screen wrote its own
+ * shape — `{ text, ok }` — and never called [`refusalTone`], so a server that was not
+ * answering was shown there in the same tone as a mistyped reason. A notice is the only
+ * thing a developer sees when a write is refused, and the whole point of the tone is to say
+ * whether the fix is their typing or their machine.
+ */
+export function noticeFor(
+  result: { ok: true, message: string } | { ok: false, error: DeskError },
+): { text: string, tone: 'plain' | 'problem' | 'blocked' } {
+  return result.ok
+    ? { text: result.message, tone: 'plain' }
+    : { text: refusal(result.error), tone: refusalTone(result.error) }
+}
+
+/** What a notice holds. Declared once; three screens had written it out. */
+export type DeskNotice = ReturnType<typeof noticeFor>

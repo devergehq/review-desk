@@ -124,6 +124,20 @@ async function refreshEverything(): Promise<void> {
 }
 
 /**
+ * Resources more than one component on a page wants, and the count of who still wants them.
+ *
+ * **One read, however many ask for it.** The layout reads the inbox to know which review to
+ * link "Reviews" at, and the Inbox screen reads it to draw itself — so the Inbox issued
+ * `GET /inbox` twice on load and twice more after every write, for one document that is the
+ * same both times. Sharing it is also what keeps the two consistent: two resources could
+ * answer differently for as long as one of them was in flight.
+ *
+ * Counted rather than kept forever: the last component to go takes the resource with it, so
+ * a long-lived page does not hold a refresher nothing is watching.
+ */
+const shared = new Map<string, { resource: DeskResource<unknown>, wanted: number }>()
+
+/**
  * One read, as a resource.
  *
  * It loads immediately. `keep` is what the resource shows while a *refresh* is in flight:
@@ -251,7 +265,7 @@ export function useReviewDesk() {
 
   /** `GET /inbox` — the five waiting groups, the reviews in progress, the week's figures. */
   function inbox(): DeskResource<Inbox> {
-    return resource(from => from.getInbox())
+    return sharing('inbox', () => resource(from => from.getInbox()))
   }
 
   /** `GET /reviews/{id}` — one review whole, as the One review screen shows it. */
@@ -462,6 +476,34 @@ export function useReviewDesk() {
 }
 
 /**
+ * One resource for every component that asks for it, made once.
+ *
+ * The caller's scope decides when it is done with it; the resource goes when the last one
+ * does. `resource()` registers its own refresher and disposes with the scope that made it,
+ * so the shared one is made outside any scope — which is why the clean-up is counted here
+ * rather than left to Vue.
+ */
+function sharing<T>(key: string, make: () => DeskResource<T>): DeskResource<T> {
+  let held = shared.get(key)
+  if (!held) {
+    held = { resource: make() as DeskResource<unknown>, wanted: 0 }
+    shared.set(key, held)
+  }
+
+  held.wanted += 1
+  const mine = held
+  onScopeDispose(() => {
+    mine.wanted -= 1
+    if (mine.wanted <= 0) {
+      live.delete(mine.resource.refresh)
+      shared.delete(key)
+    }
+  })
+
+  return held.resource as DeskResource<T>
+}
+
+/**
  * A resource over a value that can change — a review id from the route, the repository
  * picker — which re-reads when it does.
  */
@@ -488,6 +530,7 @@ function following<V, T>(
 export async function resetDesk(overrides: Record<string, unknown> = {}): Promise<void> {
   chooseSource('sample')
   backend = null
+  forgetShared()
   const { resetSource } = await import('~/data/sample')
   resetSource(overrides)
   await records()
@@ -497,4 +540,11 @@ export async function resetDesk(overrides: Record<string, unknown> = {}): Promis
 export function useDeskSource(source: DeskSourceName | null): void {
   chooseSource(source)
   backend = null
+  forgetShared()
+}
+
+/** Drop every shared resource, so the next page makes fresh ones against the new records. */
+function forgetShared(): void {
+  for (const held of shared.values()) live.delete(held.resource.refresh)
+  shared.clear()
 }

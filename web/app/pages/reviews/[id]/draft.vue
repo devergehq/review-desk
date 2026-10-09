@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { DraftDetail, ReviewEvent } from '~/types/desk'
+import type { WriteResult } from '~/composables/useReviewDesk'
+import type { DeskNotice } from '~/utils/format'
 
 /**
  * The draft preview: what GitHub will show, before anything is posted.
@@ -32,7 +34,7 @@ const event = ref<ReviewEvent>('request_changes')
 const note = ref('')
 const sendingBack = ref(false)
 const working = ref(false)
-const notice = ref<{ text: string, tone: 'plain' | 'problem' | 'blocked' } | null>(null)
+const notice = ref<DeskNotice | null>(null)
 
 /**
  * The body the editor last loaded, which is what a save compares against.
@@ -72,10 +74,8 @@ function decided(data: DraftDetail): boolean {
   return data.draft.status !== 'ready'
 }
 
-function said(result: { ok: true, message: string } | { ok: false, error: DeskError }) {
-  notice.value = result.ok
-    ? { text: result.message, tone: 'plain' }
-    : { text: refusal(result.error), tone: refusalTone(result.error) }
+function said(result: WriteResult): boolean {
+  notice.value = noticeFor(result)
   return result.ok
 }
 
@@ -128,27 +128,27 @@ function statusLine(data: DraftDetail): string {
   return 'Nothing has been posted. This is what GitHub will show.'
 }
 
+/** How the screen words each event. At module scope, as `VERBS` and `LAYER_LABELS` are. */
+const EVENTS: Record<ReviewEvent, string> = {
+  request_changes: 'Request changes',
+  comment: 'Comment',
+  approve: 'Approve',
+}
+
 function eventLabel(value: ReviewEvent | null | undefined): string {
-  const labels: Record<ReviewEvent, string> = {
-    request_changes: 'Request changes',
-    comment: 'Comment',
-    approve: 'Approve',
-  }
-  return value ? labels[value] : 'not chosen'
+  return value ? EVENTS[value] : 'not chosen'
 }
 
 /**
  * "118 of 150", or what is true when one of the two was not measured.
  *
- * The contract's rule is that a count the server cannot answer is null and never zero, so
- * a figure built by interpolating two possibly-null numbers would print "118 of null". The
- * lint object itself is nullable for the same reason, which is the fourth drift DEV-862
- * found: `DraftLint` requires `passes` and `checked_at`, so there is no shape of it that
- * means "not measured" — and this screen used to assume it was always there.
+ * `figure` does the formatting — it is the same rule the Rules screen's tiles use, and a
+ * second implementation of "x of y" is a second place for the two to disagree about a null.
+ * The contract's rule is that a count the server cannot answer is null and never zero, so a
+ * figure built by interpolating two possibly-null numbers would print "118 of null".
  */
 function ofFigure(value: number | null | undefined, of: number | null | undefined): string {
-  if (value == null) return 'Not measured'
-  return of == null ? String(value) : `${value} of ${of}`
+  return figure(value, of) ?? 'Not measured'
 }
 </script>
 

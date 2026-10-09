@@ -84,6 +84,24 @@ export class DeskRequestError extends Error {
   }
 }
 
+/**
+ * One `DeskError`, built in one place.
+ *
+ * Four literals carried the same `field: null, expected: null` and two of them carried the
+ * same sentence, so a field added to `DeskError` meant four edits and the two sentences
+ * could drift apart while meaning the same thing.
+ */
+function fault(
+  code: DeskError['code'],
+  message: string,
+  status: number | null = null,
+): DeskError {
+  return { code, message, field: null, expected: null, status }
+}
+
+/** There is nothing on the other end. The one sentence for it, written once. */
+const NOT_LISTENING = 'Nothing is listening on this address.'
+
 /** Whatever went wrong, as the one error shape the screens render. */
 export function asDeskError(thrown: unknown): DeskError {
   if (thrown instanceof DeskRequestError) return thrown.desk
@@ -94,13 +112,7 @@ export function asDeskError(thrown: unknown): DeskError {
    * no contract code describes. Calling it `store_unavailable` would tell the developer
    * their database is broken when their server is simply not running.
    */
-  return {
-    code: 'unreachable',
-    message: 'Nothing is listening on this address.',
-    field: null,
-    expected: null,
-    status: null,
-  }
+  return fault('unreachable', NOT_LISTENING)
 }
 
 /**
@@ -180,23 +192,20 @@ async function send<T>(
      */
     const timedOut = limit.signal.aborted
     limit.done()
-    throw new DeskRequestError({
-      code: 'unreachable',
+    throw new DeskRequestError(fault(
+      'unreachable',
       /*
        * The fact, and nothing about what to do with it. Whatever shows this adds that —
        * `DeskState` puts the command beside the message as something to copy, and a notice
        * on a refused write says it in words. Saying it here as well read as a stammer:
        * "Review Desk is not answering. Review Desk is not answering on this address."
        */
-      message: timedOut
+      timedOut
         ? `Nothing answered within ${Math.round(wait / 1000)} seconds, so Review Desk may `
         + 'be stuck — or something in front of it may be waiting on a server that is not '
         + 'running.'
-        : 'Nothing is listening on this address.',
-      field: null,
-      expected: null,
-      status: null,
-    })
+        : NOT_LISTENING,
+    ))
   }
   /*
    * **The deadline stays armed until the body is read, not until the headers arrive.** A
@@ -214,15 +223,12 @@ async function send<T>(
     text = await response.text()
   }
   catch {
-    throw new DeskRequestError({
-      code: 'unreachable',
-      message:
-        `Review Desk answered ${response.status} and then stopped sending within `
-        + `${Math.round(wait / 1000)} seconds.`,
-      field: null,
-      expected: null,
-      status: response.status,
-    })
+    throw new DeskRequestError(fault(
+      'unreachable',
+      `Review Desk answered ${response.status} and then stopped sending within `
+      + `${Math.round(wait / 1000)} seconds.`,
+      response.status,
+    ))
   }
   finally {
     limit.done()
@@ -234,15 +240,12 @@ async function send<T>(
       return JSON.parse(text) as T
     }
     catch {
-      throw new DeskRequestError({
-        code: 'unreadable',
-        message:
-          'The answer was not the JSON this dashboard expects. Something other than '
-          + 'Review Desk may be answering on this address.',
-        field: null,
-        expected: null,
-        status: response.status,
-      })
+      throw new DeskRequestError(fault(
+        'unreadable',
+        'The answer was not the JSON this dashboard expects. Something other than '
+        + 'Review Desk may be answering on this address.',
+        response.status,
+      ))
     }
   }
 

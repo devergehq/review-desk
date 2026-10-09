@@ -36,6 +36,7 @@ import drafts from './drafts.json'
 import reviews from './reviews.json'
 import rules from './rules.json'
 import { visibleWords } from '~/utils/draft'
+import { count } from '~/utils/format'
 import type {
   Brief,
   DeskSource,
@@ -54,9 +55,6 @@ import type {
   RuleStage,
   RulesPage,
 } from '~/types/desk'
-
-/** The repository filter's value that means every repository. */
-export const ALL_REPOSITORIES = 'all'
 
 /*
  * `7`, not `number`. The contract declares `layers_total` as a constant — the screen's
@@ -592,20 +590,27 @@ function nextStage(stage: RuleStage): RuleStage | null {
   return null
 }
 
-/** How the Rules screen words a stage. */
+/**
+ * How the Rules screen words each stage.
+ *
+ * Keyed by `RuleStage` rather than written as a chain of ternaries, for the reason `VERBS`
+ * in `utils/format.ts` gives: a stage added to the contract is then a type error here
+ * instead of a rule the screen has no word for. `active` is the one that depends on more
+ * than the stage, so it asks.
+ */
+const STAGE_WORDS: Record<RuleStage, (rule: Rule) => string> = {
+  proposed: () => 'Proposed',
+  active: rule => (rule.scope.kind === 'global' ? 'Global rule' : 'Repository rule'),
+  lint: () => 'Lint check',
+  ci: () => 'CI check',
+  retired: () => 'Retired',
+}
+
+/** How the Rules screen words a stage, with the exceptions the server appends. */
 function stageLabel(rule: Rule, stage: RuleStage): string {
-  const base
-    = stage === 'active'
-      ? rule.scope.kind === 'global' ? 'Global rule' : 'Repository rule'
-      : stage === 'lint'
-        ? 'Lint check'
-        : stage === 'ci'
-          ? 'CI check'
-          : stage === 'proposed' ? 'Proposed' : 'Retired'
+  const base = STAGE_WORDS[stage](rule)
   const exceptions = rule.counts.exceptions ?? 0
-  if (exceptions === 1) return `${base} · 1 exception`
-  if (exceptions > 1) return `${base} · ${exceptions} exceptions`
-  return base
+  return exceptions > 0 ? `${base} · ${count(exceptions, 'exception')}` : base
 }
 
 function ruleById(id: number): Rule {
@@ -666,7 +671,7 @@ function deferRule(id: number, days: number): Rule {
   const rule = ruleById(id)
   rule.stale = false
   rule.review_again_at = new Date(Date.now() + days * 86_400_000).toISOString()
-  rule.note = `Kept for ${days} ${days === 1 ? 'day' : 'days'}. Asked about again after that.`
+  rule.note = `Kept for ${count(days, 'day')}. Asked about again after that.`
   return rule
 }
 
@@ -720,9 +725,9 @@ export function sampleBackend(): DeskBackend {
     listRepos: async (): Promise<RepoSummary[]> =>
       answered(source.repos.map(repo => ({
         ...repo,
-        active_rules: source.rules.filter(
-          rule => isActive(rule) && (rule.scope.kind === 'global' || rule.scope.repo === repo.repo),
-        ).length,
+        /* `inScope`, not the rule written out again: one answer to "is this repository's". */
+        active_rules: source.rules.filter(rule => isActive(rule) && inScope(rule, repo.repo))
+          .length,
       }))),
 
     startReview: async link => answered(startReview(link)),

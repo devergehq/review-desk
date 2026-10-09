@@ -66,10 +66,20 @@ const empty = computed(() => {
   return props.isEmpty ? props.isEmpty(data) : false
 })
 
-/** A heading and a sentence for each way a read can fail. */
+/**
+ * A heading and a sentence for each way a read can fail.
+ *
+ * **The tone is not decided here.** Each branch used to carry its own `'blocked'` or
+ * `'problem'`, which is `refusalTone` in `utils/format.ts` written a second time — two
+ * lists that have to agree, with nothing tying them, on the surface where the distinction
+ * matters most: `blocked` is what boxes the message and shows a command to run. Settled
+ * once, below, from the error itself.
+ */
 const problem = computed(() => {
   const error: DeskError | null = props.resource.error.value
   if (!error) return null
+
+  const tone = refusalTone(error)
 
   if (error.code === 'unreachable') {
     return {
@@ -82,7 +92,7 @@ const problem = computed(() => {
        */
       body: `${sentence(error.message)} The record is where it was.`,
       command: 'review-desk serve',
-      tone: 'blocked' as const,
+      tone,
     }
   }
 
@@ -91,7 +101,7 @@ const problem = computed(() => {
       heading: 'Something else is answering',
       body: sentence(error.message),
       command: null,
-      tone: 'blocked' as const,
+      tone,
     }
   }
 
@@ -102,7 +112,7 @@ const problem = computed(() => {
         `${sentence(error.message)} This is Review Desk being unable to run, `
         + 'not a refused request.',
       command: 'review-desk db version',
-      tone: 'blocked' as const,
+      tone,
     }
   }
 
@@ -111,7 +121,7 @@ const problem = computed(() => {
       heading: 'A read of GitHub could not be made',
       body: `${sentence(error.message)} Review Desk reads GitHub through your own gh login.`,
       command: 'gh auth login',
-      tone: 'blocked' as const,
+      tone,
     }
   }
 
@@ -125,7 +135,7 @@ const problem = computed(() => {
       heading: 'Not on the desk',
       body: `${sentence(error.message)} It may have been opened on another database.`,
       command: null,
-      tone: 'problem' as const,
+      tone,
     }
   }
 
@@ -142,7 +152,7 @@ const problem = computed(() => {
       heading: 'The record is not in that state',
       body: refusal(error),
       command: null,
-      tone: 'problem' as const,
+      tone,
     }
   }
 
@@ -151,7 +161,7 @@ const problem = computed(() => {
     heading: 'That was refused',
     body: refusal(error),
     command: null,
-    tone: 'problem' as const,
+    tone,
   }
 })
 

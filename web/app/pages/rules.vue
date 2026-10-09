@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { RulesPage } from '~/types/desk'
+import type { WriteResult } from '~/composables/useReviewDesk'
+import type { DeskNotice } from '~/utils/format'
 
 /**
  * The rules: what the desk has learned, and what it is proposing to learn.
@@ -47,7 +49,7 @@ watch(
 
 const asking = ref<{ id: number, kind: 'dismiss' | 'retire' } | null>(null)
 const working = ref(false)
-const notice = ref<{ text: string, tone: 'plain' | 'problem' | 'blocked' } | null>(null)
+const notice = ref<DeskNotice | null>(null)
 
 /** Whether this repository has no rules at any stage. */
 function isEmpty(data: RulesPage): boolean {
@@ -89,23 +91,17 @@ function stats(data: RulesPage) {
   ]
 }
 
-function said(result: { ok: true, message: string } | { ok: false, error: DeskError }) {
-  notice.value = result.ok
-    ? { text: result.message, tone: 'plain' }
-    : { text: refusal(result.error), tone: refusalTone(result.error) }
-  return result.ok
-}
-
-async function act(run: () => Promise<{ ok: true, message: string } | { ok: false, error: DeskError }>) {
+async function act(run: () => Promise<WriteResult>) {
   working.value = true
-  const ok = said(await run())
+  const result = await run()
+  notice.value = noticeFor(result)
   working.value = false
   /*
    * The reason prompt stays open on a refusal, with what the developer wrote still in it.
    * A refusal here is almost always "say why", and clearing the box would be the one
    * response guaranteed to make them type it twice.
    */
-  if (ok) asking.value = null
+  if (result.ok) asking.value = null
 }
 
 const promote = (id: number) => act(() => desk.promoteRule(id))

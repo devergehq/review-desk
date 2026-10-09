@@ -1,8 +1,6 @@
-import { readFileSync } from 'node:fs'
-
 import { expect, test } from '@playwright/test'
 
-import { ADDRESSES, cli, cliJson, serversUnderTest, stillServing } from './harness'
+import { cli, cliJson, readAddresses, serversUnderTest, stillServing } from './harness'
 
 /*
  * **Review Desk, end to end.** The command line records a review, the binary serves it,
@@ -18,12 +16,7 @@ import { ADDRESSES, cli, cliJson, serversUnderTest, stillServing } from './harne
  * confirming it is what puts the draft in the Inbox.
  */
 
-const addresses = JSON.parse(readFileSync(ADDRESSES, 'utf8')) as {
-  seeded: string
-  seededDatabase: string
-  empty: string
-  reviewId: number
-}
+const addresses = readAddresses()
 
 const { seeded, empty, seededDatabase, reviewId } = addresses
 
@@ -84,9 +77,10 @@ test.describe('the whole path, on a seeded database', () => {
   test('the brief is confirmed in the browser, and the record says the developer did it', async ({
     page,
   }) => {
-    /* Nobody has confirmed it: the command line has no way to. */
-    expect(reviewRecord().brief.confirmed_at).toBeNull()
-    expect(reviewRecord().brief.confirmed_by).toBeNull()
+    /* Nobody has confirmed it: the command line has no way to. One read, two fields. */
+    const before = reviewRecord()
+    expect(before.brief.confirmed_at).toBeNull()
+    expect(before.brief.confirmed_by).toBeNull()
 
     await page.goto(`${seeded}reviews/${reviewId}`)
     await expect(page.getByText('Confirm the problem before anything is posted')).toBeVisible()
@@ -169,8 +163,9 @@ test.describe('the whole path, on a seeded database', () => {
   test('the draft is approved in the browser, and the record says the developer did it', async ({
     page,
   }) => {
-    expect(reviewRecord().draft.status).toBe('ready')
-    expect(reviewRecord().draft.approved_by).toBeNull()
+    const before = reviewRecord()
+    expect(before.draft.status).toBe('ready')
+    expect(before.draft.approved_by).toBeNull()
 
     await page.goto(`${seeded}reviews/${reviewId}/draft`)
     await page.locator('select#event').selectOption('request_changes')
