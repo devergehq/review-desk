@@ -22,15 +22,39 @@
 //! option: a flag that could widen it is one typo away from publishing the record, and
 //! the version that adds authentication is the version that may add the flag.
 //!
-//! ## Why `tiny_http`
+//! ## Why `axum`, and why it is not `tiny_http` any more
 //!
-//! `rusqlite` is blocking and the store holds one `Connection`, so an async runtime would
-//! buy this server nothing and cost a thread hop around every handler. `tiny_http` is
-//! four transitive crates against fifty for `axum` and `tokio`, and the shape it offers —
-//! a `Server` several threads call `recv()` on — is exactly a small fixed worker pool.
+//! **This used to be `tiny_http`, and the argument for it was a good one that turned out
+//! to be wrong.** It read: `rusqlite` is blocking and the store holds one `Connection`, so
+//! an async runtime buys this server nothing and costs a thread hop around every handler;
+//! `tiny_http` brings four crates of its own against twenty-seven, and the shape it offers
+//! — a `Server` that several threads call `recv()` on — is exactly a small fixed worker
+//! pool.
 //!
-//! One worker would be wrong, not merely slow: a browser holds its connection open, so a
-//! single accept loop would stop answering while a page sat idle.
+//! Every clause of that is still true. What it missed is that a fixed pool of threads, each
+//! of which parks on a keep-alive connection for as long as the browser holds it open, can
+//! run out — and that the library's own pool did not merely queue when it ran out, it
+//! *lost* the connection. A task could be left in its queue with every thread parked on a
+//! socket and nothing able to pick it up, so the request on that connection was never
+//! answered and never refused. Measured, on the dashboard's first page load: a silent
+//! request in about one cold start in five at six connections, which is what Chromium
+//! opens per origin. `tests/concurrency.rs` is that fault, written down.
+//!
+//! It could not be fixed from here. The pool is internal, the crate sets no socket read
+//! timeout and exposes no knob for one, and its last release was October 2022. So the
+//! choice was to own a fork of an abandoned HTTP server or to use a maintained one.
+//!
+//! **Twenty-three more crates is the real cost and it is not nothing.** Measured in this
+//! workspace rather than guessed: the server's production dependency tree goes from 30
+//! crates to 53. Twenty-seven arrive — `axum`, `tokio`, `hyper`, `tower` and what they
+//! rest on — and four leave with `tiny_http`: `ascii`, `chunked_transfer` and `log`.
+//!
+//! What that buys is a
+//! transport that does not lose requests, and a concurrency model with no fixed worker
+//! count to get wrong: connections are futures on one thread, and the blocking work —
+//! every call into the store — is handed to [`tokio::task::spawn_blocking`] at exactly one
+//! place. The original argument against an async runtime was about hop cost, and the hop
+//! is still there; it is simply worth paying, which a silent hang on first load is not.
 
 #![deny(missing_debug_implementations)]
 
@@ -43,14 +67,18 @@ pub mod route;
 pub mod store;
 pub mod wire;
 
-use std::io::Read;
-use std::net::{Ipv4Addr, SocketAddr};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::future::{Future, IntoFuture};
+use std::net::{Ipv4Addr, SocketAddr, TcpListener};
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
 
-use tiny_http::{Header, Request, Response, StatusCode};
+use axum::body::{to_bytes, Body};
+use axum::extract::{Request, State};
+use axum::http::{header, HeaderName, HeaderValue, StatusCode};
+use axum::response::Response;
+use axum::Router;
+use tokio::runtime::Builder;
+use tokio::sync::Notify;
 
 pub use crate::api::{Api, API_PREFIX};
 pub use crate::error::{ApiError, Code};
@@ -59,21 +87,6 @@ pub use crate::store::Records;
 
 /// The port the contract's `servers` entry names: `http://127.0.0.1:7777/api/v1`.
 pub const DEFAULT_PORT: u16 = 7777;
-
-/// How many threads answer requests.
-///
-/// Small and fixed. One developer in one browser opens a handful of connections, and the
-/// store is one connection behind a mutex, so more threads would queue on the same lock.
-const WORKERS: usize = 4;
-
-/// How long a worker waits for a request before checking whether it has been told to
-/// stop.
-///
-/// A blocking accept cannot be interrupted reliably — `tiny_http`'s `unblock` wakes a
-/// worker, not every worker, so four threads blocked on one listener do not all return.
-/// Waiting with a timeout and re-checking a flag is what makes stopping deterministic,
-/// which the tests need and a long-running server does not care about.
-const ACCEPT_WAIT: Duration = Duration::from_millis(100);
 
 /// The largest request body this server reads.
 ///
@@ -90,22 +103,27 @@ pub enum BindError {
     Listen { port: u16, detail: String },
 }
 
-/// A listening server.
-pub struct Server {
-    listener: Arc<tiny_http::Server>,
-    address: SocketAddr,
+/// The store and the address it is answering on, as every request sees them.
+///
+/// The address is carried rather than looked up because the guard checks `Host` against
+/// the address actually bound, and with port 0 that is not known until it is.
+#[derive(Debug, Clone)]
+struct Desk {
     api: Api,
-    stop: Arc<AtomicBool>,
+    bound: SocketAddr,
 }
 
-// `tiny_http::Server` is not `Debug`, and the crate denies a missing one, so the address
-// stands in for the listener: it is the only thing about it a reader wants anyway.
-impl std::fmt::Debug for Server {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Server")
-            .field("address", &self.address)
-            .finish_non_exhaustive()
-    }
+/// A listening server.
+///
+/// The socket is bound by [`Server::bind`] and the runtime does not exist yet. That
+/// ordering is deliberate: [`Server::address`] has to be able to report the port before
+/// anything is served, because port 0 means the operating system chooses it and both the
+/// tests and `review-desk serve` print it.
+#[derive(Debug)]
+pub struct Server {
+    listener: TcpListener,
+    address: SocketAddr,
+    api: Api,
 }
 
 impl Server {
@@ -118,18 +136,17 @@ impl Server {
         // The only address this server ever binds. Written here, once.
         let wanted = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
 
-        let listener = tiny_http::Server::http(wanted).map_err(|detail| BindError::Listen {
+        let listener = TcpListener::bind(wanted).map_err(|detail| BindError::Listen {
             port,
             detail: detail.to_string(),
         })?;
 
-        let address = listener.server_addr().to_ip().unwrap_or(wanted);
+        let address = listener.local_addr().unwrap_or(wanted);
 
         Ok(Server {
-            listener: Arc::new(listener),
+            listener,
             address,
             api: Api::new(records, github),
-            stop: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -144,73 +161,99 @@ impl Server {
     }
 
     /// Answer requests until the process ends.
+    ///
+    /// **Synchronous, and it owns its runtime.** Nothing above this — not `serve.rs`, not
+    /// `main` — is async or knows that a runtime exists, which is what keeps the choice of
+    /// transport a detail of this file.
     pub fn serve(self) {
-        let workers = self.spawn_workers();
-        for worker in workers {
-            let _ = worker.join();
-        }
+        let runtime = runtime();
+        runtime.block_on(run(
+            self.listener,
+            self.address,
+            self.api,
+            // Production stops when the process does.
+            std::future::pending::<()>(),
+        ));
     }
 
-    /// Answer requests on background threads, handing back a handle that stops them.
+    /// Answer requests on a background thread, handing back a handle that stops them.
     ///
     /// This is how the tests drive a real server over a real socket: the acceptance
     /// criteria are about what a client sees on `127.0.0.1`, and a test that called the
     /// handlers directly would not have checked that.
     pub fn spawn(self) -> Running {
         let address = self.address;
-        let listener = Arc::clone(&self.listener);
-        let stop = Arc::clone(&self.stop);
-        let workers = self.spawn_workers();
+        let stopping = Arc::new(Notify::new());
+        let signal = Arc::clone(&stopping);
+
+        let worker = thread::Builder::new()
+            .name("review-desk-http".to_string())
+            .spawn(move || {
+                let runtime = runtime();
+                runtime.block_on(run(self.listener, self.address, self.api, async move {
+                    signal.notified().await;
+                }));
+            })
+            .expect("spawning the HTTP thread");
+
         Running {
-            listener,
             address,
-            stop,
-            workers,
+            stopping,
+            worker: Some(worker),
         }
     }
+}
 
-    fn spawn_workers(self) -> Vec<thread::JoinHandle<()>> {
-        let address = self.address;
-        (0..WORKERS)
-            .map(|worker| {
-                let listener = Arc::clone(&self.listener);
-                let stop = Arc::clone(&self.stop);
-                let api = self.api.clone();
-                thread::Builder::new()
-                    .name(format!("review-desk-http-{worker}"))
-                    .spawn(move || {
-                        while !stop.load(Ordering::SeqCst) {
-                            match listener.recv_timeout(ACCEPT_WAIT) {
-                                Ok(Some(request)) => answer(&api, address, request),
-                                // Nothing arrived inside the wait, so the flag is checked
-                                // and the wait begins again.
-                                Ok(None) => continue,
-                                // The listener is gone. There is nothing left to answer.
-                                Err(_) => break,
-                            }
-                        }
-                    })
-                    .expect("spawning an HTTP worker thread")
-            })
-            .collect()
+/// The runtime every server runs on.
+///
+/// **One thread, on purpose.** Connections are futures rather than threads, so one thread
+/// serves as many at once as a browser cares to open — which is the whole point, since a
+/// fixed count of serving threads is what the previous transport ran out of. Everything
+/// that blocks goes to [`tokio::task::spawn_blocking`] instead, and that pool grows on
+/// demand.
+fn runtime() -> tokio::runtime::Runtime {
+    Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("building the HTTP runtime")
+}
+
+/// Serve `listener` until `stop` resolves.
+async fn run(listener: TcpListener, bound: SocketAddr, api: Api, stop: impl Future<Output = ()>) {
+    listener
+        .set_nonblocking(true)
+        .expect("the listening socket could not be made non-blocking");
+    let listener = tokio::net::TcpListener::from_std(listener)
+        .expect("the listening socket could not join the runtime");
+
+    // One handler for everything. The router does no matching, because `route.rs` already
+    // does it from a method and a path and is the contract's own account of what the
+    // routes are — a second table here would be a second thing to keep true.
+    //
+    // **There are no layers.** Not a logging one, not a compression one and emphatically
+    // not a permissive CORS one: `guard.rs` is the only thing that decides who may talk
+    // to this server, and middleware that answered first, or added headers of its own,
+    // would be a second rule in a place nobody looks.
+    let app = Router::new()
+        .fallback(answer)
+        .with_state(Desk { api, bound });
+
+    let serving = axum::serve(listener, app).into_future();
+
+    tokio::select! {
+        outcome = serving => {
+            let _ = outcome;
+        }
+        () = stop => {}
     }
 }
 
-/// A server answering requests on its own threads.
+/// A server answering requests on its own thread.
+#[derive(Debug)]
 pub struct Running {
-    listener: Arc<tiny_http::Server>,
     address: SocketAddr,
-    stop: Arc<AtomicBool>,
-    workers: Vec<thread::JoinHandle<()>>,
-}
-
-impl std::fmt::Debug for Running {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Running")
-            .field("address", &self.address)
-            .field("workers", &self.workers.len())
-            .finish_non_exhaustive()
-    }
+    stopping: Arc<Notify>,
+    worker: Option<thread::JoinHandle<()>>,
 }
 
 impl Running {
@@ -227,12 +270,12 @@ impl Running {
 
 impl Drop for Running {
     fn drop(&mut self) {
-        // The flag first, then the nudge: a worker that is between waits sees the flag,
-        // and one that is inside a wait returns from it within `ACCEPT_WAIT`. Joining is
-        // therefore bounded, which is what makes a test that drops this handle finish.
-        self.stop.store(true, Ordering::SeqCst);
-        self.listener.unblock();
-        for worker in self.workers.drain(..) {
+        // `notify_one` rather than `notify_waiters`, and the difference is a hang: a
+        // handle dropped before the runtime thread has reached its `await` would lose a
+        // notification sent to whoever is waiting *now*, and the join below would never
+        // return. `notify_one` leaves a permit behind, so the signal cannot be early.
+        self.stopping.notify_one();
+        if let Some(worker) = self.worker.take() {
             let _ = worker.join();
         }
     }
@@ -240,18 +283,26 @@ impl Drop for Running {
 
 /// Answer one request: the API under [`API_PREFIX`], the embedded dashboard everywhere
 /// else.
-fn answer(api: &Api, bound: SocketAddr, mut request: Request) {
-    let (path, query) = split_url(request.url());
-    let path = path.to_string();
-    let query = query.to_string();
-    let method = request.method().as_str().to_string();
+async fn answer(State(desk): State<Desk>, request: Request) -> Response {
+    let (parts, body) = request.into_parts();
+
+    let method = parts.method.as_str().to_string();
+    let path = parts.uri.path().to_string();
+    let query = parts.uri.query().unwrap_or_default().to_string();
 
     // Collected before the body is read, because the guard decides whether the body is
-    // read at all.
-    let headers: Vec<(String, String)> = request
-        .headers()
+    // read at all. `into_parts` hands back the body as a stream that nothing has polled,
+    // so "before" here is a fact about the code rather than a convention: the bytes are
+    // still on the socket until `to_bytes` below, which only runs once the guard passes.
+    let headers: Vec<(String, String)> = parts
+        .headers
         .iter()
-        .map(|header| (header.field.to_string(), header.value.to_string()))
+        .map(|(name, value)| {
+            (
+                name.as_str().to_string(),
+                value.to_str().unwrap_or_default().to_string(),
+            )
+        })
         .collect();
 
     // Before anything else, and before the body is touched: a request from somewhere that
@@ -260,21 +311,39 @@ fn answer(api: &Api, bound: SocketAddr, mut request: Request) {
     // **Above the API branch, not inside it.** It began inside, which left the static
     // branch unguarded — no data leak, since the dashboard bundle is public code, but one
     // rule for the whole server is a thing a reader can check and two rules is not.
-    if let Err(refusal) = guard::check(bound, &method, &headers) {
-        let _ = request.respond(json_response(refusal.status(), &refusal.document()));
-        return;
+    if let Err(refusal) = guard::check(desk.bound, &method, &headers) {
+        return json_response(refusal.status(), &refusal.document());
     }
 
-    let served = if let Some(rest) = api_path(&path) {
-        let body = match read_body(&mut request) {
+    if let Some(rest) = api_path(&path) {
+        let rest = rest.to_string();
+        let body = match read_body(&parts, body).await {
             Ok(body) => body,
-            Err(error) => {
-                let _ = request.respond(json_response(error.status(), &error.document()));
-                return;
-            }
+            Err(error) => return json_response(error.status(), &error.document()),
         };
-        let (status, document) = api.answer(&method, rest, &query, &body);
-        json_response(status, &document)
+
+        // The one place blocking work leaves the runtime. `Api::answer` takes the store's
+        // mutex and talks to SQLite, so running it here would stall every other
+        // connection this thread is serving.
+        let api = desk.api.clone();
+        let answered =
+            tokio::task::spawn_blocking(move || api.answer(&method, &rest, &query, &body)).await;
+
+        match answered {
+            Ok((status, document)) => json_response(status, &document),
+            // The blocking task panicked, which `Records` already turns into a refusal for
+            // a poisoned lock. Reaching here means something else did, and the one honest
+            // thing to say is that the request was not answered.
+            Err(_) => {
+                let failed = ApiError {
+                    code: Code::StoreUnavailable,
+                    message: "the request failed while it was being answered".to_string(),
+                    field: None,
+                    expected: None,
+                };
+                json_response(failed.status(), &failed.document())
+            }
+        }
     } else if method == "GET" || method == "HEAD" {
         page_response(&path)
     } else {
@@ -287,9 +356,7 @@ fn answer(api: &Api, bound: SocketAddr, mut request: Request) {
             ))
             .document(),
         )
-    };
-
-    let _ = request.respond(served);
+    }
 }
 
 /// The part of a path after the API prefix, when the path is an API path at all.
@@ -306,30 +373,32 @@ fn api_path(path: &str) -> Option<&str> {
     }
 }
 
-/// The path and the query string, separately.
-fn split_url(url: &str) -> (&str, &str) {
-    url.split_once('?').unwrap_or((url, ""))
-}
-
 /// Read a request body, refusing one that claims to be larger than [`MAX_BODY`].
-fn read_body(request: &mut Request) -> Result<Vec<u8>, ApiError> {
-    if let Some(length) = request.body_length() {
-        if length as u64 > MAX_BODY {
+///
+/// The stated length is checked before a byte is read, so a request that announces more
+/// than the limit is refused rather than read and then thrown away. `to_bytes` enforces
+/// the same limit again on what actually arrives, which is what catches a body that lied
+/// about its length or sent none at all.
+async fn read_body(parts: &axum::http::request::Parts, body: Body) -> Result<Vec<u8>, ApiError> {
+    if let Some(length) = parts
+        .headers
+        .get(header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+    {
+        if length > MAX_BODY {
             return Err(ApiError::bad_request(format!(
                 "the request body is {length} bytes, over the {MAX_BODY} byte limit"
             )));
         }
     }
 
-    let mut body = Vec::new();
-    request
-        .as_reader()
-        .take(MAX_BODY)
-        .read_to_end(&mut body)
+    to_bytes(body, MAX_BODY as usize)
+        .await
+        .map(|bytes| bytes.to_vec())
         .map_err(|error| {
             ApiError::bad_request(format!("the request body could not be read: {error}"))
-        })?;
-    Ok(body)
+        })
 }
 
 /// The headers every response carries, whatever it is.
@@ -348,30 +417,48 @@ fn read_body(request: &mut Request) -> Result<Vec<u8>, ApiError> {
 /// Both headers, not one: `X-Frame-Options` is what older browsers honour and
 /// `frame-ancestors` is what the CSP-aware ones prefer. Neither costs anything here —
 /// this server has no reason to be embedded anywhere, ever.
-fn framing_headers() -> [Header; 2] {
+fn framing_headers() -> [(HeaderName, HeaderValue); 2] {
     [
-        header("X-Frame-Options", "DENY"),
-        header("Content-Security-Policy", "frame-ancestors 'none'"),
+        (header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY")),
+        (
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static("frame-ancestors 'none'"),
+        ),
     ]
 }
 
+/// One response, with the content type it was given and the headers everything carries.
+///
+/// Every response this server sends is built here, which is what makes "the framing
+/// headers are on everything" one line rather than a rule to remember at each `return`.
+fn respond(status: u16, body: Vec<u8>, mime: &str) -> Response {
+    let mut response = Response::new(Body::from(body));
+
+    *response.status_mut() =
+        StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+
+    let headers = response.headers_mut();
+    if let Ok(value) = HeaderValue::from_str(mime) {
+        headers.insert(header::CONTENT_TYPE, value);
+    }
+    for (name, value) in framing_headers() {
+        headers.insert(name, value);
+    }
+
+    response
+}
+
 /// A JSON response, with the one header a JSON client needs.
-fn json_response(status: u16, document: &serde_json::Value) -> Response<std::io::Cursor<Vec<u8>>> {
+fn json_response(status: u16, document: &serde_json::Value) -> Response {
     let body = serde_json::to_vec(document).unwrap_or_else(|_| {
         br#"{"code":"store_unavailable","message":"the response could not be serialised"}"#.to_vec()
     });
 
-    let mut response = Response::from_data(body)
-        .with_status_code(StatusCode(status))
-        .with_header(header("Content-Type", "application/json; charset=utf-8"));
-    for header in framing_headers() {
-        response.add_header(header);
-    }
-    response
+    respond(status, body, "application/json; charset=utf-8")
 }
 
 /// A response from the embedded dashboard, or the page that says there is none.
-fn page_response(path: &str) -> Response<std::io::Cursor<Vec<u8>>> {
+fn page_response(path: &str) -> Response {
     let (status, body, mime) = match assets::resolve(path) {
         assets::Served::File { bytes, mime } => (200, bytes.to_vec(), mime),
         // 200, not 404: the binary is working exactly as built, and a 404 here would
@@ -384,18 +471,5 @@ fn page_response(path: &str) -> Response<std::io::Cursor<Vec<u8>>> {
         assets::Served::Missing => (404, b"not found".to_vec(), "text/plain; charset=utf-8"),
     };
 
-    let mut response = Response::from_data(body)
-        .with_status_code(StatusCode(status))
-        .with_header(header("Content-Type", mime));
-    // The dashboard is the thing worth framing, so this is the branch that most needs it.
-    for header in framing_headers() {
-        response.add_header(header);
-    }
-    response
-}
-
-/// One header, or none if the value cannot be one.
-fn header(name: &str, value: &str) -> Header {
-    Header::from_bytes(name.as_bytes(), value.as_bytes())
-        .unwrap_or_else(|_| panic!("{name} is a valid header name"))
+    respond(status, body, mime)
 }

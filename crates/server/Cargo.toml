@@ -17,12 +17,25 @@ review-desk-harvest = { path = "../harvest" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tiny_http = "0.12"
+# Minimal on purpose: the default features add `form`, `json`, `query`, `matched-path`,
+# `original-uri`, `tower-log` and `tracing`, none of which this server uses. The handlers
+# build their own `serde_json` documents and `route.rs` parses its own query strings.
+axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
+
+# `rt` for the runtime and its blocking pool, `net` for the listener, `sync` for the one
+# notification that stops a spawned server. No `rt-multi-thread`: see `src/lib.rs`.
+tokio = { version = "1.53.2", default-features = false, features = ["rt", "net", "sync"] }
 
 # The conformance test reads contract/openapi.yaml and validates responses against it.
 # Both of these are test-only on purpose: the shipped binary gains neither, and a schema
 # validator in the binary would be 78 crates to check what the handlers already know.
 [dev-dependencies]
 jsonschema = { version = "0.58", default-features = false }
+
+# `tests/concurrency.rs` opens several connections in one burst without waiting for any of
+# them, which needs a socket it can set non-blocking *before* connecting -- something
+# `std::net::TcpStream` cannot do, because connecting is its constructor. Test-only, and
+# already in the tree as one of tokio's own dependencies.
+socket2 = "0.6"
 serde_norway = "0.9"
 tempfile.workspace = true
