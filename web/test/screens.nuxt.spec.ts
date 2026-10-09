@@ -145,7 +145,7 @@ describe('the inbox', () => {
     const text = page.text()
     for (const heading of [
       'Confirm the problem · 1',
-      'Approve a draft · 3',
+      'Sign off a draft · 3',
       'Author replied · 1',
       'Your PRs with no reviewer · 2',
       'Proposed rule · 1',
@@ -236,7 +236,7 @@ describe('the inbox', () => {
     await settle(page)
 
     expect(page.text()).not.toContain('Confirm the problem · 1')
-    expect(page.text()).toContain('Approve a draft · 3')
+    expect(page.text()).toContain('Sign off a draft · 3')
     expect(page.text()).toContain('7 items across 2 repositories')
   })
 
@@ -503,24 +503,65 @@ describe('the draft preview', () => {
     expect(page.text()).toContain('F3 · wording')
   })
 
-  it('approves with the chosen event, and will not approve twice', async () => {
+  it('signs off with the chosen event, and will not sign off twice', async () => {
     const page = await open(17)
     await page.find('select#event').setValue('comment')
-    await click(page, 'Approve and post')
+    await click(page, 'Sign off and post')
 
-    expect(page.text()).toContain('Approved as "Comment". Waiting for the session to post it.')
+    expect(page.text()).toContain(
+      'Signed off. Will be posted as "Comment" — waiting for the session to post it.',
+    )
     expect(page.text()).toContain('The review session posts it under your name')
-    expect(button(page, 'Approve and post')!.attributes('disabled')).toBeDefined()
+    expect(button(page, 'Sign off and post')!.attributes('disabled')).toBeDefined()
   })
 
-  it('will not approve a draft with unsaved changes', async () => {
+  it('will not sign off a draft with unsaved changes', async () => {
     const page = await open(17)
     await page.findAll('[role="tab"]')[2]!.trigger('click')
     await page.find('textarea#draft-body').setValue('Replaced entirely.')
     await page.vm.$nextTick()
 
-    expect(page.text()).toContain('Save or discard your changes before approving.')
-    expect(button(page, 'Approve and post')!.attributes('disabled')).toBeDefined()
+    expect(page.text()).toContain('Save or discard your changes before signing off.')
+    expect(button(page, 'Sign off and post')!.attributes('disabled')).toBeDefined()
+  })
+
+  /*
+   * DEV-870: "approve" is GitHub's word for one of three review kinds, and the screen's
+   * word for what the developer does is "sign off". The two read as one thing when the
+   * button said "Approve and post" above a control offering "Approve" — signing off a
+   * comment review read as "approve as Comment".
+   *
+   * Asserted over the screen's own copy rather than over the strings that were changed: a
+   * sentence added later with the wrong word in it is exactly what this is for, and a list
+   * of known strings would not see it.
+   *
+   * **Two regions are subtracted, and both are deliberate.** The event control holds
+   * GitHub's three names, which is the whole point. The preview pane holds the agent's
+   * review body, which comes from the record and is not this screen's wording — a fixture
+   * that said "approve once F1 is fixed" would otherwise fail here and send whoever reads
+   * the failure to the wrong file.
+   *
+   * **It covers the `ready` draft, which is the state this screen is for.** The notice
+   * shown when a write is refused quotes the server, which says "an approved draft is what
+   * the review session reads and posts" (`crates/server/src/api.rs`); DEV-870 leaves the
+   * server's own prose alone, so a state that shows it is out of this assertion's reach
+   * rather than silently passing it.
+   */
+  it('uses "approve" nowhere in the draft page’s own copy but in the event control', async () => {
+    const page = await open(17)
+    const control = page.find('select#event')
+
+    /* The control still offers GitHub's three, under a label that names what they are. */
+    expect(control.text()).toContain('Approve')
+    expect(control.text()).toContain('Request changes')
+    expect(control.text()).toContain('Comment')
+    expect(page.find('label[for="event"]').text()).toBe('Post as')
+
+    const copy = page.text()
+      .replace(control.text(), '')
+      .replace(page.find('.pane').text(), '')
+    expect(copy).not.toMatch(/approv/i)
+    expect(copy).toContain('Sign off and post')
   })
 
   it('asks for a note before sending a draft back, and keeps it when refused', async () => {

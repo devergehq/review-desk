@@ -18,7 +18,7 @@ defineProps<{ layers: ReviewLayer[] }>()
     >
       <span class="rd-mono number">{{ item.number }}</span>
       <span>{{ layerLabel(item.name) }}</span>
-      <span v-if="item.detail">· {{ item.detail }}</span>
+      <span v-if="item.detail">· {{ layerDetail(item.detail) }}</span>
     </li>
   </ol>
 </template>

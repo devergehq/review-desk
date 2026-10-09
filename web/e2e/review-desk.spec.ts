@@ -135,7 +135,7 @@ test.describe('the whole path, on a seeded database', () => {
 
     /* On the banner and in the notice, which are two different sentences about it. */
     await expect(page.getByText('Problem confirmed.', { exact: true })).toBeVisible()
-    await expect(page.getByText('Problem confirmed. The draft is yours to approve.')).toBeVisible()
+    await expect(page.getByText('Problem confirmed. The draft is yours to sign off.')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Confirm the problem' })).toHaveCount(0)
 
     /*
@@ -169,14 +169,14 @@ test.describe('the whole path, on a seeded database', () => {
     expect(workList().some(item => item.review_id === reviewId)).toBe(false)
   })
 
-  test('the agent’s draft is what is left waiting to be approved', async ({ page }) => {
+  test('the agent’s draft is what is left waiting to be signed off', async ({ page }) => {
     /*
      * Written by `draft put` during the seed, before any of this ran — and the one thing
      * left on the Inbox now that the brief is confirmed. An agent wrote it and cannot
-     * approve it; this is the group that says so.
+     * sign it off; this is the group that says so.
      */
     await page.goto(seeded)
-    await expect(page.getByText('Approve a draft · 1')).toBeVisible()
+    await expect(page.getByText('Sign off a draft · 1')).toBeVisible()
     await expect(page.getByText('Confirm the problem · 1')).toHaveCount(0)
     await expect(page.getByText('1 item across 1 repository')).toBeVisible()
     await expect(page.getByText('1 blocker, 1 should')).toBeVisible()
@@ -272,7 +272,7 @@ test.describe('the whole path, on a seeded database', () => {
     expect(workList().some(item => item.review_id === reviewId)).toBe(false)
   })
 
-  test('the draft is approved in the browser, and the record says the developer did it', async ({
+  test('the draft is signed off in the browser, and the record says the developer did it', async ({
     page,
   }) => {
     const before = reviewRecord()
@@ -281,15 +281,17 @@ test.describe('the whole path, on a seeded database', () => {
 
     await page.goto(`${seeded}reviews/${reviewId}/draft`)
     await page.locator('select#event').selectOption('request_changes')
-    await page.getByRole('button', { name: 'Approve and post' }).click()
+    await page.getByRole('button', { name: 'Sign off and post' }).click()
 
     await expect(
-      page.getByText('Approved as "Request changes". Waiting for the session to post it.'),
+      page.getByText(
+        'Signed off. Will be posted as "Request changes" — waiting for the session to post it.',
+      ),
     ).toBeVisible()
     await expect(
       page.getByText('The review session posts it under your name, with no bot banner.'),
     ).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Approve and post' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Sign off and post' })).toBeDisabled()
 
     const record = reviewRecord()
     expect(record.draft.status).toBe('approved')
@@ -300,7 +302,7 @@ test.describe('the whole path, on a seeded database', () => {
     /* Layer 6 is finished with, and the note the developer wrote earlier is gone from it. */
     await page.goto(`${seeded}reviews/${reviewId}`)
     const layers = await trail(page)
-    expect(layers[5]).toContain('approved by the developer')
+    expect(layers[5]).toContain('signed off by the developer')
 
     /*
      * **And this is the link DEV-864 exists to make.** The dispatcher polls one command

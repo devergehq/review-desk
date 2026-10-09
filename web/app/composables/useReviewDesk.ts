@@ -338,7 +338,7 @@ export function useReviewDesk() {
       to => to.confirmBrief(id),
       (brief: Brief) =>
         brief.confirmed
-          ? 'Problem confirmed. The draft is yours to approve.'
+          ? 'Problem confirmed. The draft is yours to sign off.'
           : 'The brief was not confirmed.',
     )
   }
@@ -401,7 +401,7 @@ export function useReviewDesk() {
   async function approveDraft(id: number, event: ReviewEvent): Promise<WriteResult> {
     return write(
       to => to.approveDraft(id, event),
-      () => 'Approved. The review session posts it; Review Desk does not.',
+      () => 'Signed off. The review session posts it; Review Desk does not.',
     )
   }
 

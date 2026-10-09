@@ -119,7 +119,7 @@ function handledLines(data: Inbox): string[] {
 
           <DeskSection
             v-if="data.drafts_to_approve.length"
-            heading="Approve a draft"
+            heading="Sign off a draft"
             :count="data.drafts_to_approve.length"
           >
             <ActionRow
