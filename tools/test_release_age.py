@@ -334,16 +334,56 @@ class TheAgeVerdict(unittest.TestCase):
 
 
 class TheInterpreterGuard(unittest.TestCase):
+    """`import tomllib` has to sit below the `sys.version_info` guard in every module that
+    needs it, or the guard cannot fire and an old interpreter gets a ModuleNotFoundError
+    traceback instead of the sentence the workflow and `docs/dependencies.md` both promise.
+
+    **The set is derived, not listed, and that is the whole point of this class.** The first
+    version named two of the three modules. A later edit added the import to the third,
+    above its guard, and 155 tests passed — a listed set stops being complete the moment
+    somebody adds a member, and it fails open in exactly the direction that hides the bug.
+    Deriving it means a new module is covered on the day it is written."""
+
+    GUARD = "sys.version_info < (3, 11)"
+
+    def modules(self) -> list[Path]:
+        """Every module here that needs `tomllib` and is not itself a test."""
+        here = Path(__file__).resolve().parent
+        return sorted(
+            path
+            for path in here.glob("*.py")
+            if not path.name.startswith("test_")
+            and "import tomllib" in path.read_text(encoding="utf-8")
+        )
+
+    def test_the_derivation_finds_the_modules(self):
+        """A derived set that finds nothing passes every other test in this class
+        vacuously, which is the same fail-open shape as the list it replaced."""
+        found = self.modules()
+        self.assertTrue(found, "no module under tools/ imports tomllib — the glob is wrong")
+        self.assertGreaterEqual(len(found), 3, [p.name for p in found])
+
+    def test_no_test_module_is_in_the_derived_set(self):
+        self.assertEqual([p for p in self.modules() if p.name.startswith("test_")], [])
+
+    def test_every_such_module_has_a_guard(self):
+        for path in self.modules():
+            with self.subTest(module=path.name):
+                self.assertIn(
+                    self.GUARD,
+                    path.read_text(encoding="utf-8"),
+                    f"{path.name} imports tomllib with no interpreter guard at all",
+                )
+
     def test_tomllib_is_imported_below_the_version_guard(self):
-        """Importing tomllib above the guard meant the guard could never fire: on 3.10 the
-        script died with ModuleNotFoundError instead of the sentence the workflow and the
-        docs both promise."""
-        for name in ("release_age.py", "dependency_allowlist.py"):
-            source = (Path(__file__).resolve().parent / name).read_text(encoding="utf-8")
-            guard = source.index("sys.version_info < (3, 11)")
-            self.assertGreater(
-                source.index("import tomllib"), guard, f"{name} imports tomllib too early"
-            )
+        for path in self.modules():
+            with self.subTest(module=path.name):
+                source = path.read_text(encoding="utf-8")
+                self.assertLess(
+                    source.index(self.GUARD),
+                    source.index("import tomllib"),
+                    f"{path.name} imports tomllib above its guard, so the guard cannot fire",
+                )
 
 
 class ReadingTheManifests(unittest.TestCase):
