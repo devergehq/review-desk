@@ -225,6 +225,83 @@ describe('the shell every step page sits in', () => {
   })
 })
 
+/* ============================ Layer 2, the one act ============================= */
+
+/*
+ * **Confirming the brief is on Understand because the page it was on is gone.**
+ *
+ * `/reviews/{id}` drew it and DEV-878 retires that screen. Without this the dashboard would
+ * have no way to confirm a brief at all — and `confirmBrief` is one of only two operations
+ * that record the developer's sign-off, so `crates/cli/tests/signoff.rs` would be guarding a
+ * boundary with nothing on the far side of it. The tests that were on the old screen are
+ * these.
+ */
+describe('confirming the brief', () => {
+  beforeEach(async () => {
+    await resetDesk()
+  })
+
+  it('asks for it while the brief is unconfirmed', async () => {
+    const page = await understand(OLD_WAY)
+    expect(page.text()).toContain('Confirm the problem before anything is posted')
+    expect(page.findAll('button').some(one => one.text() === 'Confirm the problem')).toBe(true)
+  })
+
+  it('records it, and says the developer did', async () => {
+    const page = await understand(OLD_WAY)
+    await open(page, 'Confirm the problem')
+
+    expect(page.text()).toContain('Problem confirmed.')
+    expect(page.text()).toContain('The draft is yours to sign off.')
+    expect(page.findAll('button').some(one => one.text() === 'Confirm the problem')).toBe(false)
+  })
+
+  it('reads as done on a brief already confirmed, with no button', async () => {
+    const detail = fixture(OLD_WAY)
+    detail.brief = { ...detail.brief!, confirmed: true, confirmed_at: '2026-10-09T10:00:00Z' }
+    await withReview(detail)
+
+    const page = await understand(OLD_WAY)
+    expect(page.text()).toContain('Problem confirmed.')
+    expect(page.findAll('button').some(one => one.text() === 'Confirm the problem')).toBe(false)
+  })
+
+  /*
+   * **The third state, and the defect that went with the page.**
+   *
+   * The old screen wrote "The session recorded this brief as needing none: {{ field }}." —
+   * and since DEV-883 a session writes a brief twice, with that field reading "problem half
+   * only" between the writes. The sentence then gave "problem half only" as the reason no
+   * confirmation was needed, which it is not. DEV-878's own comment says the problem goes
+   * with the page; this is the assertion that it did not come back.
+   */
+  it('says confirmation was not required, without giving the field as the reason', async () => {
+    const detail = fixture(OLD_WAY)
+    detail.brief = {
+      ...detail.brief!,
+      confirmation_required: false,
+      confirmation_not_required_because: 'problem half only',
+    }
+    await withReview(detail)
+
+    const page = await understand(OLD_WAY)
+    expect(page.text()).toContain('Confirmation not required.')
+    expect(page.text()).toContain('nothing here is waiting on you')
+    expect(page.findAll('button').some(one => one.text() === 'Confirm the problem')).toBe(false)
+
+    /* The field is shown as what the session wrote, under a label that says so. */
+    expect(page.find('.why').text()).toContain('What the session wrote')
+    expect(page.find('.why').text()).toContain('problem half only')
+    expect(page.text()).not.toContain('needing none: problem half only')
+  })
+
+  it('is drawn on a structured brief too, not only on an old one', async () => {
+    const page = await understand(STRUCTURED)
+    /* The real-length example's brief is confirmed, which is the second of the three. */
+    expect(page.text()).toContain('Problem confirmed.')
+  })
+})
+
 /* ================================== Understand ================================== */
 
 describe('Understand', () => {

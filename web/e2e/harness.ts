@@ -72,10 +72,15 @@ export interface Addresses {
    * length the approved boards draw. It is what the Understand, Alternatives and Solution
    * pages are seeded from, and what their screenshots are taken of.
    *
-   * Deliberately in nobody's queue, like the waived review below: its brief is confirmed
-   * and it has no draft, so it changes none of the Inbox's counts and is reachable only by
-   * going to it. A third row in "Needs you" would rewrite every other assertion in the
-   * suite for a review that is here to be looked at rather than acted on.
+   * **It has a draft, and until DEV-878 it did not.** The comment here used to say it was
+   * deliberately in nobody's queue — brief confirmed, no draft, none of the Inbox's counts
+   * touched. That stopped being possible: the code review page's decisions change a
+   * finding's *block* of the draft, so a review with no draft has nothing to decide
+   * against and the page it is seeded for could not be exercised. Its own layer trail
+   * already claimed a draft by saying step 6 was waiting on the developer, so this is the
+   * seed being made to agree with itself.
+   *
+   * So "Needs you" holds two rows, not one, and the counts in this suite say two.
    */
   structuredReviewId: number
   /**

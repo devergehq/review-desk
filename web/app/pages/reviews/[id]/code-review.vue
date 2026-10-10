@@ -406,11 +406,20 @@ function coverage(data: ReviewDetail): string | null {
                 class="row"
                 :class="{ 'row--open': open === finding.seq }"
               >
+                <!--
+                  **`label` is the key alone, because everything else in the row is
+                  already read out.** `OpenRow`'s label exists for a row whose visible
+                  content is not a name on its own — "By name" on the Understand page.
+                  This row's content is the severity, the number, the title and the place,
+                  all of it visible, so a label repeating the title made a screen reader
+                  say it twice. Found by an end-to-end assertion matching the same string
+                  in two places on one row.
+                -->
                 <OpenRow
                   :open="open === finding.seq"
                   :controls="`finding-${finding.seq}`"
                   opens="Open"
-                  :label="`${finding.key}, ${finding.title ?? finding.claim}`"
+                  :label="finding.key"
                   class="face"
                   @toggle="show(finding.seq)"
                 >
