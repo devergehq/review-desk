@@ -1,7 +1,7 @@
 // @vitest-environment nuxt
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { defineComponent, h } from 'vue'
 
@@ -45,17 +45,37 @@ const BROKEN = 'flowchart LR\n  A[[[-->'
 const VALID = 'flowchart LR\n  A[Event] --> B[Deliver]'
 
 /**
+ * mermaid, imported once before any test runs.
+ *
+ * The first `await import('mermaid')` is the slow one — a large ESM bundle with no vite
+ * dependency cache on a cold run — and every timing below depends on it being over. Paid
+ * here, once, rather than inside the first test's budget.
+ */
+beforeAll(async () => {
+  await import('mermaid')
+}, 60_000)
+
+/**
  * Let the component's `onMounted` finish.
  *
- * It imports mermaid, parses and may render, none of which `mountSuspended` awaits. Polled
- * rather than slept on, so the file does not pay for a fixed delay it rarely needs.
+ * It imports mermaid, parses and may render, none of which `mountSuspended` awaits.
+ *
+ * **It throws rather than returning what it found.** An earlier version polled for two
+ * seconds and then returned the page as it was, which on a slow import is the page
+ * *before* mermaid answered — so `pre.written` was still `pre.fallback` and the test
+ * failed pointing at the component instead of at the wait. The budget is now well inside
+ * the test timeout and running out is an error with its own words.
  */
-async function settled(page: { vm: unknown, html: () => string }): Promise<string> {
-  for (let tick = 0; tick < 200; tick += 1) {
-    const html = page.html()
-    if (html.includes('figcaption') || html.includes('<svg')) return html
-    await new Promise(resolve => setTimeout(resolve, 10))
-  }
+async function settled(page: { html: () => string }): Promise<string> {
+  await vi.waitFor(
+    () => {
+      const html = page.html()
+      if (!html.includes('figcaption') && !html.includes('<svg')) {
+        throw new Error('the figure has not settled: no caption and no svg yet')
+      }
+    },
+    { timeout: 10_000, interval: 10 },
+  )
   return page.html()
 }
 
@@ -124,6 +144,48 @@ describe('a source that is not a diagram at all', () => {
   })
 })
 
+describe('a source that was declared a diagram', () => {
+  /*
+   * A ```mermaid fence is a session saying "this is a diagram". `MarkdownView` passes
+   * `declared` for exactly that, so a mistyped type keyword inside a fence reads as a
+   * diagram that did not draw rather than as deliberate prose — which is what GitHub will
+   * show for the same fence, and the draft preview exists to show what GitHub will show.
+   */
+  const MISTYPED = 'sequencediagram\n  A ->> B: hello'
+
+  it('is never a sketch, even when mermaid does not recognise it', async () => {
+    const page = await mountSuspended(MermaidFigure, {
+      props: { source: MISTYPED, declared: true },
+    })
+    await settled(page)
+    expect(page.find('pre.written').exists()).toBe(false)
+    expect(page.find('pre.fallback').exists()).toBe(true)
+    expect(page.find('figcaption').text()).toBe(
+      'This diagram could not be drawn. Its source is above.',
+    )
+  })
+
+  it('is a sketch when nobody declared it, which is the free field', async () => {
+    /* The same source, from a brief's `diagram` field. Same text, different claim. */
+    const page = await mountSuspended(MermaidFigure, { props: { source: MISTYPED } })
+    await settled(page)
+    expect(page.find('pre.written').exists()).toBe(true)
+  })
+
+  it('still leaves nothing outside the component', async () => {
+    const page = await mountSuspended(MermaidFigure, {
+      props: { source: MISTYPED, declared: true },
+    })
+    await settled(page)
+    nothingEscaped()
+  })
+
+  it('is what a draft\'s mermaid fence is rendered with', async () => {
+    const view = readFileSync(resolve('app/components/MarkdownView.vue'), 'utf8')
+    expect(view).toContain('declared')
+  })
+})
+
 describe('a diagram mermaid knows and cannot draw', () => {
   it('keeps the note that it could not be drawn, for a parse failure', async () => {
     const page = await mountSuspended(MermaidFigure, { props: { source: BROKEN } })
@@ -164,19 +226,28 @@ describe('more than one failure, and a page that goes away mid-render', () => {
       ]),
     })
     const page = await mountSuspended(ThreeFigures)
-    for (let tick = 0; tick < 200; tick += 1) {
-      if (page.findAll('figcaption').length === 3) break
-      await new Promise(resolve => setTimeout(resolve, 10))
-    }
-    expect(page.findAll('figcaption')).toHaveLength(3)
+    await vi.waitFor(() => expect(page.findAll('figcaption')).toHaveLength(3), {
+      timeout: 10_000,
+      interval: 10,
+    })
     nothingEscaped()
   })
 
   it('leaves nothing outside the component when it is unmounted mid-render', async () => {
-    const page = await mountSuspended(MermaidFigure, { props: { source: SKETCH } })
-    /* Gone before mermaid has answered, which is a developer clicking away from the page. */
-    page.unmount()
-    await new Promise(resolve => setTimeout(resolve, 600))
+    /*
+     * **With a control, because this test can otherwise pass for the wrong reason.** It
+     * unmounts and then waits, and if mermaid had not got as far as appending anything in
+     * that window the assertion would hold while proving nothing. So a second figure is
+     * mounted at the same moment and *not* unmounted: it settling is what says the window
+     * was long enough for mermaid to run, and only then is the first one's absence a fact.
+     */
+    const gone = await mountSuspended(MermaidFigure, { props: { source: SKETCH } })
+    const control = await mountSuspended(MermaidFigure, { props: { source: SKETCH } })
+    /* Away before mermaid answers, which is a developer clicking off the page. */
+    gone.unmount()
+
+    await settled(control)
+    expect(control.find('pre.written').exists()).toBe(true)
     nothingEscaped()
   })
 })

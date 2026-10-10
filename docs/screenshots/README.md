@@ -12,10 +12,10 @@ cd web && pnpm run e2e:screenshots
 | File | What it is |
 | -- | -- |
 | `seeded-1-queue.png` | The queue, on a database an agent session has recorded one review into. **One row**, not two: that session wrote the draft before the brief was confirmed, so the review is waiting on the developer for two things and the row shows the earlier one. |
-| `seeded-2-review.png` | One review, with the brief unconfirmed — the control only the dashboard has. |
+| `seeded-2-review.png` | One review, with the brief unconfirmed — the control only the dashboard has. Each finding's evidence is its own block below the one-line facts, keeping the paragraphs the session wrote. |
 | `seeded-3-draft.png` | The draft preview, before anything is posted: the checks, the nit held back, and the event it would be posted as. |
 | `seeded-4-rules.png` | Rules, on a database with reviews and no rules. The repository came from the review; the command line cannot write a rule, which is a gap rather than an empty screen. The populated page is in `uplift/`. |
-| `seeded-5-review-no-confirmation.png` | One review whose brief the session recorded as needing no confirmation, with the reason it gave. Layer 2 is finished with and nobody signed it, so the card is dashed and offers no button. |
+| `seeded-5-review-no-confirmation.png` | One review whose brief the session recorded as needing no confirmation, with the reason it gave. Layer 2 is finished with and nobody signed it, so the card is dashed and offers no button. Its `diagram` is the text sketch from DEV-880, shown as written — **this one is from the binary**, so it is the sketch state drawn from a real database rather than a fixture. |
 | `fresh-1-queue.png` | The queue on a database with nothing in it. It reads as new rather than as broken, and says the one thing that fills it. |
 | `fresh-2-review.png` | A review that is not there. `not_found` and an empty review are different answers. |
 | `fresh-3-draft.png` | A draft that is not there. |
@@ -34,6 +34,13 @@ the "Sample data" marker means.
 | -- | -- |
 | `dev-880-before.png` | A brief whose `diagram` field holds a hand-drawn text sketch, **before** the fix. mermaid rejected it and left its own error graphic — a bomb, "Syntax error in text", "mermaid version 12.1.0" — at the bottom of the document, outside the card that asked for the diagram and outside the app's root element. It then stayed there on every page the developer opened. |
 | `dev-880-after.png` | The same page after. The sketch is where the diagram would be, shown as written, and nothing is below the last card. |
+
+**The sketch in both is verbatim**, down to the line breaks: it is what a review session
+actually wrote into a brief's `diagram` field on 10 October 2026, not something drawn to
+illustrate the bug. That is why it describes an OAuth authorize-and-redirect flow while the
+sample review it sits on is about caching a permissions lookup — the two do not match, and
+the real one did not either. A sketch written to fit the brief would have made a tidier
+picture of a failure nobody had seen. `e2e/harness.ts` seeds the same text.
 
 Both are sample mode, because sample mode is the only place with a brief that carries one
 of these. Made the same way as the `uplift/` shots below:
