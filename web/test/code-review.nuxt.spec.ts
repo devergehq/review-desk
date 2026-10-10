@@ -160,6 +160,62 @@ describe('the code review page', () => {
     expect(page.text()).toContain('The reporting front end')
   })
 
+  /*
+   * **And says it on a review that found nothing, which is where it matters most.**
+   *
+   * It sat inside the findings branch and vanished exactly when it was the whole of the
+   * answer: a step 5 that finished and found nothing is saying "we looked at X and not at
+   * Y", and the page was dropping the second half. The retired screen was the only thing
+   * drawing this field; losing it here would have been the same regression one page along.
+   */
+  it('says it on a review that finished and found nothing', async () => {
+    const detail = fixture(RUNNING)
+    detail.layers = detail.layers.map(layer =>
+      layer.number === 5 ? { ...layer, state: 'done' as const } : layer)
+    detail.not_checked = 'The admin screens, which this change does not touch.'
+    await withReview(detail)
+
+    const page = await codeReview(RUNNING)
+    expect(page.find('h1').text()).toBe('The code review found nothing to say.')
+    expect(page.text()).toContain('What the review did not look at')
+    expect(page.text()).toContain('The admin screens')
+    /* And no list, no strip and no tally, which would each be a count of nothing. */
+    expect(page.find('.rows').exists()).toBe(false)
+    expect(page.find('.foot').exists()).toBe(false)
+  })
+
+  /*
+   * **The headline counts what will be posted, not what is in the "To post" list.**
+   *
+   * A finding carried into this round as `fixed` keeps the disposition it was carried
+   * with, so it sits at `in_draft` and the composition will not post it —
+   * `DraftSection.posted` needs the disposition *and* an open round status. The list is
+   * what the developer decided; the headline is the page's one claim about what the author
+   * receives, and it was counting a finding that was fixed last round.
+   */
+  it('leaves a settled carried finding out of the headline, and in its list', async () => {
+    const before = await codeReview(REAL)
+    expect(before.find('h1').text()).toContain('6 should change')
+
+    const detail = fixture(REAL)
+    detail.findings = detail.findings.map(finding =>
+      finding.seq === 1
+        ? {
+            ...finding,
+            continues_review_id: 40,
+            continues_round: 1,
+            round_status: 'fixed' as const,
+          }
+        : finding)
+    await withReview(detail)
+
+    const page = await codeReview(REAL)
+    expect(page.find('h1').text()).toContain('5 should change')
+    /* Still on the page, in the list its disposition puts it in, saying what became of it. */
+    const row = page.findAll('.row').find(one => one.find('.key').text() === 'F1')!
+    expect(row.text()).toContain('Fixed')
+  })
+
   it('tallies the three lists at the foot, and leads on to the draft', async () => {
     const page = await codeReview(REAL)
     expect(page.find('.tally').text()).toBe('12 to post, 1 for a ticket, 1 set aside')
@@ -786,8 +842,34 @@ describe('the developer’s decisions', () => {
     const said = page.findAll('.notice').filter(one =>
       one.text().includes('one block of markdown'))
     expect(said, 'said once, not once per button').toHaveLength(1)
+    /*
+     * **"Post it", not "Keep".** The contract's table is `Keep · Post it`: one decision,
+     * two labels, because the act reads differently depending on where the finding stands.
+     * A draft holding no block for it means pressing this *writes* it one and posts it,
+     * which is what "Keep" says the opposite of.
+     */
     expect(page.findAll('.call .item').map(one => one.text().replace(/[YXGE]$/, '')))
-      .toEqual(['Keep', 'To a ticket'])
+      .toEqual(['Post it', 'To a ticket'])
+  })
+
+  /*
+   * The same rule on a held-back nit, which is where the contract's wording comes from: the
+   * panel says "The session held this back for a ticket" and a button beside it reading
+   * "Keep" is read as *leave it held back*, while pressing it posts the finding.
+   */
+  it('says "Post it" on a finding the draft holds no block for, and "Keep" when it does', async () => {
+    const page = await codeReview(REAL)
+    await press(page, 'For a ticket')
+    await openFinding(page, 'F2')
+
+    const held = page.findAll('.call .item').map(one => one.text().replace(/[YXGE]$/, ''))
+    expect(held).toContain('Post it')
+    expect(held).not.toContain('Keep')
+
+    await press(page, 'To post')
+    await openFinding(page, 'F9')
+    expect(page.findAll('.call .item').map(one => one.text().replace(/[YXGE]$/, '')))
+      .toContain('Keep')
   })
 
   it('disables the controls and says why once the draft is posted', async () => {

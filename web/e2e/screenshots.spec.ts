@@ -50,8 +50,17 @@ test.describe('a seeded database', () => {
     await expect(page.getByRole('heading', { name: '2 reviews need you' })).toBeVisible()
     await shot(page, 'seeded-1-queue')
 
-    await page.goto(`${seeded}reviews/${reviewId}/understand`)
-    await expect(page.getByText('Confirm the problem before anything is posted')).toBeVisible()
+    /*
+     * **The code review page, which is what "the review" is in this set now.**
+     *
+     * This pointed at `/reviews/{id}` and was repointed to `/understand` when that address
+     * became a redirect — which made it a byte-identical copy of
+     * `dev-885-4-understand-old-brief.png`, since the seeded review's brief is an old-style
+     * one. Two names for one picture, and neither of them showed a finding. Step 5 is the
+     * page this set was missing.
+     */
+    await page.goto(`${seeded}reviews/${reviewId}/code-review`)
+    await expect(page.getByText('A retried delivery is sent without')).toBeVisible()
     await shot(page, 'seeded-2-review')
 
     await page.goto(`${seeded}reviews/${reviewId}/draft`)

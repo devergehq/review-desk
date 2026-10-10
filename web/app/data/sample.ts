@@ -950,7 +950,14 @@ function decideFinding(
      * with neither a consequence nor a comment is refused rather than given an invented
      * paragraph.
      */
-    const agentTitle = finding.claim
+    /*
+     * **The finding's own title, and its claim only when it has none** — which is
+     * `decision.rs`'s `words_for`, and was the claim here while the store used the title.
+     * The two composed different headings for the same press, which is this file's whole
+     * failure mode: `### Nit · F2 · <56 words>` on fixtures and `### Nit · F2 · <title>`
+     * against the binary.
+     */
+    const agentTitle = finding.title ?? finding.claim
     const agentText = [finding.why_it_matters, finding.inline_comment]
       .find(text => (text ?? '').trim().length > 0)
     if (agentText == null) {

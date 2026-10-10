@@ -132,8 +132,14 @@ const rows = computed(() =>
   ),
 )
 
-/** The findings this review would post, which is what the headline counts. */
-const posting = computed(() => findings.value.filter(finding => listOf(finding) === 'post'))
+/**
+ * The findings this review would post, which is what the headline counts.
+ *
+ * `willPost`, not `listOf(...) === 'post'`: a finding carried into this round as fixed keeps
+ * the disposition it was carried with, so it can sit in the "To post" list and still not be
+ * posted. The list is what the developer decided; the headline is what the author receives.
+ */
+const posting = computed(() => findings.value.filter(willPost))
 
 const tiles = computed(() => partTiles(findings.value, parts.value))
 
@@ -389,11 +395,21 @@ function coverage(data: ReviewDetail): string | null {
               </p>
             </div>
 
+            <!--
+              **Two sentences, because a part filter is not always what emptied the list.**
+              "Nothing here for this part" on the default "Everything" tile blames a filter
+              that is not applied — on a review whose findings are all held back, which is
+              the state it is most likely to be read in.
+            -->
             <div
               v-if="rows.length === 0"
               class="rd-empty none"
             >
-              Nothing here for this part.
+              {{
+                part === 0
+                  ? `Nothing in this list. The review's findings are all in the other two.`
+                  : 'Nothing here for this part.'
+              }}
             </div>
 
             <ul
@@ -697,23 +713,6 @@ function coverage(data: ReviewDetail): string | null {
             </ul>
           </section>
 
-          <!--
-            What step 5 did not look at. Not on board A8, and the only place it was drawn
-            was the one-page review this replaces — it is step 5's own statement about its
-            own coverage, and the sentence the posted review carries.
-          -->
-          <section
-            v-if="coverage(data)"
-            class="not-checked"
-          >
-            <h2 class="rd-rubric">
-              What the review did not look at
-            </h2>
-            <p class="rd-recorded">
-              {{ coverage(data) }}
-            </p>
-          </section>
-
           <section class="foot">
             <div class="foot-said">
               <p class="rd-display-card tally">
@@ -733,6 +732,28 @@ function coverage(data: ReviewDetail): string | null {
             </DeskButton>
           </section>
         </template>
+
+        <!--
+          What step 5 did not look at. Not on board A8, and the only place it was drawn was
+          the one-page review this replaces — it is step 5's own statement about its own
+          coverage, and the sentence the posted review carries.
+
+          **Outside the findings branch, deliberately.** It sat inside it and so vanished
+          from the one review that needs it most: a step 5 that finished and found nothing
+          says "we looked at X and not at Y", and the page was dropping the second half
+          exactly when it was the whole of the answer. Found by the self-review.
+        -->
+        <section
+          v-if="coverage(data)"
+          class="not-checked"
+        >
+          <h2 class="rd-rubric">
+            What the review did not look at
+          </h2>
+          <p class="rd-recorded">
+            {{ coverage(data) }}
+          </p>
+        </section>
       </ReviewStepPage>
     </template>
   </DeskState>

@@ -612,6 +612,19 @@ describe('deciding on a finding', () => {
      */
     const finding = await findingOn(REAL, 2)
     expect(block.text).toBe(finding.why_it_matters ?? finding.inline_comment)
+
+    /*
+     * **And the heading comes from the finding's title, not its claim.**
+     *
+     * This asserted only the text, and sample mode was writing `agent_title` from the
+     * claim while the store wrote it from the title — so pressing this button composed
+     * `### Nit · F2 · <56 words of claim>` on fixtures and `### Nit · F2 · <the title>`
+     * against the binary. The one failure mode this whole file exists to prevent, found by
+     * the self-review rather than by any test here.
+     */
+    expect(block.title).toBe(finding.title)
+    expect(block.agent_title).toBe(finding.title)
+    expect(draft.draft.body).toContain(`### Nit · F2 · ${finding.title}`)
   })
 
   it('refuses a cut when the draft holds no block for the finding', async () => {

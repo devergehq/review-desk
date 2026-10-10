@@ -129,6 +129,20 @@ const DECISIONS: Array<{ value: FindingDecision, label: string, key?: string }> 
   { value: 'rewrite', label: 'Rewrite', key: 'E' },
 ]
 
+/**
+ * `keep` on a finding the draft holds no block for says **"Post it"**, not "Keep".
+ *
+ * The contract's own table is `Keep · Post it`: one decision, two labels, because the same
+ * act reads differently depending on where the finding stands. On a held-back nit the panel
+ * says "The session held this back for a ticket" and a button beside it reading "Keep" is
+ * read as *leave it held back* — while pressing it writes the finding a block and posts it.
+ * That is the opposite of what the developer is told they are doing.
+ */
+function labelFor(decision: FindingDecision, label: string): string {
+  if (decision !== 'keep' || block.value != null) return label
+  return 'Post it'
+}
+
 const REPLIES: Array<{ value: FindingDecision, label: string, key?: string }> = [
   { value: 'raise_again', label: 'Raise it again' },
   { value: 'accept_reason', label: 'Accept their reason' },
@@ -143,7 +157,11 @@ const options = computed<TrackOption[]>(() => {
   ]
   return all
     .filter(one => available(one.value))
-    .map(one => ({ value: one.value as string, label: one.label, key: one.key }))
+    .map(one => ({
+      value: one.value as string,
+      label: labelFor(one.value, one.label),
+      key: one.key,
+    }))
 })
 
 /* ------------------------- The three that need words ------------------------- */
@@ -202,7 +220,7 @@ function regrade() {
 
 function rewrite() {
   const heading = title.value.trim()
-  const paragraph = text.value
+  const paragraph = text.value.trim()
   if (heading.length === 0) {
     problem.value = 'The heading cannot be blank: it is what gets posted.'
     return
@@ -212,11 +230,19 @@ function rewrite() {
    * joined by one blank line and a block bringing its own would compose a body nobody
    * wrote. Trimmed here rather than refused: a trailing newline in a textarea is a thing
    * the developer did not mean to type.
+   *
+   * **`null` means "leave the paragraph alone", and an emptied box does not mean that.**
+   * `rewrite_finding_block` is `COALESCE(?4, text)`, so sending null for an empty textarea
+   * kept the session's paragraph while the notice said the finding would be posted in the
+   * developer's words and the outcome's detail said only the heading changed. Sent whenever
+   * it differs from what the block holds — including when what it differs *to* is nothing,
+   * which is a heading on its own and a shape the contract allows.
    */
+  const was = block.value?.text ?? ''
   emit('decide', {
     decision: 'rewrite',
     title: heading,
-    text: paragraph.trim().length === 0 ? null : paragraph.trim(),
+    text: paragraph === was ? null : paragraph,
   })
   asking.value = null
 }

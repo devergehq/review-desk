@@ -89,6 +89,12 @@ export const LIST_LABELS: Record<FindingList, string> = {
  * and "Nit" on a tag, because a tag is a label and this is prose.
  */
 export function headline(posting: Finding[]): string {
+  /*
+   * Narrowed here rather than at the caller, so that every caller gets it right: a
+   * `headline()` that trusted its argument would be one more place to pass the wrong list.
+   */
+  posting = posting.filter(willPost)
+
   const of = (severity: Severity) =>
     posting.filter(finding => finding.severity === severity).length
 
@@ -130,9 +136,26 @@ export function reproducedLine(findings: Finding[]): string | null {
   if (reproduced === 0) {
     return 'None of these was reproduced by running something; they were read.'
   }
+  /*
+   * **One finding is its own sentence.** "1 of 1 finding were reproduced … The rest were
+   * read, not run." is the wrong verb and a "rest" that refers to nothing — and a review
+   * with one finding is not a rare shape.
+   */
+  if (reproduced === findings.length) {
+    return findings.length === 1
+      ? 'It was reproduced by running something.'
+      : `All ${count(findings.length, 'finding')} were reproduced by running something.`
+  }
+  /*
+   * Each verb agrees with its own subject: "1 of 3 findings **was** reproduced" counts the
+   * reproduced ones, not the three. Keyed on the total, the first verb is wrong exactly
+   * when the second is right.
+   */
+  const rest = findings.length - reproduced
   return (
-    `${reproduced} of ${count(findings.length, 'finding')} were reproduced by running `
-    + 'something. The rest were read, not run.'
+    `${reproduced} of ${count(findings.length, 'finding')} `
+    + `${reproduced === 1 ? 'was' : 'were'} reproduced by running something. The rest `
+    + `${rest === 1 ? 'was' : 'were'} read, not run.`
   )
 }
 
@@ -333,6 +356,27 @@ export function whereOf(finding: Finding): string {
 /** Whether a finding's round status means it is still open this round. */
 export function isStillOpen(status: RoundStatus | null | undefined): boolean {
   return status == null || status === 'new' || status === 'still_open'
+}
+
+/**
+ * Whether this finding will actually be posted — the store's `Finding::is_posted`.
+ *
+ * **Not the same as being in the "To post" list**, and the difference is the one number on
+ * this page a reader will act on. A finding carried into this round as `fixed` keeps
+ * whatever disposition it was carried with, so it can sit at `in_draft` — the contract says
+ * so in as many words, and records the same overcount in `DraftLint.findings_expected` as a
+ * known gap. `DraftSection.posted` requires the disposition **and** an open round status, so
+ * the composition will not post it.
+ *
+ * The three lists stay keyed on the disposition, because that is what the developer decided
+ * and what `DispositionCounts` serves. The **headline** counts this instead: it is the
+ * page's one claim about what the author is going to receive, and a review announcing
+ * "2 should change" about a finding that was fixed last round would be wrong about the only
+ * thing it says out loud. The row carries its round status beside it, which is what explains
+ * the difference to anyone who counts.
+ */
+export function willPost(finding: Finding): boolean {
+  return finding.disposition === 'in_draft' && isStillOpen(finding.round_status)
 }
 
 /**

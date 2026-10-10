@@ -185,9 +185,17 @@ async function ticketRest() {
   }
 }
 
-/** Whether there is anything left for that button to file. */
+/**
+ * Whether there is anything left for that button to file.
+ *
+ * **Counted with `willPost`, not off `finding_dispositions.in_draft`.** The server refuses
+ * unless a finding is *posted* — the disposition **and** an open round status — so a review
+ * whose carried findings are all `in_draft` and `fixed` has a non-zero `in_draft` count and
+ * nothing to file. Drawing the button there is exactly the "a button that is always there
+ * is a button that is sometimes a refusal" case the comment beside it says it avoids.
+ */
 const openFindings = computed(
-  () => (review.data.value?.finding_dispositions.in_draft ?? 0) > 0,
+  () => (review.data.value?.findings ?? []).some(willPost),
 )
 
 function statusLine(data: DraftDetail): string {
