@@ -238,7 +238,13 @@ function rewrite() {
    * it differs from what the block holds — including when what it differs *to* is nothing,
    * which is a heading on its own and a shape the contract allows.
    */
-  const was = block.value?.text ?? ''
+  /*
+   * Trimmed on both sides of the comparison. `paragraph` is trimmed and the block's text is
+   * not, so a block the session wrote with a trailing space differed from a textarea nobody
+   * touched — and a rewrite of the title alone then sent a paragraph with it, set
+   * `rewritten`, and had the outcome say the developer wrote words they never opened.
+   */
+  const was = (block.value?.text ?? '').trim()
   emit('decide', {
     decision: 'rewrite',
     title: heading,

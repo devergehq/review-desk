@@ -176,6 +176,16 @@ describe('how the findings were checked', () => {
       .toBe('None of these was reproduced by running something; they were read.')
   })
 
+  /*
+   * And the same agreement here, which the branches above were fixed for and this one was
+   * not: "None of these … they were read" is three plurals about one finding, and a single
+   * finding reaches this branch before either of them.
+   */
+  it('keeps the agreement when one finding was not reproduced', () => {
+    expect(reproducedLine([finding({ seq: 1 })]))
+      .toBe('It was not reproduced by running something; it was read.')
+  })
+
   it('says nothing at all about a review with no findings', () => {
     expect(reproducedLine([])).toBeNull()
   })

@@ -185,6 +185,41 @@ describe('the code review page', () => {
   })
 
   /*
+   * **And says what an empty field means, rather than drawing nothing.**
+   *
+   * `not_checked` is null on most reviews, and a section that disappears there reads as
+   * "nothing was missed" — the one thing this field can never be read to say. The screen
+   * this page replaced drew the sentence; the move carried the half a record happens to
+   * hold and left this half behind.
+   */
+  it('says what an empty coverage field means', async () => {
+    const detail = fixture(REAL)
+    detail.not_checked = null
+    await withReview(detail)
+
+    const page = await codeReview(REAL)
+    expect(page.text()).toContain('What the review did not look at')
+    expect(page.text()).toContain('Nothing is recorded as unchecked')
+    expect(page.text()).toContain('not the same as everything having been looked at')
+  })
+
+  /*
+   * **The foot closes the page, so the coverage comes before it.**
+   *
+   * Moving the coverage out of the findings branch put it after the foot, which is the
+   * grey panel with the tally and the way on to step 6 — a section under it reads as
+   * stranded past the end of the page. Asserted on the order of the rendered markup,
+   * because the fix has to be in the DOM: `order` in the stylesheet would leave a screen
+   * reader hearing one order and the eye seeing another.
+   */
+  it('draws the coverage above the foot, not below it', async () => {
+    const page = await codeReview(REAL)
+    const html = page.html()
+    expect(html.indexOf('What the review did not look at'))
+      .toBeLessThan(html.indexOf('The draft is assembled from what you keep'))
+  })
+
+  /*
    * **The headline counts what will be posted, not what is in the "To post" list.**
    *
    * A finding carried into this round as `fixed` keeps the disposition it was carried
@@ -609,6 +644,28 @@ describe('the parts strip', () => {
     expect(page.find('.none').text()).toBe('Nothing here for this part.')
   })
 
+  /*
+   * **And blames the list, not the part, when the list is empty everywhere.**
+   *
+   * A list holding nothing in the whole review holds nothing under a part either, so
+   * "Nothing here for this part" there names a filter that is not the reason — the same
+   * misattribution as the default tile's, the other way round, and reachable by choosing
+   * "For a ticket" on a review with nothing held back and then choosing a part.
+   */
+  it('blames the list, not the part, when the list is empty everywhere', async () => {
+    const detail = fixture(REAL)
+    detail.findings = detail.findings.map(
+      finding => ({ ...finding, disposition: 'in_draft' as const }),
+    )
+    await withReview(detail)
+
+    const page = await codeReview(REAL)
+    await press(page, 'For a ticket')
+    expect(page.find('.none').text()).toContain('Nothing in this list')
+    await press(page, 'Tests and generated types')
+    expect(page.find('.none').text()).toContain('Nothing in this list')
+  })
+
   it('draws no strip at all for a brief with no parts', async () => {
     const page = await codeReview(ONE_BLOCK)
     expect(page.find('.strip').exists()).toBe(false)
@@ -726,6 +783,38 @@ describe('the developer’s decisions', () => {
     const block = draftFixture(REAL)
     expect(draft.text()).toContain('The policy runs after the query, not in it')
     expect(block, 'the fixture is unchanged; the record is what moved').toBeTruthy()
+  })
+
+  /*
+   * **An emptied box is an emptied paragraph, and the record has to agree.**
+   *
+   * `rewrite_finding_block` is `COALESCE(?4, text)`, so `null` means *leave the paragraph
+   * alone*: sending it for a box the developer had cleared kept the session's words while
+   * the notice said the finding would post in the developer's. The block composes to its
+   * heading alone, which `composed()` in `composition.rs` writes out as its own case and
+   * the contract allows. This was changed with no test over it.
+   */
+  it('posts a heading alone when the developer clears the paragraph', async () => {
+    const page = await codeReview(REAL)
+    await openFinding(page, 'F6')
+    await press(page, 'Rewrite')
+
+    const text = page.find('#rewrite-text')
+    const said = (text.element as HTMLTextAreaElement).value
+    expect(said.length, 'the box opens on the words that are there').toBeGreaterThan(0)
+
+    await text.setValue('')
+    await press(page, 'Post it in my words')
+
+    /*
+     * Read off the draft screen rather than off `draftFixture`, which loads the fixtures
+     * again and so answers about the document before any of this — the record is what
+     * moved, and the page is where the record is visible.
+     */
+    const draft = await draftPage(REAL)
+    expect(draft.text(), 'the session’s paragraph is gone').not.toContain(said)
+    expect(draft.text(), 'and the heading it belonged to is still there')
+      .toContain('The policy is applied after the query is built')
   })
 
   it('will not rewrite with a blank heading', async () => {

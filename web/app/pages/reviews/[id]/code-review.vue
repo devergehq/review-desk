@@ -141,6 +141,20 @@ const rows = computed(() =>
  */
 const posting = computed(() => findings.value.filter(willPost))
 
+/**
+ * Whether the list showing is empty over the whole review, part filter or no part filter.
+ *
+ * **Which is what the empty sentence turns on, and `part === 0` was not it.** A list that
+ * holds nothing anywhere holds nothing under a part either, and "Nothing here for this
+ * part" there blames a filter that is not the reason — the same misattribution the other
+ * way round, reachable by choosing "For a ticket" on a review with nothing held back and
+ * then choosing a part. The segments carry this count already; this reads the same fact
+ * where the sentence needs it.
+ */
+const listIsEmpty = computed(
+  () => !findings.value.some(finding => listOf(finding) === list.value),
+)
+
 const tiles = computed(() => partTiles(findings.value, parts.value))
 
 /**
@@ -406,7 +420,7 @@ function coverage(data: ReviewDetail): string | null {
               class="rd-empty none"
             >
               {{
-                part === 0
+                listIsEmpty
                   ? `Nothing in this list. The review's findings are all in the other two.`
                   : 'Nothing here for this part.'
               }}
@@ -712,7 +726,52 @@ function coverage(data: ReviewDetail): string | null {
               </li>
             </ul>
           </section>
+        </template>
 
+        <!--
+          What step 5 did not look at. Not on board A8, and the only place it was drawn was
+          the one-page review this replaces — it is step 5's own statement about its own
+          coverage, and the sentence the posted review carries.
+
+          **Outside the findings branch, deliberately.** It sat inside it and so vanished
+          from the one review that needs it most: a step 5 that finished and found nothing
+          says "we looked at X and not at Y", and the page was dropping the second half
+          exactly when it was the whole of the answer. Found by the self-review.
+        -->
+        <section class="not-checked">
+          <h2 class="rd-rubric">
+            What the review did not look at
+          </h2>
+          <p
+            v-if="coverage(data)"
+            class="rd-recorded"
+          >
+            {{ coverage(data) }}
+          </p>
+          <!--
+            **And it says so when the field is empty, which is most reviews.** The screen
+            this replaced drew the sentence; moving the section here carried the half a
+            record happens to hold and left the half that says what an empty field means.
+            An absent section reads as "nothing was missed", which is the one thing this
+            field can never be read to say — a review names what it skipped only where it
+            noticed skipping it.
+          -->
+          <p
+            v-else
+            class="rd-empty"
+          >
+            Nothing is recorded as unchecked. That is not the same as everything having been
+            looked at: a review names what it skipped only where it noticed skipping it.
+          </p>
+        </section>
+
+        <!--
+          **The foot is last, after the coverage, and that is why it is its own branch.**
+          It closes the page: the tally, and the way on to step 6. A section drawn under it
+          reads as stranded past the end — which is what the coverage line did when it moved
+          out of the branch above, in the picture this pull request commits.
+        -->
+        <template v-if="findings.length > 0">
           <section class="foot">
             <div class="foot-said">
               <p class="rd-display-card tally">
@@ -732,28 +791,6 @@ function coverage(data: ReviewDetail): string | null {
             </DeskButton>
           </section>
         </template>
-
-        <!--
-          What step 5 did not look at. Not on board A8, and the only place it was drawn was
-          the one-page review this replaces — it is step 5's own statement about its own
-          coverage, and the sentence the posted review carries.
-
-          **Outside the findings branch, deliberately.** It sat inside it and so vanished
-          from the one review that needs it most: a step 5 that finished and found nothing
-          says "we looked at X and not at Y", and the page was dropping the second half
-          exactly when it was the whole of the answer. Found by the self-review.
-        -->
-        <section
-          v-if="coverage(data)"
-          class="not-checked"
-        >
-          <h2 class="rd-rubric">
-            What the review did not look at
-          </h2>
-          <p class="rd-recorded">
-            {{ coverage(data) }}
-          </p>
-        </section>
       </ReviewStepPage>
     </template>
   </DeskState>

@@ -133,8 +133,15 @@ export function reproducedLine(findings: Finding[]): string | null {
   const reproduced = findings.filter(
     finding => finding.verification === 'reproduced',
   ).length
+  /*
+   * One finding is its own sentence here too. "None of these was reproduced … they were
+   * read" is three plurals about one finding, which is the agreement the branches below
+   * were fixed for — and a review with a single finding reaches this branch first.
+   */
   if (reproduced === 0) {
-    return 'None of these was reproduced by running something; they were read.'
+    return findings.length === 1
+      ? 'It was not reproduced by running something; it was read.'
+      : 'None of these was reproduced by running something; they were read.'
   }
   /*
    * **One finding is its own sentence.** "1 of 1 finding were reproduced … The rest were
