@@ -8,6 +8,13 @@ holds no implementation of either.
 | `openapi.yaml` | OpenAPI 3.1 for the local JSON API. 16 operations. |
 | `examples/` | One example response per endpoint, one request body per write, and the error shape. A `.<variant>.` form adds a second shape where one example cannot show an optional field both present and absent. |
 | `validate-examples.mjs` | Checks every example against its schema, and fails when an endpoint has no example. |
+
+**Every example that carries `findings[]` carries the whole of a finding**, the canonical
+file and each `.<variant>.` form alike, because `Finding` is `additionalProperties: false`
+and `validate-examples.mjs` checks a variant against the same schema. A variant added for
+one optional field still has to show every other — a `getReview` variant written to
+demonstrate an absent `brief.provenance` needs the finding fields too, or the check goes
+red on a file whose own subject never changed.
 | `redocly.yaml` | Lint configuration, including the one rule turned off and why. |
 | `package.json` | The pinned tooling the checks run on. |
 
@@ -163,6 +170,17 @@ Everything else on the four screens is below.
 | "In draft" / "Suppressed" | `findings[].disposition` |
 | "Held back · ticket" | `findings[].disposition` plus `nit_ticket.status` |
 | "No consequence named · matches a proposed rule…" | `findings[].disposition_reason` |
+| "jobs/DeliverWebhook.php · lines 56 to 63, as changed" | `findings[].hunk.file`, and the range derived from `.hunk.start_line` and the markers |
+| the code rows, each with its `+`, `−` or blank gutter | `findings[].hunk.lines[].marker`, `.text` |
+| the number beside each code row, blank on a removal | `findings[].hunk.lines[].line` |
+| "Comment on line 58, as it will post" | `findings[].flagged_line` |
+| the comment under that line | `findings[].inline_comment` |
+| the "Why it matters" paragraph | `findings[].why_it_matters` |
+| the "How we know" block | `findings[].proof` |
+| the caption under that block | `findings[].proof_note` |
+| the "Reproduced" badge, and its absence | `findings[].verification` |
+| the "What would fix it" sentence | `findings[].suggested_fix` |
+| the monospace lines under it | `findings[].fix_references` |
 | the "Not checked" paragraph | `not_checked` |
 | that an "Open draft" link is shown at all | `draft_status` |
 | which of the three layer-2 cards is shown | `brief.confirmed` and `brief.confirmation_required` |
@@ -178,6 +196,43 @@ false with `confirmation_required` false is a brief an agent recorded as needing
 confirmation — settled, unsigned, in nobody's queue, and the screen must say so rather than
 offering the button. The reason is required whenever the flag is false; the threshold behind
 it is the caller's and Review Desk does not hold it.
+
+#### What a finding is about — the hunk, the comment, the proof and the fix
+
+Added by DEV-874, which is where boards A2 and A3 of the approved design draw a finding in
+full. **All eight fields are optional and independent; a finding with none of them displays
+with its file and its line, as it always did.**
+
+| Field | What it is |
+|---|---|
+| `hunk` | The lines around the finding as the pull request changed them: a file, a start line, and each line marked `added`, `removed` or `unchanged`. `null` when the finding has none. |
+| `hunk.lines[].line` | **Derived, not stored.** Counting from `hunk.start_line`, an `added` or `unchanged` line takes the next number and a `removed` line takes `null` — it is not in the file any more, and the design draws no number for it. Board A2's F1 starts at 56 and draws 56, 57, (blank), 58 … 63; board A3's F6 opens *on* a removal and still numbers from 58. |
+| `flagged_line` | The line the inline comment attaches to. When a `hunk` is present this is one of the numbers that hunk draws, and the server refuses a write that anchors a comment anywhere else. |
+| `inline_comment` | The comment as it will be posted on that line. **Not the `claim`**: the claim is what the record says is wrong, this is what the author reads on GitHub. Nothing here posts it. |
+| `why_it_matters` | The consequence, in a sentence or two. |
+| `proof` | How the review knows — test output, two logged keys, a line read. Newlines are part of it. |
+| `proof_note` | The plain caption beneath the proof — "A throwaway test, not committed." Its own field because the proof is drawn as a monospace block and this is a sentence about it. |
+| `verification` | `reproduced`, `read_not_run` or `unknown`, defaulting to `unknown`. |
+| `suggested_fix` | What would fix it. |
+| `fix_references` | Sibling code the fix should look like, in order. `[]` when there are none. |
+
+**Every one of the text fields is stored and served verbatim.** Review Desk does not fetch
+code — the project brief's rule — so the hunk the API serves is the only copy of those lines
+there is. Nothing trims, re-wraps or normalises them at any point: a line of a single space
+is a line of a single space, a tab stays a tab, and a trailing space survives. `text` may be
+the empty string. The one piece of text the server looks at before storing is a
+`fix_references` entry, which is a pointer the dashboard draws as one line and is refused
+when it is blank; refusing is not normalising, and nothing stored is altered.
+
+**A hunk line is one file line.** `text` carries no end-of-line character, and the server
+refuses a write whose line text contains one: `hunk.lines[].line` gives exactly one number
+per non-removed entry, so an entry holding three file lines would draw three rows under one
+number and shift every number after it — and `flagged_line` with them.
+
+**A removed line cannot be commented on.** It carries no number, so no value of
+`flagged_line` names it, and a write that tries is refused rather than stored undrawable.
+GitHub can comment on the left-hand side of a diff; this model cannot, and that is a stated
+limit rather than an oversight.
 
 ### Draft preview — `GET /reviews/{reviewId}/draft`, example `examples/getDraft.response.json`
 

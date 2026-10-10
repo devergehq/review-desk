@@ -138,6 +138,35 @@ string_enum! {
 }
 
 string_enum! {
+    /// What a line of a stored hunk is: added by the pull request, removed by it, or
+    /// carried through unchanged.
+    ///
+    /// Words rather than `+`, `-` and a space. The marker is a fact about the line; which
+    /// character draws it is the page's business, and board A2 draws the removal as `−`,
+    /// which is not the character a diff uses.
+    HunkLineMarker as "marker" {
+        Added => "added",
+        Removed => "removed",
+        Unchanged => "unchanged",
+    }
+}
+
+string_enum! {
+    /// Whether a finding's proof was reproduced or only read.
+    ///
+    /// **`Unknown` is the default and it is the honest one.** An agent that says nothing
+    /// has not said the finding was read rather than run; it has said nothing. Boards A2
+    /// and A3 badge `Reproduced` and show no badge otherwise, so a default of `read_not_run`
+    /// would put a claim about the method on every finding written before this field
+    /// existed.
+    Verification as "verification" {
+        Reproduced => "reproduced",
+        ReadNotRun => "read_not_run",
+        Unknown => "unknown",
+    }
+}
+
+string_enum! {
     /// What a pull request was last seen to be.
     PrState as "pr_state" {
         Open => "open",
@@ -584,6 +613,85 @@ impl Default for NewBrief {
     }
 }
 
+/// One line of a stored hunk: what the pull request did to it, and its text.
+///
+/// **The text is stored exactly as the agent gave it.** Review Desk does not fetch code —
+/// Patrick's rule — so this string is the only copy of that line there is, and a trim, a
+/// re-wrap or a tab turned into spaces would be Review Desk inventing source it never
+/// read. A line that is nothing but a space is a line that is nothing but a space.
+///
+/// The line *number* is not here. It is derivable from the hunk's `start_line` and the
+/// markers above it, and storing both would let a row say line 58 is the fourth line of a
+/// hunk that starts at 56. See [`FindingHunk::numbered_lines`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HunkLine {
+    pub marker: HunkLineMarker,
+    /// The line, verbatim, with no end-of-line character.
+    pub text: String,
+}
+
+/// The lines around a finding, as the pull request changed them.
+///
+/// The same shape going in and coming out, for [`BriefOption`]'s reason: the store assigns
+/// nothing here, so a second type would be the first type with the same fields.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FindingHunk {
+    /// The file the hunk is from, as the agent spelled it.
+    ///
+    /// Its own field rather than [`Finding::file`]'s: a finding can point at a call site
+    /// and show the hunk it calls into, and nothing here should decide that the two are
+    /// the same path.
+    pub file: String,
+    /// The number the hunk's first **numbered** line carries.
+    ///
+    /// A removed line carries no number, because it is not in the file any more — board
+    /// A3's F6 opens on a removed line and still numbers from 58. So this is the number of
+    /// the first added or unchanged line, whether or not that line is the first one.
+    pub start_line: i64,
+    /// The lines, in the order they are to be drawn.
+    pub lines: Vec<HunkLine>,
+}
+
+impl FindingHunk {
+    /// Each line with the number the page draws beside it, and `None` for a removed line.
+    ///
+    /// **This is the whole of the derivation, in one place.** An added or unchanged line
+    /// takes the next number; a removed line takes none. Board A2's F1 starts at 56 and
+    /// draws 56, 57, (blank), 58, 59, 60, 61, 62, 63 — this function, run over that hunk.
+    pub fn numbered_lines(&self) -> Vec<(Option<i64>, &HunkLine)> {
+        let mut next = self.start_line;
+        self.lines
+            .iter()
+            .map(|line| match line.marker {
+                HunkLineMarker::Removed => (None, line),
+                _ => {
+                    let number = next;
+                    // Saturating, so that nothing here can panic or wrap. A hunk written
+                    // through this crate cannot reach the end of `i64` —
+                    // `finding_evidence::validate` refuses a start line that high — but
+                    // this function also runs over rows read back from a database file,
+                    // and it is read by a server. It does not get to panic over a number
+                    // somebody put in the file by hand.
+                    next = next.saturating_add(1);
+                    (Some(number), line)
+                }
+            })
+            .collect()
+    }
+
+    /// Whether this hunk draws a line with this number.
+    ///
+    /// What makes [`Finding::flagged_line`] checkable: a comment anchored to a line the
+    /// hunk does not draw is a comment the page has nowhere to put.
+    pub fn draws_line(&self, line: i64) -> bool {
+        self.numbered_lines()
+            .iter()
+            .any(|(number, _)| *number == Some(line))
+    }
+}
+
 /// One thing the review found.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Finding {
@@ -609,6 +717,33 @@ pub struct Finding {
     /// `review-desk finding link`. Without it the harvester cannot find the finding's
     /// thread, so it is skipped for replies and resolution.
     pub github_comment_id: Option<String>,
+    /// The lines around the finding, as the pull request changed them. `None` for a
+    /// finding that was written with only a file and a line, which still displays.
+    pub hunk: Option<FindingHunk>,
+    /// The line within the hunk the inline comment attaches to.
+    pub flagged_line: Option<i64>,
+    /// The comment as it will be posted on that line.
+    ///
+    /// **Not the claim.** The claim is what the record says is wrong; this is what the
+    /// author reads on GitHub, in the second person, and board A2 captions it "as it will
+    /// post" to say exactly that.
+    pub inline_comment: Option<String>,
+    /// The consequence, in a sentence or two.
+    pub why_it_matters: Option<String>,
+    /// The proof as text — test output, two logged keys — stored verbatim.
+    pub proof: Option<String>,
+    /// The plain caption drawn beneath the proof — "A throwaway test, not committed."
+    ///
+    /// Its own field rather than more of [`Finding::proof`], because the two are drawn
+    /// differently: the proof is a monospace block and this is a sentence about it. Folded
+    /// into `proof` it would render as though it were test output.
+    pub proof_note: Option<String>,
+    /// Whether that proof was reproduced or only read. `Unknown` when nothing said.
+    pub verification: Verification,
+    /// What would fix it.
+    pub suggested_fix: Option<String>,
+    /// Sibling code the fix should look like, in the order given.
+    pub fix_references: Vec<String>,
     pub created_at: Timestamp,
 }
 
@@ -636,10 +771,79 @@ pub struct NewFinding {
     /// The rule this finding was raised under, if any.
     #[serde(default)]
     pub rule_id: Option<i64>,
+    /// The lines around the finding, as the pull request changed them.
+    #[serde(default)]
+    pub hunk: Option<FindingHunk>,
+    /// The line within the hunk the inline comment attaches to. Refused when a hunk is
+    /// given and does not draw that line.
+    #[serde(default)]
+    pub flagged_line: Option<i64>,
+    /// The comment as it will be posted on that line. Stored verbatim.
+    #[serde(default)]
+    pub inline_comment: Option<String>,
+    /// The consequence. Stored verbatim.
+    #[serde(default)]
+    pub why_it_matters: Option<String>,
+    /// The proof as text. Stored verbatim.
+    #[serde(default)]
+    pub proof: Option<String>,
+    /// The plain caption drawn beneath the proof. Stored verbatim.
+    #[serde(default)]
+    pub proof_note: Option<String>,
+    /// Whether the proof was reproduced or only read. Defaults to unknown.
+    #[serde(default = "default_verification")]
+    pub verification: Verification,
+    /// What would fix it. Stored verbatim.
+    #[serde(default)]
+    pub suggested_fix: Option<String>,
+    /// Sibling code the fix should look like. A blank reference is refused.
+    #[serde(default)]
+    pub fix_references: Vec<String>,
 }
 
 fn default_disposition() -> Disposition {
     Disposition::InDraft
+}
+
+/// What `verification` is when a caller does not mention it.
+///
+/// Hand-written for [`default_disposition`]'s reason, and for a second one: serde's default
+/// for an enum is its first variant, which here would be `reproduced`. A caller that said
+/// nothing about its method would have the record claim it ran the code.
+fn default_verification() -> Verification {
+    Verification::Unknown
+}
+
+/// **Hand-written, because `derive(Default)` would get two fields wrong.**
+///
+/// It would give `disposition: Disposition::InDraft` only by accident of declaration order
+/// and `verification: Verification::Reproduced` outright — the first variant of each. The
+/// same argument as [`NewBrief`]'s own hand-written default, and the same payoff: the call
+/// sites in this crate's tests build a finding with `..Default::default()`, so a field
+/// added here does not quietly change what any of them mean.
+impl Default for NewFinding {
+    fn default() -> Self {
+        NewFinding {
+            lens: String::new(),
+            severity: Severity::Should,
+            file: None,
+            line: None,
+            claim: String::new(),
+            evidence: None,
+            disposition: default_disposition(),
+            disposition_reason: None,
+            rule_id: None,
+            hunk: None,
+            flagged_line: None,
+            inline_comment: None,
+            why_it_matters: None,
+            proof: None,
+            proof_note: None,
+            verification: default_verification(),
+            suggested_fix: None,
+            fix_references: Vec::new(),
+        }
+    }
 }
 
 /// What became of a finding.

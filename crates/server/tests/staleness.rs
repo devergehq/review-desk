@@ -130,6 +130,7 @@ fn stale_after(days: Timestamp) -> bool {
                 disposition: review_desk_store::Disposition::InDraft,
                 disposition_reason: None,
                 rule_id: Some(rule),
+                ..Default::default()
             },
         )
         .expect("writing the citing finding");

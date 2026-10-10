@@ -37,6 +37,7 @@ fn cite(store: &Store, review: i64, rule: Option<i64>, claim: &str) -> i64 {
                 disposition: Disposition::InDraft,
                 disposition_reason: None,
                 rule_id: rule,
+                ..Default::default()
             },
         )
         .expect("add finding")
@@ -200,6 +201,7 @@ fn a_rules_counts_come_from_the_findings_that_cite_it() {
                     disposition: Disposition::InDraft,
                     disposition_reason: None,
                     rule_id: None,
+                    ..Default::default()
                 }
             },
         )

@@ -20,8 +20,9 @@ use review_desk_harvest::recorded::Recorded;
 use review_desk_harvest::{CommitFiles, Comparison, GitHub, PullRequest, ReviewThread};
 use review_desk_server::{Github, Records, Running, Server};
 use review_desk_store::{
-    BriefOption, Disposition, DraftLint, DraftStatus, NewBrief, NewDraft, NewFinding, NewOutcome,
-    NewRule, OutcomeKind, ReviewLayerState, RuleScope, RuleStage, Severity, Store,
+    BriefOption, Disposition, DraftLint, DraftStatus, FindingHunk, HunkLine, HunkLineMarker,
+    NewBrief, NewDraft, NewFinding, NewOutcome, NewRule, OutcomeKind, ReviewLayerState, RuleScope,
+    RuleStage, Severity, Store, Verification,
 };
 use serde_json::Value;
 use tempfile::TempDir;
@@ -439,6 +440,45 @@ pub fn seed(store: &Store) -> Seeded {
                 disposition: Disposition::InDraft,
                 disposition_reason: None,
                 rule_id: None,
+                // The first finding carries everything DEV-874 added, including a hunk
+                // whose middle line is a removal and whose fourth is blank — so the
+                // conformance test validates a filled `FindingHunk` and the awkward text
+                // goes over the wire rather than only into the database.
+                hunk: Some(FindingHunk {
+                    file: "jobs/DeliverWebhook.php".to_string(),
+                    start_line: 56,
+                    lines: vec![
+                        HunkLine {
+                            marker: HunkLineMarker::Unchanged,
+                            text: "{".to_string(),
+                        },
+                        HunkLine {
+                            marker: HunkLineMarker::Removed,
+                            text: "    $client->post($this->endpoint->url);".to_string(),
+                        },
+                        HunkLine {
+                            marker: HunkLineMarker::Added,
+                            text: "\t$response = $client->post($this->endpoint->url);  "
+                                .to_string(),
+                        },
+                        HunkLine {
+                            marker: HunkLineMarker::Added,
+                            text: "   ".to_string(),
+                        },
+                    ],
+                }),
+                flagged_line: Some(57),
+                inline_comment: Some(
+                    "This retry re-sends the payload with no idempotency key.".to_string(),
+                ),
+                why_it_matters: Some(
+                    "A customer whose endpoint answers slowly is charged twice.".to_string(),
+                ),
+                proof: Some("deliveries for evt_1: 2, expected 1\nnaïve ✓".to_string()),
+                proof_note: Some("A throwaway test, not committed.".to_string()),
+                verification: Verification::Reproduced,
+                suggested_fix: Some("Send the delivery id as the key.".to_string()),
+                fix_references: vec!["SendInvoiceEmail.php:44".to_string()],
             },
         )
         .expect("writing a finding");
@@ -456,6 +496,7 @@ pub fn seed(store: &Store) -> Seeded {
                 disposition: Disposition::HeldBack,
                 disposition_reason: Some("a nit; it goes in the ticket".to_string()),
                 rule_id: None,
+                ..Default::default()
             },
         )
         .expect("writing a second finding");

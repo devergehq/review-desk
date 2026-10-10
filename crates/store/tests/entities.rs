@@ -106,6 +106,7 @@ fn a_finding_is_created_and_read_back() {
                 disposition: Disposition::InDraft,
                 disposition_reason: None,
                 rule_id: None,
+                ..Default::default()
             },
         )
         .expect("add finding");
@@ -141,6 +142,7 @@ fn an_outcome_is_created_and_read_back() {
                 disposition: Disposition::InDraft,
                 disposition_reason: None,
                 rule_id: None,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -191,6 +193,7 @@ fn a_rule_is_created_and_read_back() {
                 disposition: Disposition::InDraft,
                 disposition_reason: None,
                 rule_id: None,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -606,6 +609,7 @@ fn a_finding_names_the_rule_it_was_raised_under_and_moves_its_last_citation() {
                 disposition: Disposition::InDraft,
                 disposition_reason: None,
                 rule_id: Some(rule.id),
+                ..Default::default()
             },
         )
         .expect("add a finding citing a rule");
@@ -640,6 +644,7 @@ fn a_finding_citing_a_rule_that_is_not_there_names_the_rule() {
             disposition: Disposition::InDraft,
             disposition_reason: None,
             rule_id: Some(404),
+            ..Default::default()
         },
     ) {
         Err(StoreError::UnknownParent { entity, parent, id }) => {
@@ -670,6 +675,7 @@ fn one_ticket_covers_every_nit_held_back_from_a_review() {
         disposition: Disposition::HeldBack,
         disposition_reason: Some("held for one ticket with the other nits".to_string()),
         rule_id: None,
+        ..Default::default()
     };
     store
         .add_finding(review.id, nit("backoff repeated in two files"))

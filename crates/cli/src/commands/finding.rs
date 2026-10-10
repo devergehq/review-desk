@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use clap::Subcommand;
-use review_desk_store::{Disposition, NewFinding, Severity, Store};
+use review_desk_store::{Disposition, HunkLineMarker, NewFinding, Severity, Store, Verification};
 use serde_json::json;
 
 use crate::error::Result;
@@ -16,9 +16,44 @@ pub enum FindingCommand {
     ///
     /// The document is `{"lens": "...", "severity": "...", "claim": "...", "file":
     /// "...", "line": 12, "evidence": "...", "disposition": "...",
-    /// "disposition_reason": "..."}`. `lens`, `severity` and `claim` are required, the
-    /// disposition defaults to `in_draft`, and a field that is not one of those eight is
-    /// refused rather than quietly dropped.
+    /// "disposition_reason": "...", "rule_id": 9}`. `lens`, `severity` and `claim` are
+    /// required, the disposition defaults to `in_draft`, and a field that is not one of
+    /// the names here is refused rather than quietly dropped.
+    ///
+    /// A finding may also carry what it is about, which is what the dashboard shows:
+    ///
+    /// ```json
+    /// {
+    ///   "hunk": {
+    ///     "file": "jobs/DeliverWebhook.php",
+    ///     "start_line": 56,
+    ///     "lines": [
+    ///       {"marker": "unchanged", "text": "{"},
+    ///       {"marker": "removed", "text": "    $client->post($url, $payload);"},
+    ///       {"marker": "added", "text": "    $r = $client->post($url, $payload);"}
+    ///     ]
+    ///   },
+    ///   "flagged_line": 57,
+    ///   "inline_comment": "This retry re-sends the payload with no idempotency key.",
+    ///   "why_it_matters": "A slow endpoint is charged twice for one event.",
+    ///   "proof": "deliveries for evt_1: 2, expected 1",
+    ///   "proof_note": "A throwaway test, not committed.",
+    ///   "verification": "reproduced",
+    ///   "suggested_fix": "Send the delivery id as the key.",
+    ///   "fix_references": ["SendInvoiceEmail.php:44"]
+    /// }
+    /// ```
+    ///
+    /// All of it is optional and none of it depends on the rest; a finding with none of
+    /// it reads as it always did. **Review Desk does not fetch code**, so the hunk is
+    /// stored exactly as it is given here — no trimming, no re-wrapping, no normalising —
+    /// and `start_line` is the number the first added or unchanged line carries, a removed
+    /// line carrying none. A line's `text` is one file line and may not contain an
+    /// end-of-line character, or the numbering beside it is wrong. `flagged_line` has to
+    /// be a line the hunk draws, when a hunk is given. `proof_note` is the plain caption
+    /// drawn beneath the proof, which is drawn as a monospace block. `verification` is one of `reproduced`, `read_not_run` or `unknown`, and it
+    /// defaults to `unknown`: saying nothing about the method is not the same as saying
+    /// the code was read and not run.
     Add {
         /// The review's id.
         #[arg(long, value_name = "ID")]
@@ -68,9 +103,12 @@ pub fn run(command: &FindingCommand) -> Result<Report> {
             let new: NewFinding = read_json(
                 file,
                 Some(&format!(
-                    "severity is one of: {}; disposition is one of: {}",
+                    "severity is one of: {}; disposition is one of: {}; \
+                     verification is one of: {}; a hunk line's marker is one of: {}",
                     Severity::valid_values(),
-                    Disposition::valid_values()
+                    Disposition::valid_values(),
+                    Verification::valid_values(),
+                    HunkLineMarker::valid_values()
                 )),
             )?;
             let store = Store::open_default()?;

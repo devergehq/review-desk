@@ -28,10 +28,10 @@ use std::path::{Path, PathBuf};
 
 use common::temp_store;
 use review_desk_store::{
-    now, Actor, Brief, BriefOption, Disposition, Draft, DraftLint, Finding, FindingRef, NewBrief,
-    NewDraft, NewFinding, NewOutcome, NewReview, NewRule, NitTicket, Outcome, OutcomeKind, Review,
-    ReviewEvent, ReviewFacts, ReviewLayer, ReviewLayerName, Rule, RuleScope, RuleStage, Severity,
-    Store,
+    now, Actor, Brief, BriefOption, Disposition, Draft, DraftLint, Finding, FindingHunk,
+    FindingRef, HunkLine, HunkLineMarker, NewBrief, NewDraft, NewFinding, NewOutcome, NewReview,
+    NewRule, NitTicket, Outcome, OutcomeKind, Review, ReviewEvent, ReviewFacts, ReviewLayer,
+    ReviewLayerName, Rule, RuleScope, RuleStage, Severity, Store, Verification,
 };
 use serde_json::{json, Map, Value};
 
@@ -279,14 +279,50 @@ fn seed(store: &Store) -> Seeded {
                 _ => Some("Held for one ticket with the other nits.".to_string()),
             },
             rule_id: rule,
+            ..Default::default()
         };
     for new in [
-        finding(
-            Severity::Blocker,
-            Disposition::InDraft,
-            None,
-            "no idempotency key",
-        ),
+        NewFinding {
+            // The One review example's F1 carries everything DEV-874 added, so every one
+            // of those fields has to be answerable from the store or this test fails.
+            hunk: Some(FindingHunk {
+                file: "jobs/DeliverWebhook.php".to_string(),
+                start_line: 56,
+                lines: vec![
+                    HunkLine {
+                        marker: HunkLineMarker::Unchanged,
+                        text: "{".to_string(),
+                    },
+                    HunkLine {
+                        marker: HunkLineMarker::Removed,
+                        text: "    $client->post($this->endpoint->url, $this->payload);"
+                            .to_string(),
+                    },
+                    HunkLine {
+                        marker: HunkLineMarker::Added,
+                        text: "    $response = $client->post($this->endpoint->url);".to_string(),
+                    },
+                ],
+            }),
+            flagged_line: Some(57),
+            inline_comment: Some(
+                "This retry re-sends the payload with no idempotency key.".to_string(),
+            ),
+            why_it_matters: Some(
+                "A customer whose endpoint answers slowly is charged twice.".to_string(),
+            ),
+            proof: Some("deliveries for evt_1: 2, expected 1".to_string()),
+            proof_note: Some("A throwaway test, not committed.".to_string()),
+            verification: Verification::Reproduced,
+            suggested_fix: Some("Send the delivery id as the key.".to_string()),
+            fix_references: vec!["SendInvoiceEmail.php:44".to_string()],
+            ..finding(
+                Severity::Blocker,
+                Disposition::InDraft,
+                None,
+                "no idempotency key",
+            )
+        },
         finding(
             Severity::Should,
             Disposition::InDraft,
@@ -299,12 +335,31 @@ fn seed(store: &Store) -> Seeded {
             Some(cited_rule.id),
             "the failure test passes with the fix reverted",
         ),
-        finding(
-            Severity::Nit,
-            Disposition::HeldBack,
-            None,
-            "backoff repeated",
-        ),
+        NewFinding {
+            // F4 is what the setFindingDisposition example returns, and that example
+            // carries the new fields too — a finding keeps what it is about when the
+            // developer moves it out of the draft.
+            hunk: Some(FindingHunk {
+                file: "config/webhooks.php".to_string(),
+                start_line: 12,
+                lines: vec![HunkLine {
+                    marker: HunkLineMarker::Unchanged,
+                    text: "    'backoff' => [30, 120, 600],".to_string(),
+                }],
+            }),
+            flagged_line: Some(12),
+            why_it_matters: Some("The two copies will drift.".to_string()),
+            proof: Some("From reading both files.".to_string()),
+            proof_note: Some("Read, not run: the schedule was not executed.".to_string()),
+            verification: Verification::ReadNotRun,
+            suggested_fix: Some("Read the schedule from one place.".to_string()),
+            ..finding(
+                Severity::Nit,
+                Disposition::HeldBack,
+                None,
+                "backoff repeated",
+            )
+        },
         finding(Severity::Nit, Disposition::HeldBack, None, "unused import"),
         finding(
             Severity::Nit,
@@ -495,6 +550,7 @@ fn seed(store: &Store) -> Seeded {
                 disposition: Disposition::InDraft,
                 disposition_reason: None,
                 rule_id: Some(excepted_rule.id),
+                ..Default::default()
             },
         )
         .expect("a later citation");
@@ -606,6 +662,29 @@ fn finding_document(finding: &Finding) -> Value {
         "rule_id": finding.rule_id,
         // Derived: `R-` and the rule id, zero-padded to two digits.
         "rule_key": finding.rule_id.map(|id| format!("R-{id:02}")),
+        "hunk": finding.hunk.as_ref().map(|hunk| json!({
+            "file": hunk.file,
+            "start_line": hunk.start_line,
+            "lines": hunk
+                .numbered_lines()
+                .into_iter()
+                // Derived: the number beside each line, from the start line and the
+                // markers. A removed line is not in the file any more and takes none.
+                .map(|(number, line)| json!({
+                    "marker": line.marker,
+                    "line": number,
+                    "text": line.text,
+                }))
+                .collect::<Vec<_>>(),
+        })),
+        "flagged_line": finding.flagged_line,
+        "inline_comment": finding.inline_comment,
+        "why_it_matters": finding.why_it_matters,
+        "proof": finding.proof,
+        "proof_note": finding.proof_note,
+        "verification": finding.verification,
+        "suggested_fix": finding.suggested_fix,
+        "fix_references": finding.fix_references,
         "created_at": finding.created_at,
     })
 }

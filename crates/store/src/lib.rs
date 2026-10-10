@@ -36,11 +36,12 @@ pub use crate::error::{Result, StoreError};
 pub use crate::migrations::newest_version;
 pub use crate::model::{
     now, Actor, Brief, BriefOption, Disposition, Draft, DraftLint, DraftStatus, Finding,
-    FindingRef, FullReview, NewBrief, NewDraft, NewFinding, NewOutcome, NewReview, NewRule,
-    NitTicket, NitTicketStatus, OpenedReview, Outcome, OutcomeKind, PrState, RepoSummary, Review,
-    ReviewAtLayer, ReviewEvent, ReviewFacts, ReviewLayer, ReviewLayerName, ReviewLayerState,
-    ReviewLinks, Rule, RuleCounts, RuleException, RuleScope, RuleStage, RulesSummary, Severity,
-    SignOff, Timestamp, WorkFilter, WorkItem, WorkKind, ACTIVE_RULES_CAP,
+    FindingHunk, FindingRef, FullReview, HunkLine, HunkLineMarker, NewBrief, NewDraft, NewFinding,
+    NewOutcome, NewReview, NewRule, NitTicket, NitTicketStatus, OpenedReview, Outcome, OutcomeKind,
+    PrState, RepoSummary, Review, ReviewAtLayer, ReviewEvent, ReviewFacts, ReviewLayer,
+    ReviewLayerName, ReviewLayerState, ReviewLinks, Rule, RuleCounts, RuleException, RuleScope,
+    RuleStage, RulesSummary, Severity, SignOff, Timestamp, Verification, WorkFilter, WorkItem,
+    WorkKind, ACTIVE_RULES_CAP,
 };
 pub use crate::path::{default_db_path, resolve_db_path, DB_ENV_VAR};
 

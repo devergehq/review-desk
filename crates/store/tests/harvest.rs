@@ -20,6 +20,7 @@ fn a_finding(claim: &str, file: Option<&str>, line: Option<i64>) -> NewFinding {
         disposition: Disposition::InDraft,
         disposition_reason: None,
         rule_id: None,
+        ..Default::default()
     }
 }
 
