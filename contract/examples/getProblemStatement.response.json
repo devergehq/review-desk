@@ -1,0 +1,44 @@
+{
+  "review_id": 17,
+  "problem": "When a customer's endpoint is down, a webhook delivery fails once and is never tried again. The customer finds out only when their own records drift. The ticket asks for deliveries to be retried for up to 24 hours and for the customer to see which ones failed.",
+  "how_it_works_today": "An event is delivered inside the request that caused it. The sender posts to the customer's endpoint, waits for the answer, and logs whatever came back. There is no record of a delivery anywhere apart from that log line, and nothing reads the log.",
+  "flow_before_caption": "The delivery is sent inside the request",
+  "flow_before": [
+    [
+      {
+        "title": "An event happens",
+        "note": "A subscription is created, changed or cancelled",
+        "problem": null
+      }
+    ],
+    [
+      {
+        "title": "The delivery is sent inline",
+        "note": "Inside the request that caused the event",
+        "problem": 1
+      }
+    ],
+    [
+      {
+        "title": "The endpoint answers",
+        "note": "Logged and forgotten",
+        "problem": 2
+      },
+      {
+        "title": "The endpoint is down",
+        "note": "Logged and forgotten, and nothing retries",
+        "problem": 1
+      }
+    ]
+  ],
+  "problems": [
+    {
+      "number": 1,
+      "was_wrong": "A delivery that fails is never tried again."
+    },
+    {
+      "number": 2,
+      "was_wrong": "Nothing records that a delivery was attempted."
+    }
+  ]
+}

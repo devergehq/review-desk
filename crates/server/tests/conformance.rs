@@ -179,6 +179,100 @@ fn confirm_brief_validates_as_a_brief() {
 }
 
 #[test]
+fn the_problem_statement_validates_and_carries_nothing_of_the_change() {
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+
+    let answer = harness.api(
+        "GET",
+        &format!("/reviews/{}/brief/problem-statement", seeded.review_id),
+        None,
+    );
+
+    assert_eq!(answer.status, 200, "{}", answer.text());
+    assert_valid("ProblemStatement", &answer.json());
+
+    // `additionalProperties: false` on the schema is what makes the validation above a
+    // statement about what is absent as well as what is present. These are the names the
+    // change half would arrive under, asserted by name so a field added to `Brief` and
+    // copied into this read by habit fails here.
+    let served = answer.json();
+    let fields = served.as_object().expect("an object");
+    for change_half in [
+        "headline",
+        "diagram",
+        "flow_after",
+        "flow_after_caption",
+        "support_table",
+        "options",
+        "blind_pass",
+        "blind_pass_state",
+        "parts",
+        "open_choices",
+        "disagreements",
+        "approach_verdict",
+    ] {
+        assert!(
+            !fields.contains_key(change_half),
+            "{change_half} is the change half and reached the problem statement"
+        );
+    }
+    for problem in served["problems"].as_array().expect("the problems") {
+        let problem = problem.as_object().expect("a problem");
+        assert!(
+            !problem.contains_key("now_fixed"),
+            "the \"now\" column leaked"
+        );
+        assert!(!problem.contains_key("detail_before"), "the detail leaked");
+        assert!(!problem.contains_key("detail_after"), "the detail leaked");
+    }
+}
+
+#[test]
+fn a_brief_with_every_row_on_it_validates_whole() {
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+
+    let answer = harness.api(
+        "POST",
+        &format!("/reviews/{}/brief/confirm", seeded.review_id),
+        None,
+    );
+    assert_eq!(answer.status, 200, "{}", answer.text());
+
+    let brief = answer.json();
+    assert_valid("Brief", &brief);
+
+    // The seed writes every one of the twelve rows, so this is the contract's own
+    // statement that the server serves each of them.
+    assert!(!brief["flow_before"]
+        .as_array()
+        .expect("the flow")
+        .is_empty());
+    assert!(!brief["flow_after"].as_array().expect("the flow").is_empty());
+    assert!(!brief["problems"]
+        .as_array()
+        .expect("the problems")
+        .is_empty());
+    assert!(brief["support_table"].is_object());
+    assert!(brief["blind_pass"].is_object());
+    assert_eq!(brief["blind_pass_state"], json!("ran"));
+    assert!(!brief["parts"].as_array().expect("the parts").is_empty());
+    assert!(!brief["open_choices"]
+        .as_array()
+        .expect("the choices")
+        .is_empty());
+    assert!(!brief["disagreements"]
+        .as_array()
+        .expect("the clashes")
+        .is_empty());
+    assert!(!brief["options"][0]["verdicts"]
+        .as_array()
+        .expect("the verdicts")
+        .is_empty());
+}
+
+#[test]
 fn set_finding_disposition_validates_as_a_finding() {
     let harness = common::start_with_no_github();
     let seeded = common::seed(&harness.store);

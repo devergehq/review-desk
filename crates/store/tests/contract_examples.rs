@@ -28,13 +28,15 @@ use std::path::{Path, PathBuf};
 
 use common::temp_store;
 use review_desk_store::{
-    finding_heading, now, Actor, Brief, BriefOption, CriterionStatus, Decision,
+    finding_heading, now, Actor, BlindPassState, Brief, BriefBlindPass, BriefDisagreement,
+    BriefFlowBox, BriefFlowRow, BriefOpenChoice, BriefOption, BriefOptionVerdict, BriefPart,
+    BriefPartFile, BriefProblem, BriefSupportTable, CriterionStatus, Decision,
     DescriptionLintStatus, Disposition, Draft, DraftLint, DraftSection, FileCheck, Finding,
     FindingDecision, FindingHunk, FindingRef, HunkLine, HunkLineMarker, NewAcceptanceCriterion,
     NewBrief, NewDescriptionLintResult, NewDraft, NewFileChange, NewFinding, NewOutcome, NewReview,
-    NewReviewSource, NewRule, NitTicket, Outcome, OutcomeKind, Review, ReviewEvent, ReviewFacts,
-    ReviewLayer, ReviewLayerName, ReviewProvenance, Rule, RuleScope, RuleStage, Severity,
-    SourceKind, Store, Verification,
+    NewReviewSource, NewRule, NitTicket, OptionProposer, Outcome, OutcomeKind, ProblemStatement,
+    ProblemVerdict, Review, ReviewEvent, ReviewFacts, ReviewLayer, ReviewLayerName,
+    ReviewProvenance, Rule, RuleScope, RuleStage, Severity, SourceKind, Store, Verification,
 };
 use serde_json::{json, Map, Value};
 
@@ -235,37 +237,6 @@ fn seed(store: &Store) -> Seeded {
             .expect("a layer");
     }
 
-    store
-        .put_brief(
-            review.id,
-            NewBrief {
-                problem: "A webhook delivery fails once and is never tried again.".to_string(),
-                diagram: Some(
-                    "flowchart LR\n  A[Event happens] --> B[Delivery is lost]".to_string(),
-                ),
-                approach_verdict: Some("B is the right shape for this ticket.".to_string()),
-                provenance: Some(
-                    "from the ticket and the code · you corrected one sentence".to_string(),
-                ),
-                options: ["A", "B", "C"]
-                    .iter()
-                    .map(|key| BriefOption {
-                        key: key.to_string(),
-                        title: format!("Option {key}"),
-                        argument_for: "the argument for it".to_string(),
-                        argument_against: "the argument against it".to_string(),
-                        chosen: *key == "B",
-                    })
-                    .collect(),
-                option_map: None,
-                ..Default::default()
-            },
-        )
-        .expect("a brief");
-    store
-        .confirm_brief(review.id, Actor::Developer)
-        .expect("the developer confirms it");
-
     // Six findings: three in the draft, two held back, one suppressed — the
     // dispositions the One review example shows.
     let finding =
@@ -373,6 +344,171 @@ fn seed(store: &Store) -> Seeded {
     ] {
         store.add_finding(review.id, new).expect("a finding");
     }
+
+    // The brief, whole, with every row the three approved boards draw.
+    //
+    // **Written after the findings, and that is the order a session writes it in.** The
+    // brief's change half points at findings — an open choice may, a disagreement must —
+    // so the problem half is written at layer 2 and the rest once the diff has been read.
+    // Here it is one write, because this seed is a finished review rather than a
+    // transcript of one.
+    let verdict = |problem: i64, verdict: ProblemVerdict| BriefOptionVerdict {
+        problem,
+        verdict,
+        why: Some("what it does about that problem, in one line".to_string()),
+    };
+    store
+        .put_brief(
+            review.id,
+            NewBrief {
+                problem: "A webhook delivery fails once and is never tried again.".to_string(),
+                diagram: Some(
+                    "flowchart LR\n  A[Event happens] --> B[Delivery is lost]".to_string(),
+                ),
+                approach_verdict: Some("B is the right shape for this ticket.".to_string()),
+                provenance: Some(
+                    "from the ticket and the code · you corrected one sentence".to_string(),
+                ),
+                options: ["A", "B", "C"]
+                    .iter()
+                    .map(|key| BriefOption {
+                        key: key.to_string(),
+                        title: format!("Option {key}"),
+                        argument_for: "the argument for it".to_string(),
+                        argument_against: "the argument against it".to_string(),
+                        chosen: *key == "B",
+                        // Three proposers across three options, so the Alternatives page's
+                        // badge has each of them to draw and `blind_pass_state` reads
+                        // `ran`.
+                        proposed_by: match *key {
+                            "A" => OptionProposer::Ticket,
+                            "B" => OptionProposer::Both,
+                            _ => OptionProposer::BlindPass,
+                        },
+                        verdicts: vec![
+                            verdict(1, ProblemVerdict::Fixed),
+                            verdict(2, ProblemVerdict::Partly),
+                        ],
+                    })
+                    .collect(),
+                option_map: None,
+                headline: Some(
+                    "Deliveries move to a queue, so one that fails is retried.".to_string(),
+                ),
+                how_it_works_today: Some(
+                    "A delivery is sent inside the request that caused it, and a failure is \
+                     logged and dropped."
+                        .to_string(),
+                ),
+                flow_before_caption: Some("The delivery is sent inline".to_string()),
+                flow_after_caption: Some("The delivery is queued".to_string()),
+                flow_before: vec![
+                    vec![BriefFlowBox {
+                        title: "An event happens".to_string(),
+                        note: Some("A subscription changes".to_string()),
+                        problem: None,
+                    }],
+                    // A split row, so the example's two-box row has a source.
+                    vec![
+                        BriefFlowBox {
+                            title: "The endpoint answers".to_string(),
+                            note: Some("Logged and forgotten".to_string()),
+                            problem: Some(2),
+                        },
+                        BriefFlowBox {
+                            title: "The endpoint is down".to_string(),
+                            note: Some("Nothing retries".to_string()),
+                            problem: Some(1),
+                        },
+                    ],
+                ],
+                flow_after: vec![vec![BriefFlowBox {
+                    title: "A worker sends it".to_string(),
+                    note: Some("Retried with backoff".to_string()),
+                    problem: Some(1),
+                }]],
+                problems: vec![
+                    BriefProblem {
+                        number: 1,
+                        was_wrong: "A delivery that fails is never tried again.".to_string(),
+                        now_fixed: Some("A worker retries it for 24 hours.".to_string()),
+                        detail_title: Some("The delivery sent inline".to_string()),
+                        detail_before: vec!["The sender waits inside the request.".to_string()],
+                        detail_after: vec!["A row is written before anything is sent.".to_string()],
+                    },
+                    BriefProblem {
+                        number: 2,
+                        was_wrong: "Nothing records that a delivery was attempted.".to_string(),
+                        now_fixed: Some("Every attempt is a row.".to_string()),
+                        detail_title: Some("No record of an attempt".to_string()),
+                        detail_before: vec!["Only a log line nothing reads.".to_string()],
+                        detail_after: vec!["One row per attempt, with its status.".to_string()],
+                    },
+                ],
+                support_table: Some(BriefSupportTable {
+                    title: Some("The idea: two questions, each with one owner".to_string()),
+                    columns: vec![
+                        "The question".to_string(),
+                        "Who should answer it".to_string(),
+                        "Before".to_string(),
+                        "After".to_string(),
+                    ],
+                    rows: vec![vec![
+                        "Has this delivery been attempted?".to_string(),
+                        "The delivery row".to_string(),
+                        "A log line nothing reads".to_string(),
+                        "A row with a status".to_string(),
+                    ]],
+                }),
+                blind_pass: Some(BriefBlindPass {
+                    given: "A web application delivers events inside the request that caused \
+                            them, and a failure is logged and dropped."
+                        .to_string(),
+                    pick_key: Some("B".to_string()),
+                    pick_why: Some("A queued delivery answers both problems.".to_string()),
+                    looked_up: "nothing".to_string(),
+                    questions: vec!["Must a retry be idempotent?".to_string()],
+                }),
+                parts: vec![BriefPart {
+                    title: "The delivery row and its states".to_string(),
+                    summary: "One row per attempt, written before anything is sent.".to_string(),
+                    fixes: vec![2],
+                    files: vec![
+                        BriefPartFile {
+                            path: "app/Models/WebhookDelivery.php".to_string(),
+                            lines_added: 74,
+                            lines_removed: 0,
+                            in_diff: true,
+                        },
+                        // Outside the diff, which is how a part claims a file the pull
+                        // request did not change.
+                        BriefPartFile {
+                            path: "app/Support/Backoff.php".to_string(),
+                            lines_added: 0,
+                            lines_removed: 0,
+                            in_diff: false,
+                        },
+                    ],
+                }],
+                open_choices: vec![BriefOpenChoice {
+                    left_open: "How long a failed delivery is kept".to_string(),
+                    chosen: "Thirty days, then the row is pruned".to_string(),
+                    why: "The ticket asks for a 24-hour window and stops there.".to_string(),
+                    departs_from_ticket: false,
+                    finding_seq: Some(1),
+                }],
+                disagreements: vec![BriefDisagreement {
+                    description_says: "A retry carries the first attempt's key.".to_string(),
+                    code_does: "The key is generated per attempt.".to_string(),
+                    finding_seq: 2,
+                }],
+                ..Default::default()
+            },
+        )
+        .expect("a brief");
+    store
+        .confirm_brief(review.id, Actor::Developer)
+        .expect("the developer confirms it");
 
     // The developer's edits between draft and post, which is where they live.
     for (seq, kind, detail) in [
@@ -762,6 +898,12 @@ fn brief_document(brief: &Brief) -> Value {
             "argument_for": option.argument_for,
             "argument_against": option.argument_against,
             "chosen": option.chosen,
+            "proposed_by": option.proposed_by.as_str(),
+            "verdicts": option.verdicts.iter().map(|verdict| json!({
+                "problem": verdict.problem,
+                "verdict": verdict.verdict.as_str(),
+                "why": verdict.why,
+            })).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
         "approach_verdict": brief.approach_verdict,
         "provenance": brief.provenance,
@@ -770,8 +912,102 @@ fn brief_document(brief: &Brief) -> Value {
         "confirmed_at": brief.confirmed_at,
         "confirmation_required": brief.confirmation_required,
         "confirmation_not_required_because": brief.confirmation_not_required_because,
+        "headline": brief.headline,
+        "how_it_works_today": brief.how_it_works_today,
+        "flow_before_caption": brief.flow_before_caption,
+        "flow_after_caption": brief.flow_after_caption,
+        "flow_before": flow_document(&brief.flow_before),
+        "flow_after": flow_document(&brief.flow_after),
+        "problems": brief.problems.iter().map(|problem| json!({
+            "number": problem.number,
+            "was_wrong": problem.was_wrong,
+            "now_fixed": problem.now_fixed,
+            "detail_title": problem.detail_title,
+            "detail_before": problem.detail_before,
+            "detail_after": problem.detail_after,
+        })).collect::<Vec<_>>(),
+        "support_table": brief.support_table.as_ref().map(|table| json!({
+            "title": table.title,
+            "columns": table.columns,
+            "rows": table.rows,
+        })),
+        "blind_pass": brief.blind_pass.as_ref().map(|pass| json!({
+            "given": pass.given,
+            "pick_key": pass.pick_key,
+            "pick_why": pass.pick_why,
+            "looked_up": pass.looked_up,
+            "questions": pass.questions,
+        })),
+        // Derived from the record, the way `confirmed` is.
+        "blind_pass_state": match brief.blind_pass_state() {
+            BlindPassState::NotRun => "not_run",
+            BlindPassState::RanAndFoundNothing => "ran_and_found_nothing",
+            BlindPassState::Ran => "ran",
+        },
+        "parts": brief.parts.iter().map(|part| json!({
+            "title": part.title,
+            "summary": part.summary,
+            "fixes": part.fixes,
+            "files": part.files.iter().map(|file| json!({
+                "path": file.path,
+                "lines_added": file.lines_added,
+                "lines_removed": file.lines_removed,
+                "in_diff": file.in_diff,
+            })).collect::<Vec<_>>(),
+            // Summed on the way out, so a card's figure cannot disagree with its list.
+            "lines_added": part.files.iter().map(|file| file.lines_added).sum::<i64>(),
+            "lines_removed": part.files.iter().map(|file| file.lines_removed).sum::<i64>(),
+        })).collect::<Vec<_>>(),
+        "open_choices": brief.open_choices.iter().map(|choice| json!({
+            "left_open": choice.left_open,
+            "chosen": choice.chosen,
+            "why": choice.why,
+            "departs_from_ticket": choice.departs_from_ticket,
+            "finding_seq": choice.finding_seq,
+            "finding_key": choice.finding_seq.map(|seq| format!("F{seq}")),
+        })).collect::<Vec<_>>(),
+        "disagreements": brief.disagreements.iter().map(|clash| json!({
+            "description_says": clash.description_says,
+            "code_does": clash.code_does,
+            "finding_seq": clash.finding_seq,
+            "finding_key": format!("F{}", clash.finding_seq),
+        })).collect::<Vec<_>>(),
         "updated_at": brief.updated_at,
     })
+}
+
+/// The problem half of a brief, built the way the server builds it.
+///
+/// **Five fields, named rather than subtracted.** A field added to the brief cannot reach
+/// this document by accident, which is the same guarantee the store's own
+/// `problem_statement` gives.
+fn problem_statement_document(statement: &ProblemStatement) -> Value {
+    json!({
+        "review_id": statement.review_id,
+        "problem": statement.problem,
+        "how_it_works_today": statement.how_it_works_today,
+        "flow_before_caption": statement.flow_before_caption,
+        "flow_before": flow_document(&statement.flow_before),
+        "problems": statement.problems.iter().map(|problem| json!({
+            "number": problem.number,
+            "was_wrong": problem.was_wrong,
+        })).collect::<Vec<_>>(),
+    })
+}
+
+/// One flow, as rows of boxes.
+fn flow_document(flow: &[BriefFlowRow]) -> Value {
+    json!(flow
+        .iter()
+        .map(|row| row
+            .iter()
+            .map(|flow_box| json!({
+                "title": flow_box.title,
+                "note": flow_box.note,
+                "problem": flow_box.problem,
+            }))
+            .collect::<Vec<_>>())
+        .collect::<Vec<_>>())
 }
 
 fn finding_document(store: &Store, finding: &Finding) -> Value {
@@ -1553,6 +1789,10 @@ fn every_response_example_can_be_produced_from_the_store() {
         &brief_document(&store.get_brief(review).expect("the brief")),
     );
     fields += check(
+        "getProblemStatement",
+        &problem_statement_document(&store.problem_statement(review).expect("the problem half")),
+    );
+    fields += check(
         "setFindingDisposition",
         &finding_document(&store, &store.get_finding(review, 4).expect("the finding")),
     );
@@ -1764,6 +2004,7 @@ fn every_response_example_is_checked() {
         "listRules",
         "startReview",
         "confirmBrief",
+        "getProblemStatement",
         "setFindingDisposition",
         "requestNitTicket",
         "promoteRule",

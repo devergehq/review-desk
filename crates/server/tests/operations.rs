@@ -1,4 +1,4 @@
-//! Every one of the contract's eighteen operations is routed and answers.
+//! Every one of the contract's nineteen operations is routed and answers.
 //!
 //! This walks `Operation::ALL` rather than listing routes by hand, so an operation added
 //! to the contract and not to the server fails here instead of 404ing in a browser.
@@ -7,10 +7,10 @@ mod common;
 
 use review_desk_server::route::Operation;
 
-/// The eighteen operations, as `contract/README.md` counts them.
+/// The nineteen operations, as `contract/README.md` counts them.
 #[test]
-fn the_contract_has_eighteen_operations() {
-    assert_eq!(Operation::ALL.len(), 18);
+fn the_contract_has_nineteen_operations() {
+    assert_eq!(Operation::ALL.len(), 19);
 }
 
 #[test]
@@ -66,6 +66,7 @@ fn an_unknown_review_is_not_found_on_every_operation_that_names_one() {
     let missing = [
         ("GET", "/reviews/9001", None),
         ("POST", "/reviews/9001/brief/confirm", None),
+        ("GET", "/reviews/9001/brief/problem-statement", None),
         (
             "PATCH",
             "/reviews/9001/findings/1",

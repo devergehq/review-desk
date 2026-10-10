@@ -5,6 +5,10 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::entities::brief_structure::{
+    BlindPassState, BriefBlindPass, BriefDisagreement, BriefFlowRow, BriefOpenChoice,
+    BriefOptionVerdict, BriefPart, BriefProblem, BriefSupportTable, OptionProposer,
+};
 use crate::error::StoreError;
 
 /// Seconds since the Unix epoch. Review Desk stores times as integers and leaves
@@ -573,6 +577,47 @@ pub struct Brief {
     /// it is the caller's — Review Desk does not hold one — so the reason is the only
     /// record of why a developer step was skipped.
     pub confirmation_not_required_because: Option<String>,
+    /// The one headline sentence the Understand page opens with.
+    ///
+    /// **It states the answer**, which is why it is absent from
+    /// [`crate::ProblemStatement`]: it is the one sentence that would anchor a fresh pair
+    /// of eyes hardest.
+    pub headline: Option<String>,
+    /// How the system works today, in plain words — the context a newcomer needs.
+    ///
+    /// On 10 October 2026 this was mixed into `problem`, which is why the problem half
+    /// could not be handed to anything on its own.
+    pub how_it_works_today: Option<String>,
+    /// The sub-caption above the before flow — "The staff page handles OAuth sign-in".
+    pub flow_before_caption: Option<String>,
+    /// The sub-caption above the after flow.
+    pub flow_after_caption: Option<String>,
+    /// How it works today, as rows of one to three boxes.
+    #[serde(default)]
+    pub flow_before: Vec<BriefFlowRow>,
+    /// How it works after the change, in the same shape.
+    #[serde(default)]
+    pub flow_after: Vec<BriefFlowRow>,
+    /// What is wrong, numbered. The numbers the flows, the option verdicts and the
+    /// solution parts refer to.
+    #[serde(default)]
+    pub problems: Vec<BriefProblem>,
+    /// The one small supporting table, or `None` when the brief holds none.
+    pub support_table: Option<BriefSupportTable>,
+    /// The blind pass a session reported running, or `None` when none ran.
+    ///
+    /// **Review Desk runs none.** See [`Brief::blind_pass_state`] for the three states this
+    /// and the options together distinguish.
+    pub blind_pass: Option<BriefBlindPass>,
+    /// The change in parts, in the order they are to be drawn.
+    #[serde(default)]
+    pub parts: Vec<BriefPart>,
+    /// The choices the ticket left open, and the places the change departed from it.
+    #[serde(default)]
+    pub open_choices: Vec<BriefOpenChoice>,
+    /// Where the description and the code disagree. Each names a finding.
+    #[serde(default)]
+    pub disagreements: Vec<BriefDisagreement>,
     pub updated_at: Timestamp,
 }
 
@@ -591,6 +636,29 @@ impl Brief {
     /// and a brief that needed no confirmation never was.
     pub fn is_settled(&self) -> bool {
         self.is_confirmed() || !self.confirmation_required
+    }
+
+    /// Whether a blind pass did not run, ran and recommended nothing, or ran.
+    ///
+    /// **Derived, never stored.** A stored answer could sit above an option list that
+    /// contradicts it, which is the one thing a page showing both must not be able to do —
+    /// the argument [`crate::ReviewProvenance::description_lint_passes`] makes for the
+    /// description lint's verdict, applied again.
+    pub fn blind_pass_state(&self) -> BlindPassState {
+        if self.blind_pass.is_none() {
+            return BlindPassState::NotRun;
+        }
+        let proposed = self.options.iter().any(|option| {
+            matches!(
+                option.proposed_by,
+                OptionProposer::BlindPass | OptionProposer::Both
+            )
+        });
+        if proposed {
+            BlindPassState::Ran
+        } else {
+            BlindPassState::RanAndFoundNothing
+        }
     }
 }
 
@@ -624,6 +692,37 @@ pub struct NewBrief {
     /// `confirmation_required` is false, and refused when it is true.
     #[serde(default)]
     pub confirmation_not_required_because: Option<String>,
+    /// The one headline sentence. See [`Brief::headline`].
+    #[serde(default)]
+    pub headline: Option<String>,
+    /// How the system works today, in plain words.
+    #[serde(default)]
+    pub how_it_works_today: Option<String>,
+    #[serde(default)]
+    pub flow_before_caption: Option<String>,
+    #[serde(default)]
+    pub flow_after_caption: Option<String>,
+    /// How it works today, as rows of one to three boxes.
+    #[serde(default)]
+    pub flow_before: Vec<BriefFlowRow>,
+    /// How it works after the change.
+    #[serde(default)]
+    pub flow_after: Vec<BriefFlowRow>,
+    /// What is wrong, numbered. Anything referring to a number not written here is
+    /// refused, naming the field and the number.
+    #[serde(default)]
+    pub problems: Vec<BriefProblem>,
+    #[serde(default)]
+    pub support_table: Option<BriefSupportTable>,
+    /// The blind pass a session reported running. Review Desk runs none.
+    #[serde(default)]
+    pub blind_pass: Option<BriefBlindPass>,
+    #[serde(default)]
+    pub parts: Vec<BriefPart>,
+    #[serde(default)]
+    pub open_choices: Vec<BriefOpenChoice>,
+    #[serde(default)]
+    pub disagreements: Vec<BriefDisagreement>,
 }
 
 /// What `confirmation_required` is when a caller does not mention it.
@@ -653,6 +752,18 @@ impl Default for NewBrief {
             provenance: None,
             confirmation_required: true,
             confirmation_not_required_because: None,
+            headline: None,
+            how_it_works_today: None,
+            flow_before_caption: None,
+            flow_after_caption: None,
+            flow_before: Vec::new(),
+            flow_after: Vec::new(),
+            problems: Vec::new(),
+            support_table: None,
+            blind_pass: None,
+            parts: Vec::new(),
+            open_choices: Vec::new(),
+            disagreements: Vec::new(),
         }
     }
 }
@@ -1089,6 +1200,22 @@ pub struct BriefOption {
     pub argument_against: String,
     /// Whether this is what the author built.
     pub chosen: bool,
+    /// Who put it forward: the ticket, a blind pass, or both.
+    ///
+    /// **Defaults to the ticket**, and that is the honest answer rather than a
+    /// convenience: Review Desk runs no blind pass and nothing had run one when the
+    /// options already on the record were written, so there is nowhere else they could
+    /// have come from.
+    #[serde(default = "proposed_by_the_ticket")]
+    pub proposed_by: OptionProposer,
+    /// What this option does about each numbered problem, in problem order.
+    #[serde(default)]
+    pub verdicts: Vec<BriefOptionVerdict>,
+}
+
+/// What `proposed_by` is when a caller does not mention it.
+fn proposed_by_the_ticket() -> OptionProposer {
+    OptionProposer::Ticket
 }
 
 /// What one of a review's seven layers is doing.

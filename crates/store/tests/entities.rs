@@ -5,8 +5,8 @@ mod common;
 use common::{new_review, temp_store};
 use review_desk_store::{
     Actor, BriefOption, Disposition, FindingRef, NewBrief, NewFinding, NewOutcome, NewReview,
-    NewRule, NitTicketStatus, OutcomeKind, Review, ReviewFacts, RuleScope, RuleStage, Severity,
-    StoreError,
+    NewRule, NitTicketStatus, OptionProposer, OutcomeKind, Review, ReviewFacts, RuleScope,
+    RuleStage, Severity, StoreError,
 };
 
 /// A review to hang the other entities off.
@@ -315,6 +315,8 @@ fn a_brief_holds_its_options_as_cards_in_key_order() {
                         argument_for: "Meets the 24-hour window".to_string(),
                         argument_against: "Needs an idempotency key".to_string(),
                         chosen: true,
+                        proposed_by: OptionProposer::Ticket,
+                        verdicts: Vec::new(),
                     },
                     BriefOption {
                         key: "A".to_string(),
@@ -322,6 +324,8 @@ fn a_brief_holds_its_options_as_cards_in_key_order() {
                         argument_for: "Smallest change".to_string(),
                         argument_against: "Cannot span 24 hours".to_string(),
                         chosen: false,
+                        proposed_by: OptionProposer::Ticket,
+                        verdicts: Vec::new(),
                     },
                 ],
                 provenance: Some("from the ticket and the code".to_string()),
@@ -376,6 +380,8 @@ fn an_option_map_and_structured_options_together_are_refused() {
                 argument_for: "f".to_string(),
                 argument_against: "a".to_string(),
                 chosen: true,
+                proposed_by: OptionProposer::Ticket,
+                verdicts: Vec::new(),
             }],
             ..Default::default()
         },
@@ -396,6 +402,8 @@ fn an_option_with_a_blank_field_or_a_repeated_key_is_refused() {
         argument_for: "for".to_string(),
         argument_against: "against".to_string(),
         chosen: false,
+        proposed_by: OptionProposer::Ticket,
+        verdicts: Vec::new(),
     };
 
     match store.put_brief(

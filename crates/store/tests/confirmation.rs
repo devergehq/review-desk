@@ -3,9 +3,11 @@
 //! **This is a hole in the project's load-bearing rule, deliberately cut and deliberately
 //! narrow.** Only the developer signs off — Patrick, 9 October 2026 — and
 //! `confirmation_required: false` is the single place where an agent gets to decide that a
-//! developer step was unnecessary at all. The threshold behind that decision is the
-//! caller's: a brief is confirmed on pull requests changing more than 200 lines, and
-//! Review Desk does not hold the number.
+//! developer step was unnecessary at all. Whether it is decided at all is the caller's,
+//! and **it is not a size**: Patrick's ruling is `brief_gate: never|always` in Locus, and
+//! Review Desk holds no number either way. An earlier reading of that decision had it as
+//! "more than 200 lines"; DEV-882 corrected it everywhere but the shipped SQL of migration
+//! 5, which is never edited.
 //!
 //! So the rule that matters is not that the flag exists. It is that the flag cannot be
 //! reached for after the fact: a brief written as requiring confirmation, which the

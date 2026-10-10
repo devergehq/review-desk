@@ -16,11 +16,13 @@
 //! dashboard silently never sees.
 
 use review_desk_store::{
-    finding_heading, AcceptanceCriterion, Brief, BriefOption, DescriptionLintResult, Disposition,
-    Draft, DraftLint, DraftSection, FileChange, Finding, FindingHunk, FindingInRound, NitTicket,
-    Outcome, RepoSummary, Review, ReviewLayer, ReviewProvenance, ReviewSource, RoundCommit,
-    RoundStatusCounts, RoundSummary, Rule, RuleCounts, RuleScope, RuleStage, RulesSummary,
-    Severity, Timestamp,
+    finding_heading, AcceptanceCriterion, BlindPassState, Brief, BriefBlindPass, BriefDisagreement,
+    BriefFlowBox, BriefFlowRow, BriefOpenChoice, BriefOption, BriefOptionVerdict, BriefPart,
+    BriefPartFile, BriefProblem, BriefSupportTable, DescriptionLintResult, Disposition, Draft,
+    DraftLint, DraftSection, FileChange, Finding, FindingHunk, FindingInRound, NitTicket, Outcome,
+    ProblemStatement, RepoSummary, Review, ReviewLayer, ReviewProvenance, ReviewSource,
+    RoundCommit, RoundStatusCounts, RoundSummary, Rule, RuleCounts, RuleScope, RuleStage,
+    RulesSummary, Severity, Timestamp,
 };
 use serde_json::{json, Value};
 
@@ -102,6 +104,148 @@ pub fn brief_option(option: &BriefOption) -> Value {
         "argument_for": option.argument_for,
         "argument_against": option.argument_against,
         "chosen": option.chosen,
+        "proposed_by": option.proposed_by.as_str(),
+        "verdicts": option
+            .verdicts
+            .iter()
+            .map(brief_option_verdict)
+            .collect::<Vec<_>>(),
+    })
+}
+
+/// The contract's `BriefOptionVerdict`: what one option does about one numbered problem.
+pub fn brief_option_verdict(verdict: &BriefOptionVerdict) -> Value {
+    json!({
+        "problem": verdict.problem,
+        "verdict": verdict.verdict.as_str(),
+        "why": verdict.why,
+    })
+}
+
+/// One box of a flow.
+pub fn brief_flow_box(flow_box: &BriefFlowBox) -> Value {
+    json!({
+        "title": flow_box.title,
+        "note": flow_box.note,
+        "problem": flow_box.problem,
+    })
+}
+
+/// One flow, as rows of one to three boxes.
+pub fn brief_flow(flow: &[BriefFlowRow]) -> Value {
+    json!(flow
+        .iter()
+        .map(|row| row.iter().map(brief_flow_box).collect::<Vec<_>>())
+        .collect::<Vec<_>>())
+}
+
+/// One numbered problem, with its detail.
+pub fn brief_problem(problem: &BriefProblem) -> Value {
+    json!({
+        "number": problem.number,
+        "was_wrong": problem.was_wrong,
+        "now_fixed": problem.now_fixed,
+        "detail_title": problem.detail_title,
+        "detail_before": problem.detail_before,
+        "detail_after": problem.detail_after,
+    })
+}
+
+/// The one small supporting table.
+pub fn brief_support_table(table: &BriefSupportTable) -> Value {
+    json!({
+        "title": table.title,
+        "columns": table.columns,
+        "rows": table.rows,
+    })
+}
+
+/// The blind pass a session reported running.
+///
+/// `state` is derived by the store from this and the options together, and is served
+/// beside it so the page never has to work out which of the three states it is drawing.
+pub fn brief_blind_pass(pass: &BriefBlindPass) -> Value {
+    json!({
+        "given": pass.given,
+        "pick_key": pass.pick_key,
+        "pick_why": pass.pick_why,
+        "looked_up": pass.looked_up,
+        "questions": pass.questions,
+    })
+}
+
+/// One part of the change.
+pub fn brief_part(part: &BriefPart) -> Value {
+    json!({
+        "title": part.title,
+        "summary": part.summary,
+        "fixes": part.fixes,
+        "files": part.files.iter().map(brief_part_file).collect::<Vec<_>>(),
+        "lines_added": part.files.iter().map(|file| file.lines_added).sum::<i64>(),
+        "lines_removed": part
+            .files
+            .iter()
+            .map(|file| file.lines_removed)
+            .sum::<i64>(),
+    })
+}
+
+/// One file of a part.
+pub fn brief_part_file(file: &BriefPartFile) -> Value {
+    json!({
+        "path": file.path,
+        "lines_added": file.lines_added,
+        "lines_removed": file.lines_removed,
+        "in_diff": file.in_diff,
+    })
+}
+
+/// One choice the ticket left open.
+pub fn brief_open_choice(choice: &BriefOpenChoice) -> Value {
+    json!({
+        "left_open": choice.left_open,
+        "chosen": choice.chosen,
+        "why": choice.why,
+        "departs_from_ticket": choice.departs_from_ticket,
+        "finding_seq": choice.finding_seq,
+        // Derived here, like every other display key, so the dashboard never builds an
+        // identifier of its own.
+        "finding_key": choice
+            .finding_seq
+            .map_or(Value::Null, |seq| json!(finding_key(seq))),
+    })
+}
+
+/// One place the description and the code disagree.
+pub fn brief_disagreement(clash: &BriefDisagreement) -> Value {
+    json!({
+        "description_says": clash.description_says,
+        "code_does": clash.code_does,
+        "finding_seq": clash.finding_seq,
+        "finding_key": finding_key(clash.finding_seq),
+    })
+}
+
+/// The contract's `ProblemStatement`: the problem half of a brief and nothing else.
+///
+/// **Five fields, listed here as they are listed in the store.** The store builds the
+/// statement by naming what belongs in it rather than by removing what does not, and this
+/// does the same, so a field added to the brief cannot reach the wire through here by
+/// accident.
+pub fn problem_statement(statement: &ProblemStatement) -> Value {
+    json!({
+        "review_id": statement.review_id,
+        "problem": statement.problem,
+        "how_it_works_today": statement.how_it_works_today,
+        "flow_before_caption": statement.flow_before_caption,
+        "flow_before": brief_flow(&statement.flow_before),
+        "problems": statement
+            .problems
+            .iter()
+            .map(|problem| {
+                json!({ "number": problem.number, "was_wrong": problem.was_wrong })
+            })
+            .collect::<Vec<_>>(),
     })
 }
 
@@ -112,12 +256,17 @@ pub fn brief_option(option: &BriefOption) -> Value {
 /// already written, but it is four structured fields on the wire and nothing can turn one
 /// into the other — so a brief written before the migration serves an empty list, which
 /// is true, rather than a guess.
-pub fn brief(brief: &Brief, options: &[BriefOption]) -> Value {
+///
+/// **The options come off the brief rather than as a second argument.** The store
+/// populates `Brief::options` on every read, and since DEV-882 each option carries its
+/// verdicts — so a second argument was a second read of the same rows, and a chance to
+/// serve one brief's options under another brief's fields.
+pub fn brief(brief: &Brief) -> Value {
     json!({
         "review_id": brief.review_id,
         "problem": brief.problem,
         "diagram": brief.diagram,
-        "options": options.iter().map(brief_option).collect::<Vec<_>>(),
+        "options": brief.options.iter().map(brief_option).collect::<Vec<_>>(),
         "approach_verdict": brief.approach_verdict,
         "provenance": brief.provenance,
         "confirmed": brief.is_confirmed(),
@@ -128,6 +277,41 @@ pub fn brief(brief: &Brief, options: &[BriefOption]) -> Value {
         // finished with and that nobody signed.
         "confirmation_required": brief.confirmation_required,
         "confirmation_not_required_because": brief.confirmation_not_required_because,
+        "headline": brief.headline,
+        "how_it_works_today": brief.how_it_works_today,
+        "flow_before_caption": brief.flow_before_caption,
+        "flow_after_caption": brief.flow_after_caption,
+        "flow_before": brief_flow(&brief.flow_before),
+        "flow_after": brief_flow(&brief.flow_after),
+        "problems": brief.problems.iter().map(brief_problem).collect::<Vec<_>>(),
+        "support_table": brief
+            .support_table
+            .as_ref()
+            .map_or(Value::Null, brief_support_table),
+        "blind_pass": brief
+            .blind_pass
+            .as_ref()
+            .map_or(Value::Null, brief_blind_pass),
+        // **Derived by the store from the record, never stored.** A page drawing the
+        // blind column asks one question — did it run, did it find anything — and
+        // answering it here is what stops `blind_pass` being null beside a state that
+        // says it ran.
+        "blind_pass_state": match brief.blind_pass_state() {
+            BlindPassState::NotRun => "not_run",
+            BlindPassState::RanAndFoundNothing => "ran_and_found_nothing",
+            BlindPassState::Ran => "ran",
+        },
+        "parts": brief.parts.iter().map(brief_part).collect::<Vec<_>>(),
+        "open_choices": brief
+            .open_choices
+            .iter()
+            .map(brief_open_choice)
+            .collect::<Vec<_>>(),
+        "disagreements": brief
+            .disagreements
+            .iter()
+            .map(brief_disagreement)
+            .collect::<Vec<_>>(),
         "updated_at": rfc3339(brief.updated_at),
     })
 }

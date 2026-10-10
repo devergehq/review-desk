@@ -764,3 +764,49 @@ fn a_brief_needing_no_confirmation_is_not_in_the_developers_queue() {
         serde_json::Value::Null
     );
 }
+
+#[test]
+fn a_review_with_no_brief_has_no_problem_statement_to_serve() {
+    let harness = common::start_with_no_github();
+    common::seed(&harness.store);
+
+    // A review of its own, with no brief on it. **A conflict rather than a 404**, for the
+    // reason `confirmBrief` gives: the caller asked about a review that is there, and
+    // "there is no such review" would send them looking for the wrong thing.
+    let opened = harness
+        .store
+        .open_review("acme/portal", 999, "deadbee")
+        .expect("a second review");
+
+    let answer = harness.api(
+        "GET",
+        &format!("/reviews/{}/brief/problem-statement", opened.review.id),
+        None,
+    );
+    assert_eq!(answer.status, 409, "{}", answer.text());
+    assert_eq!(answer.error_code(), "conflict");
+}
+
+#[test]
+fn the_problem_statement_answers_only_a_get() {
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+
+    // **A read, and only a read.** The one thing that must never happen at this path is a
+    // write, so the verbs that would be one are refused rather than quietly routed.
+    for method in ["POST", "PUT", "PATCH", "DELETE"] {
+        let answer = harness.api(
+            method,
+            &format!("/reviews/{}/brief/problem-statement", seeded.review_id),
+            Some("{}"),
+        );
+        assert_eq!(
+            answer.status,
+            400,
+            "{method} should be refused, not {}: {}",
+            answer.status,
+            answer.text()
+        );
+        assert_eq!(answer.error_code(), "bad_request");
+    }
+}

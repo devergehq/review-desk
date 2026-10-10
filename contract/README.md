@@ -5,7 +5,7 @@ holds no implementation of either.
 
 | File | What it is |
 |---|---|
-| `openapi.yaml` | OpenAPI 3.1 for the local JSON API. 18 operations. |
+| `openapi.yaml` | OpenAPI 3.1 for the local JSON API. 19 operations. |
 | `examples/` | One example response per endpoint, one request body per write, and the error shape. A `.<variant>.` form adds a second shape where one example cannot show an optional field both present and absent. `getReview.response.round-two.json` is the second round of the same pull request as the canonical one. |
 | `validate-examples.mjs` | Checks every example against its schema, and fails when an endpoint has no example. |
 
@@ -76,12 +76,18 @@ Each screen is one GET. The dashboard does no joining.
 |---|---|---|
 | Inbox | `GET /inbox` | `POST /reviews` |
 | One review | `GET /reviews/{reviewId}` | `POST /reviews/{reviewId}/brief/confirm`, `PATCH /reviews/{reviewId}/findings/{seq}`, `POST /reviews/{reviewId}/findings/{seq}/decide` |
+| — not a screen | `GET /reviews/{reviewId}/brief/problem-statement` | — |
 | Draft preview | `GET /reviews/{reviewId}/draft` | `PUT …/draft`, `POST …/findings/{seq}/decide`, `POST …/draft/approve`, `POST …/draft/ticket-and-approve`, `POST …/draft/send-back`, `POST …/held-back/ticket` |
 | Rules | `GET /rules?repo=`, `GET /repos` | `POST /rules/{ruleId}/promote`, `/dismiss`, `/retire`, `/defer` |
 
 The Inbox's `POST /reviews` is a write that DEV-854's own table records as "—". The
 mockup has a "Start a review" field and a button, and DEV-855 lists it too, so the
 endpoint exists. Flagged rather than quietly dropped.
+
+**`GET …/brief/problem-statement` is the one operation no screen reads**, and it is in the
+contract rather than only on the command line because a session may be running anywhere.
+It serves the problem half of a brief and nothing of the change, which is what a blind
+options pass may be shown. See "The brief, by page" below.
 
 ## Every visible datum, by screen
 
@@ -236,6 +242,79 @@ review gains; `layers[].detail` has been exactly that line since DEV-854, is wri
 disagreement the next section exists to prevent, so there is one, and
 `crates/server/tests/provenance.rs` asserts the round trip rather than a comment claiming
 it.
+
+### The brief, by page
+
+Patrick approved a page per step on 10 October 2026 — Understand, Alternatives, Solution —
+and the brief of three free-text fields could feed none of them. DEV-882 gave it a
+structure. **This table is which field feeds which page**, and it is the one the three
+issues that build on it read: DEV-885 draws the pages, DEV-883 writes the record, DEV-884
+lints it.
+
+Every field is **plain text**. The pages interpolate and never use `v-html`.
+
+| # | Page | What it draws | Field |
+|---|---|---|---|
+| 1 | Understand | the headline sentence | `brief.headline` |
+| 2 | Understand | the **before** flow, rows of one to three boxes | `brief.flow_before[][]`, captioned by `brief.flow_before_caption` |
+| 3 | Understand | the **after** flow, same shape | `brief.flow_after[][]`, captioned by `brief.flow_after_caption` |
+| 4 | Understand | the numbered marks on the boxes | `brief.problems[].number`, referenced by `flow_before[][].problem` and `flow_after[][].problem` |
+| 5 | Understand | "Was wrong" and "Now", one line each | `brief.problems[].was_wrong`, `.now_fixed` |
+| 5 | Understand | the named detail behind a click, split | `brief.problems[].detail_title`, `.detail_before[]`, `.detail_after[]` |
+| 6 | Understand | the one small supporting table | `brief.support_table.title`, `.columns[]`, `.rows[][]` |
+| 7 | Understand | how the system works today, in plain words | `brief.how_it_works_today` |
+| 8 | Alternatives | the matrix: a verdict per option per problem | `brief.options[].verdicts[].problem`, `.verdict`, `.why` |
+| 9 | Alternatives | the "Ticket" and "Blind" badges | `brief.options[].proposed_by` |
+| 10 | Alternatives | the blind pass: what it was given, its pick, its questions, what it looked up | `brief.blind_pass.given`, `.pick_key`, `.pick_why`, `.questions[]`, `.looked_up` |
+| 10 | Alternatives | whether to draw the blind column at all | `brief.blind_pass_state` |
+| 11 | Solution | the change in parts, as cards | `brief.parts[].title`, `.summary`, `.lines_added`, `.lines_removed` |
+| 11 | Solution | a part's files, with what the change did to each | `brief.parts[].files[].path`, `.lines_added`, `.lines_removed`, `.in_diff` |
+| 11 | Solution | the green problem number on a part | `brief.parts[].fixes[]` |
+| 11 | Solution | which findings sit on which part | **derived**: the review's findings whose `file` is one of `brief.parts[].files[].path` |
+| 12 | Solution | where the ticket left a choice | `brief.open_choices[].left_open`, `.chosen`, `.why`, `.departs_from_ticket` |
+| 12 | Solution | where the description and the code disagree | `brief.disagreements[].description_says`, `.code_does`, `.finding_seq` |
+
+Five things about that table are decisions rather than consequences.
+
+1. **A flow is nested, not numbered.** `flow_before` is a list of rows and a row is a list
+   of one to three boxes, so a split row is a row of two and nothing has to carry a layout
+   number. Three is the cap, in the schema: the page draws a row as a grid inside one
+   column, and a fourth box is a row that does not fit.
+2. **`problems[].number` is the brief's one internal identity**, and the only number a
+   caller assigns. A flow box, an option verdict or a solution part naming a number no
+   problem carries is refused on the way in, with the field and the number in the message.
+3. **`in_diff: false` is how a part claims a file the pull request did not change.** Two
+   findings on the review this came from sat in files outside the diff, and a part that
+   could not name them would leave those findings belonging to no part. Such a file has no
+   lines added or removed, which is what being outside the diff means.
+4. **A disagreement must name a finding; an open choice need not.** DEV-875's rule again: a
+   brief that says the description claims one thing and the code does another, and raises
+   nothing about it, posts a review that never mentions it. An open choice is a choice, not
+   a fault.
+5. **`blind_pass_state` is derived**, from the blind pass's presence and the options'
+   `proposed_by` together. `not_run`, `ran_and_found_nothing` and `ran` are three different
+   things for the page to draw, and a stored answer could sit above an option list that
+   contradicts it.
+
+**Review Desk runs no blind pass.** `blind_pass` is what a session reported running;
+`given` and `looked_up` are the session's own words, and nothing here can check either.
+
+**Which is why there is a read for the problem half.**
+`GET /reviews/{reviewId}/brief/problem-statement` serves rows 2, 4 and 7 and the
+`was_wrong` line of row 5, and nothing else — so a session can hand a problem to an
+independent pass without handing it the answer. The absences are each argued in `openapi.yaml`; the shortest version
+is that the headline states the answer, the after flow and `now_fixed` *are* the change, row
+5's detail travels as a pair, and the superseded `diagram` held both flows at once with no
+way to separate them.
+
+### A brief written before any of this
+
+A brief that recorded none of it — `problem`, `diagram`, `provenance` and options with a
+paragraph each way — reads back exactly as it did. Every new array is served **empty** and
+every new string **null**, the way `sources` and `criteria` are for a review that recorded
+no provenance, and `proposed_by` reads `ticket` on every option already on the record:
+Review Desk runs no blind pass and nothing had run one when those options were written, so
+there is nowhere else they could have come from.
 
 ### What was not looked at: one answer, never two
 

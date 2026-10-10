@@ -20,8 +20,10 @@ use review_desk_harvest::recorded::Recorded;
 use review_desk_harvest::{CommitFiles, Comparison, GitHub, PullRequest, ReviewThread};
 use review_desk_server::{Github, Records, Running, Server};
 use review_desk_store::{
-    BriefOption, Disposition, DraftLint, DraftStatus, FindingHunk, HunkLine, HunkLineMarker,
-    NewBrief, NewDraft, NewFinding, NewOutcome, NewRule, OutcomeKind, ReviewLayerState, RuleScope,
+    BriefBlindPass, BriefDisagreement, BriefFlowBox, BriefOpenChoice, BriefOption,
+    BriefOptionVerdict, BriefPart, BriefPartFile, BriefProblem, BriefSupportTable, Disposition,
+    DraftLint, DraftStatus, FindingHunk, HunkLine, HunkLineMarker, NewBrief, NewDraft, NewFinding,
+    NewOutcome, NewRule, OptionProposer, OutcomeKind, ProblemVerdict, ReviewLayerState, RuleScope,
     RuleStage, Severity, Store, Verification,
 };
 use serde_json::Value;
@@ -346,7 +348,7 @@ fn parse(raw: &[u8]) -> Answer {
     }
 }
 
-/// A record with enough in it that every one of the eighteen operations has something
+/// A record with enough in it that every one of the nineteen operations has something
 /// real to answer with.
 ///
 /// Built through the store's public API rather than by writing SQL, so it cannot drift
@@ -384,35 +386,6 @@ pub fn seed(store: &Store) -> Seeded {
             },
         )
         .expect("setting the review's facts");
-
-    store
-        .put_brief(
-            review_id,
-            NewBrief {
-                problem: "Failed webhook deliveries are never retried.".to_string(),
-                diagram: Some("flowchart LR\n  A[Event] --> B[Deliver]".to_string()),
-                options: vec![
-                    BriefOption {
-                        key: "A".to_string(),
-                        title: "Retry inside the request".to_string(),
-                        argument_for: "Smallest change, no new tables.".to_string(),
-                        argument_against: "Holds the request open.".to_string(),
-                        chosen: false,
-                    },
-                    BriefOption {
-                        key: "B".to_string(),
-                        title: "Queue with backoff".to_string(),
-                        argument_for: "Meets the 24-hour window.".to_string(),
-                        argument_against: "Needs an idempotency key.".to_string(),
-                        chosen: true,
-                    },
-                ],
-                approach_verdict: Some("B is the right shape for this ticket.".to_string()),
-                provenance: Some("from the ticket and the code".to_string()),
-                ..Default::default()
-            },
-        )
-        .expect("writing a brief");
 
     for number in 1..=7 {
         let state = match number {
@@ -501,6 +474,175 @@ pub fn seed(store: &Store) -> Seeded {
             },
         )
         .expect("writing a second finding");
+
+    // The brief, with every one of the twelve rows the three approved boards draw.
+    //
+    // **After the findings, which is the order a session writes it in.** A disagreement
+    // between the description and the code has to name the finding that raises it, so the
+    // change half of a brief cannot be written before the diff has been read.
+    //
+    // Layer 2 stays `waiting_on_you`: this brief requires confirmation and has not been
+    // confirmed, so `put_brief` writes no layer row — which is what `confirmBrief` needs
+    // to have something to do.
+    let verdict = |problem: i64, verdict: ProblemVerdict, why: &str| BriefOptionVerdict {
+        problem,
+        verdict,
+        why: Some(why.to_string()),
+    };
+    store
+        .put_brief(
+            review_id,
+            NewBrief {
+                problem: "Failed webhook deliveries are never retried.".to_string(),
+                diagram: Some("flowchart LR\n  A[Event] --> B[Deliver]".to_string()),
+                options: vec![
+                    BriefOption {
+                        key: "A".to_string(),
+                        title: "Retry inside the request".to_string(),
+                        argument_for: "Smallest change, no new tables.".to_string(),
+                        argument_against: "Holds the request open.".to_string(),
+                        chosen: false,
+                        proposed_by: OptionProposer::Ticket,
+                        verdicts: vec![
+                            verdict(
+                                1,
+                                ProblemVerdict::Partly,
+                                "It covers a blip, not an outage.",
+                            ),
+                            verdict(2, ProblemVerdict::Stays, "Nothing is written down."),
+                        ],
+                    },
+                    BriefOption {
+                        key: "B".to_string(),
+                        title: "Queue with backoff".to_string(),
+                        argument_for: "Meets the 24-hour window.".to_string(),
+                        argument_against: "Needs an idempotency key.".to_string(),
+                        chosen: true,
+                        // The ticket and the blind pass arrived at the same shape, which
+                        // is what makes `blind_pass_state` read `ran`.
+                        proposed_by: OptionProposer::Both,
+                        verdicts: vec![
+                            verdict(1, ProblemVerdict::Fixed, "Backoff runs to 24 hours."),
+                            verdict(2, ProblemVerdict::Fixed, "A row per attempt is the record."),
+                        ],
+                    },
+                ],
+                approach_verdict: Some("B is the right shape for this ticket.".to_string()),
+                provenance: Some("from the ticket and the code".to_string()),
+                headline: Some(
+                    "Deliveries move to a queue, so one that fails is retried.".to_string(),
+                ),
+                how_it_works_today: Some(
+                    "A delivery is sent inside the request that caused it, and a failure \
+                     is logged and dropped."
+                        .to_string(),
+                ),
+                flow_before_caption: Some("The delivery is sent inline".to_string()),
+                flow_after_caption: Some("The delivery is queued".to_string()),
+                flow_before: vec![
+                    vec![BriefFlowBox {
+                        title: "An event happens".to_string(),
+                        note: Some("A subscription changes".to_string()),
+                        problem: None,
+                    }],
+                    // A split row, which is the shape the board draws side by side.
+                    vec![
+                        BriefFlowBox {
+                            title: "The endpoint answers".to_string(),
+                            note: Some("Logged and forgotten".to_string()),
+                            problem: Some(2),
+                        },
+                        BriefFlowBox {
+                            title: "The endpoint is down".to_string(),
+                            note: Some("Nothing retries".to_string()),
+                            problem: Some(1),
+                        },
+                    ],
+                ],
+                flow_after: vec![vec![BriefFlowBox {
+                    title: "A worker sends it".to_string(),
+                    note: Some("Retried with backoff".to_string()),
+                    problem: Some(1),
+                }]],
+                problems: vec![
+                    BriefProblem {
+                        number: 1,
+                        was_wrong: "A delivery that fails is never tried again.".to_string(),
+                        now_fixed: Some("A worker retries it for 24 hours.".to_string()),
+                        detail_title: Some("The delivery sent inline".to_string()),
+                        detail_before: vec!["The sender waits inside the request.".to_string()],
+                        detail_after: vec!["A row is written before anything is sent.".to_string()],
+                    },
+                    BriefProblem {
+                        number: 2,
+                        was_wrong: "Nothing records that a delivery was attempted.".to_string(),
+                        now_fixed: Some("Every attempt is a row the customer sees.".to_string()),
+                        detail_title: Some("No record of an attempt".to_string()),
+                        detail_before: vec!["Only a log line nothing reads.".to_string()],
+                        detail_after: vec!["One row per attempt, with its status.".to_string()],
+                    },
+                ],
+                support_table: Some(BriefSupportTable {
+                    title: Some("The idea: two questions, each with one owner".to_string()),
+                    columns: vec![
+                        "The question".to_string(),
+                        "Who should answer it".to_string(),
+                        "Before".to_string(),
+                        "After".to_string(),
+                    ],
+                    rows: vec![vec![
+                        "Has this delivery been attempted?".to_string(),
+                        "The delivery row".to_string(),
+                        "A log line nothing reads".to_string(),
+                        "A row with a status".to_string(),
+                    ]],
+                }),
+                blind_pass: Some(BriefBlindPass {
+                    given: "A web application delivers events inside the request that \
+                            caused them, and a failure is logged and dropped."
+                        .to_string(),
+                    pick_key: Some("B".to_string()),
+                    pick_why: Some("A queued delivery answers both problems.".to_string()),
+                    looked_up: "nothing".to_string(),
+                    questions: vec!["Must a retry be idempotent?".to_string()],
+                }),
+                parts: vec![BriefPart {
+                    title: "The delivery row and its states".to_string(),
+                    summary: "One row per attempt, written before anything is sent.".to_string(),
+                    fixes: vec![1, 2],
+                    files: vec![
+                        BriefPartFile {
+                            path: "jobs/DeliverWebhook.php".to_string(),
+                            lines_added: 96,
+                            lines_removed: 31,
+                            in_diff: true,
+                        },
+                        // Outside the diff: a file the pull request did not change, which
+                        // a part still has to be able to claim.
+                        BriefPartFile {
+                            path: "app/Support/Backoff.php".to_string(),
+                            lines_added: 0,
+                            lines_removed: 0,
+                            in_diff: false,
+                        },
+                    ],
+                }],
+                open_choices: vec![BriefOpenChoice {
+                    left_open: "How long a failed delivery is kept".to_string(),
+                    chosen: "Thirty days, then the row is pruned".to_string(),
+                    why: "The ticket asks for a 24-hour window and stops there.".to_string(),
+                    departs_from_ticket: false,
+                    finding_seq: Some(1),
+                }],
+                disagreements: vec![BriefDisagreement {
+                    description_says: "A retry carries the first attempt's key.".to_string(),
+                    code_does: "The key is generated per attempt.".to_string(),
+                    finding_seq: 1,
+                }],
+                ..Default::default()
+            },
+        )
+        .expect("writing a brief");
 
     store
         .put_draft(
