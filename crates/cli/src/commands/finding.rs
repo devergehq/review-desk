@@ -21,12 +21,18 @@ use crate::report::Report;
 pub enum FindingCommand {
     /// Add one finding to a review, and print its number.
     ///
-    /// The document is `{"lens": "...", "severity": "...", "claim": "...", "file":
-    /// "...", "line": 12, "evidence": "...", "disposition": "...",
+    /// The document is `{"lens": "...", "severity": "...", "claim": "...", "title":
+    /// "...", "file": "...", "line": 12, "evidence": "...", "disposition": "...",
     /// "disposition_reason": "...", "rule_id": 9, "introduced_by_commit": "a41c9e2",
     /// "introduced_by_seq": 1}`. `lens`, `severity` and `claim` are required, the
     /// disposition defaults to `in_draft`, and a field that is not one of the names here
     /// is refused rather than quietly dropped.
+    ///
+    /// `title` is the one line the code review page's row carries — "A retried delivery
+    /// carries no idempotency key". It is optional and has no maximum length; a
+    /// finding with none shows its claim clamped to two lines, which is the honest
+    /// rendering of a finding nobody titled. The empty string is refused, because it would
+    /// draw a blank row where saying nothing draws the claim.
     ///
     /// **The number is the next one unused on the pull request, not on this review.** A
     /// finding's number is its identity across rounds, so round 2's first new finding on a

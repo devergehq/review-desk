@@ -843,6 +843,10 @@ const CARRIED: &[&str] = &[
     "file",
     "line",
     "claim",
+    // The one line the code review page's row carries. A carried finding that lost it
+    // would read as a different finding in round 2 — the row would fall back to the
+    // claim and the page would look as though nobody had ever titled it.
+    "title",
     "evidence",
     // What is to become of it in the draft. Carried as it stood, and changed from there
     // with `finding set` — a carry must not quietly redecide a disposition.

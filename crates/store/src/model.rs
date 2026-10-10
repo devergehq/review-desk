@@ -870,6 +870,17 @@ pub struct Finding {
     pub line: Option<i64>,
     /// What is claimed to be wrong.
     pub claim: String,
+    /// The one line a row of the code review page carries — "A retried delivery carries
+    /// no idempotency key".
+    ///
+    /// **`None` is the normal state and not a defect.** Nothing writes one yet; a page with
+    /// no title clamps the claim to two lines instead, which is the honest rendering of a
+    /// finding nobody has titled. Defaulting this to the claim would make the two
+    /// indistinguishable afterwards.
+    ///
+    /// Not the same thing as the draft block's title, which exists only once a draft has
+    /// been written and is what gets posted. This is read before that.
+    pub title: Option<String>,
     /// What supports the claim.
     pub evidence: Option<String>,
     pub disposition: Disposition,
@@ -966,6 +977,10 @@ pub struct NewFinding {
     #[serde(default)]
     pub line: Option<i64>,
     pub claim: String,
+    /// The one line the code review page's row carries. Optional, and blank is refused
+    /// rather than stored: see [`Finding::title`].
+    #[serde(default)]
+    pub title: Option<String>,
     #[serde(default)]
     pub evidence: Option<String>,
     /// Defaults to in draft, which is where a fresh finding starts.
@@ -1043,6 +1058,7 @@ impl Default for NewFinding {
             file: None,
             line: None,
             claim: String::new(),
+            title: None,
             evidence: None,
             disposition: default_disposition(),
             disposition_reason: None,

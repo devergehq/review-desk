@@ -47,11 +47,20 @@ test.describe.configure({ mode: 'serial' })
 test.describe('a seeded database', () => {
   test('the four pages', async ({ page }) => {
     await page.goto(seeded)
-    await expect(page.getByRole('heading', { name: '1 review needs you' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '2 reviews need you' })).toBeVisible()
     await shot(page, 'seeded-1-queue')
 
-    await page.goto(`${seeded}reviews/${reviewId}`)
-    await expect(page.getByText('Confirm the problem before anything is posted')).toBeVisible()
+    /*
+     * **The code review page, which is what "the review" is in this set now.**
+     *
+     * This pointed at `/reviews/{id}` and was repointed to `/understand` when that address
+     * became a redirect — which made it a byte-identical copy of
+     * `dev-885-4-understand-old-brief.png`, since the seeded review's brief is an old-style
+     * one. Two names for one picture, and neither of them showed a finding. Step 5 is the
+     * page this set was missing.
+     */
+    await page.goto(`${seeded}reviews/${reviewId}/code-review`)
+    await expect(page.getByText('A retried delivery is sent without')).toBeVisible()
     await shot(page, 'seeded-2-review')
 
     await page.goto(`${seeded}reviews/${reviewId}/draft`)
@@ -71,7 +80,7 @@ test.describe('a seeded database', () => {
      */
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto(seeded)
-    await expect(page.getByRole('heading', { name: '1 review needs you' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '2 reviews need you' })).toBeVisible()
     await shot(page, 'seeded-6-queue-390')
     await page.setViewportSize({ width: 1440, height: 900 })
 
@@ -82,7 +91,7 @@ test.describe('a seeded database', () => {
      * looking at this screen has to be able to tell it from one they confirmed
      * themselves.
      */
-    await page.goto(`${seeded}reviews/${waivedReviewId}`)
+    await page.goto(`${seeded}reviews/${waivedReviewId}/understand`)
     await expect(page.getByText('Confirmation not required.')).toBeVisible()
     await shot(page, 'seeded-5-review-no-confirmation')
   })
@@ -144,6 +153,55 @@ test.describe('the three step pages', () => {
   })
 })
 
+/*
+ * **Step 5 and step 6, which DEV-878 builds**, from the same invented example — at the
+ * width of a laptop and at the width of a phone, closed and with the blocker open.
+ *
+ * The open one is the point. Board A8 is a page of one-line rows, and the picture that
+ * matters is what happens when a reader presses one: the code with the comment on the
+ * flagged line, the proof, and the reasoning behind its own word count. A picture of
+ * fourteen closed rows would show the half that is always visible and none of the half
+ * Patrick said he loved.
+ */
+test.describe('the code review page and the draft', () => {
+  test('step 5 and step 6, closed and open, at both widths', async ({ page }) => {
+    for (const [width, suffix] of [[1440, ''], [390, '-390']] as const) {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
+
+      await page.goto(`${seeded}reviews/${structuredReviewId}/code-review`)
+      await expect(page.locator('h1')).toBeVisible()
+      await shot(page, `dev-878-1-code-review${suffix}`)
+
+      /*
+       * The blocker, open, with its reasoning unfolded — every part of the open row in one
+       * picture, which is what "the code with the comments, the inline style" is about.
+       */
+      await page.locator('.row').filter({ hasText: 'F9' }).first()
+        .getByRole('button').first().click()
+      await expect(page.locator('.code')).toBeVisible()
+      await page.getByRole('button', { name: /The full reasoning/ }).click()
+      await expect(page.locator('.blocks')).toBeVisible()
+      await shot(page, `dev-878-2-finding-open${suffix}`)
+
+      await page.goto(`${seeded}reviews/${structuredReviewId}/draft`)
+      await expect(page.locator('h1')).toBeVisible()
+      await shot(page, `dev-878-3-draft${suffix}`)
+    }
+    await page.setViewportSize({ width: 1440, height: 900 })
+
+    /*
+     * The two states of the page that the real-length example cannot show at once: a
+     * review whose step 5 has not written anything, and a draft written as one block of
+     * markdown rather than in parts — which is every draft written before the composition
+     * existed, and the one the per-finding decisions refuse against.
+     */
+    await page.goto(`${seeded}reviews/${reviewId}/code-review`)
+    await page.locator('.row').first().getByRole('button').first().click()
+    await expect(page.getByText('one block of markdown')).toBeVisible()
+    await shot(page, 'dev-878-4-one-block-draft')
+  })
+})
+
 test.describe('a fresh database', () => {
   test('the four pages', async ({ page }) => {
     await page.goto(empty)
@@ -171,7 +229,7 @@ test.describe('a fresh database', () => {
 
 test.describe('the server stopped', () => {
   test('with a page already open', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${reviewId}`)
+    await page.goto(`${seeded}reviews/${reviewId}/understand`)
     await expect(page.getByText('A webhook delivery that fails once')).toBeVisible()
 
     await page.route('**/api/v1/**', route => route.abort('connectionrefused'))

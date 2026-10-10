@@ -224,6 +224,11 @@ function sources(data: ReviewDetail) {
         step="understand"
         :headline="data.review.title ?? `Pull request #${data.review.pr}`"
       >
+        <BriefConfirmation
+          :brief="data.brief"
+          :review-id="data.review.id"
+        />
+
         <DeskNotice tone="plain">
           <strong>Written before the structured brief.</strong>
           This brief records the problem as one piece of text, which is what a brief held
@@ -265,6 +270,17 @@ function sources(data: ReviewDetail) {
         step="understand"
         :headline="headline(data.brief)"
       >
+        <!--
+          **Layer 2's one act, which lives here because the page it lived on is gone.**
+          `/reviews/{id}` drew it and DEV-878 retires that screen; without this the
+          dashboard would have no way to confirm a brief at all, and confirming is one of
+          only two things in the whole system that record the developer's sign-off.
+        -->
+        <BriefConfirmation
+          :brief="data.brief"
+          :review-id="data.review.id"
+        />
+
         <!-- ------------------------------ The two flows ------------------------------ -->
         <section
           v-if="flowBefore(data.brief).length || flowAfter(data.brief).length"

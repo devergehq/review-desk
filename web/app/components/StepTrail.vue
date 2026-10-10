@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { DraftStatus, ReviewLayer, ReviewLayerName } from '~/types/desk'
+import type { ReviewLayer, ReviewLayerName } from '~/types/desk'
 
 /**
  * The seven steps of a review, in the two groups they actually fall into.
@@ -31,17 +31,20 @@ import type { DraftStatus, ReviewLayer, ReviewLayerName } from '~/types/desk'
  * | Step | Goes to |
  * |---|---|
  * | 2, 3, 4 | the pages DEV-885 builds |
- * | 5 Code review | `/reviews/{id}`, the one-page review, which is where the findings are |
- * | 6 Draft | `/reviews/{id}/draft`, **when there is a draft to read** |
- * | 1 Lint, 7 Harvest | nowhere — no page until DEV-878, and a link to a page that does not exist is worse than a label |
+ * | 5 Code review | `/reviews/{id}/code-review`, which DEV-878 builds |
+ * | 6 Draft | `/reviews/{id}/draft` |
+ * | 1 Lint, 7 Harvest | nowhere — no page yet, and a link to a page that does not exist is worse than a label |
  *
- * Step 6 is a link only when `draft_status` says there is a draft to read. The flagship
- * structured review has none, and an unguarded link sent it to a blocking not-found panel
- * with no trail on it — the same dead end steps 1 and 7 are labels to avoid.
+ * **Step 6 is a link whatever the draft status says, and that changed in DEV-878.** It used
+ * to be guarded on `draft_status`, because `GET …/draft` refuses when there is no draft row
+ * and the draft screen then drew a blocking not-found panel carrying no trail and no way
+ * back — the same dead end steps 1 and 7 are labels to avoid. The draft screen is inside
+ * this shell now, so it carries the trail even when there is nothing to read, and the
+ * reason for the guard is gone with the dead end. A review whose session has not written a
+ * draft says so on step 6's own page, which is a better answer than a step that cannot be
+ * pressed.
  *
  * The board draws only three links, and drew them against a queue that landed elsewhere.
- * Steps 5 and 6 go to the two screens this slice does not rebuild; **each of those carries
- * one link back to Understand**, so neither is a one-way trip out of the trail.
  */
 /*
  * **Resolved to the component, not named as a string.** `QueueRow` carries the measurement:
@@ -58,45 +61,28 @@ const props = defineProps<{
   active: ReviewLayerName
   /** Which round the second group is. */
   round: number
-  /**
-   * The review's draft status, which decides whether step 6 is a link.
-   *
-   * **`GET /reviews/{id}/draft` is a refusal when there is no draft**, so step 6 has to
-   * know. `null` is a review no session has drafted; `drafting` is one being written and
-   * the document may not exist yet — two of the sample reviews are exactly that. Either
-   * way the link would land on a blocking not-found panel carrying no trail and no way
-   * back, which is the thing this trail exists to prevent.
+  /*
+   * **There is no `draftStatus` prop any more.** It existed to decide whether step 6 was a
+   * link, and nothing decides that now: the draft screen is inside this shell, so it is
+   * never the dead end the guard was for. A prop every caller passes and nothing reads is
+   * a claim about what this component needs that is not true.
    */
-  draftStatus?: DraftStatus | null
 }>()
 
 /**
- * The five steps that have somewhere to go, as whole paths.
+ * The five steps that have somewhere to go.
  *
- * Whole paths rather than suffixes, because step 5's page **is** the base route: the
- * one-page review is where the findings are drawn until DEV-878 replaces it, and a suffix
- * map would have had to express that as an empty string and build `/reviews/1/`.
+ * A suffix each, now that every one of them is a suffix: step 5 was the base route while
+ * the one-page review was where the findings were, and `/reviews/{id}` is a redirect to
+ * Understand since DEV-878 retired it.
  */
-const PAGES: Partial<Record<ReviewLayerName, (id: number) => string>> = {
-  understand: id => `/reviews/${id}/understand`,
-  alternatives: id => `/reviews/${id}/alternatives`,
-  solution_map: id => `/reviews/${id}/solution`,
-  /* The one-page review, which is the only place the findings are shown. */
-  code_review: id => `/reviews/${id}`,
-  draft: id => `/reviews/${id}/draft`,
+const PAGES: Partial<Record<ReviewLayerName, string>> = {
+  understand: 'understand',
+  alternatives: 'alternatives',
+  solution_map: 'solution',
+  code_review: 'code-review',
+  draft: 'draft',
 }
-
-/**
- * The draft statuses that mean there is a draft to read.
- *
- * **Not "the status is set".** `drafting` is a session part-way through writing one, and
- * the document may not exist yet — `getDraft` refuses on the row, not on the status, and
- * two of the sample reviews carry `drafting` with nothing behind it. Excluding it can at
- * worst turn a readable draft into a label for a few seconds; including it turns a trail
- * step into a dead end, and the rule this component states for steps 1 and 7 is that a
- * link to a page that does not exist is worse than a label.
- */
-const DRAFT_IS_READABLE: DraftStatus[] = ['ready', 'approved', 'sent_back', 'posted']
 
 interface Step {
   number: number
@@ -123,10 +109,9 @@ const steps = computed<Step[]>(() =>
       name: layer.name,
       label: layerLabel(layer.name),
       outcome: layerOutcome(layer),
-      to: layer.name === 'draft'
-        && !DRAFT_IS_READABLE.includes(props.draftStatus as DraftStatus)
+      to: PAGES[layer.name] == null
         ? null
-        : PAGES[layer.name]?.(props.reviewId) ?? null,
+        : `/reviews/${props.reviewId}/${PAGES[layer.name]}`,
       current: layer.name === props.active,
       tone: layerTone(layer.state),
     })),

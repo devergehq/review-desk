@@ -39,21 +39,28 @@ import { visibleWords } from '~/utils/draft'
 import { count } from '~/utils/format'
 import type {
   Brief,
+  DecideFindingRequest,
   DeskSource,
   Disposition,
   DraftDetail,
   Finding,
+  FindingDecision,
+  FindingDecisionMade,
   Inbox,
   InboxPr,
   NitTicket,
+  OutcomeKind,
   RepoName,
   RepoSummary,
   Review,
   ReviewDetail,
   ReviewEvent,
+  RoundStatus,
   Rule,
   RuleStage,
   RulesPage,
+  Severity,
+  TicketedAndApproved,
 } from '~/types/desk'
 
 /*
@@ -162,6 +169,42 @@ function retally(detail: ReviewDetail) {
   }
   detail.finding_severities = severities
   detail.finding_dispositions = dispositions
+}
+
+/**
+ * Put the draft's held-back list and its ticket back in step with the findings.
+ *
+ * `DraftDetail.held_back` is a projection of the findings, not a second record of them, so
+ * anything that moves a disposition has to rebuild it. Shared by the three operations that
+ * do — a disposition change, a decision, and ticketing the rest — because the first of them
+ * carried this inline and the next two would each have been a chance to forget a line of it.
+ */
+function syncHeldBack(owner: ReviewDetail, drafted: DraftDetail | undefined): void {
+  if (!drafted) return
+  drafted.held_back = owner.findings
+    .filter(item => item.disposition === 'held_back')
+    .map(item => ({
+      finding_seq: item.seq,
+      finding_key: item.key,
+      claim: item.claim,
+      severity: item.severity,
+    }))
+  drafted.nit_ticket = owner.nit_ticket
+}
+
+/**
+ * The next outcome id, across the whole desk.
+ *
+ * The id is `int64` and unique per outcome in the contract, and outcomes live on their
+ * review — so counting within one review would hand two reviews the same id. Read from the
+ * records each time rather than held in a module variable, because `resetSource` puts the
+ * desk back and a counter would keep climbing past what the fixtures hold.
+ */
+function nextOutcomeId(): number {
+  const highest = source.reviews
+    .flatMap(detail => detail.outcomes)
+    .reduce((top, outcome) => Math.max(top, outcome.id), 0)
+  return highest + 1
 }
 
 /** Re-run the review lint over a draft body, the way the server does on every save. */
@@ -441,15 +484,7 @@ function setFindingDisposition(
 
   const drafted = draftById(reviewId)
   if (drafted) {
-    drafted.held_back = detail.findings
-      .filter(item => item.disposition === 'held_back')
-      .map(item => ({
-        finding_seq: item.seq,
-        finding_key: item.key,
-        claim: item.claim,
-        severity: item.severity,
-      }))
-    drafted.nit_ticket = detail.nit_ticket
+    syncHeldBack(detail, drafted)
     relint(drafted)
   }
 
@@ -589,6 +624,467 @@ function requestNitTicket(id: number, ticketId: string | null = null): NitTicket
   return detail.nit_ticket
 }
 
+/* ------------------------- The developer's decisions -------------------------- */
+
+/*
+ * **`crates/store/src/entities/decision.rs`'s own three tables, restated once here and
+ * nowhere else.**
+ *
+ * This is the one place in `web/` where sample mode has to reproduce a *rule* rather than
+ * patch a record. The eight decisions are not eight branches: each settles a disposition, a
+ * round status and exactly one outcome, and separately each either needs a block of the
+ * draft that is already there, writes one that is not, or neither. Written as branches in a
+ * handler, "every decision leaves exactly one outcome" would be a sentence nobody could
+ * check; written as tables, a decision added to the contract is a type error here.
+ *
+ * The reason it matters that these agree with the store and not merely look like it: a
+ * decision that works on fixtures and is refused by the binary is the worst possible shape
+ * of this file. `test/desk.spec.ts` asserts the three tables against the contract's own
+ * `FindingDecision` description, which carries the same table in prose.
+ */
+
+/** What one decision settles, with no reference to the record. */
+interface Settled {
+  /** Where the finding stands in this round's draft afterwards, or null to leave it. */
+  disposition: Disposition | null
+  /** What became of the finding this round, or null to leave it. */
+  round_status: RoundStatus | null
+  /** The outcome kind it is recorded as. Exactly one, always. */
+  outcome: OutcomeKind
+}
+
+const SETTLES: Record<FindingDecision, Settled> = {
+  keep: { disposition: 'in_draft', round_status: null, outcome: 'kept' },
+  cut: { disposition: 'suppressed', round_status: null, outcome: 'cut' },
+  regrade: { disposition: null, round_status: null, outcome: 'regraded' },
+  rewrite: { disposition: null, round_status: null, outcome: 'rewritten' },
+  to_ticket: { disposition: 'held_back', round_status: 'ticketed', outcome: 'ticketed' },
+  raise_again: { disposition: 'in_draft', round_status: 'still_open', outcome: 'raised_again' },
+  /*
+   * `rejected`, and the reason is the detail. That is exactly what
+   * `RuleCounts.rejected_with_reason` counts — "author disagreed once, with a reason you
+   * accepted" — so it has to be that kind rather than one of its own nothing would read.
+   */
+  accept_reason: { disposition: 'suppressed', round_status: 'accepted', outcome: 'rejected' },
+  withdraw: { disposition: 'suppressed', round_status: 'withdrawn', outcome: 'withdrawn' },
+}
+
+/** The decisions that write a block for a finding the draft has none for. */
+const WRITES_A_BLOCK: FindingDecision[] = ['keep', 'raise_again']
+
+/** The decisions that need a block that is already there — they change words. */
+const NEEDS_A_BLOCK: FindingDecision[] = ['cut', 'regrade', 'rewrite']
+
+/** The round statuses that mean the finding is still open. */
+const STILL_OPEN: RoundStatus[] = ['new', 'still_open']
+
+const SEVERITY_LABELS: Record<Severity, string> = {
+  blocker: 'Blocker',
+  should: 'Should',
+  nit: 'Nit',
+  question: 'Question',
+}
+
+/** One finding's heading, as the posted body carries it. */
+function findingHeading(severity: Severity, seq: number, title: string): string {
+  return `### ${SEVERITY_LABELS[severity]} · F${seq} · ${title}`
+}
+
+/** Whether a finding's block posts: the store's `Finding::is_posted`, restated. */
+function isPosted(finding: Finding): boolean {
+  return (
+    finding.disposition === 'in_draft'
+    && STILL_OPEN.includes((finding.round_status ?? 'new') as RoundStatus)
+  )
+}
+
+/**
+ * Recompose the body from the blocks, and clear the lint.
+ *
+ * **The lint is cleared on every change to the body, and that is the rule rather than a
+ * convenience.** The review lint was run by the agent over the body it wrote; the moment a
+ * decision changes that body the result is about a different document, and a lint still
+ * saying "passes" would be the record vouching for words nobody checked.
+ *
+ * Blocks are joined by a blank line and the body ends in one newline. A composition with
+ * nothing to post is the empty string rather than a lone newline.
+ */
+function recompose(drafted: DraftDetail, owner: ReviewDetail): void {
+  for (const section of drafted.sections) {
+    if (section.kind === 'prose') {
+      section.posted = true
+      continue
+    }
+    const finding = owner.findings.find(item => item.seq === section.finding_seq)
+    /* Derived, never stored: regrading the finding changes the heading it composes. */
+    section.severity = finding?.severity ?? section.severity
+    section.posted = finding != null && isPosted(finding)
+    section.rewritten = section.text !== section.agent_text
+      || (section.title ?? null) !== (section.agent_title ?? null)
+    section.heading = section.title == null || section.severity == null
+      ? null
+      : findingHeading(section.severity, section.finding_seq!, section.title)
+  }
+
+  const posted = drafted.sections
+    .filter(section => section.posted)
+    .map((section) => {
+      if (section.kind === 'prose') return section.text
+      if (section.heading == null) return null
+      return section.text.length === 0
+        ? section.heading
+        : `${section.heading}\n\n${section.text}`
+    })
+    .filter((block): block is string => block != null)
+
+  drafted.draft.body = posted.length === 0 ? '' : `${posted.join('\n\n')}\n`
+  drafted.draft.updated_at = nowIso()
+  /* Not relint(): a decision leaves the lint **not checked**, never passing. */
+  drafted.lint = null
+}
+
+/**
+ * The refusals a decision can earn from the request alone, before the record is touched.
+ *
+ * Every one of them is `decision.rs`'s `check`, in the same order, so that a request the
+ * binary refuses is refused here too — and with the same `field`, because the page reads
+ * `field` to decide which control to put the message beside.
+ */
+function checkDecision(request: DecideFindingRequest): void {
+  const blank = (text: string | null | undefined) => (text ?? '').trim().length === 0
+
+  if (request.decision === 'regrade' && request.severity == null) {
+    throw invalidValue(
+      'severity',
+      'Choose the severity to post it at. Regrading is the decision that changes one.',
+      'blocker, should, nit or question',
+    )
+  }
+
+  if (request.decision === 'rewrite' && request.title == null && request.text == null) {
+    throw invalidValue(
+      'text',
+      'A rewrite needs words: the heading, the paragraph, or both.',
+      'the heading\'s title, the paragraph, or both — in your own words, which is what '
+      + 'gets posted',
+    )
+  }
+
+  if (request.decision === 'rewrite') {
+    if (request.title != null && blank(request.title)) {
+      throw invalidValue(
+        'title',
+        'The heading cannot be blank.',
+        'the title the heading posts',
+      )
+    }
+    if (
+      request.text != null
+      && (request.text.startsWith('\n') || request.text.endsWith('\n'))
+    ) {
+      throw invalidValue(
+        'text',
+        'The paragraph begins or ends with a newline.',
+        'the paragraph itself; blocks are joined by one blank line, and a block that '
+        + 'brought its own would compose a body nobody wrote',
+      )
+    }
+  }
+
+  if (request.decision === 'accept_reason' && blank(request.note)) {
+    throw invalidValue(
+      'note',
+      'Say what the author’s reason was.',
+      'the author’s reason, in their words. A rejection with no reason is the one '
+      + 'outcome the feedback loop cannot learn from',
+    )
+  }
+
+  /*
+   * Words belong to a rewrite, and to the two decisions that may have to write a block the
+   * draft has none of. **Refused rather than ignored** on the other five: an API that
+   * accepts a field and does nothing with it is one a caller cannot tell they misused.
+   */
+  if (
+    (request.title != null || request.text != null)
+    && !['rewrite', 'keep', 'raise_again'].includes(request.decision)
+  ) {
+    throw invalidValue(
+      'text',
+      `Words on a ${request.decision} decision.`,
+      'no title and no text on this decision; rewriting what gets posted is its own '
+      + 'decision, and this one takes the finding out of the post',
+    )
+  }
+
+  if (request.severity != null && request.decision !== 'regrade') {
+    throw invalidValue(
+      'severity',
+      `A severity on a ${request.decision} decision.`,
+      'no severity on this decision; changing one is a regrade, so that the record says '
+      + 'the developer regraded it',
+    )
+  }
+}
+
+/** What the outcome says beyond its kind: `decision.rs`'s `detail_for`. */
+function decisionDetail(
+  request: DecideFindingRequest,
+  finding: Finding,
+): string | null {
+  const note = (request.note ?? '').trim()
+  const withNote = (change: string) => (note.length > 0 ? `${change}: ${note}` : change)
+
+  if (request.decision === 'regrade' && request.severity != null) {
+    return withNote(
+      `${SEVERITY_LABELS[finding.severity]} to ${SEVERITY_LABELS[request.severity]}`,
+    )
+  }
+  if (request.decision === 'rewrite') {
+    const parts: string[] = []
+    if (request.title != null) parts.push('the heading')
+    if (request.text != null) parts.push('the paragraph')
+    return withNote(`rewrote ${parts.join(' and ')}`)
+  }
+  if (request.title != null || request.text != null) {
+    return withNote('posted in the developer\'s own words')
+  }
+  return note.length > 0 ? note : null
+}
+
+/**
+ * `POST /reviews/{id}/findings/{seq}/decide` — the developer's decision, and the draft
+ * recomposed.
+ *
+ * One step, like the store's one transaction: the severity, the disposition, the round
+ * status, the block and the body are all written before anything is read back, and the
+ * three things handed over are one instant of the record.
+ */
+function decideFinding(
+  reviewId: number,
+  seq: number,
+  request: DecideFindingRequest,
+): FindingDecisionMade {
+  const owner = reviewById(reviewId)
+  const finding = owner?.findings.find(item => item.seq === seq)
+  if (!owner || !finding) throw notFound(`finding ${seq} on review ${reviewId}`)
+
+  /* Computed from the request alone, before anything is written. */
+  checkDecision(request)
+
+  const drafted = draftById(reviewId)
+  if (!drafted) throw notFound(`draft on review ${reviewId}`)
+
+  if (drafted.draft.status === 'approved' || drafted.draft.status === 'posted') {
+    throw conflict(
+      `This draft is ${drafted.draft.status} and cannot be decided about: an approved `
+      + 'draft is what the review session posts under your name.',
+    )
+  }
+
+  const held = drafted.sections.find(
+    section => section.kind === 'finding' && section.finding_seq === seq,
+  )
+
+  if (NEEDS_A_BLOCK.includes(request.decision) && !held) {
+    throw conflict(
+      `the draft of review ${reviewId} has no block for ${finding.key}, so there is `
+      + 'nothing to decide about: it was written as one block of markdown rather than '
+      + 'in parts',
+    )
+  }
+
+  /*
+   * **Keeping a finding this round has already settled is refused rather than quietly
+   * reopened.** "Keep" means *post this as it stands*, and a finding carried as fixed,
+   * accepted, withdrawn or ticketed is not posted as an open finding. Raising it again is
+   * the decision that says it is still open, and it is one button away.
+   */
+  if (request.decision === 'keep' && !STILL_OPEN.includes(
+    (finding.round_status ?? 'new') as RoundStatus,
+  )) {
+    throw invalidValue(
+      'decision',
+      `${finding.key} is ${finding.round_status} this round.`,
+      'a finding whose round status is new or still open. Raise it again if this round '
+      + 'is to say it is still there',
+    )
+  }
+
+  /* The developer's own words belong to a rewrite once the block exists. */
+  if (held && request.decision !== 'rewrite' && (request.title != null || request.text != null)) {
+    throw invalidValue(
+      'text',
+      `${finding.key} already has a block in this draft.`,
+      'no words on this decision; rewriting what gets posted is its own decision, so '
+      + 'that the record says the developer rewrote it',
+    )
+  }
+
+  const settled = SETTLES[request.decision]
+  const detail = decisionDetail(request, finding)
+
+  /* The severity first, because the heading is composed from it. */
+  if (request.severity != null) finding.severity = request.severity
+
+  if (settled.disposition != null) {
+    finding.disposition = settled.disposition
+    finding.disposition_reason = (request.note ?? '').trim() || null
+  }
+
+  if (settled.round_status != null) {
+    finding.round_status = settled.round_status
+    finding.round_status_by = 'developer'
+    finding.round_status_checked = (request.note ?? '').trim() || null
+    finding.round_status_at = nowIso()
+  }
+
+  if (request.decision === 'rewrite' && held) {
+    if (request.title != null) held.title = request.title.trim()
+    if (request.text != null) held.text = request.text
+  }
+  else if (WRITES_A_BLOCK.includes(request.decision) && !held) {
+    /*
+     * The words a new block is written with. The agent's own title and paragraph are kept
+     * beside the developer's, so the record can say whose words were posted — and a finding
+     * with neither a consequence nor a comment is refused rather than given an invented
+     * paragraph.
+     */
+    /*
+     * **The finding's own title, and its claim only when it has none** — which is
+     * `decision.rs`'s `words_for`, and was the claim here while the store used the title.
+     * The two composed different headings for the same press, which is this file's whole
+     * failure mode: `### Nit · F2 · <56 words>` on fixtures and `### Nit · F2 · <title>`
+     * against the binary.
+     */
+    const agentTitle = finding.title ?? finding.claim
+    const agentText = [finding.why_it_matters, finding.inline_comment]
+      .find(text => (text ?? '').trim().length > 0)
+    if (agentText == null) {
+      throw invalidValue(
+        'text',
+        `${finding.key} has no paragraph to post.`,
+        'what the review is to say about it; the finding records no consequence and no '
+        + 'comment for the author, and nothing may invent one',
+      )
+    }
+    const title = (request.title ?? '').trim() || agentTitle
+    const text = (request.text ?? '').trim().length > 0 ? request.text! : agentText
+    drafted.sections.push({
+      position: drafted.sections.length + 1,
+      kind: 'finding',
+      finding_seq: seq,
+      finding_key: finding.key,
+      severity: finding.severity,
+      heading: findingHeading(finding.severity, seq, title),
+      title,
+      text,
+      agent_title: agentTitle,
+      agent_text: agentText,
+      rewritten: title !== agentTitle || text !== agentText,
+      posted: true,
+    })
+  }
+
+  /* The body last, so it is composed from everything the decision changed. */
+  retally(owner)
+  syncHeldBack(owner, drafted)
+  recompose(drafted, owner)
+
+  const outcome = {
+    id: nextOutcomeId(),
+    review_id: reviewId,
+    finding_seq: seq,
+    finding_key: finding.key,
+    kind: settled.outcome,
+    actor: 'developer' as const,
+    occurred_at: nowIso(),
+    detail,
+  }
+  owner.outcomes.push(outcome)
+
+  return { finding, outcome, draft: drafted }
+}
+
+/**
+ * `POST /reviews/{id}/draft/ticket-and-approve` — file what is left, and approve.
+ *
+ * **A sign-off, and it neither posts nor files anything.** Every finding the draft would
+ * have posted is held back and recorded as ticketed this round by the developer, the one
+ * nit ticket is asked for, the body is recomposed without them, and the draft is approved
+ * with the event `approve` — which is not the caller's to choose, because a request for
+ * changes that ticketed everything it asked for would contradict itself.
+ */
+function ticketRestAndApprove(id: number, note: string | null): TicketedAndApproved {
+  const drafted = draftById(id)
+  const owner = reviewById(id)
+  if (!drafted || !owner) throw notFound(`draft on review ${id}`)
+
+  if (drafted.draft.status !== 'ready') {
+    throw conflict(
+      `This draft is ${drafted.draft.status} and only a draft that is ready can be `
+      + 'approved.',
+    )
+  }
+
+  const open = owner.findings.filter(isPosted)
+  if (open.length === 0) {
+    throw invalidValue(
+      'review_id',
+      `Review ${id} has no open finding to file.`,
+      'a review with an open finding; sign the draft off instead, and ask for a ticket '
+      + 'for the nits held back on its own',
+    )
+  }
+
+  const said = (note ?? '').trim() || null
+  const at = nowIso()
+  for (const finding of open) {
+    finding.disposition = 'held_back'
+    finding.disposition_reason = said
+    finding.round_status = 'ticketed'
+    finding.round_status_by = 'developer'
+    finding.round_status_checked = said
+    finding.round_status_at = at
+    owner.outcomes.push({
+      id: nextOutcomeId(),
+      review_id: id,
+      finding_seq: finding.seq,
+      finding_key: finding.key,
+      kind: 'ticketed',
+      actor: 'developer',
+      occurred_at: at,
+      detail: said,
+    })
+  }
+
+  retally(owner)
+  owner.nit_ticket = {
+    ...owner.nit_ticket,
+    status: 'requested',
+    finding_seqs: owner.findings
+      .filter(finding => finding.disposition === 'held_back')
+      .map(finding => finding.seq),
+    requested_at: owner.nit_ticket.requested_at ?? at,
+  }
+  syncHeldBack(owner, drafted)
+  recompose(drafted, owner)
+
+  drafted.draft.status = 'approved'
+  drafted.draft.event = 'approve'
+  drafted.draft.approved_at = at
+  drafted.draft.sent_back_note = null
+  drafted.draft.sent_back_at = null
+  owner.draft_status = 'approved'
+
+  return {
+    draft: drafted,
+    nit_ticket: owner.nit_ticket,
+    ticketed: open.map(finding => finding.seq),
+    ticketed_keys: open.map(finding => finding.key),
+  }
+}
+
 /** The stage that follows this one, or `null` at the end of the line. */
 function nextStage(stage: RuleStage): RuleStage | null {
   if (stage === 'proposed') return 'active'
@@ -706,7 +1202,7 @@ function answered<T>(value: T): T {
 }
 
 /**
- * The sixteen operations over the records in memory.
+ * The eighteen operations over the records in memory.
  *
  * Every one is `async` so that the composable above cannot tell which backend it has. They
  * resolve immediately — there is nothing to wait for — which means a loading state is not
@@ -741,9 +1237,12 @@ export function sampleBackend(): DeskBackend {
     confirmBrief: async id => answered(confirmBrief(id)),
     setFindingDisposition: async (reviewId, seq, disposition, reason) =>
       answered(setFindingDisposition(reviewId, seq, disposition, reason)),
+    decideFinding: async (reviewId, seq, request) =>
+      answered(decideFinding(reviewId, seq, request)),
     saveDraft: async (id, body, edits) => answered(saveDraft(id, body, edits)),
     approveDraft: async (id, event) => answered(approveDraft(id, event)),
     sendBackDraft: async (id, note) => answered(sendBackDraft(id, note)),
+    ticketRestAndApprove: async (id, note) => answered(ticketRestAndApprove(id, note)),
     requestNitTicket: async (id, ticketId = null) => answered(requestNitTicket(id, ticketId)),
     promoteRule: async (id, toStage) => answered(promoteRule(id, toStage)),
     dismissRule: async (id, reason) => answered(retireWithReason(id, reason, 'dismissed')),

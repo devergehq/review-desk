@@ -31,16 +31,24 @@ const {
 } = addresses
 
 /**
- * The layer trail on the One review screen, one string per layer.
+ * The step trail, one string per step, in number order.
  *
- * Waited for rather than read straight away. The screen's first read is a request, so a
+ * **Read off `StepTrail`, which every page of a review now carries.** It used to be the
+ * One review screen's `LayerTrail`, and that screen is a redirect since DEV-878 — so this
+ * reads the shell's own trail instead, which is on all five pages rather than on one.
+ *
+ * Two `ol`s, because the trail draws the seven steps in the two groups a review actually
+ * has: four settled once for the pull request and three repeating every round. They are
+ * concatenated here, in order, so a caller still indexes a step by its number minus one.
+ *
+ * Waited for rather than read straight away. The page's first read is a request, so a
  * `goto` followed immediately by `allTextContents` returns an empty list — which fails as
  * `undefined` on an index and points at the trail rather than at the timing.
  */
 async function trail(page: import('@playwright/test').Page): Promise<string[]> {
-  const layers = page.locator('ol[aria-label="The seven layers of this review"] li')
-  await expect(layers).toHaveCount(7)
-  return layers.allTextContents()
+  const steps = page.locator('nav[aria-label="The seven steps of this review"] .steps li')
+  await expect(steps).toHaveCount(7)
+  return steps.allTextContents()
 }
 
 /** What `work list` says is waiting for an agent, read through the binary. */
@@ -83,7 +91,13 @@ test.describe('the whole path, on a seeded database', () => {
   test('the queue lists the review once, with its title and nothing from a fixture', async ({ page }) => {
     await page.goto(seeded)
 
-    await expect(page.getByRole('heading', { name: '1 review needs you' })).toBeVisible()
+    /*
+     * **Two, and they are two reviews rather than one review twice.** The structured
+     * review gained a draft in DEV-878 — the code review page's decisions change a
+     * finding's *block*, so a review with no draft has nothing to decide against — and its
+     * own layer trail already claimed one by saying step 6 was waiting on the developer.
+     */
+    await expect(page.getByRole('heading', { name: '2 reviews need you' })).toBeVisible()
 
     /*
      * **DEV-876's first acceptance criterion, on a real database.** This session wrote the
@@ -93,7 +107,7 @@ test.describe('the whole path, on a seeded database', () => {
      * behind it. The screen this replaced drew the title twice.
      */
     await expect(page.getByText('Retry failed webhook deliveries')).toHaveCount(1)
-    await expect(page.locator('.row')).toHaveCount(1)
+    await expect(page.locator('.row')).toHaveCount(2)
     await expect(page.getByText('Problem brief ready')).toBeVisible()
     await expect(page.getByText('nothing posts until you confirm')).toBeVisible()
     await expect(page.getByText('a draft is ready behind it')).toBeVisible()
@@ -140,25 +154,17 @@ test.describe('the whole path, on a seeded database', () => {
     expect(before.brief.confirmed_at).toBeNull()
     expect(before.brief.confirmed_by).toBeNull()
 
-    await page.goto(`${seeded}reviews/${reviewId}`)
+    /*
+     * **On Understand, which is where confirming lives since DEV-878.** It was on
+     * `/reviews/{id}`, and retiring that page without moving this would have left the
+     * dashboard unable to confirm a brief at all — one of only two acts in the whole
+     * system that record the developer's sign-off.
+     */
+    await page.goto(`${seeded}reviews/${reviewId}/understand`)
     await expect(page.getByText('Confirm the problem before anything is posted')).toBeVisible()
     await expect(
       page.getByText('A webhook delivery that fails once is never tried again'),
     ).toBeVisible()
-
-    /*
-     * Layer 3's one thing: the alternatives, written before the diff was read, with the one
-     * the author built marked. `brief put` writes them — `NewBrief` carries
-     * `options: Vec<BriefOption>` — and this is the only screen that shows them.
-     */
-    await expect(page.getByRole('heading', { name: 'Ways to solve it' })).toBeVisible()
-    await expect(page.getByText('written before the diff was read')).toBeVisible()
-    await expect(page.getByText('A · Retry inside the request')).toBeVisible()
-    await expect(page.getByText('B · Queue with backoff')).toBeVisible()
-    await expect(page.getByText('C · Dead-letter and replay by hand')).toBeVisible()
-    /* One of the three is what they built, and exactly one. */
-    await expect(page.getByText('What they built')).toHaveCount(1)
-    await expect(page.getByText('B is the right shape for this ticket.')).toBeVisible()
 
     await page.getByRole('button', { name: 'Confirm the problem' }).click()
 
@@ -206,16 +212,20 @@ test.describe('the whole path, on a seeded database', () => {
      */
     await page.goto(seeded)
     /*
-     * Still one row — the same row. Its next action has moved from the brief to the draft,
-     * because layer 2 is settled and layer 6 is not, and nothing else about the queue
-     * changed. That is what "one row showing its next action" buys.
+     * **Still two rows, and the same two.** What moved is this one's next action: from the
+     * brief to the draft, because layer 2 is settled and layer 6 is not. That is what "one
+     * row showing its next action" buys — a review waiting for two things does not become
+     * two rows, and does not stop being a row when one of them is answered.
      */
-    await expect(page.locator('.row')).toHaveCount(1)
-    await expect(page.getByText('Draft ready')).toBeVisible()
+    await expect(page.locator('.row')).toHaveCount(2)
+    const webhooks = page.locator('.row').filter({ hasText: 'Retry failed webhook deliveries' })
+    await expect(webhooks).toHaveCount(1)
+    await expect(webhooks.getByText('Draft ready')).toBeVisible()
     await expect(page.getByText('Problem brief ready')).toHaveCount(0)
     await expect(page.getByText('a draft is ready behind it')).toHaveCount(0)
-    await expect(page.getByText('1 blocker, 1 should')).toBeVisible()
-    await expect(page.getByText('1 nit to a ticket')).toBeVisible()
+    /* Scoped to this row: the second review's own tally also ends in a nit to a ticket. */
+    await expect(webhooks.getByText('1 blocker, 1 should')).toBeVisible()
+    await expect(webhooks.getByText('1 nit to a ticket')).toBeVisible()
 
     /*
      * **A row goes to the review, and the draft is one click along the trail.**
@@ -228,14 +238,24 @@ test.describe('the whole path, on a seeded database', () => {
      * This is the path that proves the queue does not dead-end: queue, Understand, trail,
      * draft. Linking step 6 is what makes it exist.
      */
-    await page.getByRole('link', { name: 'Read and sign off' }).first().click()
+    /*
+     * This review's row, not the first one on the queue: two reviews are waiting since the
+     * structured one gained a draft, and `.first()` picked whichever the ordering put on
+     * top — which is a fact about the sort, not about this review.
+     */
+    await expect(webhooks.getByText('Read and sign off')).toBeVisible()
+    await webhooks.click()
     await expect(page).toHaveURL(`${seeded}reviews/${reviewId}/understand`)
 
     await page.locator('.trail').getByRole('link', { name: /6 Draft/ }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${reviewId}/draft`)
 
-    /* And back again, because that screen carries no trail of its own. */
-    await page.getByRole('link', { name: 'Back to the review' }).click()
+    /*
+     * **And back by the trail, which the draft now carries.** It used to carry a "Back to
+     * the review" link instead, because it was outside the shell; inside it, that link
+     * beside a trail whose first step is the review would be the same door twice.
+     */
+    await page.locator('.trail').getByRole('link', { name: /2 Understand/ }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${reviewId}/understand`)
     await page.locator('.trail').getByRole('link', { name: /6 Draft/ }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${reviewId}/draft`)
@@ -295,9 +315,15 @@ test.describe('the whole path, on a seeded database', () => {
     await page.locator('textarea#send-back-note').fill(note)
     await page.getByRole('button', { name: 'Send back', exact: true }).click()
 
-    await expect(page.getByText(note)).toBeVisible()
+    /*
+     * Scoped to the card, because the note is legitimately in two places now that this
+     * screen carries the trail: the card the developer reads, and step 6's own outcome
+     * line in the trail — which is the trail doing exactly what it is for.
+     */
+    await expect(page.locator('.sent-back')).toContainText(note)
+    await expect(page.locator('.trail')).toContainText(note)
 
-    await page.goto(`${seeded}reviews/${reviewId}`)
+    await page.goto(`${seeded}reviews/${reviewId}/understand`)
     const layers = await trail(page)
     expect(layers[5]).toContain('Draft')
     expect(layers[5]).toContain(note)
@@ -355,7 +381,7 @@ test.describe('the whole path, on a seeded database', () => {
     expect(record.draft.approved_by).toBe('developer')
 
     /* Layer 6 is finished with, and the note the developer wrote earlier is gone from it. */
-    await page.goto(`${seeded}reviews/${reviewId}`)
+    await page.goto(`${seeded}reviews/${reviewId}/understand`)
     const layers = await trail(page)
     expect(layers[5]).toContain('signed off by the developer')
 
@@ -420,21 +446,32 @@ test.describe('the whole path, on a seeded database', () => {
     await expect(body).toHaveValue(typed)
   })
 
-  test('the review screen shows the findings and what was not checked', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${reviewId}`)
+  test('the code review page shows the findings and what was not checked', async ({ page }) => {
+    await page.goto(`${seeded}reviews/${reviewId}/code-review`)
 
-    await expect(page.getByText('2 in the draft · 1 held back · 0 suppressed')).toBeVisible()
+    /* The tally at the foot, which is the three lists in one line. */
+    await expect(page.getByText('2 to post, 1 for a ticket, 0 set aside')).toBeVisible()
     await expect(
-      page.getByText('A retried delivery is sent without an idempotency key'),
+      page.locator('.title').filter({ hasText: 'A retried delivery is sent without an idempotency key' }),
     ).toBeVisible()
     await expect(page.getByText('jobs/DeliverWebhook.php:58')).toBeVisible()
     await expect(
       page.getByText('The admin screens, which this change does not touch.'),
     ).toBeVisible()
-    await expect(page.getByText('214 changed lines')).toBeVisible()
 
-    /* The seven layers, as the command line set them. */
-    await expect(page.locator('ol li')).toHaveCount(7)
+    /* The seven steps of the trail, as the command line set them. */
+    await expect(page.locator('.steps li')).toHaveCount(7)
+  })
+
+  /*
+   * **The address the one-page review had still works, and arrives at the review.** It is
+   * in links people have and in anything written down; a route that 404s is worse than one
+   * that lands somewhere useful, and every queue row already lands on Understand.
+   */
+  test('the retired one-page review redirects to Understand', async ({ page }) => {
+    await page.goto(`${seeded}reviews/${reviewId}`)
+    await expect(page).toHaveURL(`${seeded}reviews/${reviewId}/understand`)
+    await expect(page.locator('.trail')).toBeVisible()
   })
 
   test('a brief that needed no confirmation is in nobody’s queue, and says so', async ({
@@ -455,7 +492,7 @@ test.describe('the whole path, on a seeded database', () => {
       page.getByText('Say "not measured" rather than null in the delivery log'),
     ).toHaveCount(0)
 
-    await page.goto(`${seeded}reviews/${waivedReviewId}`)
+    await page.goto(`${seeded}reviews/${waivedReviewId}/understand`)
     await expect(page.getByText('Confirmation not required.')).toBeVisible()
     /*
      * `.first()`, because the reason is legitimately in two places on this screen: the
@@ -503,7 +540,7 @@ test.describe('the whole path, on a seeded database', () => {
      * diagram would be, nothing of mermaid's is outside the component, and the graphic is
      * still absent two navigations later.
      */
-    await page.goto(`${seeded}reviews/${waivedReviewId}`)
+    await page.goto(`${seeded}reviews/${waivedReviewId}/understand`)
 
     const figure = page.locator('figure')
     await expect(figure.locator('pre')).toContainText(
@@ -540,7 +577,7 @@ test.describe('the whole path, on a seeded database', () => {
      * only thing in this repository that can say it was drawn — jsdom has no `getBBox`, so
      * the component tests cannot.
      */
-    await page.goto(`${seeded}reviews/${reviewId}`)
+    await page.goto(`${seeded}reviews/${reviewId}/understand`)
     const drawing = page.locator('figure svg')
     await expect(drawing).toBeVisible()
     await expect(drawing).toContainText('Deliver')
@@ -725,21 +762,27 @@ test.describe('the three step pages of one review', () => {
       page.getByRole('heading', { name: 'Where the description and the code disagree' }),
     ).toBeVisible()
 
-    /* ---- 5 and 6, the two screens this slice does not rebuild ---- */
+    /* ---- 5 and 6, which DEV-878 brought into the same shell ---- */
 
     /*
      * The trail is the only way to either, now that every queue row opens Understand — so
      * these two links are what stop the queue leading somewhere a reader cannot leave.
-     * Each screen carries one link back, and that is all DEV-885 changes about them.
+     * Both pages carry the trail themselves, so there is no way out of it at all.
      */
     await page.locator('.trail').getByRole('link', { name: /5 Code review/ }).click()
-    await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}`)
+    await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/code-review`)
     /*
-     * **"Back to Understand" here, "Back to the review" on the draft.** This *is* a review
-     * page — the findings are on it — so naming the destination is the only wording that
-     * does not point at a page the reader has not seen and call it the one they are on.
+     * **And back by the trail, not by a link of the page's own.** Both screens carried one
+     * — "Back to Understand" here, "Back to the review" on the draft — because neither was
+     * inside the shell. Both are now, so the way back is the trail, and a link beside a
+     * trail whose first step is the review would be the same door twice.
      */
-    await page.getByRole('link', { name: 'Back to Understand' }).click()
+    await expect(page.locator('.trail')).toBeVisible()
+    await expect(
+      page.getByRole('link', { name: /^Back to / }),
+      'the back links went with the dead ends they were for',
+    ).toHaveCount(0)
+    await page.locator('.trail').getByRole('link', { name: /2 Understand/ }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/understand`)
 
     /* ---- and back to 2 · Understand, which is what "move back freely" means ---- */
@@ -756,12 +799,18 @@ test.describe('the three step pages of one review', () => {
     await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/understand`)
 
     /*
-     * And step 6 is a **label** on this review, because it has no draft — the one guard
-     * that stops the trail sending a reader to a refusal with no way back.
+     * **And step 6 is a link, which it was not before DEV-878.** It was guarded on the
+     * draft status, because the draft screen was outside the shell and a review with no
+     * draft landed on a blocking refusal carrying no trail and no way back. The draft
+     * screen is step 6 now and carries the trail either way, so the guard went with the
+     * dead end it was for.
      */
-    await expect(page.locator('.trail').getByRole('link', { name: /6 Draft/ })).toHaveCount(0)
+    await page.locator('.trail').getByRole('link', { name: /6 Draft/ }).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/draft`)
+    await page.locator('.trail').getByRole('link', { name: /2 Understand/ }).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/understand`)
 
-    /* Lint and Harvest are labels, not links: neither has a page until DEV-878. */
+    /* Lint and Harvest are labels, not links: neither has a page of its own. */
     await expect(page.locator('.trail').getByRole('link', { name: /1 Lint/ })).toHaveCount(0)
     await expect(page.locator('.trail').getByRole('link', { name: /7 Harvest/ })).toHaveCount(0)
   })
@@ -780,7 +829,7 @@ test.describe('the three step pages of one review', () => {
     test(`no page of a review scrolls sideways at ${label}`, async ({ page }) => {
       await page.setViewportSize({ width, height })
 
-      for (const step of ['understand', 'alternatives', 'solution']) {
+      for (const step of ['understand', 'alternatives', 'solution', 'code-review', 'draft']) {
         await page.goto(`${seeded}reviews/${structuredReviewId}/${step}`)
         await expect(page.locator('h1')).toBeVisible()
         await page.waitForLoadState('networkidle')
@@ -814,7 +863,144 @@ test.describe('the three step pages of one review', () => {
         ).toBeLessThanOrEqual(opened.clientWidth)
       }
     })
+
+    /*
+     * **And the one thing on the code review page that is allowed to be wider than the
+     * page — the code — is inside the one thing that scrolls.**
+     *
+     * DEV-878: "Only the code block scrolls sideways; the page never does." The test above
+     * is the second half. This is the first, and the two together are what stop it being
+     * satisfied by a page that simply has no code on it: a line of PHP is as long as it is,
+     * nothing re-wraps it — these are the only copy of those lines there is — so there has
+     * to be something wider than the viewport, and it has to be in the scroller.
+     */
+    test(`only the code block scrolls sideways at ${label}`, async ({ page }) => {
+      await page.setViewportSize({ width, height })
+      await page.goto(`${seeded}reviews/${structuredReviewId}/code-review`)
+      await expect(page.locator('h1')).toBeVisible()
+
+      /* The blocker, which is the finding with the widest hunk. */
+      await page.locator('.row').filter({ hasText: 'F9' }).first()
+        .getByRole('button').first().click()
+      await expect(page.locator('.code')).toBeVisible()
+
+      const measured = await page.evaluate(() => {
+        const viewport = document.documentElement.clientWidth
+        const scroller = document.querySelector('.scroller')!
+        return {
+          viewport,
+          page: document.documentElement.scrollWidth,
+          codeScrolls: scroller.scrollWidth > scroller.clientWidth,
+          /* Everything past the right edge that is not inside the one scroller. */
+          strays: [...document.querySelectorAll('body *')]
+            .filter(element => element.getBoundingClientRect().right > viewport + 1)
+            .filter(element => !scroller.contains(element) && element !== scroller)
+            .map(element => `${element.tagName.toLowerCase()}.${element.className}`),
+        }
+      })
+
+      expect(measured.page, 'the page itself').toBeLessThanOrEqual(measured.viewport)
+      expect(measured.codeScrolls, 'the code block scrolls').toBe(true)
+      expect(measured.strays, 'nothing outside the scroller is past the edge').toEqual([])
+    })
+
+    /*
+     * **The pinned comment stays put while the code scrolls**, which is the one thing this
+     * page does that board A8 does not. On the board the comment is carried along with the
+     * code and leaves the screen after about forty characters at this width.
+     */
+    test(`the inline comment stays pinned while the code scrolls at ${label}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height })
+      await page.goto(`${seeded}reviews/${structuredReviewId}/code-review`)
+      await page.locator('.row').filter({ hasText: 'F9' }).first()
+        .getByRole('button').first().click()
+      await expect(page.locator('.note .card')).toBeVisible()
+
+      const moved = await page.evaluate(async () => {
+        const scroller = document.querySelector('.scroller') as HTMLElement
+        const card = document.querySelector('.note .card')!
+        const before = card.getBoundingClientRect().left
+        scroller.scrollLeft = scroller.scrollWidth - scroller.clientWidth
+        await new Promise(settle => requestAnimationFrame(() => settle(null)))
+        return { before, after: card.getBoundingClientRect().left }
+      })
+
+      expect(Math.abs(moved.after - moved.before)).toBeLessThanOrEqual(1)
+    })
   }
+
+  /*
+   * **Step 5 in the browser, deciding on a finding, end to end.**
+   *
+   * On the structured review, because a decision changes a finding's *block* of the draft
+   * and this is the one seeded review whose draft is written in parts. The seeded review's
+   * is one block of markdown — which is the other half of this, asserted below.
+   *
+   * The decision reaches the binary, the binary writes the finding, its block, the body
+   * and the outcome in one transaction, and the page redraws from what came back. Nothing
+   * on the command line can do any of it, which `crates/cli/tests/signoff.rs` is the other
+   * half of.
+   */
+  test('a finding is decided on in the browser, and the record says the developer did', async ({
+    page,
+  }) => {
+    await page.goto(`${seeded}reviews/${structuredReviewId}/code-review`)
+
+    /* F10, a nit: cutting it takes it out of the review and off this list. */
+    await page.locator('.row').filter({ hasText: 'F10' }).first()
+      .getByRole('button').first().click()
+    await expect(page.getByText('Your call')).toBeVisible()
+
+    await page.getByRole('group', { name: /How to decide on F10/ })
+      .getByRole('button', { name: 'Cut' })
+      .click()
+
+    await expect(page.getByText('will not be posted')).toBeVisible()
+    await expect(page.locator('.row').filter({ hasText: 'F10' })).toHaveCount(0)
+
+    /* And the record, read back through the binary rather than off the screen. */
+    const after = cliJson(seededDatabase, [
+      'review', 'show', '--review', String(structuredReviewId),
+    ]) as unknown as {
+      findings: Array<{ seq: number, disposition: string }>
+      outcomes: Array<{ finding_seq: number, kind: string, actor: string }>
+      draft: { body: string, lint: { passes: boolean | null } }
+    }
+
+    expect(after.findings.find(finding => finding.seq === 10)!.disposition).toBe('suppressed')
+    const outcome = after.outcomes.find(one => one.finding_seq === 10 && one.kind === 'cut')
+    expect(outcome, 'the decision left an outcome').toBeDefined()
+    expect(outcome!.actor).toBe('developer')
+
+    /* The body was recomposed without it, and the lint reads as not checked. */
+    expect(after.draft.body).not.toContain('F10')
+    expect(after.draft.lint.passes).toBeNull()
+  })
+
+  /*
+   * **A signed-off draft refuses every decision, and says why.**
+   *
+   * On the seeded review, whose draft a test further up signed off in a browser: an
+   * approved draft is what the review session posts under the developer's name, so a
+   * decision that recomposed it underneath would change what gets posted. The controls are
+   * not drawn at all rather than drawn and refused.
+   *
+   * The other refusal — a draft written as one block of markdown, which holds no block for
+   * any finding — is covered in `test/code-review.nuxt.spec.ts` against a one-block
+   * fixture. It cannot be covered here as well: this is the suite's only one-block draft
+   * and by now it is approved, which is a different refusal and the one that wins.
+   */
+  test('a signed-off draft refuses every decision, and says why', async ({ page }) => {
+    await page.goto(`${seeded}reviews/${reviewId}/code-review`)
+    await page.locator('.row').first().getByRole('button').first().click()
+
+    await expect(page.getByText('You have signed this draft off')).toBeVisible()
+    await expect(
+      page.locator('.call').getByRole('group', { name: /How to decide/ }),
+    ).toHaveCount(0)
+  })
 
   /**
    * A brief written the old way, on the page built for the new one.
@@ -868,9 +1054,17 @@ test.describe('a database with nothing in it', () => {
      * different answers, and the screen says the first rather than drawing the second.
      */
     await page.goto(`${empty}reviews/1`)
+    /* The retired address redirects, and the refusal is on the page it lands on. */
+    await expect(page).toHaveURL(`${empty}reviews/1/understand`)
     await expect(page.getByText('Not on the desk')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible()
 
+    /*
+     * **The draft of a review that is not there is still a refusal**, and that is not a
+     * contradiction of step 6 never being a dead end. A review with no *draft* draws the
+     * frame and says so; a review that is not on the desk at all has no frame to draw,
+     * because the trail is read off the review.
+     */
     await page.goto(`${empty}reviews/1/draft`)
     await expect(page.getByText('Not on the desk')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible()
@@ -885,7 +1079,7 @@ test.describe('a database with nothing in it', () => {
 
 test.describe('the server stops while a page is open', () => {
   test('a message, the command that fixes it, and a retry that works', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${reviewId}`)
+    await page.goto(`${seeded}reviews/${reviewId}/understand`)
     await expect(page.getByText('A webhook delivery that fails once')).toBeVisible()
 
     /*

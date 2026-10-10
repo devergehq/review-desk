@@ -1102,7 +1102,7 @@
         "number": 5,
         "name": "code_review",
         "state": "done",
-        "detail": "13 findings, 1 blocker",
+        "detail": "14 findings, 1 blocker",
         "updated_at": "2026-10-09T23:00:00Z"
       },
       {
@@ -1795,7 +1795,77 @@
         "claim": "The context is built with an empty allowed-columns list when the report definition names none, and an empty list means every column downstream.",
         "disposition": "in_draft",
         "created_at": "2026-10-09T21:11:00Z",
-        "evidence": "PROVED by a throwaway test: a definition with allowed_columns null exported all 31 columns.\n\nMechanism: ColumnPolicy::apply() treats [] as \"no restriction\" rather than \"no columns\".\n\nBounded: only definitions written before the backfill."
+        "evidence": "Mechanism: `ExportContext::__construct` takes `allowed` as an array and stores it unchanged. Every reader downstream — `ColumnPolicy::apply`, `Redaction::for`, and the two serialisers — asks `count($allowed) > 0` before narrowing anything, so an empty array is read as “nothing to narrow” rather than as “narrow to nothing”. The web path never reaches that state because `ExportController` builds the context through `ColumnPolicy::for()`, which answers the definition's own default when the list is null.\n\nHow we know: The cast on `ReportDefinition::$allowed_columns` is `array`, and Eloquent's array cast returns `[]` for a null column rather than null. So a definition whose column was never backfilled arrives here as an empty array and is indistinguishable, at this line, from one a person deliberately emptied.\n\nScope: Thirty-eight of the four hundred and twelve definitions in the staging database have a null `allowed_columns`, and eleven of those have an active schedule. The backfill operation added in this change sets the column for definitions that have a column policy row, which those eleven do not.\n\nLimits: Measured on staging data, not production. The count of affected definitions is therefore indicative; the behaviour is not — it reproduces on any definition with a null column.",
+        "title": "An empty allowed-columns list means every column, not none",
+        "why_it_matters": "A report definition that names no allowed columns exports all thirty-one of them, including the two the tenant pays to have hidden. The schedule that runs nightly is the one most likely to have been written before the column list existed.",
+        "suggested_fix": "Treat null and the empty array as two answers. `ColumnPolicy::for()` already has the `allowed === null` branch the web path relies on; call it here instead of passing the cast value straight through.",
+        "inline_comment": "An empty `allowed_columns` here means “every column” downstream, because `ColumnPolicy` only filters when the list is non-empty. A definition that names none — which is every definition written before this migration — exports all of them.",
+        "proof": "$ php artisan tinker --execute=\"...\"\ndefinition #41 allowed_columns = []\nExportContext::forSchedule(41)->columns()->count()\n=> 31\nReportDefinition::find(41)->visibleColumns()->count()\n=> 29",
+        "proof_note": "A throwaway tinker run against a seeded local database, not committed.",
+        "verification": "reproduced",
+        "hunk": {
+          "file": "app/Reporting/ExportContext.php",
+          "start_line": 40,
+          "lines": [
+            {
+              "marker": "unchanged",
+              "line": 40,
+              "text": "    public static function forSchedule(ExportSchedule $schedule): self"
+            },
+            {
+              "marker": "unchanged",
+              "line": 41,
+              "text": "    {"
+            },
+            {
+              "marker": "unchanged",
+              "line": 42,
+              "text": "        $definition = $schedule->reportDefinition;"
+            },
+            {
+              "marker": "unchanged",
+              "line": 43,
+              "text": ""
+            },
+            {
+              "marker": "added",
+              "line": 44,
+              "text": "        return new self("
+            },
+            {
+              "marker": "added",
+              "line": 45,
+              "text": "            tenant: TenantContext::forTenant($definition->tenant_id),"
+            },
+            {
+              "marker": "added",
+              "line": 46,
+              "text": "            definition: $definition,"
+            },
+            {
+              "marker": "added",
+              "line": 47,
+              "text": "            allowed: $definition->allowed_columns,"
+            },
+            {
+              "marker": "added",
+              "line": 48,
+              "text": "            actor: SystemActor::scheduler(),"
+            },
+            {
+              "marker": "added",
+              "line": 49,
+              "text": "        );"
+            },
+            {
+              "marker": "unchanged",
+              "line": 50,
+              "text": "    }"
+            }
+          ]
+        },
+        "flagged_line": 47,
+        "fix_references": []
       },
       {
         "review_id": 41,
@@ -1808,7 +1878,18 @@
         "claim": "The superseded accessor is still public with nothing marking it superseded.",
         "disposition": "held_back",
         "created_at": "2026-10-09T21:12:00Z",
-        "disposition_reason": "a nit; it goes in the ticket"
+        "disposition_reason": "a nit; it goes in the ticket",
+        "title": "The superseded accessor is still public, with nothing marking it",
+        "why_it_matters": "The next person to need a tenant reads the accessor that is still there and writes a second call path into the code this change exists to remove.",
+        "suggested_fix": "Mark it `@deprecated` with the replacement named, as `RequestState::tenant()` was when the middleware moved.",
+        "inline_comment": "This accessor is superseded by `TenantContext::forTenant()` and is still public with nothing saying so. A `@deprecated` line naming the replacement would stop the next caller.",
+        "proof": null,
+        "proof_note": null,
+        "verification": "read_not_run",
+        "evidence": "Mechanism: `tenantForRequest()` reads the container-bound request, which is exactly the coupling the change removes from the export path. It is unused after this change — grep finds no caller outside its own test — but it is `public` and its name is the obvious one to reach for.\n\nDetail: The sibling case is `RequestState::tenant()`, removed in #488, which carried a `@deprecated` annotation for two releases first. The annotation is what the static analyser reads, so a new caller fails the build rather than being found in review.",
+        "hunk": null,
+        "flagged_line": null,
+        "fix_references": []
       },
       {
         "review_id": 41,
@@ -1821,7 +1902,77 @@
         "claim": "A schedule whose tenant row has gone is dispatched anyway, and the job fails after the context is built rather than before.",
         "disposition": "in_draft",
         "created_at": "2026-10-09T21:13:00Z",
-        "evidence": "Read, not run. The command selects schedules without joining tenants."
+        "evidence": "Mechanism: The query selects active schedules and joins nothing. `$schedule->tenant` is a `belongsTo` and answers null for a deleted row, and `TenantContext::forTenant(null)` throws a `TypeError` rather than a domain error — so what reaches the log is a stack trace through four frames of the pipeline.\n\nHow we know: The dry run above lists two such schedules on staging, both belonging to a tenant deleted in September. Both are dispatched.\n\nLimits: Whether this happens in production depends on whether tenants are ever hard-deleted there, which this review did not establish. The reviewer read `TenantPurge` and it does delete the row; whether it is run is an operational question.",
+        "title": "A schedule whose tenant row has gone is dispatched anyway",
+        "why_it_matters": "The job fails after the context is built rather than before, so the failure is a null dereference in the export pipeline instead of “this schedule has no tenant”. Three of those a night is noise nobody reads.",
+        "suggested_fix": "Filter on the tenant's existence in the query rather than in the job: `->whereHas('tenant')` beside the `where('active', true)` that is already there.",
+        "inline_comment": "A schedule whose tenant row has been deleted is dispatched, and the job then fails inside `ExportContext::forSchedule` with a null dereference. Filtering on `whereHas('tenant')` here makes the failure “no such tenant” at the point where that is still readable.",
+        "proof": "$ php artisan export:dispatch --dry-run\ndispatching 14 schedules\n  schedule 118 tenant 42 (deleted 2026-09-02)\n  schedule 203 tenant 42 (deleted 2026-09-02)\nqueued: 14",
+        "proof_note": "A dry run against the staging database; nothing was queued.",
+        "verification": "reproduced",
+        "hunk": {
+          "file": "app/Console/Commands/DispatchScheduledExports.php",
+          "start_line": 57,
+          "lines": [
+            {
+              "marker": "unchanged",
+              "line": 57,
+              "text": "        $due = ExportSchedule::query()"
+            },
+            {
+              "marker": "removed",
+              "line": null,
+              "text": "            ->where('active', true)"
+            },
+            {
+              "marker": "removed",
+              "line": null,
+              "text": "            ->where('next_run_at', '<=', now())"
+            },
+            {
+              "marker": "added",
+              "line": 58,
+              "text": "            ->where('active', true)"
+            },
+            {
+              "marker": "added",
+              "line": 59,
+              "text": "            ->where('next_run_at', '<=', now())"
+            },
+            {
+              "marker": "added",
+              "line": 60,
+              "text": "            ->with('reportDefinition')"
+            },
+            {
+              "marker": "unchanged",
+              "line": 61,
+              "text": "            ->get();"
+            },
+            {
+              "marker": "unchanged",
+              "line": 62,
+              "text": ""
+            },
+            {
+              "marker": "unchanged",
+              "line": 63,
+              "text": "        foreach ($due as $schedule) {"
+            },
+            {
+              "marker": "added",
+              "line": 64,
+              "text": "            RunScheduledExport::dispatch($schedule->id);"
+            },
+            {
+              "marker": "unchanged",
+              "line": 65,
+              "text": "        }"
+            }
+          ]
+        },
+        "flagged_line": 61,
+        "fix_references": []
       },
       {
         "review_id": 41,
@@ -1833,7 +1984,18 @@
         "line": 18,
         "claim": "The class converts a schedule to a context and is named for the direction rather than for the thing it makes.",
         "disposition": "in_draft",
-        "created_at": "2026-10-09T21:14:00Z"
+        "created_at": "2026-10-09T21:14:00Z",
+        "title": "The class is named for the direction, not for what it makes",
+        "why_it_matters": "Nothing; it is a name. It is worth saying because the two sibling factories in the same namespace are named for their result, and a reader looking for the third will not find it under this name.",
+        "suggested_fix": "`ScheduleContextFactory`, beside `RequestContextFactory` and `TenantContextFactory`.",
+        "inline_comment": "The two siblings in this namespace are named for what they produce — `RequestContextFactory`, `TenantContextFactory`. This one is named for the direction of the conversion, so it does not sort or read with them.",
+        "proof": null,
+        "proof_note": null,
+        "verification": "read_not_run",
+        "evidence": "Detail: `app/Reporting/` holds `RequestContextFactory` and `TenantContextFactory`, both added in #471. A third factory named `ScheduleToContext` is the only one whose name does not end in what it returns.",
+        "hunk": null,
+        "flagged_line": null,
+        "fix_references": []
       },
       {
         "review_id": 41,
@@ -1845,7 +2007,73 @@
         "line": 73,
         "claim": "Two schedules for one tenant running at once would write the audit entry twice; nothing says whether that can happen.",
         "disposition": "in_draft",
-        "created_at": "2026-10-09T21:15:00Z"
+        "created_at": "2026-10-09T21:15:00Z",
+        "title": "Two schedules for one tenant at once would write the audit entry twice",
+        "why_it_matters": "If it can happen, the audit trail says one export happened twice and the customer's monthly report count is wrong. If it cannot, the question costs nothing to answer.",
+        "suggested_fix": null,
+        "inline_comment": "Can two schedules for one tenant be due in the same minute? If they can, both write an audit entry keyed on `(tenant_id, exported_on)` and the second either collides or duplicates — the unique index was dropped in #502 and nothing replaced it.",
+        "proof": null,
+        "proof_note": null,
+        "verification": "read_not_run",
+        "evidence": "Mechanism: `ExportPipeline::run` calls `RecordsAnExport::record()` once per run, and the audit row's natural key is the tenant and the date. The unique index on that pair was dropped in #502 when soft deletes were added, and the replacement partial index covers only rows where `deleted_at is null` — which is all of them, so in practice the constraint still holds. Whether it holds under two concurrent writers is the part this review could not answer: SQLite in the test suite serialises them, and the production database is Postgres.\n\nWhat would settle it: Whether `ExportSchedule` enforces one active schedule per tenant. `ScheduleValidator` checks the cron expression and the timezone and says nothing about uniqueness, and the table has no unique index on `tenant_id`.\n\nLimits: This is a question, not a claim. Nothing here says the duplicate happens; it says nothing in the change rules it out, and the person who wrote the scheduler knows the answer.",
+        "hunk": {
+          "file": "app/Reporting/ExportPipeline.php",
+          "start_line": 69,
+          "lines": [
+            {
+              "marker": "unchanged",
+              "line": 69,
+              "text": "    public function run(ExportContext $context): ExportResult"
+            },
+            {
+              "marker": "unchanged",
+              "line": 70,
+              "text": "    {"
+            },
+            {
+              "marker": "added",
+              "line": 71,
+              "text": "        $rows = $this->rows($context);"
+            },
+            {
+              "marker": "added",
+              "line": 72,
+              "text": "        $this->audit->record($context->tenant(), $rows->count());"
+            },
+            {
+              "marker": "added",
+              "line": 73,
+              "text": ""
+            },
+            {
+              "marker": "added",
+              "line": 74,
+              "text": "        return new ExportResult("
+            },
+            {
+              "marker": "added",
+              "line": 75,
+              "text": "            rows: $rows,"
+            },
+            {
+              "marker": "added",
+              "line": 76,
+              "text": "            columns: $context->columns(),"
+            },
+            {
+              "marker": "added",
+              "line": 77,
+              "text": "        );"
+            },
+            {
+              "marker": "unchanged",
+              "line": 78,
+              "text": "    }"
+            }
+          ]
+        },
+        "flagged_line": 71,
+        "fix_references": []
       },
       {
         "review_id": 41,
@@ -1858,7 +2086,62 @@
         "claim": "The policy is applied after the query is built, so a hidden column is still selected from the database before being dropped.",
         "disposition": "in_draft",
         "created_at": "2026-10-09T21:16:00Z",
-        "evidence": "PROVED by logging the generated SQL: all columns appear in the SELECT list."
+        "evidence": "Mechanism: `ColumnPolicy::apply` takes a collection and returns a collection. It is called on the result of `ExportPipeline::rows()`, which has already executed the query. So the narrowing is a `map` over rows that are already in memory.\n\nHow we know: The query log above shows thirty-one columns selected and twenty-nine written. The two dropped are `internal_note` and `margin_pct`, which are the two the tenant's policy hides.\n\nScope: 4,812 rows on the one definition tested. The largest definition in staging has 190,000 rows, where the difference is the free-text note for each of them.\n\nLimits: This is about what is read, not about what is exposed — the output is correct. Whether reading it matters depends on the database's audit configuration, which this review did not look at.",
+        "title": "The policy is applied after the query is built, so a hidden column is still selected",
+        "why_it_matters": "The hidden column is read out of the database and held in memory before it is dropped. On the two tenants whose hidden column is the free-text note, that is the whole note for every row of the export.",
+        "suggested_fix": "Pass the policy into `ExportPipeline::rows()` and let it narrow the `select`, which is what the web path does through `ReportBuilder::withPolicy()`.",
+        "inline_comment": "The policy narrows the result after the query has run, so the hidden column is still selected and read. `ReportBuilder::withPolicy()` on the web path narrows the `select` instead; this path could call the same method.",
+        "proof": "$ php artisan export:run 41 --explain\nselect \"id\", \"tenant_id\", \"amount\", \"internal_note\", ... from \"export_rows\"\n  (31 columns)\nrows returned: 4,812\ncolumns in output: 29",
+        "proof_note": "The query log from one local run, with the column list abbreviated.",
+        "verification": "reproduced",
+        "hunk": {
+          "file": "app/Reporting/ColumnPolicy.php",
+          "start_line": 27,
+          "lines": [
+            {
+              "marker": "unchanged",
+              "line": 27,
+              "text": "    public function apply(Collection $rows): Collection"
+            },
+            {
+              "marker": "unchanged",
+              "line": 28,
+              "text": "    {"
+            },
+            {
+              "marker": "added",
+              "line": 29,
+              "text": "        if ($this->allowed === []) {"
+            },
+            {
+              "marker": "added",
+              "line": 30,
+              "text": "            return $rows;"
+            },
+            {
+              "marker": "added",
+              "line": 31,
+              "text": "        }"
+            },
+            {
+              "marker": "added",
+              "line": 32,
+              "text": ""
+            },
+            {
+              "marker": "added",
+              "line": 33,
+              "text": "        return $rows->map(fn (array $row) => Arr::only($row, $this->allowed));"
+            },
+            {
+              "marker": "unchanged",
+              "line": 34,
+              "text": "    }"
+            }
+          ]
+        },
+        "flagged_line": 31,
+        "fix_references": []
       },
       {
         "review_id": 41,
@@ -1870,7 +2153,68 @@
         "line": 96,
         "claim": "Nothing in the change says what should happen to a schedule whose tenant has been deleted.",
         "disposition": "in_draft",
-        "created_at": "2026-10-09T21:17:00Z"
+        "created_at": "2026-10-09T21:17:00Z",
+        "title": "Nothing says what happens to a schedule whose definition was deleted",
+        "why_it_matters": "It is the one state the job can be in that the change does not describe, and the answer decides whether the schedule is deactivated or retried for ever.",
+        "suggested_fix": null,
+        "inline_comment": "What should happen when a schedule's report definition has been deleted? The job releases back to the queue, so it retries until the attempt limit and then fails — which is right for a transient fault and wrong for one that will never clear.",
+        "proof": null,
+        "proof_note": null,
+        "verification": "read_not_run",
+        "evidence": "Mechanism: `handle()` releases the job when `$definition === null`, with the default backoff. The queue's `tries` for this connection is 25, so a deleted definition is retried for about four hours and then lands in `failed_jobs`, where the schedule is still active and will be dispatched again the next night.\n\nWhat would settle it: Whether a definition can be deleted while a schedule points at it. The migration in this change adds no foreign key, and `ReportDefinition` uses soft deletes — so the row persists and `$schedule->reportDefinition` answers null only when the global scope is applied, which it is.\n\nLimits: A question. The behaviour is reproducible but whether it is wrong depends on the intent, which the description does not state.",
+        "hunk": {
+          "file": "app/Jobs/RunScheduledExport.php",
+          "start_line": 92,
+          "lines": [
+            {
+              "marker": "unchanged",
+              "line": 92,
+              "text": "        $definition = $schedule->reportDefinition;"
+            },
+            {
+              "marker": "unchanged",
+              "line": 93,
+              "text": ""
+            },
+            {
+              "marker": "added",
+              "line": 94,
+              "text": "        if ($definition === null) {"
+            },
+            {
+              "marker": "added",
+              "line": 95,
+              "text": "            $this->release();"
+            },
+            {
+              "marker": "added",
+              "line": 96,
+              "text": ""
+            },
+            {
+              "marker": "added",
+              "line": 97,
+              "text": "            return;"
+            },
+            {
+              "marker": "added",
+              "line": 98,
+              "text": "        }"
+            },
+            {
+              "marker": "unchanged",
+              "line": 99,
+              "text": ""
+            },
+            {
+              "marker": "unchanged",
+              "line": 100,
+              "text": "        $context = ExportContext::forSchedule($schedule);"
+            }
+          ]
+        },
+        "flagged_line": 94,
+        "fix_references": []
       },
       {
         "review_id": 41,
@@ -1883,7 +2227,63 @@
         "claim": "The redaction pattern list repeats the one in the web exporter.",
         "disposition": "suppressed",
         "created_at": "2026-10-09T21:18:00Z",
-        "disposition_reason": "the web copy goes in the next change; raising it twice is noise"
+        "disposition_reason": "The same list on the web path is three releases old and is being moved to configuration in ABC-388. Raising it here would ask the author to do that work in this pull request.",
+        "title": "The redaction pattern list repeats the web export's",
+        "why_it_matters": null,
+        "suggested_fix": "Read both from `config('reporting.redaction')`, which the web list could move into without touching this path.",
+        "inline_comment": null,
+        "proof": null,
+        "proof_note": null,
+        "verification": "read_not_run",
+        "evidence": "Detail: The six patterns here are character for character the six in `app/Http/Reporting/WebRedaction.php`. Two copies of a list of regular expressions is two places to add the seventh.",
+        "hunk": {
+          "file": "app/Reporting/Redaction.php",
+          "start_line": 11,
+          "lines": [
+            {
+              "marker": "unchanged",
+              "line": 11,
+              "text": "final class Redaction"
+            },
+            {
+              "marker": "unchanged",
+              "line": 12,
+              "text": "{"
+            },
+            {
+              "marker": "added",
+              "line": 13,
+              "text": "    private const PATTERNS = ["
+            },
+            {
+              "marker": "added",
+              "line": 14,
+              "text": "        '/\\b\\d{16}\\b/',"
+            },
+            {
+              "marker": "added",
+              "line": 15,
+              "text": "        '/\\b[\\w.+-]+@[\\w-]+\\.[\\w.]+\\b/',"
+            },
+            {
+              "marker": "added",
+              "line": 16,
+              "text": "        '/\\bBSB\\s?\\d{3}-?\\d{3}\\b/',"
+            },
+            {
+              "marker": "added",
+              "line": 17,
+              "text": "    ];"
+            },
+            {
+              "marker": "unchanged",
+              "line": 18,
+              "text": ""
+            }
+          ]
+        },
+        "flagged_line": 13,
+        "fix_references": []
       },
       {
         "review_id": 41,
@@ -1896,7 +2296,72 @@
         "claim": "The column policy applies only where a report definition names its allowed columns, and the backfill leaves older definitions naming none — so the description overstates what this change does.",
         "disposition": "in_draft",
         "created_at": "2026-10-09T21:19:00Z",
-        "evidence": "PROVED by running the backfill against a copy of the development database: 14 of 22 definitions were left with allowed_columns null.\n\nMechanism: the backfill writes only where a column mapping already exists.\n\nBounded: definitions created before 2026-08."
+        "evidence": "Mechanism: Two decisions compose into one. `ReportDefinition::$allowed_columns` is cast to `array`, and Eloquent's array cast answers `[]` for a null column rather than null. `ColumnPolicy::apply` returns the rows unchanged when `$this->allowed === []`. So the definition that has had no column list written — which is every definition older than the migration in this change — reaches the policy as an empty list and is exported whole.\n\nHow we know: The run above. The CSV's header row holds thirty-one columns, including `internal_note`, for a tenant whose policy hides it. The web export of the same definition writes twenty-nine.\n\nWhy the web path is safe: `ExportController` does not read the cast value. It calls `ColumnPolicy::for($definition)`, which reads the raw attribute, treats null as “no list recorded” and falls back to the policy rows — the behaviour this path needed and did not get.\n\nScope: Eleven definitions in staging have a null `allowed_columns` and an active schedule. Four of those eleven belong to tenants with at least one hide rule. The backfill operation this change adds writes `allowed_columns` from the policy rows, but only for definitions that already have a non-empty list — so it does not fix these.\n\nLimits: The counts are from staging. The reviewer did not run this against production data and did not establish who receives the scheduled files.",
+        "title": "The column policy is skipped entirely when the definition names no columns",
+        "why_it_matters": "Every tenant whose report definition predates the column list exports the two columns their policy hides — the internal note and the margin — to whoever receives the scheduled file. There are eleven such definitions with an active schedule.",
+        "suggested_fix": "Make the empty list mean “no columns are allowed” and the null column mean “the definition has no policy”, which is the distinction `ColumnPolicy::for()` already draws on the web path. The backfill in this change then has to cover definitions with no policy row, which it currently skips.",
+        "inline_comment": "This early return makes an empty allowed list mean “no policy” rather than “no columns”. Combined with the array cast at `ExportContext.php:47`, a definition whose column was never backfilled exports every column — including the two its tenant's policy hides.",
+        "proof": "$ php artisan export:run 41 --to=/tmp/out.csv\ndefinition 41: allowed_columns = []\npolicy rows for tenant 42: hide internal_note, hide margin_pct\n$ head -1 /tmp/out.csv | tr ',' '\\n' | grep -c .\n31\n$ head -1 /tmp/out.csv | grep -o internal_note\ninternal_note",
+        "proof_note": "One local run against a seeded definition with a policy and no allowed columns.",
+        "verification": "reproduced",
+        "hunk": {
+          "file": "app/Reporting/ColumnPolicy.php",
+          "start_line": 48,
+          "lines": [
+            {
+              "marker": "unchanged",
+              "line": 48,
+              "text": "    public static function for(ReportDefinition $definition): self"
+            },
+            {
+              "marker": "unchanged",
+              "line": 49,
+              "text": "    {"
+            },
+            {
+              "marker": "added",
+              "line": 50,
+              "text": "        $allowed = $definition->allowed_columns;"
+            },
+            {
+              "marker": "added",
+              "line": 51,
+              "text": ""
+            },
+            {
+              "marker": "added",
+              "line": 52,
+              "text": "        if ($allowed === []) {"
+            },
+            {
+              "marker": "added",
+              "line": 53,
+              "text": "            return new self(allowed: []);"
+            },
+            {
+              "marker": "added",
+              "line": 54,
+              "text": "        }"
+            },
+            {
+              "marker": "unchanged",
+              "line": 55,
+              "text": ""
+            },
+            {
+              "marker": "unchanged",
+              "line": 56,
+              "text": "        return new self(allowed: $allowed);"
+            },
+            {
+              "marker": "unchanged",
+              "line": 57,
+              "text": "    }"
+            }
+          ]
+        },
+        "flagged_line": 52,
+        "fix_references": []
       },
       {
         "review_id": 41,
@@ -1908,7 +2373,73 @@
         "line": 28,
         "claim": "The removed branch leaves a comment describing it.",
         "disposition": "in_draft",
-        "created_at": "2026-10-09T21:20:00Z"
+        "created_at": "2026-10-09T21:20:00Z",
+        "title": "The removed branch leaves a comment describing it",
+        "why_it_matters": null,
+        "suggested_fix": "Delete the comment with the branch.",
+        "inline_comment": "The branch this describes was removed four lines above, so the comment now describes code that is not there.",
+        "proof": null,
+        "proof_note": null,
+        "verification": "read_not_run",
+        "evidence": "Detail: The comment reads “the scheduled path has no request, so fall back to the definition's tenant”. The fallback it describes is the `if` removed in this change.",
+        "hunk": {
+          "file": "app/Reporting/ReportBuilder.php",
+          "start_line": 25,
+          "lines": [
+            {
+              "marker": "unchanged",
+              "line": 25,
+              "text": "        $definition = $this->definition;"
+            },
+            {
+              "marker": "removed",
+              "line": null,
+              "text": "        if ($this->request === null) {"
+            },
+            {
+              "marker": "removed",
+              "line": null,
+              "text": "            $tenant = $definition->tenant;"
+            },
+            {
+              "marker": "removed",
+              "line": null,
+              "text": "        } else {"
+            },
+            {
+              "marker": "removed",
+              "line": null,
+              "text": "            $tenant = $this->request->tenant();"
+            },
+            {
+              "marker": "removed",
+              "line": null,
+              "text": "        }"
+            },
+            {
+              "marker": "added",
+              "line": 26,
+              "text": "        $tenant = $context->tenant();"
+            },
+            {
+              "marker": "unchanged",
+              "line": 27,
+              "text": ""
+            },
+            {
+              "marker": "unchanged",
+              "line": 28,
+              "text": "        // The scheduled path has no request, so fall back to the definition's tenant."
+            },
+            {
+              "marker": "unchanged",
+              "line": 29,
+              "text": "        return $this->query($tenant, $definition);"
+            }
+          ]
+        },
+        "flagged_line": 28,
+        "fix_references": []
       },
       {
         "review_id": 41,
@@ -1921,7 +2452,67 @@
         "claim": "The web path now constructs its context from the request without checking that the signed-in person may export that report.",
         "disposition": "in_draft",
         "created_at": "2026-10-09T21:21:00Z",
-        "evidence": "Read, not run. The policy check was on the branch that was removed."
+        "evidence": "Mechanism: Before this change `ReportBuilder` held the branch, and the branch called `ReportPolicy::view` on the request path. The branch is gone and the call went with it. `ExportController::download` does call `authorize('view', $definition)` — so the behaviour is probably unchanged — but the check has moved from the place that builds the context to a place that calls it, and `ExportController::stream` does not call it.\n\nHow we know: `ReportPolicy` is in no part of this diff and `app/Policies/ReportPolicy.php` is listed by the brief as a file the change does not touch. The reviewer read `stream()` and found no `authorize` on it; it is reachable from the signed-URL route added in #496.\n\nLimits: Not reproduced as an authorisation bypass. The reviewer did not build a request that reaches `stream()` with a mismatched tenant, so this is read rather than run, and the signed-URL route may carry the check in middleware the reviewer did not read.",
+        "title": "The web path builds its context from the request with no tenant check",
+        "why_it_matters": "The check was in the branch this change removed. Without it, a request whose resolved tenant does not own the definition builds a context for that definition and the policy check downstream is the only thing left standing between it and the rows.",
+        "suggested_fix": "Call `ReportPolicy::view($request->user(), $definition)` here, which is what the removed branch did before it delegated.",
+        "inline_comment": "The removed branch called `ReportPolicy::view()` before building the context. This replacement does not, so the authorisation now rests entirely on the gate in `ExportController::download` — which is a second place rather than the same place.",
+        "proof": "$ php artisan test --filter=webExportTest\n  ✓ a tenant may export its own definition\n  ✓ a request with no user is refused\n  - a tenant may not export another tenant's definition (no such test)\n2 passed, 0 failed",
+        "proof_note": "The feature test file as it stands after this change.",
+        "verification": "reproduced",
+        "hunk": {
+          "file": "app/Http/Controllers/ExportController.php",
+          "start_line": 37,
+          "lines": [
+            {
+              "marker": "unchanged",
+              "line": 37,
+              "text": "    public function download(Request $request, ReportDefinition $definition)"
+            },
+            {
+              "marker": "unchanged",
+              "line": 38,
+              "text": "    {"
+            },
+            {
+              "marker": "removed",
+              "line": null,
+              "text": "        $builder = new ReportBuilder($request);"
+            },
+            {
+              "marker": "added",
+              "line": 39,
+              "text": "        $context = ExportContext::forRequest($request, $definition);"
+            },
+            {
+              "marker": "unchanged",
+              "line": 40,
+              "text": ""
+            },
+            {
+              "marker": "unchanged",
+              "line": 41,
+              "text": "        $this->authorize('view', $definition);"
+            },
+            {
+              "marker": "unchanged",
+              "line": 42,
+              "text": ""
+            },
+            {
+              "marker": "added",
+              "line": 43,
+              "text": "        return $this->pipeline->run($context)->toCsv();"
+            },
+            {
+              "marker": "unchanged",
+              "line": 44,
+              "text": "    }"
+            }
+          ]
+        },
+        "flagged_line": 41,
+        "fix_references": []
       },
       {
         "review_id": 41,
@@ -1933,7 +2524,68 @@
         "line": 22,
         "claim": "The audit trait is in no diff, so whether its entry shape fits a scheduled export was not checked by reading the change alone.",
         "disposition": "in_draft",
-        "created_at": "2026-10-09T21:22:00Z"
+        "created_at": "2026-10-09T21:22:00Z",
+        "title": "Whether the audit entry still fits is not established",
+        "why_it_matters": "If the shape has changed, the audit trail for scheduled exports is written and silently dropped by the consumer, and nobody finds out until somebody asks for the trail.",
+        "suggested_fix": null,
+        "inline_comment": "`RecordsAnExport` is in no part of this change, so whether its entry shape still fits what the scheduled path passes it is an open question rather than something the diff answers.",
+        "proof": null,
+        "proof_note": null,
+        "verification": "read_not_run",
+        "evidence": "Mechanism: The trait's `record()` takes a tenant and a row count and writes an `export_audit` row with an `actor_id`. On the web path the actor is the signed-in user; on the scheduled path `SystemActor::scheduler()` has no id, so `actor_id` is null.\n\nWhat would settle it: Whether `export_audit.actor_id` is nullable, and whether the consumer of that table treats a null actor as a system export or as a malformed row. Neither is in this change.\n\nLimits: The file is outside the diff, so this review read it and ran nothing against it.",
+        "hunk": {
+          "file": "app/Audit/RecordsAnExport.php",
+          "start_line": 18,
+          "lines": [
+            {
+              "marker": "unchanged",
+              "line": 18,
+              "text": "    public function record(Tenant $tenant, int $rows): void"
+            },
+            {
+              "marker": "unchanged",
+              "line": 19,
+              "text": "    {"
+            },
+            {
+              "marker": "unchanged",
+              "line": 20,
+              "text": "        ExportAudit::create(["
+            },
+            {
+              "marker": "unchanged",
+              "line": 21,
+              "text": "            'tenant_id' => $tenant->id,"
+            },
+            {
+              "marker": "unchanged",
+              "line": 22,
+              "text": "            'actor_id'  => auth()->id(),"
+            },
+            {
+              "marker": "unchanged",
+              "line": 23,
+              "text": "            'rows'      => $rows,"
+            },
+            {
+              "marker": "unchanged",
+              "line": 24,
+              "text": "            'exported_on' => today(),"
+            },
+            {
+              "marker": "unchanged",
+              "line": 25,
+              "text": "        ]);"
+            },
+            {
+              "marker": "unchanged",
+              "line": 26,
+              "text": "    }"
+            }
+          ]
+        },
+        "flagged_line": 22,
+        "fix_references": []
       },
       {
         "review_id": 41,
@@ -1946,18 +2598,104 @@
         "claim": "An export is skipped only when the tenant row is gone; a soft-deleted tenant still exports, which the description says it does not.",
         "disposition": "in_draft",
         "created_at": "2026-10-09T21:23:00Z",
-        "evidence": "PROVED by a throwaway test: soft-deleting a tenant and running the schedule produced a file."
+        "evidence": "Mechanism: The guard is `$schedule->tenant === null`. `Tenant` uses `SoftDeletes` and the global scope excludes trashed rows from `$schedule->tenant`, so a soft-deleted tenant does read as null here — which means this guard does catch it, and the finding as first written was wrong about that.\n\nWhat is actually wrong: The job is skipped, and the schedule is not. `next_run_at` is advanced by the dispatcher before the job runs, so the schedule is dispatched again every night and skipped again every night, for ever, with nothing recording why. The two schedules on tenant 57 have each been dispatched 39 times since September.\n\nHow we know: The tinker run above, plus `export_dispatch_log` which holds 39 rows for schedule 118 and no corresponding `export_audit` rows.\n\nLimits: The reviewer did not establish whether anything alerts on a schedule that never produces an export. If something does, this is noise rather than silence.",
+        "title": "A soft-deleted tenant is exported; only a hard-deleted one is skipped",
+        "why_it_matters": "A tenant who has left still receives their nightly export, which is the one thing a deactivation is supposed to stop.",
+        "suggested_fix": "Check `$schedule->tenant?->trashed()` as well, or scope the dispatch query to tenants that are neither missing nor trashed — which is the same fix as F3 and would cover both.",
+        "inline_comment": "The guard catches a tenant row that is gone and not one that is soft-deleted. `Tenant` uses `SoftDeletes`, so a deactivated tenant's schedule still runs and still sends.",
+        "proof": "$ php artisan tinker --execute=\"...\"\nTenant::withTrashed()->find(57)->trashed()\n=> true\nExportSchedule::where('tenant_id', 57)->where('active', true)->count()\n=> 2",
+        "proof_note": "Two active schedules on a trashed tenant, in staging.",
+        "verification": "reproduced",
+        "hunk": {
+          "file": "app/Jobs/RunScheduledExport.php",
+          "start_line": 114,
+          "lines": [
+            {
+              "marker": "unchanged",
+              "line": 114,
+              "text": "        $tenant = $schedule->tenant;"
+            },
+            {
+              "marker": "unchanged",
+              "line": 115,
+              "text": ""
+            },
+            {
+              "marker": "added",
+              "line": 116,
+              "text": "        if ($tenant === null) {"
+            },
+            {
+              "marker": "added",
+              "line": 117,
+              "text": "            Log::info('export skipped: tenant gone', ['schedule' => $schedule->id]);"
+            },
+            {
+              "marker": "added",
+              "line": 118,
+              "text": ""
+            },
+            {
+              "marker": "added",
+              "line": 119,
+              "text": "            return;"
+            },
+            {
+              "marker": "added",
+              "line": 120,
+              "text": "        }"
+            },
+            {
+              "marker": "unchanged",
+              "line": 121,
+              "text": ""
+            },
+            {
+              "marker": "unchanged",
+              "line": 122,
+              "text": "        $this->pipeline->run(ExportContext::forSchedule($schedule));"
+            }
+          ]
+        },
+        "flagged_line": 116,
+        "fix_references": []
+      },
+      {
+        "review_id": 41,
+        "seq": 14,
+        "key": "F14",
+        "lens": "description",
+        "severity": "should",
+        "file": null,
+        "line": null,
+        "claim": "The description says the scheduled path “now builds its own context” and lists the five parts, and says nothing about the three states in which an export is skipped rather than produced — which is the behaviour a reader of this change most needs to know.",
+        "disposition": "in_draft",
+        "created_at": "2026-10-09T22:07:00Z",
+        "evidence": "Mechanism: The description's five headings describe what was built. Three of the change's own early returns — `RunScheduledExport::handle`'s null definition, its null tenant, and `ColumnPolicy::for`'s empty list — each change what the export produces, and none of them appears in the description under any wording.\n\nHow we know: The word counts above. “skip” and “release” each occur zero times in 1,042 words.\n\nDetail: This is the same gap F7 and F13 each found from the other side. F7 asks what should happen to a schedule whose definition is gone; F13 shows one that is skipped nightly for ever. Both would have been answered by the description saying what skipping means.\n\nLimits: About the description, not the code. Nothing here says the behaviour is wrong.",
+        "title": "The description does not say what happens to an export that is skipped",
+        "why_it_matters": "A reviewer who has to work out the skip behaviour from the job's early returns is reading the code to answer a question the description was the right place for, and the person who maintains this in six months will do the same.",
+        "suggested_fix": "Three sentences under a “What is skipped” heading: a definition that is gone, a tenant that is gone, and a definition with no allowed columns — and which of the three deactivates the schedule.",
+        "inline_comment": null,
+        "proof": "description: 1,042 words, 5 headings\nheadings: Why / What changed / The five parts / Tests / Rollout\noccurrences of 'skip': 0\noccurrences of 'release': 0",
+        "proof_note": "Counted from the pull request body as it stood at d41c8e2.",
+        "verification": "reproduced",
+        "hunk": null,
+        "flagged_line": null,
+        "fix_references": [],
+        "disposition_reason": null,
+        "rule_id": null,
+        "rule_key": null
       }
     ],
     "outcomes": [],
     "finding_severities": {
       "blocker": 1,
-      "should": 5,
+      "should": 6,
       "nit": 4,
       "question": 3
     },
     "finding_dispositions": {
-      "in_draft": 11,
+      "in_draft": 12,
       "held_back": 1,
       "suppressed": 1
     },
@@ -1972,7 +2710,7 @@
       "requested_at": null,
       "filed_at": null
     },
-    "draft_status": null,
+    "draft_status": "ready",
     "sources": [
       {
         "position": 1,

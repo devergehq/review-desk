@@ -290,6 +290,10 @@ fn seed(store: &Store) -> Seeded {
             verification: Verification::Reproduced,
             suggested_fix: Some("Send the delivery id as the key.".to_string()),
             fix_references: vec!["SendInvoiceEmail.php:44".to_string()],
+            // And the one line the code review page's row carries, added by DEV-878. The
+            // example gives F1 a title and F2 none, because a page branches on which it is
+            // and one finding cannot show both.
+            title: Some("A retried delivery carries no idempotency key".to_string()),
             ..finding(
                 Severity::Blocker,
                 Disposition::InDraft,
@@ -1031,6 +1035,7 @@ fn finding_document(store: &Store, finding: &Finding) -> Value {
         "file": finding.file,
         "line": finding.line,
         "claim": finding.claim,
+        "title": finding.title,
         "evidence": finding.evidence,
         "disposition": finding.disposition,
         "disposition_reason": finding.disposition_reason,

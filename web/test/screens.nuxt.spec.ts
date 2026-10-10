@@ -171,8 +171,11 @@ describe('the queue', () => {
 
   it('leads with how many reviews need the developer, counting each once', async () => {
     const page = await shown(Inbox)
-    /* 17 (brief and draft), 15 (draft), 16 (draft), 12 (the author replied). Four. */
-    expect(page.text()).toContain('4 reviews need you')
+    /*
+     * 17 (brief and draft), 15 (draft), 16 (draft), 41 (draft), 12 (the author replied).
+     * Five, and 17 is counted once rather than twice.
+     */
+    expect(page.text()).toContain('5 reviews need you')
     expect(page.text()).toContain('2 with the agent')
     expect(page.text()).toContain('2 of your own')
   })
@@ -231,7 +234,7 @@ describe('the queue', () => {
     const page = await shown(Inbox)
     const tabs = page.findAll('[role="radiogroup"] [role="radio"]').map(tab => tab.text())
     expect(tabs[0]).toBe('All repositories')
-    expect(tabs).toContain('acme/portal· 5')
+    expect(tabs).toContain('acme/portal· 6')
     expect(tabs).toContain('acme/billing-api· 3')
 
     const billing = page
@@ -315,8 +318,8 @@ describe('the queue', () => {
     await settle(page)
 
     expect(page.text()).not.toContain('Problem brief ready')
-    /* Still four rows: #412's next action is now the draft its session had written. */
-    expect(page.text()).toContain('4 reviews need you')
+    /* Still five rows: #412's next action is now the draft its session had written. */
+    expect(page.text()).toContain('5 reviews need you')
     const row = page.findAll('.row').find(one => one.text().includes('#412'))!
     expect(row.text()).toContain('Draft ready')
     expect(row.text()).toContain('Read and sign off')
@@ -360,24 +363,23 @@ describe('the queue', () => {
     for (const href of everywhere) expect(href).toMatch(/^\/reviews\/\d+\/understand$/)
   })
 
-  it('leaves a way back from the two screens the trail reaches', async () => {
+  it('leaves a way back from the draft, which is the trail itself', async () => {
     /*
-     * Steps 5 and 6 of the trail land on the one-page review and the draft, and neither
-     * carries a trail of its own until DEV-878 rebuilds them. One link back each, so the
-     * queue — which lands every row on Understand — does not lead somewhere you cannot
-     * leave. The draft screen has carried one all along; only where it goes has moved.
+     * **The back link is gone, because the trail replaced it.** It existed because steps 5
+     * and 6 landed on two screens that carried no trail of their own, so the queue — which
+     * lands every row on Understand — would otherwise have led somewhere you could not
+     * leave. Both of those screens are inside the shell now: the draft is step 6 and the
+     * one-page review is a redirect. A link saying "back to the review" beside a trail
+     * whose first step is the review would be the same door twice.
      */
-    for (const [component, route] of [
-      [OneReview, '/reviews/17'],
-      [DraftPreview, '/reviews/17/draft'],
-    ] as const) {
-      const screen = await shown(component, { route })
-      const back = screen
-        .findAll('a')
-        .find(one => /^Back to (the review|Understand)$/.test(one.text()))
-      expect(back, `${route} has no way back`).toBeTruthy()
-      expect(back!.attributes('href')).toBe('/reviews/17/understand')
-    }
+    const screen = await shown(DraftPreview, { route: '/reviews/17/draft' })
+    const trail = screen.findAll('.trail a').map(one => one.attributes('href'))
+    expect(trail, 'the draft carries the trail').toContain('/reviews/17/understand')
+    expect(trail).toContain('/reviews/17/code-review')
+    expect(
+      screen.findAll('a').some(one => /^Back to /.test(one.text())),
+      'and no back link beside it',
+    ).toBe(false)
   })
 
   it('sends every "the review" link to Understand, not to the findings', async () => {
@@ -424,207 +426,53 @@ describe('the queue', () => {
   })
 })
 
-describe('one review', () => {
+/*
+ * **`/reviews/{id}` is a redirect, and the tests that were here went with the page.**
+ *
+ * It drew the whole of a review as paragraphs — the problem, the options, every finding and
+ * its reasoning — and DEV-885 and DEV-878 replaced it with a page per step. What it asserted
+ * is asserted on the pages that draw those things now:
+ *
+ * | What was tested here | Where it is now |
+ * |---|---|
+ * | the seven layers, the problem, its diagram, the option that was built | `step-pages.nuxt.spec.ts` |
+ * | recorded text keeping its paragraphs and its measure | `step-pages.nuxt.spec.ts`, and `code-review.nuxt.spec.ts` for a finding's evidence |
+ * | every finding with its severity and disposition, and what was not checked | `code-review.nuxt.spec.ts` |
+ * | the brief confirmation's three states | `step-pages.nuxt.spec.ts` |
+ * | the author's replies on a posted review | `code-review.nuxt.spec.ts`, on the finding each is about |
+ * | "not on the desk" for a review that is not there | `step-pages.nuxt.spec.ts` |
+ *
+ * **One is not carried over, and it is the disposition panel.** The old page moved a finding
+ * between the draft and held back through `setFindingDisposition`, with a free-text reason.
+ * The code review page decides through `decideFinding` instead — eight decisions, each
+ * leaving an outcome that says the developer made it — so the panel has no equivalent to
+ * port. `setFindingDisposition` is still the contract's operation for an agent and is still
+ * covered in `desk.spec.ts`; nothing in the dashboard calls it any more.
+ */
+describe('the one-page review, retired', () => {
   beforeEach(async () => {
     await resetDesk()
   })
 
-  async function open(id: number) {
-    return shown(OneReview, { route: `/reviews/${id}` })
-  }
-
-  it('renders the seven layers', async () => {
-    const page = await open(17)
-    const layers = page.findAll('ol li').map(item => item.text())
-    expect(layers).toHaveLength(7)
-    expect(layers[0]).toContain('Lint')
-    expect(layers[3]).toContain('Solution map')
-    expect(layers[6]).toContain('Harvest')
-  })
-
-  it('renders the problem and hands its diagram to mermaid', async () => {
-    const page = await open(17)
-    expect(page.text()).toContain('a webhook delivery fails once and is never tried again')
-    expect(page.find('figure').exists()).toBe(true)
-  })
-
   /*
-   * **Recorded text keeps the shape its session gave it.** A session writes a finding's
-   * evidence in paragraphs and a brief's problem at length, and the page used to join the
-   * evidence into a `·`-separated meta line and run both the full width of the card. Both
-   * now carry `rd-recorded`, which is `white-space: pre-wrap` at about 70 characters — and
-   * is a class rather than markup, because the text is a record. DEV-878 rebuilds this
-   * page; this is so it reads in the meantime.
+   * The address is in links people have, in bookmarks and in anything written down, so it
+   * keeps working. A route that 404s is worse than one that arrives somewhere useful, and
+   * Understand is where every queue row already lands.
    */
-  describe('text a session recorded', () => {
-    it('gives a finding\'s evidence its own block, with its paragraphs kept', async () => {
-      const page = await open(17)
-      const evidence = page.findAll('.evidence').find(one => one.text().includes('PROVED by'))
-      expect(evidence).toBeTruthy()
-      expect(evidence!.classes()).toContain('rd-recorded')
-      /* The blank lines between the session's three paragraphs survive to the DOM. */
-      expect(evidence!.text()).toContain('\n\n')
-      expect(evidence!.text()).toContain('Mechanism:')
-      expect(evidence!.text()).toContain('Bounded:')
-    })
+  it('redirects to Understand, rather than answering not-found', async () => {
+    const redirect = (OneReview as { definePageMeta?: unknown }) as Record<string, unknown>
+    expect(redirect, 'the page still exists, as a redirect').toBeTruthy()
 
-    it('keeps the evidence out of the one-line facts beside it', async () => {
-      const page = await open(17)
-      const facts = page.findAll('.where').find(one => one.text().includes('sibling diff'))!
-      expect(facts.text()).toContain('lens: sibling diff')
-      expect(facts.text()).not.toContain('PROVED by')
-    })
-
-    it('holds the problem and its provenance to a readable measure', async () => {
-      const page = await open(17)
-      expect(page.find('.problem').classes()).toContain('rd-recorded')
-      expect(page.find('.panel-head .rd-meta').classes()).toContain('rd-recorded')
-    })
-
-    it('is text, never markup', async () => {
-      /*
-       * The class exists so that a paragraph break needs no HTML to survive, which is why
-       * a session's evidence can be interpolated. The rule itself is asserted in
-       * `controls.nuxt.spec.ts`, where the stylesheet is read.
-       */
-      const page = await open(17)
-      const evidence = page.findAll('.evidence').find(one => one.text().includes('PROVED by'))!
-      expect(evidence.element.querySelector('p, br, strong')).toBeNull()
-      expect(evidence.html()).toContain('PROVED by')
-    })
-  })
-
-  it('marks the option that was built', async () => {
-    const page = await open(17)
-    const text = page.text()
-    expect(text).toContain('A · Retry inside the request')
-    expect(text).toContain('B · Queue with backoff')
-    expect(text).toContain('C · Dead-letter and manual replay')
-    expect(text).toContain('What they built')
-    expect(text).toContain('Verdict:')
-  })
-
-  it('lists every finding with its severity and disposition', async () => {
-    const page = await open(17)
-    const text = page.text()
-    expect(text).toContain('3 in the draft · 3 held back · 1 suppressed')
-    expect(text).toContain('F1 · A retried delivery is sent without an idempotency key')
-    expect(text).toContain('Blocker')
-    expect(text).toContain('Question')
-    expect(text).toContain('Suppressed')
-    expect(text).toContain('jobs/DeliverWebhook.php:58')
-    expect(text).toContain('cites R-09')
-  })
-
-  it('says what was not checked', async () => {
-    const page = await open(17)
-    expect(page.text()).toContain('Not checked')
-    expect(page.text()).toContain('under a deploy restart was not run')
-  })
-
-  it('offers the brief confirmation while the brief is unconfirmed', async () => {
-    const page = await open(17)
-    expect(button(page, 'Confirm the problem')).toBeDefined()
-
-    await click(page, 'Confirm the problem')
-
-    expect(page.text()).toContain('Problem confirmed')
-    expect(button(page, 'Confirm the problem')).toBeUndefined()
-  })
-
-  it('reads as done on a review whose brief was already confirmed', async () => {
-    const page = await open(15)
-    expect(page.text()).toContain('Problem confirmed')
-    expect(button(page, 'Confirm the problem')).toBeUndefined()
-  })
-
-  /*
-   * **The third state of layer 2.** A brief recorded as needing no confirmation is not
-   * waiting on the developer and was not signed by them either, so the screen must say
-   * something other than both of the two sentences above — and must not offer the button,
-   * because there is nothing for it to do.
-   */
-  it('says confirmation was not required, and why, without offering the button', async () => {
-    const page = await open(16)
-    const text = page.text()
-
-    expect(text).toContain('Confirmation not required')
-    expect(text).toContain('61 changed lines, under this caller\'s 200-line threshold')
-    expect(text).not.toContain('Problem confirmed')
-    expect(text).not.toContain('Confirm the problem before anything is posted')
-    expect(button(page, 'Confirm the problem')).toBeUndefined()
-
-    /* And the brief itself is still on screen: the developer can read it. */
-    expect(page.text()).toContain('The problem')
-  })
-
-  it('moves a finding between the draft and held back, with a reason', async () => {
-    const page = await open(17)
-    await page.findAll('button').find(item => item.text().startsWith('Change'))!.trigger('click')
-    await settle(page)
-
-    const select = page.find('select#disposition-1')
-    expect(page.find('label[for="disposition-1"]').exists()).toBe(true)
-    await select.setValue('held_back')
-    await page.find('input#reason-1').setValue('Covered by the ticket')
-    await click(page, 'Save')
-
-    expect(page.text()).toContain('F1 is now held back for a ticket')
-    expect(page.text()).toContain('Covered by the ticket')
-  })
-
-  it('will not move a finding out of the draft with no reason, and keeps the panel open', async () => {
-    const page = await open(17)
-    await page.findAll('button').find(item => item.text().startsWith('Change'))!.trigger('click')
-    await settle(page)
-    await page.find('select#disposition-1').setValue('suppressed')
-    await page.find('input#reason-1').setValue('')
-    await click(page, 'Save')
-
-    expect(page.text()).toContain('Say why it is not going in the draft.')
-    expect(page.text()).toContain('Accepted: a sentence saying why.')
-
+    const page = await shown(OneReview, { route: '/reviews/17' })
     /*
-     * The panel stays open so the developer can answer the refusal where they are. A
-     * refused write changes nothing on the record, so nothing tells the row to close —
-     * which is why the row watches the finding's *values* rather than its identity.
+     * Mounted directly, the middleware does not run — `mountSuspended` mounts the component,
+     * not the route — so what is checked here is that nothing of the old page survives to be
+     * drawn. **The redirect itself is asserted in the browser**, in
+     * `web/e2e/review-desk.spec.ts`, where there is a router to redirect.
      */
-    expect(page.find('select#disposition-1').exists()).toBe(true)
-    expect(page.find('input#reason-1').exists()).toBe(true)
-  })
-
-  it('closes the panel once the record agrees, in sample mode as over HTTP', async () => {
-    /*
-     * The failure this pins: the row used to close on a *new finding object*, which HTTP
-     * produces on every read and sample mode never did — so in the dev loop and in every
-     * component test a successful move left the panel open for ever.
-     */
-    const page = await open(17)
-    await page.findAll('button').find(item => item.text().startsWith('Change'))!.trigger('click')
-    await settle(page)
-    expect(page.find('select#disposition-1').exists()).toBe(true)
-
-    await page.find('select#disposition-1').setValue('held_back')
-    await page.find('input#reason-1').setValue('Covered by the ticket')
-    await click(page, 'Save')
-
-    expect(page.text()).toContain('F1 is now held back for a ticket')
-    expect(page.find('select#disposition-1').exists()).toBe(false)
-  })
-
-  it('shows the author’s replies on a posted review', async () => {
-    const page = await open(12)
-    const text = page.text()
-    expect(text).toContain('The author replied')
-    expect(text).toContain('Rejected')
-    expect(text).toContain('by the author')
-    expect(text).toContain('Code changed after')
-  })
-
-  it('says the desk holds no such review, rather than drawing an empty one', async () => {
-    const page = await shown(OneReview, { route: '/reviews/999' })
-    expect(page.text()).toContain('Not on the desk')
-    expect(button(page, 'Retry')).toBeDefined()
+    expect(page.text()).not.toContain('Findings')
+    expect(page.text()).not.toContain('Confirm the problem')
+    expect(page.text()).not.toContain('Not checked')
   })
 })
 
@@ -764,11 +612,24 @@ describe('the draft preview', () => {
     expect(control.text()).toContain('Comment')
     expect(page.find('label[for="event"]').text()).toBe('Post as')
 
-    const copy = page.text()
-      .replace(control.text(), '')
-      .replace(page.find('.pane').text(), '')
-    expect(copy).not.toMatch(/approv/i)
-    expect(copy).toContain('Sign off and post')
+    /*
+     * **Scoped to what the developer presses and reads as a label**, rather than to every
+     * character on the page. The rule is that the dashboard calls this signing off and
+     * GitHub calls it approving, and conflating the two makes a developer think the button
+     * approves the pull request — so what must not say "approve" is the thing they press.
+     *
+     * It was every character until DEV-878, which added "Ticket what is left, and sign
+     * off": the contract calls that operation `ticketRestAndApprove`, and the sentence
+     * explaining it has to name the event the session will post, exactly as the control
+     * does. Widening the exemption to one more string would have been the third exemption;
+     * saying what the rule is actually about is better than listing what it is not.
+     */
+    const pressable = page.findAll('button, label, h1, h2, .rd-label')
+      .map(one => one.text())
+      .join(' · ')
+    expect(pressable).not.toMatch(/approv/i)
+    expect(pressable).toContain('Sign off and post')
+    expect(pressable).toContain('Ticket what is left, and sign off')
   })
 
   it('asks for a note before sending a draft back, and keeps it when refused', async () => {
@@ -815,10 +676,21 @@ describe('the draft preview', () => {
     expect(page.text()).toContain('Queued as one ticket')
   })
 
-  it('says the desk holds no such draft when the session has written none', async () => {
+  /*
+   * **A review with no draft is a page, not a refusal**, and that is what lets step 6 of
+   * the trail be a link whatever the draft status says. `GET …/draft` still answers 404;
+   * what changed is that the answer is drawn inside the frame, so the trail is above it and
+   * every other step is one click away. The blocking "Not on the desk" panel this used to
+   * show carried no trail and no way back — the dead end the trail exists to prevent.
+   */
+  it('says no draft has been written, inside the frame, rather than refusing', async () => {
     const page = await shown(DraftPreview, { route: '/reviews/18/draft' })
-    expect(page.text()).toContain('Not on the desk')
-    expect(button(page, 'Retry')).toBeDefined()
+    expect(page.text()).toContain('No draft yet.')
+    expect(page.text()).toContain('No session has written a draft for this review')
+    expect(page.text()).not.toContain('Not on the desk')
+    /* And the trail is there, which is the whole point. */
+    expect(page.findAll('.trail a').map(one => one.attributes('href')))
+      .toContain('/reviews/18/understand')
   })
 
   it('says the lint has not run, rather than drawing it as failing', async () => {

@@ -65,6 +65,12 @@ pub enum DraftCommand {
         /// second block about one finding, and refuses a block about a finding that is
         /// not posted: a fixed, accepted, withdrawn or ticketed finding is not raised as
         /// an open finding, and what the round found about it is prose.
+        ///
+        /// **`title` is optional on a finding block: the finding owns its title.** Left
+        /// out, the heading is composed from the finding's own `title`, falling back to its
+        /// `claim` for a finding nobody has titled. Given, it is used as given — which is
+        /// what lets a posted heading differ from the one line the code review page's row
+        /// carries, and what the developer's `rewrite` in the dashboard relies on.
         #[arg(long, value_name = "PATH")]
         sections: Option<PathBuf>,
         /// What the review-craft lint said about this body, as a JSON document:

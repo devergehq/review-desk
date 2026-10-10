@@ -1,5 +1,5 @@
 /*
- * What a source of records can do: the contract's sixteen operations, and nothing else.
+ * What a source of records can do: the contract's eighteen operations, and nothing else.
  *
  * Two things implement it — `api.ts`, which calls the Rust server, and `sample.ts`, which
  * patches invented records in memory. **The point of writing it down is that the composable
@@ -14,9 +14,11 @@
 
 import type {
   Brief,
+  DecideFindingRequest,
   Disposition,
   DraftDetail,
   Finding,
+  FindingDecisionMade,
   Inbox,
   NitTicket,
   OutcomeKind,
@@ -27,6 +29,7 @@ import type {
   Rule,
   RuleStage,
   RulesPage,
+  TicketedAndApproved,
 } from '~/types/desk'
 
 /** One edit a draft save represents, recorded as an outcome by the developer. */
@@ -48,7 +51,7 @@ export interface DeskBackend {
   listRules: (repo: string | null) => Promise<RulesPage>
   listRepos: () => Promise<RepoSummary[]>
 
-  /* The twelve writes. */
+  /* The fourteen writes. */
   startReview: (prUrl: string) => Promise<Review>
   confirmBrief: (reviewId: number) => Promise<Brief>
   setFindingDisposition: (
@@ -57,6 +60,20 @@ export interface DeskBackend {
     disposition: Disposition,
     reason: string | null,
   ) => Promise<Finding>
+  /**
+   * `POST …/findings/{seq}/decide` — the developer's decision, and the draft recomposed.
+   *
+   * **The whole request, not a decision and some arguments.** Four of the eight decisions
+   * carry words — a severity for a regrade, a title or a text for a rewrite, the author's
+   * reason for an acceptance — and the contract refuses the wrong combination by name. A
+   * signature with one parameter per field would let a caller send a severity on a cut and
+   * find out from the server; passing the request means the generated type refuses it here.
+   */
+  decideFinding: (
+    reviewId: number,
+    seq: number,
+    request: DecideFindingRequest,
+  ) => Promise<FindingDecisionMade>
   saveDraft: (
     reviewId: number,
     body: string,
@@ -64,6 +81,11 @@ export interface DeskBackend {
   ) => Promise<DraftDetail>
   approveDraft: (reviewId: number, event: ReviewEvent) => Promise<DraftDetail>
   sendBackDraft: (reviewId: number, note: string) => Promise<DraftDetail>
+  /** `POST …/draft/ticket-and-approve` — a sign-off. It neither posts nor files anything. */
+  ticketRestAndApprove: (
+    reviewId: number,
+    note: string | null,
+  ) => Promise<TicketedAndApproved>
   requestNitTicket: (reviewId: number, ticketId?: string | null) => Promise<NitTicket>
   promoteRule: (ruleId: number, toStage: RuleStage) => Promise<Rule>
   dismissRule: (ruleId: number, reason: string) => Promise<Rule>

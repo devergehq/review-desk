@@ -485,7 +485,15 @@ fn check(decision: &Decision) -> Result<()> {
 /// a held-back nit in their own words, and a record that stored those words as the agent's
 /// would read as a block nobody had rewritten.
 fn words_for(decision: &Decision, finding: &Finding) -> Result<composition::BlockWords> {
-    let agent_title = finding.claim.clone();
+    // **The finding's own title, and its claim only when it has none.** The title is the one
+    // line the code review page's row carries; the claim is what the review says is wrong in
+    // the review's voice, and on the review board A8 was drawn from one ran to 56 words — a
+    // heading nobody would post. Every finding written before migration 11 has no title,
+    // which is what the fallback is for.
+    let agent_title = finding
+        .title
+        .clone()
+        .unwrap_or_else(|| finding.claim.clone());
     let agent_text = finding
         .why_it_matters
         .clone()

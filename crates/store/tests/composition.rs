@@ -194,6 +194,224 @@ fn the_assembled_draft_of_a_review_with_no_decisions_is_what_the_agent_wrote() {
     );
 }
 
+/// **A finding block written with no title takes the finding's, and the finding owns it.**
+///
+/// Two copies of a title are two titles that can disagree, and the one a reader sees first
+/// is the finding's — it is the whole of a row on the code review page. So a block that
+/// states none is composed from `Finding::title`, and from the claim only for a finding
+/// nobody has titled, which is every finding written before migration 11.
+#[test]
+fn a_finding_block_with_no_title_takes_the_findings_own() {
+    let (_dir, store) = temp_store();
+    let review = store
+        .create_review(new_review("acme/portal", 878, "a1b2c3d", 1))
+        .expect("review");
+
+    let titled = store
+        .add_finding(
+            review.id,
+            NewFinding {
+                lens: "correctness".to_string(),
+                severity: Severity::Should,
+                claim: "A retried delivery is sent with no idempotency key, so an endpoint \
+                        that accepted the first attempt slowly receives the same event a \
+                        second time and acts on it twice"
+                    .to_string(),
+                title: Some("A retried delivery carries no idempotency key".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("a titled finding");
+
+    let untitled = store
+        .add_finding(
+            review.id,
+            NewFinding {
+                lens: "naming".to_string(),
+                severity: Severity::Nit,
+                claim: "The accessor is still public".to_string(),
+                ..Default::default()
+            },
+        )
+        .expect("a finding nobody titled");
+
+    store
+        .put_draft(
+            review.id,
+            NewDraft {
+                body: String::new(),
+                status: DraftStatus::Ready,
+                lint: None,
+                sections: Some(vec![
+                    NewDraftSection {
+                        kind: DraftSectionKind::Finding,
+                        finding_seq: Some(titled.seq),
+                        title: None,
+                        text: "Please send the delivery id as the key.".to_string(),
+                    },
+                    NewDraftSection {
+                        kind: DraftSectionKind::Finding,
+                        finding_seq: Some(untitled.seq),
+                        title: None,
+                        text: "A `@deprecated` line would stop the next caller.".to_string(),
+                    },
+                ]),
+            },
+        )
+        .expect("a draft whose blocks state no titles");
+
+    let draft = store.get_draft(review.id).expect("the draft");
+    let blocks = store.draft_sections(review.id).expect("the blocks");
+
+    assert_eq!(
+        blocks[0].title.as_deref(),
+        Some("A retried delivery carries no idempotency key"),
+        "the titled finding's own title, not its 56-word claim"
+    );
+    assert_eq!(
+        blocks[1].title.as_deref(),
+        Some("The accessor is still public"),
+        "and the claim for a finding nobody titled, which is the honest fallback"
+    );
+    assert!(draft
+        .body
+        .contains("### Should · F1 · A retried delivery carries no idempotency key"));
+
+    /*
+     * **And `agent_title` is the resolved words**, which is what keeps DEV-877's guarantee
+     * standing: a rewrite still keeps what it replaced, because what it replaced is what is
+     * recorded here.
+     */
+    assert_eq!(blocks[0].agent_title, blocks[0].title);
+    assert!(!blocks[0].rewritten());
+}
+
+/// A stated title is used as stated, **and that is deliberate rather than a leftover.**
+///
+/// A heading the posted review carries is not required to be the one line a row of the code
+/// review page carries, and `decideFinding`'s `rewrite` exists precisely to make the two
+/// differ. Refusing a stated title that disagreed with the finding's would remove a
+/// rewrite's own effect, so the ownership is "the finding is the source", not "they can
+/// never differ".
+#[test]
+fn a_stated_title_is_used_as_stated_even_when_the_finding_has_one() {
+    let (_dir, store) = temp_store();
+    let review = store
+        .create_review(new_review("acme/portal", 878, "d4e5f6a", 1))
+        .expect("review");
+
+    let finding = store
+        .add_finding(
+            review.id,
+            NewFinding {
+                lens: "correctness".to_string(),
+                severity: Severity::Blocker,
+                claim: "the claim".to_string(),
+                title: Some("The finding's own title".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("finding");
+
+    store
+        .put_draft(
+            review.id,
+            NewDraft {
+                body: String::new(),
+                status: DraftStatus::Ready,
+                lint: None,
+                sections: Some(vec![NewDraftSection::finding(
+                    finding.seq,
+                    "The heading this review posts",
+                    "the paragraph",
+                )]),
+            },
+        )
+        .expect("the draft");
+
+    let blocks = store.draft_sections(review.id).expect("the blocks");
+    assert_eq!(
+        blocks[0].title.as_deref(),
+        Some("The heading this review posts")
+    );
+    assert_eq!(
+        store
+            .get_finding(review.id, finding.seq)
+            .expect("read it")
+            .title
+            .as_deref(),
+        Some("The finding's own title"),
+        "and the finding is not rewritten by a block being written"
+    );
+}
+
+/// Keeping a held-back finding writes it a block **titled from the finding**.
+///
+/// The designs' "Post it" on a held-back nit. Before the title existed the block was headed
+/// with the finding's claim, which on the review board A8 was drawn from ran to 56 words —
+/// a heading nobody would post.
+#[test]
+fn posting_a_held_back_finding_heads_its_block_with_the_findings_title() {
+    let (_dir, store) = temp_store();
+    let review = store
+        .create_review(new_review("acme/portal", 878, "b7c8d9e", 1))
+        .expect("review");
+
+    let finding = store
+        .add_finding(
+            review.id,
+            NewFinding {
+                lens: "repetition".to_string(),
+                severity: Severity::Nit,
+                claim: "The superseded accessor is still public with nothing at all marking \
+                        it as superseded, so the next caller to need a tenant reaches for it"
+                    .to_string(),
+                title: Some("The superseded accessor is still public".to_string()),
+                why_it_matters: Some("The next caller writes a second path.".to_string()),
+                disposition: Disposition::HeldBack,
+                disposition_reason: Some("a nit; it goes in the ticket".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("finding");
+
+    store
+        .put_draft(
+            review.id,
+            NewDraft {
+                body: String::new(),
+                status: DraftStatus::Ready,
+                lint: None,
+                sections: Some(vec![NewDraftSection::prose("Nothing much to say.")]),
+            },
+        )
+        .expect("the draft");
+
+    store
+        .decide_finding(
+            review.id,
+            finding.seq,
+            &Decision {
+                decision: FindingDecision::Keep,
+                severity: None,
+                title: None,
+                text: None,
+                note: None,
+            },
+            Actor::Developer,
+        )
+        .expect("the developer posts it");
+
+    let draft = store.get_draft(review.id).expect("the draft");
+    assert!(
+        draft
+            .body
+            .contains("### Nit · F1 · The superseded accessor is still public"),
+        "headed from the title, not the claim: {}",
+        draft.body
+    );
+}
+
 #[test]
 fn a_body_written_as_one_block_is_stored_as_one_block() {
     let (_dir, store) = temp_store();

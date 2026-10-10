@@ -1,10 +1,10 @@
 /*
- * The contract's sixteen operations, as sixteen functions.
+ * The contract's eighteen operations, as eighteen functions.
  *
  * **This file and `sample.ts` are the only two places in `web/` that produce records**, and
  * this is the only one that makes an HTTP request. `test/architecture.spec.ts` holds that.
  *
- * Four reads and twelve writes, named after the `operationId` in `contract/openapi.yaml`,
+ * Four reads and fourteen writes, named after the `operationId` in `contract/openapi.yaml`,
  * at the paths its `servers` entry gives. Nothing here joins anything: each screen is one
  * GET, which is the contract's own rule and the reason the dashboard needs no client-side
  * model of the record.
@@ -32,11 +32,13 @@ import { DeskRequestError, NOT_LISTENING, fault } from './fault'
 import type {
   ApproveDraftRequest,
   Brief,
+  DecideFindingRequest,
   DeferRuleRequest,
   DeskError,
   Disposition,
   DraftDetail,
   Finding,
+  FindingDecisionMade,
   Inbox,
   NitTicket,
   PromoteRuleRequest,
@@ -53,6 +55,8 @@ import type {
   SendBackDraftRequest,
   SetFindingDispositionRequest,
   StartReviewRequest,
+  TicketRestAndApproveRequest,
+  TicketedAndApproved,
 } from '~/types/desk'
 
 /** Where the API is, from the dashboard. The contract's `servers` path, no host. */
@@ -272,7 +276,7 @@ export async function listRepos(): Promise<RepoSummary[]> {
   return answer.repos
 }
 
-/* ------------------------------ The twelve writes ----------------------------- */
+/* ----------------------------- The fourteen writes ---------------------------- */
 
 /**
  * `POST /reviews` — start a review from a pull request link.
@@ -307,6 +311,32 @@ export function setFindingDisposition(
 }
 
 /**
+ * `POST /reviews/{id}/findings/{seq}/decide` — one decision, one transaction.
+ *
+ * The finding, its block of the body, the body and the outcome recording who decided are
+ * written together, and all three come back read inside that transaction — so **one call is
+ * one re-render** and the page never patches its own copy.
+ *
+ * The actor is not sent. It is `developer`, the server refuses any other, and nothing on the
+ * command line reaches the function behind this.
+ *
+ * Refused with `conflict` when the draft is approved or posted, and with `conflict` again —
+ * carrying `expected` — when the decision needs a block the draft has none of, which is
+ * every draft written as one block of markdown.
+ */
+export function decideFinding(
+  reviewId: number,
+  seq: number,
+  request: DecideFindingRequest,
+): Promise<FindingDecisionMade> {
+  return send<FindingDecisionMade>(
+    'POST',
+    `/reviews/${reviewId}/findings/${seq}/decide`,
+    request,
+  )
+}
+
+/**
  * `PUT /reviews/{id}/draft` — the body, and the edits it represents.
  *
  * The edits are stated rather than inferred from a text diff: "regraded F3 from Blocker to
@@ -332,6 +362,29 @@ export function approveDraft(reviewId: number, event: ReviewEvent): Promise<Draf
 export function sendBackDraft(reviewId: number, note: string): Promise<DraftDetail> {
   const request: SendBackDraftRequest = { note }
   return send<DraftDetail>('POST', `/reviews/${reviewId}/draft/send-back`, request)
+}
+
+/**
+ * `POST /reviews/{id}/draft/ticket-and-approve` — file what is left, and approve.
+ *
+ * **A sign-off, and it neither posts nor files anything.** Every finding the draft would
+ * have posted is held back and recorded as ticketed this round, the review's one nit ticket
+ * moves to `requested`, the body is recomposed without them, and the draft is approved as
+ * `approve`.
+ *
+ * The event is not a parameter: the button says approve, and a request for changes that
+ * ticketed everything it asked for would contradict itself.
+ */
+export function ticketRestAndApprove(
+  reviewId: number,
+  note: string | null,
+): Promise<TicketedAndApproved> {
+  const request: TicketRestAndApproveRequest = { note }
+  return send<TicketedAndApproved>(
+    'POST',
+    `/reviews/${reviewId}/draft/ticket-and-approve`,
+    request,
+  )
 }
 
 /**

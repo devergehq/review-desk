@@ -1,5 +1,5 @@
 // @vitest-environment nuxt
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
@@ -670,19 +670,60 @@ describe('text a review session recorded, rather than copy the app wrote', () =>
     expect(block('.rd-measure')).toContain('var(--rd-measure)')
   })
 
-  it('needs no markup, which is what lets a record stay a record', () => {
-    /*
-     * The whole point of doing this in CSS: a paragraph break survives without anything
-     * being parsed as HTML, so the text can be interpolated. Nothing on the review page
-     * reaches for `v-html` to show what a session recorded.
-     */
-    for (const component of ['FindingRow.vue', 'MermaidFigure.vue']) {
-      const text = readFileSync(resolve(`app/components/${component}`), 'utf8')
-      /* The directive, not the word: both files discuss `v-html` in a comment. */
-      const uses = text.split('\n').filter(line => line.includes('v-html='))
-      /* `MermaidFigure` has exactly one, for mermaid's own sanitised SVG, and it is the
-         `svg` branch — never the branch that shows a source. */
-      for (const line of uses) expect(line).toContain('v-html="svg"')
+  /*
+   * **Every `v-html` in the dashboard, named, with the reason it is there.**
+   *
+   * This read two components by name until DEV-878, which asks for it over a whole page:
+   * "Every field is interpolated; no `v-html` on these pages." A list of two files could
+   * not answer that — a third file is what it would have missed — so it reads every
+   * component and every page and allows exactly two expressions, each with its reason.
+   *
+   * The whole point of `rd-recorded` doing this in CSS is that a paragraph break survives
+   * without anything being parsed as HTML, so recorded text can be interpolated. A record
+   * that could carry markup is a record that could carry a script.
+   */
+  it('reaches for v-html in exactly two places, each with a reason', () => {
+    /** The expression after `v-html=`, and why that one is allowed. */
+    const ALLOWED: Record<string, string> = {
+      '"svg"':
+        'MermaidFigure: mermaid\'s own sanitised SVG, and never the branch that shows a '
+        + 'source',
+      '"render(block.content)"':
+        'MarkdownView: the draft body is GitHub-flavoured markdown and is rendered by its '
+        + 'own escaping renderer, which is what the Draft preview is a preview of',
     }
+
+    const found: Array<{ file: string, line: string }> = []
+    const walk = (directory: string) => {
+      for (const entry of readdirSync(resolve(directory), { withFileTypes: true })) {
+        const path = `${directory}/${entry.name}`
+        if (entry.isDirectory()) {
+          walk(path)
+          continue
+        }
+        if (!/\.(vue|ts)$/.test(entry.name)) continue
+        for (const line of readFileSync(resolve(path), 'utf8').split('\n')) {
+          /* The directive, not the word: several files discuss `v-html` in a comment. */
+          if (line.includes('v-html=')) found.push({ file: path, line: line.trim() })
+        }
+      }
+    }
+    walk('app')
+
+    for (const { file, line } of found) {
+      const expression = /v-html=("[^"]*"|'[^']*')/.exec(line)?.[1] ?? line
+      expect(
+        Object.keys(ALLOWED),
+        `${file} uses v-html=${expression}, which is not one of the two allowed. Interpolate `
+        + 'it: a record that could carry markup is a record that could carry a script.',
+      ).toContain(expression)
+    }
+
+    /*
+     * And both are still there, so that deleting one and leaving this list behind is a
+     * failure rather than a quietly weaker test.
+     */
+    const expressions = found.map(({ line }) => /v-html=("[^"]*")/.exec(line)?.[1])
+    for (const allowed of Object.keys(ALLOWED)) expect(expressions).toContain(allowed)
   })
 })

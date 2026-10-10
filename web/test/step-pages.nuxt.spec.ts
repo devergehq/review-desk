@@ -126,7 +126,7 @@ describe('the shell every step page sits in', () => {
     /* The store's own words, not a restatement of the state. */
     expect(trail).toContain('passes, 2 warnings')
     expect(trail).toContain('8 options, C built')
-    expect(trail).toContain('13 findings, 1 blocker')
+    expect(trail).toContain('14 findings, 1 blocker')
     expect(trail).toContain('waiting on you')
   })
 
@@ -147,51 +147,48 @@ describe('the shell every step page sits in', () => {
     /*
      * **The trail is the only way to four of these.** Every row in the queue opens
      * Understand, so if the trail did not reach the findings and the draft the queue would
-     * lead somewhere a reader could not leave. Steps 1 and 7 have no page until DEV-878,
-     * and a link to a page that does not exist is worse than a label.
-     */
-    /*
-     * **Four, not five, on this review: it has no draft.** `draft_status` is null and
-     * `GET /reviews/{id}/draft` refuses, so step 6 is a label. An unguarded link here sent
-     * the flagship structured review to a blocking not-found panel that carries no trail
-     * and no way back — the dead end steps 1 and 7 are labels to avoid.
+     * lead somewhere a reader could not leave. Steps 1 and 7 have no page, and a link to a
+     * page that does not exist is worse than a label.
      */
     expect(links).toEqual([
       `/reviews/${STRUCTURED}/understand`,
       `/reviews/${STRUCTURED}/alternatives`,
       `/reviews/${STRUCTURED}/solution`,
-      `/reviews/${STRUCTURED}`,
+      `/reviews/${STRUCTURED}/code-review`,
+      `/reviews/${STRUCTURED}/draft`,
     ])
-    /* Lint, Draft and Harvest are labels. */
+    /* Lint and Harvest are labels. */
     const labels = page.findAll('.trail .face:not(a)').map(one => one.text())
-    for (const step of ['1 Lint', '6 Draft', '7 Harvest']) {
+    for (const step of ['1 Lint', '7 Harvest']) {
       expect(labels.some(one => one.includes(step)), `${step} should be a label`).toBe(true)
     }
   })
 
-  it('links step 6 once there is a draft to read', async () => {
-    const detail = fixture(STRUCTURED)
-    detail.draft_status = 'ready'
-    await withReview(detail)
+  /*
+   * **Step 6 is a link whatever the draft status says, and that is DEV-878's doing.**
+   *
+   * It used to be guarded: `GET …/draft` refuses when there is no draft row, and the draft
+   * screen then drew a blocking not-found panel carrying no trail and no way back — the
+   * dead end steps 1 and 7 are labels to avoid. The draft screen is inside the shell now,
+   * so it carries the trail even when there is nothing to read, and a review whose session
+   * has not written one says so on step 6's own page. The guard went with the dead end.
+   *
+   * Three statuses, because the guard distinguished them and nothing does any more: a
+   * session part-way through writing one, a review no session has drafted at all, and one
+   * waiting on the developer.
+   */
+  it('links step 6 whatever the draft status says', async () => {
+    for (const status of ['ready', 'drafting', null] as const) {
+      const detail = fixture(STRUCTURED)
+      detail.draft_status = status
+      await withReview(detail)
 
-    const page = await understand(STRUCTURED)
-    expect(page.findAll('.trail a').map(one => one.attributes('href')))
-      .toContain(`/reviews/${STRUCTURED}/draft`)
-  })
-
-  it('leaves step 6 a label while a session is still writing the draft', async () => {
-    const detail = fixture(STRUCTURED)
-    detail.draft_status = 'drafting'
-    await withReview(detail)
-
-    const page = await understand(STRUCTURED)
-    /*
-     * `drafting` is a session part-way through writing one, and the document may not
-     * exist yet — `getDraft` refuses on the row, not on the status. Two sample reviews
-     * carry exactly that. A label for a few seconds costs nothing; a dead end does not.
-     */
-    expect(page.findAll('.trail a').map(one => one.attributes('href')))
-      .not.toContain(`/reviews/${STRUCTURED}/draft`)
+      const page = await understand(STRUCTURED)
+      expect(
+        page.findAll('.trail a').map(one => one.attributes('href')),
+        `step 6 should be a link with draft_status ${String(status)}`,
+      ).toContain(`/reviews/${STRUCTURED}/draft`)
+    }
   })
 
   it('still says which step is waiting, whichever page you are on', async () => {
@@ -225,6 +222,83 @@ describe('the shell every step page sits in', () => {
       const page = await make(999)
       expect(page.text()).toContain('Not on the desk')
     }
+  })
+})
+
+/* ============================ Layer 2, the one act ============================= */
+
+/*
+ * **Confirming the brief is on Understand because the page it was on is gone.**
+ *
+ * `/reviews/{id}` drew it and DEV-878 retires that screen. Without this the dashboard would
+ * have no way to confirm a brief at all — and `confirmBrief` is one of only two operations
+ * that record the developer's sign-off, so `crates/cli/tests/signoff.rs` would be guarding a
+ * boundary with nothing on the far side of it. The tests that were on the old screen are
+ * these.
+ */
+describe('confirming the brief', () => {
+  beforeEach(async () => {
+    await resetDesk()
+  })
+
+  it('asks for it while the brief is unconfirmed', async () => {
+    const page = await understand(OLD_WAY)
+    expect(page.text()).toContain('Confirm the problem before anything is posted')
+    expect(page.findAll('button').some(one => one.text() === 'Confirm the problem')).toBe(true)
+  })
+
+  it('records it, and says the developer did', async () => {
+    const page = await understand(OLD_WAY)
+    await open(page, 'Confirm the problem')
+
+    expect(page.text()).toContain('Problem confirmed.')
+    expect(page.text()).toContain('The draft is yours to sign off.')
+    expect(page.findAll('button').some(one => one.text() === 'Confirm the problem')).toBe(false)
+  })
+
+  it('reads as done on a brief already confirmed, with no button', async () => {
+    const detail = fixture(OLD_WAY)
+    detail.brief = { ...detail.brief!, confirmed: true, confirmed_at: '2026-10-09T10:00:00Z' }
+    await withReview(detail)
+
+    const page = await understand(OLD_WAY)
+    expect(page.text()).toContain('Problem confirmed.')
+    expect(page.findAll('button').some(one => one.text() === 'Confirm the problem')).toBe(false)
+  })
+
+  /*
+   * **The third state, and the defect that went with the page.**
+   *
+   * The old screen wrote "The session recorded this brief as needing none: {{ field }}." —
+   * and since DEV-883 a session writes a brief twice, with that field reading "problem half
+   * only" between the writes. The sentence then gave "problem half only" as the reason no
+   * confirmation was needed, which it is not. DEV-878's own comment says the problem goes
+   * with the page; this is the assertion that it did not come back.
+   */
+  it('says confirmation was not required, without giving the field as the reason', async () => {
+    const detail = fixture(OLD_WAY)
+    detail.brief = {
+      ...detail.brief!,
+      confirmation_required: false,
+      confirmation_not_required_because: 'problem half only',
+    }
+    await withReview(detail)
+
+    const page = await understand(OLD_WAY)
+    expect(page.text()).toContain('Confirmation not required.')
+    expect(page.text()).toContain('nothing here is waiting on you')
+    expect(page.findAll('button').some(one => one.text() === 'Confirm the problem')).toBe(false)
+
+    /* The field is shown as what the session wrote, under a label that says so. */
+    expect(page.find('.why').text()).toContain('What the session wrote')
+    expect(page.find('.why').text()).toContain('problem half only')
+    expect(page.text()).not.toContain('needing none: problem half only')
+  })
+
+  it('is drawn on a structured brief too, not only on an old one', async () => {
+    const page = await understand(STRUCTURED)
+    /* The real-length example's brief is confirmed, which is the second of the three. */
+    expect(page.text()).toContain('Problem confirmed.')
   })
 })
 
@@ -990,10 +1064,20 @@ describe('Solution', () => {
     await withReview(detail)
 
     const page = await solution(STRUCTURED)
-    expect(page.text()).toContain('1 finding in no part of this description')
+    expect(page.text()).toContain('2 findings in no part of this description')
     expect(page.text()).toContain('F15')
-    /* And with the whole set accounted for, the section is not there at all. */
-    await resetDesk()
+
+    /*
+     * And with the whole set accounted for, the section is not there at all.
+     *
+     * **Built by taking the two away rather than by resetting**, because the example's own
+     * F14 is in no part for good: it names no file, being about the pull request's
+     * description. `resetDesk()` would put it back and this would assert the opposite of
+     * what it means to.
+     */
+    const accounted = fixture(STRUCTURED)
+    accounted.findings = accounted.findings.filter(finding => finding.file != null)
+    await withReview(accounted)
     const whole = await solution(STRUCTURED)
     expect(whole.text()).not.toContain('in no part of this description')
   })

@@ -1,0 +1,1683 @@
+{
+  "review": {
+    "id": 41,
+    "repo": "acme/portal",
+    "pr": 514,
+    "head_sha": "d41c8e2",
+    "round": 1,
+    "title": "Give a scheduled export its own context",
+    "ticket_id": "ABC-402",
+    "changed_lines": 1442,
+    "session_id": "ses_41b907de",
+    "ledger_id": "ledger-2026-10-09-514",
+    "github_review_id": null,
+    "created_at": "2026-10-09T20:40:00Z"
+  },
+  "layers": [
+    {
+      "number": 1,
+      "name": "lint",
+      "state": "done",
+      "detail": "passes, 2 warnings",
+      "updated_at": "2026-10-09T21:00:00Z"
+    },
+    {
+      "number": 2,
+      "name": "understand",
+      "state": "done",
+      "detail": "brief settled",
+      "updated_at": "2026-10-09T22:00:00Z"
+    },
+    {
+      "number": 3,
+      "name": "alternatives",
+      "state": "done",
+      "detail": "8 options, C built",
+      "updated_at": "2026-10-09T23:00:00Z"
+    },
+    {
+      "number": 4,
+      "name": "solution_map",
+      "state": "done",
+      "detail": "right shape",
+      "updated_at": "2026-10-09T23:00:00Z"
+    },
+    {
+      "number": 5,
+      "name": "code_review",
+      "state": "done",
+      "detail": "14 findings, 1 blocker",
+      "updated_at": "2026-10-09T23:00:00Z"
+    },
+    {
+      "number": 6,
+      "name": "draft",
+      "state": "waiting_on_you",
+      "detail": "waiting on you",
+      "updated_at": "2026-10-09T23:00:00Z"
+    },
+    {
+      "number": 7,
+      "name": "harvest",
+      "state": "pending",
+      "detail": "after posting",
+      "updated_at": "2026-10-09T23:00:00Z"
+    }
+  ],
+  "brief": {
+    "review_id": 41,
+    "problem": "Scheduled exports run with whatever tenant the last web request left in a request-scoped singleton, and they skip the filters a web export goes through. Two incidents have been patched by clearing the slot; the mechanism is unchanged. The ticket asks for an export to carry its own context and for both paths to share one filter chain.",
+    "diagram": null,
+    "options": [
+      {
+        "key": "A",
+        "title": "Clear the slot between jobs and pin the incidents with tests",
+        "argument_for": "Smallest change, and both incidents get a regression test.",
+        "argument_against": "Leaves an export able to run with another tenant's context after the next new entry point.",
+        "chosen": false,
+        "proposed_by": "both",
+        "verdicts": [
+          {
+            "problem": 1,
+            "verdict": "partly",
+            "why": "The two known incidents stop recurring; the slot is still writable by the web middleware."
+          },
+          {
+            "problem": 2,
+            "verdict": "stays",
+            "why": "The builder keeps asking whether a request is in flight."
+          },
+          {
+            "problem": 3,
+            "verdict": "stays",
+            "why": "The scheduled path still builds its own query."
+          }
+        ]
+      },
+      {
+        "key": "B",
+        "title": "Give the export its own context object, keep the shared builder",
+        "argument_for": "One owned object the web cannot overwrite, and a small diff in the worker.",
+        "argument_against": "The builder keeps its branch, so a third entry point learns the branch again.",
+        "chosen": false,
+        "proposed_by": "both",
+        "verdicts": [
+          {
+            "problem": 1,
+            "verdict": "fixed",
+            "why": "A context constructed by the caller cannot be overwritten by a request."
+          },
+          {
+            "problem": 2,
+            "verdict": "partly",
+            "why": "The builder still branches, but once, through a named accessor."
+          },
+          {
+            "problem": 3,
+            "verdict": "stays",
+            "why": "The filters are untouched."
+          }
+        ]
+      },
+      {
+        "key": "C",
+        "title": "An export context passed explicitly, and one filter chain for both",
+        "argument_for": "Fixes all three: owned context, no branch in the builder, one filter chain.",
+        "argument_against": "Two entry points to keep in step, and the filter chain has to be callable from outside the web path first.",
+        "chosen": true,
+        "proposed_by": "both",
+        "verdicts": [
+          {
+            "problem": 1,
+            "verdict": "fixed",
+            "why": "The context is an argument through the whole path."
+          },
+          {
+            "problem": 2,
+            "verdict": "fixed",
+            "why": "The builder asks its context and has no branch left."
+          },
+          {
+            "problem": 3,
+            "verdict": "fixed",
+            "why": "One filter chain serves both entry points."
+          }
+        ]
+      },
+      {
+        "key": "D",
+        "title": "A tenant-scoped database connection per export",
+        "argument_for": "No shared state to overwrite, because the connection carries the tenant.",
+        "argument_against": "A connection per tenant per export is a pool size nobody has measured, and it fixes nothing about the filters.",
+        "chosen": false,
+        "proposed_by": "ticket",
+        "verdicts": [
+          {
+            "problem": 1,
+            "verdict": "not_assessed",
+            "why": null
+          },
+          {
+            "problem": 2,
+            "verdict": "not_assessed",
+            "why": null
+          },
+          {
+            "problem": 3,
+            "verdict": "not_assessed",
+            "why": null
+          }
+        ]
+      },
+      {
+        "key": "E",
+        "title": "Make the scheduled path call the web path's controller",
+        "argument_for": "The filters are reused without being moved anywhere.",
+        "argument_against": "A job driving a controller needs a fabricated request, which is the ambient state this is meant to remove.",
+        "chosen": false,
+        "proposed_by": "blind_pass",
+        "verdicts": [
+          {
+            "problem": 1,
+            "verdict": "stays",
+            "why": "The tenant still arrives through ambient state."
+          },
+          {
+            "problem": 2,
+            "verdict": "stays",
+            "why": "The branch is where it was."
+          },
+          {
+            "problem": 3,
+            "verdict": "fixed",
+            "why": "The scheduled path is made to call the web path's filters."
+          }
+        ]
+      },
+      {
+        "key": "F",
+        "title": "Extract reporting into a service with its own entry points",
+        "argument_for": "Everything the report needs becomes an argument, and the web is one caller of many.",
+        "argument_against": "The largest change of the eight, and the audit entry needs a product answer before it can move.",
+        "chosen": false,
+        "proposed_by": "blind_pass",
+        "verdicts": [
+          {
+            "problem": 1,
+            "verdict": "fixed",
+            "why": "Nothing reads the slot once the export is a separate service."
+          },
+          {
+            "problem": 2,
+            "verdict": "fixed",
+            "why": "The builder is given everything it needs."
+          },
+          {
+            "problem": 3,
+            "verdict": "partly",
+            "why": "The filters move with it, but the audit entry needs a second decision."
+          }
+        ]
+      },
+      {
+        "key": "G",
+        "title": "Carry the tenant in a signed manifest the schedule writes",
+        "argument_for": "The tenant travels with the work rather than being looked up when the work runs.",
+        "argument_against": "A manifest is a second format to version, and it answers nothing about the filters.",
+        "chosen": false,
+        "proposed_by": "blind_pass",
+        "verdicts": [
+          {
+            "problem": 1,
+            "verdict": "fixed",
+            "why": "A signed manifest carries the tenant instead of the session."
+          },
+          {
+            "problem": 2,
+            "verdict": "partly",
+            "why": "The builder reads the manifest rather than the request."
+          },
+          {
+            "problem": 3,
+            "verdict": "stays",
+            "why": "Nothing about the filters changes."
+          }
+        ]
+      },
+      {
+        "key": "H",
+        "title": "Run each tenant's exports in their own worker process",
+        "argument_for": "Isolation by process, with no code change to the builder at all.",
+        "argument_against": "One process per tenant does not scale past a few hundred, and the filters stay skipped.",
+        "chosen": false,
+        "proposed_by": "blind_pass",
+        "verdicts": [
+          {
+            "problem": 1,
+            "verdict": "fixed",
+            "why": "A tenant-per-connection pool means no slot to overwrite."
+          },
+          {
+            "problem": 2,
+            "verdict": "stays",
+            "why": "The builder's branch is unaffected."
+          },
+          {
+            "problem": 3,
+            "verdict": "stays",
+            "why": "The filters are unaffected."
+          }
+        ]
+      }
+    ],
+    "approach_verdict": "C is the right shape. It is the only option of the eight that answers all three problems, and the one departure from the ticket — where the context is constructed — is justified in the record.",
+    "provenance": "from the ticket, the pull request description and the code",
+    "confirmed": true,
+    "confirmed_at": "2026-10-09T22:14:00Z",
+    "confirmation_required": true,
+    "confirmation_not_required_because": null,
+    "headline": "Scheduled exports get their own context, so the report builder no longer reads whichever tenant a web request left behind.",
+    "how_it_works_today": "Every report is built by one class. For a web export it reads the tenant from a request-scoped singleton the middleware wrote, applies a row-visibility filter, a column policy and a redaction pass, and writes the file to a bucket resolved from that same singleton. For a scheduled export there is no request, so the queued job sets the singleton itself and the builder takes a different branch that goes straight from the report definition to the query.",
+    "flow_before_caption": "The tenant arrives through a slot the web also writes",
+    "flow_after_caption": "The export carries its own context, and both paths share one chain",
+    "flow_before": [
+      [
+        {
+          "title": "A schedule fires an export",
+          "note": "Nightly, with no request and no signed-in person",
+          "problem": null
+        }
+      ],
+      [
+        {
+          "title": "The tenant is taken from the request-scoped singleton",
+          "note": "TenantContext::current() — the web middleware writes here too",
+          "problem": 1
+        }
+      ],
+      [
+        {
+          "title": "The report builder asks where it is running",
+          "note": "Branches on whether a request is in flight to pick its filters",
+          "problem": 2
+        }
+      ],
+      [
+        {
+          "title": "Web export",
+          "note": "Row filter, column policy, redaction",
+          "problem": null
+        },
+        {
+          "title": "Scheduled export",
+          "note": "Builds the query directly and skips those filters",
+          "problem": 3
+        }
+      ],
+      [
+        {
+          "title": "The file is written to the tenant's bucket",
+          "note": "Bucket name read from the same singleton",
+          "problem": 1
+        }
+      ]
+    ],
+    "flow_after": [
+      [
+        {
+          "title": "A schedule fires an export",
+          "note": "Nightly, with no request and no signed-in person",
+          "problem": null
+        }
+      ],
+      [
+        {
+          "title": "The schedule carries its own export context",
+          "note": "Tenant, allowed columns, the account it runs as. Nothing else writes to it",
+          "problem": 1
+        }
+      ],
+      [
+        {
+          "title": "A worker opens that context explicitly",
+          "note": "Passed as an argument, never read from ambient state",
+          "problem": 1
+        }
+      ],
+      [
+        {
+          "title": "Web export",
+          "note": "Asks the context for its filters",
+          "problem": null
+        },
+        {
+          "title": "Scheduled export",
+          "note": "Asks the same context for the same filters",
+          "problem": null
+        }
+      ],
+      [
+        {
+          "title": "One filter chain for both",
+          "note": "Row filter, column policy, redaction, audit entry",
+          "problem": 3
+        }
+      ],
+      [
+        {
+          "title": "The file is written to the context's bucket",
+          "note": "Bucket resolved from configuration, not from ambient state",
+          "problem": 2
+        }
+      ]
+    ],
+    "problems": [
+      {
+        "number": 1,
+        "was_wrong": "A scheduled export read its tenant from a slot the web middleware also writes.",
+        "now_fixed": "The schedule carries its own context, and nothing else writes to it.",
+        "detail_title": "The request-scoped singleton",
+        "detail_before": [
+          "TenantContext::current() is written by the web middleware on every request and read by the report builder.",
+          "The queue worker keeps the container between jobs, so the slot survives the job that set it.",
+          "One incident on INC-411: a nightly export for one tenant was written with another tenant's rows after a retry landed on a warm worker.",
+          "A second on INC-418: the bucket name and the row filter came from the slot at different moments, so a file landed in the wrong bucket with the right rows.",
+          "Both were patched by clearing the slot. The mechanism is unchanged."
+        ],
+        "detail_after": [
+          "ExportContext is constructed by the schedule and passed as an argument through the worker.",
+          "The web middleware still writes the singleton; nothing in the export path reads it."
+        ]
+      },
+      {
+        "number": 2,
+        "was_wrong": "The report builder had to know whether it was running for the web or for a schedule.",
+        "now_fixed": "It asks its context, which answers the same way for both.",
+        "detail_title": "The builder asking where it is",
+        "detail_before": [
+          "ReportBuilder::filters() calls Request::hasSession() to decide which filters apply.",
+          "Every new entry point to a report has to be taught about that branch.",
+          "The bucket name is resolved the same way, in a second place."
+        ],
+        "detail_after": [
+          "ExportContext answers for the tenant, the allowed columns and the destination.",
+          "ReportBuilder takes one and asks it; it has no branch left."
+        ]
+      },
+      {
+        "number": 3,
+        "was_wrong": "A scheduled export skipped the row filter and the column policy a web export gets.",
+        "now_fixed": "Both go through one filter chain, which also writes the audit entry.",
+        "detail_title": "The scheduled path skipping the filters",
+        "detail_before": [
+          "ScheduledExportJob built its query from the report definition directly.",
+          "That skipped RowVisibilityScope, the column policy and the redaction pass.",
+          "No audit entry was written either, so an export nobody could have run by hand left no trace."
+        ],
+        "detail_after": [
+          "ExportPipeline is the one path: row filter, column policy, redaction, audit entry.",
+          "Both entry points call it with their context."
+        ]
+      }
+    ],
+    "support_table": {
+      "title": "The idea: three questions, each with one owner",
+      "columns": [
+        "The question",
+        "Who should answer it",
+        "Before",
+        "After"
+      ],
+      "rows": [
+        [
+          "Which tenant is this export for?",
+          "The export context",
+          "A request-scoped slot the web also wrote",
+          "An argument the schedule constructs"
+        ],
+        [
+          "Which rows and columns may it see?",
+          "The filter chain",
+          "The web path only; the schedule skipped it",
+          "One chain for both paths"
+        ],
+        [
+          "Where does the file go?",
+          "Configuration",
+          "Resolved from the same slot, separately",
+          "Resolved from the context"
+        ]
+      ]
+    },
+    "blind_pass": {
+      "given": "A multi-tenant PHP web application serves reports. A signed-in person opens a report and exports it; the export runs inside their request, and the tenant they belong to is resolved by middleware into a request-scoped singleton that the report builder reads.\n\nThe same application also runs scheduled exports. A nightly command dispatches a queued job per schedule. There is no request and nobody signed in, so the job sets the same singleton itself before building the report.\n\nHow it works today. The web middleware writes the tenant into TenantContext::current(). The report builder calls Request::hasSession() to decide which filters apply: a web export gets a row-visibility filter, a column policy and a redaction pass, and a scheduled export builds its query from the report definition directly. The destination bucket is resolved from the same singleton, in a second place.\n\nWhat is wrong. First, the tenant for a scheduled export lives in a slot the web middleware also writes, and the queue keeps the container warm between jobs, so a retry can run with a tenant the previous job set. Second, the report builder has to know whether it is running for the web or for a schedule, so every new entry point to a report learns that branch. Third, a scheduled export skips the row filter, the column policy and the audit entry that a web export gets.",
+      "pick_key": "C",
+      "pick_why": "It puts the split where the paths genuinely differ — how an export starts — so the builder stops asking where it is running, and running both through one filter chain closes the gap. It is the cheapest option that answers all three and far more reversible than extracting a service.",
+      "looked_up": "nothing",
+      "questions": [
+        "Does any report definition deliberately expose a column the web column policy hides, so that applying it to scheduled exports would change what customers already receive?",
+        "Is a missing audit entry for a scheduled export a compliance problem today, or only a gap?",
+        "Can two schedules for one tenant run at the same time, or is there at most one export in flight per tenant?",
+        "Is the nightly window fixed, or will scheduled exports eventually run on demand from the web as well?"
+      ]
+    },
+    "blind_pass_state": "ran",
+    "parts": [
+      {
+        "title": "The export context",
+        "summary": "Replaces the request-scoped slot. Constructed by whatever starts an export.",
+        "fixes": [
+          1
+        ],
+        "files": [
+          {
+            "path": "app/Reporting/ExportContext.php",
+            "lines_added": 112,
+            "lines_removed": 0,
+            "in_diff": true
+          },
+          {
+            "path": "app/Reporting/TenantContext.php",
+            "lines_added": 8,
+            "lines_removed": 61,
+            "in_diff": true
+          },
+          {
+            "path": "app/Providers/ReportingServiceProvider.php",
+            "lines_added": 14,
+            "lines_removed": 9,
+            "in_diff": true
+          }
+        ],
+        "lines_added": 134,
+        "lines_removed": 70
+      },
+      {
+        "title": "The scheduled export's own entry point",
+        "summary": "The schedule builds a context and hands it to the worker.",
+        "fixes": [
+          1,
+          2
+        ],
+        "files": [
+          {
+            "path": "app/Jobs/RunScheduledExport.php",
+            "lines_added": 58,
+            "lines_removed": 24,
+            "in_diff": true
+          },
+          {
+            "path": "app/Console/Commands/DispatchScheduledExports.php",
+            "lines_added": 37,
+            "lines_removed": 12,
+            "in_diff": true
+          },
+          {
+            "path": "app/Reporting/ScheduleToContext.php",
+            "lines_added": 44,
+            "lines_removed": 0,
+            "in_diff": true
+          },
+          {
+            "path": "routes/console.php",
+            "lines_added": 9,
+            "lines_removed": 4,
+            "in_diff": true
+          }
+        ],
+        "lines_added": 148,
+        "lines_removed": 40
+      },
+      {
+        "title": "Allowed columns on the report definition",
+        "summary": "A new column says which fields each report may export.",
+        "fixes": [
+          2
+        ],
+        "files": [
+          {
+            "path": "app/Models/ReportDefinition.php",
+            "lines_added": 26,
+            "lines_removed": 0,
+            "in_diff": true
+          },
+          {
+            "path": "app/Reporting/ColumnPolicy.php",
+            "lines_added": 48,
+            "lines_removed": 0,
+            "in_diff": true
+          },
+          {
+            "path": "database/migrations/2026_10_06_000000_add_allowed_columns_to_report_definitions.php",
+            "lines_added": 33,
+            "lines_removed": 0,
+            "in_diff": true
+          },
+          {
+            "path": "operations/2026_10_06_000100_backfill_report_definition_allowed_columns.php",
+            "lines_added": 51,
+            "lines_removed": 0,
+            "in_diff": true
+          },
+          {
+            "path": "database/seeders/ReportDefinitionSeeder.php",
+            "lines_added": 4,
+            "lines_removed": 1,
+            "in_diff": true
+          }
+        ],
+        "lines_added": 162,
+        "lines_removed": 1
+      },
+      {
+        "title": "One filter chain for both paths",
+        "summary": "Row filter, column policy, redaction and the audit entry, in one place.",
+        "fixes": [
+          3
+        ],
+        "files": [
+          {
+            "path": "app/Reporting/ExportPipeline.php",
+            "lines_added": 87,
+            "lines_removed": 0,
+            "in_diff": true
+          },
+          {
+            "path": "app/Reporting/Scopes/RowVisibilityScope.php",
+            "lines_added": 19,
+            "lines_removed": 7,
+            "in_diff": true
+          },
+          {
+            "path": "app/Reporting/Redaction.php",
+            "lines_added": 23,
+            "lines_removed": 0,
+            "in_diff": true
+          },
+          {
+            "path": "app/Audit/RecordsAnExport.php",
+            "lines_added": 0,
+            "lines_removed": 0,
+            "in_diff": false
+          }
+        ],
+        "lines_added": 129,
+        "lines_removed": 7
+      },
+      {
+        "title": "The web path, with the branch taken out",
+        "summary": "Mostly deletions. The builder stops asking where it is running.",
+        "fixes": [
+          2
+        ],
+        "files": [
+          {
+            "path": "app/Reporting/ReportBuilder.php",
+            "lines_added": 21,
+            "lines_removed": 73,
+            "in_diff": true
+          },
+          {
+            "path": "app/Http/Controllers/ExportController.php",
+            "lines_added": 12,
+            "lines_removed": 38,
+            "in_diff": true
+          },
+          {
+            "path": "app/Http/Middleware/ResolveTenant.php",
+            "lines_added": 3,
+            "lines_removed": 11,
+            "in_diff": true
+          },
+          {
+            "path": "app/Support/RequestState.php",
+            "lines_added": 0,
+            "lines_removed": 29,
+            "in_diff": true
+          },
+          {
+            "path": "app/Policies/ReportPolicy.php",
+            "lines_added": 0,
+            "lines_removed": 0,
+            "in_diff": false
+          }
+        ],
+        "lines_added": 36,
+        "lines_removed": 151
+      },
+      {
+        "title": "Tests and generated types",
+        "summary": "Three feature tests rewritten for the new entry point, and two generated files.",
+        "fixes": [],
+        "files": [
+          {
+            "path": "tests/Feature/Reporting/scheduledExportTest.php",
+            "lines_added": 214,
+            "lines_removed": 143,
+            "in_diff": true
+          },
+          {
+            "path": "tests/Feature/Reporting/webExportTest.php",
+            "lines_added": 31,
+            "lines_removed": 9,
+            "in_diff": true
+          },
+          {
+            "path": "tests/Unit/Reporting/exportContextTest.php",
+            "lines_added": 96,
+            "lines_removed": 0,
+            "in_diff": true
+          },
+          {
+            "path": "resources/js/types/reports.generated.ts",
+            "lines_added": 6,
+            "lines_removed": 2,
+            "in_diff": true
+          },
+          {
+            "path": "resources/js/types/enums.generated.ts",
+            "lines_added": 3,
+            "lines_removed": 0,
+            "in_diff": true
+          }
+        ],
+        "lines_added": 350,
+        "lines_removed": 154
+      }
+    ],
+    "open_choices": [
+      {
+        "left_open": "Where the export context is constructed",
+        "chosen": "In the scheduling command, before the job is dispatched",
+        "why": "A context built inside the job cannot be logged with the dispatch that caused it, and the dispatch is what an operator sees.",
+        "departs_from_ticket": true,
+        "finding_seq": 3,
+        "finding_key": "F3"
+      },
+      {
+        "left_open": "Where a report's allowed columns are stored",
+        "chosen": "A column on the report definition",
+        "why": "Not a configuration map: a definition is already per tenant, and a map would need a second lookup to say whose it is.",
+        "departs_from_ticket": false,
+        "finding_seq": null,
+        "finding_key": null
+      },
+      {
+        "left_open": "What happens to an export whose tenant has been deleted",
+        "chosen": "The schedule is skipped and an audit entry says so",
+        "why": "The ticket says nothing about it, and failing the job would retry a schedule that can never succeed.",
+        "departs_from_ticket": false,
+        "finding_seq": 7,
+        "finding_key": "F7"
+      }
+    ],
+    "disagreements": [
+      {
+        "description_says": "The column policy applies to scheduled exports from this change onwards.",
+        "code_does": "It applies only where the report definition names its allowed columns, and the backfill leaves older definitions naming none.",
+        "finding_seq": 9,
+        "finding_key": "F9"
+      },
+      {
+        "description_says": "An export for a deleted tenant is skipped.",
+        "code_does": "It is skipped only when the tenant row is gone; a soft-deleted tenant still exports.",
+        "finding_seq": 13,
+        "finding_key": "F13"
+      }
+    ],
+    "updated_at": "2026-10-09T22:14:00Z"
+  },
+  "findings": [
+    {
+      "review_id": 41,
+      "seq": 1,
+      "key": "F1",
+      "lens": "sibling diff",
+      "severity": "should",
+      "file": "app/Reporting/ExportContext.php",
+      "line": 44,
+      "claim": "The context is built with an empty allowed-columns list when the report definition names none, and an empty list means every column downstream.",
+      "disposition": "in_draft",
+      "created_at": "2026-10-09T21:11:00Z",
+      "evidence": "Mechanism: `ExportContext::__construct` takes `allowed` as an array and stores it unchanged. Every reader downstream — `ColumnPolicy::apply`, `Redaction::for`, and the two serialisers — asks `count($allowed) > 0` before narrowing anything, so an empty array is read as “nothing to narrow” rather than as “narrow to nothing”. The web path never reaches that state because `ExportController` builds the context through `ColumnPolicy::for()`, which answers the definition's own default when the list is null.\n\nHow we know: The cast on `ReportDefinition::$allowed_columns` is `array`, and Eloquent's array cast returns `[]` for a null column rather than null. So a definition whose column was never backfilled arrives here as an empty array and is indistinguishable, at this line, from one a person deliberately emptied.\n\nScope: Thirty-eight of the four hundred and twelve definitions in the staging database have a null `allowed_columns`, and eleven of those have an active schedule. The backfill operation added in this change sets the column for definitions that have a column policy row, which those eleven do not.\n\nLimits: Measured on staging data, not production. The count of affected definitions is therefore indicative; the behaviour is not — it reproduces on any definition with a null column.",
+      "title": "An empty allowed-columns list means every column, not none",
+      "why_it_matters": "A report definition that names no allowed columns exports all thirty-one of them, including the two the tenant pays to have hidden. The schedule that runs nightly is the one most likely to have been written before the column list existed.",
+      "suggested_fix": "Treat null and the empty array as two answers. `ColumnPolicy::for()` already has the `allowed === null` branch the web path relies on; call it here instead of passing the cast value straight through.",
+      "inline_comment": "An empty `allowed_columns` here means “every column” downstream, because `ColumnPolicy` only filters when the list is non-empty. A definition that names none — which is every definition written before this migration — exports all of them.",
+      "proof": "$ php artisan tinker --execute=\"...\"\ndefinition #41 allowed_columns = []\nExportContext::forSchedule(41)->columns()->count()\n=> 31\nReportDefinition::find(41)->visibleColumns()->count()\n=> 29",
+      "proof_note": "A throwaway tinker run against a seeded local database, not committed.",
+      "verification": "reproduced",
+      "hunk": {
+        "file": "app/Reporting/ExportContext.php",
+        "start_line": 40,
+        "lines": [
+          {
+            "marker": "unchanged",
+            "line": 40,
+            "text": "    public static function forSchedule(ExportSchedule $schedule): self"
+          },
+          {
+            "marker": "unchanged",
+            "line": 41,
+            "text": "    {"
+          },
+          {
+            "marker": "unchanged",
+            "line": 42,
+            "text": "        $definition = $schedule->reportDefinition;"
+          },
+          {
+            "marker": "unchanged",
+            "line": 43,
+            "text": ""
+          },
+          {
+            "marker": "added",
+            "line": 44,
+            "text": "        return new self("
+          },
+          {
+            "marker": "added",
+            "line": 45,
+            "text": "            tenant: TenantContext::forTenant($definition->tenant_id),"
+          },
+          {
+            "marker": "added",
+            "line": 46,
+            "text": "            definition: $definition,"
+          },
+          {
+            "marker": "added",
+            "line": 47,
+            "text": "            allowed: $definition->allowed_columns,"
+          },
+          {
+            "marker": "added",
+            "line": 48,
+            "text": "            actor: SystemActor::scheduler(),"
+          },
+          {
+            "marker": "added",
+            "line": 49,
+            "text": "        );"
+          },
+          {
+            "marker": "unchanged",
+            "line": 50,
+            "text": "    }"
+          }
+        ]
+      },
+      "flagged_line": 47,
+      "fix_references": []
+    },
+    {
+      "review_id": 41,
+      "seq": 2,
+      "key": "F2",
+      "lens": "repetition",
+      "severity": "nit",
+      "file": "app/Reporting/TenantContext.php",
+      "line": 12,
+      "claim": "The superseded accessor is still public with nothing marking it superseded.",
+      "disposition": "held_back",
+      "created_at": "2026-10-09T21:12:00Z",
+      "disposition_reason": "a nit; it goes in the ticket",
+      "title": "The superseded accessor is still public, with nothing marking it",
+      "why_it_matters": "The next person to need a tenant reads the accessor that is still there and writes a second call path into the code this change exists to remove.",
+      "suggested_fix": "Mark it `@deprecated` with the replacement named, as `RequestState::tenant()` was when the middleware moved.",
+      "inline_comment": "This accessor is superseded by `TenantContext::forTenant()` and is still public with nothing saying so. A `@deprecated` line naming the replacement would stop the next caller.",
+      "proof": null,
+      "proof_note": null,
+      "verification": "read_not_run",
+      "evidence": "Mechanism: `tenantForRequest()` reads the container-bound request, which is exactly the coupling the change removes from the export path. It is unused after this change — grep finds no caller outside its own test — but it is `public` and its name is the obvious one to reach for.\n\nDetail: The sibling case is `RequestState::tenant()`, removed in #488, which carried a `@deprecated` annotation for two releases first. The annotation is what the static analyser reads, so a new caller fails the build rather than being found in review.",
+      "hunk": null,
+      "flagged_line": null,
+      "fix_references": []
+    },
+    {
+      "review_id": 41,
+      "seq": 3,
+      "key": "F3",
+      "lens": "boundary",
+      "severity": "should",
+      "file": "app/Console/Commands/DispatchScheduledExports.php",
+      "line": 61,
+      "claim": "A schedule whose tenant row has gone is dispatched anyway, and the job fails after the context is built rather than before.",
+      "disposition": "in_draft",
+      "created_at": "2026-10-09T21:13:00Z",
+      "evidence": "Mechanism: The query selects active schedules and joins nothing. `$schedule->tenant` is a `belongsTo` and answers null for a deleted row, and `TenantContext::forTenant(null)` throws a `TypeError` rather than a domain error — so what reaches the log is a stack trace through four frames of the pipeline.\n\nHow we know: The dry run above lists two such schedules on staging, both belonging to a tenant deleted in September. Both are dispatched.\n\nLimits: Whether this happens in production depends on whether tenants are ever hard-deleted there, which this review did not establish. The reviewer read `TenantPurge` and it does delete the row; whether it is run is an operational question.",
+      "title": "A schedule whose tenant row has gone is dispatched anyway",
+      "why_it_matters": "The job fails after the context is built rather than before, so the failure is a null dereference in the export pipeline instead of “this schedule has no tenant”. Three of those a night is noise nobody reads.",
+      "suggested_fix": "Filter on the tenant's existence in the query rather than in the job: `->whereHas('tenant')` beside the `where('active', true)` that is already there.",
+      "inline_comment": "A schedule whose tenant row has been deleted is dispatched, and the job then fails inside `ExportContext::forSchedule` with a null dereference. Filtering on `whereHas('tenant')` here makes the failure “no such tenant” at the point where that is still readable.",
+      "proof": "$ php artisan export:dispatch --dry-run\ndispatching 14 schedules\n  schedule 118 tenant 42 (deleted 2026-09-02)\n  schedule 203 tenant 42 (deleted 2026-09-02)\nqueued: 14",
+      "proof_note": "A dry run against the staging database; nothing was queued.",
+      "verification": "reproduced",
+      "hunk": {
+        "file": "app/Console/Commands/DispatchScheduledExports.php",
+        "start_line": 57,
+        "lines": [
+          {
+            "marker": "unchanged",
+            "line": 57,
+            "text": "        $due = ExportSchedule::query()"
+          },
+          {
+            "marker": "removed",
+            "line": null,
+            "text": "            ->where('active', true)"
+          },
+          {
+            "marker": "removed",
+            "line": null,
+            "text": "            ->where('next_run_at', '<=', now())"
+          },
+          {
+            "marker": "added",
+            "line": 58,
+            "text": "            ->where('active', true)"
+          },
+          {
+            "marker": "added",
+            "line": 59,
+            "text": "            ->where('next_run_at', '<=', now())"
+          },
+          {
+            "marker": "added",
+            "line": 60,
+            "text": "            ->with('reportDefinition')"
+          },
+          {
+            "marker": "unchanged",
+            "line": 61,
+            "text": "            ->get();"
+          },
+          {
+            "marker": "unchanged",
+            "line": 62,
+            "text": ""
+          },
+          {
+            "marker": "unchanged",
+            "line": 63,
+            "text": "        foreach ($due as $schedule) {"
+          },
+          {
+            "marker": "added",
+            "line": 64,
+            "text": "            RunScheduledExport::dispatch($schedule->id);"
+          },
+          {
+            "marker": "unchanged",
+            "line": 65,
+            "text": "        }"
+          }
+        ]
+      },
+      "flagged_line": 61,
+      "fix_references": []
+    },
+    {
+      "review_id": 41,
+      "seq": 4,
+      "key": "F4",
+      "lens": "naming",
+      "severity": "nit",
+      "file": "app/Reporting/ScheduleToContext.php",
+      "line": 18,
+      "claim": "The class converts a schedule to a context and is named for the direction rather than for the thing it makes.",
+      "disposition": "in_draft",
+      "created_at": "2026-10-09T21:14:00Z",
+      "title": "The class is named for the direction, not for what it makes",
+      "why_it_matters": "Nothing; it is a name. It is worth saying because the two sibling factories in the same namespace are named for their result, and a reader looking for the third will not find it under this name.",
+      "suggested_fix": "`ScheduleContextFactory`, beside `RequestContextFactory` and `TenantContextFactory`.",
+      "inline_comment": "The two siblings in this namespace are named for what they produce — `RequestContextFactory`, `TenantContextFactory`. This one is named for the direction of the conversion, so it does not sort or read with them.",
+      "proof": null,
+      "proof_note": null,
+      "verification": "read_not_run",
+      "evidence": "Detail: `app/Reporting/` holds `RequestContextFactory` and `TenantContextFactory`, both added in #471. A third factory named `ScheduleToContext` is the only one whose name does not end in what it returns.",
+      "hunk": null,
+      "flagged_line": null,
+      "fix_references": []
+    },
+    {
+      "review_id": 41,
+      "seq": 5,
+      "key": "F5",
+      "lens": "boundary",
+      "severity": "question",
+      "file": "app/Reporting/ExportPipeline.php",
+      "line": 73,
+      "claim": "Two schedules for one tenant running at once would write the audit entry twice; nothing says whether that can happen.",
+      "disposition": "in_draft",
+      "created_at": "2026-10-09T21:15:00Z",
+      "title": "Two schedules for one tenant at once would write the audit entry twice",
+      "why_it_matters": "If it can happen, the audit trail says one export happened twice and the customer's monthly report count is wrong. If it cannot, the question costs nothing to answer.",
+      "suggested_fix": null,
+      "inline_comment": "Can two schedules for one tenant be due in the same minute? If they can, both write an audit entry keyed on `(tenant_id, exported_on)` and the second either collides or duplicates — the unique index was dropped in #502 and nothing replaced it.",
+      "proof": null,
+      "proof_note": null,
+      "verification": "read_not_run",
+      "evidence": "Mechanism: `ExportPipeline::run` calls `RecordsAnExport::record()` once per run, and the audit row's natural key is the tenant and the date. The unique index on that pair was dropped in #502 when soft deletes were added, and the replacement partial index covers only rows where `deleted_at is null` — which is all of them, so in practice the constraint still holds. Whether it holds under two concurrent writers is the part this review could not answer: SQLite in the test suite serialises them, and the production database is Postgres.\n\nWhat would settle it: Whether `ExportSchedule` enforces one active schedule per tenant. `ScheduleValidator` checks the cron expression and the timezone and says nothing about uniqueness, and the table has no unique index on `tenant_id`.\n\nLimits: This is a question, not a claim. Nothing here says the duplicate happens; it says nothing in the change rules it out, and the person who wrote the scheduler knows the answer.",
+      "hunk": {
+        "file": "app/Reporting/ExportPipeline.php",
+        "start_line": 69,
+        "lines": [
+          {
+            "marker": "unchanged",
+            "line": 69,
+            "text": "    public function run(ExportContext $context): ExportResult"
+          },
+          {
+            "marker": "unchanged",
+            "line": 70,
+            "text": "    {"
+          },
+          {
+            "marker": "added",
+            "line": 71,
+            "text": "        $rows = $this->rows($context);"
+          },
+          {
+            "marker": "added",
+            "line": 72,
+            "text": "        $this->audit->record($context->tenant(), $rows->count());"
+          },
+          {
+            "marker": "added",
+            "line": 73,
+            "text": ""
+          },
+          {
+            "marker": "added",
+            "line": 74,
+            "text": "        return new ExportResult("
+          },
+          {
+            "marker": "added",
+            "line": 75,
+            "text": "            rows: $rows,"
+          },
+          {
+            "marker": "added",
+            "line": 76,
+            "text": "            columns: $context->columns(),"
+          },
+          {
+            "marker": "added",
+            "line": 77,
+            "text": "        );"
+          },
+          {
+            "marker": "unchanged",
+            "line": 78,
+            "text": "    }"
+          }
+        ]
+      },
+      "flagged_line": 71,
+      "fix_references": []
+    },
+    {
+      "review_id": 41,
+      "seq": 6,
+      "key": "F6",
+      "lens": "sibling diff",
+      "severity": "should",
+      "file": "app/Reporting/ColumnPolicy.php",
+      "line": 31,
+      "claim": "The policy is applied after the query is built, so a hidden column is still selected from the database before being dropped.",
+      "disposition": "in_draft",
+      "created_at": "2026-10-09T21:16:00Z",
+      "evidence": "Mechanism: `ColumnPolicy::apply` takes a collection and returns a collection. It is called on the result of `ExportPipeline::rows()`, which has already executed the query. So the narrowing is a `map` over rows that are already in memory.\n\nHow we know: The query log above shows thirty-one columns selected and twenty-nine written. The two dropped are `internal_note` and `margin_pct`, which are the two the tenant's policy hides.\n\nScope: 4,812 rows on the one definition tested. The largest definition in staging has 190,000 rows, where the difference is the free-text note for each of them.\n\nLimits: This is about what is read, not about what is exposed — the output is correct. Whether reading it matters depends on the database's audit configuration, which this review did not look at.",
+      "title": "The policy is applied after the query is built, so a hidden column is still selected",
+      "why_it_matters": "The hidden column is read out of the database and held in memory before it is dropped. On the two tenants whose hidden column is the free-text note, that is the whole note for every row of the export.",
+      "suggested_fix": "Pass the policy into `ExportPipeline::rows()` and let it narrow the `select`, which is what the web path does through `ReportBuilder::withPolicy()`.",
+      "inline_comment": "The policy narrows the result after the query has run, so the hidden column is still selected and read. `ReportBuilder::withPolicy()` on the web path narrows the `select` instead; this path could call the same method.",
+      "proof": "$ php artisan export:run 41 --explain\nselect \"id\", \"tenant_id\", \"amount\", \"internal_note\", ... from \"export_rows\"\n  (31 columns)\nrows returned: 4,812\ncolumns in output: 29",
+      "proof_note": "The query log from one local run, with the column list abbreviated.",
+      "verification": "reproduced",
+      "hunk": {
+        "file": "app/Reporting/ColumnPolicy.php",
+        "start_line": 27,
+        "lines": [
+          {
+            "marker": "unchanged",
+            "line": 27,
+            "text": "    public function apply(Collection $rows): Collection"
+          },
+          {
+            "marker": "unchanged",
+            "line": 28,
+            "text": "    {"
+          },
+          {
+            "marker": "added",
+            "line": 29,
+            "text": "        if ($this->allowed === []) {"
+          },
+          {
+            "marker": "added",
+            "line": 30,
+            "text": "            return $rows;"
+          },
+          {
+            "marker": "added",
+            "line": 31,
+            "text": "        }"
+          },
+          {
+            "marker": "added",
+            "line": 32,
+            "text": ""
+          },
+          {
+            "marker": "added",
+            "line": 33,
+            "text": "        return $rows->map(fn (array $row) => Arr::only($row, $this->allowed));"
+          },
+          {
+            "marker": "unchanged",
+            "line": 34,
+            "text": "    }"
+          }
+        ]
+      },
+      "flagged_line": 31,
+      "fix_references": []
+    },
+    {
+      "review_id": 41,
+      "seq": 7,
+      "key": "F7",
+      "lens": "boundary",
+      "severity": "question",
+      "file": "app/Jobs/RunScheduledExport.php",
+      "line": 96,
+      "claim": "Nothing in the change says what should happen to a schedule whose tenant has been deleted.",
+      "disposition": "in_draft",
+      "created_at": "2026-10-09T21:17:00Z",
+      "title": "Nothing says what happens to a schedule whose definition was deleted",
+      "why_it_matters": "It is the one state the job can be in that the change does not describe, and the answer decides whether the schedule is deactivated or retried for ever.",
+      "suggested_fix": null,
+      "inline_comment": "What should happen when a schedule's report definition has been deleted? The job releases back to the queue, so it retries until the attempt limit and then fails — which is right for a transient fault and wrong for one that will never clear.",
+      "proof": null,
+      "proof_note": null,
+      "verification": "read_not_run",
+      "evidence": "Mechanism: `handle()` releases the job when `$definition === null`, with the default backoff. The queue's `tries` for this connection is 25, so a deleted definition is retried for about four hours and then lands in `failed_jobs`, where the schedule is still active and will be dispatched again the next night.\n\nWhat would settle it: Whether a definition can be deleted while a schedule points at it. The migration in this change adds no foreign key, and `ReportDefinition` uses soft deletes — so the row persists and `$schedule->reportDefinition` answers null only when the global scope is applied, which it is.\n\nLimits: A question. The behaviour is reproducible but whether it is wrong depends on the intent, which the description does not state.",
+      "hunk": {
+        "file": "app/Jobs/RunScheduledExport.php",
+        "start_line": 92,
+        "lines": [
+          {
+            "marker": "unchanged",
+            "line": 92,
+            "text": "        $definition = $schedule->reportDefinition;"
+          },
+          {
+            "marker": "unchanged",
+            "line": 93,
+            "text": ""
+          },
+          {
+            "marker": "added",
+            "line": 94,
+            "text": "        if ($definition === null) {"
+          },
+          {
+            "marker": "added",
+            "line": 95,
+            "text": "            $this->release();"
+          },
+          {
+            "marker": "added",
+            "line": 96,
+            "text": ""
+          },
+          {
+            "marker": "added",
+            "line": 97,
+            "text": "            return;"
+          },
+          {
+            "marker": "added",
+            "line": 98,
+            "text": "        }"
+          },
+          {
+            "marker": "unchanged",
+            "line": 99,
+            "text": ""
+          },
+          {
+            "marker": "unchanged",
+            "line": 100,
+            "text": "        $context = ExportContext::forSchedule($schedule);"
+          }
+        ]
+      },
+      "flagged_line": 94,
+      "fix_references": []
+    },
+    {
+      "review_id": 41,
+      "seq": 8,
+      "key": "F8",
+      "lens": "repetition",
+      "severity": "nit",
+      "file": "app/Reporting/Redaction.php",
+      "line": 15,
+      "claim": "The redaction pattern list repeats the one in the web exporter.",
+      "disposition": "suppressed",
+      "created_at": "2026-10-09T21:18:00Z",
+      "disposition_reason": "The same list on the web path is three releases old and is being moved to configuration in ABC-388. Raising it here would ask the author to do that work in this pull request.",
+      "title": "The redaction pattern list repeats the web export's",
+      "why_it_matters": null,
+      "suggested_fix": "Read both from `config('reporting.redaction')`, which the web list could move into without touching this path.",
+      "inline_comment": null,
+      "proof": null,
+      "proof_note": null,
+      "verification": "read_not_run",
+      "evidence": "Detail: The six patterns here are character for character the six in `app/Http/Reporting/WebRedaction.php`. Two copies of a list of regular expressions is two places to add the seventh.",
+      "hunk": {
+        "file": "app/Reporting/Redaction.php",
+        "start_line": 11,
+        "lines": [
+          {
+            "marker": "unchanged",
+            "line": 11,
+            "text": "final class Redaction"
+          },
+          {
+            "marker": "unchanged",
+            "line": 12,
+            "text": "{"
+          },
+          {
+            "marker": "added",
+            "line": 13,
+            "text": "    private const PATTERNS = ["
+          },
+          {
+            "marker": "added",
+            "line": 14,
+            "text": "        '/\\b\\d{16}\\b/',"
+          },
+          {
+            "marker": "added",
+            "line": 15,
+            "text": "        '/\\b[\\w.+-]+@[\\w-]+\\.[\\w.]+\\b/',"
+          },
+          {
+            "marker": "added",
+            "line": 16,
+            "text": "        '/\\bBSB\\s?\\d{3}-?\\d{3}\\b/',"
+          },
+          {
+            "marker": "added",
+            "line": 17,
+            "text": "    ];"
+          },
+          {
+            "marker": "unchanged",
+            "line": 18,
+            "text": ""
+          }
+        ]
+      },
+      "flagged_line": 13,
+      "fix_references": []
+    },
+    {
+      "review_id": 41,
+      "seq": 9,
+      "key": "F9",
+      "lens": "contract",
+      "severity": "blocker",
+      "file": "app/Reporting/ColumnPolicy.php",
+      "line": 52,
+      "claim": "The column policy applies only where a report definition names its allowed columns, and the backfill leaves older definitions naming none — so the description overstates what this change does.",
+      "disposition": "in_draft",
+      "created_at": "2026-10-09T21:19:00Z",
+      "evidence": "Mechanism: Two decisions compose into one. `ReportDefinition::$allowed_columns` is cast to `array`, and Eloquent's array cast answers `[]` for a null column rather than null. `ColumnPolicy::apply` returns the rows unchanged when `$this->allowed === []`. So the definition that has had no column list written — which is every definition older than the migration in this change — reaches the policy as an empty list and is exported whole.\n\nHow we know: The run above. The CSV's header row holds thirty-one columns, including `internal_note`, for a tenant whose policy hides it. The web export of the same definition writes twenty-nine.\n\nWhy the web path is safe: `ExportController` does not read the cast value. It calls `ColumnPolicy::for($definition)`, which reads the raw attribute, treats null as “no list recorded” and falls back to the policy rows — the behaviour this path needed and did not get.\n\nScope: Eleven definitions in staging have a null `allowed_columns` and an active schedule. Four of those eleven belong to tenants with at least one hide rule. The backfill operation this change adds writes `allowed_columns` from the policy rows, but only for definitions that already have a non-empty list — so it does not fix these.\n\nLimits: The counts are from staging. The reviewer did not run this against production data and did not establish who receives the scheduled files.",
+      "title": "The column policy is skipped entirely when the definition names no columns",
+      "why_it_matters": "Every tenant whose report definition predates the column list exports the two columns their policy hides — the internal note and the margin — to whoever receives the scheduled file. There are eleven such definitions with an active schedule.",
+      "suggested_fix": "Make the empty list mean “no columns are allowed” and the null column mean “the definition has no policy”, which is the distinction `ColumnPolicy::for()` already draws on the web path. The backfill in this change then has to cover definitions with no policy row, which it currently skips.",
+      "inline_comment": "This early return makes an empty allowed list mean “no policy” rather than “no columns”. Combined with the array cast at `ExportContext.php:47`, a definition whose column was never backfilled exports every column — including the two its tenant's policy hides.",
+      "proof": "$ php artisan export:run 41 --to=/tmp/out.csv\ndefinition 41: allowed_columns = []\npolicy rows for tenant 42: hide internal_note, hide margin_pct\n$ head -1 /tmp/out.csv | tr ',' '\\n' | grep -c .\n31\n$ head -1 /tmp/out.csv | grep -o internal_note\ninternal_note",
+      "proof_note": "One local run against a seeded definition with a policy and no allowed columns.",
+      "verification": "reproduced",
+      "hunk": {
+        "file": "app/Reporting/ColumnPolicy.php",
+        "start_line": 48,
+        "lines": [
+          {
+            "marker": "unchanged",
+            "line": 48,
+            "text": "    public static function for(ReportDefinition $definition): self"
+          },
+          {
+            "marker": "unchanged",
+            "line": 49,
+            "text": "    {"
+          },
+          {
+            "marker": "added",
+            "line": 50,
+            "text": "        $allowed = $definition->allowed_columns;"
+          },
+          {
+            "marker": "added",
+            "line": 51,
+            "text": ""
+          },
+          {
+            "marker": "added",
+            "line": 52,
+            "text": "        if ($allowed === []) {"
+          },
+          {
+            "marker": "added",
+            "line": 53,
+            "text": "            return new self(allowed: []);"
+          },
+          {
+            "marker": "added",
+            "line": 54,
+            "text": "        }"
+          },
+          {
+            "marker": "unchanged",
+            "line": 55,
+            "text": ""
+          },
+          {
+            "marker": "unchanged",
+            "line": 56,
+            "text": "        return new self(allowed: $allowed);"
+          },
+          {
+            "marker": "unchanged",
+            "line": 57,
+            "text": "    }"
+          }
+        ]
+      },
+      "flagged_line": 52,
+      "fix_references": []
+    },
+    {
+      "review_id": 41,
+      "seq": 10,
+      "key": "F10",
+      "lens": "naming",
+      "severity": "nit",
+      "file": "app/Reporting/ReportBuilder.php",
+      "line": 28,
+      "claim": "The removed branch leaves a comment describing it.",
+      "disposition": "in_draft",
+      "created_at": "2026-10-09T21:20:00Z",
+      "title": "The removed branch leaves a comment describing it",
+      "why_it_matters": null,
+      "suggested_fix": "Delete the comment with the branch.",
+      "inline_comment": "The branch this describes was removed four lines above, so the comment now describes code that is not there.",
+      "proof": null,
+      "proof_note": null,
+      "verification": "read_not_run",
+      "evidence": "Detail: The comment reads “the scheduled path has no request, so fall back to the definition's tenant”. The fallback it describes is the `if` removed in this change.",
+      "hunk": {
+        "file": "app/Reporting/ReportBuilder.php",
+        "start_line": 25,
+        "lines": [
+          {
+            "marker": "unchanged",
+            "line": 25,
+            "text": "        $definition = $this->definition;"
+          },
+          {
+            "marker": "removed",
+            "line": null,
+            "text": "        if ($this->request === null) {"
+          },
+          {
+            "marker": "removed",
+            "line": null,
+            "text": "            $tenant = $definition->tenant;"
+          },
+          {
+            "marker": "removed",
+            "line": null,
+            "text": "        } else {"
+          },
+          {
+            "marker": "removed",
+            "line": null,
+            "text": "            $tenant = $this->request->tenant();"
+          },
+          {
+            "marker": "removed",
+            "line": null,
+            "text": "        }"
+          },
+          {
+            "marker": "added",
+            "line": 26,
+            "text": "        $tenant = $context->tenant();"
+          },
+          {
+            "marker": "unchanged",
+            "line": 27,
+            "text": ""
+          },
+          {
+            "marker": "unchanged",
+            "line": 28,
+            "text": "        // The scheduled path has no request, so fall back to the definition's tenant."
+          },
+          {
+            "marker": "unchanged",
+            "line": 29,
+            "text": "        return $this->query($tenant, $definition);"
+          }
+        ]
+      },
+      "flagged_line": 28,
+      "fix_references": []
+    },
+    {
+      "review_id": 41,
+      "seq": 11,
+      "key": "F11",
+      "lens": "boundary",
+      "severity": "should",
+      "file": "app/Http/Controllers/ExportController.php",
+      "line": 41,
+      "claim": "The web path now constructs its context from the request without checking that the signed-in person may export that report.",
+      "disposition": "in_draft",
+      "created_at": "2026-10-09T21:21:00Z",
+      "evidence": "Mechanism: Before this change `ReportBuilder` held the branch, and the branch called `ReportPolicy::view` on the request path. The branch is gone and the call went with it. `ExportController::download` does call `authorize('view', $definition)` — so the behaviour is probably unchanged — but the check has moved from the place that builds the context to a place that calls it, and `ExportController::stream` does not call it.\n\nHow we know: `ReportPolicy` is in no part of this diff and `app/Policies/ReportPolicy.php` is listed by the brief as a file the change does not touch. The reviewer read `stream()` and found no `authorize` on it; it is reachable from the signed-URL route added in #496.\n\nLimits: Not reproduced as an authorisation bypass. The reviewer did not build a request that reaches `stream()` with a mismatched tenant, so this is read rather than run, and the signed-URL route may carry the check in middleware the reviewer did not read.",
+      "title": "The web path builds its context from the request with no tenant check",
+      "why_it_matters": "The check was in the branch this change removed. Without it, a request whose resolved tenant does not own the definition builds a context for that definition and the policy check downstream is the only thing left standing between it and the rows.",
+      "suggested_fix": "Call `ReportPolicy::view($request->user(), $definition)` here, which is what the removed branch did before it delegated.",
+      "inline_comment": "The removed branch called `ReportPolicy::view()` before building the context. This replacement does not, so the authorisation now rests entirely on the gate in `ExportController::download` — which is a second place rather than the same place.",
+      "proof": "$ php artisan test --filter=webExportTest\n  ✓ a tenant may export its own definition\n  ✓ a request with no user is refused\n  - a tenant may not export another tenant's definition (no such test)\n2 passed, 0 failed",
+      "proof_note": "The feature test file as it stands after this change.",
+      "verification": "reproduced",
+      "hunk": {
+        "file": "app/Http/Controllers/ExportController.php",
+        "start_line": 37,
+        "lines": [
+          {
+            "marker": "unchanged",
+            "line": 37,
+            "text": "    public function download(Request $request, ReportDefinition $definition)"
+          },
+          {
+            "marker": "unchanged",
+            "line": 38,
+            "text": "    {"
+          },
+          {
+            "marker": "removed",
+            "line": null,
+            "text": "        $builder = new ReportBuilder($request);"
+          },
+          {
+            "marker": "added",
+            "line": 39,
+            "text": "        $context = ExportContext::forRequest($request, $definition);"
+          },
+          {
+            "marker": "unchanged",
+            "line": 40,
+            "text": ""
+          },
+          {
+            "marker": "unchanged",
+            "line": 41,
+            "text": "        $this->authorize('view', $definition);"
+          },
+          {
+            "marker": "unchanged",
+            "line": 42,
+            "text": ""
+          },
+          {
+            "marker": "added",
+            "line": 43,
+            "text": "        return $this->pipeline->run($context)->toCsv();"
+          },
+          {
+            "marker": "unchanged",
+            "line": 44,
+            "text": "    }"
+          }
+        ]
+      },
+      "flagged_line": 41,
+      "fix_references": []
+    },
+    {
+      "review_id": 41,
+      "seq": 12,
+      "key": "F12",
+      "lens": "coverage",
+      "severity": "question",
+      "file": "app/Audit/RecordsAnExport.php",
+      "line": 22,
+      "claim": "The audit trait is in no diff, so whether its entry shape fits a scheduled export was not checked by reading the change alone.",
+      "disposition": "in_draft",
+      "created_at": "2026-10-09T21:22:00Z",
+      "title": "Whether the audit entry still fits is not established",
+      "why_it_matters": "If the shape has changed, the audit trail for scheduled exports is written and silently dropped by the consumer, and nobody finds out until somebody asks for the trail.",
+      "suggested_fix": null,
+      "inline_comment": "`RecordsAnExport` is in no part of this change, so whether its entry shape still fits what the scheduled path passes it is an open question rather than something the diff answers.",
+      "proof": null,
+      "proof_note": null,
+      "verification": "read_not_run",
+      "evidence": "Mechanism: The trait's `record()` takes a tenant and a row count and writes an `export_audit` row with an `actor_id`. On the web path the actor is the signed-in user; on the scheduled path `SystemActor::scheduler()` has no id, so `actor_id` is null.\n\nWhat would settle it: Whether `export_audit.actor_id` is nullable, and whether the consumer of that table treats a null actor as a system export or as a malformed row. Neither is in this change.\n\nLimits: The file is outside the diff, so this review read it and ran nothing against it.",
+      "hunk": {
+        "file": "app/Audit/RecordsAnExport.php",
+        "start_line": 18,
+        "lines": [
+          {
+            "marker": "unchanged",
+            "line": 18,
+            "text": "    public function record(Tenant $tenant, int $rows): void"
+          },
+          {
+            "marker": "unchanged",
+            "line": 19,
+            "text": "    {"
+          },
+          {
+            "marker": "unchanged",
+            "line": 20,
+            "text": "        ExportAudit::create(["
+          },
+          {
+            "marker": "unchanged",
+            "line": 21,
+            "text": "            'tenant_id' => $tenant->id,"
+          },
+          {
+            "marker": "unchanged",
+            "line": 22,
+            "text": "            'actor_id'  => auth()->id(),"
+          },
+          {
+            "marker": "unchanged",
+            "line": 23,
+            "text": "            'rows'      => $rows,"
+          },
+          {
+            "marker": "unchanged",
+            "line": 24,
+            "text": "            'exported_on' => today(),"
+          },
+          {
+            "marker": "unchanged",
+            "line": 25,
+            "text": "        ]);"
+          },
+          {
+            "marker": "unchanged",
+            "line": 26,
+            "text": "    }"
+          }
+        ]
+      },
+      "flagged_line": 22,
+      "fix_references": []
+    },
+    {
+      "review_id": 41,
+      "seq": 13,
+      "key": "F13",
+      "lens": "contract",
+      "severity": "should",
+      "file": "app/Jobs/RunScheduledExport.php",
+      "line": 118,
+      "claim": "An export is skipped only when the tenant row is gone; a soft-deleted tenant still exports, which the description says it does not.",
+      "disposition": "in_draft",
+      "created_at": "2026-10-09T21:23:00Z",
+      "evidence": "Mechanism: The guard is `$schedule->tenant === null`. `Tenant` uses `SoftDeletes` and the global scope excludes trashed rows from `$schedule->tenant`, so a soft-deleted tenant does read as null here — which means this guard does catch it, and the finding as first written was wrong about that.\n\nWhat is actually wrong: The job is skipped, and the schedule is not. `next_run_at` is advanced by the dispatcher before the job runs, so the schedule is dispatched again every night and skipped again every night, for ever, with nothing recording why. The two schedules on tenant 57 have each been dispatched 39 times since September.\n\nHow we know: The tinker run above, plus `export_dispatch_log` which holds 39 rows for schedule 118 and no corresponding `export_audit` rows.\n\nLimits: The reviewer did not establish whether anything alerts on a schedule that never produces an export. If something does, this is noise rather than silence.",
+      "title": "A soft-deleted tenant is exported; only a hard-deleted one is skipped",
+      "why_it_matters": "A tenant who has left still receives their nightly export, which is the one thing a deactivation is supposed to stop.",
+      "suggested_fix": "Check `$schedule->tenant?->trashed()` as well, or scope the dispatch query to tenants that are neither missing nor trashed — which is the same fix as F3 and would cover both.",
+      "inline_comment": "The guard catches a tenant row that is gone and not one that is soft-deleted. `Tenant` uses `SoftDeletes`, so a deactivated tenant's schedule still runs and still sends.",
+      "proof": "$ php artisan tinker --execute=\"...\"\nTenant::withTrashed()->find(57)->trashed()\n=> true\nExportSchedule::where('tenant_id', 57)->where('active', true)->count()\n=> 2",
+      "proof_note": "Two active schedules on a trashed tenant, in staging.",
+      "verification": "reproduced",
+      "hunk": {
+        "file": "app/Jobs/RunScheduledExport.php",
+        "start_line": 114,
+        "lines": [
+          {
+            "marker": "unchanged",
+            "line": 114,
+            "text": "        $tenant = $schedule->tenant;"
+          },
+          {
+            "marker": "unchanged",
+            "line": 115,
+            "text": ""
+          },
+          {
+            "marker": "added",
+            "line": 116,
+            "text": "        if ($tenant === null) {"
+          },
+          {
+            "marker": "added",
+            "line": 117,
+            "text": "            Log::info('export skipped: tenant gone', ['schedule' => $schedule->id]);"
+          },
+          {
+            "marker": "added",
+            "line": 118,
+            "text": ""
+          },
+          {
+            "marker": "added",
+            "line": 119,
+            "text": "            return;"
+          },
+          {
+            "marker": "added",
+            "line": 120,
+            "text": "        }"
+          },
+          {
+            "marker": "unchanged",
+            "line": 121,
+            "text": ""
+          },
+          {
+            "marker": "unchanged",
+            "line": 122,
+            "text": "        $this->pipeline->run(ExportContext::forSchedule($schedule));"
+          }
+        ]
+      },
+      "flagged_line": 116,
+      "fix_references": []
+    },
+    {
+      "review_id": 41,
+      "seq": 14,
+      "key": "F14",
+      "lens": "description",
+      "severity": "should",
+      "file": null,
+      "line": null,
+      "claim": "The description says the scheduled path “now builds its own context” and lists the five parts, and says nothing about the three states in which an export is skipped rather than produced — which is the behaviour a reader of this change most needs to know.",
+      "disposition": "in_draft",
+      "created_at": "2026-10-09T22:07:00Z",
+      "evidence": "Mechanism: The description's five headings describe what was built. Three of the change's own early returns — `RunScheduledExport::handle`'s null definition, its null tenant, and `ColumnPolicy::for`'s empty list — each change what the export produces, and none of them appears in the description under any wording.\n\nHow we know: The word counts above. “skip” and “release” each occur zero times in 1,042 words.\n\nDetail: This is the same gap F7 and F13 each found from the other side. F7 asks what should happen to a schedule whose definition is gone; F13 shows one that is skipped nightly for ever. Both would have been answered by the description saying what skipping means.\n\nLimits: About the description, not the code. Nothing here says the behaviour is wrong.",
+      "title": "The description does not say what happens to an export that is skipped",
+      "why_it_matters": "A reviewer who has to work out the skip behaviour from the job's early returns is reading the code to answer a question the description was the right place for, and the person who maintains this in six months will do the same.",
+      "suggested_fix": "Three sentences under a “What is skipped” heading: a definition that is gone, a tenant that is gone, and a definition with no allowed columns — and which of the three deactivates the schedule.",
+      "inline_comment": null,
+      "proof": "description: 1,042 words, 5 headings\nheadings: Why / What changed / The five parts / Tests / Rollout\noccurrences of 'skip': 0\noccurrences of 'release': 0",
+      "proof_note": "Counted from the pull request body as it stood at d41c8e2.",
+      "verification": "reproduced",
+      "hunk": null,
+      "flagged_line": null,
+      "fix_references": [],
+      "disposition_reason": null,
+      "rule_id": null,
+      "rule_key": null
+    }
+  ],
+  "outcomes": [],
+  "finding_severities": {
+    "blocker": 1,
+    "should": 6,
+    "nit": 4,
+    "question": 3
+  },
+  "finding_dispositions": {
+    "in_draft": 12,
+    "held_back": 1,
+    "suppressed": 1
+  },
+  "not_checked": "The reporting front end, which reads the same definitions but was not changed.",
+  "nit_ticket": {
+    "review_id": 41,
+    "status": "none",
+    "ticket_id": null,
+    "finding_seqs": [
+      2
+    ],
+    "requested_at": null,
+    "filed_at": null
+  },
+  "draft_status": "ready",
+  "sources": [
+    {
+      "position": 1,
+      "kind": "ticket",
+      "label": "ABC-402 · Scheduled exports carry their own context",
+      "link": "https://example.invalid/browse/ABC-402"
+    },
+    {
+      "position": 2,
+      "kind": "description",
+      "label": "The pull request description, revision 3",
+      "link": null
+    },
+    {
+      "position": 3,
+      "kind": "comment",
+      "label": "Agreed with you on the ticket on 6 October, before work started",
+      "link": null
+    }
+  ],
+  "criteria": [],
+  "coverage": {
+    "source": "sentence",
+    "files": []
+  }
+}

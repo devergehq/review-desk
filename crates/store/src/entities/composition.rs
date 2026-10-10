@@ -136,16 +136,22 @@ pub(crate) fn validate(sections: &[NewDraftSection]) -> Result<()> {
                         "the finding's number, whose severity composes the heading",
                     ));
                 };
+                // **The title is not checked here, and that is a division rather than an
+                // omission.** A finding block may state no title: the finding owns it, and
+                // resolving it needs a read. This function is called before the
+                // transaction opens — `put_draft`'s own comment says why, and it was found
+                // sitting inside one by the review of DEV-877 — so the title rule lives in
+                // `resolve_titles`, which has the transaction it needs. What stays here is
+                // a *stated* title that is blank, which needs nothing read.
                 if section
                     .title
                     .as_deref()
-                    .unwrap_or_default()
-                    .trim()
-                    .is_empty()
+                    .is_some_and(|title| title.trim().is_empty())
                 {
                     return Err(refuse(
-                        format!("block {at} is about F{seq} and has no title"),
-                        "the heading's title — the part after the severity and the number",
+                        format!("block {at} is about F{seq} and states a blank title"),
+                        "the heading's title — the part after the severity and the number \
+                         — or no title at all, which takes the finding's own",
                     ));
                 }
                 if named.contains(&seq) {
@@ -267,6 +273,24 @@ pub(crate) fn write(
     review_id: i64,
     sections: &[NewDraftSection],
 ) -> Result<()> {
+    // **The finding owns its title, and this is where that is true rather than described.**
+    //
+    // A finding block's title had to be stated, so the same words lived twice — once on the
+    // finding and once on every block about it — and two copies of a title are two titles
+    // that can disagree. A block written with none now takes the finding's, falling back to
+    // its claim for a finding nobody has titled, which is every finding written before
+    // migration 11.
+    //
+    // **It does not weaken what DEV-877 guarantees, and that was checked rather than
+    // assumed.** A caller that states a title still gets exactly that title, so a body with
+    // no decisions in it still equals what the agent wrote character for character; and
+    // `agent_title` is set from the resolved words either way, so a rewrite still keeps what
+    // it replaced. What is *not* done here is refusing a stated title that differs from the
+    // finding's: `rewrite` exists to make them differ, and a heading the posted review
+    // carries is not required to be the one line a row of the code review page carries.
+    let resolved = resolve_titles(tx, review_id, sections)?;
+    let sections = resolved.as_slice();
+
     validate(sections)?;
 
     let blocks = written_by_the_writer(tx, review_id, sections)?;
@@ -295,6 +319,58 @@ pub(crate) fn write(
     }
 
     replace(tx, review_id, &blocks)
+}
+
+/// Give every finding block with no title of its own the finding's.
+///
+/// Read inside the caller's transaction, so a block cannot take a title from a finding that
+/// is changing underneath it. A block about a finding that is not there is left alone: the
+/// foreign key refuses it a moment later and naming the missing finding is that error's job,
+/// not this one's.
+fn resolve_titles(
+    tx: &Transaction<'_>,
+    review_id: i64,
+    sections: &[NewDraftSection],
+) -> Result<Vec<NewDraftSection>> {
+    let mut resolved = Vec::with_capacity(sections.len());
+
+    for section in sections {
+        let needs_a_title = section.kind == DraftSectionKind::Finding && section.title.is_none();
+        let Some(seq) = section.finding_seq.filter(|_| needs_a_title) else {
+            resolved.push(section.clone());
+            continue;
+        };
+
+        let Ok(found) = finding_in(tx, review_id, seq) else {
+            // A block about a finding that is not there. Left alone: the foreign key
+            // refuses it a moment later and naming the missing finding is that error's
+            // job, not this one's.
+            resolved.push(section.clone());
+            continue;
+        };
+
+        // The finding's title, else its claim. A finding with neither is a finding whose
+        // claim is the empty string, and a heading reading `### Nit · F1 ·` is posted to
+        // GitHub verbatim — so it is refused here rather than composed.
+        let title = found.title.unwrap_or(found.claim);
+        if title.trim().is_empty() {
+            return Err(StoreError::InvalidValue {
+                field: "sections",
+                value: format!("F{seq} has no title and no claim to fall back on"),
+                expected: "a title on the block, or a finding with a title or a claim to \
+                           head it with; a heading with nothing after the number is a \
+                           finding the posted review does not state"
+                    .to_string(),
+            });
+        }
+
+        resolved.push(NewDraftSection {
+            title: Some(title),
+            ..section.clone()
+        });
+    }
+
+    Ok(resolved)
 }
 
 /// Refuse the words a rewrite would put in a block.
