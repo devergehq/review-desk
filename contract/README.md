@@ -541,58 +541,10 @@ lint reading as not checked.
 **The merged store has no table for the draft or its approval.** This is the
 specification; the migration is a later issue. One draft per review, replaced in place.
 
-### The body is composed, not edited
-
-**Since DEV-877 `draft.body` is what the draft's blocks compose to.** Before it, the
-developer dropped a finding from a review by deleting its paragraph out of one block of
-markdown — slow, and it left Review Desk with no record of what they did, which is the
-strongest signal the feedback loop has.
-
-A draft is an ordered list of blocks of two kinds, in `draft_sections`:
-
-| Kind | Composes to |
-|---|---|
-| `prose` | its text, exactly as written |
-| `finding` | `### {Severity} · F{seq} · {title}`, a blank line, then its text — **while the finding is posted** |
-
-Blocks are joined by a blank line and the body ends in one newline. The heading is the one
-derived piece, from the finding's live severity, which is what makes regrading a finding
-change its heading rather than leaving a second copy of the severity to disagree with it.
-
-**This is why the composition can reproduce what an agent writes.** Only the part a
-decision changes is modelled; everything else — the summary sentence, the not-checked line,
-an Open/Resolved index, a method line, a folded proof, a suppressed list — is a prose block
-carried through character for character. `contract/examples/getDraft.response.json` is the
-one record this repository holds of what an agent wrote, and
-`crates/store/tests/composition.rs` decomposes that body, writes it as blocks and asserts
-the stored body is the same bytes. The one constraint the composition imposes: a finding
-the developer can decide on has to have been written as a `finding` block. A body in the
-review-craft house style, where each finding is a `<details>` fold rather than a heading,
-stores and posts unchanged — and its findings are prose to Review Desk, so the per-finding
-decisions refuse, saying so.
-
-**A finding block posts while its finding does**: disposition `in_draft`, round status
-`new` or `still_open`. A carried finding whose round status is `fixed`, `accepted`,
-`withdrawn` or `ticketed` is not posted as an open finding, which is the question DEV-873
-left open and this answers. The write enforces it too: a `finding` block about a finding
-that is not posted is refused rather than stored and silently dropped from the body.
-
-**After any decision the lint reads as not checked.** The lint the agent ran was over a
-different body, and a result that still said "passes" would be the record vouching for
-words nobody checked. Re-running it is the session's, and out of scope here. It is also
-the mechanism that catches the one thing the composition cannot know: a prose block that
-*lists* findings — an index, "0 Blockers · 2 Should" — goes stale when the developer cuts
-one, and the lint is what reads the body against the findings.
-
-**The body is stored rather than derived.** Every write and every decision recomposes it
-in the same transaction. Composing it at read time would let a later change to the record
-alter an approved draft underneath the session that is about to post it, and `draft.body`
-is the one thing in this database that is posted verbatim.
-
 | Field | Type | Holds |
 |---|---|---|
 | `review_id` | integer, primary key | The review it belongs to. One draft per review. |
-| `body` | text | The review body as GitHub-flavoured markdown, posted verbatim. May be empty while `drafting`. |
+| `body` | text | The review body as GitHub-flavoured markdown, posted verbatim. **What the draft's blocks compose to** since DEV-877, rewritten in the same transaction as every write and every decision. May be empty while `drafting`. |
 | `status` | text | `drafting`, `ready`, `approved`, `sent_back`, `posted`. |
 | `event` | text, nullable | The GitHub review event chosen at approval: `comment`, `request_changes`, `approve`. Null until approved. |
 | `approved_at` | integer, nullable | When the developer approved it. |
@@ -645,6 +597,54 @@ decision cannot be added without the screen's list being revisited. A decision m
 That is what `RuleCounts.rejected_with_reason` counts — "author disagreed once, with a
 reason you accepted" — so it has to be that kind rather than one of its own that nothing
 would read.
+
+### The body is composed, not edited
+
+**Since DEV-877 `draft.body` is what the draft's blocks compose to.** Before it, the
+developer dropped a finding from a review by deleting its paragraph out of one block of
+markdown — slow, and it left Review Desk with no record of what they did, which is the
+strongest signal the feedback loop has.
+
+A draft is an ordered list of blocks of two kinds, in `draft_sections`:
+
+| Kind | Composes to |
+|---|---|
+| `prose` | its text, exactly as written |
+| `finding` | `### {Severity} · F{seq} · {title}`, a blank line, then its text — **while the finding is posted** |
+
+Blocks are joined by a blank line and the body ends in one newline. The heading is the one
+derived piece, from the finding's live severity, which is what makes regrading a finding
+change its heading rather than leaving a second copy of the severity to disagree with it.
+
+**This is why the composition can reproduce what an agent writes.** Only the part a
+decision changes is modelled; everything else — the summary sentence, the not-checked line,
+an Open/Resolved index, a method line, a folded proof, a suppressed list — is a prose block
+carried through character for character. `contract/examples/getDraft.response.json` is the
+one record this repository holds of what an agent wrote, and
+`crates/store/tests/composition.rs` decomposes that body, writes it as blocks and asserts
+the stored body is the same bytes. The one constraint the composition imposes: a finding
+the developer can decide on has to have been written as a `finding` block. A body in the
+review-craft house style, where each finding is a `<details>` fold rather than a heading,
+stores and posts unchanged — and its findings are prose to Review Desk, so the per-finding
+decisions refuse, saying so.
+
+**A finding block posts while its finding does**: disposition `in_draft`, round status
+`new` or `still_open`. A carried finding whose round status is `fixed`, `accepted`,
+`withdrawn` or `ticketed` is not posted as an open finding, which is the question DEV-873
+left open and this answers. The write enforces it too: a `finding` block about a finding
+that is not posted is refused rather than stored and silently dropped from the body.
+
+**After any decision the lint reads as not checked.** The lint the agent ran was over a
+different body, and a result that still said "passes" would be the record vouching for
+words nobody checked. Re-running it is the session's, and out of scope here. It is also
+the mechanism that catches the one thing the composition cannot know: a prose block that
+*lists* findings — an index, "0 Blockers · 2 Should" — goes stale when the developer cuts
+one, and the lint is what reads the body against the findings.
+
+**The body is stored rather than derived.** Every write and every decision recomposes it
+in the same transaction. Composing it at read time would let a later change to the record
+alter an approved draft underneath the session that is about to post it, and `draft.body`
+is the one thing in this database that is posted verbatim.
 
 ### Where the blocks of the body live
 
