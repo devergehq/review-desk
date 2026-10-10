@@ -431,6 +431,292 @@ describe('the draft', () => {
   })
 })
 
+/*
+ * The developer's decisions, which are the only writes on the code review page.
+ *
+ * **Every assertion here is also an assertion about the Rust server.** Sample mode
+ * reproduces `crates/store/src/entities/decision.rs`'s three tables rather than patching a
+ * record freely, and the failure this guards against is the one that would be worst: a
+ * decision that works on fixtures and is refused by the binary. So what is checked is the
+ * rules — which decision settles what, which needs a block that exists, which writes one
+ * that does not — and not merely that a click changes something.
+ */
+describe('deciding on a finding', () => {
+  /** #514, the real-length review: fourteen findings and a draft composed of blocks. */
+  const REAL = 41
+
+  async function findingOn(id: number, seq: number) {
+    const detail = await settled(desk().review(id))
+    return detail.findings.find(finding => finding.seq === seq)!
+  }
+
+  it('keeps a finding, and the draft still carries its block', async () => {
+    const api = desk()
+    const result = await api.decideFinding(REAL, 9, { decision: 'keep' })
+    expect(result.ok).toBe(true)
+
+    const finding = await findingOn(REAL, 9)
+    expect(finding.disposition).toBe('in_draft')
+    const draft = await settled(api.draft(REAL))
+    expect(draft.draft.body).toContain('F9')
+  })
+
+  it('cuts a finding: its block stops posting and stays on the record', async () => {
+    const api = desk()
+    expect((await api.decideFinding(REAL, 10, { decision: 'cut' })).ok).toBe(true)
+
+    const finding = await findingOn(REAL, 10)
+    expect(finding.disposition).toBe('suppressed')
+
+    const draft = await settled(api.draft(REAL))
+    expect(draft.draft.body).not.toContain('F10')
+    /*
+     * **The block is still served.** A cut finding's block stays on the record — that is
+     * the difference between a decision and a deletion — so the page can still say what
+     * the session had written.
+     */
+    const block = draft.sections.find(section => section.finding_seq === 10)!
+    expect(block).toBeDefined()
+    expect(block.posted).toBe(false)
+  })
+
+  it('regrades a finding, and the heading its block composes changes with it', async () => {
+    const api = desk()
+    expect((await api.decideFinding(REAL, 1, {
+      decision: 'regrade',
+      severity: 'blocker',
+    })).ok).toBe(true)
+
+    expect((await findingOn(REAL, 1)).severity).toBe('blocker')
+    const draft = await settled(api.draft(REAL))
+    expect(draft.sections.find(section => section.finding_seq === 1)!.heading)
+      .toMatch(/^### Blocker · F1 · /)
+    expect(draft.draft.body).toContain('### Blocker · F1 ·')
+  })
+
+  it('refuses a regrade with no severity, and a severity on anything else', async () => {
+    const api = desk()
+    const noSeverity = await api.decideFinding(REAL, 1, { decision: 'regrade' })
+    expect(noSeverity.ok).toBe(false)
+    expect(noSeverity.ok === false && noSeverity.error.field).toBe('severity')
+
+    const stray = await api.decideFinding(REAL, 1, { decision: 'cut', severity: 'nit' })
+    expect(stray.ok).toBe(false)
+    expect(stray.ok === false && stray.error.field).toBe('severity')
+  })
+
+  it('rewrites a block in the developer’s words and keeps the session’s beside them', async () => {
+    const api = desk()
+    const before = await settled(api.draft(REAL))
+    const was = before.sections.find(section => section.finding_seq === 6)!
+
+    expect((await api.decideFinding(REAL, 6, {
+      decision: 'rewrite',
+      title: 'The policy runs after the query, not in it',
+      text: 'Please narrow the select rather than the result.',
+    })).ok).toBe(true)
+
+    const draft = await settled(api.draft(REAL))
+    const block = draft.sections.find(section => section.finding_seq === 6)!
+    expect(block.title).toBe('The policy runs after the query, not in it')
+    expect(block.text).toBe('Please narrow the select rather than the result.')
+    expect(block.rewritten).toBe(true)
+    /* The agent's own words are still there, which is what "beside them" means. */
+    expect(block.agent_title).toBe(was.agent_title)
+    expect(block.agent_text).toBe(was.agent_text)
+  })
+
+  it('refuses a rewrite with neither a title nor a paragraph', async () => {
+    const refusal = await desk().decideFinding(REAL, 6, { decision: 'rewrite' })
+    expect(refusal.ok).toBe(false)
+    expect(refusal.ok === false && refusal.error.field).toBe('text')
+  })
+
+  it('refuses words on a decision that takes the finding out of the post', async () => {
+    const refusal = await desk().decideFinding(REAL, 6, {
+      decision: 'to_ticket',
+      title: 'something else',
+    })
+    expect(refusal.ok).toBe(false)
+    expect(refusal.ok === false && refusal.error.field).toBe('text')
+  })
+
+  it('moves a finding to a ticket, and the ticket covers it', async () => {
+    const api = desk()
+    expect((await api.decideFinding(REAL, 3, {
+      decision: 'to_ticket',
+      note: 'worth doing, not worth this round',
+    })).ok).toBe(true)
+
+    const finding = await findingOn(REAL, 3)
+    expect(finding.disposition).toBe('held_back')
+    expect(finding.round_status).toBe('ticketed')
+    expect(finding.round_status_by).toBe('developer')
+    expect(finding.round_status_checked).toBe('worth doing, not worth this round')
+
+    const draft = await settled(api.draft(REAL))
+    expect(draft.draft.body).not.toContain('F3')
+    expect(draft.held_back.map(item => item.finding_seq)).toContain(3)
+  })
+
+  it('requires the author’s reason before accepting it', async () => {
+    const api = desk()
+    const refusal = await api.decideFinding(REAL, 5, { decision: 'accept_reason' })
+    expect(refusal.ok).toBe(false)
+    expect(refusal.ok === false && refusal.error.field).toBe('note')
+
+    expect((await api.decideFinding(REAL, 5, {
+      decision: 'accept_reason',
+      note: 'Only one schedule per tenant can be active; the validator enforces it.',
+    })).ok).toBe(true)
+
+    const finding = await findingOn(REAL, 5)
+    expect(finding.disposition).toBe('suppressed')
+    expect(finding.round_status).toBe('accepted')
+    /*
+     * **Recorded as `rejected`, with the reason as the detail.** That is what
+     * "author disagreed once, with a reason you accepted" counts, so accepting has to be
+     * that outcome rather than one of its own that nothing would read.
+     */
+    const detail = await settled(api.review(REAL))
+    const outcome = detail.outcomes.find(one => one.finding_seq === 5)!
+    expect(outcome.kind).toBe('rejected')
+    expect(outcome.actor).toBe('developer')
+    expect(outcome.detail).toContain('Only one schedule per tenant')
+  })
+
+  it('withdraws a finding, and the record says who withdrew it', async () => {
+    const api = desk()
+    expect((await api.decideFinding(REAL, 4, { decision: 'withdraw' })).ok).toBe(true)
+
+    const finding = await findingOn(REAL, 4)
+    expect(finding.round_status).toBe('withdrawn')
+    const detail = await settled(api.review(REAL))
+    expect(detail.outcomes.find(one => one.finding_seq === 4)!.kind).toBe('withdrawn')
+  })
+
+  it('posts a held-back finding by writing it a block it had none of', async () => {
+    const api = desk()
+    const before = await settled(api.draft(REAL))
+    expect(before.sections.some(section => section.finding_seq === 2)).toBe(false)
+
+    expect((await api.decideFinding(REAL, 2, { decision: 'keep' })).ok).toBe(true)
+
+    const draft = await settled(api.draft(REAL))
+    const block = draft.sections.find(section => section.finding_seq === 2)!
+    expect(block.posted).toBe(true)
+    expect(draft.draft.body).toContain('F2')
+    /*
+     * Written from the finding's own words, because the request carried none: its
+     * consequence, or failing that its comment for the author. Never invented.
+     */
+    const finding = await findingOn(REAL, 2)
+    expect(block.text).toBe(finding.why_it_matters ?? finding.inline_comment)
+  })
+
+  it('refuses a cut when the draft holds no block for the finding', async () => {
+    /*
+     * #412's draft was written as one block of markdown, which is every draft written
+     * before the composition existed. Cutting changes words that have to exist first, so
+     * there is nothing to cut — and the page says that, in words, once.
+     */
+    const refusal = await desk().decideFinding(WEBHOOKS, 1, { decision: 'cut' })
+    expect(refusal.ok).toBe(false)
+    expect(refusal.ok === false && refusal.error.code).toBe('conflict')
+    expect(refusal.ok === false && refusal.error.message).toContain('one block of markdown')
+  })
+
+  it('refuses every decision once the draft is approved', async () => {
+    const api = desk()
+    expect((await api.approveDraft(REAL, 'request_changes')).ok).toBe(true)
+
+    const refusal = await api.decideFinding(REAL, 9, { decision: 'cut' })
+    expect(refusal.ok).toBe(false)
+    expect(refusal.ok === false && refusal.error.code).toBe('conflict')
+    expect(refusal.ok === false && refusal.error.message).toContain('approved')
+  })
+
+  it('leaves the lint not checked, never passing, after a decision', async () => {
+    const api = desk()
+    expect((await settled(api.draft(REAL))).lint).not.toBeNull()
+
+    expect((await api.decideFinding(REAL, 10, { decision: 'cut' })).ok).toBe(true)
+
+    /*
+     * **Not a failing lint — no lint.** The review lint was run by the agent over the body
+     * it wrote; the moment a decision changes that body the result is about a different
+     * document, and a lint still saying "passes" would be the record vouching for words
+     * nobody checked.
+     */
+    expect((await settled(api.draft(REAL))).lint).toBeNull()
+  })
+
+  it('composes the body from the blocks that post, joined by one blank line', async () => {
+    const api = desk()
+    const draft = await settled(api.draft(REAL))
+    const posted = draft.sections.filter(section => section.posted)
+    const composed = posted
+      .map(section =>
+        section.kind === 'prose'
+          ? section.text
+          : `${section.heading}\n\n${section.text}`)
+      .join('\n\n')
+    expect(draft.draft.body).toBe(`${composed}\n`)
+  })
+})
+
+/*
+ * "Ticket what is left, and approve" — a sign-off, and it neither posts nor files anything.
+ */
+describe('ticketing the rest and approving', () => {
+  const REAL = 41
+
+  it('moves every open finding into the ticket and approves as approve', async () => {
+    const api = desk()
+    const before = await settled(api.review(REAL))
+    const open = before.findings
+      .filter(finding => finding.disposition === 'in_draft')
+      .map(finding => finding.seq)
+    expect(open.length).toBeGreaterThan(0)
+
+    const result = await api.ticketRestAndApprove(REAL, 'all of it goes in one ticket')
+    expect(result.ok).toBe(true)
+    expect(result.ok === true && result.message).toContain('An agent files it')
+
+    const after = await settled(api.review(REAL))
+    for (const seq of open) {
+      const finding = after.findings.find(one => one.seq === seq)!
+      expect(finding.disposition).toBe('held_back')
+      expect(finding.round_status).toBe('ticketed')
+      expect(finding.round_status_by).toBe('developer')
+    }
+    expect(after.nit_ticket.status).toBe('requested')
+    expect(after.nit_ticket.finding_seqs).toEqual(
+      expect.arrayContaining([...open, 2]),
+    )
+
+    const draft = await settled(api.draft(REAL))
+    /*
+     * **The event is not the caller's to choose.** The button says approve, and a request
+     * for changes that ticketed everything it asked for would contradict itself.
+     */
+    expect(draft.draft.status).toBe('approved')
+    expect(draft.draft.event).toBe('approve')
+    /* And the body is recomposed without them: no finding block posts. */
+    expect(draft.sections.filter(section => section.kind === 'finding' && section.posted))
+      .toHaveLength(0)
+  })
+
+  it('refuses when the review has no open finding to file', async () => {
+    const api = desk()
+    expect((await api.ticketRestAndApprove(REAL, '')).ok).toBe(true)
+
+    const again = await api.ticketRestAndApprove(REAL, '')
+    expect(again.ok).toBe(false)
+    expect(again.ok === false && again.error.code).toBe('conflict')
+  })
+})
+
 describe('the rules', () => {
   it('filters by repository, and keeps global rules in every repository', async () => {
     const repo = ref(PORTAL)

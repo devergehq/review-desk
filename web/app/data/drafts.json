@@ -35,6 +35,22 @@
       "errors": [],
       "checked_at": "2026-10-08T11:21:00Z"
     },
+    "sections": [
+      {
+        "position": 1,
+        "kind": "prose",
+        "finding_seq": null,
+        "finding_key": null,
+        "severity": null,
+        "heading": null,
+        "title": null,
+        "text": "The queue-with-backoff approach fits the ticket: deliveries are stored, retried for 24 hours and visible to the customer. One thing blocks the merge and two should be fixed with it.\n\n### Blocker · F1 · A retried delivery is sent without an idempotency key\n\nA retry re-sends the same payload with no key, so a customer whose endpoint accepted the first attempt slowly receives the event twice. See `jobs/DeliverWebhook.php:58`.\n\n```mermaid\nflowchart LR\n  A[\"Attempt 1 times out\"] --> B[\"Endpoint still processes it\"]\n  B --> C[\"Attempt 2 sends again\"]\n  C --> D[\"Two events for one\"]\n  class D bad\n  classDef bad fill:#FCE9D9,stroke:#6B2F04,color:#6B2F04\n```\n\n<details>\n<summary>Proof: a throwaway test, two deliveries for one event</summary>\n\n```php\n$event = Event::factory()->create();\nDeliverWebhook::dispatchSync($event);   // times out; the endpoint commits anyway\nDeliverWebhook::dispatchSync($event);   // no key, so the endpoint commits again\n$this->assertSame(1, $endpoint->countReceived($event->id));  // got 2\n```\n\n</details>\n\n### Should · F2 · No way to replay a delivery after the window closes\n\nAfter 24 hours a delivery is marked dead and nothing can send it again. Acceptance criterion 3 on ABC-231 asks the customer to recover from a long outage.\n\n### Should · F3 · The failure test passes with the retry code reverted\n\nI reverted the retry and `tests/WebhookRetryTest.php:31` still passed, so it does not pin the behaviour.\n\n**Not checked:** worker behaviour across a deploy restart; production delivery volumes.",
+        "agent_title": null,
+        "agent_text": "The queue-with-backoff approach fits the ticket: deliveries are stored, retried for 24 hours and visible to the customer. One thing blocks the merge and two should be fixed with it.\n\n### Blocker · F1 · A retried delivery is sent without an idempotency key\n\nA retry re-sends the same payload with no key, so a customer whose endpoint accepted the first attempt slowly receives the event twice. See `jobs/DeliverWebhook.php:58`.\n\n```mermaid\nflowchart LR\n  A[\"Attempt 1 times out\"] --> B[\"Endpoint still processes it\"]\n  B --> C[\"Attempt 2 sends again\"]\n  C --> D[\"Two events for one\"]\n  class D bad\n  classDef bad fill:#FCE9D9,stroke:#6B2F04,color:#6B2F04\n```\n\n<details>\n<summary>Proof: a throwaway test, two deliveries for one event</summary>\n\n```php\n$event = Event::factory()->create();\nDeliverWebhook::dispatchSync($event);   // times out; the endpoint commits anyway\nDeliverWebhook::dispatchSync($event);   // no key, so the endpoint commits again\n$this->assertSame(1, $endpoint->countReceived($event->id));  // got 2\n```\n\n</details>\n\n### Should · F2 · No way to replay a delivery after the window closes\n\nAfter 24 hours a delivery is marked dead and nothing can send it again. Acceptance criterion 3 on ABC-231 asks the customer to recover from a long outage.\n\n### Should · F3 · The failure test passes with the retry code reverted\n\nI reverted the retry and `tests/WebhookRetryTest.php:31` still passed, so it does not pin the behaviour.\n\n**Not checked:** worker behaviour across a deploy restart; production delivery volumes.",
+        "rewritten": false,
+        "posted": true
+      }
+    ],
     "edits": [
       {
         "finding_seq": 6,
@@ -127,6 +143,22 @@
       "errors": [],
       "checked_at": "2026-10-08T06:34:00Z"
     },
+    "sections": [
+      {
+        "position": 1,
+        "kind": "prose",
+        "finding_seq": null,
+        "finding_key": null,
+        "severity": null,
+        "heading": null,
+        "title": null,
+        "text": "Whole cents is the right representation and the migration is in the right order. One export path blocks the merge.\n\n### Blocker · F1 · The CSV export still divides by 100 twice\n\n`app/Invoice.php:102` divides the stored cents, and `ExportInvoices` divides the result again. An exported total of `12.34` comes out as `0.1234`.\n\n### Should · F2 · The migration has no down path for the decimal column\n\n`database/migrations/2026_09_30_invoices.php:18` drops the old column without recreating it, so the migration cannot be rolled back on a release that has to go backwards.\n\n### Should · F3 · The rounding test asserts on a value it computed the same way\n\n`tests/InvoiceTotalTest.php:44` builds the expected total with the same helper it is testing, so the test cannot fail if the helper is wrong.\n\n**Not checked:** the reporting warehouse reads the same column and was not looked at.",
+        "agent_title": null,
+        "agent_text": "Whole cents is the right representation and the migration is in the right order. One export path blocks the merge.\n\n### Blocker · F1 · The CSV export still divides by 100 twice\n\n`app/Invoice.php:102` divides the stored cents, and `ExportInvoices` divides the result again. An exported total of `12.34` comes out as `0.1234`.\n\n### Should · F2 · The migration has no down path for the decimal column\n\n`database/migrations/2026_09_30_invoices.php:18` drops the old column without recreating it, so the migration cannot be rolled back on a release that has to go backwards.\n\n### Should · F3 · The rounding test asserts on a value it computed the same way\n\n`tests/InvoiceTotalTest.php:44` builds the expected total with the same helper it is testing, so the test cannot fail if the helper is wrong.\n\n**Not checked:** the reporting warehouse reads the same column and was not looked at.",
+        "rewritten": false,
+        "posted": true
+      }
+    ],
     "edits": [],
     "held_back": [
       {
@@ -204,6 +236,22 @@
       "errors": [],
       "checked_at": "2026-10-08T10:12:00Z"
     },
+    "sections": [
+      {
+        "position": 1,
+        "kind": "prose",
+        "finding_seq": null,
+        "finding_key": null,
+        "severity": null,
+        "heading": null,
+        "title": null,
+        "text": "Round 2 adds the explicit bust, which is what round 1 asked for. One thing in the delta should be fixed.\n\n### Should · F1 · The revoke path busts one key, not the group the key belongs to\n\n`src/permissions/cache.rs:77` busts the key for the member whose permission changed. A revoke on a team leaves each member's entry alive until the window closes. Same ruling as `R-11`.\n\n**Not checked:** cache behaviour across two processes; the test runs in one.",
+        "agent_title": null,
+        "agent_text": "Round 2 adds the explicit bust, which is what round 1 asked for. One thing in the delta should be fixed.\n\n### Should · F1 · The revoke path busts one key, not the group the key belongs to\n\n`src/permissions/cache.rs:77` busts the key for the member whose permission changed. A revoke on a team leaves each member's entry alive until the window closes. Same ruling as `R-11`.\n\n**Not checked:** cache behaviour across two processes; the test runs in one.",
+        "rewritten": false,
+        "posted": true
+      }
+    ],
     "edits": [],
     "held_back": [],
     "nit_ticket": {
@@ -251,6 +299,22 @@
       "errors": [],
       "checked_at": "2026-10-06T14:25:00Z"
     },
+    "sections": [
+      {
+        "position": 1,
+        "kind": "prose",
+        "finding_seq": null,
+        "finding_key": null,
+        "severity": null,
+        "heading": null,
+        "title": null,
+        "text": "Splitting per tenant with a cursor is the right shape. Two things should be fixed with it.\n\n### Should · F1 · A partial export leaves the previous file in place\n\n`jobs/ExportTenant.php:40` writes in place, so a failed run leaves yesterday's file looking like today's.\n\n### Should · F2 · The cursor is held in memory, so a restart starts the tenant again\n\nA restart re-runs the tenant from the beginning. For the largest tenant that is most of the window.\n\n**Not checked:** the bucket's lifecycle rules were not read, so the stale-file cleanup is assumed.",
+        "agent_title": null,
+        "agent_text": "Splitting per tenant with a cursor is the right shape. Two things should be fixed with it.\n\n### Should · F1 · A partial export leaves the previous file in place\n\n`jobs/ExportTenant.php:40` writes in place, so a failed run leaves yesterday's file looking like today's.\n\n### Should · F2 · The cursor is held in memory, so a restart starts the tenant again\n\nA restart re-runs the tenant from the beginning. For the largest tenant that is most of the window.\n\n**Not checked:** the bucket's lifecycle rules were not read, so the stale-file cleanup is assumed.",
+        "rewritten": false,
+        "posted": true
+      }
+    ],
     "edits": [
       {
         "finding_seq": 3,

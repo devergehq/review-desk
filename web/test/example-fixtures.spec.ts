@@ -50,6 +50,38 @@ describe('the invented example and the fixtures', () => {
   })
 
   /*
+   * **Every draft fixture carries its blocks**, because `DraftDetail.sections` is required
+   * and a fixture missing it is a fixture the server could not have served.
+   *
+   * This was found the hard way: four of the five had no `sections` key at all, and the
+   * first thing to read it was the code review page's own refusal path — which crashed
+   * instead of refusing, and reported "nothing is listening on this address" for a draft
+   * that was right there. A one-block draft has **one prose block**, which is migration 9's
+   * own backfill for a body nothing wrote in parts, and no block about any finding — which
+   * is exactly why the per-finding decisions refuse against it.
+   */
+  it('gives every draft fixture the blocks its body is composed of', () => {
+    for (const detail of drafts as unknown as DraftDetail[]) {
+      const where = `the draft of review ${detail.draft.review_id}`
+      expect(Array.isArray(detail.sections), `${where} carries its blocks`).toBe(true)
+
+      const composed = detail.sections
+        .filter(section => section.posted)
+        .map(section =>
+          section.kind === 'prose'
+            ? section.text
+            : section.text === ''
+              ? section.heading
+              : `${section.heading}\n\n${section.text}`)
+        .join('\n\n')
+      expect(
+        detail.draft.body,
+        `${where} composes to the body it serves`,
+      ).toBe(composed === '' ? '' : `${composed}\n`)
+    }
+  })
+
+  /*
    * And the example is at the length the page was designed against, measured rather than
    * asserted. DEV-878 asks for "at least twelve findings, eight with a hunk, across all
    * three lists"; an example that quietly shrank below that would leave the page's hardest

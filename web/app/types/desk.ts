@@ -47,6 +47,12 @@ export type ReviewEvent = Schema['ReviewEvent']
 export type ReviewLayerName = Schema['ReviewLayerName']
 export type ReviewLayerState = Schema['ReviewLayerState']
 export type NitTicketStatus = Schema['NitTicketStatus']
+/** What became of a finding in one round. Not the same question as `Disposition`. */
+export type RoundStatus = Schema['RoundStatus']
+/** Who decided a round status. Deliberately not `Actor`: an agent decides most of them. */
+export type DecidedBy = Schema['DecidedBy']
+/** Eight decisions behind eleven buttons. `FindingDecision` in the contract has the table. */
+export type FindingDecision = Schema['FindingDecision']
 
 /**
  * Why a request was refused. `store_unavailable` means Review Desk is broken;
@@ -83,6 +89,8 @@ export interface DeskError {
 
 export type StartReviewRequest = Schema['StartReviewRequest']
 export type SetFindingDispositionRequest = Schema['SetFindingDispositionRequest']
+export type DecideFindingRequest = Schema['DecideFindingRequest']
+export type TicketRestAndApproveRequest = Schema['TicketRestAndApproveRequest']
 export type SaveDraftRequest = Schema['SaveDraftRequest']
 export type SaveDraftEdit = NonNullable<SaveDraftRequest['edits']>[number]
 export type ApproveDraftRequest = Schema['ApproveDraftRequest']
@@ -136,10 +144,25 @@ export type ReviewDetail = Schema['ReviewDetail']
 /* ---- GET /reviews/{id}/draft ---- */
 
 export type Draft = Schema['Draft']
+/**
+ * One block of the draft body — the unit a decision changes.
+ *
+ * `kind: 'finding'` is the part a decision touches and `prose` is everything else, which is
+ * what lets an assembled body reproduce what an agent wrote character for character. A
+ * draft with **no** sections is one written as one block of markdown, and the per-finding
+ * decisions refuse against it; that is not an empty list to be ignored but the one state
+ * the code review page has to say out loud.
+ */
+export type DraftSection = Schema['DraftSection']
+export type DraftSectionKind = Schema['DraftSectionKind']
 export type DraftLint = Schema['DraftLint']
 export type DraftEdit = Schema['DraftEdit']
 export type HeldBackFinding = Schema['HeldBackFinding']
 export type DraftDetail = Schema['DraftDetail']
+/** The decision, and everything it changed, read in one instant of the record. */
+export type FindingDecisionMade = Schema['FindingDecisionMade']
+/** What "Ticket what is left, and approve" came to. */
+export type TicketedAndApproved = Schema['TicketedAndApproved']
 
 /* ---- GET /rules?repo= ---- */
 

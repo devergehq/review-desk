@@ -10,7 +10,7 @@
  *   draft(id)        GET /reviews/{id}/draft
  *   rules(repo)      GET /rules?repo=
  *
- * and the writes mirror its twelve operations, one function each. Which records they reach
+ * and the writes mirror its fourteen operations, one function each. Which records they reach
  * — the Rust server, or invented ones in memory — is `app/data/source.ts`'s decision, and
  * nothing above this file can tell.
  *
@@ -53,10 +53,13 @@ import { detectEdits, findingsInBody } from '~/utils/draft'
 import { count } from '~/utils/format'
 import type {
   Brief,
+  DecideFindingRequest,
+  FindingDecision,
   DeskError,
   Disposition,
   DraftDetail,
   Finding,
+  FindingDecisionMade,
   Inbox,
   NitTicket,
   RepoName,
@@ -67,6 +70,7 @@ import type {
   Rule,
   RuleStage,
   RulesPage,
+  TicketedAndApproved,
 } from '~/types/desk'
 
 /** The repository filter's value that means every repository. */
@@ -77,6 +81,27 @@ const DISPOSITIONS: Record<Disposition, string> = {
   in_draft: 'in the draft',
   held_back: 'held back for a ticket',
   suppressed: 'suppressed',
+}
+
+/**
+ * What each decision came to, in the developer's own terms.
+ *
+ * Keyed by `FindingDecision` rather than written as a chain of ternaries, for the reason
+ * `DISPOSITIONS` above and `VERBS` in `utils/format.ts` are: a ninth decision added to the
+ * contract is then a type error here instead of a decision the screen has no word for.
+ *
+ * Each sentence says what the *record* now holds, not what the button said — "is in the
+ * review again" rather than "raised again" — because the notice is read after the fact.
+ */
+const DECIDED: Record<FindingDecision, string> = {
+  keep: 'stays in the review, and its comment posts on its line.',
+  cut: 'will not be posted. It stays on the record, marked as cut by you.',
+  regrade: 'will be posted at the severity you chose.',
+  rewrite: 'will be posted in your words. The session’s own are kept beside them.',
+  to_ticket: 'has left the review for the ticket.',
+  raise_again: 'is in the review again, as still open this round.',
+  accept_reason: 'is closed: you accepted the author’s reason, and the reason is recorded.',
+  withdraw: 'is withdrawn. The record says you withdrew it, not that it was wrong.',
 }
 
 /* --------------------------- The records behind it --------------------------- */
@@ -366,6 +391,47 @@ export function useReviewDesk() {
   }
 
   /**
+   * `POST /reviews/{id}/findings/{seq}/decide` — the developer's decision on one finding.
+   *
+   * **The whole request is the parameter, not a decision and five optional arguments.**
+   * Four of the eight decisions carry words and the contract refuses the wrong combination
+   * by name, so passing the generated request type means a severity on a cut is a type
+   * error here rather than a round trip that comes back refused.
+   *
+   * The sentence it answers with is the decision in the developer's own terms, because
+   * what changed is spread over the finding, the draft and an outcome and none of those is
+   * a thing to read back. `FindingDecision`'s table in the contract is where each of the
+   * eight is defined; this is only the wording.
+   */
+  async function decideFinding(
+    reviewId: number,
+    seq: number,
+    request: DecideFindingRequest,
+  ): Promise<WriteResult> {
+    return write(
+      to => to.decideFinding(reviewId, seq, request),
+      (made: FindingDecisionMade) => `${made.finding.key} ${DECIDED[request.decision]}`,
+    )
+  }
+
+  /**
+   * `POST /reviews/{id}/draft/ticket-and-approve` — file what is left, and approve.
+   *
+   * A sign-off. It neither posts nor files anything: the findings are recorded as ticketed,
+   * the one ticket is asked for, and the review session does the rest.
+   */
+  async function ticketRestAndApprove(id: number, note: string): Promise<WriteResult> {
+    const said = note.trim()
+    return write(
+      to => to.ticketRestAndApprove(id, said.length === 0 ? null : said),
+      (made: TicketedAndApproved) =>
+        `Signed off. ${count(made.ticketed.length, 'finding')} `
+        + `(${made.ticketed_keys.join(', ')}) `
+        + 'moved into the ticket. An agent files it; Review Desk does not.',
+    )
+  }
+
+  /**
    * `PUT /reviews/{id}/draft` — the body, plus the edits this save represents.
    *
    * The edits are read out of the two bodies here rather than left to the server, because
@@ -464,6 +530,8 @@ export function useReviewDesk() {
     startReview,
     confirmBrief,
     setFindingDisposition,
+    decideFinding,
+    ticketRestAndApprove,
     saveDraft,
     approveDraft,
     sendBackDraft,
