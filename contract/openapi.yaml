@@ -2250,8 +2250,19 @@ components:
               title:
                 type: [string, 'null']
                 description: |
-                  The heading's title. Required on a `finding` block and refused on prose;
-                  the severity and the number are composed from the finding.
+                  The heading's title. Refused on prose; the severity and the number are
+                  composed from the finding.
+
+                  **Optional on a `finding` block, because the finding owns its title.** Left
+                  out, the server composes the heading from `Finding.title`, falling back to
+                  the finding's `claim` for a finding nobody has titled — which is every
+                  finding written before the title existed. Two copies of a title are two
+                  titles that can disagree, and the finding's is the one a reader sees first.
+
+                  Given, it is used exactly as given. That is what lets a posted heading
+                  differ from the one line a row of the code review page carries, and it is
+                  what `decideFinding`'s `rewrite` relies on: a rewrite exists to make the
+                  two differ, so they are not made unable to.
               text:
                 type: string
                 description: |

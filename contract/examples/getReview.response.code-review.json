@@ -1477,8 +1477,58 @@
       "proof_note": null,
       "verification": "read_not_run",
       "evidence": "Mechanism: the trait's `record()` takes a tenant and a row count and writes an `export_audit` row with an `actor_id`. On the web path the actor is the signed-in user; on the scheduled path `SystemActor::scheduler()` has no id, so `actor_id` is null.\n\nWhat would settle it: whether `export_audit.actor_id` is nullable, and whether the consumer of that table treats a null actor as a system export or as a malformed row. Neither is in this change.\n\nLimits: the file is outside the diff, so this review read it and ran nothing against it.",
-      "hunk": null,
-      "flagged_line": null,
+      "hunk": {
+        "file": "app/Audit/RecordsAnExport.php",
+        "start_line": 18,
+        "lines": [
+          {
+            "marker": "unchanged",
+            "line": 18,
+            "text": "    public function record(Tenant $tenant, int $rows): void"
+          },
+          {
+            "marker": "unchanged",
+            "line": 19,
+            "text": "    {"
+          },
+          {
+            "marker": "unchanged",
+            "line": 20,
+            "text": "        ExportAudit::create(["
+          },
+          {
+            "marker": "unchanged",
+            "line": 21,
+            "text": "            'tenant_id' => $tenant->id,"
+          },
+          {
+            "marker": "unchanged",
+            "line": 22,
+            "text": "            'actor_id'  => auth()->id(),"
+          },
+          {
+            "marker": "unchanged",
+            "line": 23,
+            "text": "            'rows'      => $rows,"
+          },
+          {
+            "marker": "unchanged",
+            "line": 24,
+            "text": "            'exported_on' => today(),"
+          },
+          {
+            "marker": "unchanged",
+            "line": 25,
+            "text": "        ]);"
+          },
+          {
+            "marker": "unchanged",
+            "line": 26,
+            "text": "    }"
+          }
+        ]
+      },
+      "flagged_line": 22,
       "fix_references": []
     },
     {

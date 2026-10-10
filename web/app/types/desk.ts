@@ -137,6 +137,12 @@ export type BriefDisagreement = Schema['BriefDisagreement']
 /** The problem half on its own, which is what a blind pass may be handed. */
 export type ProblemStatement = Schema['ProblemStatement']
 export type Finding = Schema['Finding']
+/** The lines around a finding, as the pull request changed them. */
+export type FindingHunk = Schema['FindingHunk']
+export type FindingHunkLine = Schema['FindingHunkLine']
+/** What the pull request did to one line: words, not `+`, `-` and a space. */
+export type HunkLineMarker = Schema['HunkLineMarker']
+export type FindingVerification = Schema['FindingVerification']
 export type Outcome = Schema['Outcome']
 export type NitTicket = Schema['NitTicket']
 export type ReviewDetail = Schema['ReviewDetail']

@@ -286,7 +286,12 @@ function structuredSections(
     ...posted.map(({ finding, seq }) => ({
       kind: 'finding',
       finding_seq: seq,
-      title: finding.title,
+      /*
+       * **No title: the finding owns it.** The store composes the heading from the
+       * finding's own `title`, falling back to its claim, so stating one here would be a
+       * second copy of the same words — and two copies of a title are two titles that can
+       * disagree.
+       */
       /*
        * The consequence, which is what the review says about a finding in its body. The
        * reasoning stays on the finding, folded behind its word count on the page — the

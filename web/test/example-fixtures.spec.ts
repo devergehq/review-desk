@@ -103,23 +103,28 @@ describe('the invented example and the fixtures', () => {
     }
 
     /*
-     * And the three reasons a finding shows no code, each with an example — the page has a
-     * different sentence for each and all three have to be reachable.
+     * And the three things the page says about a finding whose code is not a changed line,
+     * each with an example — one sentence per case, and each has to be reachable.
+     *
+     * **Two of the three are no-code cases and the third comes with code.** A session
+     * records the lines around a finding on a line the diff does not draw as a hunk whose
+     * every marker is `unchanged`, so "not part of the change" is a hunk with a label
+     * rather than an absence; F12, in a file the pull request never touched, is that one.
      */
     const noCode = detail.findings.filter(finding => finding.hunk == null)
-    const claimed = new Map(
-      (detail.brief?.parts ?? []).flatMap(part => part.files.map(file => [file.path, file])),
-    )
     expect(noCode.some(finding => finding.file == null), 'one is about the description')
       .toBe(true)
     expect(
-      noCode.some(finding => claimed.get(finding.file ?? '')?.in_diff === false),
-      'one names a file outside the change',
+      noCode.some(finding => finding.file != null),
+      'one names a file the session recorded no code for',
     ).toBe(true)
     expect(
-      noCode.some(finding =>
-        finding.file != null && claimed.get(finding.file)?.in_diff !== false),
-      'one names a changed file the session recorded no code for',
+      detail.findings.some(
+        finding =>
+          finding.hunk != null
+          && finding.hunk.lines.every(line => line.marker === 'unchanged'),
+      ),
+      'one carries the code around a line the pull request did not change',
     ).toBe(true)
   })
 
