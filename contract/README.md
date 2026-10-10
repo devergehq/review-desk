@@ -641,6 +641,15 @@ the mechanism that catches the one thing the composition cannot know: a prose bl
 *lists* findings — an index, "0 Blockers · 2 Should" — goes stale when the developer cuts
 one, and the lint is what reads the body against the findings.
 
+**There is no decision for a block of prose, and that is a limit of the record rather than
+an omission.** An outcome is about a finding, so a change to the summary sentence or the
+not-checked line has nothing to hang one on. The way the developer changes one is
+`PUT …/draft` with the whole composition and that block's text replaced — which clears the
+lint, keeps every other block, and is refused once the draft is approved. **A block whose
+words did not change keeps what a rewrite replaced**, compared per field, so changing the
+summary sentence cannot relabel a paragraph the developer rewrote as the agent's own words.
+A session that sends new words is still the author of them.
+
 **The body is stored rather than derived.** Every write and every decision recomposes it
 in the same transaction. Composing it at read time would let a later change to the record
 alter an approved draft underneath the session that is about to post it, and `draft.body`
