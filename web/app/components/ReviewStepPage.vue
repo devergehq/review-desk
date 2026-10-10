@@ -19,9 +19,11 @@ import type { ReviewLayerName, ReviewDetail } from '~/types/desk'
  * can pick a review up cold and move back to these pages freely while reading the
  * findings; the trail is what "freely" means.
  *
- * The one-page review screen at `/reviews/{id}` and the draft screen beside it do **not**
- * use this. They keep working exactly as they did until DEV-878 replaces them, which is
- * DEV-885's own acceptance criterion.
+ * **Every page of a review is inside this, including the draft.** DEV-878 brought the last
+ * two in: the code review page is step 5, the draft screen is step 6, and the one-page
+ * review at `/reviews/{id}` is a redirect to Understand. That is what lets the trail link
+ * all five steps that have a page unconditionally — a step can no longer lead somewhere
+ * that carries no way back, because there is nowhere left like that.
  */
 defineProps<{
   detail: ReviewDetail
@@ -49,7 +51,6 @@ defineProps<{
         :review-id="detail.review.id"
         :active="step"
         :round="detail.review.round"
-        :draft-status="detail.draft_status"
       />
 
       <h1 class="rd-display headline">

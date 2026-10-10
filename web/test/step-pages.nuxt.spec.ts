@@ -147,14 +147,14 @@ describe('the shell every step page sits in', () => {
     /*
      * **The trail is the only way to four of these.** Every row in the queue opens
      * Understand, so if the trail did not reach the findings and the draft the queue would
-     * lead somewhere a reader could not leave. Steps 1 and 7 have no page until DEV-878,
-     * and a link to a page that does not exist is worse than a label.
+     * lead somewhere a reader could not leave. Steps 1 and 7 have no page, and a link to a
+     * page that does not exist is worse than a label.
      */
     expect(links).toEqual([
       `/reviews/${STRUCTURED}/understand`,
       `/reviews/${STRUCTURED}/alternatives`,
       `/reviews/${STRUCTURED}/solution`,
-      `/reviews/${STRUCTURED}`,
+      `/reviews/${STRUCTURED}/code-review`,
       `/reviews/${STRUCTURED}/draft`,
     ])
     /* Lint and Harvest are labels. */
@@ -164,29 +164,31 @@ describe('the shell every step page sits in', () => {
     }
   })
 
-  it('links step 6 once there is a draft to read', async () => {
-    const detail = fixture(STRUCTURED)
-    detail.draft_status = 'ready'
-    await withReview(detail)
+  /*
+   * **Step 6 is a link whatever the draft status says, and that is DEV-878's doing.**
+   *
+   * It used to be guarded: `GET …/draft` refuses when there is no draft row, and the draft
+   * screen then drew a blocking not-found panel carrying no trail and no way back — the
+   * dead end steps 1 and 7 are labels to avoid. The draft screen is inside the shell now,
+   * so it carries the trail even when there is nothing to read, and a review whose session
+   * has not written one says so on step 6's own page. The guard went with the dead end.
+   *
+   * Three statuses, because the guard distinguished them and nothing does any more: a
+   * session part-way through writing one, a review no session has drafted at all, and one
+   * waiting on the developer.
+   */
+  it('links step 6 whatever the draft status says', async () => {
+    for (const status of ['ready', 'drafting', null] as const) {
+      const detail = fixture(STRUCTURED)
+      detail.draft_status = status
+      await withReview(detail)
 
-    const page = await understand(STRUCTURED)
-    expect(page.findAll('.trail a').map(one => one.attributes('href')))
-      .toContain(`/reviews/${STRUCTURED}/draft`)
-  })
-
-  it('leaves step 6 a label while a session is still writing the draft', async () => {
-    const detail = fixture(STRUCTURED)
-    detail.draft_status = 'drafting'
-    await withReview(detail)
-
-    const page = await understand(STRUCTURED)
-    /*
-     * `drafting` is a session part-way through writing one, and the document may not
-     * exist yet — `getDraft` refuses on the row, not on the status. Two sample reviews
-     * carry exactly that. A label for a few seconds costs nothing; a dead end does not.
-     */
-    expect(page.findAll('.trail a').map(one => one.attributes('href')))
-      .not.toContain(`/reviews/${STRUCTURED}/draft`)
+      const page = await understand(STRUCTURED)
+      expect(
+        page.findAll('.trail a').map(one => one.attributes('href')),
+        `step 6 should be a link with draft_status ${String(status)}`,
+      ).toContain(`/reviews/${STRUCTURED}/draft`)
+    }
   })
 
   it('still says which step is waiting, whichever page you are on', async () => {

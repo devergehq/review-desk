@@ -253,6 +253,25 @@ const foldLabel = computed(() =>
     : `The full reasoning · ${count(words.value, 'word')}`,
 )
 
+/**
+ * What has already happened to one finding, by somebody other than the developer.
+ *
+ * **The author's replies, which the retired one-page review was the only thing drawing.**
+ * They belong to step 7 and step 7 has no page, so retiring that screen would have dropped
+ * them — and a reply from the author is the one piece of context that changes what the
+ * developer should decide here. Shown on the finding they are about rather than in a list
+ * of their own, which is better than the page they came off: that one grouped them at the
+ * top, away from the finding each was answering.
+ *
+ * `actor !== 'developer'`, so the developer's own decisions are not replayed at them. Those
+ * are already on the page as the record the controls read.
+ */
+function saidByOthers(data: ReviewDetail, finding: Finding) {
+  return data.outcomes.filter(
+    outcome => outcome.finding_seq === finding.seq && outcome.actor !== 'developer',
+  )
+}
+
 /** The name of the part a finding sits in, for its row. */
 function partName(finding: Finding): string {
   const at = partOf(finding, parts.value)
@@ -521,6 +540,31 @@ function coverage(data: ReviewDetail): string | null {
                         </span>
                         <p class="rd-recorded">
                           {{ finding.disposition_reason }}
+                        </p>
+                      </div>
+
+                      <!--
+                        What the author said about this finding, harvested after posting.
+                        See `saidByOthers`: the screen this page retires was the only thing
+                        drawing these, and step 7 has no page of its own.
+                      -->
+                      <div
+                        v-if="saidByOthers(data, finding).length"
+                        class="field"
+                      >
+                        <span class="rd-rubric">What came back</span>
+                        <p
+                          v-for="outcome in saidByOthers(data, finding)"
+                          :key="outcome.id"
+                          class="rd-recorded reply"
+                        >
+                          <span class="reply-kind">{{ editVerb(outcome.kind) }}</span>
+                          <span class="rd-note">
+                            by the {{ outcome.actor }} · {{ sinceLabel(outcome.occurred_at) }}
+                          </span>
+                          <template v-if="outcome.detail">
+                            <br>{{ outcome.detail }}
+                          </template>
                         </p>
                       </div>
 
@@ -986,6 +1030,26 @@ function coverage(data: ReviewDetail): string | null {
 
 .under {
   margin: 0;
+}
+
+.reply {
+  margin: 0;
+  /*
+   * Not `pre-wrap` through `rd-recorded`'s own rule by accident: an outcome's detail is a
+   * sentence the harvester stored verbatim, and its paragraph breaks are the author's.
+   */
+  padding: 10px 14px;
+  border-left: 3px solid var(--rd-question-ink);
+  border-radius: 0 var(--rd-radius-control) var(--rd-radius-control) 0;
+  background: var(--rd-question-wash);
+}
+
+.reply + .reply {
+  margin-top: 8px;
+}
+
+.reply-kind {
+  font-weight: 600;
 }
 
 .no-code {
