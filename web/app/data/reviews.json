@@ -110,7 +110,7 @@
         "file": "jobs/DeliverWebhook.php",
         "line": 58,
         "claim": "A retried delivery is sent without an idempotency key",
-        "evidence": "throwaway test, 2 deliveries for 1 event",
+        "evidence": "PROVED by a throwaway test: an endpoint that accepts attempt 1 after 31 seconds receives the event twice.\n\nMechanism: the retry re-sends the payload with no idempotency key, so the second delivery is indistinguishable from a new event.\n\nBounded: only the webhook sender. The two sibling senders set Idempotency-Key from the delivery id, and neither was changed by this pull request.",
         "disposition": "in_draft",
         "disposition_reason": null,
         "rule_id": null,
@@ -577,7 +577,7 @@
     "brief": {
       "review_id": 16,
       "problem": "Every request re-reads the permission table. The ticket asks for a cache, and round 1 asked what happens to a cached entry when a permission is revoked.",
-      "diagram": null,
+      "diagram": "BEFORE (shared surface, implicit flow record)\n\nconsumer app --> GET /oauth/authorize --(guest)--> redirect()->guest() writes url.intended\n    |\n    v\nGET /login  (SHARED staff page)\n    |\n    FortifyServiceProvider reads url.intended",
       "options": [
         {
           "key": "A",

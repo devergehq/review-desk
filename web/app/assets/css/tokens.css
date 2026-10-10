@@ -118,6 +118,11 @@
 
   --rd-shell-max: 1240px;
   --rd-measure: 720px;
+  /*
+   * The measure for text a session wrote, which runs longer than the page's own copy:
+   * about 70 characters, where `--rd-measure` is nearer 90 at the body size.
+   */
+  --rd-measure-recorded: 70ch;
 
   /* The board's geometry; see the table at the top for the colour. */
   --rd-focus-ring: var(--rd-accent);
@@ -232,6 +237,28 @@ h3 {
 
 .rd-measure {
   max-width: var(--rd-measure);
+}
+
+/*
+ * Text a review session recorded, shown the way the session wrote it.
+ *
+ * A session writes in paragraphs — a finding's evidence separates "PROVED by …",
+ * "Mechanism: …" and "Bounded: …" with blank lines — and the page collapsed every one of
+ * them into a single block the full width of the card, so 200 words arrived as a wall.
+ * `pre-wrap` keeps the breaks and still wraps the long lines, and the measure keeps a line
+ * short enough to read.
+ *
+ * **Always interpolated, never `v-html`.** This is the class for recorded text, and
+ * recorded text is a record rather than markup. The shape of this rule is also why it can
+ * be: no HTML is needed to get a paragraph break back.
+ *
+ * The review page is the one that uses it. DEV-878 rebuilds that page; until it lands this
+ * is what makes the current one readable.
+ */
+.rd-recorded {
+  max-width: var(--rd-measure-recorded);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
 .rd-stack {

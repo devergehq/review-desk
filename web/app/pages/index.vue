@@ -151,7 +151,15 @@ function nextAction(row: Waiting) {
       what: 'Draft ready',
       detail: [tally, held].filter(Boolean).join(' · ') || 'nothing in the draft yet',
       action: 'Read and sign off',
-      to: `/reviews/${row.review_id}/draft`,
+      /*
+       * **The review, not the draft.** A row is a review, and clicking one goes to the
+       * review — Patrick, on tc-portal #9584: "when we click a review, we want to go to
+       * the review, not to the draft." The draft is one click further on, behind the
+       * review page's own "Open draft", which is where the reading that precedes a
+       * sign-off starts anyway. Every row in this queue now goes to the same kind of
+       * place, which is the point.
+       */
+      to: `/reviews/${row.review_id}`,
       at: null,
       atUnknown: 'a draft waiting to be signed off carries no time in the inbox',
     }

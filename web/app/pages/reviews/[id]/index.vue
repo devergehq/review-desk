@@ -205,12 +205,12 @@ async function changeDisposition(payload: {
             <h2>The problem</h2>
             <span
               v-if="data.brief.provenance"
-              class="rd-meta"
+              class="rd-meta rd-recorded"
             >
               {{ data.brief.provenance }}
             </span>
           </div>
-          <p class="rd-measure problem">
+          <p class="rd-recorded problem">
             {{ data.brief.problem }}
           </p>
           <MermaidFigure

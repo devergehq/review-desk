@@ -14,6 +14,27 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
+/**
+ * A diagram field holding something that is not a diagram.
+ *
+ * **This is not invented.** It is what a review session wrote into a brief on 10 October
+ * 2026 — a flow drawn by hand in text, in the field the dashboard hands to mermaid. mermaid
+ * rejected it and left its own error graphic at the bottom of every page the developer
+ * opened afterwards, which is DEV-880. A session will write one of these again, so the
+ * seed carries one and `review-desk.spec.ts` asserts what the page does with it.
+ *
+ * It is on the *waived* review rather than the main one, so that the main review's valid
+ * `flowchart` keeps proving that a diagram still draws.
+ */
+export const TEXT_SKETCH = `BEFORE (shared surface, implicit flow record)
+
+consumer app --> GET /oauth/authorize --(guest)--> redirect()->guest() writes url.intended
+    |
+    v
+GET /login  (SHARED staff page)
+    |
+    FortifyServiceProvider reads url.intended`
+
 /** The binary, as `cargo build` leaves it. */
 export const BINARY = resolve(
   process.env.REVIEW_DESK_BIN ?? '../target/debug/review-desk',
@@ -306,6 +327,7 @@ Ran the job twice against a local endpoint that 500s once, and counted the deliv
       problem:
         'The delivery log prints `null` for a latency it never measured, which reads as '
         + 'a measurement of zero.',
+      diagram: TEXT_SKETCH,
       confirmation_required: false,
       confirmation_not_required_because:
         '61 changed lines, under this caller\'s 200-line threshold',

@@ -647,3 +647,42 @@ describe('the unknown state itself', () => {
     expect(page.text()).toContain('no time recorded')
   })
 })
+
+describe('text a review session recorded, rather than copy the app wrote', () => {
+  /*
+   * `rd-recorded` is the one primitive for it. A session writes paragraphs — a finding's
+   * evidence separates "PROVED by …", "Mechanism: …" and "Bounded: …" with blank lines —
+   * and before this the review page collapsed every break and ran the text the full width
+   * of the card.
+   *
+   * Declared once here, as hover and press are, so that no page can disagree with another
+   * about what recorded text looks like. The review page's use of it is asserted in
+   * `screens.nuxt.spec.ts`.
+   */
+  it('keeps the breaks the session wrote', () => {
+    expect(block('.rd-recorded')).toContain('white-space: pre-wrap')
+  })
+
+  it('holds a line to a readable measure, which is not the page\'s', () => {
+    expect(block('.rd-recorded')).toContain('max-width: var(--rd-measure-recorded)')
+    expect(css).toContain('--rd-measure-recorded: 70ch')
+    /* Narrower than the page's own measure, which is what makes it a second token. */
+    expect(block('.rd-measure')).toContain('var(--rd-measure)')
+  })
+
+  it('needs no markup, which is what lets a record stay a record', () => {
+    /*
+     * The whole point of doing this in CSS: a paragraph break survives without anything
+     * being parsed as HTML, so the text can be interpolated. Nothing on the review page
+     * reaches for `v-html` to show what a session recorded.
+     */
+    for (const component of ['FindingRow.vue', 'MermaidFigure.vue']) {
+      const text = readFileSync(resolve(`app/components/${component}`), 'utf8')
+      /* The directive, not the word: both files discuss `v-html` in a comment. */
+      const uses = text.split('\n').filter(line => line.includes('v-html='))
+      /* `MermaidFigure` has exactly one, for mermaid's own sanitised SVG, and it is the
+         `svg` branch — never the branch that shows a source. */
+      for (const line of uses) expect(line).toContain('v-html="svg"')
+    }
+  })
+})

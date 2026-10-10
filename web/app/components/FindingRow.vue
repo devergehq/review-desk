@@ -47,13 +47,17 @@ const where = computed(() => {
   return f.line != null ? `${f.file}:${f.line}` : f.file
 })
 
+/**
+ * The short facts about a finding, on one line.
+ *
+ * **Evidence is not among them.** A session writes evidence in paragraphs — "PROVED by …",
+ * "Mechanism: …", "Bounded: …", separated by blank lines — and joining 200 words of that
+ * into a `·`-separated line collapsed every break and ran it the width of the card. It has
+ * its own block below, which is the only place on this row that a paragraph survives.
+ */
 const rest = computed(() => {
   const f = props.finding
-  return [
-    `lens: ${f.lens}`,
-    f.evidence ? `evidence: ${f.evidence}` : null,
-    f.rule_key ? `cites ${f.rule_key}` : null,
-  ]
+  return [`lens: ${f.lens}`, f.rule_key ? `cites ${f.rule_key}` : null]
     .filter(Boolean)
     .join(' · ')
 })
@@ -100,6 +104,17 @@ function save() {
           >{{ where }}</span>
           <span v-if="where"> · </span>{{ rest }}
         </div>
+        <!--
+          Interpolated, like everything else a session recorded. `rd-recorded` is what
+          keeps the paragraph breaks the session wrote and holds the line to a readable
+          measure; nothing here turns the record into markup.
+        -->
+        <p
+          v-if="finding.evidence"
+          class="rd-meta rd-recorded evidence"
+        >
+          <span class="rd-label">Evidence.</span> {{ finding.evidence }}
+        </p>
         <p
           v-if="finding.disposition_reason"
           class="rd-meta reason"
@@ -205,8 +220,15 @@ function save() {
   margin-top: 2px;
 }
 
+.evidence,
 .reason {
   margin: 2px 0 0;
+}
+
+/* `pre-wrap` keeps the blank line a session put between its paragraphs; this gives the
+   first paragraph the same room, so "Evidence." is not crowded against the line above. */
+.evidence {
+  margin-top: 6px;
 }
 
 .finding--quiet .claim {
