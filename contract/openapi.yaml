@@ -1630,6 +1630,27 @@ components:
         file: { type: [string, 'null'] }
         line: { type: [integer, 'null'], minimum: 1 }
         claim: { type: string, minLength: 1 }
+        title:
+          type: [string, 'null']
+          minLength: 1
+          description: |
+            The one line a row of the code review page carries — "Email code can now issue
+            a 400-day remember-me cookie".
+
+            **Null is the normal state, and the page has a different rendering for it.** The
+            record held no title until DEV-878 and nothing writes one yet — having the review
+            session write them is out of that issue's scope — so a finding with none shows
+            its `claim`, clamped to two lines. Defaulting this from the claim would be a
+            56-word "title" a client could not tell from a real one.
+
+            Not `DraftSection.title`, which is the heading the body posts and exists only
+            once a draft has been written. This is read before that, and a `rewrite` changes
+            that one and not this.
+
+            **No maximum length.** A title that runs long is a writing fault and belongs to
+            the review linter, which is this document's rule for every other recorded string.
+            The empty string is refused, because it would draw a blank row where no title
+            draws the claim.
         evidence: { type: [string, 'null'] }
         disposition: { $ref: '#/components/schemas/Disposition' }
         disposition_reason:

@@ -49,6 +49,12 @@
 //! a session reported, the change in parts, and the choices and disagreements the change
 //! left behind. Thirteen tables, because every one of them is a list a page draws and the
 //! store holds no opaque blobs.
+//!
+//! Version 11 is one column: a finding's short title. The code review page board A8 draws
+//! is one line per finding, and the record had nothing a line long — a `claim` is what the
+//! review says is wrong, in the review's voice, and on the review this was measured against
+//! one ran to 56 words. The draft holds a title per block, but only once a draft exists, and
+//! this page is read before that.
 
 use rusqlite::Connection;
 
@@ -1122,6 +1128,39 @@ CREATE TABLE brief_disagreements (
     FOREIGN KEY (review_id, finding_seq)
         REFERENCES findings (review_id, seq) ON DELETE CASCADE
 );
+"#,
+    },
+    Migration {
+        version: 11,
+        name: "finding-title",
+        sql: r#"
+-- A finding's short title: the one line board A8 puts on every row.
+--
+-- **The record had none, and the row needs one.** A finding's `claim` is what the review
+-- says is wrong, in the review's voice, and on the review this was measured against it ran
+-- to 56 words -- which is a paragraph, not a row. The draft's own `draft_sections.title`
+-- holds a title, but only once a draft has been written, and the code review page is read
+-- before that: a page that could only name a finding after the draft existed would be
+-- unreadable in exactly the state it is opened in.
+--
+-- **Nullable, and that is the honest default.** Nothing writes one today -- having the
+-- review session write titles is DEV-878's own out-of-scope note -- so every finding
+-- already held has none, and the page clamps the claim to two lines instead. Defaulting to
+-- the claim here would put a 56-word "title" on the record and make the two indistinguishable
+-- afterwards.
+--
+-- **No length is enforced.** A title that runs long is a writing fault and belongs to the
+-- linter in Locus, which is migration 10's reasoning for the brief and is no different here:
+-- a CHECK on the length would refuse a finding rather than report a bad title. What is
+-- refused is a title that is not one -- the empty string, which is a field nobody filled in
+-- wearing the clothes of one somebody did.
+-- **A blank title is refused, and not by a CHECK here.** SQLite cannot add one to an
+-- existing table, and the refusal belongs beside the hunk's and the fix reference's anyway:
+-- `add_finding` refuses `"title": ""` by name, the way `finding_evidence` refuses a blank
+-- fix reference. Stated here so that the absence of a constraint reads as a decision rather
+-- than an omission. A column added by ALTER is NULL on every row already held, which is
+-- what "no finding has a title yet" means.
+ALTER TABLE findings ADD COLUMN title TEXT;
 "#,
     },
 ];

@@ -125,6 +125,113 @@ fn a_finding_is_created_and_read_back() {
     assert_eq!(read.disposition_reason, None);
 }
 
+/// A finding's title: held when it is given, null when it is not, refused when it is blank.
+///
+/// The three states are one test because they are one decision. The page draws the title
+/// when there is one and falls back to the claim clamped to two lines when there is not —
+/// so `Some("")` has to be refused rather than stored, or it would draw a blank row where
+/// saying nothing draws something readable.
+#[test]
+fn a_findings_title_is_optional_and_never_the_empty_string() {
+    let (_dir, store) = temp_store();
+    let review = seed_review(&store);
+
+    let titled = store
+        .add_finding(
+            review.id,
+            NewFinding {
+                lens: "correctness".to_string(),
+                severity: Severity::Should,
+                claim: "The connection does not enforce foreign keys, so a child row \
+                        pointing at a review that is not there is accepted and the \
+                        orphan is served back as though it belonged to something"
+                    .to_string(),
+                title: Some("Foreign keys are not enforced on the connection".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("a finding with a title");
+
+    assert_eq!(
+        store
+            .get_finding(review.id, titled.seq)
+            .expect("read it back")
+            .title
+            .as_deref(),
+        Some("Foreign keys are not enforced on the connection"),
+    );
+
+    let untitled = store
+        .add_finding(
+            review.id,
+            NewFinding {
+                lens: "naming".to_string(),
+                severity: Severity::Nit,
+                claim: "The accessor is still public".to_string(),
+                ..Default::default()
+            },
+        )
+        .expect("a finding with no title");
+
+    assert_eq!(
+        store
+            .get_finding(review.id, untitled.seq)
+            .expect("read it back")
+            .title,
+        None,
+        "nothing writes a title yet, so none is the normal state rather than a defect",
+    );
+
+    let refused = store.add_finding(
+        review.id,
+        NewFinding {
+            lens: "naming".to_string(),
+            severity: Severity::Nit,
+            claim: "The accessor is still public".to_string(),
+            title: Some("   ".to_string()),
+            ..Default::default()
+        },
+    );
+
+    match refused {
+        Err(StoreError::InvalidValue { field, .. }) => assert_eq!(field, "title"),
+        other => panic!("a blank title should be refused by name, got {other:?}"),
+    }
+}
+
+/// There is no maximum length, and that is a decision rather than an oversight.
+///
+/// A title that runs long is a writing fault and belongs to the review linter in Locus —
+/// migration 10's own reasoning for the brief, which refuses structural nonsense and no
+/// lengths at all. A CHECK here would refuse the finding instead of reporting the title.
+#[test]
+fn a_findings_title_has_no_length_limit() {
+    let (_dir, store) = temp_store();
+    let review = seed_review(&store);
+
+    let long = "a title nobody should write ".repeat(40);
+    let created = store
+        .add_finding(
+            review.id,
+            NewFinding {
+                lens: "correctness".to_string(),
+                severity: Severity::Should,
+                claim: "something".to_string(),
+                title: Some(long.clone()),
+                ..Default::default()
+            },
+        )
+        .expect("a long title is held, not refused");
+
+    assert_eq!(
+        store
+            .get_finding(review.id, created.seq)
+            .expect("read it back")
+            .title,
+        Some(long),
+    );
+}
+
 #[test]
 fn an_outcome_is_created_and_read_back() {
     let (_dir, store) = temp_store();

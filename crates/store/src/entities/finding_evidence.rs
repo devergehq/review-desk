@@ -28,10 +28,28 @@ use crate::Store;
 
 /// Refuse evidence the record cannot hold or the page cannot draw.
 ///
-/// Called before the insert, so a finding is never half written. The three refusals are
-/// each a thing an agent gets wrong: a hunk with nothing in it, a hunk whose file is
-/// blank, and a comment anchored to a line the hunk does not draw.
+/// Called before the insert, so a finding is never half written. The refusals are each a
+/// thing an agent gets wrong: a hunk with nothing in it, a hunk whose file is blank, a
+/// comment anchored to a line the hunk does not draw, and a title that is the empty string.
 pub(crate) fn validate(new: &NewFinding) -> Result<()> {
+    // **A title that is blank is not a title.** The code review page draws the row's one
+    // line from it and falls back to the claim when there is none, so `""` would draw an
+    // empty row where no title would have drawn the claim — the worse of the two, and
+    // indistinguishable from the field having been written. Refused by name, the way a
+    // blank fix reference is, and for the reason the module's own rule gives: refusing is
+    // not normalising, and nothing that is stored is altered.
+    if let Some(title) = &new.title {
+        if title.trim().is_empty() {
+            return Err(StoreError::InvalidValue {
+                field: "title",
+                value: title.clone(),
+                expected: "the one line a row of the code review page carries, or no \
+                           title at all — a finding with none shows its claim instead"
+                    .to_string(),
+            });
+        }
+    }
+
     if let Some(hunk) = &new.hunk {
         if hunk.file.trim().is_empty() {
             return Err(StoreError::InvalidValue {

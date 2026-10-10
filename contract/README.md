@@ -370,6 +370,24 @@ confirmation — settled, unsigned, in nobody's queue, and the screen must say s
 offering the button. The reason is required whenever the flag is false; the threshold behind
 it is the caller's and Review Desk does not hold it.
 
+#### A finding's title
+
+Added by DEV-878, which is where board A8 draws one finding per row.
+
+| Field | What it is |
+|---|---|
+| `title` | The one line the row carries — "Email code can now issue a 400-day remember-me cookie". `null` when nothing has titled this finding, which is every finding written before migration 11. No maximum length; the empty string is refused. |
+
+**`null` is the normal state and the page has a different rendering for it.** Nothing writes
+a title yet, so a finding with none shows its `claim` clamped to two lines. Defaulting the
+title from the claim would be a 56-word "title" — the length a claim actually ran to on the
+review A8 was drawn from — that no client could tell from a real one.
+
+**It is not `DraftSection.title`.** That is the heading the body posts, and it exists only
+once a draft has been written; this is read before that. `decideFinding`'s `rewrite` changes
+the block's title and leaves this alone, which is correct: the developer rewriting what gets
+posted is not the same act as naming the finding.
+
 #### What a finding is about — the hunk, the comment, the proof and the fix
 
 Added by DEV-874, which is where boards A2 and A3 of the approved design draw a finding in

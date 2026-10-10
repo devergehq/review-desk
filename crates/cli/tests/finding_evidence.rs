@@ -326,3 +326,89 @@ fn an_unknown_verification_is_refused_and_names_the_three() {
         assert!(text.contains(named), "the refusal names {named}: {text}");
     }
 }
+
+/// `finding add --title`, and the row the dashboard draws from it.
+///
+/// **A finding's title is the one thing the code review page cannot derive.** Board A8 is
+/// one line per finding; the record had nothing a line long, so DEV-878 added the field and
+/// this is the surface it has to land on — a review session writes the title with the
+/// finding, in the same document, and reads it back unchanged.
+///
+/// It also pins the two states the page branches on. A title given comes back as written; a
+/// title left out comes back `null`, which is what tells the page to clamp the claim instead
+/// of drawing an empty row.
+#[test]
+fn a_title_goes_in_with_the_finding_and_comes_back_as_written() {
+    let desk = Desk::new();
+    let review = open_review(&desk, "devergehq/review-desk", "878", "c0ffee1");
+
+    let titled = add(
+        &desk,
+        &review,
+        json!({
+            "lens": "sibling diff",
+            "severity": "should",
+            "claim": "The retried delivery is sent with no idempotency key, so an \
+                      endpoint that accepted the first attempt slowly receives the \
+                      same event a second time and acts on it twice",
+            "title": "A retried delivery carries no idempotency key",
+        }),
+    );
+    assert_eq!(
+        titled["finding"]["title"],
+        "A retried delivery carries no idempotency key"
+    );
+
+    let untitled = add(
+        &desk,
+        &review,
+        json!({"lens": "naming", "severity": "nit", "claim": "The accessor is still public"}),
+    );
+    assert!(
+        untitled["finding"]["title"].is_null(),
+        "a finding nobody titled has no title, and the page clamps its claim instead"
+    );
+
+    // The record's own copy, not the write's answer.
+    let shown = desk.json(&["review", "show", "--review", &review]);
+    assert_eq!(
+        shown["findings"][0]["title"],
+        "A retried delivery carries no idempotency key"
+    );
+    assert!(shown["findings"][1]["title"].is_null());
+}
+
+/// A blank title is refused by name, and the finding is not written.
+///
+/// `""` is the one value that would be worse than nothing: the page draws the title when
+/// there is one, so an empty string draws an empty row where no title draws the claim — and
+/// nothing afterwards could tell the two apart.
+#[test]
+fn a_blank_title_is_refused_and_names_the_field() {
+    let desk = Desk::new();
+    let review = open_review(&desk, "devergehq/review-desk", "878", "c0ffee1");
+
+    let refused = desk
+        .command()
+        .args(["finding", "add", "--review", &review, "--file", "-"])
+        .write_stdin(
+            json!({
+                "lens": "naming",
+                "severity": "nit",
+                "claim": "The accessor is still public",
+                "title": "  ",
+            })
+            .to_string(),
+        )
+        .assert()
+        .failure();
+    let said = String::from_utf8(refused.get_output().stderr.clone()).expect("stderr is text");
+    assert!(said.contains("title"), "the refusal names the field: {said}");
+
+    let shown = desk.json(&["review", "show", "--review", &review]);
+    assert_eq!(
+        shown["findings"].as_array().expect("findings").len(),
+        0,
+        "a refused title leaves no finding behind"
+    );
+}

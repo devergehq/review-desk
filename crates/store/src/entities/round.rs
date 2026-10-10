@@ -111,21 +111,21 @@ impl Store {
         // resolves it.
         tx.execute(
             "INSERT INTO findings
-                 (review_id, seq, lens, severity, file, line, claim, evidence,
+                 (review_id, seq, lens, severity, file, line, claim, title, evidence,
                   disposition, disposition_reason, rule_id, flagged_line, inline_comment,
                   why_it_matters, proof, proof_note, verification, suggested_fix,
                   introduced_by_commit, introduced_by_seq, continues_review_id,
                   round_status, round_status_by, round_status_checked, round_status_at,
                   round_status_commit, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
-                     ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)
+                     ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)
              ON CONFLICT (review_id, seq) DO UPDATE SET
-                 continues_review_id  = ?21,
-                 round_status         = ?22,
-                 round_status_by      = ?23,
-                 round_status_checked = ?24,
-                 round_status_at      = ?25,
-                 round_status_commit  = ?26",
+                 continues_review_id  = ?22,
+                 round_status         = ?23,
+                 round_status_by      = ?24,
+                 round_status_checked = ?25,
+                 round_status_at      = ?26,
+                 round_status_commit  = ?27",
             params![
                 into_review_id,
                 seq,
@@ -134,6 +134,9 @@ impl Store {
                 earlier.file,
                 earlier.line,
                 earlier.claim,
+                // The title too: a row of the code review page is the title, so a carried
+                // finding that lost it would read as a different finding in round 2.
+                earlier.title,
                 earlier.evidence,
                 earlier.disposition,
                 earlier.disposition_reason,

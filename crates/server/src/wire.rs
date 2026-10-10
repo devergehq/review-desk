@@ -359,6 +359,11 @@ pub fn finding(finding: &Finding) -> Value {
         "file": finding.file,
         "line": finding.line,
         "claim": finding.claim,
+        // Null when nothing has titled this finding, which is every finding written before
+        // migration 11. The page clamps the claim to two lines instead; a title defaulted
+        // from the claim here would be a 56-word "title" the page could not tell apart
+        // from a real one.
+        "title": finding.title,
         "evidence": finding.evidence,
         "disposition": finding.disposition.as_str(),
         "disposition_reason": finding.disposition_reason,
