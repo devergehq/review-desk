@@ -870,8 +870,8 @@ pub struct Finding {
     pub line: Option<i64>,
     /// What is claimed to be wrong.
     pub claim: String,
-    /// The one line a row of the code review page carries — "Email code can now issue a
-    /// 400-day remember-me cookie".
+    /// The one line a row of the code review page carries — "A retried delivery carries
+    /// no idempotency key".
     ///
     /// **`None` is the normal state and not a defect.** Nothing writes one yet; a page with
     /// no title clamps the claim to two lines instead, which is the honest rendering of a

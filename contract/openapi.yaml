@@ -1634,8 +1634,8 @@ components:
           type: [string, 'null']
           minLength: 1
           description: |
-            The one line a row of the code review page carries — "Email code can now issue
-            a 400-day remember-me cookie".
+            The one line a row of the code review page carries — "A retried delivery
+            carries no idempotency key".
 
             **Null is the normal state, and the page has a different rendering for it.** The
             record held no title until DEV-878 and nothing writes one yet — having the review

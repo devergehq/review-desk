@@ -376,7 +376,7 @@ Added by DEV-878, which is where board A8 draws one finding per row.
 
 | Field | What it is |
 |---|---|
-| `title` | The one line the row carries — "Email code can now issue a 400-day remember-me cookie". `null` when nothing has titled this finding, which is every finding written before migration 11. No maximum length; the empty string is refused. |
+| `title` | The one line the row carries — "A retried delivery carries no idempotency key". `null` when nothing has titled this finding, which is every finding written before migration 11. No maximum length; the empty string is refused. |
 
 **`null` is the normal state and the page has a different rendering for it.** Nothing writes
 a title yet, so a finding with none shows its `claim` clamped to two lines. Defaulting the

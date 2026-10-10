@@ -28,8 +28,8 @@ pub enum FindingCommand {
     /// disposition defaults to `in_draft`, and a field that is not one of the names here
     /// is refused rather than quietly dropped.
     ///
-    /// `title` is the one line the code review page's row carries — "Email code can now
-    /// issue a 400-day remember-me cookie". It is optional and has no maximum length; a
+    /// `title` is the one line the code review page's row carries — "A retried delivery
+    /// carries no idempotency key". It is optional and has no maximum length; a
     /// finding with none shows its claim clamped to two lines, which is the honest
     /// rendering of a finding nobody titled. The empty string is refused, because it would
     /// draw a blank row where saying nothing draws the claim.
