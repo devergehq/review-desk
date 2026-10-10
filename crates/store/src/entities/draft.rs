@@ -67,6 +67,15 @@ impl Store {
             });
         }
 
+        // Checked before the transaction opens, which is this crate's rule and was this
+        // call's comment before the rule was true of it: the check sat below the
+        // `BEGIN IMMEDIATE` and the rollback was what covered it. Found by the review of
+        // DEV-877. Nothing here reads the database, so there is no reason for it to be
+        // inside a transaction and one good reason for it not to be.
+        if let Some(sections) = &new.sections {
+            composition::validate(sections)?;
+        }
+
         // The status check and the write are one step, for the reason `add_finding`
         // gives: a draft approved between the two would otherwise be overwritten by a
         // caller that read it as `ready`. IMMEDIATE because SQLite will not upgrade a
@@ -82,12 +91,6 @@ impl Store {
                              rewritten",
                 });
             }
-        }
-
-        // Checked before the transaction opens, so a draft is never left with a body
-        // written and its blocks refused.
-        if let Some(sections) = &new.sections {
-            composition::validate(sections)?;
         }
 
         let lint = new.lint.unwrap_or_default();

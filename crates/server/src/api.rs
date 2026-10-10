@@ -760,7 +760,9 @@ impl Api {
                 title: trimmed(request.title),
                 // Not trimmed. The paragraph is what gets posted, and a trailing space in
                 // markdown is a line break; the store refuses the one shape that would
-                // compose a body nobody wrote, which is a newline at either end.
+                // compose a body nobody wrote, which is a newline at either end — in
+                // `composition::validate_rewrite`, which the review of DEV-877 found this
+                // comment had been describing before it existed.
                 text: request.text,
                 note: trimmed(request.note),
             },

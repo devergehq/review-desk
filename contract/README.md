@@ -650,6 +650,15 @@ words did not change keeps what a rewrite replaced**, compared per field, so cha
 summary sentence cannot relabel a paragraph the developer rewrote as the agent's own words.
 A session that sends new words is still the author of them.
 
+**A block handed back unchanged is accepted even when its finding no longer posts**, and
+that is load-bearing rather than lenient. `sections[]` serves a cut finding's block
+deliberately, so the composition the page writes back contains it; refusing it would make
+the first cut the last prose edit the developer could make. What the refusal above is *for*
+is a caller claiming a finding is raised when the composition will drop it — adding a
+block, or giving an existing one new words. Found by the review of DEV-877 after it merged;
+`a_block_handed_back_unchanged_does_not_stop_an_edit_somewhere_else` and
+`a_block_added_for_a_finding_that_cannot_be_posted_is_still_refused` hold the two halves.
+
 **The body is stored rather than derived.** Every write and every decision recomposes it
 in the same transaction. Composing it at read time would let a later change to the record
 alter an approved draft underneath the session that is about to post it, and `draft.body`
@@ -667,6 +676,13 @@ heading is composed from the finding, so a second block would repeat it.
 the newest rewrite replaces the one before it, and the outcomes are where the sequence of
 decisions lives. They are the one comparison the feedback loop asks for — what the
 developer changed, and from what.
+
+**A block written by a `keep` carrying the developer's own words — the designs' "Post it"
+on a held-back nit — holds theirs and keeps the agent's beside them**: the finding's claim
+and its consequence, which is what the store would have composed the block from. So
+`rewritten` reads true and the outcome's detail says the words were the developer's. Until
+the review of DEV-877 found it, the developer's words went into both columns, which left
+the record saying the agent wrote them.
 
 The position is the store's to assign; no caller numbers blocks. The whole list is replaced
 on every write, which is the arrangement `review_sources` uses and for the same reason: two

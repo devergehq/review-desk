@@ -249,6 +249,19 @@ pub(crate) fn recompose(tx: &Transaction<'_>, review_id: i64, lint: Lint) -> Res
 /// Checked, then written. The findings are checked inside the caller's transaction, so a
 /// block about a finding that is not posted is a refusal naming it rather than a draft
 /// that silently drops a paragraph the agent wrote.
+///
+/// **The check is on the blocks the caller is adding or changing, and not on the ones it
+/// is handing back.** What the refusal is for is a session writing a draft that raises a
+/// finding the composition will drop — and adding a block, or giving an existing one new
+/// words, is that claim. Handing back a block the store itself just served is not.
+///
+/// Refusing those too, which is what this did until the review of DEV-877 found it, made
+/// the first decision that took a finding out of the post the last prose edit the
+/// developer could make: `draft_sections` serves a cut finding's block deliberately, the
+/// dashboard writes the whole composition back to change the summary sentence, and the
+/// block the store had just handed it was the block that failed the write. Every recovery
+/// was worse — dropping the block loses what a rewrite replaced, and raising the finding
+/// again to edit it writes outcomes nobody decided.
 pub(crate) fn write(
     tx: &Transaction<'_>,
     review_id: i64,
@@ -256,10 +269,14 @@ pub(crate) fn write(
 ) -> Result<()> {
     validate(sections)?;
 
-    for section in sections {
-        let Some(seq) = section.finding_seq else {
+    let blocks = written_by_the_writer(tx, review_id, sections)?;
+    for block in &blocks {
+        let Some(seq) = block.section.finding_seq else {
             continue;
         };
+        if !block.claims_the_finding_is_posted {
+            continue;
+        }
         let finding = finding_in(tx, review_id, seq)?;
         if !finding.is_posted() {
             return Err(StoreError::InvalidValue {
@@ -277,11 +294,45 @@ pub(crate) fn write(
         }
     }
 
-    replace(
-        tx,
-        review_id,
-        &written_by_the_writer(tx, review_id, sections)?,
-    )
+    replace(tx, review_id, &blocks)
+}
+
+/// Refuse the words a rewrite would put in a block.
+///
+/// **The one write path that did not run [`validate`].** A rewrite replaces a block's title
+/// and paragraph through a statement of its own, so until the review of DEV-877 found it,
+/// the two rules the composition rests on were enforced on every path except the decision
+/// whose purpose is to change those words — and a body with three blank lines in it, or a
+/// heading reading `### Blocker · F1 ·`, is posted to GitHub verbatim.
+///
+/// Checked without the database, so the caller can refuse before its transaction opens.
+pub(crate) fn validate_rewrite(title: Option<&str>, text: Option<&str>) -> Result<()> {
+    if let Some(title) = title {
+        if title.trim().is_empty() {
+            return Err(StoreError::InvalidValue {
+                field: "title",
+                value: format!("{title:?}"),
+                expected: "the heading's title — the part after the severity and the \
+                           number. A heading with nothing after the number is a finding \
+                           the posted review does not state"
+                    .to_string(),
+            });
+        }
+    }
+
+    if let Some(text) = text {
+        if text.starts_with('\n') || text.ends_with('\n') {
+            return Err(StoreError::InvalidValue {
+                field: "text",
+                value: "a paragraph that begins or ends with a newline".to_string(),
+                expected: "the paragraph's own text; blocks are joined by one blank line, \
+                           and a block that brings its own composes a body nobody wrote"
+                    .to_string(),
+            });
+        }
+    }
+
+    Ok(())
 }
 
 /// Add one block for a finding the composition has none for, after the last finding block.
@@ -295,8 +346,7 @@ pub(crate) fn add_finding_block(
     tx: &Transaction<'_>,
     review_id: i64,
     seq: i64,
-    title: &str,
-    text: &str,
+    words: &BlockWords,
 ) -> Result<()> {
     let mut held = rows(tx, review_id)?;
     let after = held
@@ -307,9 +357,10 @@ pub(crate) fn add_finding_block(
     held.insert(
         after,
         Written {
-            section: NewDraftSection::finding(seq, title, text),
-            agent_title: Some(title.to_string()),
-            agent_text: text.to_string(),
+            section: NewDraftSection::finding(seq, &words.title, &words.text),
+            agent_title: Some(words.agent_title.clone()),
+            agent_text: words.agent_text.clone(),
+            claims_the_finding_is_posted: true,
         },
     );
 
@@ -385,29 +436,52 @@ fn written_by_the_writer(
                 .finding_seq
                 .and_then(|seq| held.iter().find(|block| block.finding_seq == Some(seq)));
 
-            let (agent_title, agent_text) = match earlier {
-                Some(block) => (
-                    if block.title == section.title {
-                        block.agent_title.clone()
-                    } else {
-                        section.title.clone()
-                    },
-                    if block.text == section.text {
-                        block.agent_text.clone()
-                    } else {
-                        section.text.clone()
-                    },
-                ),
-                None => (section.title.clone(), section.text.clone()),
+            let (agent_title, agent_text, changed) = match earlier {
+                Some(block) => {
+                    let same_title = block.title == section.title;
+                    let same_text = block.text == section.text;
+                    (
+                        if same_title {
+                            block.agent_title.clone()
+                        } else {
+                            section.title.clone()
+                        },
+                        if same_text {
+                            block.agent_text.clone()
+                        } else {
+                            section.text.clone()
+                        },
+                        !(same_title && same_text),
+                    )
+                }
+                // No block for this finding yet, so writing one is a claim that it posts.
+                None => (section.title.clone(), section.text.clone(), true),
             };
 
             Written {
                 section: section.clone(),
                 agent_title,
                 agent_text,
+                claims_the_finding_is_posted: section.finding_seq.is_some() && changed,
             }
         })
         .collect())
+}
+
+/// The words a new block is written with: the ones it posts, and the writer's own.
+///
+/// **Two pairs rather than one**, because the developer may post a held-back nit in their
+/// own words — the designs' "Post it" — and the agent's words then still exist: they are
+/// the finding's claim and its consequence, which is what the store would have composed
+/// the block from. Writing the developer's words into both, which is what this did until
+/// the review of DEV-877 found it, made the record say the agent wrote them and left
+/// [`DraftSection::rewritten`] reading false about a block the developer had written.
+#[derive(Debug)]
+pub(crate) struct BlockWords {
+    pub title: String,
+    pub text: String,
+    pub agent_title: String,
+    pub agent_text: String,
 }
 
 /// One block as it is to be written: the words it holds, and the agent's own.
@@ -415,6 +489,9 @@ struct Written {
     section: NewDraftSection,
     agent_title: Option<String>,
     agent_text: String,
+    /// Whether writing this block is a claim that its finding is posted — true when it is
+    /// being added, or given words it did not have. See [`write`].
+    claims_the_finding_is_posted: bool,
 }
 
 /// Every block of a draft, in order, each saying whether it posts.
@@ -475,6 +552,8 @@ fn rows(conn: &Connection, review_id: i64) -> Result<Vec<Written>> {
                 title: section.title,
                 text: section.text,
             },
+            // Handed back as it stands, so it claims nothing new.
+            claims_the_finding_is_posted: false,
         })
         .collect())
 }

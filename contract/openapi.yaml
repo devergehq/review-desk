@@ -1610,7 +1610,8 @@ components:
           type: string
           description: |
             The paragraph as the agent wrote it — **what a rewrite replaced**. Equal to
-            `text` until the developer rewrites the block.
+            `text` until the developer's words replace it, by a `rewrite` or by a `keep`
+            that carried its own paragraph.
         rewritten:
           type: boolean
           description: |
@@ -1821,13 +1822,19 @@ components:
           type: [string, 'null']
           description: |
             The paragraph's new text, for a `rewrite`. A `rewrite` needs a title, a text,
-            or both.
+            or both. Either is refused when it would compose a body nobody wrote: a blank
+            title, or a paragraph beginning or ending with a newline.
 
             On a `keep` for a finding the draft holds no block for — the designs' "Post
             it" on a held-back nit — this is the paragraph the new block is written with.
             Left out, the server uses the finding's own `why_it_matters`, or failing that
             its `inline_comment`, and refuses when it has neither rather than inventing a
             paragraph.
+
+            **Given here, these words are the developer's and the record says so**: the
+            block's `agent_title` and `agent_text` keep the finding's own claim and
+            consequence, `rewritten` reads true, and the outcome's detail says the words
+            posted were theirs.
         note:
           type: [string, 'null']
           description: |
