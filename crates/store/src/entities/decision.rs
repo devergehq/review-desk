@@ -180,6 +180,14 @@ impl Store {
 
         let settled = decision.decision.settles();
         let detail = detail_for(decision, &finding)?;
+        // The words a new block would be written with, worked out before anything is
+        // written — the handler's own rule. The transaction would roll a refusal back
+        // either way; computing it here means a finding with nothing to say about it is
+        // refused without a write having been attempted at all.
+        let words = match (decision.decision.writes_a_block(), &held) {
+            (true, None) => Some(words_for(decision, &finding)?),
+            _ => None,
+        };
 
         // The severity first, because the heading is composed from it: by the time the
         // body is recomposed below, the finding already holds the severity it is to be
@@ -237,8 +245,8 @@ impl Store {
                 }
             }
             (chosen, None) if chosen.writes_a_block() => {
-                let (title, text) = words_for(decision, &finding)?;
-                composition::add_finding_block(&tx, review_id, seq, &title, &text)?;
+                let (title, text) = words.as_ref().expect("worked out above");
+                composition::add_finding_block(&tx, review_id, seq, title, text)?;
             }
             // A block the draft already holds, and a decision that does not rewrite its
             // words. Whether it posts is decided by the finding, which has just been

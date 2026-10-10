@@ -309,16 +309,21 @@ pub(crate) fn add_finding_block(
         .rposition(|row| row.section.kind == DraftSectionKind::Finding)
         .map_or(held.len(), |index| index + 1);
 
-    let added = NewDraftSection::finding(seq, title, text);
-    validate(std::slice::from_ref(&added))?;
     held.insert(
         after,
         Written {
-            section: added,
+            section: NewDraftSection::finding(seq, title, text),
             agent_title: Some(title.to_string()),
             agent_text: text.to_string(),
         },
     );
+
+    // The whole list, not only the block being added: the rules are about the list — one
+    // block per finding, and no block bringing its own blank line — and checking the new
+    // one alone would leave a second block about this finding to the unique index, which
+    // reports a broken database rather than a refusal naming the finding.
+    let sections: Vec<NewDraftSection> = held.iter().map(|block| block.section.clone()).collect();
+    validate(&sections)?;
 
     replace(tx, review_id, &held)
 }
