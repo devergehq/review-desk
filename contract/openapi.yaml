@@ -2919,7 +2919,13 @@ components:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }
         ticket_id: { $ref: '#/components/schemas/ForeignId' }
-        brief_ready_at: { type: [string, 'null'], format: date-time }
+        brief_ready_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When the brief became ready for the developer: step 2's own time, or — for a
+            session that wrote a brief and never reported the step — the brief's
+            `updated_at`. Null only when neither exists.
         blocks_later_layers:
           type: boolean
           description: |

@@ -129,7 +129,7 @@ Everything else on the four screens is below.
 | "Retry failed webhook deliveries" | `briefs_to_confirm[].pull_request.title` |
 | "acme/portal" | `briefs_to_confirm[].pull_request.repo` |
 | "ABC-231" | `briefs_to_confirm[].ticket_id` |
-| "brief ready 6 min ago" | `briefs_to_confirm[].brief_ready_at` |
+| "brief ready 6 min ago" | `briefs_to_confirm[].brief_ready_at` — step 2's time, else the brief's own |
 | "nothing else runs until you confirm" | `briefs_to_confirm[].blocks_later_layers` |
 | "Approve a draft · 2" | length of `drafts_to_approve` |
 | "round 1" | `drafts_to_approve[].round` |

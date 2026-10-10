@@ -145,11 +145,24 @@ impl Api {
             .map(|review| -> Result<Value, ApiError> {
                 let layers = self.records.review_layers(review.id)?;
                 let at_two = layers.iter().find(|layer| layer.number == 2);
+                // **The brief's own time when the step has none.** A session that writes a
+                // brief and nothing else leaves layer 2 unwritten — DEV-864's rule, that
+                // what a session's steps say about its progress is the session's to write
+                // — and the queue showed "no time recorded" over a row it could date from
+                // the brief in front of it. The step first, because a step that *has* been
+                // written is the one that says whose turn it is and when it became theirs.
+                let ready_at = at_two.and_then(|layer| layer.updated_at).or_else(|| {
+                    self.records
+                        .find_brief(review.id)
+                        .ok()
+                        .flatten()
+                        .map(|brief| brief.updated_at)
+                });
                 Ok(json!({
                     "review_id": review.id,
                     "pull_request": wire::inbox_pr(review),
                     "ticket_id": review.ticket_id,
-                    "brief_ready_at": wire::rfc3339_or_null(at_two.and_then(|l| l.updated_at)),
+                    "brief_ready_at": wire::rfc3339_or_null(ready_at),
                     // True when the session is holding at layer 2 for this confirmation,
                     // which is what justifies "nothing else runs until you confirm" on
                     // the screen. Read from the layer rather than assumed: a review whose

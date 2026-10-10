@@ -277,6 +277,37 @@ fn the_queue_says_how_long_a_review_has_been_where_it_is() {
         "which is not a claim about the session: Allele still owns that"
     );
 
+    // A brief whose session never wrote step 2 is still dated, from the brief itself.
+    let harness2 = common::start_with_no_github();
+    let only_a_brief = harness2
+        .store
+        .open_review("acme/portal", 500, "ab12cd3")
+        .expect("a review")
+        .review
+        .id;
+    harness2
+        .store
+        .put_brief(
+            only_a_brief,
+            review_desk_store::NewBrief {
+                problem: "The importer reads another tenant's rows.".to_string(),
+                ..Default::default()
+            },
+        )
+        .expect("its brief, and nothing else");
+    let brief_row = harness2.api("GET", "/inbox", None).json()["briefs_to_confirm"]
+        .as_array()
+        .expect("the briefs to confirm")
+        .iter()
+        .find(|item| item["review_id"] == only_a_brief)
+        .expect("the review with only a brief")
+        .clone();
+    assert!(
+        brief_row["brief_ready_at"].is_string(),
+        "a session that writes a brief and no step still leaves a time to date the row \
+         by — the brief's own: {brief_row}"
+    );
+
     let draft = inbox["drafts_to_approve"]
         .as_array()
         .expect("the drafts to sign off")

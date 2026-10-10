@@ -110,9 +110,14 @@ describe('saying how long', () => {
     expect(stepDurationLabel({ state: 'done', seconds: 1020 })).toBe('17 min')
     expect(stepDurationLabel({ state: 'done', seconds: null })).toBe('time not recorded')
     expect(stepDurationLabel({ state: 'skipped', seconds: null })).toBe('time not recorded')
-    /* Still going: the figure would grow while you read it, so there is none. */
-    expect(stepDurationLabel({ state: 'running', seconds: null })).toBeNull()
-    expect(stepDurationLabel({ state: 'waiting_on_you', seconds: null })).toBeNull()
+    /*
+     * **A step still going shows nothing, even when it has a total.** Measured on the
+     * binary: step 2 waiting on the developer read "7 sec", which is the agent's pass
+     * before the wait and reads like how long you have been keeping it. How long a step
+     * still going has been where it is belongs to the queue, which says exactly that.
+     */
+    expect(stepDurationLabel({ state: 'running', seconds: 420 })).toBeNull()
+    expect(stepDurationLabel({ state: 'waiting_on_you', seconds: 420 })).toBeNull()
     expect(stepDurationLabel({ state: 'pending', seconds: null })).toBeNull()
   })
 

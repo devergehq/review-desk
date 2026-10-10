@@ -211,6 +211,14 @@ impl Records {
 
     // -- briefs -------------------------------------------------------------------
 
+    /// The review's brief, or `None` when nothing has written one.
+    ///
+    /// For a read that has something to say either way — the Inbox dates a brief waiting
+    /// to be confirmed from the brief itself when the step carries no time.
+    pub fn find_brief(&self, review_id: i64) -> Result<Option<Brief>, ApiError> {
+        self.with(|store| store.find_brief(review_id))
+    }
+
     /// The review's brief, or a `conflict`.
     ///
     /// The contract gives `confirmBrief` a 409 for "the review has no brief to confirm",

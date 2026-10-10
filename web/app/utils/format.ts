@@ -137,20 +137,26 @@ export function durationLabel(seconds: number | null | undefined): string | null
 }
 
 /**
- * How long a step has taken, for the line under its name on the trail.
+ * How long a step took, for the line under its name on the trail.
  *
- * Three answers, and the middle one is the point of DEV-890: a step that finished with no
- * duration on the record says so, rather than drawing a nought or drawing nothing — which
- * a reader would take for "it was instant" and "it is still going" respectively.
+ * **Only for a step that has finished**, which is what DEV-890 asks the trail to show. A
+ * step still going has a total too — the passes it has already closed — and showing it was
+ * worse than showing nothing: step 2 waiting on the developer read "7 sec", which is how
+ * long the agent took before the wait and reads like how long you have been keeping it.
+ * The queue is where a step still going is timed, and it times the right thing: how long
+ * the review has been in the state it is in.
+ *
+ * A step that finished with no duration on the record says so rather than drawing a nought
+ * — that is every finished step of a review from before DEV-890, and a nought would say it
+ * was instant.
  */
 export function stepDurationLabel(layer: {
   state: ReviewLayerState
   seconds?: number | null
 }): string | null {
-  const measured = durationLabel(layer.seconds)
-  if (measured) return measured
   const finished = layer.state === 'done' || layer.state === 'failed' || layer.state === 'skipped'
-  return finished ? 'time not recorded' : null
+  if (!finished) return null
+  return durationLabel(layer.seconds) ?? 'time not recorded'
 }
 
 /**
