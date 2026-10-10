@@ -256,12 +256,17 @@ pub fn problem_statement(statement: &ProblemStatement) -> Value {
 /// already written, but it is four structured fields on the wire and nothing can turn one
 /// into the other — so a brief written before the migration serves an empty list, which
 /// is true, rather than a guess.
-pub fn brief(brief: &Brief, options: &[BriefOption]) -> Value {
+///
+/// **The options come off the brief rather than as a second argument.** The store
+/// populates `Brief::options` on every read, and since DEV-882 each option carries its
+/// verdicts — so a second argument was a second read of the same rows, and a chance to
+/// serve one brief's options under another brief's fields.
+pub fn brief(brief: &Brief) -> Value {
     json!({
         "review_id": brief.review_id,
         "problem": brief.problem,
         "diagram": brief.diagram,
-        "options": options.iter().map(brief_option).collect::<Vec<_>>(),
+        "options": brief.options.iter().map(brief_option).collect::<Vec<_>>(),
         "approach_verdict": brief.approach_verdict,
         "provenance": brief.provenance,
         "confirmed": brief.is_confirmed(),

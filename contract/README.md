@@ -5,7 +5,7 @@ holds no implementation of either.
 
 | File | What it is |
 |---|---|
-| `openapi.yaml` | OpenAPI 3.1 for the local JSON API. 18 operations. |
+| `openapi.yaml` | OpenAPI 3.1 for the local JSON API. 19 operations. |
 | `examples/` | One example response per endpoint, one request body per write, and the error shape. A `.<variant>.` form adds a second shape where one example cannot show an optional field both present and absent. `getReview.response.round-two.json` is the second round of the same pull request as the canonical one. |
 | `validate-examples.mjs` | Checks every example against its schema, and fails when an endpoint has no example. |
 
@@ -300,9 +300,9 @@ Five things about that table are decisions rather than consequences.
 `given` and `looked_up` are the session's own words, and nothing here can check either.
 
 **Which is why there is a read for the problem half.**
-`GET /reviews/{reviewId}/brief/problem-statement` serves rows 2, 7 and the `was_wrong` half
-of row 4, and nothing else — so a session can hand a problem to an independent pass without
-handing it the answer. The absences are each argued in `openapi.yaml`; the shortest version
+`GET /reviews/{reviewId}/brief/problem-statement` serves rows 2, 4 and 7 and the
+`was_wrong` line of row 5, and nothing else — so a session can hand a problem to an
+independent pass without handing it the answer. The absences are each argued in `openapi.yaml`; the shortest version
 is that the headline states the answer, the after flow and `now_fixed` *are* the change, row
 5's detail travels as a pair, and the superseded `diagram` held both flows at once with no
 way to separate them.

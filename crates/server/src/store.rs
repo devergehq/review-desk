@@ -14,7 +14,7 @@
 use std::sync::{Arc, Mutex};
 
 use review_desk_store::{
-    Actor, Brief, BriefOption, Decision, DecisionMade, Disposition, Draft, DraftSection, Finding,
+    Actor, Brief, Decision, DecisionMade, Disposition, Draft, DraftSection, Finding,
     FindingInRound, FullReview, NewDraft, NewOutcome, NitTicket, OpenedReview, ProblemStatement,
     RepoSummary, Review, ReviewAtLayer, ReviewEvent, ReviewFacts, ReviewLayer, ReviewProvenance,
     RoundCommit, RoundSummary, Rule, RuleCounts, RuleStage, RulesSummary, Store, StoreError,
@@ -208,24 +208,23 @@ impl Records {
         self.with(|store| store.confirm_brief(review_id, SIGN_OFF_ACTOR))
     }
 
-    /// The alternatives the brief considered, in key order.
-    pub fn brief_options(&self, review_id: i64) -> Result<Vec<BriefOption>, ApiError> {
-        self.with(|store| store.list_brief_options(review_id))
-    }
-
     /// The problem half of a review's brief.
     ///
     /// A review that exists and has no brief is a **conflict**, not a 404, for the reason
     /// [`Records::brief_to_confirm`] gives: the caller asked about a review that is there.
     /// The store reports an absent brief as `NotFound`, which this crate serves as 404, so
     /// the absence is read here rather than mapped from the store's error.
+    ///
+    /// `find_problem_statement` rather than `problem_statement`, so telling the two apart
+    /// costs one read of the brief instead of two. A brief is a dozen statements to read
+    /// now that it carries every row the three pages draw.
     pub fn problem_statement(&self, review_id: i64) -> Result<ProblemStatement, ApiError> {
-        if self.with(|store| store.find_brief(review_id))?.is_none() {
-            return Err(ApiError::conflict(format!(
-                "review {review_id} has no brief, so it has no problem statement"
-            )));
-        }
-        self.with(|store| store.problem_statement(review_id))
+        self.with(|store| store.find_problem_statement(review_id))?
+            .ok_or_else(|| {
+                ApiError::conflict(format!(
+                    "review {review_id} has no brief, so it has no problem statement"
+                ))
+            })
     }
 
     // -- findings and outcomes ----------------------------------------------------

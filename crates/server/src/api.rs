@@ -411,7 +411,6 @@ impl Api {
     /// null. See [`wire::coverage_source`] and [`wire::not_checked`].
     fn review(&self, review_id: i64) -> Result<(u16, Value), ApiError> {
         let full = self.records.full_review(review_id)?;
-        let options = self.records.brief_options(review_id)?;
         let ticket = self.records.nit_ticket(review_id)?;
         let provenance = self.records.review_provenance(review_id)?;
 
@@ -437,10 +436,7 @@ impl Api {
             json!({
                 "review": wire::review(&full.review),
                 "layers": full.layers.iter().map(wire::review_layer).collect::<Vec<_>>(),
-                "brief": full
-                    .brief
-                    .as_ref()
-                    .map_or(Value::Null, |brief| wire::brief(brief, &options)),
+                "brief": full.brief.as_ref().map_or(Value::Null, wire::brief),
                 "findings": findings.iter().map(wire::finding_in_round).collect::<Vec<_>>(),
                 "outcomes": full.outcomes.iter().map(wire::outcome).collect::<Vec<_>>(),
                 "finding_severities": wire::severity_counts(&full.findings),
@@ -487,8 +483,7 @@ impl Api {
         // Confirming an already confirmed brief returns it unchanged rather than failing,
         // which is what the store does and what the contract asks for.
         let brief = self.records.confirm_brief(review_id)?;
-        let options = self.records.brief_options(review_id)?;
-        Ok((200, wire::brief(&brief, &options)))
+        Ok((200, wire::brief(&brief)))
     }
 
     /// `GET /reviews/{reviewId}/brief/problem-statement`: the problem, with nothing of

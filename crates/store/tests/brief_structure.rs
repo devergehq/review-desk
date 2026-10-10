@@ -697,6 +697,123 @@ fn an_option_proposed_by_both_counts_as_the_blind_pass_having_run() {
 }
 
 #[test]
+fn an_option_from_a_blind_pass_that_is_not_recorded_is_refused() {
+    let (_dir, store) = temp_store();
+    let review = seed(&store);
+
+    // **The direction the first draft of this change missed.** `blind_pass_state` answers
+    // `not_run` as soon as there is no pass on the record, so a brief with an option
+    // claiming a pass and no pass to show would have the Alternatives page badge that
+    // option "Blind" with no blind column to put it in — a brief disagreeing with its own
+    // options, which is the one thing deriving the state is supposed to make impossible.
+    for proposer in [OptionProposer::BlindPass, OptionProposer::Both] {
+        let (field, value, _) = refusal(store.put_brief(
+            review.id,
+            NewBrief {
+                blind_pass: None,
+                options: vec![option("A", proposer, Vec::new())],
+                ..whole_brief()
+            },
+        ));
+        assert_eq!(field, "options.proposed_by");
+        assert!(value.contains("option A"), "{value}");
+    }
+
+    // And with the pass recorded, the same brief is fine.
+    let stored = store
+        .put_brief(
+            review.id,
+            NewBrief {
+                options: vec![option("A", OptionProposer::BlindPass, Vec::new())],
+                blind_pass: Some(BriefBlindPass {
+                    given: "the problem, as handed over".to_string(),
+                    pick_key: Some("A".to_string()),
+                    pick_why: Some("it answers it".to_string()),
+                    looked_up: "nothing".to_string(),
+                    questions: Vec::new(),
+                }),
+                ..whole_brief()
+            },
+        )
+        .expect("a recorded pass makes the option honest");
+    assert_eq!(stored.blind_pass_state(), BlindPassState::Ran);
+}
+
+#[test]
+fn a_blank_line_on_the_brief_is_refused_rather_than_stored() {
+    let (_dir, store) = temp_store();
+    let review = seed(&store);
+
+    // Migration 10 adds these four with `ALTER TABLE`, and SQLite cannot put a CHECK on a
+    // table that already exists — so `put_brief` is the only layer there is. A blank
+    // headline draws an empty line where the page's first sentence goes.
+    for (field, brief) in [
+        (
+            "headline",
+            NewBrief {
+                headline: Some("   ".to_string()),
+                ..whole_brief()
+            },
+        ),
+        (
+            "how_it_works_today",
+            NewBrief {
+                how_it_works_today: Some(String::new()),
+                ..whole_brief()
+            },
+        ),
+        (
+            "flow_before_caption",
+            NewBrief {
+                flow_before_caption: Some("\t".to_string()),
+                ..whole_brief()
+            },
+        ),
+        (
+            "flow_after_caption",
+            NewBrief {
+                flow_after_caption: Some(String::new()),
+                ..whole_brief()
+            },
+        ),
+    ] {
+        let (refused, _, expected) = refusal(store.put_brief(review.id, brief));
+        assert_eq!(refused, field);
+        assert!(expected.contains("leave the field out"), "{expected}");
+    }
+
+    // Leaving it out is the way to say there is none, and that is still allowed.
+    store
+        .put_brief(
+            review.id,
+            NewBrief {
+                headline: None,
+                ..whole_brief()
+            },
+        )
+        .expect("an absent headline is not a blank one");
+}
+
+#[test]
+fn a_caption_over_an_empty_flow_is_refused() {
+    let (_dir, store) = temp_store();
+    let review = seed(&store);
+
+    // The same fault as a heading over an empty table: the page draws the words and then
+    // a blank where the picture goes.
+    let (field, _, expected) = refusal(store.put_brief(
+        review.id,
+        NewBrief {
+            flow_after: Vec::new(),
+            flow_after_caption: Some("The delivery is queued".to_string()),
+            ..whole_brief()
+        },
+    ));
+    assert_eq!(field, "flow_after_caption");
+    assert!(expected.contains("a flow to caption"), "{expected}");
+}
+
+#[test]
 fn a_blind_pass_picking_an_option_that_is_not_on_the_list_is_refused() {
     let (_dir, store) = temp_store();
     let review = seed(&store);
@@ -860,6 +977,7 @@ fn the_store_holds_no_length_limit() {
                 }],
                 flow_before: vec![vec![flow_box("a box", Some(1))]],
                 flow_after: Vec::new(),
+                flow_after_caption: None,
                 options: Vec::new(),
                 blind_pass: None,
                 parts: Vec::new(),

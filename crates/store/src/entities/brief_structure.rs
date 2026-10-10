@@ -280,13 +280,15 @@ pub struct BriefDisagreement {
 
 /// The problem half of a brief, and nothing else.
 ///
-/// **This is what a blind pass may be shown.** Rows 2, 4 and 7 of DEV-882's table: the
-/// before flow, what was wrong with each numbered problem, and how the system works today.
+/// **This is what a blind pass may be shown.** Rows 2, 4 and 7 of DEV-882's table, and
+/// the "was wrong" line of row 5: the before flow, the numbers marking it, what was wrong
+/// with each, and how the system works today.
 /// Nothing from the change half is here, and the absences are deliberate:
 ///
 /// * **no headline** — the headline states the answer ("OAuth sign-in gets its own login
 ///   page"), which is the one sentence that would anchor a fresh pair of eyes hardest;
-/// * **no after flow, and no `now_fixed`** — those are the change;
+/// * **no after flow, and no `now_fixed`** — those are the change, which is row 5's other
+///   half;
 /// * **no detail** — row 5's detail is split before and after, and the before side travels
 ///   with the after side; splitting a reader's click would be a half-answer;
 /// * **no `diagram`** — the superseded free-text field held both flows at once and nothing
@@ -331,8 +333,25 @@ impl Store {
     /// things.** A read that subtracts grows a leak every time the brief grows a field; a
     /// read that adds cannot.
     pub fn problem_statement(&self, review_id: i64) -> Result<ProblemStatement> {
-        let brief = self.get_brief(review_id)?;
-        Ok(ProblemStatement {
+        self.find_problem_statement(review_id)?
+            .ok_or(StoreError::NotFound {
+                entity: "brief",
+                id: review_id.to_string(),
+            })
+    }
+
+    /// The problem half, or `None` when the review has no brief.
+    ///
+    /// **One read of the brief, not two.** A caller that has to tell "no such review" from
+    /// "no brief on it" would otherwise ask for the brief to find out and then ask again
+    /// to read it — and reading a brief is a dozen statements, because it carries every
+    /// row the three pages draw. The cheapest read in the contract should not be the most
+    /// expensive one in the store.
+    pub fn find_problem_statement(&self, review_id: i64) -> Result<Option<ProblemStatement>> {
+        let Some(brief) = self.find_brief(review_id)? else {
+            return Ok(None);
+        };
+        Ok(Some(ProblemStatement {
             review_id: brief.review_id,
             problem: brief.problem,
             how_it_works_today: brief.how_it_works_today,
@@ -346,7 +365,7 @@ impl Store {
                     was_wrong: problem.was_wrong,
                 })
                 .collect(),
-        })
+        }))
     }
 
     /// Read one flow of the review's brief, as rows of boxes.
@@ -638,11 +657,49 @@ pub(crate) fn invalid(field: &'static str, value: impl Into<String>, expected: &
 pub(crate) fn validate_brief_structure(new: &NewBrief) -> Result<()> {
     let numbers = validate_problems(&new.problems)?;
 
+    // The four free lines on the brief itself. Migration 10 adds them with `ALTER TABLE`,
+    // and SQLite cannot put a CHECK on a table that already exists -- so this is the only
+    // layer there is, the way `put_brief` is for `confirmation_not_required_because`.
+    for (field, value) in [
+        ("headline", new.headline.as_deref()),
+        ("how_it_works_today", new.how_it_works_today.as_deref()),
+        ("flow_before_caption", new.flow_before_caption.as_deref()),
+        ("flow_after_caption", new.flow_after_caption.as_deref()),
+    ] {
+        optional(field, value, "the brief")?;
+    }
+
     for (side, flow) in [
         ("flow_before", &new.flow_before),
         ("flow_after", &new.flow_after),
     ] {
         validate_flow(side, flow, &numbers)?;
+    }
+
+    // A caption over an empty flow is the same fault as a heading over an empty table:
+    // the page draws the words and then a blank where the picture goes.
+    for (field, caption, flow) in [
+        (
+            "flow_before_caption",
+            new.flow_before_caption.as_deref(),
+            &new.flow_before,
+        ),
+        (
+            "flow_after_caption",
+            new.flow_after_caption.as_deref(),
+            &new.flow_after,
+        ),
+    ] {
+        if let Some(caption) = caption {
+            if flow.is_empty() {
+                return Err(invalid(
+                    field,
+                    caption,
+                    "a flow to caption; a caption over an empty flow draws the words and \
+                     then a blank where the picture goes",
+                ));
+            }
+        }
     }
 
     if let Some(table) = &new.support_table {
@@ -653,8 +710,29 @@ pub(crate) fn validate_brief_structure(new: &NewBrief) -> Result<()> {
         validate_verdicts(option, &numbers)?;
     }
 
-    if let Some(pass) = &new.blind_pass {
-        validate_blind_pass(pass, &new.options)?;
+    match &new.blind_pass {
+        Some(pass) => validate_blind_pass(pass, &new.options)?,
+        // **The other direction, which is the one that was missing.** `blind_pass_state`
+        // short-circuits on an absent pass and answers `not_run`, so an option claiming a
+        // pass that is not on the record would make the Alternatives page badge an option
+        // "Blind" with no blind column to put it in -- the disagreement between a brief
+        // and its own options that the derived state exists to make impossible.
+        None => {
+            if let Some(option) = new.options.iter().find(|option| {
+                matches!(
+                    option.proposed_by,
+                    OptionProposer::BlindPass | OptionProposer::Both
+                )
+            }) {
+                return Err(invalid(
+                    "options.proposed_by",
+                    format!("option {}: {}", option.key, option.proposed_by),
+                    "the blind pass that proposed it, in `blind_pass`, or `ticket`; an \
+                     option from a pass this brief does not record is a pass nothing \
+                     can show",
+                ));
+            }
+        }
     }
 
     validate_parts(&new.parts, &numbers)?;

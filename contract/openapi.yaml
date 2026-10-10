@@ -1043,7 +1043,8 @@ components:
     BriefOption:
       type: object
       additionalProperties: false
-      required: [key, title, argument_for, argument_against, chosen]
+      required:
+        [key, title, argument_for, argument_against, chosen, proposed_by, verdicts]
       description: |
         One alternative, written before the diff was read. The store holds the option map
         as one opaque string today; this is the shape the screen needs instead.
