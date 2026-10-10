@@ -432,6 +432,23 @@ fn check(decision: &Decision) -> Result<()> {
         _ => {}
     }
 
+    // Words belong to a rewrite, and to the two decisions that may have to write a block
+    // the draft has none of. **Refused rather than ignored** on the other five: an API that
+    // accepts a field and does nothing with it is one a caller cannot tell they misused.
+    if (decision.title.is_some() || decision.text.is_some())
+        && !matches!(
+            decision.decision,
+            FindingDecision::Rewrite | FindingDecision::Keep | FindingDecision::RaiseAgain
+        )
+    {
+        return Err(refuse(
+            "text",
+            format!("words on a {} decision", decision.decision),
+            "no title and no text on this decision; rewriting what gets posted is its own \
+             decision, and this one takes the finding out of the post",
+        ));
+    }
+
     if decision.severity.is_some() && decision.decision != FindingDecision::Regrade {
         return Err(refuse(
             "severity",

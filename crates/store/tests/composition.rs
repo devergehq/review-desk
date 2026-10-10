@@ -547,6 +547,51 @@ fn a_rewrite_with_nothing_to_say_is_refused() {
 }
 
 #[test]
+fn words_on_a_decision_that_has_nowhere_to_put_them_are_refused() {
+    // An API that accepts a field and does nothing with it is one a caller cannot tell
+    // they misused. The two that *can* hold words are a rewrite, and a keep for a finding
+    // the draft holds no block for — the designs' "Post it" on a held-back nit.
+    let (_dir, store) = temp_store();
+    let review = seeded(&store);
+
+    for decision in [
+        FindingDecision::Cut,
+        FindingDecision::ToTicket,
+        FindingDecision::Withdraw,
+    ] {
+        let refused = store
+            .decide_finding(
+                review,
+                1,
+                &Decision {
+                    text: Some("the developer's words".to_string()),
+                    note: Some("a reason".to_string()),
+                    ..Decision::of(decision)
+                },
+                Actor::Developer,
+            )
+            .unwrap_err();
+        assert_eq!(refused.code(), "invalid_value", "{decision:?}");
+    }
+
+    // And on a keep for a finding that already has a block, because taking them would
+    // change what gets posted while the record said only "kept".
+    let refused = store
+        .decide_finding(
+            review,
+            1,
+            &Decision {
+                text: Some("the developer's words".to_string()),
+                ..Decision::of(FindingDecision::Keep)
+            },
+            Actor::Developer,
+        )
+        .unwrap_err();
+    assert_eq!(refused.code(), "invalid_value");
+    assert!(refused.to_string().contains("rewriting"), "{refused}");
+}
+
+#[test]
 fn keeping_a_finding_records_it_and_changes_no_words() {
     let (_dir, store) = temp_store();
     let review = seeded(&store);
