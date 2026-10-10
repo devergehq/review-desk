@@ -321,6 +321,13 @@ describe('the queue', () => {
     expect(row.text()).toContain('Draft ready')
     expect(row.text()).toContain('Read and sign off')
     expect(page.findAll('.row').filter(one => one.text().includes('#412'))).toHaveLength(1)
+    /*
+     * **And it goes to the review, not to the draft.** Every row in this queue opens the
+     * review it is about; the draft is behind the review page's own "Open draft". This
+     * row was the exception until DEV-880's pull request, and it is pinned here so it
+     * does not become one again.
+     */
+    expect(row.attributes('href')).toBe('/reviews/17')
   })
 
   it('keeps the figures the boards do not draw, rather than dropping them', async () => {
@@ -377,6 +384,52 @@ describe('one review', () => {
     const page = await open(17)
     expect(page.text()).toContain('a webhook delivery fails once and is never tried again')
     expect(page.find('figure').exists()).toBe(true)
+  })
+
+  /*
+   * **Recorded text keeps the shape its session gave it.** A session writes a finding's
+   * evidence in paragraphs and a brief's problem at length, and the page used to join the
+   * evidence into a `·`-separated meta line and run both the full width of the card. Both
+   * now carry `rd-recorded`, which is `white-space: pre-wrap` at about 70 characters — and
+   * is a class rather than markup, because the text is a record. DEV-878 rebuilds this
+   * page; this is so it reads in the meantime.
+   */
+  describe('text a session recorded', () => {
+    it('gives a finding\'s evidence its own block, with its paragraphs kept', async () => {
+      const page = await open(17)
+      const evidence = page.findAll('.evidence').find(one => one.text().includes('PROVED by'))
+      expect(evidence).toBeTruthy()
+      expect(evidence!.classes()).toContain('rd-recorded')
+      /* The blank lines between the session's three paragraphs survive to the DOM. */
+      expect(evidence!.text()).toContain('\n\n')
+      expect(evidence!.text()).toContain('Mechanism:')
+      expect(evidence!.text()).toContain('Bounded:')
+    })
+
+    it('keeps the evidence out of the one-line facts beside it', async () => {
+      const page = await open(17)
+      const facts = page.findAll('.where').find(one => one.text().includes('sibling diff'))!
+      expect(facts.text()).toContain('lens: sibling diff')
+      expect(facts.text()).not.toContain('PROVED by')
+    })
+
+    it('holds the problem and its provenance to a readable measure', async () => {
+      const page = await open(17)
+      expect(page.find('.problem').classes()).toContain('rd-recorded')
+      expect(page.find('.panel-head .rd-meta').classes()).toContain('rd-recorded')
+    })
+
+    it('is text, never markup', async () => {
+      /*
+       * The class exists so that a paragraph break needs no HTML to survive, which is why
+       * a session's evidence can be interpolated. The rule itself is asserted in
+       * `controls.nuxt.spec.ts`, where the stylesheet is read.
+       */
+      const page = await open(17)
+      const evidence = page.findAll('.evidence').find(one => one.text().includes('PROVED by'))!
+      expect(evidence.element.querySelector('p, br, strong')).toBeNull()
+      expect(evidence.html()).toContain('PROVED by')
+    })
   })
 
   it('marks the option that was built', async () => {

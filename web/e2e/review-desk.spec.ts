@@ -199,7 +199,16 @@ test.describe('the whole path, on a seeded database', () => {
     await expect(page.getByText('1 blocker, 1 should')).toBeVisible()
     await expect(page.getByText('1 nit to a ticket')).toBeVisible()
 
+    /*
+     * **A row goes to the review, and the draft is one click further on.** It used to go
+     * straight to the draft, which is the one row in the queue that skipped the review —
+     * Patrick, on tc-portal #9584: "when we click a review, we want to go to the review,
+     * not to the draft." The path to signing off is the same, with the review read first.
+     */
     await page.getByRole('link', { name: 'Read and sign off' }).first().click()
+    await expect(page).toHaveURL(`${seeded}reviews/${reviewId}`)
+
+    await page.getByRole('link', { name: 'Open draft' }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${reviewId}/draft`)
     await expect(
       page.getByText('Nothing has been posted. This is what GitHub will show.'),
