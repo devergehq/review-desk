@@ -411,7 +411,7 @@ pub fn draft_section(section: &DraftSection) -> Value {
         "text": section.text,
         "agent_title": section.agent_title,
         "agent_text": section.agent_text,
-        "rewritten": section.title != section.agent_title || section.text != section.agent_text,
+        "rewritten": section.rewritten(),
         "posted": section.posted,
     })
 }

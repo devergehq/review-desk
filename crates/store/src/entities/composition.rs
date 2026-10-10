@@ -277,16 +277,11 @@ pub(crate) fn write(
         }
     }
 
-    let blocks: Vec<Written> = sections
-        .iter()
-        .map(|section| Written {
-            agent_title: section.title.clone(),
-            agent_text: section.text.clone(),
-            section: section.clone(),
-        })
-        .collect();
-
-    replace(tx, review_id, &blocks)
+    replace(
+        tx,
+        review_id,
+        &written_by_the_writer(tx, review_id, sections)?,
+    )
 }
 
 /// Add one block for a finding the composition has none for, after the last finding block.
@@ -361,6 +356,58 @@ pub(crate) fn finding_block(
     Ok(list(conn, review_id)?
         .into_iter()
         .find(|section| section.finding_seq == Some(seq)))
+}
+
+/// Pair each block being written with the words to keep as the writer's own.
+///
+/// **A block whose words did not change keeps what a rewrite replaced.** A whole-draft
+/// write is normally the session writing the draft, and then what it sends *is* the
+/// writer's words. But the dashboard writes the whole composition too — it is how the
+/// developer changes a block of prose, because a prose block is about no finding and so
+/// cannot carry an outcome — and it sends every other block back unchanged. Without this,
+/// changing the summary sentence would quietly relabel a paragraph the developer had
+/// rewritten as the words the agent wrote, and the one comparison the feedback loop asks
+/// for would be lost to an edit somewhere else in the body.
+///
+/// Compared per field, so a session that rewrites a title and keeps the paragraph is the
+/// author of the title and nothing more.
+fn written_by_the_writer(
+    conn: &Connection,
+    review_id: i64,
+    sections: &[NewDraftSection],
+) -> Result<Vec<Written>> {
+    let held = list(conn, review_id)?;
+
+    Ok(sections
+        .iter()
+        .map(|section| {
+            let earlier = section
+                .finding_seq
+                .and_then(|seq| held.iter().find(|block| block.finding_seq == Some(seq)));
+
+            let (agent_title, agent_text) = match earlier {
+                Some(block) => (
+                    if block.title == section.title {
+                        block.agent_title.clone()
+                    } else {
+                        section.title.clone()
+                    },
+                    if block.text == section.text {
+                        block.agent_text.clone()
+                    } else {
+                        section.text.clone()
+                    },
+                ),
+                None => (section.title.clone(), section.text.clone()),
+            };
+
+            Written {
+                section: section.clone(),
+                agent_title,
+                agent_text,
+            }
+        })
+        .collect())
 }
 
 /// One block as it is to be written: the words it holds, and the agent's own.

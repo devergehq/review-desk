@@ -1276,6 +1276,18 @@ pub struct DraftSection {
     pub posted: bool,
 }
 
+impl DraftSection {
+    /// Whether the developer has rewritten this block.
+    ///
+    /// Derived from the words rather than stored beside them, so it cannot disagree with
+    /// them, and read through this function rather than compared at each caller so the
+    /// rule — the title or the paragraph differs from the writer's own — lives in one
+    /// place.
+    pub fn rewritten(&self) -> bool {
+        self.title != self.agent_title || self.text != self.agent_text
+    }
+}
+
 /// A block to write, in the order given.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

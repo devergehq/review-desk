@@ -368,6 +368,103 @@ fn a_finding_marked_fixed_after_the_draft_was_written_stops_posting() {
     );
 }
 
+#[test]
+fn changing_a_block_of_prose_keeps_what_a_rewrite_replaced() {
+    // **How the developer changes a block of prose**: there is no decision for one — a
+    // prose block is about no finding, so it can carry no outcome — and the dashboard
+    // writes the whole composition back with that one block's text changed. Every other
+    // block goes back unchanged, and a finding block the developer had rewritten must not
+    // be relabelled as the agent's words by an edit somewhere else in the body.
+    let (_dir, store) = temp_store();
+    let review = seeded(&store);
+
+    store
+        .decide_finding(
+            review,
+            1,
+            &Decision {
+                text: Some("The customer receives the event twice.".to_string()),
+                ..Decision::of(FindingDecision::Rewrite)
+            },
+            Actor::Developer,
+        )
+        .expect("the developer rewrites F1");
+
+    // The whole composition, as the page holds it, with the summary sentence changed.
+    let held = store.draft_sections(review).expect("the blocks");
+    let sections: Vec<NewDraftSection> = held
+        .iter()
+        .map(|section| NewDraftSection {
+            kind: section.kind,
+            finding_seq: section.finding_seq,
+            title: section.title.clone(),
+            text: if section.position == 1 {
+                "The queue-with-backoff approach fits, and one thing blocks the merge.".to_string()
+            } else {
+                section.text.clone()
+            },
+        })
+        .collect();
+    store
+        .put_draft_sections(review, &sections)
+        .expect("the developer changes the summary sentence");
+
+    let f1 = store
+        .draft_sections(review)
+        .expect("the blocks")
+        .into_iter()
+        .find(|section| section.finding_seq == Some(1))
+        .expect("F1's block");
+    assert_eq!(f1.text, "The customer receives the event twice.");
+    assert_eq!(
+        f1.agent_text, "A second delivery is indistinguishable from a new one.",
+        "what the rewrite replaced survives an edit to another block"
+    );
+}
+
+#[test]
+fn a_session_that_writes_new_words_is_the_author_of_them() {
+    // The other side of the rule above: a session reworking a draft after a send-back is
+    // the writer of what it sends, and the comparison is against *its* words.
+    let (_dir, store) = temp_store();
+    let review = seeded(&store);
+
+    store
+        .decide_finding(
+            review,
+            1,
+            &Decision {
+                text: Some("the developer's paragraph".to_string()),
+                ..Decision::of(FindingDecision::Rewrite)
+            },
+            Actor::Developer,
+        )
+        .expect("the developer rewrites F1");
+    store
+        .put_draft_sections(
+            review,
+            &[NewDraftSection::finding(
+                1,
+                "A retried delivery is sent without an idempotency key",
+                "the session's own new paragraph",
+            )],
+        )
+        .expect("the session reworks the draft");
+
+    let f1 = store
+        .draft_sections(review)
+        .expect("the blocks")
+        .into_iter()
+        .find(|section| section.finding_seq == Some(1))
+        .expect("F1's block");
+    assert_eq!(f1.text, "the session's own new paragraph");
+    assert_eq!(f1.agent_text, "the session's own new paragraph");
+    assert!(
+        !f1.rewritten(),
+        "nothing has been rewritten since the session wrote this"
+    );
+}
+
 // -- the decisions ------------------------------------------------------------------
 
 #[test]
