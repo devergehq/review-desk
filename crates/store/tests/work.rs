@@ -8,6 +8,7 @@
 
 mod common;
 
+use std::cell::RefCell;
 use std::collections::BTreeSet;
 
 use common::{db_path, new_review, temp_store};
@@ -310,6 +311,7 @@ fn a_review_a_session_abandoned_is_still_listed() {
                 body: "half a draft".to_string(),
                 status: review_desk_store::DraftStatus::Drafting,
                 lint: None,
+                sections: None,
             },
         )
         .expect("a drafting draft");
@@ -464,16 +466,23 @@ fn one_repository_or_one_review_at_a_time() {
 
 #[test]
 fn every_reachable_state_has_one_kind_or_none() {
-    // **The property the four kinds rest on.** Four separate queries would be four
+    // **The property the five kinds rest on.** Five separate queries would be five
     // chances for two of them to match one review and hand an agent two contradictory
     // instructions. This walks a review through every state it can reach and asserts that
     // never happens, and that the states which should be silent are.
     let (_dir, store) = temp_store();
     let review = requested(&store, 800, "aaa0030");
 
+    // What the walk actually reached. **It used to count `WorkKind::ALL` instead**, so the
+    // closing assertion held however few states the walk visited — a kind added and never
+    // walked passed it. Found while adding the fifth.
+    let visited = RefCell::new(BTreeSet::new());
     let seen = |expected: Option<WorkKind>, what: &str| {
         let got = kind_for(&store, review.id);
         assert_eq!(got, expected, "{what}");
+        if let Some(kind) = got {
+            visited.borrow_mut().insert(kind.as_str());
+        }
     };
 
     seen(
@@ -517,9 +526,26 @@ fn every_reachable_state_has_one_kind_or_none() {
     store.post_draft(review.id, "gh-review-9").expect("posted");
     seen(None, "posted: nothing is waiting on an agent");
 
+    store
+        .request_nit_ticket(review.id, None)
+        .expect("the developer asks for the one ticket");
+    seen(
+        Some(WorkKind::NitsToTicket),
+        "a ticket the developer asked for and nobody has filed",
+    );
+
+    store
+        .request_nit_ticket(review.id, Some("ABC-246"))
+        .expect("the session files it");
+    seen(None, "filed: nothing is waiting on an agent again");
+
     // Every kind was reached, so this test covers the set rather than part of it.
-    let reached: BTreeSet<&str> = WorkKind::ALL.iter().map(|kind| kind.as_str()).collect();
-    assert_eq!(reached.len(), 4, "four kinds, and this walk visited each");
+    let every: BTreeSet<&str> = WorkKind::ALL.iter().map(|kind| kind.as_str()).collect();
+    assert_eq!(
+        visited.into_inner(),
+        every,
+        "every kind, and this walk visited each"
+    );
 }
 
 #[test]

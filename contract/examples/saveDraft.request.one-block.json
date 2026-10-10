@@ -1,0 +1,10 @@
+{
+  "body": "A review written as one block of markdown, which is every draft before the composition existed. The per-finding decisions refuse on it, saying so.\n",
+  "edits": [
+    {
+      "finding_seq": 1,
+      "kind": "rewritten",
+      "summary": "first sentence"
+    }
+  ]
+}

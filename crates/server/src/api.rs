@@ -16,8 +16,9 @@
 //! methods and no write in it.
 
 use review_desk_store::{
-    Actor, Disposition, DraftStatus, NewDraft, NewOutcome, OutcomeKind, ReviewEvent, ReviewFacts,
-    RuleStage,
+    Actor, Decision, Disposition, DraftSectionKind, DraftStatus, FindingDecision, NewDraft,
+    NewDraftSection, NewOutcome, OutcomeKind, ReviewEvent, ReviewFacts, RuleStage, Severity,
+    DEVELOPER_DECISIONS,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -108,11 +109,17 @@ impl Api {
             Operation::SetFindingDisposition { review_id, seq } => {
                 self.set_finding_disposition(review_id, seq, body)
             }
+            Operation::DecideFinding { review_id, seq } => {
+                self.decide_finding(review_id, seq, body)
+            }
             Operation::GetDraft { review_id } => self.draft(review_id),
             Operation::SaveDraft { review_id } => self.save_draft(review_id, body),
             Operation::ApproveDraft { review_id } => self.approve_draft(review_id, body),
             Operation::SendBackDraft { review_id } => self.send_back_draft(review_id, body),
             Operation::RequestNitTicket { review_id } => self.request_nit_ticket(review_id, body),
+            Operation::TicketRestAndApprove { review_id } => {
+                self.ticket_rest_and_approve(review_id, body)
+            }
             Operation::ListRules => self.rules(query),
             Operation::PromoteRule { rule_id } => self.promote_rule(rule_id, body),
             Operation::DismissRule { rule_id } => self.dismiss_rule(rule_id, body),
@@ -538,12 +545,12 @@ impl Api {
             .outcomes
             .iter()
             .filter(|outcome| outcome.actor == Actor::Developer)
-            .filter(|outcome| {
-                matches!(
-                    outcome.kind,
-                    OutcomeKind::Cut | OutcomeKind::Regraded | OutcomeKind::Rewritten
-                )
-            })
+            // Every kind a decision leaves behind, named once in the store. Before
+            // DEV-877 this was the three the developer could make by editing markdown;
+            // the list is now the eight decisions, and a ninth added to the store without
+            // this list being revisited is a compile error rather than a row quietly
+            // missing from the screen.
+            .filter(|outcome| DEVELOPER_DECISIONS.contains(&outcome.kind))
             .map(wire::draft_edit)
             .collect();
 
@@ -553,10 +560,18 @@ impl Api {
             .map(wire::held_back_finding)
             .collect();
 
+        let sections: Vec<Value> = self
+            .records
+            .draft_sections(review_id)?
+            .iter()
+            .map(wire::draft_section)
+            .collect();
+
         Ok(json!({
             "draft": wire::draft(draft),
             "review": wire::review(&review),
             "lint": wire::draft_lint(&draft.lint),
+            "sections": sections,
             "edits": edits,
             "held_back": held_back,
             "nit_ticket": wire::nit_ticket(&ticket),
@@ -587,6 +602,14 @@ impl Api {
             )));
         }
 
+        if request.body.is_none() && request.sections.is_none() {
+            return Err(ApiError::invalid_value(
+                "body",
+                "a save with neither a body nor the blocks to compose one",
+                "the blocks the body is composed of, or a body to store as one block",
+            ));
+        }
+
         // Every edit is checked against a finding that exists before anything is written,
         // so a typo in one edit cannot leave the body saved and the outcomes half
         // recorded.
@@ -607,7 +630,7 @@ impl Api {
         let saved = self.records.put_draft(
             review_id,
             NewDraft {
-                body: request.body,
+                body: request.body.clone().unwrap_or_default(),
                 status: match existing.status {
                     DraftStatus::Ready => DraftStatus::Ready,
                     _ => DraftStatus::Drafting,
@@ -616,6 +639,10 @@ impl Api {
                 // longer about this draft. Cleared rather than kept: a stale lint result
                 // shown against a new body is worse than no result.
                 lint: None,
+                sections: request
+                    .sections
+                    .as_ref()
+                    .map(|sections| sections.iter().map(SaveDraftSection::stored).collect()),
             },
         )?;
 
@@ -691,6 +718,111 @@ impl Api {
 
         let sent_back = self.records.send_back_draft(review_id, &note)?;
         Ok((200, self.draft_detail(&sent_back)?))
+    }
+
+    /// `POST /reviews/{reviewId}/findings/{seq}/decide`: the developer's decision about
+    /// one finding, and the draft recomposed from it.
+    ///
+    /// **Eight decisions behind the designs' eleven buttons**, with the mapping in the
+    /// store's `FindingDecision`. Each is one transaction there: the finding, its block of
+    /// the body, the body itself and the outcome recording who decided are written
+    /// together, and the draft's lint reads as not checked afterwards.
+    ///
+    /// Only the developer decides. The actor is not a parameter — see
+    /// `store::DECIDING_ACTOR` — and nothing in the command line reaches the store
+    /// function behind this.
+    fn decide_finding(
+        &self,
+        review_id: i64,
+        seq: i64,
+        body: &[u8],
+    ) -> Result<(u16, Value), ApiError> {
+        let request: DecideFindingRequest = read_body(body)?;
+        let decision: FindingDecision = request.decision.parse().map_err(ApiError::from)?;
+        let severity: Option<Severity> = request
+            .severity
+            .as_deref()
+            .map(str::parse)
+            .transpose()
+            .map_err(ApiError::from)?;
+
+        // Read before written, so an unknown review or finding is a 404 that changed
+        // nothing. The store checks both again inside its transaction.
+        self.records.review(review_id)?;
+        self.records.finding(review_id, seq)?;
+
+        let made = self.records.decide_finding(
+            review_id,
+            seq,
+            &Decision {
+                decision,
+                severity,
+                title: trimmed(request.title),
+                // Not trimmed. The paragraph is what gets posted, and a trailing space in
+                // markdown is a line break; the store refuses the one shape that would
+                // compose a body nobody wrote, which is a newline at either end.
+                text: request.text,
+                note: trimmed(request.note),
+            },
+        )?;
+
+        // The finding, the outcome and the whole draft, because the review page draws all
+        // three and a decision changes all three. One call, one re-render.
+        Ok((
+            200,
+            json!({
+                "finding": wire::finding(&made.finding),
+                "outcome": wire::outcome(&made.outcome),
+                "draft": self.draft_detail(&made.draft)?,
+            }),
+        ))
+    }
+
+    /// `POST /reviews/{reviewId}/draft/ticket-and-approve`: file what is left as one
+    /// ticket, and approve.
+    ///
+    /// Behind "Ticket what is left, and approve". **A sign-off, and it neither posts nor
+    /// files anything.** Every finding the draft would have posted is held back for the
+    /// ticket and recorded as ticketed this round, the review's one nit ticket is asked
+    /// for, and the draft is approved to be posted as `approve`. The review session finds
+    /// the approved draft and the ticket in `work list`, posts the one and files the
+    /// other.
+    ///
+    /// **The approval cannot link to the ticket**, which is a gap in the design rather
+    /// than an omission here: Review Desk files no ticket, so no ticket id exists at the
+    /// moment of approval. Only the session that files it can add that line.
+    fn ticket_rest_and_approve(
+        &self,
+        review_id: i64,
+        body: &[u8],
+    ) -> Result<(u16, Value), ApiError> {
+        let request: TicketRestAndApproveRequest = if body.is_empty() {
+            TicketRestAndApproveRequest::default()
+        } else {
+            read_body(body)?
+        };
+
+        self.records.review(review_id)?;
+        self.draft_must_be(review_id, DraftStatus::Ready, "approved")?;
+
+        let note = trimmed(request.note);
+        let settled = self
+            .records
+            .ticket_rest_and_approve(review_id, note.as_deref())?;
+
+        Ok((
+            200,
+            json!({
+                "draft": self.draft_detail(&settled.draft)?,
+                "nit_ticket": wire::nit_ticket(&settled.ticket),
+                "ticketed": settled.ticketed,
+                "ticketed_keys": settled
+                    .ticketed
+                    .iter()
+                    .map(|seq| wire::finding_key(*seq))
+                    .collect::<Vec<_>>(),
+            }),
+        ))
     }
 
     /// `POST /reviews/{reviewId}/held-back/ticket`: ask for one ticket covering the nits
@@ -991,12 +1123,69 @@ struct SetFindingDispositionRequest {
 }
 
 /// `SaveDraftRequest` from the contract.
+///
+/// `body` is optional **when `sections` are given**, because the body is then what they
+/// compose to; sent as well it is checked against the composition and refused when the two
+/// disagree. Sent on its own it is stored as one block of prose, which is the honest
+/// reading of a draft nobody wrote in parts.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SaveDraftRequest {
-    body: String,
+    #[serde(default)]
+    body: Option<String>,
+    #[serde(default)]
+    sections: Option<Vec<SaveDraftSection>>,
     #[serde(default)]
     edits: Vec<SaveDraftEdit>,
+}
+
+/// One block of a draft body, as a caller writes it.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SaveDraftSection {
+    kind: DraftSectionKind,
+    #[serde(default)]
+    finding_seq: Option<i64>,
+    #[serde(default)]
+    title: Option<String>,
+    text: String,
+}
+
+impl SaveDraftSection {
+    /// The store's shape. The two are separate types for the reason every other request
+    /// body here is: the contract's shape is the contract's, and a store type that gained
+    /// a field would otherwise widen the API without anybody deciding to.
+    fn stored(&self) -> NewDraftSection {
+        NewDraftSection {
+            kind: self.kind,
+            finding_seq: self.finding_seq,
+            title: self.title.clone(),
+            text: self.text.clone(),
+        }
+    }
+}
+
+/// `DecideFindingRequest` from the contract.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DecideFindingRequest {
+    decision: String,
+    #[serde(default)]
+    severity: Option<String>,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default)]
+    note: Option<String>,
+}
+
+/// `TicketRestAndApproveRequest` from the contract. One optional field, and so is the body.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TicketRestAndApproveRequest {
+    #[serde(default)]
+    note: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -1,5 +1,16 @@
 //! `draft put`, `draft show` and `draft posted`.
 //!
+//! **A draft body is composed, not written as one block.** Since DEV-877 the developer
+//! decides on each finding in the dashboard — keep, cut, regrade, rewrite — and the body
+//! is assembled from the blocks the session wrote. So `draft put --sections` is how a
+//! session writes a draft it wants those decisions to work on; `--file` alone still works
+//! and stores the body as one block, which leaves the decisions with nothing to act on and
+//! a refusal that says so.
+//!
+//! **None of this lets the command line decide anything.** Writing the blocks is writing
+//! the draft; the decisions are the developer's, through the dashboard's API, and
+//! `crates/cli/tests/signoff.rs` scans this crate's source for their names.
+//!
 //! **There is no `draft approve`, and there will not be one.** Approving a draft is the
 //! developer's sign-off and happens in the dashboard — decided on 9 October 2026. The
 //! store enforces it rather than this module promising it: `put_draft` accepts only
@@ -12,10 +23,12 @@
 use std::path::PathBuf;
 
 use clap::Subcommand;
-use review_desk_store::{Draft, DraftLint, DraftStatus, NewDraft, Store};
+use review_desk_store::{
+    Draft, DraftLint, DraftSectionKind, DraftStatus, NewDraft, NewDraftSection, Store,
+};
 use serde_json::json;
 
-use crate::error::Result;
+use crate::error::{CliError, Result};
 use crate::input::{read_json, read_text};
 use crate::report::Report;
 
@@ -35,8 +48,25 @@ pub enum DraftCommand {
         #[arg(long, value_name = "ID")]
         review: i64,
         /// The markdown body, or `-` for standard input.
+        ///
+        /// Optional when `--sections` is given, because the body is then what the blocks
+        /// compose to. Given as well, it is checked against the composition and the write
+        /// is refused when the two differ by anything but trailing newlines.
         #[arg(long, value_name = "PATH")]
-        file: PathBuf,
+        file: Option<PathBuf>,
+        /// The blocks the body is composed of, as a JSON array:
+        /// `[{"kind":"prose","text":"The approach fits the ticket."},
+        /// {"kind":"finding","finding_seq":1,"title":"A retry carries no key",
+        /// "text":"The customer receives the event twice."}]`
+        ///
+        /// A `prose` block is markdown carried through as it is. A `finding` block is a
+        /// heading the store composes — `### Blocker · F1 · <title>`, from the finding's
+        /// own severity — followed by its text. The store numbers the blocks, refuses a
+        /// second block about one finding, and refuses a block about a finding that is
+        /// not posted: a fixed, accepted, withdrawn or ticketed finding is not raised as
+        /// an open finding, and what the round found about it is prose.
+        #[arg(long, value_name = "PATH")]
+        sections: Option<PathBuf>,
         /// What the review-craft lint said about this body, as a JSON document:
         /// `{"passes": true, "visible_words": 118, "word_budget": 150,
         /// "findings_in_body": 3, "findings_expected": 3, "raised_before_on_pr": 0,
@@ -82,12 +112,29 @@ pub fn run(command: &DraftCommand) -> Result<Report> {
         DraftCommand::Put {
             review,
             file,
+            sections,
             lint,
             drafting,
         } => {
-            // Both documents are read before the database is opened, so a body that
-            // cannot be read does not create a database file as a side effect.
-            let body = read_text(file)?;
+            if file.is_none() && sections.is_none() {
+                return Err(CliError::bad_input(
+                    "draft put needs something to write",
+                    "a draft is written as the blocks it is composed of, with --sections, \
+                     or as one block of markdown, with --file; this had neither",
+                ));
+            }
+
+            // Every document is read before the database is opened, so a body that cannot
+            // be read does not create a database file as a side effect.
+            let body = match file {
+                Some(path) => read_text(path)?,
+                None => String::new(),
+            };
+            let kinds = DraftSectionKind::valid_values();
+            let sections: Option<Vec<NewDraftSection>> = match sections {
+                Some(path) => Some(read_json(path, Some(&kinds))?),
+                None => None,
+            };
             let lint: Option<DraftLint> = match lint {
                 // A lint holds no closed set, so there is nothing to name.
                 Some(path) => Some(read_json(path, None)?),
@@ -95,6 +142,7 @@ pub fn run(command: &DraftCommand) -> Result<Report> {
             };
 
             let store = Store::open_default()?;
+            let blocks = sections.is_some();
             let stored = store.put_draft(
                 *review,
                 NewDraft {
@@ -105,16 +153,20 @@ pub fn run(command: &DraftCommand) -> Result<Report> {
                         DraftStatus::Ready
                     },
                     lint,
+                    sections,
                 },
             )?;
+            let held = store.draft_sections(*review)?;
 
             Ok(Report::new(
-                json!({ "draft": stored }),
+                json!({ "draft": stored, "sections": held }),
                 format!(
-                    "draft of review {} is {} ({} characters)",
+                    "draft of review {} is {} ({} characters, {} {})",
                     stored.review_id,
                     stored.status,
-                    stored.body.len()
+                    stored.body.len(),
+                    held.len(),
+                    if blocks { "blocks" } else { "block of prose" }
                 ),
             ))
         }

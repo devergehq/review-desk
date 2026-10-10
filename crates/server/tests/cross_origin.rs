@@ -58,6 +58,119 @@ fn a_foreign_origin_cannot_approve_a_draft() {
 }
 
 #[test]
+fn no_write_this_contract_declares_is_reachable_from_another_origin() {
+    // **Walked from `Operation::ALL` rather than listed.** The two tests either side of
+    // this one name the writes the project rests on; this one is what makes an operation
+    // added later guarded by default. The guard runs before any handler, so the body does
+    // not have to be one the operation would accept: a refusal naming the origin is proof
+    // the request never reached the record.
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+    let host = harness
+        .running
+        .base()
+        .trim_start_matches("http://")
+        .to_string();
+
+    let mut writes = 0;
+    for operation in review_desk_server::route::Operation::ALL {
+        let route = operation
+            .route()
+            .replace("/reviews/1", &format!("/reviews/{}", seeded.review_id))
+            .replace("/rules/1/", &format!("/rules/{}/", seeded.rule_id));
+        let (method, path) = route.split_once(' ').expect("a method and a path");
+        if method == "GET" {
+            continue;
+        }
+        writes += 1;
+
+        let answer = harness.raw(
+            method,
+            &format!("/api/v1{path}"),
+            &foreign_fetch(&host),
+            Some("{}"),
+        );
+
+        assert_eq!(
+            answer.status,
+            400,
+            "{} ({}) answered a page on another origin: {}",
+            operation.route(),
+            operation.id(),
+            answer.text()
+        );
+        assert!(
+            answer.json()["message"]
+                .as_str()
+                .expect("a message")
+                .contains("evil.example"),
+            "{} was refused for some other reason than its origin: {}",
+            operation.route(),
+            answer.text()
+        );
+    }
+
+    assert!(writes >= 13, "only {writes} writes were walked");
+    assert_eq!(
+        harness.store.get_draft(seeded.review_id).unwrap().status,
+        DraftStatus::Ready,
+        "and no write landed"
+    );
+    assert!(
+        harness
+            .store
+            .list_outcomes(seeded.review_id)
+            .unwrap()
+            .iter()
+            .all(|outcome| outcome.kind != review_desk_store::OutcomeKind::Ticketed),
+        "nor any decision"
+    );
+}
+
+#[test]
+fn a_foreign_origin_cannot_decide_about_a_finding() {
+    // The same argument as approving a draft, and for the same reason it is a test of its
+    // own: cutting a finding changes what gets posted under the developer's name, and
+    // "ticket what is left, and approve" approves.
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+    let host = harness
+        .running
+        .base()
+        .trim_start_matches("http://")
+        .to_string();
+
+    let cut = harness.raw(
+        "POST",
+        &format!("/api/v1/reviews/{}/findings/1/decide", seeded.review_id),
+        &foreign_fetch(&host),
+        Some(r#"{"decision":"cut"}"#),
+    );
+    assert!(cut.status >= 400, "{}", cut.text());
+
+    let ticket = harness.raw(
+        "POST",
+        &format!(
+            "/api/v1/reviews/{}/draft/ticket-and-approve",
+            seeded.review_id
+        ),
+        &foreign_fetch(&host),
+        Some("{}"),
+    );
+    assert!(ticket.status >= 400, "{}", ticket.text());
+
+    // The assertions the file exists for: the record did not move.
+    let finding = harness.store.get_finding(seeded.review_id, 1).unwrap();
+    assert_eq!(finding.disposition, review_desk_store::Disposition::InDraft);
+    let draft = harness.store.get_draft(seeded.review_id).unwrap();
+    assert_eq!(draft.status, DraftStatus::Ready);
+    assert!(
+        draft.body.contains("### Blocker · F1"),
+        "a page on https://evil.example recomposed the body"
+    );
+}
+
+#[test]
 fn a_foreign_origin_cannot_confirm_a_brief() {
     let harness = common::start_with_no_github();
     let seeded = common::seed(&harness.store);

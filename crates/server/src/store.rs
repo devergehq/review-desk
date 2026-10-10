@@ -14,13 +14,23 @@
 use std::sync::{Arc, Mutex};
 
 use review_desk_store::{
-    Actor, Brief, BriefOption, Disposition, Draft, Finding, FindingInRound, FullReview, NewDraft,
-    NewOutcome, NitTicket, OpenedReview, RepoSummary, Review, ReviewAtLayer, ReviewEvent,
-    ReviewFacts, ReviewLayer, ReviewProvenance, RoundCommit, RoundSummary, Rule, RuleCounts,
-    RuleStage, RulesSummary, Store, StoreError, Timestamp,
+    Actor, Brief, BriefOption, Decision, DecisionMade, Disposition, Draft, DraftSection, Finding,
+    FindingInRound, FullReview, NewDraft, NewOutcome, NitTicket, OpenedReview, RepoSummary, Review,
+    ReviewAtLayer, ReviewEvent, ReviewFacts, ReviewLayer, ReviewProvenance, RoundCommit,
+    RoundSummary, Rule, RuleCounts, RuleStage, RulesSummary, Store, StoreError,
+    TicketedAndApproved, Timestamp,
 };
 
 use crate::error::{ApiError, Code};
+
+/// Who the server records as having decided.
+///
+/// **Always the developer, and there is no code path that chooses otherwise** — the same
+/// argument as [`SIGN_OFF_ACTOR`], for the same reason. Keeping, cutting, regrading and
+/// rewriting a finding are the developer's decisions, made in the dashboard, and the store
+/// refuses any other actor. An endpoint that could be told whose decision to record would
+/// be one that could be told the wrong one.
+pub const DECIDING_ACTOR: Actor = Actor::Developer;
 
 /// Who the server records as having signed off.
 ///
@@ -303,6 +313,34 @@ impl Records {
     /// Send the draft back to the session with a note.
     pub fn send_back_draft(&self, review_id: i64, note: &str) -> Result<Draft, ApiError> {
         self.with(|store| store.send_back_draft(review_id, note))
+    }
+
+    /// The blocks the draft body is composed of, in order.
+    pub fn draft_sections(&self, review_id: i64) -> Result<Vec<DraftSection>, ApiError> {
+        self.with(|store| store.draft_sections(review_id))
+    }
+
+    /// Record the developer's decision about one finding, and recompose the draft.
+    ///
+    /// One transaction in the store: the finding, the block, the body and the outcome that
+    /// says who decided are one step. Recorded as [`DECIDING_ACTOR`].
+    pub fn decide_finding(
+        &self,
+        review_id: i64,
+        seq: i64,
+        decision: &Decision,
+    ) -> Result<DecisionMade, ApiError> {
+        self.with(|store| store.decide_finding(review_id, seq, decision, DECIDING_ACTOR))
+    }
+
+    /// File what is left of the review as one ticket and approve the draft, in one step.
+    /// A sign-off: see [`SIGN_OFF_ACTOR`].
+    pub fn ticket_rest_and_approve(
+        &self,
+        review_id: i64,
+        note: Option<&str>,
+    ) -> Result<TicketedAndApproved, ApiError> {
+        self.with(|store| store.ticket_rest_and_approve(review_id, note, SIGN_OFF_ACTOR))
     }
 
     // -- rules --------------------------------------------------------------------

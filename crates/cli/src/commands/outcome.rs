@@ -17,8 +17,12 @@ pub enum OutcomeCommand {
         /// The finding's sequence number within the review.
         #[arg(long, value_name = "FID")]
         finding: i64,
-        /// One of: cut, regraded, rewritten, kept, rejected, raised_again, replied,
-        /// thread_resolved, code_changed_after.
+        /// One of: cut, regraded, rewritten, kept, rejected, ticketed, withdrawn,
+        /// raised_again, replied, thread_resolved, code_changed_after.
+        ///
+        /// Recording an outcome is not making a decision: it annotates a finding and
+        /// cannot move it out of the draft, change its severity or recompose the body.
+        /// The developer's decisions are made in the dashboard.
         #[arg(long, value_name = "VALUE")]
         kind: String,
         /// Who brought it about. One of: developer, author, harvester.

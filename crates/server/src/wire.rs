@@ -16,10 +16,11 @@
 //! dashboard silently never sees.
 
 use review_desk_store::{
-    AcceptanceCriterion, Brief, BriefOption, DescriptionLintResult, Disposition, Draft, DraftLint,
-    FileChange, Finding, FindingHunk, FindingInRound, NitTicket, Outcome, RepoSummary, Review,
-    ReviewLayer, ReviewProvenance, ReviewSource, RoundCommit, RoundStatusCounts, RoundSummary,
-    Rule, RuleCounts, RuleScope, RuleStage, RulesSummary, Severity, Timestamp,
+    finding_heading, AcceptanceCriterion, Brief, BriefOption, DescriptionLintResult, Disposition,
+    Draft, DraftLint, DraftSection, FileChange, Finding, FindingHunk, FindingInRound, NitTicket,
+    Outcome, RepoSummary, Review, ReviewLayer, ReviewProvenance, ReviewSource, RoundCommit,
+    RoundStatusCounts, RoundSummary, Rule, RuleCounts, RuleScope, RuleStage, RulesSummary,
+    Severity, Timestamp,
 };
 use serde_json::{json, Value};
 
@@ -390,6 +391,37 @@ pub fn draft(draft: &Draft) -> Value {
         "posted_at": rfc3339_or_null(draft.posted_at),
         "updated_at": rfc3339(draft.updated_at),
     })
+}
+
+/// The contract's `DraftSection`: one block of the draft body.
+///
+/// `heading` is served beside the parts it is made of, because the page draws the heading
+/// the body will carry and deriving it a second time in the dashboard is a second place for
+/// the format to live. `posted` is what says whether this block is in `draft.body` — a cut
+/// finding's block is served and does not post.
+pub fn draft_section(section: &DraftSection) -> Value {
+    json!({
+        "position": section.position,
+        "kind": section.kind.as_str(),
+        "finding_seq": section.finding_seq,
+        "finding_key": section.finding_seq.map(finding_key),
+        "severity": section.severity.map(|severity| severity.as_str()),
+        "heading": heading_of(section),
+        "title": section.title,
+        "text": section.text,
+        "agent_title": section.agent_title,
+        "agent_text": section.agent_text,
+        "rewritten": section.rewritten(),
+        "posted": section.posted,
+    })
+}
+
+/// The heading a finding block composes, or null on a block of prose.
+fn heading_of(section: &DraftSection) -> Value {
+    match (section.severity, section.finding_seq, &section.title) {
+        (Some(severity), Some(seq), Some(title)) => json!(finding_heading(severity, seq, title)),
+        _ => Value::Null,
+    }
 }
 
 /// The contract's `DraftEdit`: one edit the developer made, as an outcome by them.

@@ -35,6 +35,12 @@
 //! criteria, the description lint's individual results and the per-file change map. It
 //! was written as 6 and rebased twice, which is the rule above being used rather than
 //! quoted.
+//!
+//! Version 9 is what the posted body is composed of: one row per block, so that cutting a
+//! finding removes it from the review rather than the developer deleting a paragraph. It
+//! backfills one prose block per draft already held, which is the honest reading of a body
+//! nothing wrote in parts — and it normalises that body to end in exactly one newline,
+//! because from here on the body is composed and the composition ends in one.
 
 use rusqlite::Connection;
 
@@ -699,6 +705,86 @@ CREATE TABLE description_lint_results (
     CHECK (label <> ''),
     CHECK (detail IS NULL OR detail <> '')
 );
+"#,
+    },
+    Migration {
+        version: 9,
+        name: "draft-composition",
+        sql: r#"
+-- The blocks a draft body is composed of, in order.
+--
+-- **The body is no longer one block of markdown the developer edits.** It is this list,
+-- composed: a `prose` block is carried through exactly as written, and a `finding` block
+-- is a heading the store composes from the finding's live severity, its number and the
+-- title here, followed by the paragraph. Cutting a finding stops its block posting;
+-- regrading it changes the heading because the heading was never stored.
+--
+-- Keyed on the position rather than on the finding, for the reason `review_sources` gives:
+-- two prose blocks have nothing to tell them apart but their order. The whole list is
+-- replaced on every write, so the position is the store's to assign and no caller numbers
+-- blocks.
+--
+-- `agent_title` and `agent_text` are what the agent wrote. They are not a history — the
+-- newest rewrite replaces the one before it — they are the one comparison the feedback
+-- loop asks for: what the developer changed, and from what.
+--
+-- The foreign key to `drafts` is what makes a draft and its composition one record: no
+-- draft, no blocks, and deleting the review takes both.
+CREATE TABLE draft_sections (
+    review_id   INTEGER NOT NULL REFERENCES drafts (review_id) ON DELETE CASCADE,
+    position    INTEGER NOT NULL,
+    kind        TEXT    NOT NULL,
+    finding_seq INTEGER,
+    title       TEXT,
+    text        TEXT    NOT NULL,
+    agent_title TEXT,
+    agent_text  TEXT    NOT NULL,
+    PRIMARY KEY (review_id, position),
+    CHECK (position >= 1),
+    CHECK (kind IN ('prose', 'finding')),
+    -- A prose block is text and nothing else. An empty one would compose a blank line
+    -- into the body that nothing could see to remove.
+    CHECK (kind <> 'prose'
+           OR (finding_seq IS NULL AND title IS NULL AND agent_title IS NULL
+               AND text <> '')),
+    -- A finding block names its finding and carries a title. Its paragraph may be empty:
+    -- a heading on its own is a finding the draft raises without elaborating.
+    CHECK (kind <> 'finding'
+           OR (finding_seq IS NOT NULL AND title IS NOT NULL AND title <> ''
+               AND agent_title IS NOT NULL AND agent_title <> '')),
+    -- The block is about a finding of this review, which is what stops a composition
+    -- pointing at another review's F1. The same composite shape `outcomes` uses.
+    FOREIGN KEY (review_id, finding_seq)
+        REFERENCES findings (review_id, seq) ON DELETE CASCADE
+);
+
+-- One block per finding. Two blocks for F1 would both answer "what does cutting F1
+-- remove", and the heading is composed from the finding, so the second would repeat it.
+CREATE UNIQUE INDEX draft_sections_one_per_finding
+    ON draft_sections (review_id, finding_seq)
+    WHERE finding_seq IS NOT NULL;
+
+-- Every draft already on the record becomes one prose block holding its whole body.
+--
+-- **That is the honest reading of it, and it is a decision with a visible consequence:**
+-- the per-finding decisions refuse on such a draft, saying it was written as one block,
+-- because nothing can say which characters are F1's without inferring it from the text —
+-- which is the guessing this table exists to stop. A session that rewrites the draft in
+-- parts gets the buttons.
+INSERT INTO draft_sections
+    (review_id, position, kind, finding_seq, title, text, agent_title, agent_text)
+SELECT review_id, 1, 'prose', NULL, NULL,
+       TRIM(body, char(10)), NULL, TRIM(body, char(10))
+FROM drafts
+WHERE TRIM(body, char(10)) <> '';
+
+-- And the body is normalised to what composing that one block produces, so that the
+-- column and the blocks agree from the first read rather than from the first write.
+UPDATE drafts
+SET body = TRIM(body, char(10)) || char(10)
+WHERE TRIM(body, char(10)) <> '';
+
+UPDATE drafts SET body = '' WHERE TRIM(body, char(10)) = '';
 "#,
     },
 ];

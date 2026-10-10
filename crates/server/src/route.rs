@@ -1,4 +1,4 @@
-//! The contract's sixteen operations, as a type.
+//! The contract's eighteen operations, as a type.
 //!
 //! [`Operation::ALL`] is the point of this module: a test can walk every operation the
 //! contract declares and assert that each one is routed and answers, rather than the set
@@ -20,11 +20,13 @@ pub enum Operation {
     GetReview { review_id: i64 },
     ConfirmBrief { review_id: i64 },
     SetFindingDisposition { review_id: i64, seq: i64 },
+    DecideFinding { review_id: i64, seq: i64 },
     GetDraft { review_id: i64 },
     SaveDraft { review_id: i64 },
     ApproveDraft { review_id: i64 },
     SendBackDraft { review_id: i64 },
     RequestNitTicket { review_id: i64 },
+    TicketRestAndApprove { review_id: i64 },
     ListRules,
     PromoteRule { rule_id: i64 },
     DismissRule { rule_id: i64 },
@@ -44,11 +46,16 @@ impl Operation {
             review_id: 1,
             seq: 1,
         },
+        Operation::DecideFinding {
+            review_id: 1,
+            seq: 1,
+        },
         Operation::GetDraft { review_id: 1 },
         Operation::SaveDraft { review_id: 1 },
         Operation::ApproveDraft { review_id: 1 },
         Operation::SendBackDraft { review_id: 1 },
         Operation::RequestNitTicket { review_id: 1 },
+        Operation::TicketRestAndApprove { review_id: 1 },
         Operation::ListRules,
         Operation::PromoteRule { rule_id: 1 },
         Operation::DismissRule { rule_id: 1 },
@@ -65,11 +72,13 @@ impl Operation {
             Operation::GetReview { .. } => "getReview",
             Operation::ConfirmBrief { .. } => "confirmBrief",
             Operation::SetFindingDisposition { .. } => "setFindingDisposition",
+            Operation::DecideFinding { .. } => "decideFinding",
             Operation::GetDraft { .. } => "getDraft",
             Operation::SaveDraft { .. } => "saveDraft",
             Operation::ApproveDraft { .. } => "approveDraft",
             Operation::SendBackDraft { .. } => "sendBackDraft",
             Operation::RequestNitTicket { .. } => "requestNitTicket",
+            Operation::TicketRestAndApprove { .. } => "ticketRestAndApprove",
             Operation::ListRules => "listRules",
             Operation::PromoteRule { .. } => "promoteRule",
             Operation::DismissRule { .. } => "dismissRule",
@@ -92,6 +101,9 @@ impl Operation {
             Operation::SetFindingDisposition { review_id, seq } => {
                 format!("PATCH /reviews/{review_id}/findings/{seq}")
             }
+            Operation::DecideFinding { review_id, seq } => {
+                format!("POST /reviews/{review_id}/findings/{seq}/decide")
+            }
             Operation::GetDraft { review_id } => format!("GET /reviews/{review_id}/draft"),
             Operation::SaveDraft { review_id } => format!("PUT /reviews/{review_id}/draft"),
             Operation::ApproveDraft { review_id } => {
@@ -102,6 +114,9 @@ impl Operation {
             }
             Operation::RequestNitTicket { review_id } => {
                 format!("POST /reviews/{review_id}/held-back/ticket")
+            }
+            Operation::TicketRestAndApprove { review_id } => {
+                format!("POST /reviews/{review_id}/draft/ticket-and-approve")
             }
             Operation::ListRules => "GET /rules".to_string(),
             Operation::PromoteRule { rule_id } => format!("POST /rules/{rule_id}/promote"),
@@ -164,6 +179,13 @@ pub fn match_route(method: &str, path: &str) -> Target {
             ),
             _ => (Target::Unknown, true),
         },
+        ["reviews", id, "findings", seq, "decide"] => match (number(id), number(seq)) {
+            (Some(review_id), Some(seq)) => (
+                Target::Operation(Operation::DecideFinding { review_id, seq }),
+                method == "POST",
+            ),
+            _ => (Target::Unknown, true),
+        },
         ["reviews", id, "draft"] => match (number(id), method) {
             (Some(review_id), "GET") => {
                 (Target::Operation(Operation::GetDraft { review_id }), true)
@@ -184,6 +206,13 @@ pub fn match_route(method: &str, path: &str) -> Target {
         ["reviews", id, "draft", "send-back"] => match number(id) {
             Some(review_id) => (
                 Target::Operation(Operation::SendBackDraft { review_id }),
+                method == "POST",
+            ),
+            None => (Target::Unknown, true),
+        },
+        ["reviews", id, "draft", "ticket-and-approve"] => match number(id) {
+            Some(review_id) => (
+                Target::Operation(Operation::TicketRestAndApprove { review_id }),
                 method == "POST",
             ),
             None => (Target::Unknown, true),

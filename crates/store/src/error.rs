@@ -33,6 +33,19 @@ pub enum StoreError {
         wanted: &'static str,
     },
 
+    /// A decision was made about a finding the draft is not composed of.
+    ///
+    /// Its own variant, because it is the one refusal a screen has something to say about:
+    /// the draft was written as one block of markdown, so there is no paragraph of it that
+    /// is F6's and nothing can cut one without guessing which characters to remove. A
+    /// session that writes the draft in parts gets the buttons. Every draft written before
+    /// migration 9 is in this state.
+    #[error(
+        "the draft of review {review_id} has no block for F{seq}, so there is nothing to \
+         decide about: it was written as one block of markdown rather than in parts"
+    )]
+    NoDraftSection { review_id: i64, seq: i64 },
+
     /// A row was requested, or referenced, that is not there.
     #[error("no {entity} with id {id}")]
     NotFound { entity: &'static str, id: String },
@@ -98,6 +111,7 @@ impl StoreError {
             StoreError::DuplicateReview { .. } => "duplicate_review",
             StoreError::DuplicateGithubComment { .. } => "duplicate_github_comment",
             StoreError::DraftStatus { .. } => "draft_status",
+            StoreError::NoDraftSection { .. } => "no_draft_section",
             StoreError::NotFound { .. } => "not_found",
             StoreError::UnknownParent { .. } => "unknown_parent",
             StoreError::InvalidValue { .. } => "invalid_value",
@@ -118,6 +132,7 @@ impl StoreError {
             StoreError::DuplicateReview { .. }
                 | StoreError::DuplicateGithubComment { .. }
                 | StoreError::DraftStatus { .. }
+                | StoreError::NoDraftSection { .. }
                 | StoreError::NotFound { .. }
                 | StoreError::UnknownParent { .. }
                 | StoreError::InvalidValue { .. }

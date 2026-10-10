@@ -28,12 +28,13 @@ use std::path::{Path, PathBuf};
 
 use common::temp_store;
 use review_desk_store::{
-    now, Actor, Brief, BriefOption, CriterionStatus, DescriptionLintStatus, Disposition, Draft,
-    DraftLint, FileCheck, Finding, FindingHunk, FindingRef, HunkLine, HunkLineMarker,
-    NewAcceptanceCriterion, NewBrief, NewDescriptionLintResult, NewDraft, NewFileChange,
-    NewFinding, NewOutcome, NewReview, NewReviewSource, NewRule, NitTicket, Outcome, OutcomeKind,
-    Review, ReviewEvent, ReviewFacts, ReviewLayer, ReviewLayerName, ReviewProvenance, Rule,
-    RuleScope, RuleStage, Severity, SourceKind, Store, Verification,
+    finding_heading, now, Actor, Brief, BriefOption, CriterionStatus, Decision,
+    DescriptionLintStatus, Disposition, Draft, DraftLint, DraftSection, FileCheck, Finding,
+    FindingDecision, FindingHunk, FindingRef, HunkLine, HunkLineMarker, NewAcceptanceCriterion,
+    NewBrief, NewDescriptionLintResult, NewDraft, NewFileChange, NewFinding, NewOutcome, NewReview,
+    NewReviewSource, NewRule, NitTicket, Outcome, OutcomeKind, Review, ReviewEvent, ReviewFacts,
+    ReviewLayer, ReviewLayerName, ReviewProvenance, Rule, RuleScope, RuleStage, Severity,
+    SourceKind, Store, Verification,
 };
 use serde_json::{json, Map, Value};
 
@@ -525,7 +526,23 @@ fn seed(store: &Store) -> Seeded {
         .put_draft(
             review.id,
             NewDraft {
-                body: "The queue-with-backoff approach fits the ticket.\n".to_string(),
+                // **Written in parts**, as a session writes a draft: the summary
+                // sentence, a block per finding in the draft, and the not-checked line.
+                // The body is what they compose to, which is why none is given here.
+                body: String::new(),
+                sections: Some(vec![
+                    review_desk_store::NewDraftSection::prose(
+                        "The queue-with-backoff approach fits the ticket.",
+                    ),
+                    review_desk_store::NewDraftSection::finding(
+                        1,
+                        "A retried delivery is sent without an idempotency key",
+                        "A customer whose endpoint answers slowly receives the event twice.",
+                    ),
+                    review_desk_store::NewDraftSection::prose(
+                        "**Not checked:** worker behaviour across a deploy restart.",
+                    ),
+                ]),
                 status: review_desk_store::DraftStatus::Ready,
                 lint: Some(DraftLint {
                     passes: Some(true),
@@ -906,6 +923,29 @@ fn draft_document(draft: &Draft) -> Value {
     })
 }
 
+/// The contract's `DraftSection`. The heading is composed, which is the whole point of it.
+fn draft_section_document(section: &DraftSection) -> Value {
+    json!({
+        "position": section.position,
+        "kind": section.kind,
+        "finding_seq": section.finding_seq,
+        "finding_key": section.finding_seq.map(|seq| format!("F{seq}")),
+        "severity": section.severity,
+        "heading": match (section.severity, section.finding_seq, &section.title) {
+            (Some(severity), Some(seq), Some(title)) => {
+                Value::String(finding_heading(severity, seq, title))
+            }
+            _ => Value::Null,
+        },
+        "title": section.title,
+        "text": section.text,
+        "agent_title": section.agent_title,
+        "agent_text": section.agent_text,
+        "rewritten": section.rewritten(),
+        "posted": section.posted,
+    })
+}
+
 fn lint_document(lint: &DraftLint) -> Value {
     json!({
         "passes": lint.passes.unwrap_or(false),
@@ -1206,14 +1246,17 @@ fn draft_detail(store: &Store, review_id: i64) -> Value {
         "draft": draft_document(&draft),
         "review": review_document(&review),
         "lint": lint_document(&draft.lint),
+        "sections": store
+            .draft_sections(review_id)
+            .expect("the blocks")
+            .iter()
+            .map(draft_section_document)
+            .collect::<Vec<_>>(),
         // The developer's edits are outcomes with actor `developer`, which is where
         // PR #1 already puts them.
         "edits": outcomes.iter().filter(|outcome| {
             outcome.actor == Actor::Developer
-                && matches!(
-                    outcome.kind,
-                    OutcomeKind::Cut | OutcomeKind::Regraded | OutcomeKind::Rewritten
-                )
+                && review_desk_store::DEVELOPER_DECISIONS.contains(&outcome.kind)
         }).map(|outcome| json!({
             "finding_seq": outcome.finding_seq,
             "finding_key": format!("F{}", outcome.finding_seq),
@@ -1557,11 +1600,65 @@ fn every_response_example_can_be_produced_from_the_store() {
     // Reworked with its lint re-run, which is what the contract says a save does. A
     // body written without one has no lint, deliberately: see
     // `rewriting_a_draft_clears_a_lint_that_described_the_old_body`.
+    // The developer's decision, and the draft recomposed from it. **Made before the
+    // draft is approved**, which is the only state a decision can be made in.
+    store
+        .put_draft(
+            review,
+            NewDraft::composed(vec![review_desk_store::NewDraftSection::finding(
+                1,
+                "A retried delivery is sent without an idempotency key",
+                "A customer whose endpoint answers slowly receives the event twice.",
+            )]),
+        )
+        .expect("a draft to decide about");
+    let made = store
+        .decide_finding(
+            review,
+            1,
+            &Decision {
+                note: Some("Already covered by the rule.".to_string()),
+                ..Decision::of(FindingDecision::Cut)
+            },
+            Actor::Developer,
+        )
+        .expect("the developer cuts F1");
+    fields += check(
+        "decideFinding",
+        &json!({
+            "finding": finding_document(&store, &made.finding),
+            "outcome": outcome_document(&made.outcome),
+            "draft": draft_detail(&store, review),
+        }),
+    );
+
+    // Kept after all, which is the decision track's own move and is what lets the rework
+    // below raise F1 again: a suppressed finding cannot be written into a draft.
+    store
+        .decide_finding(
+            review,
+            1,
+            &Decision::of(FindingDecision::Keep),
+            Actor::Developer,
+        )
+        .expect("kept after all");
+
     store
         .put_draft(
             review,
             NewDraft {
-                body: "reworked".to_string(),
+                // In parts, like the first write: the examples of a draft carry finding
+                // blocks, and a rework that dropped to one block of prose would make
+                // `approveDraft`'s own example unproducible.
+                body: String::new(),
+                sections: Some(vec![
+                    review_desk_store::NewDraftSection::prose("Reworked, as asked."),
+                    review_desk_store::NewDraftSection::finding(
+                        1,
+                        "A retried delivery is sent without an idempotency key",
+                        "A customer whose endpoint answers slowly receives the event twice.",
+                    ),
+                ]),
                 status: review_desk_store::DraftStatus::Ready,
                 lint: Some(DraftLint {
                     passes: Some(true),
@@ -1580,6 +1677,70 @@ fn every_response_example_can_be_produced_from_the_store() {
         .approve_draft(review, ReviewEvent::RequestChanges, Actor::Developer)
         .expect("approve");
     fields += check("approveDraft", &draft_detail(&store, review));
+
+    // And "ticket what is left, and approve", on a review of its own: it approves, and so
+    // does `approveDraft` above, and one draft cannot be approved twice two ways.
+    let last = store
+        .create_review(NewReview {
+            repo: "acme/portal".to_string(),
+            pr: 413,
+            head_sha: "ddddddd".to_string(),
+            round: 1,
+            title: Some("Record the delivery attempt count".to_string()),
+            ticket_id: Some("ABC-247".to_string()),
+            changed_lines: Some(64),
+            ..Default::default()
+        })
+        .expect("a review to ticket what is left of")
+        .id;
+    store
+        .set_review_links(
+            last,
+            review_desk_store::ReviewLinks {
+                session_id: Some("ses_a1b2c3d4".to_string()),
+                ledger_id: Some("ledger-2026-10-08-413".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("the other systems' ids");
+    store
+        .add_finding(
+            last,
+            NewFinding {
+                lens: "correctness".to_string(),
+                severity: Severity::Should,
+                claim: "The attempt count is written outside the transaction".to_string(),
+                ..Default::default()
+            },
+        )
+        .expect("an open finding");
+    let seq = store.list_findings(last).expect("the findings")[0].seq;
+    store
+        .put_draft(
+            last,
+            NewDraft::composed(vec![review_desk_store::NewDraftSection::finding(
+                seq,
+                "The attempt count is written outside the transaction",
+                "A crash between the two leaves the count disagreeing with the deliveries.",
+            )]),
+        )
+        .expect("a draft");
+    let settled = store
+        .ticket_rest_and_approve(last, Some("one ticket for an agent"), Actor::Developer)
+        .expect("ticket what is left, and approve");
+    fields += check(
+        "ticketRestAndApprove",
+        &json!({
+            "draft": draft_detail(&store, last),
+            "nit_ticket": nit_ticket_document(&settled.ticket),
+            "ticketed": settled.ticketed,
+            "ticketed_keys": settled
+                .ticketed
+                .iter()
+                .map(|seq| format!("F{seq}"))
+                .collect::<Vec<_>>(),
+        }),
+    );
 
     // Said out loud, so that a refactor which quietly stops checking most of the
     // contract fails here rather than passing. The sixteen examples carry well over
@@ -1611,6 +1772,8 @@ fn every_response_example_is_checked() {
         "dismissRule",
         "approveDraft",
         "sendBackDraft",
+        "decideFinding",
+        "ticketRestAndApprove",
     ]
     .into_iter()
     .collect();

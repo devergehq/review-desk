@@ -4,7 +4,9 @@
 //! rather than one sub-object per table.
 
 mod brief;
-mod draft;
+pub(crate) mod composition;
+pub(crate) mod decision;
+pub(crate) mod draft;
 mod finding;
 mod finding_evidence;
 pub(crate) mod inbox;

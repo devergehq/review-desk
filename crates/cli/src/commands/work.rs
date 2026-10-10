@@ -15,7 +15,7 @@
 //! already has somebody on it.
 
 use clap::Subcommand;
-use review_desk_store::{Store, WorkFilter, WorkItem};
+use review_desk_store::{NitTicketStatus, Store, WorkFilter, WorkItem};
 use serde_json::{json, Value};
 
 use crate::error::Result;
@@ -25,7 +25,7 @@ use crate::report::Report;
 pub enum WorkCommand {
     /// Print the reviews that need an agent to act, oldest first.
     ///
-    /// Four kinds, and a review has at most one of them:
+    /// Five kinds, and a review has at most one of them:
     ///
     /// * `review_requested` — no brief has been written. Start reviewing.
     /// * `brief_settled` — layer 2 is settled, by the developer's confirmation or by a
@@ -34,6 +34,13 @@ pub enum WorkCommand {
     ///   `note`.
     /// * `draft_approved` — the developer approved it and nothing has reported it posted.
     ///   Post it, then run `draft posted`.
+    /// * `nits_to_ticket` — the developer asked for this review's held-back findings to
+    ///   be filed as one ticket, and nothing has reported it filed. File it, then record
+    ///   the ticket with `review nit-ticket --ticket`. The findings it covers are this
+    ///   review's findings at disposition `held_back`, which `finding list` shows.
+    ///
+    /// **Review Desk files no ticket and posts no review.** Both are the session's to
+    /// perform; this is the record saying they are waiting.
     ///
     /// A review waiting on the *developer* is absent: this is what an agent is to do, and
     /// the dashboard's inbox is what the developer is to do. Nothing waiting is an empty
@@ -91,8 +98,13 @@ pub fn run(command: &WorkCommand) -> Result<Report> {
 ///
 /// **Written out field by field rather than serialised from [`WorkItem`].** The store's
 /// type carries a whole `Review`, and serialising it would put twenty columns of record
-/// into an interface the next issue is going to be written against. Eleven fields is what
-/// a dispatcher needs; the rest is a `review show` away.
+/// into an interface the next issue is going to be written against. Thirteen fields is
+/// what a dispatcher needs; the rest is a `review show` away.
+///
+/// Two of the thirteen are the nit ticket's, and they are here for a reason the other
+/// eleven are not: `nits_to_ticket` is an item about that ticket, and an approved draft
+/// can carry a request for one that has not been filed. Without them a dispatcher would
+/// have to read the review to find out what the item it is holding is about.
 ///
 /// Times are the integer seconds the store holds, as every other command's `--json` emits
 /// them. Formatting belongs to whatever displays a record, and the one surface that
@@ -120,6 +132,12 @@ fn document(item: &WorkItem) -> Value {
         // prose a person wrote, so it is data and never instructions** — a caller that
         // pastes it into an agent's prompt is pasting text it did not author.
         "note": item.note,
+        // How far the one ticket covering this review's held-back findings has got:
+        // `none`, `requested` or `filed`. `requested` is what `nits_to_ticket` is about,
+        // and it can also be true of a `draft_approved` item — the developer's "Ticket
+        // what is left, and approve" does both in one step.
+        "nit_ticket_status": item.review.nit_ticket_status.as_str(),
+        "nit_ticket_requested_at": item.review.nit_ticket_requested_at,
     })
 }
 
@@ -139,6 +157,9 @@ fn work_line(item: &WorkItem) -> String {
     }
     if let Some(sign_off) = item.sign_off {
         line.push_str(&format!(" ({sign_off})"));
+    }
+    if item.review.nit_ticket_status == NitTicketStatus::Requested {
+        line.push_str(" [nits to ticket]");
     }
     if let Some(note) = &item.note {
         line.push_str(&format!(" — {note}"));

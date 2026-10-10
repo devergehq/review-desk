@@ -74,6 +74,14 @@ impl Desk {
             .unwrap_or_else(|error| panic!("a refusal must still be one document: {error}\n{text}"))
     }
 
+    /// Write a file in this desk's directory and hand back its path, for a command that
+    /// takes a document.
+    pub fn write_file(&self, name: &str, contents: &str) -> PathBuf {
+        let path = self.dir.path().join(name);
+        std::fs::write(&path, contents).expect("write the document");
+        path
+    }
+
     /// A store on this desk's database, for seeding what no command creates — rules,
     /// which DEV-851 deliberately leaves out of the command line.
     pub fn store(&self) -> Store {

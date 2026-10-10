@@ -1,6 +1,6 @@
 //! Reviews: one per pull request head commit per round.
 
-use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior};
+use rusqlite::{params, Connection, OptionalExtension, Row, Transaction, TransactionBehavior};
 
 use crate::error::{Result, StoreError};
 use crate::model::{
@@ -207,23 +207,11 @@ impl Store {
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
         let review = self.get_review(id)?;
 
-        let at = now();
         let status = match ticket_id {
             Some(_) => NitTicketStatus::Filed,
             None => NitTicketStatus::Requested,
         };
-
-        self.conn.execute(
-            "UPDATE reviews SET
-                 nit_ticket_status       = ?2,
-                 nit_ticket_id           = COALESCE(?3, nit_ticket_id),
-                 nit_ticket_requested_at = COALESCE(nit_ticket_requested_at, ?4),
-                 nit_ticket_filed_at     = CASE WHEN ?2 = 'filed'
-                                                THEN COALESCE(nit_ticket_filed_at, ?4)
-                                                ELSE nit_ticket_filed_at END
-             WHERE id = ?1",
-            params![review.id, status, ticket_id, at],
-        )?;
+        write_nit_ticket(&self.conn, review.id, status, ticket_id, now())?;
 
         tx.commit()?;
         self.nit_ticket(id)
@@ -497,4 +485,36 @@ pub(super) fn row_to_review(row: &Row<'_>) -> rusqlite::Result<Review> {
         nit_ticket_filed_at: row.get("nit_ticket_filed_at")?,
         created_at: row.get("created_at")?,
     })
+}
+
+/// Move the one ticket covering a review's held-back nits to this status.
+///
+/// **One statement, two callers.** `request_nit_ticket` is the dashboard asking for the
+/// ticket or recording the one that was filed; `ticket_rest_and_approve` asks for it in the
+/// same transaction as a sign-off. Written out twice they could come to mean different
+/// things, and `requested_at` is the kind of column that gets overwritten by the second
+/// copy of a statement.
+///
+/// `requested_at` is kept once set, so asking twice does not move the clock, and
+/// `filed_at` is only written by a filing.
+pub(crate) fn write_nit_ticket(
+    conn: &Connection,
+    review_id: i64,
+    status: NitTicketStatus,
+    ticket_id: Option<&str>,
+    at: Timestamp,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE reviews SET
+             nit_ticket_status       = ?2,
+             nit_ticket_id           = COALESCE(?3, nit_ticket_id),
+             nit_ticket_requested_at = COALESCE(nit_ticket_requested_at, ?4),
+             nit_ticket_filed_at     = CASE WHEN ?2 = 'filed'
+                                            THEN COALESCE(nit_ticket_filed_at, ?4)
+                                            ELSE nit_ticket_filed_at END
+         WHERE id = ?1",
+        params![review_id, status, ticket_id, at],
+    )?;
+
+    Ok(())
 }

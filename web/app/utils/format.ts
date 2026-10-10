@@ -121,12 +121,12 @@ export function descriptionLintLabel(lint: DescriptionLint | null | undefined): 
 /**
  * What an outcome kind is called in a sentence about one finding.
  *
- * **All nine of them, which is the drift DEV-862 closed.** `replied` and `thread_resolved`
+ * **All eleven of them, which is the drift DEV-862 closed.** `replied` and `thread_resolved`
  * are what the harvester writes — a reply on a finding's comment thread, and that thread
  * being resolved — and this map had neither, so the One review screen printed the raw wire
  * string for the two kinds it is most likely to be showing. The map is keyed by
  * `OutcomeKind` rather than by `string`, so a kind added to the contract is a type error
- * here instead of a word nobody wrote.
+ * here instead of a word nobody wrote — which is how DEV-877's two arrived.
  */
 const VERBS: Record<OutcomeKind, string> = {
   cut: 'Cut',
@@ -134,6 +134,8 @@ const VERBS: Record<OutcomeKind, string> = {
   rewritten: 'Rewrote',
   kept: 'Kept',
   rejected: 'Rejected',
+  ticketed: 'Moved to a ticket',
+  withdrawn: 'Withdrew',
   raised_again: 'Raised again',
   replied: 'Replied to',
   thread_resolved: 'Resolved the thread on',
@@ -174,6 +176,10 @@ export function replyLabel(event: InboxReplyEvent): string {
       return `${key} was regraded`
     case 'rewritten':
       return `${key} was rewritten`
+    case 'ticketed':
+      return `${key} was moved to a ticket`
+    case 'withdrawn':
+      return `${key} was withdrawn`
   }
 }
 

@@ -1,4 +1,4 @@
-//! Every one of the contract's sixteen operations is routed and answers.
+//! Every one of the contract's eighteen operations is routed and answers.
 //!
 //! This walks `Operation::ALL` rather than listing routes by hand, so an operation added
 //! to the contract and not to the server fails here instead of 404ing in a browser.
@@ -7,10 +7,10 @@ mod common;
 
 use review_desk_server::route::Operation;
 
-/// The sixteen operations, as `contract/README.md` counts them.
+/// The eighteen operations, as `contract/README.md` counts them.
 #[test]
-fn the_contract_has_sixteen_operations() {
-    assert_eq!(Operation::ALL.len(), 16);
+fn the_contract_has_eighteen_operations() {
+    assert_eq!(Operation::ALL.len(), 18);
 }
 
 #[test]
@@ -84,6 +84,12 @@ fn an_unknown_review_is_not_found_on_every_operation_that_names_one() {
             Some(r#"{"note":"cut the nits"}"#),
         ),
         ("POST", "/reviews/9001/held-back/ticket", Some("{}")),
+        (
+            "POST",
+            "/reviews/9001/findings/1/decide",
+            Some(r#"{"decision":"cut"}"#),
+        ),
+        ("POST", "/reviews/9001/draft/ticket-and-approve", Some("{}")),
     ];
 
     for (method, path, body) in missing {
@@ -174,6 +180,10 @@ pub fn call(
         Operation::ApproveDraft { .. } => Some(r#"{"event":"comment"}"#.to_string()),
         Operation::SendBackDraft { .. } => Some(r#"{"note":"cut the nits"}"#.to_string()),
         Operation::RequestNitTicket { .. } => Some("{}".to_string()),
+        // Cut, which is the decision that needs the least beside it — and the seeded
+        // draft is written in parts, so F1 has a block to cut.
+        Operation::DecideFinding { .. } => Some(r#"{"decision":"cut"}"#.to_string()),
+        Operation::TicketRestAndApprove { .. } => Some("{}".to_string()),
         // The seeded rule is `active`, so the stage that follows it is `lint`.
         Operation::PromoteRule { .. } => Some(r#"{"to_stage":"lint"}"#.to_string()),
         Operation::DismissRule { .. } | Operation::RetireRule { .. } => {

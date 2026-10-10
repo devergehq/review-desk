@@ -4,11 +4,11 @@ mod common;
 
 use common::{db_path, temp_store};
 use review_desk_store::{
-    newest_version, Actor, CriterionStatus, DescriptionLintStatus, DraftStatus, FileCheck,
-    FindingHunk, HunkLine, HunkLineMarker, NewAcceptanceCriterion, NewDescriptionLintResult,
-    NewDraft, NewFileChange, NewFinding, NewReviewSource, NewRoundCommit, NitTicketStatus,
-    ReviewLayerName, ReviewLayerState, RoundStatus, Severity, SourceKind, Store, StoreError,
-    Verification, WorkFilter,
+    newest_version, Actor, CriterionStatus, Decision, DescriptionLintStatus, DraftSectionKind,
+    DraftStatus, FileCheck, FindingDecision, FindingHunk, HunkLine, HunkLineMarker,
+    NewAcceptanceCriterion, NewDescriptionLintResult, NewDraft, NewFileChange, NewFinding,
+    NewReviewSource, NewRoundCommit, NitTicketStatus, ReviewLayerName, ReviewLayerState,
+    RoundStatus, Severity, SourceKind, Store, StoreError, Verification, WorkFilter,
 };
 use tempfile::TempDir;
 
@@ -460,4 +460,80 @@ fn the_default_path_sits_under_the_home_directory() {
     let path = review_desk_store::default_db_path().expect("a home directory");
     assert!(path.ends_with("review-desk.db"));
     assert!(path.to_string_lossy().contains(".review-desk"));
+}
+
+#[test]
+fn a_draft_written_before_the_composition_becomes_one_block_of_prose() {
+    // **Migration 9's backfill, against a draft that really predates it.** Every draft on
+    // the record was one block of markdown, and the honest reading of one is a single
+    // prose block: nothing can say which characters are F1's without inferring it from the
+    // text, which is the guessing the composition exists to stop. The visible consequence
+    // is that the per-finding decisions refuse on such a draft — which this asserts too,
+    // because it is the thing a page has to be able to say.
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+
+    const FROM: i64 = 8;
+    assert!(
+        newest_version() > FROM,
+        "this test needs the composition's migration to come from version 8"
+    );
+
+    {
+        let old = Store::open_at_version(&path, FROM).expect("open at version 8");
+        assert_eq!(old.schema_version().unwrap(), FROM);
+    }
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        // Written in its own SQL, as the paragraph above `an_older_database_…` explains:
+        // today's typed functions speak the newest schema only. The body has no trailing
+        // newline, which is what a draft written with `draft put --file` had.
+        conn.execute_batch(
+            "INSERT INTO reviews (id, repo, pr, head_sha, round, created_at)
+                 VALUES (1, 'acme/portal', 412, '3f9c2ab', 1, 1000),
+                        (2, 'acme/portal', 413, 'c7730bd', 1, 1000);
+             INSERT INTO findings
+                 (review_id, seq, lens, severity, claim, disposition, created_at)
+                 VALUES (1, 1, 'correctness', 'blocker', 'a finding the body mentions',
+                         'in_draft', 1001);
+             INSERT INTO drafts (review_id, body, status, updated_at)
+                 VALUES (1, 'The body, as one block.\n\n### Blocker · F1 · a finding',
+                         'ready', 1002);
+             INSERT INTO drafts (review_id, body, status, updated_at)
+                 VALUES (2, '', 'drafting', 1003);",
+        )
+        .expect("write a draft under the old schema");
+    }
+
+    let migrated = Store::open(&path).expect("reopen migrates");
+    assert_eq!(migrated.schema_version().unwrap(), newest_version());
+
+    let sections = migrated.draft_sections(1).expect("the blocks");
+    assert_eq!(sections.len(), 1, "one block, holding the whole body");
+    assert_eq!(sections[0].kind, DraftSectionKind::Prose);
+    assert_eq!(
+        sections[0].text, "The body, as one block.\n\n### Blocker · F1 · a finding",
+        "carried through character for character"
+    );
+    assert_eq!(sections[0].finding_seq, None);
+    assert!(sections[0].posted);
+
+    assert_eq!(
+        migrated.get_draft(1).expect("the draft").body,
+        "The body, as one block.\n\n### Blocker · F1 · a finding\n",
+        "and the body is what that block composes to, which ends in one newline"
+    );
+
+    let refused = migrated
+        .decide_finding(1, 1, &Decision::of(FindingDecision::Cut), Actor::Developer)
+        .expect_err("a decision about a draft with no block for F1");
+    assert_eq!(refused.code(), "no_draft_section");
+    assert!(
+        refused.to_string().contains("one block"),
+        "the refusal has to say why: {refused}"
+    );
+
+    // A draft that held no body at all gets no block, and still composes to nothing.
+    assert!(migrated.draft_sections(2).expect("the blocks").is_empty());
+    assert_eq!(migrated.get_draft(2).expect("the draft").body, "");
 }

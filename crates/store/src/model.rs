@@ -116,6 +116,23 @@ string_enum! {
     }
 }
 
+impl Severity {
+    /// The word a finding's heading in the draft body is written with.
+    ///
+    /// **The one place this casing lives.** A draft's finding heading is composed, not
+    /// stored — see [`crate::DraftSection`] — so "Blocker" appears in the posted review
+    /// because of this function and nowhere else. The wire string stays lower case; a
+    /// screen that wants its own casing derives it from that.
+    pub fn label(self) -> &'static str {
+        match self {
+            Severity::Blocker => "Blocker",
+            Severity::Should => "Should",
+            Severity::Nit => "Nit",
+            Severity::Question => "Question",
+        }
+    }
+}
+
 string_enum! {
     /// What is to become of a finding in this round's draft.
     Disposition as "disposition" {
@@ -137,7 +154,18 @@ string_enum! {
         Regraded => "regraded",
         Rewritten => "rewritten",
         Kept => "kept",
+        /// The finding was rejected, with a reason. Recorded by the developer when they
+        /// accept the author's reason, which is what `RuleCounts::rejected_with_reason`
+        /// counts — the reason is the outcome's detail, and an outcome with none is not
+        /// counted.
         Rejected => "rejected",
+        /// Moved to a ticket instead of being posted. Added by DEV-877, for the
+        /// developer's "to a ticket" on a held-back nit, "move to a ticket" on a carried
+        /// finding, and "ticket what is left" on the whole review.
+        Ticketed => "ticketed",
+        /// Withdrawn by the developer: the finding no longer stands. Distinct from `Cut`,
+        /// which is a finding that stands and is not being posted this round.
+        Withdrawn => "withdrawn",
         RaisedAgain => "raised_again",
         Replied => "replied",
         ThreadResolved => "thread_resolved",
@@ -281,6 +309,14 @@ string_enum! {
         /// The developer approved the draft and nothing has reported it posted. An agent
         /// should post it and then run `draft posted`.
         DraftApproved => "draft_approved",
+        /// The developer asked for this review's held-back findings to be filed as one
+        /// ticket, and nothing has reported it filed. An agent should file it and then
+        /// record the ticket with `review-desk review nit-ticket --ticket`.
+        ///
+        /// **Review Desk files no ticket**, for the same reason it posts no review: it
+        /// owns the record and the session performs the outward act. Added by DEV-877,
+        /// which is where "ticket what is left, and approve" records the request.
+        NitsToTicket => "nits_to_ticket",
     }
 }
 
@@ -789,6 +825,22 @@ pub struct Finding {
     pub created_at: Timestamp,
 }
 
+impl Finding {
+    /// Whether this finding is posted as an open finding in this round's draft.
+    ///
+    /// **Two facts, and both have to hold**: the disposition says the draft is where it
+    /// was headed, and the round status says it is still something this round has to say.
+    /// A finding carried as `fixed`, `accepted`, `withdrawn` or `ticketed` is not posted
+    /// as an open finding whatever its disposition — DEV-873 left a fixed finding carrying
+    /// whatever disposition it was carried with, and this is where DEV-877 answers it.
+    ///
+    /// This is the one rule the composed body is filtered by, and
+    /// [`crate::DraftSection::posted`] is this function read through a block.
+    pub fn is_posted(&self) -> bool {
+        self.disposition == Disposition::InDraft && self.round_status.is_open()
+    }
+}
+
 /// A finding to add to a review. The sequence number is assigned by the store.
 ///
 /// Unknown fields are refused, for the same reason as [`NewBrief`]: a misspelled
@@ -1138,17 +1190,230 @@ pub struct NewDraft {
     pub status: DraftStatus,
     /// What the lint said about this body, if it was run.
     pub lint: Option<DraftLint>,
+    /// The blocks the body is composed of, in order, or `None` to write the body as one
+    /// block of prose.
+    ///
+    /// **Given them, `body` is checked rather than stored**: the store composes the body
+    /// from the blocks and refuses a `body` that differs by anything but trailing
+    /// newlines, so a caller cannot leave the two saying different things. `None` is the
+    /// honest way to write a draft nobody is going to decide on finding by finding — it
+    /// stores one prose block holding the whole body, and the per-finding decisions then
+    /// refuse, naming what is missing.
+    #[serde(default)]
+    pub sections: Option<Vec<NewDraftSection>>,
 }
 
 impl NewDraft {
-    /// A finished draft: this body, waiting on the developer.
+    /// A finished draft: this body, waiting on the developer, written as one block.
     pub fn ready(body: impl Into<String>) -> Self {
         NewDraft {
             body: body.into(),
             status: DraftStatus::Ready,
             lint: None,
+            sections: None,
         }
     }
+
+    /// A finished draft composed of these blocks, waiting on the developer.
+    pub fn composed(sections: Vec<NewDraftSection>) -> Self {
+        NewDraft {
+            body: String::new(),
+            status: DraftStatus::Ready,
+            lint: None,
+            sections: Some(sections),
+        }
+    }
+}
+
+string_enum! {
+    /// What one block of a draft body is.
+    ///
+    /// Two kinds, and the division is the whole of DEV-877's composition: `finding` is the
+    /// part a decision changes, and `prose` is everything else, carried through exactly as
+    /// it was written. The summary sentence, the not-checked line, an index, a method
+    /// line, a folded proof and a suppressed list are all prose — which is what lets the
+    /// composed body reproduce what an agent wrote character for character.
+    DraftSectionKind as "kind" {
+        /// Markdown, posted verbatim. The store reads none of it.
+        Prose => "prose",
+        /// One finding: a heading the store composes, and the paragraph beneath it.
+        Finding => "finding",
+    }
+}
+
+/// One block of a draft body.
+///
+/// **A finding block's heading is composed and never stored**, from the finding's live
+/// severity, its number and this title: `### Blocker · F1 · A retried delivery…`. That is
+/// what makes "regrading changes the heading" a fact about the record rather than a second
+/// copy of the severity that could disagree with the finding.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftSection {
+    pub review_id: i64,
+    /// Where it sits in the body, from 1. The store assigns it; no caller numbers blocks.
+    pub position: i64,
+    pub kind: DraftSectionKind,
+    /// The finding this block is about, on a `finding` block and nowhere else.
+    pub finding_seq: Option<i64>,
+    /// The heading's title — the part after the severity and the number.
+    pub title: Option<String>,
+    /// The paragraph, as it will post. The developer's words once they have rewritten it.
+    pub text: String,
+    /// The title as the agent wrote it. Equal to `title` until the developer rewrites it.
+    pub agent_title: Option<String>,
+    /// The paragraph as the agent wrote it. **What a rewrite replaced**, kept so that the
+    /// record can say what the developer changed and the feedback loop can learn from it.
+    pub agent_text: String,
+    /// The severity the heading is composed with, read from the finding. `None` on a prose
+    /// block. Derived, never stored — regrading the finding changes it.
+    pub severity: Option<Severity>,
+    /// Whether this block is in the composed body.
+    ///
+    /// Derived, never stored: a prose block always posts, and a finding block posts while
+    /// its finding is at disposition `in_draft` with an open round status. A cut finding's
+    /// block stays on the record and stops being posted, which is the difference between
+    /// a decision and a deletion.
+    pub posted: bool,
+}
+
+impl DraftSection {
+    /// Whether the developer has rewritten this block.
+    ///
+    /// Derived from the words rather than stored beside them, so it cannot disagree with
+    /// them, and read through this function rather than compared at each caller so the
+    /// rule — the title or the paragraph differs from the writer's own — lives in one
+    /// place.
+    pub fn rewritten(&self) -> bool {
+        self.title != self.agent_title || self.text != self.agent_text
+    }
+}
+
+/// A block to write, in the order given.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NewDraftSection {
+    pub kind: DraftSectionKind,
+    #[serde(default)]
+    pub finding_seq: Option<i64>,
+    #[serde(default)]
+    pub title: Option<String>,
+    pub text: String,
+}
+
+impl NewDraftSection {
+    /// A block of markdown, carried through as it is.
+    pub fn prose(text: impl Into<String>) -> Self {
+        NewDraftSection {
+            kind: DraftSectionKind::Prose,
+            finding_seq: None,
+            title: None,
+            text: text.into(),
+        }
+    }
+
+    /// One finding's heading and paragraph.
+    pub fn finding(seq: i64, title: impl Into<String>, text: impl Into<String>) -> Self {
+        NewDraftSection {
+            kind: DraftSectionKind::Finding,
+            finding_seq: Some(seq),
+            title: Some(title.into()),
+            text: text.into(),
+        }
+    }
+}
+
+string_enum! {
+    /// What the developer decided about one finding.
+    ///
+    /// **Eight decisions behind eleven buttons**, and the collapsing is deliberate: the
+    /// designs label the same decision differently depending on where it is drawn, and two
+    /// wire values for one act would be two things to keep in step for ever. "Keep" on a
+    /// finding in the draft and "Post it" on a held-back nit both mean *this is posted*;
+    /// "Cut" and "Drop" both mean *this is not*; "To a ticket" and "Move to a ticket" are
+    /// one act on two screens.
+    ///
+    /// | Decision | The body | Disposition | Round status | Outcome |
+    /// | -- | -- | -- | -- | -- |
+    /// | `keep` | its block posts, written if it had none | `in_draft` | unchanged | `kept` |
+    /// | `cut` | its block stops posting | `suppressed` | unchanged | `cut` |
+    /// | `regrade` | its heading changes | unchanged | unchanged | `regraded` |
+    /// | `rewrite` | its title and paragraph change | unchanged | unchanged | `rewritten` |
+    /// | `to_ticket` | its block stops posting | `held_back` | `ticketed` | `ticketed` |
+    /// | `raise_again` | its block posts | `in_draft` | `still_open` | `raised_again` |
+    /// | `accept_reason` | its block stops posting | `suppressed` | `accepted` | `rejected` |
+    /// | `withdraw` | its block stops posting | `suppressed` | `withdrawn` | `withdrawn` |
+    ///
+    /// Only the developer makes one, and the record says so twice: the outcome's actor is
+    /// `developer` and a round status it changes is decided by `developer`.
+    FindingDecision as "decision" {
+        /// Post it as it stands. The designs' "Keep" and "Post it".
+        Keep => "keep",
+        /// Do not post it. It stays on the record, cut by the developer. The designs'
+        /// "Cut" and "Drop".
+        Cut => "cut",
+        /// Post it at another severity.
+        Regrade => "regrade",
+        /// Post it in the developer's own words.
+        Rewrite => "rewrite",
+        /// Do not post it; it goes in the ticket for an agent. The designs' "To a ticket"
+        /// and "Move to a ticket".
+        ToTicket => "to_ticket",
+        /// Say it again in this round. The reply the author's answer did not settle.
+        RaiseAgain => "raise_again",
+        /// The author's reason stands. The reason is required, and it is the outcome's
+        /// detail — a rejection with no reason teaches the feedback loop nothing, and
+        /// `RuleCounts::rejected_with_reason` counts only the ones that have one.
+        AcceptReason => "accept_reason",
+        /// It should not have been raised, or no longer holds.
+        Withdraw => "withdraw",
+    }
+}
+
+/// One decision on one finding, as the developer made it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Decision {
+    pub decision: FindingDecision,
+    /// The severity to post it at. Required by `regrade` and refused by the rest, which
+    /// would otherwise be able to change a severity without the record saying it was
+    /// regraded.
+    #[serde(default)]
+    pub severity: Option<Severity>,
+    /// The heading's new title, for a `rewrite`.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// The paragraph's new text, for a `rewrite`.
+    #[serde(default)]
+    pub text: Option<String>,
+    /// Why, in the developer's words. The outcome's detail. Required by `accept_reason`
+    /// and optional everywhere else: the design is one click, and the outcome's kind and
+    /// actor are themselves the signal.
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+impl Decision {
+    /// The plainest form of a decision: this one, with no further words.
+    pub fn of(decision: FindingDecision) -> Self {
+        Decision {
+            decision,
+            severity: None,
+            title: None,
+            text: None,
+            note: None,
+        }
+    }
+}
+
+/// A decision, and everything it changed.
+///
+/// All three are read back inside the decision's own transaction, so the finding, the
+/// draft and the outcome a caller is handed are the same instant of the record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DecisionMade {
+    pub finding: Finding,
+    pub draft: Draft,
+    pub outcome: Outcome,
 }
 
 /// The one ticket covering every nit held back from a review's draft.

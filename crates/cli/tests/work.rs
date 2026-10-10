@@ -4,6 +4,9 @@
 //! against these field names and these exit codes, so this file is about the document and
 //! not only about the four kinds: the key set, the integer times, and that an empty answer
 //! is exit 0 with an empty list rather than a failure.
+//!
+//! DEV-877 added the fifth kind, `nits_to_ticket`, and two fields: the state of the one
+//! ticket covering a review's held-back findings, and when it was asked for.
 
 mod common;
 
@@ -97,6 +100,8 @@ fn the_document_carries_exactly_the_fields_the_dispatcher_is_written_against() {
             "head_sha",
             "kind",
             "ledger_id",
+            "nit_ticket_requested_at",
+            "nit_ticket_status",
             "note",
             "pr",
             "repo",
@@ -283,5 +288,73 @@ fn an_unknown_review_is_refused_rather_than_answered_with_silence() {
             .expect("a message")
             .contains("99"),
         "{document}"
+    );
+}
+
+#[test]
+fn a_ticket_the_developer_asked_for_is_an_item_an_agent_can_discharge() {
+    // **The round trip DEV-877 needs**: the developer asks in the dashboard, `work list`
+    // reports it, the session files the ticket and records it, and the item goes.
+    let desk = Desk::new();
+    let review = open_review(&desk, "acme/portal", "412", "3f9c2ab");
+    let id: i64 = review.parse().expect("the review id");
+
+    desk.command()
+        .args(["finding", "add", "--review", &review, "--file", "-"])
+        .write_stdin(r#"{"lens":"repetition","severity":"nit","claim":"a nit for the ticket"}"#)
+        .assert()
+        .success();
+    desk.run(&[
+        "finding",
+        "set",
+        "--review",
+        &review,
+        "--finding",
+        "1",
+        "--disposition",
+        "held_back",
+        "--reason",
+        "a nit; it goes in the ticket",
+    ]);
+
+    // The developer's act, in the dashboard's place: there is no command for it.
+    desk.store()
+        .request_nit_ticket(id, None)
+        .expect("the developer asks for the one ticket");
+
+    let items = work(&desk, &[]);
+    assert_eq!(items.len(), 1, "{items:#?}");
+    assert_eq!(items[0]["kind"], "nits_to_ticket");
+    assert_eq!(items[0]["nit_ticket_status"], "requested");
+    assert!(
+        items[0]["nit_ticket_requested_at"].is_i64(),
+        "the time is an integer, as every other time in this document is: {items:#?}"
+    );
+    assert!(
+        desk.run(&["work", "list"]).contains("[nits to ticket]"),
+        "and the plain line says so too"
+    );
+
+    let filed = desk.json(&[
+        "review",
+        "nit-ticket",
+        "--review",
+        &review,
+        "--ticket",
+        "ABC-246",
+    ]);
+    assert_eq!(filed["nit_ticket"]["status"], "filed");
+    assert_eq!(filed["nit_ticket"]["ticket_id"], "ABC-246");
+    assert_eq!(filed["nit_ticket"]["finding_seqs"], json!([1]));
+
+    let after = work(&desk, &[]);
+    assert!(
+        !after.iter().any(|item| item["kind"] == "nits_to_ticket"),
+        "once the session has said which ticket it filed, the ticket is not waiting: \
+         {after:#?}"
+    );
+    assert_eq!(
+        after[0]["kind"], "review_requested",
+        "and what is outstanding is what always was — this review has no brief"
     );
 }
