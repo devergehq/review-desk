@@ -143,7 +143,11 @@ pub(crate) fn validate(sections: &[NewDraftSection]) -> Result<()> {
                 // sitting inside one by the review of DEV-877 — so the title rule lives in
                 // `resolve_titles`, which has the transaction it needs. What stays here is
                 // a *stated* title that is blank, which needs nothing read.
-                if section.title.as_deref().is_some_and(|title| title.trim().is_empty()) {
+                if section
+                    .title
+                    .as_deref()
+                    .is_some_and(|title| title.trim().is_empty())
+                {
                     return Err(refuse(
                         format!("block {at} is about F{seq} and states a blank title"),
                         "the heading's title — the part after the severity and the number \

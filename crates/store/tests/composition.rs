@@ -330,9 +330,16 @@ fn a_stated_title_is_used_as_stated_even_when_the_finding_has_one() {
         .expect("the draft");
 
     let blocks = store.draft_sections(review.id).expect("the blocks");
-    assert_eq!(blocks[0].title.as_deref(), Some("The heading this review posts"));
     assert_eq!(
-        store.get_finding(review.id, finding.seq).expect("read it").title.as_deref(),
+        blocks[0].title.as_deref(),
+        Some("The heading this review posts")
+    );
+    assert_eq!(
+        store
+            .get_finding(review.id, finding.seq)
+            .expect("read it")
+            .title
+            .as_deref(),
         Some("The finding's own title"),
         "and the finding is not rewritten by a block being written"
     );

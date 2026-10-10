@@ -403,7 +403,10 @@ fn a_blank_title_is_refused_and_names_the_field() {
         .assert()
         .failure();
     let said = String::from_utf8(refused.get_output().stderr.clone()).expect("stderr is text");
-    assert!(said.contains("title"), "the refusal names the field: {said}");
+    assert!(
+        said.contains("title"),
+        "the refusal names the field: {said}"
+    );
 
     let shown = desk.json(&["review", "show", "--review", &review]);
     assert_eq!(
