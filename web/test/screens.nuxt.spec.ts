@@ -322,47 +322,60 @@ describe('the queue', () => {
     expect(row.text()).toContain('Read and sign off')
     expect(page.findAll('.row').filter(one => one.text().includes('#412'))).toHaveLength(1)
     /*
-     * **And it goes to the step that is waiting**, which is now the draft.
-     *
-     * This assertion used to read `/reviews/17`, pinning "every row opens the review, not
-     * the draft" — Patrick on tc-portal #9584, against a queue where every row skipped
-     * straight to the draft screen. DEV-885 supersedes it rather than undoing it: a review
-     * is no longer one page, so "the review" has stopped naming a place. Before the brief
-     * is confirmed this row goes to Understand, which *is* the review; once it is
-     * confirmed the only step still waiting is the draft, and there is nothing left to
-     * read first.
+     * **And it still goes to the review, not to the draft.** Patrick, on tc-portal #9584:
+     * "when we click a review, we want to go to the review, not to the draft." In a
+     * page-per-step review the review starts at Understand, and the draft is one click
+     * along the trail — which is also the click that walks past the alternatives and the
+     * solution on the way.
      */
-    expect(row.attributes('href')).toBe('/reviews/17/draft')
+    expect(row.attributes('href')).toBe('/reviews/17/understand')
   })
 
-  it('opens the step that is waiting, and Understand when nothing is', async () => {
+  it('opens Understand, whatever the row is waiting for', async () => {
     const page = await shown(Inbox)
 
-    /* A brief waiting to be confirmed is step 2, and step 2 has a page. */
+    /*
+     * **Every row, whatever it is waiting for.** A brief to confirm, a draft to sign off
+     * and an author's reply are three different steps, and all three land on Understand:
+     * the trail is what says which step is waiting, and it says it about all seven at once
+     * where a destination could only say it about one.
+     */
     const brief = page.findAll('.row').find(one => one.text().includes('Problem brief ready'))!
     expect(brief.attributes('href')).toBe('/reviews/17/understand')
 
-    /*
-     * A review whose only waiting thing is an author's reply. That is step 7, which has no
-     * page until DEV-878 builds it, so the row lands on Understand — where a reader starts
-     * anyway.
-     *
-     * **Asserted on the row, not on a predicate over the list.** This was
-     * `every(href => !/^\/reviews\/\d+$/.test(href))`, which passes on an empty list and
-     * passes on a row pointing at `/reviews/17/draft` — so it could not fail for the reason
-     * its own title gives.
-     */
     const reply = page.findAll('.row').find(one => one.text().includes('The author replied'))
     expect(reply, 'the fixtures hold a review whose only waiting thing is a reply').toBeTruthy()
     expect(reply!.attributes('href')).toMatch(/^\/reviews\/\d+\/understand$/)
 
-    /* And no row anywhere still points at the review's old single page. */
+    /*
+     * And no row anywhere goes anywhere else. Asserted over every row rather than as a
+     * predicate that could pass on an empty list.
+     */
     const everywhere = page
       .findAll('.row')
       .map(one => one.attributes('href'))
       .filter((href): href is string => href != null)
-    expect(everywhere.length).toBeGreaterThan(0)
-    expect(everywhere.filter(href => /^\/reviews\/\d+$/.test(href))).toEqual([])
+      .filter(href => href.startsWith('/reviews/'))
+    expect(everywhere.length).toBeGreaterThan(2)
+    for (const href of everywhere) expect(href).toMatch(/^\/reviews\/\d+\/understand$/)
+  })
+
+  it('leaves a way back from the two screens the trail reaches', async () => {
+    /*
+     * Steps 5 and 6 of the trail land on the one-page review and the draft, and neither
+     * carries a trail of its own until DEV-878 rebuilds them. One link back each, so the
+     * queue — which lands every row on Understand — does not lead somewhere you cannot
+     * leave. The draft screen has carried one all along; only where it goes has moved.
+     */
+    for (const [component, route] of [
+      [OneReview, '/reviews/17'],
+      [DraftPreview, '/reviews/17/draft'],
+    ] as const) {
+      const screen = await shown(component, { route })
+      const back = screen.findAll('a').find(one => one.text() === 'Back to the review')
+      expect(back, `${route} has no way back`).toBeTruthy()
+      expect(back!.attributes('href')).toBe('/reviews/17/understand')
+    }
   })
 
   it('keeps the figures the boards do not draw, rather than dropping them', async () => {

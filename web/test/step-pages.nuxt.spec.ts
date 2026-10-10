@@ -141,14 +141,40 @@ describe('the shell every step page sits in', () => {
     expect(page.find('.trail').text()).toContain('not yet')
   })
 
-  it('links the three steps that have a page, and no others', async () => {
+  it('links the five steps that have somewhere to go, and no others', async () => {
     const page = await understand(STRUCTURED)
     const links = page.findAll('.trail a').map(one => one.attributes('href'))
+    /*
+     * **The trail is the only way to four of these.** Every row in the queue opens
+     * Understand, so if the trail did not reach the findings and the draft the queue would
+     * lead somewhere a reader could not leave. Steps 1 and 7 have no page until DEV-878,
+     * and a link to a page that does not exist is worse than a label.
+     */
     expect(links).toEqual([
       `/reviews/${STRUCTURED}/understand`,
       `/reviews/${STRUCTURED}/alternatives`,
       `/reviews/${STRUCTURED}/solution`,
+      `/reviews/${STRUCTURED}`,
+      `/reviews/${STRUCTURED}/draft`,
     ])
+    /* Lint and Harvest are labels. */
+    const labels = page.findAll('.trail .face:not(a)').map(one => one.text())
+    expect(labels.some(one => one.includes('1 Lint'))).toBe(true)
+    expect(labels.some(one => one.includes('7 Harvest'))).toBe(true)
+  })
+
+  it('still says which step is waiting, whichever page you are on', async () => {
+    const page = await understand(STRUCTURED)
+    /*
+     * Step 6 is a link now, and it is also the step waiting on the developer. The two
+     * facts are drawn by different things — `face--current` is the review's state,
+     * `face--here` is the browser's — and linking it changed neither.
+     */
+    const waiting = page.findAll('.trail .face--current')
+    expect(waiting).toHaveLength(1)
+    expect(waiting[0]!.text()).toContain('6 Draft')
+    expect(waiting[0]!.text()).toContain('waiting on you')
+    expect(page.find('.trail .face--here').text()).toContain('2 Understand')
   })
 
   it('marks the step you are on, on each of the three pages', async () => {

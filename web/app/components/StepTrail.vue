@@ -21,13 +21,23 @@ import type { ReviewLayer, ReviewLayerName } from '~/types/desk'
  *
  * ## Which steps are links
  *
- * Understand, Alternatives and Solution, which are the three pages DEV-885 builds. The
- * board makes exactly these three links and leaves the other four as labels, and that is
- * the right behaviour rather than a limitation of the mockup: steps 1, 5 and 7 have no page
- * until DEV-878 builds them, and a link to a page that does not exist is worse than a
- * label. **Step 6 is deliberately not a link either**, even though `/reviews/{id}/draft`
- * exists: that screen carries no trail, so following the link would be a one-way trip out
- * of a navigation whose whole purpose is moving between steps freely.
+ * **Five of the seven, and the trail is the only way to four of them.**
+ *
+ * Every row in the queue opens Understand — "when we click a review, we want to go to the
+ * review, not to the draft", and in a page-per-step review the review starts at
+ * Understand. That makes the trail load-bearing rather than decorative: if it did not
+ * reach the draft and the findings, the queue would lead somewhere you could not leave.
+ *
+ * | Step | Goes to |
+ * |---|---|
+ * | 2, 3, 4 | the pages DEV-885 builds |
+ * | 5 Code review | `/reviews/{id}`, the one-page review, which is where the findings are |
+ * | 6 Draft | `/reviews/{id}/draft` |
+ * | 1 Lint, 7 Harvest | nowhere — no page until DEV-878, and a link to a page that does not exist is worse than a label |
+ *
+ * The board draws only three links, and drew them against a queue that landed elsewhere.
+ * Steps 5 and 6 go to the two screens this slice does not rebuild; **each of those carries
+ * one link back to Understand**, so neither is a one-way trip out of the trail.
  */
 /*
  * **Resolved to the component, not named as a string.** `QueueRow` carries the measurement:
@@ -46,11 +56,20 @@ const props = defineProps<{
   round: number
 }>()
 
-/** The three steps with a page, and where each one is. */
-const PAGES: Partial<Record<ReviewLayerName, string>> = {
-  understand: 'understand',
-  alternatives: 'alternatives',
-  solution_map: 'solution',
+/**
+ * The five steps that have somewhere to go, as whole paths.
+ *
+ * Whole paths rather than suffixes, because step 5's page **is** the base route: the
+ * one-page review is where the findings are drawn until DEV-878 replaces it, and a suffix
+ * map would have had to express that as an empty string and build `/reviews/1/`.
+ */
+const PAGES: Partial<Record<ReviewLayerName, (id: number) => string>> = {
+  understand: id => `/reviews/${id}/understand`,
+  alternatives: id => `/reviews/${id}/alternatives`,
+  solution_map: id => `/reviews/${id}/solution`,
+  /* The one-page review, which is the only place the findings are shown. */
+  code_review: id => `/reviews/${id}`,
+  draft: id => `/reviews/${id}/draft`,
 }
 
 interface Step {
@@ -78,9 +97,7 @@ const steps = computed<Step[]>(() =>
       name: layer.name,
       label: layerLabel(layer.name),
       outcome: layerOutcome(layer),
-      to: PAGES[layer.name] == null
-        ? null
-        : `/reviews/${props.reviewId}/${PAGES[layer.name]}`,
+      to: PAGES[layer.name]?.(props.reviewId) ?? null,
       current: layer.name === props.active,
       tone: layerTone(layer.state),
     })),

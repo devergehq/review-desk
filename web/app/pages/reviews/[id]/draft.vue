@@ -161,8 +161,15 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
     <template #default="{ data }">
       <div class="draft">
         <div>
+          <!--
+            **"The review" is Understand now**, which is the only thing about this screen
+            DEV-885 changes. Step 6 of the trail links here, and this screen carries no
+            trail of its own until DEV-878 rebuilds it — so without a way back the queue,
+            which lands every row on Understand, would lead somewhere you could not leave.
+            The control and its wording were already here; only where it goes has moved.
+          -->
           <NuxtLink
-            :to="`/reviews/${data.draft.review_id}`"
+            :to="`/reviews/${data.draft.review_id}/understand`"
             class="back"
           >
             Back to the review

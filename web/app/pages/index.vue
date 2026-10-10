@@ -130,28 +130,20 @@ function needingYou(data: Inbox): Waiting[] {
 }
 
 /**
- * Where a row goes: **the step that is waiting on the developer**, or Understand.
+ * Where a row goes: **Understand, whatever the row is waiting for.**
  *
- * DEV-885 asks for exactly that, and it is a change of destination rather than of
- * behaviour. A review is no longer one page, so "go to the review" has stopped naming a
- * place: it is seven steps, and the one worth landing on is the one that is waiting.
+ * Patrick, on tc-portal #9584: "when we click a review, we want to go to the review, not to
+ * the draft." In a page-per-step review the review *starts* at Understand — his order is
+ * understand, alternatives, solution, then the code, then the draft — so every row lands
+ * there and the reading happens in the order it was designed to happen in.
  *
- * | What is waiting | Step | Where |
- * |---|---|---|
- * | a brief to confirm | 2 · Understand | `/reviews/{id}/understand` |
- * | a draft to sign off | 6 · Draft | `/reviews/{id}/draft` |
- * | an author's reply | 7 · Harvest, which has no page yet | `/reviews/{id}/understand` |
- *
- * **This supersedes a narrower instruction, and the reason it does is worth recording.**
- * On tc-portal #9584 Patrick said "when we click a review, we want to go to the review, not
- * to the draft" — against a queue where every row went to the draft screen, skipping the
- * reading that precedes a sign-off. The reading now has a page of its own: a row with a
- * brief waiting lands on Understand, which *is* the review. A row whose only waiting step
- * is the draft lands on the draft, because there is nothing else to read first.
+ * **The trail is what says which step is waiting**, and it is a better place for that than
+ * the destination of a click: it says so about all seven steps at once, where a
+ * destination can only say it about one. From Understand the draft is one click along the
+ * trail, which is also the click that walks you past the alternatives and the solution on
+ * the way — the reading that precedes a sign-off.
  */
 function stepFor(row: Waiting): string {
-  if (row.brief) return `/reviews/${row.review_id}/understand`
-  if (row.draft) return `/reviews/${row.review_id}/draft`
   return `/reviews/${row.review_id}/understand`
 }
 

@@ -218,14 +218,26 @@ test.describe('the whole path, on a seeded database', () => {
     await expect(page.getByText('1 nit to a ticket')).toBeVisible()
 
     /*
-     * **A row goes to the step that is waiting**, which with the brief confirmed is the
-     * draft — DEV-885's criterion. This assertion used to be `/reviews/{id}`, pinning
-     * "a row goes to the review, and the draft is one click further on" against the
-     * version where every row skipped the reading. The reading now has pages of its own:
-     * before the brief was confirmed, two tests above, this same row went to Understand.
-     * With layer 2 settled there is nothing left to read before signing off.
+     * **A row goes to the review, and the draft is one click along the trail.**
+     *
+     * Patrick, on tc-portal #9584: "when we click a review, we want to go to the review,
+     * not to the draft." In a page-per-step review the review starts at Understand, so
+     * that is where every row lands however much is waiting behind it — and the trail,
+     * which says which step is waiting, is what carries you on.
+     *
+     * This is the path that proves the queue does not dead-end: queue, Understand, trail,
+     * draft. Linking step 6 is what makes it exist.
      */
     await page.getByRole('link', { name: 'Read and sign off' }).first().click()
+    await expect(page).toHaveURL(`${seeded}reviews/${reviewId}/understand`)
+
+    await page.locator('.trail').getByRole('link', { name: /6 Draft/ }).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${reviewId}/draft`)
+
+    /* And back again, because that screen carries no trail of its own. */
+    await page.getByRole('link', { name: 'Back to the review' }).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${reviewId}/understand`)
+    await page.locator('.trail').getByRole('link', { name: /6 Draft/ }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${reviewId}/draft`)
     await expect(
       page.getByText('Nothing has been posted. This is what GitHub will show.'),
@@ -713,10 +725,27 @@ test.describe('the three step pages of one review', () => {
       page.getByRole('heading', { name: 'Where the description and the code disagree' }),
     ).toBeVisible()
 
+    /* ---- 5 and 6, the two screens this slice does not rebuild ---- */
+
+    /*
+     * The trail is the only way to either, now that every queue row opens Understand — so
+     * these two links are what stop the queue leading somewhere a reader cannot leave.
+     * Each screen carries one link back, and that is all DEV-885 changes about them.
+     */
+    await page.locator('.trail').getByRole('link', { name: /5 Code review/ }).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}`)
+    await page.getByRole('link', { name: 'Back to the review' }).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/understand`)
+
     /* ---- and back to 2 · Understand, which is what "move back freely" means ---- */
 
+    await page.locator('.trail').getByRole('link', { name: /3 Alternatives/ }).click()
     await page.locator('.trail').getByRole('link', { name: /2 Understand/ }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/understand`)
+
+    /* Lint and Harvest are labels, not links: neither has a page until DEV-878. */
+    await expect(page.locator('.trail').getByRole('link', { name: /1 Lint/ })).toHaveCount(0)
+    await expect(page.locator('.trail').getByRole('link', { name: /7 Harvest/ })).toHaveCount(0)
   })
 
   /**
