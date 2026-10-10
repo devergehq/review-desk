@@ -1218,9 +1218,15 @@ components:
           type: [integer, 'null']
           minimum: 0
           description: |
-            Requested to draft ready, less the time spent waiting on the developer in
-            between. Null until the draft is ready: there is no end to measure to, and
-            measuring to now would make a figure that grows while nothing happens.
+            Requested to draft ready, less the developer's own time inside that span.
+
+            **The overlap, not the waits that finished.** A session may draft before the
+            brief is confirmed — `blocks_later_layers` exists to say whether it did — so a
+            wait on the developer can still be open when the draft becomes ready. Its own
+            length is unknown; the part of it that fell inside this span is not.
+
+            Null until the draft is ready: there is no end to measure to, and measuring to
+            now would make a figure that grows while nothing happens.
         waiting_on_you_seconds:
           type: [integer, 'null']
           minimum: 0

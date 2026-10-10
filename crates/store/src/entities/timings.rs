@@ -19,7 +19,7 @@
 use rusqlite::params;
 
 use crate::error::Result;
-use crate::model::{ReviewLayer, ReviewLayerName, ReviewTimings, Timestamp};
+use crate::model::{ReviewLayer, ReviewLayerName, ReviewLayerRun, ReviewTimings, Timestamp};
 use crate::Store;
 
 impl Store {
@@ -111,29 +111,40 @@ fn timings_from(
 ) -> ReviewTimings {
     let draft_ready_at = last_draft_ready(&layers);
 
-    // Every wait on the developer that has finished, over every layer: the brief's
-    // confirmation at layer 2, and the draft's sign-off at layer 6. A wait still going is
-    // left out for the reason `ReviewLayer::seconds` gives — a figure that grows on every
-    // reload is not an answer to "how long did it wait".
-    let waits: Vec<(Timestamp, i64)> = layers
+    // Every wait on the developer, over every layer: the brief's confirmation at layer 2,
+    // and the draft's sign-off at layer 6.
+    let waits: Vec<&ReviewLayerRun> = layers
         .iter()
         .flat_map(|layer| layer.runs.iter())
         .filter(|run| run.is_waiting_on_you())
-        .filter_map(|run| run.finished_at.zip(run.seconds()))
         .collect();
 
-    let waiting_on_you_seconds =
-        (!waits.is_empty()).then(|| waits.iter().map(|(_, seconds)| seconds).sum::<i64>());
+    // The total counts the waits that have **finished**, for the reason
+    // `ReviewLayer::seconds` gives: a figure that grows on every reload is not an answer
+    // to "how long did it wait".
+    let finished: Vec<i64> = waits.iter().filter_map(|run| run.seconds()).collect();
+    let waiting_on_you_seconds = (!finished.is_empty()).then(|| finished.iter().sum::<i64>());
 
-    // Requested to draft ready, less the waits that finished inside that span — which in
-    // practice is the brief's confirmation. **Null until the draft is ready**: there is no
-    // end to measure to, and measuring to now would make the figure grow while nothing
-    // happened.
+    // Requested to draft ready, less the developer's own time **inside that span**.
+    //
+    // **The overlap, not the finished waits.** A session may draft before the brief is
+    // confirmed — the Inbox supports exactly that, and says so with `blocks_later_layers`
+    // — so a wait on the developer can still be open when the draft becomes ready. Its
+    // own length is unknown, but the part of it that fell inside this span is not: it ran
+    // from where it started to the moment the draft was ready. Counting only finished
+    // waits would charge the developer's time to the agent on the one path where the two
+    // overlap.
+    //
+    // **Null until the draft is ready**: there is no end to measure to, and measuring to
+    // now would make the figure grow while nothing happened.
     let with_the_agent_seconds = draft_ready_at.map(|ready| {
         let waited: i64 = waits
             .iter()
-            .filter(|(finished, _)| *finished <= ready)
-            .map(|(_, seconds)| seconds)
+            .filter_map(|run| {
+                let from = run.started_at?.max(requested_at);
+                let to = run.finished_at.unwrap_or(ready).min(ready);
+                Some((to - from).max(0))
+            })
             .sum();
         // Never negative. Two writes a clock moved backwards between would otherwise
         // serve a duration that cannot have happened.
@@ -156,7 +167,7 @@ fn timings_from(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ReviewLayerName, ReviewLayerRun, ReviewLayerState};
+    use crate::model::{ReviewLayerName, ReviewLayerState};
 
     /// A layer carrying the passes a test wants, with the rest of it left plain.
     fn layer(number: i64, runs: Vec<ReviewLayerRun>) -> ReviewLayer {
@@ -273,6 +284,36 @@ mod tests {
             timings.signed_off_at,
             Some(1_760_000_100),
             "what the draft did record is still served"
+        );
+    }
+
+    #[test]
+    fn a_wait_still_open_when_the_draft_was_ready_is_not_the_agents_time() {
+        // **The path the Inbox supports**: a session drafts before the brief is confirmed,
+        // so the developer's wait at step 2 is still open when the draft becomes ready.
+        // Requested at 0, the developer waited from 600, the draft was ready at 1,800 and
+        // nobody has confirmed anything — so 1,200 of those 1,800 seconds were theirs.
+        let timings = timings_from(
+            1,
+            0,
+            None,
+            None,
+            None,
+            vec![
+                layer(2, vec![going(ReviewLayerState::WaitingOnYou, 600)]),
+                layer(6, vec![going(ReviewLayerState::WaitingOnYou, 1_800)]),
+            ],
+        );
+
+        assert_eq!(timings.draft_ready_at, Some(1_800));
+        assert_eq!(
+            timings.with_the_agent_seconds,
+            Some(600),
+            "the 1,200 seconds the developer has had it are not the agent's"
+        );
+        assert_eq!(
+            timings.waiting_on_you_seconds, None,
+            "and no wait has finished, so there is no total to give"
         );
     }
 

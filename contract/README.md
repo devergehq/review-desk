@@ -174,7 +174,7 @@ Everything else on the four screens is below.
 | the chip's dark / dashed / plain styling | `layers[].state` — `waiting_on_you` and `running` are current, `pending` is not started |
 | "17 min" under a finished step | `layers[].seconds` |
 | "ran twice · 10 min, then 6 min" | `layers[].runs[]` — `state`, `started_at`, `finished_at`, `seconds` |
-| "34 min with the agent" | `timings.with_the_agent_seconds` |
+| "34 min with the agent" | `timings.with_the_agent_seconds` — requested to draft ready, less the developer's own time inside that span |
 | "10 min waiting on you" | `timings.waiting_on_you_seconds` |
 | "requested at 10:31" | `timings.requested_at` |
 | "draft ready at 11:21" | `timings.draft_ready_at` |
