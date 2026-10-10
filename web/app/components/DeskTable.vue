@@ -24,10 +24,19 @@
  *                                     └──────────────────────────┘
  * ```
  *
- * **A real `<table>`**, because these are tables: a reader on a screen reader gets the
- * column name with the cell either way. At narrow widths the header is moved out of sight
- * rather than removed, so the cells keep their headers in the accessibility tree while the
- * visible label comes from the cell's own `data-label`.
+ * ## The elements are a table; the roles have to say so out loud
+ *
+ * These are tables and are written as `<table>`, `<th scope="col">` and `<td>`. But the
+ * geometry the boards set — `1.2fr 1fr 1.4fr`, and a card per row under 760px — is a grid,
+ * and **`display: grid` on a table row strips the table semantics in every browser**: the
+ * table, row and cell roles go, and with them the `<th>`-to-cell association that makes a
+ * column name reach a screen reader.
+ *
+ * So the roles are written explicitly. `role="table"`, `role="rowgroup"`, `role="row"`,
+ * `role="columnheader"` and `role="cell"` restore what the display property took away, and
+ * the header stays in the accessibility tree at narrow widths where it is moved out of
+ * sight. Without them the only thing carrying a column name was the visible `data-label`
+ * and the `<caption>` — which is what this comment used to claim was fine, and was not.
  */
 defineProps<{
   /** The column names, in order. From the record wherever the record has them. */
@@ -42,13 +51,20 @@ defineProps<{
 <template>
   <table
     class="table"
+    role="table"
     :style="{ '--template': template }"
   >
     <caption class="rd-visually-hidden">
       {{ label }}
     </caption>
-    <thead class="head">
-      <tr class="row row--head">
+    <thead
+      class="head"
+      role="rowgroup"
+    >
+      <tr
+        class="row row--head"
+        role="row"
+      >
         <!--
           The column names, or whatever the caller draws instead. The matrix on the
           Alternatives page heads three of its columns with a numbered mark and the problem
@@ -60,6 +76,7 @@ defineProps<{
             v-for="(column, index) in columns"
             :key="index"
             scope="col"
+            role="columnheader"
             class="th"
           >
             {{ column }}
@@ -67,7 +84,7 @@ defineProps<{
         </slot>
       </tr>
     </thead>
-    <tbody>
+    <tbody role="rowgroup">
       <slot />
     </tbody>
   </table>

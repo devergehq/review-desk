@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Brief, BriefOption, BriefProblem } from '~/types/desk'
+import type { BlindPassState, Brief, BriefOption, BriefProblem } from '~/types/desk'
 
 /**
  * Step 3 — **Alternatives**. Board A6, with a real blind pass overlaid, which Patrick
@@ -87,11 +87,22 @@ function blindPick(brief: Brief): BriefOption | null {
   return options(brief).find(option => option.key === key) ?? null
 }
 
-/** How many options each side put forward. `both` counts on both sides, because it was. */
+/**
+ * Whether one side put this option forward. `both` counts for each, because it was.
+ *
+ * **Asked positively, which it was not.** The two pills were drawn on
+ * `proposed_by !== 'blind_pass'` and `proposed_by !== 'ticket'`, and both of those are true
+ * when the field is absent — so every option on a brief recorded before `proposed_by`
+ * existed wore *both* badges and claimed two independent sources had arrived at it. A
+ * negated test answers "yes" for a value it has never heard of; a positive one does not.
+ */
+function raised(option: BriefOption, who: 'ticket' | 'blind_pass'): boolean {
+  return option.proposed_by === who || option.proposed_by === 'both'
+}
+
+/** How many options each side put forward. */
 function raisedBy(brief: Brief, who: 'ticket' | 'blind_pass'): number {
-  return options(brief).filter(
-    option => option.proposed_by === who || option.proposed_by === 'both',
-  ).length
+  return options(brief).filter(option => raised(option, who)).length
 }
 
 /**
@@ -114,8 +125,32 @@ function onlyBlind(option: BriefOption): boolean {
  * that are easiest to collapse into one grey sentence, and they mean opposite things about
  * how much the option list has been tested.
  */
+/**
+ * The blind pass's state, read once.
+ *
+ * **Absent reads as `not_run`,** which is what the server derives for a brief recorded
+ * before the field existed. Every test of the state goes through here: the three places
+ * that each asked `blind_pass_state !== 'not_run'` were each separately true of
+ * `undefined`, so a brief that recorded nothing drew the blind column, its count and its
+ * ring as though a pass had run.
+ */
+function state(brief: Brief): BlindPassState {
+  return brief.blind_pass_state ?? 'not_run'
+}
+
 function blindState(brief: Brief): { heading: string, says: string, tone: 'plain' | 'quiet' } {
-  switch (brief.blind_pass_state) {
+  /*
+   * **`?? 'not_run'`, and `ran` is a case rather than the default.**
+   *
+   * The switch fell through to "a blind pass ran" for anything it did not name — including
+   * `undefined`, which is what four of the sample briefs carry, because they were recorded
+   * before this field existed. The page then asserted that a session had handed the problem
+   * to an independent pass when nothing of the sort had happened: the page's own doc says
+   * these three states must not collapse, and the absent state was collapsing into the
+   * strongest of the three. The server derives `not_run` for such a brief; absent is the
+   * same statement and now reads the same way.
+   */
+  switch (state(brief)) {
     case 'not_run':
       return {
         heading: 'No blind pass was run',
@@ -134,6 +169,7 @@ function blindState(brief: Brief): { heading: string, says: string, tone: 'plain
           + 'have — which is a result about the option list, not an absence of one.',
         tone: 'plain',
       }
+    case 'ran':
     default:
       return {
         heading: 'A blind pass ran',
@@ -143,6 +179,21 @@ function blindState(brief: Brief): { heading: string, says: string, tone: 'plain
         tone: 'plain',
       }
   }
+}
+
+/**
+ * The matrix's column ratios, the board's own — with no `repeat(0, …)` in them.
+ *
+ * **`repeat()` requires a positive integer**, so a brief that numbers no problems produced
+ * `repeat(0, minmax(0, 1fr))`, which is invalid, and the browser dropped the whole
+ * `grid-template-columns` declaration — taking the board's layout off the header row and
+ * every option row with it. A brief written the old way has options and no numbered
+ * problems, so this is the common case on the real server rather than an edge.
+ */
+function matrixTemplate(brief: Brief): string {
+  const columns = problems(brief).length
+  const middle = columns > 0 ? ` repeat(${columns}, minmax(0, 1fr))` : ''
+  return `2.4fr 150px${middle} 110px`
 }
 
 /** The matrix's label, which names how many options and how many problems it holds. */
@@ -182,7 +233,7 @@ function matrixLabel(brief: Brief): string {
               ...problems(data.brief).map(problem => `${problem.number} · ${problem.was_wrong}`),
               '',
             ]"
-            :template="`2.4fr 150px repeat(${problems(data.brief).length}, minmax(0, 1fr)) 110px`"
+            :template="matrixTemplate(data.brief)"
             :label="matrixLabel(data.brief)"
           >
             <!--
@@ -193,12 +244,14 @@ function matrixLabel(brief: Brief): string {
             <template #head>
               <th
                 scope="col"
+                role="columnheader"
                 class="th"
               >
                 Option
               </th>
               <th
                 scope="col"
+                role="columnheader"
                 class="th"
               >
                 Seen by
@@ -219,6 +272,7 @@ function matrixLabel(brief: Brief): string {
               </th>
               <th
                 scope="col"
+                role="columnheader"
                 class="th"
               >
                 <span class="rd-visually-hidden">Open the reasoning</span>
@@ -229,8 +283,12 @@ function matrixLabel(brief: Brief): string {
               v-for="option in options(data.brief)"
               :key="option.key"
             >
-              <tr class="shell">
+              <tr
+                class="shell"
+                role="row"
+              >
                 <td
+                  role="cell"
                   class="holder"
                   :colspan="problems(data.brief).length + 3"
                 >
@@ -271,13 +329,17 @@ function matrixLabel(brief: Brief): string {
                       data-label="Seen by"
                     >
                       <DeskPill
-                        v-if="option.proposed_by !== 'blind_pass'"
+                        v-if="raised(option, 'ticket')"
                         tone="quiet"
                       >Ticket {{ option.key }}</DeskPill>
                       <DeskPill
-                        v-if="option.proposed_by !== 'ticket'"
+                        v-if="raised(option, 'blind_pass')"
                         tone="info"
                       >Blind</DeskPill>
+                      <span
+                        v-if="!option.proposed_by"
+                        class="rd-meta"
+                      >not recorded</span>
                     </span>
 
                     <span
@@ -418,8 +480,9 @@ function matrixLabel(brief: Brief): string {
             What the blind pass needed to know
           </h2>
           <p class="rd-note legend">
-            Four things the problem statement did not say. Each one is cheaper to answer now
-            than after the change is built.
+            {{ count(data.brief.blind_pass.questions.length, 'thing') }} the problem
+            statement did not say. Each one is cheaper to answer now than after the change
+            is built.
           </p>
           <ul class="questions">
             <li
@@ -446,8 +509,24 @@ function matrixLabel(brief: Brief): string {
               <p class="rd-rubric">
                 The ticket
               </p>
-              <p class="card-title source-count">
+              <!--
+                **No count rather than a count of nought.** A brief recorded before
+                `proposed_by` existed attributes nothing to either side, and "0 options"
+                over a matrix of eight is a measurement that contradicts the page above it.
+                Absent is not zero, which is the rule this app applies to every other
+                figure it draws.
+              -->
+              <p
+                v-if="raisedBy(data.brief, 'ticket')"
+                class="card-title source-count"
+              >
                 {{ count(raisedBy(data.brief, 'ticket'), 'option') }}
+              </p>
+              <p
+                v-else
+                class="rd-note"
+              >
+                This brief does not record which options came from the ticket.
               </p>
               <p class="rd-note">
                 Written before the work started. The option that was built was agreed there.
@@ -455,18 +534,18 @@ function matrixLabel(brief: Brief): string {
             </DeskCard>
 
             <DeskCard
-              :tone="data.brief.blind_pass_state === 'not_run' ? 'pending' : 'plain'"
+              :tone="state(data.brief) === 'not_run' ? 'pending' : 'plain'"
               class="card"
-              :class="{ 'card--blind': data.brief.blind_pass_state !== 'not_run' }"
+              :class="{ 'card--blind': state(data.brief) !== 'not_run' }"
             >
               <p
                 class="rd-rubric"
-                :class="{ 'rd-rubric--blind': data.brief.blind_pass_state !== 'not_run' }"
+                :class="{ 'rd-rubric--blind': state(data.brief) !== 'not_run' }"
               >
                 {{ blindState(data.brief).heading }}
               </p>
               <p
-                v-if="data.brief.blind_pass_state !== 'not_run'"
+                v-if="state(data.brief) !== 'not_run' && raisedBy(data.brief, 'blind_pass')"
                 class="card-title source-count"
               >
                 {{ count(raisedBy(data.brief, 'blind_pass'), 'option') }}

@@ -343,15 +343,26 @@ describe('the queue', () => {
     expect(brief.attributes('href')).toBe('/reviews/17/understand')
 
     /*
-     * A review with nothing waiting on the developer. Step 7 has no page until DEV-878
-     * builds it, and Understand is where a reader starts anyway — so a row with no step to
-     * land on lands there rather than nowhere.
+     * A review whose only waiting thing is an author's reply. That is step 7, which has no
+     * page until DEV-878 builds it, so the row lands on Understand — where a reader starts
+     * anyway.
+     *
+     * **Asserted on the row, not on a predicate over the list.** This was
+     * `every(href => !/^\/reviews\/\d+$/.test(href))`, which passes on an empty list and
+     * passes on a row pointing at `/reviews/17/draft` — so it could not fail for the reason
+     * its own title gives.
      */
-    const withAgent = page
+    const reply = page.findAll('.row').find(one => one.text().includes('The author replied'))
+    expect(reply, 'the fixtures hold a review whose only waiting thing is a reply').toBeTruthy()
+    expect(reply!.attributes('href')).toMatch(/^\/reviews\/\d+\/understand$/)
+
+    /* And no row anywhere still points at the review's old single page. */
+    const everywhere = page
       .findAll('.row')
       .map(one => one.attributes('href'))
       .filter((href): href is string => href != null)
-    expect(withAgent.every(href => !/^\/reviews\/\d+$/.test(href))).toBe(true)
+    expect(everywhere.length).toBeGreaterThan(0)
+    expect(everywhere.filter(href => /^\/reviews\/\d+$/.test(href))).toEqual([])
   })
 
   it('keeps the figures the boards do not draw, rather than dropping them', async () => {

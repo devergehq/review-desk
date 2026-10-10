@@ -404,6 +404,60 @@ describe('Understand', () => {
     expect(recorded.find('.rd-recorded').exists()).toBe(true)
   })
 
+  describe('a brief caught between the session\u2019s two writes', () => {
+    /**
+     * The problem half written and the change half not: a before flow and numbered
+     * problems, no headline, no after flow, no `now_fixed`, no options, no parts. A
+     * session writes the problem first and hands it to an independent options pass, so
+     * this state lasts for minutes on every review.
+     */
+    async function halfWritten() {
+      const detail = fixture(STRUCTURED)
+      const brief = detail.brief!
+      brief.headline = null
+      brief.flow_after = []
+      brief.flow_after_caption = null
+      brief.problems = brief.problems.map(problem => ({ ...problem, now_fixed: null }))
+      brief.options = []
+      brief.parts = []
+      await withReview(detail)
+      return understand(STRUCTURED)
+    }
+
+    it('draws the after side as not written yet, not as missing', async () => {
+      const page = await halfWritten()
+      /* The picture is a before and an after; an absent right-hand side reads as a
+         page that failed to load rather than a record that is twenty minutes old. */
+      expect(page.findAll('.flow')).toHaveLength(1)
+      expect(page.text()).toContain('After')
+      expect(page.text()).toContain('Not written yet.')
+      expect(page.text()).toContain('this side arrives second')
+    })
+
+    it('is not mistaken for a brief written the old way', async () => {
+      const page = await halfWritten()
+      expect(page.text()).not.toContain('Written before the structured brief.')
+      expect(page.text()).toContain('The problem is written. What was done about it is not, yet.')
+    })
+
+    it('does not explain green marks that are not there', async () => {
+      const page = await halfWritten()
+      expect(page.text()).not.toContain('green on the right, with the same number')
+      expect(page.text()).toContain('arrive with the after flow')
+    })
+
+    it('draws no legend at all when there is no picture', async () => {
+      const detail = fixture(STRUCTURED)
+      detail.brief!.flow_before = []
+      detail.brief!.flow_after = []
+      await withReview(detail)
+
+      const page = await understand(STRUCTURED)
+      expect(page.find('.flows').exists()).toBe(false)
+      expect(page.text()).not.toContain('Each number is one of the problems below')
+    })
+  })
+
   describe('a brief written before any of this', () => {
     it('still shows, with one line saying what it is', async () => {
       const page = await understand(OLD_WAY)
@@ -573,6 +627,20 @@ describe('Alternatives', () => {
     expect(page.find('.card--blind').text()).toContain('Extract reporting into a service')
   })
 
+  it('counts the questions rather than asserting there are four', async () => {
+    const detail = fixture(STRUCTURED)
+    detail.brief!.blind_pass = {
+      ...detail.brief!.blind_pass!,
+      questions: ['Only one thing was unclear.'],
+    }
+    await withReview(detail)
+
+    const page = await alternatives(STRUCTURED)
+    /* The heading said "Four things" over however many rows the record held. */
+    expect(page.text()).toContain('1 thing the problem statement did not say')
+    expect(page.findAll('.question')).toHaveLength(1)
+  })
+
   it('lists what the blind pass needed to know', async () => {
     const page = await alternatives(STRUCTURED)
     expect(page.text()).toContain('What the blind pass needed to know')
@@ -644,6 +712,62 @@ describe('Alternatives', () => {
       const page = await withState('ran', true)
       expect(page.text()).toContain('A blind pass ran')
       expect(page.text()).toContain('What it put forward is marked below.')
+    })
+  })
+
+  /*
+   * **What the self-review found, pinned.** Three of these were states the page claimed
+   * something false about, and all three came from the same habit: a brief recorded before
+   * a field existed carries `undefined`, and `undefined` is not the field's default.
+   */
+  describe('a brief recorded before these fields existed', () => {
+    /** The shape of every brief written before 10 October 2026: options, nothing else. */
+    async function oldWayWithOptions() {
+      const detail = fixture(STRUCTURED)
+      const brief = detail.brief!
+      brief.options = brief.options.map(option => ({
+        ...option,
+        proposed_by: undefined as unknown as 'ticket',
+        verdicts: undefined as unknown as [],
+      }))
+      brief.blind_pass_state = undefined as unknown as 'not_run'
+      brief.blind_pass = null
+      brief.problems = []
+      await withReview(detail)
+      return alternatives(STRUCTURED)
+    }
+
+    it('does not invent a blind pass that never ran', async () => {
+      const page = await oldWayWithOptions()
+      /*
+       * The switch fell through to "a blind pass ran" for an absent state, which is the
+       * strongest of the three things it could say and the one nothing had reported.
+       */
+      expect(page.text()).toContain('No blind pass was run')
+      expect(page.text()).not.toContain('A session reported handing this problem')
+    })
+
+    it('does not badge every option as raised by both sides', async () => {
+      const page = await oldWayWithOptions()
+      const seen = page.findAll('.seen').map(one => one.text())
+      /* `!== 'blind_pass'` and `!== 'ticket'` are both true of `undefined`. */
+      for (const cell of seen) {
+        expect(cell).not.toContain('Blind')
+        expect(cell).toContain('not recorded')
+      }
+      /* And the counts do not claim options for a side that raised none. */
+      expect(page.text()).not.toContain('0 options')
+    })
+
+    it('leaves the matrix a valid grid when no problem is numbered', async () => {
+      const page = await oldWayWithOptions()
+      const template = page.find('table').attributes('style')
+      /*
+       * `repeat(0, …)` is invalid, and a browser drops the whole declaration — taking the
+       * board's column layout off the header and every row with it.
+       */
+      expect(template).not.toContain('repeat(0')
+      expect(template).toContain('2.4fr 150px 110px')
     })
   })
 
@@ -859,6 +983,34 @@ describe('Solution', () => {
     const page = await solution(STRUCTURED)
     expect(page.text()).toContain('The change has not been described in parts yet.')
   })
+
+  it('still draws the choices and the clashes when there are no parts', async () => {
+    const detail = fixture(STRUCTURED)
+    detail.brief!.parts = []
+    await withReview(detail)
+
+    const page = await solution(STRUCTURED)
+    /*
+     * **Understand gives this page its open-choices table and says so in a line and a
+     * link.** An empty-state page whenever `parts` was empty therefore left a brief with
+     * choices recorded showing them nowhere at all, under a promise on the page before it.
+     * The three sections are three independent lists.
+     */
+    expect(page.text()).toContain('Where the ticket left a choice')
+    expect(page.text()).toContain('In the scheduling command, before the job is dispatched')
+    expect(page.text()).toContain('Where the description and the code disagree')
+    expect(page.text()).toContain('F9')
+  })
+
+  it('says there is no brief at all differently again', async () => {
+    const detail = fixture(STRUCTURED)
+    detail.brief = null
+    await withReview(detail)
+
+    const page = await solution(STRUCTURED)
+    expect(page.text()).toContain('Nothing has been written about this change yet.')
+    expect(page.text()).not.toContain('Where the ticket left a choice')
+  })
 })
 
 /* ============================ Every field interpolated ========================== */
@@ -929,6 +1081,23 @@ describe('nothing on these pages is handed to the browser as markup', () => {
       .filter(file => /import\(['"]mermaid['"]\)/.test(file.text))
       .map(file => file.name)
     expect(loads).toEqual(['components/MermaidFigure.vue'])
+  })
+
+  it('says out loud that its tables are tables', () => {
+    /*
+     * `display: grid` on a table row strips the table, row and cell roles in every browser,
+     * and with them the `<th>`-to-cell association. The component claimed a screen reader
+     * got the column name either way; it did not, until these roles were written.
+     */
+    const table = sources.find(file => file.name === 'components/DeskTable.vue')!
+    for (const role of ['role="table"', 'role="rowgroup"', 'role="row"', 'role="columnheader"']) {
+      expect(table.text, `DeskTable is missing ${role}`).toContain(role)
+    }
+    const pages = sources.filter(file => file.name.startsWith('pages/reviews'))
+    for (const page of pages.filter(one => one.text.includes('<DeskTable'))) {
+      expect(page.text, `${page.name} has table rows with no role`).toContain('role="row"')
+      expect(page.text, `${page.name} has cells with no role`).toContain('role="cell"')
+    }
   })
 
   it('never lets a pill break across two lines', () => {

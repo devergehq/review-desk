@@ -37,6 +37,27 @@ useHead({
   }),
 })
 
+/**
+ * The page's one heading.
+ *
+ * The verdict on the approach when the brief has one; otherwise a sentence about what is
+ * and is not written. A brief whose change half has not been written has no verdict either,
+ * because both arrive in the same write.
+ */
+function headline(brief: Brief): string {
+  if (brief.approach_verdict) return brief.approach_verdict
+  return parts(brief).length
+    ? 'What was built'
+    : 'The change has not been described in parts yet.'
+}
+
+/** The line under the heading: the size of the change, when there is one to measure. */
+function sub(brief: Brief): string | null {
+  if (!parts(brief).length) return null
+  return `${count(allFiles(brief).length, 'file')}, ${linesAdded(brief)} lines added `
+    + `and ${linesRemoved(brief)} removed, in ${count(parts(brief).length, 'part')}.`
+}
+
 /** Which part is open, by its position in the list. One at a time, as on the board. */
 const openPart = ref<number | null>(null)
 
@@ -139,22 +160,35 @@ function severityWord(severity: string, n: number): string {
   >
     <template #default="{ data }">
       <ReviewStepPage
-        v-if="!data.brief || !parts(data.brief).length"
+        v-if="!data.brief"
         :detail="data"
         step="solution_map"
-        headline="The change has not been described in parts yet."
-        sub="Step 4 is where a session says what was built, as the parts the change divides into. Nothing has written any."
+        headline="Nothing has been written about this change yet."
+        sub="Step 4 is where a session says what was built, as the parts the change divides into. There is no brief to hold it."
       />
 
+      <!--
+        **One page whose sections are each conditional, not two pages.**
+
+        Solution drew an empty-state page whenever `parts` was empty — and `open_choices`
+        and `disagreements` live only on this page, because the Understand page gives up
+        its table to it and says so in a line and a link. So a brief with choices recorded
+        and no parts had them drawn nowhere at all, while Understand promised "3 choices
+        the ticket left open … they are on the Solution page". The three sections are three
+        independent lists and are now gated independently.
+      -->
       <ReviewStepPage
         v-else
         :detail="data"
         step="solution_map"
-        :headline="data.brief.approach_verdict ?? 'What was built'"
-        :sub="`${count(allFiles(data.brief).length, 'file')}, ${linesAdded(data.brief)} lines added and ${linesRemoved(data.brief)} removed, in ${count(parts(data.brief).length, 'part')}.`"
+        :headline="headline(data.brief)"
+        :sub="sub(data.brief)"
       >
         <!-- ------------------------------ What was built ------------------------------ -->
-        <section class="block">
+        <section
+          v-if="parts(data.brief).length"
+          class="block"
+        >
           <h2 class="rd-display-lead">
             What was built, in {{ count(parts(data.brief).length, 'part') }}
           </h2>
@@ -324,12 +358,26 @@ function severityWord(severity: string, n: number): string {
         </section>
 
         <!--
+          The change in parts, when a session has not written it. Said here rather than by
+          replacing the page, because the two lists below are recorded separately and may
+          well be there when this is not.
+        -->
+        <DeskNotice
+          v-else
+          tone="plain"
+        >
+          <strong>The change has not been described in parts yet.</strong>
+          A session writes the problem first and what was built second, so this arrives
+          after the Understand page is already readable. Nothing is wrong.
+        </DeskNotice>
+
+        <!--
           Findings no part accounts for. Not an error, and not hidden: a brief whose parts
           do not between them name every file a finding sits in has described the change
           incompletely, and that is worth one section.
         -->
         <section
-          v-if="findingsInNoPart(data, data.brief).length"
+          v-if="parts(data.brief).length && findingsInNoPart(data, data.brief).length"
           class="block"
         >
           <h2 class="rd-display-lead">
@@ -388,27 +436,32 @@ function severityWord(severity: string, n: number): string {
             <tr
               v-for="(choice, index) in data.brief.open_choices"
               :key="index"
+              role="row"
               class="row"
             >
               <td
+                role="cell"
                 class="td"
                 data-label="The ticket left open"
               >
                 {{ choice.left_open }}
               </td>
               <td
+                role="cell"
                 class="td td--strong"
                 data-label="Chosen"
               >
                 {{ choice.chosen }}
               </td>
               <td
+                role="cell"
                 class="td td--muted"
                 data-label="Why"
               >
                 {{ choice.why }}
               </td>
               <td
+                role="cell"
                 class="td td--pills"
                 data-label="Against the ticket"
               >
@@ -464,21 +517,25 @@ function severityWord(severity: string, n: number): string {
             <tr
               v-for="(clash, index) in data.brief.disagreements"
               :key="index"
+              role="row"
               class="row"
             >
               <td
+                role="cell"
                 class="td td--strong"
                 data-label="Finding"
               >
                 <span class="rd-mono">{{ clash.finding_key }}</span>
               </td>
               <td
+                role="cell"
                 class="td"
                 data-label="The description says"
               >
                 {{ clash.description_says }}
               </td>
               <td
+                role="cell"
                 class="td"
                 data-label="The code does"
               >

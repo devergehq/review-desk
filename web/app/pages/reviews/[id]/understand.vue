@@ -104,9 +104,31 @@ function writtenTheOldWay(brief: Brief): boolean {
     && brief.support_table == null
 }
 
-/** The headline, or a sentence that says there is none rather than an empty heading. */
+/**
+ * Whether the session has written the problem half and not yet the rest.
+ *
+ * **A brief arrives in two writes.** DEV-883's session writes the problem half first —
+ * `problem`, `how_it_works_today`, the before flow and its caption, and each problem's
+ * number and `was_wrong` — hands that to an independent options pass, and writes everything
+ * else when the pass reports. For the minutes in between, a brief has a before flow and
+ * numbered problems and no headline, no after flow, no `now_fixed`, no options and no
+ * parts.
+ *
+ * That is a **fourth state**, and the page has to name it. It is not an old-way brief:
+ * `writtenTheOldWay` is false, because there are problems and a flow. It is not an error
+ * and it is not an empty page. Saying so is the difference between a reader thinking the
+ * record is broken and knowing it is twenty minutes old.
+ */
+function stillBeingWritten(brief: Brief): boolean {
+  return flowBefore(brief).length > 0 && flowAfter(brief).length === 0
+}
+
+/** The headline, or what to say while the sentence that states the answer is unwritten. */
 function headline(brief: Brief): string {
-  return brief.headline ?? 'This brief records no headline sentence.'
+  if (brief.headline) return brief.headline
+  return stillBeingWritten(brief)
+    ? 'The problem is written. What was done about it is not, yet.'
+    : 'This brief records no headline sentence.'
 }
 
 /* --------------------------------- Already decided ------------------------------ */
@@ -244,7 +266,10 @@ function sources(data: ReviewDetail) {
         :headline="headline(data.brief)"
       >
         <!-- ------------------------------ The two flows ------------------------------ -->
-        <section class="flows">
+        <section
+          v-if="flowBefore(data.brief).length || flowAfter(data.brief).length"
+          class="flows"
+        >
           <div class="pair">
             <DeskCard
               v-if="flowBefore(data.brief).length"
@@ -293,12 +318,50 @@ function sources(data: ReviewDetail) {
                 :focus="openProblem"
               />
             </DeskCard>
+
+            <!--
+              The after side, during the minutes between the session's two writes. **A
+              column that says it is not written yet, not a column that is missing**: the
+              picture is a before and an after, and an absent right-hand side reads as a
+              page that failed to load rather than as a record that is twenty minutes old.
+            -->
+            <DeskCard
+              v-else-if="flowBefore(data.brief).length"
+              tone="pending"
+              pad="section"
+              class="side"
+            >
+              <div class="side-head">
+                <h2 class="rd-display-card">
+                  After
+                </h2>
+              </div>
+              <p class="rd-note pending-note">
+                Not written yet. A session writes the problem first and hands it to an
+                independent pass before it writes what was done about it, so this side
+                arrives second. Nothing is wrong.
+              </p>
+            </DeskCard>
           </div>
 
-          <p class="rd-note legend">
+          <!--
+            The legend describes two flows, so it is drawn when there are two. Printed over
+            a brief with no picture at all it explained marks that were not there.
+          -->
+          <p
+            v-if="flowBefore(data.brief).length && flowAfter(data.brief).length"
+            class="rd-note legend"
+          >
             Each number is one of the problems below. Red on the left marks what was wrong;
             green on the right, with the same number, marks what fixes it. Open a problem
             to pick its boxes out of both flows.
+          </p>
+          <p
+            v-else-if="flowBefore(data.brief).length"
+            class="rd-note legend"
+          >
+            Each red number is one of the problems below. The green marks that say what
+            fixes each one arrive with the after flow.
           </p>
         </section>
 
@@ -438,11 +501,13 @@ function sources(data: ReviewDetail) {
             <tr
               v-for="(row, index) in data.brief.support_table.rows"
               :key="index"
+              role="row"
               class="row"
             >
               <td
                 v-for="(cell, column) in row"
                 :key="column"
+                role="cell"
                 class="td"
                 :class="{ 'td--strong': column === 0 }"
                 :data-label="data.brief.support_table.columns[column]"
@@ -640,6 +705,11 @@ function sources(data: ReviewDetail) {
 }
 
 .legend {
+  margin: 0;
+  max-width: var(--rd-measure);
+}
+
+.pending-note {
   margin: 0;
   max-width: var(--rd-measure);
 }
