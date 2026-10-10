@@ -208,12 +208,18 @@ impl Api {
         let author_replies = replies
             .iter()
             .map(|review| -> Result<Option<Value>, ApiError> {
-                let events: Vec<Value> = self
-                    .records
-                    .full_review(review.id)?
+                // One read, two answers. The author's acts are read once and both the
+                // list and its newest time come off that: a second `full_review` here
+                // would be a second read of the same review per row of the queue.
+                let full = self.records.full_review(review.id)?;
+                let acted: Vec<_> = full
                     .outcomes
                     .iter()
                     .filter(|outcome| matches!(outcome.actor, Actor::Author | Actor::Harvester))
+                    .collect();
+
+                let events: Vec<Value> = acted
+                    .iter()
                     .map(|outcome| {
                         json!({
                             "finding_seq": outcome.finding_seq,
@@ -224,21 +230,14 @@ impl Api {
                     })
                     .collect();
 
+                // The newest of those acts' own times. The outcomes have carried one all
+                // along; nothing served it, so the queue's age cell read "no time
+                // recorded" over a reply it could have dated.
+                let replied_at = acted.iter().map(|outcome| outcome.occurred_at).max();
+
                 // `events` has minItems 1, so a review with none is not an item. The
                 // store's query should not return one; serving an invalid item if it did
                 // would be worse than serving a shorter list.
-                // The newest of these outcomes' own times. The outcomes have carried one
-                // all along; nothing served it, so the queue's age cell read "no time
-                // recorded" over a reply it could have dated.
-                let replied_at = self
-                    .records
-                    .full_review(review.id)?
-                    .outcomes
-                    .iter()
-                    .filter(|outcome| matches!(outcome.actor, Actor::Author | Actor::Harvester))
-                    .map(|outcome| outcome.occurred_at)
-                    .max();
-
                 Ok((!events.is_empty()).then(|| {
                     json!({
                         "review_id": review.id,

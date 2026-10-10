@@ -494,7 +494,7 @@ function handledLine(data: Inbox): string {
                 in: "Code review · 20 min". The age cell says when that began; this says
                 how long it has lasted, which is the figure Patrick asked for.
               -->
-              <template v-if="forLabel(item.in_state_since)">
+              <template v-if="item.in_state_since">
                 · {{ forLabel(item.in_state_since) }}
               </template>
             </span>
