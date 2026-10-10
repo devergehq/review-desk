@@ -269,5 +269,260 @@
       "requested_at": "2026-10-06T14:25:00Z",
       "filed_at": "2026-10-06T16:10:00Z"
     }
+  },
+  {
+    "draft": {
+      "review_id": 41,
+      "body": "The change does what the ticket asks and the shape is right: the scheduled path builds its own context and the branch is out of `ReportBuilder`. One blocker, and it is the composition of two reasonable-looking decisions rather than either of them.\n\n### Blocker · F9 · The column policy is skipped entirely when the definition names no columns\n\nTwo decisions compose here. The array cast answers `[]` for a null column, and this early return reads `[]` as “no policy” — so a definition older than the migration exports every column, including the two its tenant's policy hides. Eleven definitions in staging are in that state with an active schedule.\n\n### Should · F1 · An empty allowed-columns list means every column, not none\n\n`allowed_columns` arrives here as `[]` for any definition whose column was never written, and every reader downstream treats an empty list as “nothing to narrow”. `ColumnPolicy::for()` already draws the distinction the web path needs; this path could call it.\n\n### Should · F3 · A schedule whose tenant row has gone is dispatched anyway\n\nA schedule whose tenant row is gone is dispatched and then fails inside `ExportContext::forSchedule` with a null dereference, four frames deep. Filtering the dispatch query on the tenant's existence makes the same failure readable.\n\n### Should · F6 · The policy is applied after the query is built, so a hidden column is still selected\n\nThe policy narrows rows that are already in memory, so the hidden columns are selected and read before they are dropped. `ReportBuilder::withPolicy()` narrows the `select` instead.\n\n### Should · F11 · The web path builds its context from the request with no tenant check\n\nThe removed branch called `ReportPolicy::view()` before building the context, and the call went with it. `download()` still authorises; `stream()`, reachable from the signed-URL route added in #496, does not.\n\n### Should · F13 · A soft-deleted tenant is exported; only a hard-deleted one is skipped\n\nThe guard skips the job and not the schedule: `next_run_at` is advanced before the job runs, so a trashed tenant's schedule is dispatched and skipped every night. Schedule 118 has done that 39 times since September with no audit row to show for it.\n\n### Should · F14 · The description does not say what happens to an export that is skipped\n\nThree of the change's early returns each decide what an export produces, and none of them appears in the description. Three sentences under “What is skipped” would answer the question a reader otherwise has to read the job for.\n\n### Question · F5 · Two schedules for one tenant at once would write the audit entry twice\n\nCan two schedules for one tenant be due in the same minute? Both would write an audit row keyed on the tenant and the date, and the unique index on that pair was dropped in #502.\n\n### Question · F7 · Nothing says what happens to a schedule whose definition was deleted\n\nA schedule whose definition has been deleted releases back to the queue and is retried until the attempt limit, then dispatched again the next night. Is deactivating it the intended answer?\n\n### Question · F12 · Whether the audit entry still fits is not established\n\n`RecordsAnExport` is outside this change, and the scheduled path passes it a system actor with no id. Is `export_audit.actor_id` nullable, and does its consumer read a null actor as a system export?\n\n### Nit · F4 · The class is named for the direction, not for what it makes\n\nThe two siblings in this namespace are named for what they return. This one is named for the direction of the conversion, so it does not read with them.\n\n### Nit · F10 · The removed branch leaves a comment describing it\n\nThe branch this comment describes was removed four lines above.\n\n**Not checked.** The reporting front end, which reads the same definitions but was not changed.\n",
+      "status": "ready",
+      "event": null,
+      "approved_at": null,
+      "sent_back_note": null,
+      "sent_back_at": null,
+      "updated_at": "2026-10-09T22:18:00Z"
+    },
+    "review": {
+      "id": 41,
+      "repo": "acme/portal",
+      "pr": 514,
+      "head_sha": "d41c8e2",
+      "round": 1,
+      "title": "Give a scheduled export its own context",
+      "ticket_id": "ABC-402",
+      "changed_lines": 1442,
+      "session_id": "ses_41b907de",
+      "ledger_id": "ledger-2026-10-09-514",
+      "github_review_id": null,
+      "created_at": "2026-10-09T20:40:00Z"
+    },
+    "lint": {
+      "passes": false,
+      "visible_words": 645,
+      "word_budget": 420,
+      "findings_in_body": 12,
+      "findings_expected": 12,
+      "raised_before_on_pr": 0,
+      "errors": [
+        "The body runs 645 words against a budget of 420."
+      ],
+      "checked_at": "2026-10-09T22:18:04Z"
+    },
+    "sections": [
+      {
+        "position": 1,
+        "kind": "prose",
+        "finding_seq": null,
+        "finding_key": null,
+        "severity": null,
+        "heading": null,
+        "title": null,
+        "text": "The change does what the ticket asks and the shape is right: the scheduled path builds its own context and the branch is out of `ReportBuilder`. One blocker, and it is the composition of two reasonable-looking decisions rather than either of them.",
+        "agent_title": null,
+        "agent_text": "The change does what the ticket asks and the shape is right: the scheduled path builds its own context and the branch is out of `ReportBuilder`. One blocker, and it is the composition of two reasonable-looking decisions rather than either of them.",
+        "rewritten": false,
+        "posted": true
+      },
+      {
+        "position": 2,
+        "kind": "finding",
+        "finding_seq": 9,
+        "finding_key": "F9",
+        "severity": "blocker",
+        "heading": "### Blocker · F9 · The column policy is skipped entirely when the definition names no columns",
+        "title": "The column policy is skipped entirely when the definition names no columns",
+        "text": "Two decisions compose here. The array cast answers `[]` for a null column, and this early return reads `[]` as “no policy” — so a definition older than the migration exports every column, including the two its tenant's policy hides. Eleven definitions in staging are in that state with an active schedule.",
+        "agent_title": "The column policy is skipped entirely when the definition names no columns",
+        "agent_text": "Two decisions compose here. The array cast answers `[]` for a null column, and this early return reads `[]` as “no policy” — so a definition older than the migration exports every column, including the two its tenant's policy hides. Eleven definitions in staging are in that state with an active schedule.",
+        "rewritten": false,
+        "posted": true
+      },
+      {
+        "position": 3,
+        "kind": "finding",
+        "finding_seq": 1,
+        "finding_key": "F1",
+        "severity": "should",
+        "heading": "### Should · F1 · An empty allowed-columns list means every column, not none",
+        "title": "An empty allowed-columns list means every column, not none",
+        "text": "`allowed_columns` arrives here as `[]` for any definition whose column was never written, and every reader downstream treats an empty list as “nothing to narrow”. `ColumnPolicy::for()` already draws the distinction the web path needs; this path could call it.",
+        "agent_title": "An empty allowed-columns list means every column, not none",
+        "agent_text": "`allowed_columns` arrives here as `[]` for any definition whose column was never written, and every reader downstream treats an empty list as “nothing to narrow”. `ColumnPolicy::for()` already draws the distinction the web path needs; this path could call it.",
+        "rewritten": false,
+        "posted": true
+      },
+      {
+        "position": 4,
+        "kind": "finding",
+        "finding_seq": 3,
+        "finding_key": "F3",
+        "severity": "should",
+        "heading": "### Should · F3 · A schedule whose tenant row has gone is dispatched anyway",
+        "title": "A schedule whose tenant row has gone is dispatched anyway",
+        "text": "A schedule whose tenant row is gone is dispatched and then fails inside `ExportContext::forSchedule` with a null dereference, four frames deep. Filtering the dispatch query on the tenant's existence makes the same failure readable.",
+        "agent_title": "A schedule whose tenant row has gone is dispatched anyway",
+        "agent_text": "A schedule whose tenant row is gone is dispatched and then fails inside `ExportContext::forSchedule` with a null dereference, four frames deep. Filtering the dispatch query on the tenant's existence makes the same failure readable.",
+        "rewritten": false,
+        "posted": true
+      },
+      {
+        "position": 5,
+        "kind": "finding",
+        "finding_seq": 6,
+        "finding_key": "F6",
+        "severity": "should",
+        "heading": "### Should · F6 · The policy is applied after the query is built, so a hidden column is still selected",
+        "title": "The policy is applied after the query is built, so a hidden column is still selected",
+        "text": "The policy narrows rows that are already in memory, so the hidden columns are selected and read before they are dropped. `ReportBuilder::withPolicy()` narrows the `select` instead.",
+        "agent_title": "The policy is applied after the query is built, so a hidden column is still selected",
+        "agent_text": "The policy narrows rows that are already in memory, so the hidden columns are selected and read before they are dropped. `ReportBuilder::withPolicy()` narrows the `select` instead.",
+        "rewritten": false,
+        "posted": true
+      },
+      {
+        "position": 6,
+        "kind": "finding",
+        "finding_seq": 11,
+        "finding_key": "F11",
+        "severity": "should",
+        "heading": "### Should · F11 · The web path builds its context from the request with no tenant check",
+        "title": "The web path builds its context from the request with no tenant check",
+        "text": "The removed branch called `ReportPolicy::view()` before building the context, and the call went with it. `download()` still authorises; `stream()`, reachable from the signed-URL route added in #496, does not.",
+        "agent_title": "The web path builds its context from the request with no tenant check",
+        "agent_text": "The removed branch called `ReportPolicy::view()` before building the context, and the call went with it. `download()` still authorises; `stream()`, reachable from the signed-URL route added in #496, does not.",
+        "rewritten": false,
+        "posted": true
+      },
+      {
+        "position": 7,
+        "kind": "finding",
+        "finding_seq": 13,
+        "finding_key": "F13",
+        "severity": "should",
+        "heading": "### Should · F13 · A soft-deleted tenant is exported; only a hard-deleted one is skipped",
+        "title": "A soft-deleted tenant is exported; only a hard-deleted one is skipped",
+        "text": "The guard skips the job and not the schedule: `next_run_at` is advanced before the job runs, so a trashed tenant's schedule is dispatched and skipped every night. Schedule 118 has done that 39 times since September with no audit row to show for it.",
+        "agent_title": "A soft-deleted tenant is exported; only a hard-deleted one is skipped",
+        "agent_text": "The guard skips the job and not the schedule: `next_run_at` is advanced before the job runs, so a trashed tenant's schedule is dispatched and skipped every night. Schedule 118 has done that 39 times since September with no audit row to show for it.",
+        "rewritten": false,
+        "posted": true
+      },
+      {
+        "position": 8,
+        "kind": "finding",
+        "finding_seq": 14,
+        "finding_key": "F14",
+        "severity": "should",
+        "heading": "### Should · F14 · The description does not say what happens to an export that is skipped",
+        "title": "The description does not say what happens to an export that is skipped",
+        "text": "Three of the change's early returns each decide what an export produces, and none of them appears in the description. Three sentences under “What is skipped” would answer the question a reader otherwise has to read the job for.",
+        "agent_title": "The description does not say what happens to an export that is skipped",
+        "agent_text": "Three of the change's early returns each decide what an export produces, and none of them appears in the description. Three sentences under “What is skipped” would answer the question a reader otherwise has to read the job for.",
+        "rewritten": false,
+        "posted": true
+      },
+      {
+        "position": 9,
+        "kind": "finding",
+        "finding_seq": 5,
+        "finding_key": "F5",
+        "severity": "question",
+        "heading": "### Question · F5 · Two schedules for one tenant at once would write the audit entry twice",
+        "title": "Two schedules for one tenant at once would write the audit entry twice",
+        "text": "Can two schedules for one tenant be due in the same minute? Both would write an audit row keyed on the tenant and the date, and the unique index on that pair was dropped in #502.",
+        "agent_title": "Two schedules for one tenant at once would write the audit entry twice",
+        "agent_text": "Can two schedules for one tenant be due in the same minute? Both would write an audit row keyed on the tenant and the date, and the unique index on that pair was dropped in #502.",
+        "rewritten": false,
+        "posted": true
+      },
+      {
+        "position": 10,
+        "kind": "finding",
+        "finding_seq": 7,
+        "finding_key": "F7",
+        "severity": "question",
+        "heading": "### Question · F7 · Nothing says what happens to a schedule whose definition was deleted",
+        "title": "Nothing says what happens to a schedule whose definition was deleted",
+        "text": "A schedule whose definition has been deleted releases back to the queue and is retried until the attempt limit, then dispatched again the next night. Is deactivating it the intended answer?",
+        "agent_title": "Nothing says what happens to a schedule whose definition was deleted",
+        "agent_text": "A schedule whose definition has been deleted releases back to the queue and is retried until the attempt limit, then dispatched again the next night. Is deactivating it the intended answer?",
+        "rewritten": false,
+        "posted": true
+      },
+      {
+        "position": 11,
+        "kind": "finding",
+        "finding_seq": 12,
+        "finding_key": "F12",
+        "severity": "question",
+        "heading": "### Question · F12 · Whether the audit entry still fits is not established",
+        "title": "Whether the audit entry still fits is not established",
+        "text": "`RecordsAnExport` is outside this change, and the scheduled path passes it a system actor with no id. Is `export_audit.actor_id` nullable, and does its consumer read a null actor as a system export?",
+        "agent_title": "Whether the audit entry still fits is not established",
+        "agent_text": "`RecordsAnExport` is outside this change, and the scheduled path passes it a system actor with no id. Is `export_audit.actor_id` nullable, and does its consumer read a null actor as a system export?",
+        "rewritten": false,
+        "posted": true
+      },
+      {
+        "position": 12,
+        "kind": "finding",
+        "finding_seq": 4,
+        "finding_key": "F4",
+        "severity": "nit",
+        "heading": "### Nit · F4 · The class is named for the direction, not for what it makes",
+        "title": "The class is named for the direction, not for what it makes",
+        "text": "The two siblings in this namespace are named for what they return. This one is named for the direction of the conversion, so it does not read with them.",
+        "agent_title": "The class is named for the direction, not for what it makes",
+        "agent_text": "The two siblings in this namespace are named for what they return. This one is named for the direction of the conversion, so it does not read with them.",
+        "rewritten": false,
+        "posted": true
+      },
+      {
+        "position": 13,
+        "kind": "finding",
+        "finding_seq": 10,
+        "finding_key": "F10",
+        "severity": "nit",
+        "heading": "### Nit · F10 · The removed branch leaves a comment describing it",
+        "title": "The removed branch leaves a comment describing it",
+        "text": "The branch this comment describes was removed four lines above.",
+        "agent_title": "The removed branch leaves a comment describing it",
+        "agent_text": "The branch this comment describes was removed four lines above.",
+        "rewritten": false,
+        "posted": true
+      },
+      {
+        "position": 14,
+        "kind": "prose",
+        "finding_seq": null,
+        "finding_key": null,
+        "severity": null,
+        "heading": null,
+        "title": null,
+        "text": "**Not checked.** The reporting front end, which reads the same definitions but was not changed.",
+        "agent_title": null,
+        "agent_text": "**Not checked.** The reporting front end, which reads the same definitions but was not changed.",
+        "rewritten": false,
+        "posted": true
+      }
+    ],
+    "edits": [],
+    "held_back": [
+      {
+        "finding_seq": 2,
+        "finding_key": "F2",
+        "claim": "The superseded accessor is still public with nothing marking it superseded.",
+        "severity": "nit"
+      }
+    ],
+    "nit_ticket": {
+      "review_id": 41,
+      "status": "none",
+      "ticket_id": null,
+      "finding_seqs": [
+        2
+      ],
+      "requested_at": null,
+      "filed_at": null
+    }
   }
 ]

@@ -171,8 +171,11 @@ describe('the queue', () => {
 
   it('leads with how many reviews need the developer, counting each once', async () => {
     const page = await shown(Inbox)
-    /* 17 (brief and draft), 15 (draft), 16 (draft), 12 (the author replied). Four. */
-    expect(page.text()).toContain('4 reviews need you')
+    /*
+     * 17 (brief and draft), 15 (draft), 16 (draft), 41 (draft), 12 (the author replied).
+     * Five, and 17 is counted once rather than twice.
+     */
+    expect(page.text()).toContain('5 reviews need you')
     expect(page.text()).toContain('2 with the agent')
     expect(page.text()).toContain('2 of your own')
   })
@@ -231,7 +234,7 @@ describe('the queue', () => {
     const page = await shown(Inbox)
     const tabs = page.findAll('[role="radiogroup"] [role="radio"]').map(tab => tab.text())
     expect(tabs[0]).toBe('All repositories')
-    expect(tabs).toContain('acme/portal· 5')
+    expect(tabs).toContain('acme/portal· 6')
     expect(tabs).toContain('acme/billing-api· 3')
 
     const billing = page
@@ -315,8 +318,8 @@ describe('the queue', () => {
     await settle(page)
 
     expect(page.text()).not.toContain('Problem brief ready')
-    /* Still four rows: #412's next action is now the draft its session had written. */
-    expect(page.text()).toContain('4 reviews need you')
+    /* Still five rows: #412's next action is now the draft its session had written. */
+    expect(page.text()).toContain('5 reviews need you')
     const row = page.findAll('.row').find(one => one.text().includes('#412'))!
     expect(row.text()).toContain('Draft ready')
     expect(row.text()).toContain('Read and sign off')

@@ -18,6 +18,15 @@ import { join, resolve } from 'node:path'
 const REAL_LENGTH_BRIEF = resolve('../contract/examples/confirmBrief.response.real-length.json')
 
 /**
+ * The same review's findings and draft, at the length board A8 was drawn at.
+ *
+ * Fourteen findings across all three lists, ten of them with the code the finding is about
+ * and the comment as it will post. The code review page is seeded from this, and so are its
+ * unit tests and its screenshots.
+ */
+const CODE_REVIEW_EXAMPLE = resolve('../contract/examples/getReview.response.code-review.json')
+
+/**
  * A diagram field holding something that is not a diagram.
  *
  * **This is not invented.** It is what a review session wrote into a brief on 10 October
@@ -182,155 +191,117 @@ function structuredBrief(): Record<string, unknown> {
 }
 
 /**
- * The thirteen findings the structured review's parts account for.
+ * The findings the structured review carries, read from the contract's own example.
+ *
+ * **Read and stripped, not written out again.** `getReview.response.code-review.json` is
+ * the review DEV-878's page is drawn from, and `web/app/data/reviews.json` holds the same
+ * document for the unit tests — so a third hand-written copy here would be the one that
+ * drifted. `NewFinding` is `deny_unknown_fields` and a hunk line's `line` is derived from
+ * the hunk's `start_line`, so what is taken off is exactly what the store works out for
+ * itself: the review it belongs to, its number and `F`-prefixed key, the GitHub comment it
+ * was posted as, everything about the round, and each hunk line's number.
  *
  * **Every path is one the invented brief's own `parts[].files[].path` names**, because the
  * Solution page joins the review's findings to a part by file — `contract/README.md`: "the
- * review's findings whose `file` is one of `brief.parts[].files[].path`" — and a seed whose
- * findings sat elsewhere would leave every part reading "nothing found here" while the
- * page looked like it was working.
+ * review's findings whose `file` is one of `brief.parts[].files[].path`". One finding names
+ * no file at all: it is about the pull request's description, and the code review page has
+ * its own sentence for that.
  *
  * Four of the sequence numbers are load-bearing. `brief_open_choices` and
  * `brief_disagreements` each carry a foreign key to `findings (review_id, seq)`, and the
  * invented example points at 3, 7, 9 and 13 — so those findings have to exist **before**
  * `brief put` runs, or the write is refused by the database rather than by a validator.
+ * They are seeded in sequence order for the same reason: a number is assigned by the store
+ * from the order they are added, and the foreign keys name numbers.
  */
-const STRUCTURED_FINDINGS: Array<{
-  lens: string
-  severity: string
-  claim: string
-  file: string
-  line: number
-  disposition: string
-  disposition_reason?: string
-  evidence?: string
-}> = [
-  {
-    lens: 'sibling diff',
-    severity: 'should',
-    claim: 'The context is built with an empty allowed-columns list when the report '
-      + 'definition names none, and an empty list means every column downstream.',
-    file: 'app/Reporting/ExportContext.php',
-    line: 44,
-    disposition: 'in_draft',
-    evidence: 'PROVED by a throwaway test: a definition with allowed_columns null '
-      + 'exported all 31 columns.',
-  },
-  {
-    lens: 'repetition',
-    severity: 'nit',
-    claim: 'The superseded accessor is still public with nothing marking it superseded.',
-    file: 'app/Reporting/TenantContext.php',
-    line: 12,
-    disposition: 'held_back',
-    disposition_reason: 'a nit; it goes in the ticket',
-  },
-  {
-    lens: 'boundary',
-    severity: 'should',
-    claim: 'A schedule whose tenant row has gone is dispatched anyway, and the job fails '
-      + 'after the context is built rather than before.',
-    file: 'app/Console/Commands/DispatchScheduledExports.php',
-    line: 61,
-    disposition: 'in_draft',
-  },
-  {
-    lens: 'naming',
-    severity: 'nit',
-    claim: 'The class converts a schedule to a context and is named for the direction '
-      + 'rather than for the thing it makes.',
-    file: 'app/Reporting/ScheduleToContext.php',
-    line: 18,
-    disposition: 'in_draft',
-  },
-  {
-    lens: 'boundary',
-    severity: 'question',
-    claim: 'Two schedules for one tenant running at once would write the audit entry '
-      + 'twice; nothing says whether that can happen.',
-    file: 'app/Reporting/ExportPipeline.php',
-    line: 73,
-    disposition: 'in_draft',
-  },
-  {
-    lens: 'sibling diff',
-    severity: 'should',
-    claim: 'The policy is applied after the query is built, so a hidden column is still '
-      + 'selected from the database before being dropped.',
-    file: 'app/Reporting/ColumnPolicy.php',
-    line: 31,
-    disposition: 'in_draft',
-  },
-  {
-    lens: 'boundary',
-    severity: 'question',
-    claim: 'Nothing in the change says what should happen to a schedule whose tenant has '
-      + 'been deleted.',
-    file: 'app/Jobs/RunScheduledExport.php',
-    line: 96,
-    disposition: 'in_draft',
-  },
-  {
-    lens: 'repetition',
-    severity: 'nit',
-    claim: 'The redaction pattern list repeats the one in the web exporter.',
-    file: 'app/Reporting/Redaction.php',
-    line: 15,
-    disposition: 'suppressed',
-    disposition_reason: 'the web copy goes in the next change; raising it twice is noise',
-  },
-  {
-    lens: 'contract',
-    severity: 'blocker',
-    claim: 'The column policy applies only where a report definition names its allowed '
-      + 'columns, and the backfill leaves older definitions naming none.',
-    file: 'app/Reporting/ColumnPolicy.php',
-    line: 52,
-    disposition: 'in_draft',
-    evidence: 'PROVED by running the backfill against a copy of the development '
-      + 'database: 14 of 22 definitions were left with allowed_columns null.',
-  },
-  {
-    lens: 'naming',
-    severity: 'nit',
-    claim: 'The removed branch leaves a comment describing it.',
-    file: 'app/Reporting/ReportBuilder.php',
-    line: 28,
-    disposition: 'in_draft',
-  },
-  {
-    lens: 'boundary',
-    severity: 'should',
-    claim: 'The web path now constructs its context from the request without checking '
-      + 'that the signed-in person may export that report.',
-    file: 'app/Http/Controllers/ExportController.php',
-    line: 41,
-    disposition: 'in_draft',
-  },
-  {
-    /*
-     * In `app/Audit/RecordsAnExport.php`, which the brief's fourth part claims with
-     * `in_diff: false`. It is the finding that makes a part's claim on a file outside the
-     * diff worth anything: without it that file belongs to no part and so does this.
-     */
-    lens: 'coverage',
-    severity: 'question',
-    claim: 'The audit trait is in no diff, so whether its entry shape fits a scheduled '
-      + 'export was not checked by reading the change alone.',
-    file: 'app/Audit/RecordsAnExport.php',
-    line: 22,
-    disposition: 'in_draft',
-  },
-  {
-    lens: 'contract',
-    severity: 'should',
-    claim: 'An export is skipped only when the tenant row is gone; a soft-deleted tenant '
-      + 'still exports, which the description says it does not.',
-    file: 'app/Jobs/RunScheduledExport.php',
-    line: 118,
-    disposition: 'in_draft',
-  },
-]
+function structuredFindings(): Array<Record<string, unknown>> {
+  const served = JSON.parse(readFileSync(CODE_REVIEW_EXAMPLE, 'utf8')) as {
+    findings: Array<Record<string, unknown>>
+  }
+
+  return [...served.findings]
+    .sort((one, two) => (one.seq as number) - (two.seq as number))
+    .map(({
+      review_id: _reviewId,
+      seq: _seq,
+      key: _key,
+      rule_key: _ruleKey,
+      github_comment_id: _commentId,
+      round_status: _roundStatus,
+      round_status_by: _roundStatusBy,
+      round_status_checked: _roundStatusChecked,
+      round_status_at: _roundStatusAt,
+      round_status_commit: _roundStatusCommit,
+      continues_review_id: _continues,
+      continues_round: _continuesRound,
+      rounds_open: _roundsOpen,
+      introduced_by_key: _introducedByKey,
+      late: _late,
+      created_at: _createdAt,
+      ...written
+    }) => ({
+      ...written,
+      hunk: written.hunk == null
+        ? null
+        : {
+            ...(written.hunk as Record<string, unknown>),
+            lines: ((written.hunk as { lines: Array<Record<string, unknown>> }).lines).map(
+              ({ line: _line, ...rest }) => rest,
+            ),
+          },
+    }))
+}
+
+/**
+ * The draft the review session wrote, as the blocks it is composed of.
+ *
+ * **Blocks, not one body**, and that is what makes the code review page's decisions real:
+ * `decideFinding` changes a finding's block, and a draft written as one block of markdown
+ * has none — which the page says, in words, once. The seeded review in `seed()` keeps its
+ * one-block draft so that refusal is seeded too.
+ *
+ * The body is not given. `draft put --sections` composes it, so a body stated here would be
+ * a second copy of what the store already builds, and the store refuses the two when they
+ * differ.
+ */
+function structuredSections(
+  findings: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  const ORDER: Record<string, number> = { blocker: 0, should: 1, question: 2, nit: 3 }
+  const posted = findings
+    .map((finding, at) => ({ finding, seq: at + 1 }))
+    .filter(({ finding }) => finding.disposition === 'in_draft')
+    .sort((one, two) =>
+      ORDER[one.finding.severity as string] - ORDER[two.finding.severity as string]
+      || one.seq - two.seq)
+
+  return [
+    {
+      kind: 'prose',
+      text: 'The change does what the ticket asks and the shape is right: the scheduled '
+        + 'path builds its own context and the branch is out of `ReportBuilder`. One '
+        + 'blocker, and it is the composition of two reasonable-looking decisions rather '
+        + 'than either of them.',
+    },
+    ...posted.map(({ finding, seq }) => ({
+      kind: 'finding',
+      finding_seq: seq,
+      title: finding.title,
+      /*
+       * The consequence, which is what the review says about a finding in its body. The
+       * reasoning stays on the finding, folded behind its word count on the page — the
+       * posted review is read by the author, and 221 words of evidence is not a review
+       * comment.
+       */
+      text: finding.why_it_matters ?? finding.inline_comment ?? finding.claim,
+    })),
+    {
+      kind: 'prose',
+      text: '**Not checked.** The reporting front end, which reads the same definitions '
+        + 'but was not changed.',
+    },
+  ]
+}
 
 /**
  * A third review, with the structured brief the three step pages draw.
@@ -363,7 +334,8 @@ function seedStructured(directory: string, database: string): number {
     throw new Error(`review open printed no id: ${opened}`)
   }
 
-  STRUCTURED_FINDINGS.forEach((finding, index) => {
+  const findings = structuredFindings()
+  findings.forEach((finding, index) => {
     const path = join(directory, `structured-finding-${index}.json`)
     writeFileSync(path, JSON.stringify(finding))
     cli(database, ['finding', 'add', '--review', String(reviewId), '--file', path])
@@ -373,12 +345,68 @@ function seedStructured(directory: string, database: string): number {
   writeFileSync(brief, JSON.stringify(structuredBrief()))
   cli(database, ['brief', 'put', '--review', String(reviewId), '--file', brief])
 
+  /*
+   * The draft, written in parts. It is what makes step 6 a page with something on it and
+   * what makes the code review page's decisions real — a decision changes a block, and a
+   * draft of one block of markdown has none.
+   *
+   * The lint is written with it and left failing, because the body it measured runs over
+   * its budget: a review of fourteen findings does. A failing lint and an absent one are
+   * different things, and the draft screen says which.
+   */
+  const sections = join(directory, 'structured-sections.json')
+  writeFileSync(sections, JSON.stringify(structuredSections(findings)))
+  const put = (lint?: string) =>
+    cli(database, [
+      'draft',
+      'put',
+      '--review',
+      String(reviewId),
+      '--sections',
+      sections,
+      ...(lint == null ? [] : ['--lint', lint]),
+    ])
+
+  /*
+   * **Written twice, and the second write is what makes the lint true rather than plausible.**
+   * The body is composed by the store from the blocks, so nothing here knows how long it is
+   * until it has been written — and a hard-coded `visible_words` is a number that goes stale
+   * the first time a block's wording changes. So: write the blocks, read the body back,
+   * count it, write the same blocks again with the lint that measured it. Two identical puts
+   * compose the same body, which is the whole reason this is safe.
+   */
+  put()
+  const body = String(
+    (cliJson(database, ['draft', 'show', '--review', String(reviewId)]) as unknown as {
+      draft: { body: string }
+    }).draft.body,
+  )
+  const words = body.split(/\s+/).filter(word => /[a-z0-9]/i.test(word)).length
+  const expected = findings.filter(one => one.disposition === 'in_draft').length
+
+  const lint = join(directory, 'structured-lint.json')
+  writeFileSync(lint, JSON.stringify({
+    /*
+     * Failing, and failing on the one thing a review of fourteen findings fails on. A
+     * failing lint and an absent one are different things and the draft screen says which,
+     * so the suite needs one of each: this draft fails, and `seed()`'s has none at all.
+     */
+    passes: false,
+    visible_words: words,
+    word_budget: 420,
+    findings_in_body: expected,
+    findings_expected: expected,
+    raised_before_on_pr: 0,
+    errors: `The body runs ${words} words against a budget of 420.`,
+  }))
+  put(lint)
+
   const layers: Array<[number, string, string]> = [
     [1, 'done', 'passes, 2 warnings'],
     [2, 'done', 'brief settled'],
     [3, 'done', '8 options, C built'],
     [4, 'done', 'right shape'],
-    [5, 'done', '13 findings, 1 blocker'],
+    [5, 'done', `${findings.length} findings, 1 blocker`],
     [6, 'waiting_on_you', 'waiting on you'],
     [7, 'pending', 'after posting'],
   ]

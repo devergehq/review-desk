@@ -69,21 +69,25 @@ beforeEach(async () => {
 })
 
 describe('the inbox', () => {
-  it('groups eight waiting items across two repositories', async () => {
+  it('groups nine waiting items across two repositories', async () => {
     const inbox = await settled(desk().inbox())
     /*
-     * Eight, and one review is two of them: #412 has a brief to confirm *and* a draft to
+     * Nine, and one review is two of them: #412 has a brief to confirm *and* a draft to
      * approve, because its session wrote the draft without waiting for the confirmation.
      * Both are waiting on the developer, so both are items — which is what the server
      * counts, and what this counted differently until DEV-862's end-to-end test caught it.
+     *
+     * It was eight until DEV-878 gave the real-length review a draft. That review's own
+     * layer trail already said step 6 was waiting on the developer, with no draft behind it
+     * to wait on; the ninth item is the fixture being made to agree with itself.
      */
-    expect(inbox.totals).toEqual({ items: 8, repos: 2 })
+    expect(inbox.totals).toEqual({ items: 9, repos: 2 })
   })
 
   it('has all five groups filled', async () => {
     const inbox = await settled(desk().inbox())
     expect(inbox.briefs_to_confirm).toHaveLength(1)
-    expect(inbox.drafts_to_approve).toHaveLength(3)
+    expect(inbox.drafts_to_approve).toHaveLength(4)
     expect(inbox.author_replies).toHaveLength(1)
     expect(inbox.own_prs_without_reviewer).toHaveLength(2)
     expect(inbox.proposed_rules).toHaveLength(1)
@@ -123,7 +127,7 @@ describe('confirming a brief', () => {
      * you confirm" means — the draft can be looked at, and approving it is a second act.
      */
     expect(before.drafts_to_approve.map(item => item.review_id)).toContain(WEBHOOKS)
-    expect(before.totals.items).toBe(8)
+    expect(before.totals.items).toBe(9)
 
     const result = await api.confirmBrief(WEBHOOKS)
     expect(result.ok).toBe(true)
@@ -131,7 +135,7 @@ describe('confirming a brief', () => {
     const after = await settled(inbox)
     expect(after.briefs_to_confirm).toHaveLength(0)
     expect(after.drafts_to_approve.map(item => item.review_id)).toContain(WEBHOOKS)
-    expect(after.totals.items).toBe(7)
+    expect(after.totals.items).toBe(8)
   })
 
   it('sets the confirmation and leaves the layer rows alone', async () => {

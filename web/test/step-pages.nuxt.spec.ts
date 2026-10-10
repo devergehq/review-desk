@@ -126,7 +126,7 @@ describe('the shell every step page sits in', () => {
     /* The store's own words, not a restatement of the state. */
     expect(trail).toContain('passes, 2 warnings')
     expect(trail).toContain('8 options, C built')
-    expect(trail).toContain('13 findings, 1 blocker')
+    expect(trail).toContain('14 findings, 1 blocker')
     expect(trail).toContain('waiting on you')
   })
 
@@ -150,21 +150,16 @@ describe('the shell every step page sits in', () => {
      * lead somewhere a reader could not leave. Steps 1 and 7 have no page until DEV-878,
      * and a link to a page that does not exist is worse than a label.
      */
-    /*
-     * **Four, not five, on this review: it has no draft.** `draft_status` is null and
-     * `GET /reviews/{id}/draft` refuses, so step 6 is a label. An unguarded link here sent
-     * the flagship structured review to a blocking not-found panel that carries no trail
-     * and no way back — the dead end steps 1 and 7 are labels to avoid.
-     */
     expect(links).toEqual([
       `/reviews/${STRUCTURED}/understand`,
       `/reviews/${STRUCTURED}/alternatives`,
       `/reviews/${STRUCTURED}/solution`,
       `/reviews/${STRUCTURED}`,
+      `/reviews/${STRUCTURED}/draft`,
     ])
-    /* Lint, Draft and Harvest are labels. */
+    /* Lint and Harvest are labels. */
     const labels = page.findAll('.trail .face:not(a)').map(one => one.text())
-    for (const step of ['1 Lint', '6 Draft', '7 Harvest']) {
+    for (const step of ['1 Lint', '7 Harvest']) {
       expect(labels.some(one => one.includes(step)), `${step} should be a label`).toBe(true)
     }
   })
@@ -990,10 +985,20 @@ describe('Solution', () => {
     await withReview(detail)
 
     const page = await solution(STRUCTURED)
-    expect(page.text()).toContain('1 finding in no part of this description')
+    expect(page.text()).toContain('2 findings in no part of this description')
     expect(page.text()).toContain('F15')
-    /* And with the whole set accounted for, the section is not there at all. */
-    await resetDesk()
+
+    /*
+     * And with the whole set accounted for, the section is not there at all.
+     *
+     * **Built by taking the two away rather than by resetting**, because the example's own
+     * F14 is in no part for good: it names no file, being about the pull request's
+     * description. `resetDesk()` would put it back and this would assert the opposite of
+     * what it means to.
+     */
+    const accounted = fixture(STRUCTURED)
+    accounted.findings = accounted.findings.filter(finding => finding.file != null)
+    await withReview(accounted)
     const whole = await solution(STRUCTURED)
     expect(whole.text()).not.toContain('in no part of this description')
   })
