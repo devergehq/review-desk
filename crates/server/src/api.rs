@@ -151,12 +151,19 @@ impl Api {
                 // — and the queue showed "no time recorded" over a row it could date from
                 // the brief in front of it. The step first, because a step that *has* been
                 // written is the one that says whose turn it is and when it became theirs.
-                // **When step 2 entered the state it is in, not when its row was last
-                // written.** `set_review_layer` is idempotent, so a session re-reporting
-                // the same state moves `updated_at` and would reset "brief ready 6 min
-                // ago" — and its place in the oldest-first sort — without anything having
-                // changed. The pass's own start is the stable answer, and it is what
-                // `draft_ready_at` uses.
+                // **When step 2 began waiting on the developer, not when its row was
+                // last written.** `set_review_layer` is idempotent, so a session
+                // re-reporting the same state moves `updated_at` and would reset "brief
+                // ready 6 min ago" — and its place in the oldest-first sort — without
+                // anything having changed. The pass's own start is the stable answer, and
+                // it is what `draft_ready_at` uses.
+                //
+                // **The waiting pass, not whatever pass is open.** A session that reports
+                // step 2 `running` and then writes the brief without reporting
+                // `waiting_on_you` is in this group all the same — the group is keyed on
+                // the brief being unconfirmed — and dating it from the open `running` pass
+                // would say the brief was ready when the agent *started* reading. That
+                // review falls to the brief's own time below, which is what it has.
                 //
                 // **Falling back to the brief's own time**, for a session that wrote a
                 // brief and never reported the step (DEV-864 leaves that step unwritten on
@@ -165,7 +172,7 @@ impl Api {
                 // fallback on purpose: `drafts.updated_at` moves when the *developer*
                 // edits the draft, so it would date their wait from their own last
                 // keystroke.
-                let ready_at = match at_two.and_then(|layer| layer.in_state_since()) {
+                let ready_at = match at_two.and_then(|layer| layer.waiting_on_you_since()) {
                     Some(entered) => Some(entered),
                     None => self
                         .records

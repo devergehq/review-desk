@@ -613,6 +613,48 @@ fn the_nit_ticket_validates() {
 }
 
 #[test]
+fn the_finished_review_timings_validate() {
+    // **The one new operation whose served response nothing validated.**
+    // `tests/timings.rs` asserts its values and `store/tests/contract_examples.rs` checks
+    // what the *store* can build; neither puts what the server actually writes past the
+    // schema, which is this file's whole job — an agreement nothing checks is a document.
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+
+    // Empty first: an operation whose list is empty still has to be the shape it says.
+    let empty = harness.api("GET", "/timings", None);
+    assert_eq!(empty.status, 200, "{}", empty.text());
+    assert_valid(TIMINGS_SCHEMA, &empty.json());
+
+    harness
+        .store
+        .approve_draft(
+            seeded.review_id,
+            review_desk_store::ReviewEvent::Comment,
+            review_desk_store::Actor::Developer,
+        )
+        .expect("signed off");
+    harness
+        .store
+        .post_draft(seeded.review_id, "gh-review-3312")
+        .expect("posted");
+
+    let answer = harness.api("GET", "/timings", None);
+    assert_eq!(answer.status, 200, "{}", answer.text());
+    let listed = answer.json();
+    assert_valid(TIMINGS_SCHEMA, &listed);
+    assert_eq!(
+        listed["reviews"].as_array().map(Vec::len),
+        Some(1),
+        "an empty list would validate and check nothing: {listed}"
+    );
+}
+
+/// The inline 200 schema of `listReviewTimings`, by pointer: it has no named component,
+/// being the one shape only this operation serves.
+const TIMINGS_SCHEMA: &str = "#/paths/~1timings/get/responses/200/content/application~1json/schema";
+
+#[test]
 fn the_rules_page_validates() {
     let harness = common::start_with_no_github();
     common::seed(&harness.store);

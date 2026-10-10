@@ -158,18 +158,25 @@ fn timings_from(
     //
     // **Null until the draft is ready**: there is no end to measure to, and measuring to
     // now would make the figure grow while nothing happened.
+    //
+    // **The waits are merged before they are subtracted, because two of them can overlap.**
+    // On the path above — a session drafting while the brief is still unconfirmed — layer
+    // 2's wait is open across the whole span and layer 6's wait sits inside it, so
+    // subtracting each one's overlap separately charges the same minutes to the developer
+    // twice and can drive the figure to nought. Two waits at once is still one wait.
     let with_the_agent_seconds = draft_ready_at.map(|ready| {
-        let waited: i64 = waits
+        let spans: Vec<(Timestamp, Timestamp)> = waits
             .iter()
             .filter_map(|run| {
                 let from = run.started_at?.max(requested_at);
                 let to = run.finished_at.unwrap_or(ready).min(ready);
-                Some((to - from).max(0))
+                (to > from).then_some((from, to))
             })
-            .sum();
+            .collect();
+
         // Never negative. Two writes a clock moved backwards between would otherwise
         // serve a duration that cannot have happened.
-        (ready - requested_at - waited).max(0)
+        (ready - requested_at - merged_seconds(spans)).max(0)
     });
 
     ReviewTimings {
@@ -183,6 +190,29 @@ fn timings_from(
         last_activity_at,
         layers,
     }
+}
+
+/// The total length of a set of spans, counting an instant covered by two of them once.
+///
+/// Sorted by where each begins and then walked, which is the ordinary sweep: a span that
+/// starts before the one in hand has ended extends it, and one that starts after it closes
+/// the run and opens another.
+fn merged_seconds(mut spans: Vec<(Timestamp, Timestamp)>) -> i64 {
+    spans.sort_unstable();
+
+    let mut total = 0;
+    let mut open: Option<(Timestamp, Timestamp)> = None;
+    for (from, to) in spans {
+        match open {
+            Some((start, end)) if from <= end => open = Some((start, end.max(to))),
+            Some((start, end)) => {
+                total += end - start;
+                open = Some((from, to));
+            }
+            None => open = Some((from, to)),
+        }
+    }
+    total + open.map_or(0, |(start, end)| end - start)
 }
 
 #[cfg(test)]
@@ -305,6 +335,60 @@ mod tests {
             timings.signed_off_at,
             Some(1_760_000_100),
             "what the draft did record is still served"
+        );
+    }
+
+    #[test]
+    fn two_waits_at_once_are_subtracted_once() {
+        // **The path the comment above is about, with both waits running.** Requested at
+        // 0. The brief has been waiting on the developer since 600 and nobody has
+        // confirmed it. The draft was ready at 1,000, sent back at 1,200 and ready again
+        // at 1,800. The developer's own time inside the span is 600 to 1,800 — the
+        // layer-6 wait falls inside the layer-2 one — so 600 of the 1,800 seconds were
+        // the agent's.
+        let timings = timings_from(
+            1,
+            0,
+            None,
+            None,
+            None,
+            vec![
+                layer(2, vec![going(ReviewLayerState::WaitingOnYou, 600)]),
+                layer(
+                    6,
+                    vec![
+                        pass(ReviewLayerState::WaitingOnYou, 1_000, 1_200),
+                        pass(ReviewLayerState::Running, 1_200, 1_800),
+                        going(ReviewLayerState::WaitingOnYou, 1_800),
+                    ],
+                ),
+            ],
+        );
+
+        assert_eq!(timings.draft_ready_at, Some(1_800));
+        assert_eq!(
+            timings.with_the_agent_seconds,
+            Some(600),
+            "the 200 seconds inside the open wait are the developer's once, not twice"
+        );
+    }
+
+    #[test]
+    fn merging_spans_counts_a_shared_instant_once() {
+        assert_eq!(merged_seconds(vec![]), 0);
+        assert_eq!(merged_seconds(vec![(0, 100)]), 100);
+        assert_eq!(merged_seconds(vec![(0, 100), (200, 250)]), 150, "disjoint");
+        assert_eq!(
+            merged_seconds(vec![(0, 100), (50, 150)]),
+            150,
+            "overlapping"
+        );
+        assert_eq!(merged_seconds(vec![(0, 100), (20, 40)]), 100, "contained");
+        assert_eq!(merged_seconds(vec![(0, 100), (100, 150)]), 150, "touching");
+        assert_eq!(
+            merged_seconds(vec![(200, 250), (0, 100), (60, 210)]),
+            250,
+            "out of order, and a span that joins two others"
         );
     }
 

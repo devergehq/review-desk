@@ -1308,6 +1308,19 @@ impl ReviewLayer {
         (!measured.is_empty()).then(|| measured.iter().sum())
     }
 
+    /// When this layer last began waiting on the developer, if it is waiting now.
+    ///
+    /// **Not `in_state_since`, and the difference is a queue row's age.** That one answers
+    /// for whatever state the layer is in, so a step reported `running` and never reported
+    /// `waiting_on_you` would date the developer's wait from when the agent started. This
+    /// asks the question the Inbox is asking: since when has this been mine to do?
+    pub fn waiting_on_you_since(&self) -> Option<Timestamp> {
+        self.runs
+            .last()
+            .filter(|run| run.is_open() && run.is_waiting_on_you())
+            .and_then(|run| run.started_at)
+    }
+
     /// When the layer entered the state it is in now, if a pass is still going.
     ///
     /// The queue's "waiting 20 min": how long the review has been in its present state.
@@ -1517,6 +1530,19 @@ impl NewDraft {
         NewDraft {
             body: body.into(),
             status: DraftStatus::Ready,
+            lint: None,
+            sections: None,
+        }
+    }
+
+    /// A draft part-written: this body, still the session's, written as one block.
+    ///
+    /// The counterpart of [`NewDraft::ready`], and what a session writes when it takes a
+    /// ready draft back — which moves layer 6 off the developer, as `put_draft` says.
+    pub fn drafting(body: impl Into<String>) -> Self {
+        NewDraft {
+            body: body.into(),
+            status: DraftStatus::Drafting,
             lint: None,
             sections: None,
         }

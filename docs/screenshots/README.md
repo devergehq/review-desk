@@ -70,7 +70,7 @@ named here rather than left to be assumed:
   commands ran in seconds and the figures are the point of the picture. Nothing invented a
   duration: every pass still has the two ends the store stamped, and only the instants
   moved. There is no other way to photograph an hour.
-- **The third review's state record was replaced** with what migration 11's backfill
+- **The third review's state record was replaced** with what migration 12's backfill
   leaves — one row per step, from `updated_at`, and no start anywhere — so that the "before
   this change" state could be seen on a database created after it.
 

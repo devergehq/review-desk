@@ -225,12 +225,6 @@ fn seed(store: &Store) -> Seeded {
         )
         .expect("the other systems' ids");
 
-    // **Each step is reported running before it is reported finished**, which is how a
-    // session really writes a trail and what gives every finished step a pass with both
-    // ends — the `layers[].runs` and `layers[].seconds` the example carries. The clock is
-    // the machine's here, so the durations come out at zero seconds; a zero is a
-    // measurement and this test compares no values. `tests/timings.rs` is where the
-    // arithmetic is asserted, against a clock it can move.
     // **Every state each step passed through, in order**, which is how a session really
     // writes a trail and what gives a finished step a pass with both ends — the
     // `layers[].runs` and `layers[].seconds` the example carries. Step 2 waits on the

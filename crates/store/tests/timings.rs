@@ -156,6 +156,50 @@ fn a_draft_sent_back_and_redrafted_reports_both_runs_and_their_total() {
 }
 
 #[test]
+fn a_ready_draft_taken_back_stops_waiting_on_the_developer() {
+    // `put_draft` accepts `drafting` over a draft that is `ready`: a session taking it
+    // back. Layer 6 has to follow, or the trail says the developer is being waited on
+    // while the agent types and the wait run never closes.
+    let (_dir, store, clock) = stopped_store();
+    let review = opened(&store, 423);
+
+    store
+        .put_draft(review.id, NewDraft::ready("the first draft"))
+        .expect("ready");
+    clock.advance(300);
+    store
+        .put_draft(review.id, NewDraft::drafting("a rewrite, half done"))
+        .expect("the session takes it back");
+
+    let layer = store.get_review_layer(review.id, 6).expect("layer 6");
+    assert_eq!(layer.state, ReviewLayerState::Running);
+    assert_eq!(
+        layer.runs.len(),
+        2,
+        "the wait closed and the session's own pass opened: {:?}",
+        layer.runs
+    );
+    assert_eq!(
+        layer.runs[0].seconds(),
+        Some(300),
+        "the developer's 5 minutes"
+    );
+    assert!(layer.runs[1].is_open());
+    assert_eq!(layer.waiting_on_you_since(), None, "nobody is waiting now");
+
+    // And putting it back to ready waits on them again, from now rather than from before.
+    clock.advance(120);
+    store
+        .put_draft(review.id, NewDraft::ready("the rewrite"))
+        .expect("ready again");
+    assert_eq!(
+        store.draft_ready_at(review.id).expect("the time"),
+        Some(START + 420),
+        "the draft became ready again when the session said so"
+    );
+}
+
+#[test]
 fn the_review_splits_its_time_between_the_agent_and_the_developer() {
     let (_dir, store, clock) = stopped_store();
     let review = opened(&store, 415);

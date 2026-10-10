@@ -31,6 +31,12 @@ use crate::model::{
 };
 use crate::{is_foreign_key_violation, Store};
 
+/// What layer 6 says when a session takes a ready draft back to work on.
+///
+/// Not the developer's own note — that is what `send_back_draft` writes, and the
+/// difference is who asked for the change.
+pub(crate) const TAKEN_BACK_DETAIL: &str = "the session is rewriting it";
+
 /// What layer 6 says while the draft is waiting to be signed off.
 ///
 /// The same words the Inbox and the trail already use for a layer waiting on the
@@ -197,22 +203,44 @@ impl Store {
         // the state change for a second reason: when the draft became ready is where "how
         // long was the review with the agent" stops, and this is the only record of it.
         //
-        // **Only on `ready`.** A draft still being written is the session's business and
-        // the session reports it with `review-desk layer set`; moving layer 6 to `running`
-        // here would put every part-written draft into the queue's "With the agent" group
-        // on the store's say-so rather than the session's.
+        // **And the reverse: a ready draft taken back is no longer waiting on anybody.**
+        // `put_draft` accepts `drafting` over a draft that is `ready`, which is a session
+        // taking it back to work on — and leaving layer 6 at `waiting_on_you` would say
+        // the developer was being waited on while the agent typed, keep a wait run open
+        // that no one is in, and freeze "when the draft was ready" at an instant that is
+        // no longer true. That is the stale trail this change exists to remove, on the one
+        // transition that still had it.
+        //
+        // **Only from `waiting_on_you`.** A draft that was already `drafting` is the
+        // session's business and the session reports it with `review-desk layer set`;
+        // moving layer 6 to `running` on every part-written draft would put it in the
+        // queue's "With the agent" group on the store's say-so rather than the session's.
         //
         // Inside the transaction, like the other three, so a draft and its trail are
         // written together or not at all. A state is recorded only when it changes, so the
         // developer editing a draft that is already ready does not restart the clock on
         // their own wait.
-        if new.status == DraftStatus::Ready {
-            self.set_review_layer(
-                review_id,
-                ReviewLayerName::Draft.number(),
-                ReviewLayerState::WaitingOnYou,
-                Some(READY_DETAIL),
-            )?;
+        let waiting = self
+            .find_review_layer(review_id, ReviewLayerName::Draft.number())?
+            .is_some_and(|layer| layer.state == ReviewLayerState::WaitingOnYou);
+        match new.status {
+            DraftStatus::Ready => {
+                self.set_review_layer(
+                    review_id,
+                    ReviewLayerName::Draft.number(),
+                    ReviewLayerState::WaitingOnYou,
+                    Some(READY_DETAIL),
+                )?;
+            }
+            DraftStatus::Drafting if waiting => {
+                self.set_review_layer(
+                    review_id,
+                    ReviewLayerName::Draft.number(),
+                    ReviewLayerState::Running,
+                    Some(TAKEN_BACK_DETAIL),
+                )?;
+            }
+            _ => {}
         }
 
         self.mark_review_active(review_id)?;
