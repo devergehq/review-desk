@@ -20,49 +20,116 @@
         "name": "lint",
         "state": "done",
         "detail": "passed",
-        "updated_at": "2026-10-08T10:32:00Z"
+        "updated_at": "2026-10-08T10:32:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T10:31:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-08T10:32:00Z",
+            "seconds": 60,
+            "detail": null
+          }
+        ],
+        "seconds": 60
       },
       {
         "number": 2,
         "name": "understand",
         "state": "waiting_on_you",
         "detail": "waiting on you",
-        "updated_at": "2026-10-08T10:58:00Z"
+        "updated_at": "2026-10-08T10:58:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T10:32:00Z",
+            "ended_as": "waiting_on_you",
+            "finished_at": "2026-10-08T10:58:00Z",
+            "seconds": 1560,
+            "detail": null
+          },
+          {
+            "state": "waiting_on_you",
+            "started_at": "2026-10-08T10:58:00Z",
+            "ended_as": null,
+            "finished_at": null,
+            "seconds": null,
+            "detail": "waiting on you"
+          }
+        ],
+        "seconds": 1560
       },
       {
         "number": 3,
         "name": "alternatives",
         "state": "done",
         "detail": "3 options",
-        "updated_at": "2026-10-08T11:02:00Z"
+        "updated_at": "2026-10-08T11:02:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T10:58:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-08T11:02:00Z",
+            "seconds": 240,
+            "detail": null
+          }
+        ],
+        "seconds": 240
       },
       {
         "number": 4,
         "name": "solution_map",
         "state": "done",
         "detail": "done",
-        "updated_at": "2026-10-08T11:05:00Z"
+        "updated_at": "2026-10-08T11:05:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T11:02:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-08T11:05:00Z",
+            "seconds": 180,
+            "detail": null
+          }
+        ],
+        "seconds": 180
       },
       {
         "number": 5,
         "name": "code_review",
         "state": "done",
         "detail": "7 findings",
-        "updated_at": "2026-10-08T11:18:00Z"
+        "updated_at": "2026-10-08T11:18:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T11:05:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-08T11:18:00Z",
+            "seconds": 780,
+            "detail": null
+          }
+        ],
+        "seconds": 780
       },
       {
         "number": 6,
         "name": "draft",
         "state": "pending",
         "detail": "drafted, held until you confirm",
-        "updated_at": "2026-10-08T11:21:00Z"
+        "updated_at": "2026-10-08T11:21:00Z",
+        "runs": [],
+        "seconds": null
       },
       {
         "number": 7,
         "name": "harvest",
         "state": "pending",
         "detail": "after posting",
-        "updated_at": null
+        "updated_at": null,
+        "runs": [],
+        "seconds": null
       }
     ],
     "brief": {
@@ -270,7 +337,16 @@
       "requested_at": null,
       "filed_at": null
     },
-    "draft_status": "ready"
+    "draft_status": "ready",
+    "timings": {
+      "requested_at": "2026-10-08T10:31:00Z",
+      "draft_ready_at": null,
+      "signed_off_at": null,
+      "posted_at": null,
+      "with_the_agent_seconds": null,
+      "waiting_on_you_seconds": null,
+      "last_activity_at": "2026-10-08T11:21:00Z"
+    }
   },
   {
     "review": {
@@ -293,49 +369,133 @@
         "name": "lint",
         "state": "done",
         "detail": "passed",
-        "updated_at": "2026-10-08T06:02:00Z"
+        "updated_at": "2026-10-08T06:02:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T06:00:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-08T06:02:00Z",
+            "seconds": 120,
+            "detail": null
+          }
+        ],
+        "seconds": 120
       },
       {
         "number": 2,
         "name": "understand",
         "state": "done",
         "detail": "confirmed by you",
-        "updated_at": "2026-10-08T06:10:00Z"
+        "updated_at": "2026-10-08T06:10:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T06:02:00Z",
+            "ended_as": "waiting_on_you",
+            "finished_at": "2026-10-08T06:06:00Z",
+            "seconds": 240,
+            "detail": "reading the ticket and the diff"
+          },
+          {
+            "state": "waiting_on_you",
+            "started_at": "2026-10-08T06:06:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-08T06:10:00Z",
+            "seconds": 240,
+            "detail": "waiting on you"
+          }
+        ],
+        "seconds": 480
       },
       {
         "number": 3,
         "name": "alternatives",
         "state": "done",
         "detail": "2 options",
-        "updated_at": "2026-10-08T06:15:00Z"
+        "updated_at": "2026-10-08T06:15:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T06:10:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-08T06:15:00Z",
+            "seconds": 300,
+            "detail": null
+          }
+        ],
+        "seconds": 300
       },
       {
         "number": 4,
         "name": "solution_map",
         "state": "done",
         "detail": "done",
-        "updated_at": "2026-10-08T06:20:00Z"
+        "updated_at": "2026-10-08T06:20:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T06:15:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-08T06:20:00Z",
+            "seconds": 300,
+            "detail": null
+          }
+        ],
+        "seconds": 300
       },
       {
         "number": 5,
         "name": "code_review",
         "state": "done",
         "detail": "7 findings",
-        "updated_at": "2026-10-08T06:30:00Z"
+        "updated_at": "2026-10-08T06:30:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T06:20:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-08T06:30:00Z",
+            "seconds": 600,
+            "detail": null
+          }
+        ],
+        "seconds": 600
       },
       {
         "number": 6,
         "name": "draft",
         "state": "waiting_on_you",
         "detail": "waiting on you",
-        "updated_at": "2026-10-08T06:34:00Z"
+        "updated_at": "2026-10-08T06:34:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T06:30:00Z",
+            "ended_as": "waiting_on_you",
+            "finished_at": "2026-10-08T06:34:00Z",
+            "seconds": 240,
+            "detail": null
+          },
+          {
+            "state": "waiting_on_you",
+            "started_at": "2026-10-08T06:34:00Z",
+            "ended_as": null,
+            "finished_at": null,
+            "seconds": null,
+            "detail": "waiting on you"
+          }
+        ],
+        "seconds": 240
       },
       {
         "number": 7,
         "name": "harvest",
         "state": "pending",
         "detail": "after posting",
-        "updated_at": null
+        "updated_at": null,
+        "runs": [],
+        "seconds": null
       }
     ],
     "brief": {
@@ -506,7 +666,16 @@
       "requested_at": null,
       "filed_at": null
     },
-    "draft_status": "ready"
+    "draft_status": "ready",
+    "timings": {
+      "requested_at": "2026-10-08T06:00:00Z",
+      "draft_ready_at": "2026-10-08T06:34:00Z",
+      "signed_off_at": null,
+      "posted_at": null,
+      "with_the_agent_seconds": 1800,
+      "waiting_on_you_seconds": 240,
+      "last_activity_at": "2026-10-08T06:34:00Z"
+    }
   },
   {
     "review": {
@@ -529,49 +698,133 @@
         "name": "lint",
         "state": "done",
         "detail": "passed",
-        "updated_at": "2026-10-08T09:51:00Z"
+        "updated_at": "2026-10-08T09:51:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T09:50:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-08T09:51:00Z",
+            "seconds": 60,
+            "detail": null
+          }
+        ],
+        "seconds": 60
       },
       {
         "number": 2,
         "name": "understand",
         "state": "done",
         "detail": "confirmation not required: 61 changed lines, under this caller's 200-line threshold",
-        "updated_at": "2026-10-08T09:53:00Z"
+        "updated_at": "2026-10-08T09:53:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T09:51:00Z",
+            "ended_as": "waiting_on_you",
+            "finished_at": "2026-10-08T09:52:00Z",
+            "seconds": 60,
+            "detail": "reading the ticket and the diff"
+          },
+          {
+            "state": "waiting_on_you",
+            "started_at": "2026-10-08T09:52:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-08T09:53:00Z",
+            "seconds": 60,
+            "detail": "waiting on you"
+          }
+        ],
+        "seconds": 120
       },
       {
         "number": 3,
         "name": "alternatives",
         "state": "skipped",
         "detail": "carried from round 1",
-        "updated_at": "2026-10-08T09:53:00Z"
+        "updated_at": "2026-10-08T09:53:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T09:53:00Z",
+            "ended_as": "skipped",
+            "finished_at": "2026-10-08T09:53:00Z",
+            "seconds": 0,
+            "detail": null
+          }
+        ],
+        "seconds": 0
       },
       {
         "number": 4,
         "name": "solution_map",
         "state": "done",
         "detail": "done",
-        "updated_at": "2026-10-08T09:55:00Z"
+        "updated_at": "2026-10-08T09:55:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T09:53:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-08T09:55:00Z",
+            "seconds": 120,
+            "detail": null
+          }
+        ],
+        "seconds": 120
       },
       {
         "number": 5,
         "name": "code_review",
         "state": "done",
         "detail": "1 finding in the delta",
-        "updated_at": "2026-10-08T10:10:00Z"
+        "updated_at": "2026-10-08T10:10:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T09:55:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-08T10:10:00Z",
+            "seconds": 900,
+            "detail": null
+          }
+        ],
+        "seconds": 900
       },
       {
         "number": 6,
         "name": "draft",
         "state": "waiting_on_you",
         "detail": "waiting on you",
-        "updated_at": "2026-10-08T10:12:00Z"
+        "updated_at": "2026-10-08T10:12:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T10:10:00Z",
+            "ended_as": "waiting_on_you",
+            "finished_at": "2026-10-08T10:12:00Z",
+            "seconds": 120,
+            "detail": null
+          },
+          {
+            "state": "waiting_on_you",
+            "started_at": "2026-10-08T10:12:00Z",
+            "ended_as": null,
+            "finished_at": null,
+            "seconds": null,
+            "detail": "waiting on you"
+          }
+        ],
+        "seconds": 120
       },
       {
         "number": 7,
         "name": "harvest",
         "state": "pending",
         "detail": "after posting",
-        "updated_at": null
+        "updated_at": null,
+        "runs": [],
+        "seconds": null
       }
     ],
     "brief": {
@@ -641,7 +894,16 @@
       "requested_at": null,
       "filed_at": null
     },
-    "draft_status": "ready"
+    "draft_status": "ready",
+    "timings": {
+      "requested_at": "2026-10-08T09:50:00Z",
+      "draft_ready_at": "2026-10-08T10:12:00Z",
+      "signed_off_at": null,
+      "posted_at": null,
+      "with_the_agent_seconds": 1260,
+      "waiting_on_you_seconds": 60,
+      "last_activity_at": "2026-10-08T10:12:00Z"
+    }
   },
   {
     "review": {
@@ -664,49 +926,142 @@
         "name": "lint",
         "state": "done",
         "detail": "passed",
-        "updated_at": "2026-10-06T11:11:00Z"
+        "updated_at": "2026-10-06T11:11:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-06T11:10:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-06T11:11:00Z",
+            "seconds": 60,
+            "detail": null
+          }
+        ],
+        "seconds": 60
       },
       {
         "number": 2,
         "name": "understand",
         "state": "done",
         "detail": "confirmed by you",
-        "updated_at": "2026-10-06T11:30:00Z"
+        "updated_at": "2026-10-06T11:30:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-06T11:11:00Z",
+            "ended_as": "waiting_on_you",
+            "finished_at": "2026-10-06T11:20:30Z",
+            "seconds": 570,
+            "detail": "reading the ticket and the diff"
+          },
+          {
+            "state": "waiting_on_you",
+            "started_at": "2026-10-06T11:20:30Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-06T11:30:00Z",
+            "seconds": 570,
+            "detail": "waiting on you"
+          }
+        ],
+        "seconds": 1140
       },
       {
         "number": 3,
         "name": "alternatives",
         "state": "done",
         "detail": "3 options",
-        "updated_at": "2026-10-06T11:40:00Z"
+        "updated_at": "2026-10-06T11:40:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-06T11:30:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-06T11:40:00Z",
+            "seconds": 600,
+            "detail": null
+          }
+        ],
+        "seconds": 600
       },
       {
         "number": 4,
         "name": "solution_map",
         "state": "done",
         "detail": "done",
-        "updated_at": "2026-10-06T11:50:00Z"
+        "updated_at": "2026-10-06T11:50:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-06T11:40:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-06T11:50:00Z",
+            "seconds": 600,
+            "detail": null
+          }
+        ],
+        "seconds": 600
       },
       {
         "number": 5,
         "name": "code_review",
         "state": "done",
         "detail": "3 findings",
-        "updated_at": "2026-10-06T12:50:00Z"
+        "updated_at": "2026-10-06T12:50:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-06T11:50:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-06T12:50:00Z",
+            "seconds": 3600,
+            "detail": null
+          }
+        ],
+        "seconds": 3600
       },
       {
         "number": 6,
         "name": "draft",
         "state": "done",
         "detail": "posted by you",
-        "updated_at": "2026-10-06T14:30:00Z"
+        "updated_at": "2026-10-06T14:30:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-06T12:50:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-06T14:30:00Z",
+            "seconds": 6000,
+            "detail": null
+          }
+        ],
+        "seconds": 6000
       },
       {
         "number": 7,
         "name": "harvest",
         "state": "running",
         "detail": "1 rejected, 1 fixed",
-        "updated_at": "2026-10-08T09:50:00Z"
+        "updated_at": "2026-10-08T09:50:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-06T14:30:00Z",
+            "ended_as": "running",
+            "finished_at": "2026-10-08T09:50:00Z",
+            "seconds": 156000,
+            "detail": null
+          },
+          {
+            "state": "running",
+            "started_at": "2026-10-08T09:50:00Z",
+            "ended_as": null,
+            "finished_at": null,
+            "seconds": null,
+            "detail": "1 rejected, 1 fixed"
+          }
+        ],
+        "seconds": 156000
       }
     ],
     "brief": {
@@ -846,7 +1201,16 @@
       "requested_at": "2026-10-06T14:25:00Z",
       "filed_at": "2026-10-06T16:10:00Z"
     },
-    "draft_status": "posted"
+    "draft_status": "posted",
+    "timings": {
+      "requested_at": "2026-10-06T11:10:00Z",
+      "draft_ready_at": null,
+      "signed_off_at": "2026-10-06T14:30:00Z",
+      "posted_at": "2026-10-06T14:31:00Z",
+      "with_the_agent_seconds": null,
+      "waiting_on_you_seconds": 570,
+      "last_activity_at": "2026-10-08T09:50:00Z"
+    }
   },
   {
     "review": {
@@ -869,49 +1233,124 @@
         "name": "lint",
         "state": "done",
         "detail": "passed",
-        "updated_at": "2026-10-08T11:17:00Z"
+        "updated_at": "2026-10-08T11:17:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T11:16:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-08T11:17:00Z",
+            "seconds": 60,
+            "detail": null
+          }
+        ],
+        "seconds": 60
       },
       {
         "number": 2,
         "name": "understand",
         "state": "done",
         "detail": "confirmed by you",
-        "updated_at": "2026-10-08T11:18:00Z"
+        "updated_at": "2026-10-08T11:18:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T11:17:00Z",
+            "ended_as": "waiting_on_you",
+            "finished_at": "2026-10-08T11:17:30Z",
+            "seconds": 30,
+            "detail": "reading the ticket and the diff"
+          },
+          {
+            "state": "waiting_on_you",
+            "started_at": "2026-10-08T11:17:30Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-08T11:18:00Z",
+            "seconds": 30,
+            "detail": "waiting on you"
+          }
+        ],
+        "seconds": 60
       },
       {
         "number": 3,
         "name": "alternatives",
         "state": "done",
         "detail": "3 options",
-        "updated_at": "2026-10-08T11:19:00Z"
+        "updated_at": "2026-10-08T11:19:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T11:18:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-08T11:19:00Z",
+            "seconds": 60,
+            "detail": null
+          }
+        ],
+        "seconds": 60
       },
       {
         "number": 4,
         "name": "solution_map",
         "state": "done",
         "detail": "done",
-        "updated_at": "2026-10-08T11:20:00Z"
+        "updated_at": "2026-10-08T11:20:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T11:19:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-08T11:20:00Z",
+            "seconds": 60,
+            "detail": null
+          }
+        ],
+        "seconds": 60
       },
       {
         "number": 5,
         "name": "code_review",
         "state": "running",
         "detail": "running",
-        "updated_at": "2026-10-08T11:21:00Z"
+        "updated_at": "2026-10-08T11:21:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T11:20:00Z",
+            "ended_as": "running",
+            "finished_at": "2026-10-08T11:21:00Z",
+            "seconds": 60,
+            "detail": null
+          },
+          {
+            "state": "running",
+            "started_at": "2026-10-08T11:21:00Z",
+            "ended_as": null,
+            "finished_at": null,
+            "seconds": null,
+            "detail": "running"
+          }
+        ],
+        "seconds": 60
       },
       {
         "number": 6,
         "name": "draft",
         "state": "pending",
         "detail": "not yet",
-        "updated_at": null
+        "updated_at": null,
+        "runs": [],
+        "seconds": null
       },
       {
         "number": 7,
         "name": "harvest",
         "state": "pending",
         "detail": "after posting",
-        "updated_at": null
+        "updated_at": null,
+        "runs": [],
+        "seconds": null
       }
     ],
     "brief": {
@@ -949,7 +1388,16 @@
       "requested_at": null,
       "filed_at": null
     },
-    "draft_status": "drafting"
+    "draft_status": "drafting",
+    "timings": {
+      "requested_at": "2026-10-08T11:16:00Z",
+      "draft_ready_at": null,
+      "signed_off_at": null,
+      "posted_at": null,
+      "with_the_agent_seconds": null,
+      "waiting_on_you_seconds": 30,
+      "last_activity_at": "2026-10-08T11:21:00Z"
+    }
   },
   {
     "review": {
@@ -972,49 +1420,106 @@
         "name": "lint",
         "state": "done",
         "detail": "passed",
-        "updated_at": "2026-10-08T11:23:00Z"
+        "updated_at": "2026-10-08T11:23:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T11:22:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-08T11:23:00Z",
+            "seconds": 60,
+            "detail": null
+          }
+        ],
+        "seconds": 60
       },
       {
         "number": 2,
         "name": "understand",
         "state": "done",
         "detail": "confirmed by you",
-        "updated_at": "2026-10-08T11:24:00Z"
+        "updated_at": "2026-10-08T11:24:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T11:23:00Z",
+            "ended_as": "waiting_on_you",
+            "finished_at": "2026-10-08T11:23:30Z",
+            "seconds": 30,
+            "detail": "reading the ticket and the diff"
+          },
+          {
+            "state": "waiting_on_you",
+            "started_at": "2026-10-08T11:23:30Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-08T11:24:00Z",
+            "seconds": 30,
+            "detail": "waiting on you"
+          }
+        ],
+        "seconds": 60
       },
       {
         "number": 3,
         "name": "alternatives",
         "state": "running",
         "detail": "running",
-        "updated_at": "2026-10-08T11:25:00Z"
+        "updated_at": "2026-10-08T11:25:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-08T11:24:00Z",
+            "ended_as": "running",
+            "finished_at": "2026-10-08T11:25:00Z",
+            "seconds": 60,
+            "detail": null
+          },
+          {
+            "state": "running",
+            "started_at": "2026-10-08T11:25:00Z",
+            "ended_as": null,
+            "finished_at": null,
+            "seconds": null,
+            "detail": "running"
+          }
+        ],
+        "seconds": 60
       },
       {
         "number": 4,
         "name": "solution_map",
         "state": "pending",
         "detail": "not yet",
-        "updated_at": null
+        "updated_at": null,
+        "runs": [],
+        "seconds": null
       },
       {
         "number": 5,
         "name": "code_review",
         "state": "pending",
         "detail": "not yet",
-        "updated_at": null
+        "updated_at": null,
+        "runs": [],
+        "seconds": null
       },
       {
         "number": 6,
         "name": "draft",
         "state": "pending",
         "detail": "not yet",
-        "updated_at": null
+        "updated_at": null,
+        "runs": [],
+        "seconds": null
       },
       {
         "number": 7,
         "name": "harvest",
         "state": "pending",
         "detail": "after posting",
-        "updated_at": null
+        "updated_at": null,
+        "runs": [],
+        "seconds": null
       }
     ],
     "brief": {
@@ -1052,7 +1557,16 @@
       "requested_at": null,
       "filed_at": null
     },
-    "draft_status": "drafting"
+    "draft_status": "drafting",
+    "timings": {
+      "requested_at": "2026-10-08T11:22:00Z",
+      "draft_ready_at": null,
+      "signed_off_at": null,
+      "posted_at": null,
+      "with_the_agent_seconds": null,
+      "waiting_on_you_seconds": 30,
+      "last_activity_at": "2026-10-08T11:25:00Z"
+    }
   },
   {
     "review": {
@@ -1075,49 +1589,125 @@
         "name": "lint",
         "state": "done",
         "detail": "passes, 2 warnings",
-        "updated_at": "2026-10-09T21:00:00Z"
+        "updated_at": "2026-10-09T21:00:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-09T20:40:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-09T21:00:00Z",
+            "seconds": 1200,
+            "detail": null
+          }
+        ],
+        "seconds": 1200
       },
       {
         "number": 2,
         "name": "understand",
         "state": "done",
         "detail": "brief settled",
-        "updated_at": "2026-10-09T22:00:00Z"
+        "updated_at": "2026-10-09T22:00:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-09T21:00:00Z",
+            "ended_as": "waiting_on_you",
+            "finished_at": "2026-10-09T21:30:00Z",
+            "seconds": 1800,
+            "detail": "reading the ticket and the diff"
+          },
+          {
+            "state": "waiting_on_you",
+            "started_at": "2026-10-09T21:30:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-09T22:00:00Z",
+            "seconds": 1800,
+            "detail": "waiting on you"
+          }
+        ],
+        "seconds": 3600
       },
       {
         "number": 3,
         "name": "alternatives",
         "state": "done",
         "detail": "8 options, C built",
-        "updated_at": "2026-10-09T23:00:00Z"
+        "updated_at": "2026-10-09T23:00:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-09T22:00:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-09T23:00:00Z",
+            "seconds": 3600,
+            "detail": null
+          }
+        ],
+        "seconds": 3600
       },
       {
         "number": 4,
         "name": "solution_map",
         "state": "done",
         "detail": "right shape",
-        "updated_at": "2026-10-09T23:00:00Z"
+        "updated_at": "2026-10-09T23:00:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-09T23:00:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-09T23:00:00Z",
+            "seconds": 0,
+            "detail": null
+          }
+        ],
+        "seconds": 0
       },
       {
         "number": 5,
         "name": "code_review",
         "state": "done",
         "detail": "14 findings, 1 blocker",
-        "updated_at": "2026-10-09T23:00:00Z"
+        "updated_at": "2026-10-09T23:00:00Z",
+        "runs": [
+          {
+            "state": "running",
+            "started_at": "2026-10-09T23:00:00Z",
+            "ended_as": "done",
+            "finished_at": "2026-10-09T23:00:00Z",
+            "seconds": 0,
+            "detail": null
+          }
+        ],
+        "seconds": 0
       },
       {
         "number": 6,
         "name": "draft",
         "state": "waiting_on_you",
         "detail": "waiting on you",
-        "updated_at": "2026-10-09T23:00:00Z"
+        "updated_at": "2026-10-09T23:00:00Z",
+        "runs": [
+          {
+            "state": "waiting_on_you",
+            "started_at": "2026-10-09T23:00:00Z",
+            "ended_as": null,
+            "finished_at": null,
+            "seconds": null,
+            "detail": "waiting on you"
+          }
+        ],
+        "seconds": null
       },
       {
         "number": 7,
         "name": "harvest",
         "state": "pending",
         "detail": "after posting",
-        "updated_at": "2026-10-09T23:00:00Z"
+        "updated_at": "2026-10-09T23:00:00Z",
+        "runs": [],
+        "seconds": null
       }
     ],
     "brief": {
@@ -2735,6 +3325,15 @@
     "coverage": {
       "source": "sentence",
       "files": []
+    },
+    "timings": {
+      "requested_at": "2026-10-09T20:40:00Z",
+      "draft_ready_at": "2026-10-09T23:00:00Z",
+      "signed_off_at": null,
+      "posted_at": null,
+      "with_the_agent_seconds": 6600,
+      "waiting_on_you_seconds": 1800,
+      "last_activity_at": "2026-10-09T23:00:00Z"
     }
   }
 ]

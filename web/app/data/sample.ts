@@ -276,6 +276,13 @@ function inbox(): Inbox {
       severities: owner!.finding_severities,
       held_back: owner!.finding_dispositions.held_back,
       is_delta: owner!.review.round > 1,
+      /*
+       * When the draft became ready: step 6 entering `waiting_on_you`, which the server
+       * reads out of the same record. The queue's age cell said "no time recorded" over
+       * this row until DEV-890, and a review whose step 6 has not got there yet still
+       * says so.
+       */
+      draft_ready_at: owner!.timings.draft_ready_at,
     }))
 
   const author_replies = source.reviews
@@ -290,6 +297,12 @@ function inbox(): Inbox {
           kind: outcome.kind,
           detail: outcome.detail ?? null,
         })),
+      /* The newest of those outcomes' own times, which the record has always held. */
+      replied_at: detail.outcomes
+        .filter(outcome => outcome.actor !== 'developer')
+        .map(outcome => outcome.occurred_at)
+        .sort()
+        .at(-1) ?? null,
     }))
     .filter(item => item.events.length > 0)
 
@@ -318,6 +331,13 @@ function inbox(): Inbox {
        * is null, and the screen says so rather than assuming the session is alive.
        */
       session_alive: source.session_liveness[String(detail.review.id)] ?? null,
+      /*
+       * What the record can say where Allele's answer is missing: when this step's current
+       * pass began, and when anything last wrote to the review. The queue shows the second
+       * one where it showed "Session state unknown".
+       */
+      in_state_since: running!.runs?.find(run => run.finished_at == null)?.started_at ?? null,
+      last_activity_at: detail.timings.last_activity_at,
     }))
 
   const groups = [

@@ -141,6 +141,72 @@ describe('the shell every step page sits in', () => {
     expect(page.find('.trail').text()).toContain('not yet')
   })
 
+  it('shows how long each finished step took, beside its outcome', async () => {
+    const page = await understand(STRUCTURED)
+    const took = page.findAll('.trail .took').map(one => one.text())
+    /*
+     * One figure per step that has finished, and none for a step still going: a duration
+     * that grew while you read it would not be an answer to how long the step took.
+     */
+    expect(took.length).toBeGreaterThan(0)
+    expect(took.every(label => /\d/.test(label) || label === 'time not recorded')).toBe(true)
+    expect(page.find('.trail').text()).toMatch(/\d+ (sec|min|hr|day)/)
+  })
+
+  it('says a finished step’s duration is not recorded rather than drawing a nought', async () => {
+    // **A review from before DEV-890**: the record holds one time per step, the finish,
+    // and no start at all. Every figure that would need the start is null — and a nought
+    // in its place would say the step took no time.
+    const detail = fixture(STRUCTURED)
+    detail.layers = detail.layers.map(layer =>
+      layer.state === 'done'
+        ? { ...layer, seconds: null, runs: [{
+            state: null,
+            started_at: null,
+            ended_as: 'done' as const,
+            finished_at: layer.updated_at ?? null,
+            seconds: null,
+            detail: null,
+          }] }
+        : layer)
+    detail.timings = {
+      ...detail.timings,
+      with_the_agent_seconds: null,
+      waiting_on_you_seconds: null,
+    }
+    await withReview(detail)
+
+    const page = await understand(STRUCTURED)
+    const trail = page.find('.trail').text()
+    expect(trail).toContain('time not recorded')
+    expect(trail).not.toMatch(/\b0 sec\b/)
+  })
+
+  it('shows the total with the agent and the total waiting on the developer', async () => {
+    const page = await understand(STRUCTURED)
+    const totals = page.find('.totals')
+    expect(totals.exists()).toBe(true)
+    expect(totals.text()).toContain('with the agent')
+    expect(totals.text()).toContain('waiting on you')
+    expect(totals.text()).toMatch(/\d+ (min|hr|day).{0,4} with the agent/)
+    expect(totals.text()).toContain('requested')
+  })
+
+  it('says which total is not recorded rather than showing a nought', async () => {
+    const detail = fixture(STRUCTURED)
+    detail.timings = {
+      ...detail.timings,
+      draft_ready_at: null,
+      with_the_agent_seconds: null,
+      waiting_on_you_seconds: null,
+    }
+    await withReview(detail)
+
+    const page = await understand(STRUCTURED)
+    expect(page.text()).toContain('with the agent: not recorded yet')
+    expect(page.text()).toContain('waiting on you: not recorded')
+  })
+
   it('links the five steps that have somewhere to go, and no others', async () => {
     const page = await understand(STRUCTURED)
     const links = page.findAll('.trail a').map(one => one.attributes('href'))

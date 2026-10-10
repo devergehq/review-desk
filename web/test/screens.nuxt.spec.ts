@@ -217,15 +217,31 @@ describe('the queue', () => {
     expect(layers[0]!.findAll('.seg')).toHaveLength(7)
   })
 
-  it('says what it knows about each session, and says when it knows nothing', async () => {
+  it('says what it knows about each session, and how long the record has been silent', async () => {
+    // **"Session state unknown" was what this row said until DEV-890**, on every review,
+    // because Allele owns session liveness and tells Review Desk nothing. What the record
+    // holds is when anything last wrote to the review, and that is what the row says now
+    // — while an answer from Allele, when there is one, still outranks it.
     const page = await shown(Inbox)
     expect(page.text()).toContain('Session running')
-    expect(page.text()).toContain('Session state unknown')
+    expect(page.text()).toContain('Last activity')
+    expect(page.text()).not.toContain('Session state unknown')
+  })
+
+  it('says how long each review has been in the state it is in', async () => {
+    const page = await shown(Inbox)
+    /* Beside the step the session is on: "Code review · 2 days 1 hr". */
+    expect(page.text()).toMatch(/Code review\s+·\s+\d/)
   })
 
   it('says a row has no recorded time rather than inventing one', async () => {
     const page = await shown(Inbox)
-    /* Only a brief carries a ready time. A draft, a reply and a session carry none. */
+    /*
+     * A pull request nothing has dated. The three rows that said this before DEV-890 — a
+     * draft waiting, an author's reply and a running session — have a time now, and that
+     * is asserted above; what is asserted here is that a row with nothing still says so
+     * rather than drawing a nought.
+     */
     expect(page.text()).toContain('no time recorded')
     expect(page.text()).toContain('and the rows with no recorded time last')
   })
