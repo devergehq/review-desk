@@ -465,6 +465,232 @@ fn a_session_that_writes_new_words_is_the_author_of_them() {
     );
 }
 
+#[test]
+fn a_block_handed_back_unchanged_does_not_stop_an_edit_somewhere_else() {
+    // **Found by the review of this change, after it merged.** `draft_sections` serves
+    // every block including the ones that do not post — a cut finding's block stays on the
+    // record — and the way the developer changes a block of prose is to write the whole
+    // composition back with that one block's text replaced. So the block the store just
+    // handed the page is the block the next write has to accept.
+    //
+    // It refused: any block naming a finding that is not posted was refused, whether the
+    // caller was adding it or handing it straight back. The first decision that took a
+    // finding out of the post therefore made every later prose edit impossible, and the
+    // recoveries were all worse — dropping the block loses what a rewrite replaced, and
+    // raising it again to edit it writes outcomes the developer never decided.
+    let (_dir, store) = temp_store();
+    let review = seeded(&store);
+
+    store
+        .decide_finding(
+            review,
+            2,
+            &Decision {
+                note: Some("the ceiling is ABC-240 work".to_string()),
+                ..Decision::of(FindingDecision::Cut)
+            },
+            Actor::Developer,
+        )
+        .expect("the developer cuts F2");
+
+    let held = store.draft_sections(review).expect("the blocks");
+    assert!(
+        held.iter()
+            .any(|section| section.finding_seq == Some(2) && !section.posted),
+        "F2's block is still served, and does not post"
+    );
+
+    let sections: Vec<NewDraftSection> = held
+        .iter()
+        .map(|section| NewDraftSection {
+            kind: section.kind,
+            finding_seq: section.finding_seq,
+            title: section.title.clone(),
+            text: if section.position == 1 {
+                "One thing blocks the merge.".to_string()
+            } else {
+                section.text.clone()
+            },
+        })
+        .collect();
+
+    store
+        .put_draft_sections(review, &sections)
+        .expect("the developer changes the summary sentence after cutting a finding");
+
+    let after = store.draft_sections(review).expect("the blocks");
+    assert_eq!(after[0].text, "One thing blocks the merge.");
+    let f2 = after
+        .iter()
+        .find(|section| section.finding_seq == Some(2))
+        .expect("F2's block survives the write");
+    assert!(!f2.posted);
+    assert_eq!(
+        f2.agent_text, "A dead endpoint is retried forever.",
+        "and what the agent wrote about it is still there"
+    );
+    assert!(
+        !store
+            .get_draft(review)
+            .expect("the draft")
+            .body
+            .contains("F2"),
+        "a cut finding is still not posted"
+    );
+}
+
+#[test]
+fn a_block_added_for_a_finding_that_cannot_be_posted_is_still_refused() {
+    // The other half of the rule above: what the refusal is *for* is a session writing a
+    // draft that raises a finding the composition will drop. Adding such a block, and
+    // changing the words of one, are both that claim; handing one back is not.
+    let (_dir, store) = temp_store();
+    let review = seeded(&store);
+
+    store
+        .decide_finding(
+            review,
+            2,
+            &Decision {
+                note: Some("withdrawn".to_string()),
+                ..Decision::of(FindingDecision::Withdraw)
+            },
+            Actor::Developer,
+        )
+        .expect("the developer withdraws F2");
+
+    let held = store.draft_sections(review).expect("the blocks");
+    let changed: Vec<NewDraftSection> = held
+        .iter()
+        .map(|section| NewDraftSection {
+            kind: section.kind,
+            finding_seq: section.finding_seq,
+            title: section.title.clone(),
+            text: if section.finding_seq == Some(2) {
+                "the session says it is still open after all".to_string()
+            } else {
+                section.text.clone()
+            },
+        })
+        .collect();
+
+    let refused = store
+        .put_draft_sections(review, &changed)
+        .expect_err("new words for a withdrawn finding");
+    assert_eq!(refused.code(), "invalid_value");
+    assert!(refused.to_string().contains("withdrawn"), "{refused}");
+}
+
+#[test]
+fn a_rewrite_cannot_compose_a_body_nobody_wrote() {
+    // **Found by the review, after the merge.** `rewrite` was the one write path that did
+    // not run `validate`, so the two rules the composition rests on — no newline at either
+    // end of a block's text, and a finding block carries a title — were enforced
+    // everywhere except on the decision whose whole purpose is to change those words. A
+    // body with three blank lines in it, or a heading reading `### Blocker · F1 ·`, is
+    // posted to GitHub verbatim under the developer's name.
+    let (_dir, store) = temp_store();
+    let review = seeded(&store);
+    let before = store.get_draft(review).expect("the draft").body;
+
+    for (title, text) in [
+        (None, Some("\nleading and trailing\n".to_string())),
+        (None, Some("trailing only\n".to_string())),
+        (Some("   ".to_string()), None),
+        (Some(String::new()), None),
+    ] {
+        let refused = store
+            .decide_finding(
+                review,
+                1,
+                &Decision {
+                    title: title.clone(),
+                    text: text.clone(),
+                    ..Decision::of(FindingDecision::Rewrite)
+                },
+                Actor::Developer,
+            )
+            .expect_err(&format!(
+                "{title:?} / {text:?} composes a body nobody wrote"
+            ));
+        assert_eq!(refused.code(), "invalid_value", "{title:?} / {text:?}");
+    }
+
+    assert_eq!(
+        store.get_draft(review).expect("the draft").body,
+        before,
+        "and none of them was written"
+    );
+}
+
+#[test]
+fn posting_a_nit_in_the_developers_own_words_says_whose_they_are() {
+    // **Found by the review, after the merge.** A `keep` may carry the developer's own
+    // words, because that is the designs' "Post it" on a held-back nit. Those words were
+    // written into `agent_title` and `agent_text` as well, so the record said the agent
+    // wrote them, `rewritten()` read false, and the outcome was a bare `kept` — a decision
+    // that changed what gets posted without the record saying it had, which is the one
+    // thing this issue exists to stop.
+    let (_dir, store) = temp_store();
+    let review = seeded(&store);
+
+    store
+        .put_draft_sections(
+            review,
+            &[NewDraftSection::prose("The approach fits the ticket.")],
+        )
+        .expect("a draft with no block for F3");
+    store
+        .set_finding_disposition(review, 3, Disposition::HeldBack, Some("a nit".to_string()))
+        .expect("held back");
+
+    let made = store
+        .decide_finding(
+            review,
+            3,
+            &Decision {
+                title: Some("The backoff schedule lives in two files".to_string()),
+                text: Some("Say it once. The second copy will drift.".to_string()),
+                ..Decision::of(FindingDecision::Keep)
+            },
+            Actor::Developer,
+        )
+        .expect("the developer posts the nit in their own words");
+
+    let block = store
+        .draft_sections(review)
+        .expect("the blocks")
+        .into_iter()
+        .find(|section| section.finding_seq == Some(3))
+        .expect("F3's block");
+
+    assert_eq!(block.text, "Say it once. The second copy will drift.");
+    assert_eq!(
+        block.agent_text, "the consequence, as the agent recorded it",
+        "the agent's words are the finding's own consequence, which is what the store \
+         would have composed the block from"
+    );
+    assert_eq!(
+        block.agent_title.as_deref(),
+        Some("Backoff schedule is repeated in two files"),
+        "and its claim"
+    );
+    assert!(
+        block.rewritten(),
+        "the posted words are the developer's, and the record has to say so"
+    );
+    assert_eq!(made.outcome.kind, OutcomeKind::Kept);
+    assert!(
+        made.outcome
+            .detail
+            .as_deref()
+            .expect("a detail saying what the decision did")
+            .contains("own words"),
+        "{:?}",
+        made.outcome.detail
+    );
+}
+
 // -- the decisions ------------------------------------------------------------------
 
 #[test]

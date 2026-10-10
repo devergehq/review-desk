@@ -247,8 +247,8 @@ impl Store {
             // `words` is `Some` exactly when this decision has a block to write and the
             // draft holds none, which is worked out above — so matching on it rather than
             // on the decision again is what keeps the two from disagreeing.
-            (_, Some((title, text))) => {
-                composition::add_finding_block(&tx, review_id, seq, title, text)?;
+            (_, Some(words)) => {
+                composition::add_finding_block(&tx, review_id, seq, words)?;
             }
             // A block the draft already holds, and a decision that does not rewrite its
             // words. Whether it posts is decided by the finding, which has just been
@@ -422,6 +422,13 @@ fn check(decision: &Decision) -> Result<()> {
                  words, which is what gets posted",
             ));
         }
+        // And the words themselves, against the two rules the composition rests on. The
+        // rewrite is the one path that writes a block's words through a statement of its
+        // own rather than through `composition::write`, so it is the one path that has to
+        // ask for itself. See `composition::validate_rewrite`.
+        FindingDecision::Rewrite => {
+            composition::validate_rewrite(decision.title.as_deref(), decision.text.as_deref())?;
+        }
         FindingDecision::AcceptReason if blank(decision.note.as_deref()) => {
             return Err(refuse(
                 "note",
@@ -466,37 +473,48 @@ fn check(decision: &Decision) -> Result<()> {
     Ok(())
 }
 
-/// The words a decision is to write a new block with.
+/// The words a decision is to write a new block with, and the agent's own beside them.
 ///
-/// The developer's, when they gave any. Otherwise the finding's own, in a stated order and
-/// with no invention: its claim is the heading's title, and the paragraph is the
-/// consequence it recorded or, failing that, the comment written for the author. A finding
-/// with neither is a refusal naming what is missing rather than a block with an empty
-/// paragraph.
-fn words_for(decision: &Decision, finding: &Finding) -> Result<(String, String)> {
+/// The agent's words are the finding's, in a stated order and with no invention: its claim
+/// is the heading's title, and the paragraph is the consequence it recorded or, failing
+/// that, the comment written for the author. A finding with neither is a refusal naming
+/// what is missing rather than a block with an empty paragraph.
+///
+/// **The developer's words, where they gave any, are what the block posts — and the
+/// agent's stay beside them.** That is the point of returning both: the developer may post
+/// a held-back nit in their own words, and a record that stored those words as the agent's
+/// would read as a block nobody had rewritten.
+fn words_for(decision: &Decision, finding: &Finding) -> Result<composition::BlockWords> {
+    let agent_title = finding.claim.clone();
+    let agent_text = finding
+        .why_it_matters
+        .clone()
+        .or_else(|| finding.inline_comment.clone())
+        .filter(|text| !text.trim().is_empty())
+        .ok_or_else(|| StoreError::InvalidValue {
+            field: "text",
+            value: format!("F{} has no paragraph to post", finding.seq),
+            expected: "what the review is to say about it; the finding records no \
+                       consequence and no comment for the author, and nothing may invent \
+                       one"
+            .to_string(),
+        })?;
+
     let title = match decision.title.as_deref().map(str::trim) {
         Some(title) if !title.is_empty() => title.to_string(),
-        _ => finding.claim.clone(),
+        _ => agent_title.clone(),
     };
-
     let text = match decision.text.as_deref() {
         Some(text) if !text.trim().is_empty() => text.to_string(),
-        _ => finding
-            .why_it_matters
-            .clone()
-            .or_else(|| finding.inline_comment.clone())
-            .filter(|text| !text.trim().is_empty())
-            .ok_or_else(|| StoreError::InvalidValue {
-                field: "text",
-                value: format!("F{} has no paragraph to post", finding.seq),
-                expected: "what the review is to say about it; the finding records no \
-                           consequence and no comment for the author, and nothing may \
-                           invent one"
-                    .to_string(),
-            })?,
+        _ => agent_text.clone(),
     };
 
-    Ok((title, text))
+    Ok(composition::BlockWords {
+        title,
+        text,
+        agent_title,
+        agent_text,
+    })
 }
 
 /// What the outcome says beyond its kind.
@@ -536,6 +554,18 @@ fn detail_for(decision: &Decision, finding: &Finding) -> Result<Option<String>> 
                 parts.push("the paragraph");
             }
             let change = format!("rewrote {}", parts.join(" and "));
+            Some(match note {
+                Some(note) => format!("{change}: {note}"),
+                None => change,
+            })
+        }
+        // A `keep` or a `raise_again` may carry the developer's own words, for a finding
+        // the draft holds no block for — the designs' "Post it" on a held-back nit. The
+        // outcome is still the one its decision names, and its detail says whose words
+        // were posted, because otherwise a decision that changed what gets posted would
+        // leave a record that did not say so.
+        _ if decision.title.is_some() || decision.text.is_some() => {
+            let change = "posted in the developer's own words".to_string();
             Some(match note {
                 Some(note) => format!("{change}: {note}"),
                 None => change,
