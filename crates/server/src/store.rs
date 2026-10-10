@@ -17,8 +17,8 @@ use review_desk_store::{
     Actor, Brief, Decision, DecisionMade, Disposition, Draft, DraftSection, Finding,
     FindingInRound, FullReview, NewDraft, NewOutcome, NitTicket, OpenedReview, ProblemStatement,
     RepoSummary, Review, ReviewAtLayer, ReviewEvent, ReviewFacts, ReviewLayer, ReviewProvenance,
-    RoundCommit, RoundSummary, Rule, RuleCounts, RuleStage, RulesSummary, Store, StoreError,
-    TicketedAndApproved, Timestamp,
+    ReviewTimings, RoundCommit, RoundSummary, Rule, RuleCounts, RuleStage, RulesSummary, Store,
+    StoreError, TicketedAndApproved, Timestamp,
 };
 
 use crate::error::{ApiError, Code};
@@ -180,6 +180,28 @@ impl Records {
     /// Nit tickets filed since a time, for the Inbox's "handled without you".
     pub fn filed_nit_tickets(&self, since: Timestamp) -> Result<Vec<NitTicket>, ApiError> {
         self.with(|store| store.filed_nit_tickets(None, Some(since)))
+    }
+
+    /// When this review's draft last became ready for the developer.
+    ///
+    /// The queue's age cell on a draft waiting to be signed off, which read "no time
+    /// recorded" until DEV-890: the draft holds `approved_at`, `sent_back_at` and
+    /// `posted_at`, and had no time for the one state the developer is waiting in.
+    pub fn draft_ready_at(&self, review_id: i64) -> Result<Option<Timestamp>, ApiError> {
+        self.with(|store| store.draft_ready_at(review_id))
+    }
+
+    /// How long one review has taken, with all seven layers and their passes.
+    pub fn review_timings(&self, review_id: i64) -> Result<ReviewTimings, ApiError> {
+        self.with(|store| store.review_timings(review_id))
+    }
+
+    /// Every finished review's timings, newest first. `GET /timings`.
+    pub fn finished_review_timings(
+        &self,
+        repo: Option<&str>,
+    ) -> Result<Vec<ReviewTimings>, ApiError> {
+        self.with(|store| store.finished_review_timings(repo))
     }
 
     /// Every repository Review Desk holds a record for.

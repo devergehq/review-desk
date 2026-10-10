@@ -19,49 +19,133 @@
       "name": "lint",
       "state": "done",
       "detail": "passed",
-      "updated_at": "2026-10-08T10:32:00Z"
+      "updated_at": "2026-10-08T10:32:00Z",
+      "runs": [
+        {
+          "state": "running",
+          "started_at": "2026-10-08T10:31:00Z",
+          "ended_as": "done",
+          "finished_at": "2026-10-08T10:32:00Z",
+          "seconds": 60,
+          "detail": null
+        }
+      ],
+      "seconds": 60
     },
     {
       "number": 2,
       "name": "understand",
       "state": "done",
       "detail": "confirmed by you",
-      "updated_at": "2026-10-08T10:58:00Z"
+      "updated_at": "2026-10-08T10:58:00Z",
+      "runs": [
+        {
+          "state": "running",
+          "started_at": "2026-10-08T10:32:00Z",
+          "ended_as": "waiting_on_you",
+          "finished_at": "2026-10-08T10:42:00Z",
+          "seconds": 600,
+          "detail": "reading the ticket and the diff"
+        },
+        {
+          "state": "waiting_on_you",
+          "started_at": "2026-10-08T10:42:00Z",
+          "ended_as": "done",
+          "finished_at": "2026-10-08T10:58:00Z",
+          "seconds": 960,
+          "detail": "waiting on you"
+        }
+      ],
+      "seconds": 1560
     },
     {
       "number": 3,
       "name": "alternatives",
       "state": "done",
       "detail": "3 options",
-      "updated_at": "2026-10-08T11:02:00Z"
+      "updated_at": "2026-10-08T11:02:00Z",
+      "runs": [
+        {
+          "state": "running",
+          "started_at": "2026-10-08T10:58:00Z",
+          "ended_as": "done",
+          "finished_at": "2026-10-08T11:02:00Z",
+          "seconds": 240,
+          "detail": null
+        }
+      ],
+      "seconds": 240
     },
     {
       "number": 4,
       "name": "solution_map",
       "state": "done",
       "detail": "done",
-      "updated_at": "2026-10-08T11:05:00Z"
+      "updated_at": "2026-10-08T11:05:00Z",
+      "runs": [
+        {
+          "state": "running",
+          "started_at": "2026-10-08T11:02:00Z",
+          "ended_as": "done",
+          "finished_at": "2026-10-08T11:05:00Z",
+          "seconds": 180,
+          "detail": null
+        }
+      ],
+      "seconds": 180
     },
     {
       "number": 5,
       "name": "code_review",
       "state": "done",
       "detail": "6 findings",
-      "updated_at": "2026-10-08T11:18:00Z"
+      "updated_at": "2026-10-08T11:18:00Z",
+      "runs": [
+        {
+          "state": "running",
+          "started_at": "2026-10-08T11:05:00Z",
+          "ended_as": "done",
+          "finished_at": "2026-10-08T11:18:00Z",
+          "seconds": 780,
+          "detail": null
+        }
+      ],
+      "seconds": 780
     },
     {
       "number": 6,
       "name": "draft",
       "state": "waiting_on_you",
       "detail": "waiting on you",
-      "updated_at": "2026-10-08T11:21:00Z"
+      "updated_at": "2026-10-08T11:21:00Z",
+      "runs": [
+        {
+          "state": "running",
+          "started_at": "2026-10-08T11:18:00Z",
+          "ended_as": "waiting_on_you",
+          "finished_at": "2026-10-08T11:21:00Z",
+          "seconds": 180,
+          "detail": "drafting"
+        },
+        {
+          "state": "waiting_on_you",
+          "started_at": "2026-10-08T11:21:00Z",
+          "ended_as": null,
+          "finished_at": null,
+          "seconds": null,
+          "detail": "waiting on you"
+        }
+      ],
+      "seconds": 180
     },
     {
       "number": 7,
       "name": "harvest",
       "state": "pending",
       "detail": "after posting",
-      "updated_at": null
+      "updated_at": null,
+      "runs": [],
+      "seconds": null
     }
   ],
   "brief": {
@@ -482,6 +566,15 @@
   "sources": [],
   "criteria": [],
   "description_lint": null,
+  "timings": {
+    "requested_at": "2026-10-08T10:31:00Z",
+    "draft_ready_at": "2026-10-08T11:21:00Z",
+    "signed_off_at": null,
+    "posted_at": null,
+    "with_the_agent_seconds": 2040,
+    "waiting_on_you_seconds": 960,
+    "last_activity_at": "2026-10-08T11:21:00Z"
+  },
   "coverage": {
     "source": "sentence",
     "files": []

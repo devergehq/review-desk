@@ -35,8 +35,9 @@ use review_desk_store::{
     FindingDecision, FindingHunk, FindingRef, HunkLine, HunkLineMarker, NewAcceptanceCriterion,
     NewBrief, NewDescriptionLintResult, NewDraft, NewFileChange, NewFinding, NewOutcome, NewReview,
     NewReviewSource, NewRule, NitTicket, OptionProposer, Outcome, OutcomeKind, ProblemStatement,
-    ProblemVerdict, Review, ReviewEvent, ReviewFacts, ReviewLayer, ReviewLayerName,
-    ReviewProvenance, Rule, RuleScope, RuleStage, Severity, SourceKind, Store, Verification,
+    ProblemVerdict, Review, ReviewEvent, ReviewFacts, ReviewLayer, ReviewLayerName, ReviewLayerRun,
+    ReviewProvenance, ReviewTimings, Rule, RuleScope, RuleStage, Severity, SourceKind, Store,
+    Verification,
 };
 use serde_json::{json, Map, Value};
 
@@ -171,6 +172,11 @@ struct Seeded {
     review: Review,
     other_review: Review,
     waiting_review: Review,
+    /// A review carried all the way to posted, which is what `GET /timings` lists. Read
+    /// through the store rather than by id — `finished_review_timings` finds it — and kept
+    /// on the struct so the seed's shape is readable from one place.
+    #[allow(dead_code)]
+    posted_review: Review,
     proposed_rule: Rule,
     excepted_rule: Rule,
     stale_rule: Rule,
@@ -219,22 +225,44 @@ fn seed(store: &Store) -> Seeded {
         )
         .expect("the other systems' ids");
 
-    for (number, state, detail) in [
-        (1, "done", "passed"),
-        (2, "done", "confirmed by you"),
-        (3, "done", "3 options"),
-        (4, "done", "done"),
-        (5, "done", "6 findings"),
-        (6, "waiting_on_you", "waiting on you"),
+    // **Each step is reported running before it is reported finished**, which is how a
+    // session really writes a trail and what gives every finished step a pass with both
+    // ends — the `layers[].runs` and `layers[].seconds` the example carries. The clock is
+    // the machine's here, so the durations come out at zero seconds; a zero is a
+    // measurement and this test compares no values. `tests/timings.rs` is where the
+    // arithmetic is asserted, against a clock it can move.
+    // **Every state each step passed through, in order**, which is how a session really
+    // writes a trail and what gives a finished step a pass with both ends — the
+    // `layers[].runs` and `layers[].seconds` the example carries. Step 2 waits on the
+    // developer between the brief and the confirmation, so the review has a finished wait
+    // and `timings.waiting_on_you_seconds` has something to add up.
+    //
+    // The clock is the machine's here, so the durations come out at zero seconds. A zero
+    // is a measurement and this test compares no values; `tests/timings.rs` is where the
+    // arithmetic is asserted, against a clock it can move.
+    for (number, states, detail) in [
+        (1, &["running", "done"][..], "passed"),
+        (
+            2,
+            &["running", "waiting_on_you", "done"][..],
+            "confirmed by you",
+        ),
+        (3, &["running", "done"][..], "3 options"),
+        (4, &["running", "done"][..], "done"),
+        (5, &["running", "done"][..], "6 findings"),
+        (6, &["running", "waiting_on_you"][..], "waiting on you"),
     ] {
-        store
-            .set_review_layer(
-                review.id,
-                number,
-                state.parse().expect("a state"),
-                Some(detail),
-            )
-            .expect("a layer");
+        for (step, state) in states.iter().enumerate() {
+            let last = step + 1 == states.len();
+            store
+                .set_review_layer(
+                    review.id,
+                    number,
+                    state.parse().expect("a state"),
+                    last.then_some(detail),
+                )
+                .expect("a layer");
+        }
     }
 
     // Six findings: three in the draft, two held back, one suppressed — the
@@ -762,6 +790,74 @@ fn seed(store: &Store) -> Seeded {
         )
         .expect("holding at layer 2");
 
+    // **A fourth review, finished with**: drafted, signed off and reported posted. It is
+    // what `GET /timings` lists — "finished" there means posted — and without one that
+    // example would be an empty array, which has no fields and so would check nothing.
+    let posted_review = store
+        .create_review(NewReview {
+            repo: "acme/portal".to_string(),
+            pr: 401,
+            head_sha: "9d41c0e".to_string(),
+            round: 1,
+            title: Some("Hold the queue connection open".to_string()),
+            ticket_id: Some("ABC-219".to_string()),
+            changed_lines: Some(86),
+            session_id: Some("ses_41b7c208".to_string()),
+            ledger_id: Some("ledger-2026-10-06-401".to_string()),
+            github_review_id: Some("gh-review-3291".to_string()),
+        })
+        .expect("a review that was posted");
+    store
+        .put_brief(
+            posted_review.id,
+            NewBrief {
+                problem: "Each delivery opens its own connection to the queue.".to_string(),
+                ..Default::default()
+            },
+        )
+        .expect("its brief");
+    store
+        .confirm_brief(posted_review.id, Actor::Developer)
+        .expect("the developer confirmed it");
+    for number in [1, 3, 4, 5] {
+        store
+            .set_review_layer(
+                posted_review.id,
+                number,
+                "running".parse().expect("a state"),
+                None,
+            )
+            .expect("the step starts");
+        store
+            .set_review_layer(
+                posted_review.id,
+                number,
+                "done".parse().expect("a state"),
+                Some("done"),
+            )
+            .expect("and finishes");
+    }
+    store
+        .put_draft(
+            posted_review.id,
+            NewDraft::ready("The connection is held open."),
+        )
+        .expect("its draft");
+    store
+        .approve_draft(posted_review.id, ReviewEvent::Approve, Actor::Developer)
+        .expect("signed off");
+    store
+        .post_draft(posted_review.id, "gh-review-3291")
+        .expect("the session reported it posted");
+    store
+        .set_review_layer(
+            posted_review.id,
+            7,
+            "done".parse().expect("a state"),
+            Some("2 outcomes harvested"),
+        )
+        .expect("the harvest");
+
     // A proposal to decide on, a rule with an accepted exception, and a deferred one.
     let proposed_rule = store
         .create_rule(NewRule {
@@ -847,6 +943,7 @@ fn seed(store: &Store) -> Seeded {
         review,
         other_review,
         waiting_review,
+        posted_review,
         proposed_rule,
         excepted_rule,
         stale_rule,
@@ -1136,6 +1233,53 @@ fn layer_document(layer: &ReviewLayer) -> Value {
         "state": layer.state,
         "detail": layer.detail,
         "updated_at": layer.updated_at,
+        "runs": layer.runs.iter().map(run_document).collect::<Vec<_>>(),
+        "seconds": layer.seconds(),
+    })
+}
+
+/// One pass a step made. The store derives these from its record of the states the step
+/// entered; nothing here computes a duration of its own.
+fn run_document(run: &ReviewLayerRun) -> Value {
+    json!({
+        "state": run.state,
+        "started_at": run.started_at,
+        "ended_as": run.ended_as,
+        "finished_at": run.finished_at,
+        "seconds": run.seconds(),
+        "detail": run.detail,
+    })
+}
+
+/// How long one review took. The four figures DEV-890 records, and nothing per-step: those
+/// are on the layers, with the passes they were computed from.
+fn timings_document(timings: &ReviewTimings) -> Value {
+    json!({
+        "requested_at": timings.requested_at,
+        "draft_ready_at": timings.draft_ready_at,
+        "signed_off_at": timings.signed_off_at,
+        "posted_at": timings.posted_at,
+        "with_the_agent_seconds": timings.with_the_agent_seconds,
+        "waiting_on_you_seconds": timings.waiting_on_you_seconds,
+        "last_activity_at": timings.last_activity_at,
+    })
+}
+
+/// One row of `GET /timings`: a finished review, its figures and its seven steps.
+fn review_timing_rows(store: &Store) -> Value {
+    json!({
+        "reviews": store
+            .finished_review_timings(None)
+            .expect("the finished reviews")
+            .iter()
+            .map(|timings| json!({
+                "review": review_document(
+                    &store.get_review(timings.review_id).expect("the review"),
+                ),
+                "timings": timings_document(timings),
+                "layers": timings.layers.iter().map(layer_document).collect::<Vec<_>>(),
+            }))
+            .collect::<Vec<_>>(),
     })
 }
 
@@ -1442,6 +1586,10 @@ fn review_detail(store: &Store, review_id: i64) -> Value {
         }),
     );
     document.insert(
+        "timings".to_string(),
+        timings_document(&store.review_timings(review_id).expect("the timings")),
+    );
+    document.insert(
         "nit_ticket".to_string(),
         nit_ticket_document(&store.nit_ticket(review_id).expect("the nit ticket")),
     );
@@ -1556,6 +1704,9 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
                 "held_back": store.held_back_findings(review.id).expect("held back").len(),
                 // Derived: a later round reviews only what changed.
                 "is_delta": review.round > 1,
+                "draft_ready_at": store
+                    .draft_ready_at(review.id)
+                    .expect("when the draft became ready"),
             })
         })
         .collect::<Vec<_>>();
@@ -1577,6 +1728,13 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
                     "kind": outcome.kind,
                     "detail": outcome.detail,
                 })).collect::<Vec<_>>(),
+                "replied_at": outcomes
+                    .iter()
+                    .filter(|outcome| {
+                        matches!(outcome.actor, Actor::Author | Actor::Harvester)
+                    })
+                    .map(|outcome| outcome.occurred_at)
+                    .max(),
             })
         })
         .collect::<Vec<_>>();
@@ -1595,6 +1753,10 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
                 "session_id": at.review.session_id,
                 // No source: Allele owns whether the session is alive.
                 "session_alive": Value::Null,
+                // What the store can say instead: when this step's current pass began,
+                // and when anything last wrote to the review.
+                "in_state_since": at.layer.in_state_since(),
+                "last_activity_at": at.review.last_activity_at,
             })
         })
         .collect::<Vec<_>>();
@@ -1756,6 +1918,7 @@ fn every_response_example_can_be_produced_from_the_store() {
     fields += check("saveDraft", &draft_detail(&store, review));
     fields += check("listRepos", &repos_page(&store));
     fields += check("listRules", &rules_page(&store, Some("acme/portal")));
+    fields += check("listReviewTimings", &review_timing_rows(&store));
 
     // The groups those two checks read must not have been empty, or they checked
     // nothing: an empty array has no leaf paths, so a vacuous group would pass
@@ -2007,6 +2170,7 @@ fn every_response_example_is_checked() {
         "saveDraft",
         "listRepos",
         "listRules",
+        "listReviewTimings",
         "startReview",
         "confirmBrief",
         "getProblemStatement",

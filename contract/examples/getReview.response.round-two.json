@@ -19,49 +19,117 @@
       "name": "lint",
       "state": "done",
       "detail": "unchanged",
-      "updated_at": "2026-10-10T09:38:00Z"
+      "updated_at": "2026-10-10T09:38:00Z",
+      "runs": [
+        {
+          "state": "running",
+          "started_at": "2026-10-10T09:30:00Z",
+          "ended_as": "done",
+          "finished_at": "2026-10-10T09:38:00Z",
+          "seconds": 480,
+          "detail": null
+        }
+      ],
+      "seconds": 480
     },
     {
       "number": 2,
       "name": "understand",
       "state": "done",
       "detail": "unchanged · settled in round 1",
-      "updated_at": "2026-10-10T09:38:00Z"
+      "updated_at": "2026-10-10T09:38:00Z",
+      "runs": [
+        {
+          "state": "running",
+          "started_at": "2026-10-10T09:30:00Z",
+          "ended_as": "done",
+          "finished_at": "2026-10-10T09:38:00Z",
+          "seconds": 480,
+          "detail": null
+        }
+      ],
+      "seconds": 480
     },
     {
       "number": 3,
       "name": "alternatives",
       "state": "done",
       "detail": "unchanged · 3 options",
-      "updated_at": "2026-10-10T09:38:00Z"
+      "updated_at": "2026-10-10T09:38:00Z",
+      "runs": [
+        {
+          "state": "running",
+          "started_at": "2026-10-10T09:30:00Z",
+          "ended_as": "done",
+          "finished_at": "2026-10-10T09:38:00Z",
+          "seconds": 480,
+          "detail": null
+        }
+      ],
+      "seconds": 480
     },
     {
       "number": 4,
       "name": "solution_map",
       "state": "done",
       "detail": "unchanged · still the right shape",
-      "updated_at": "2026-10-10T09:38:00Z"
+      "updated_at": "2026-10-10T09:38:00Z",
+      "runs": [
+        {
+          "state": "running",
+          "started_at": "2026-10-10T09:30:00Z",
+          "ended_as": "done",
+          "finished_at": "2026-10-10T09:38:00Z",
+          "seconds": 480,
+          "detail": null
+        }
+      ],
+      "seconds": 480
     },
     {
       "number": 5,
       "name": "code_review",
       "state": "done",
       "detail": "8 findings · 2 fixed, 2 still open, 2 new",
-      "updated_at": "2026-10-10T09:38:00Z"
+      "updated_at": "2026-10-10T09:38:00Z",
+      "runs": [
+        {
+          "state": "running",
+          "started_at": "2026-10-10T09:30:00Z",
+          "ended_as": "done",
+          "finished_at": "2026-10-10T09:38:00Z",
+          "seconds": 480,
+          "detail": null
+        }
+      ],
+      "seconds": 480
     },
     {
       "number": 6,
       "name": "draft",
       "state": "waiting_on_you",
       "detail": "waiting on you",
-      "updated_at": "2026-10-10T09:38:00Z"
+      "updated_at": "2026-10-10T09:38:00Z",
+      "runs": [
+        {
+          "state": "waiting_on_you",
+          "started_at": "2026-10-10T09:38:00Z",
+          "ended_as": null,
+          "finished_at": null,
+          "seconds": null,
+          "detail": "waiting on you"
+        }
+      ],
+      "seconds": null
     },
     {
       "number": 7,
       "name": "harvest",
       "state": "pending",
       "detail": "nothing yet for round 2",
-      "updated_at": null
+      "updated_at": null,
+      "runs": [],
+      "seconds": null
     }
   ],
   "brief": {
@@ -677,6 +745,15 @@
   "sources": [],
   "criteria": [],
   "description_lint": null,
+  "timings": {
+    "requested_at": "2026-10-10T09:30:00Z",
+    "draft_ready_at": "2026-10-10T09:38:00Z",
+    "signed_off_at": null,
+    "posted_at": null,
+    "with_the_agent_seconds": 480,
+    "waiting_on_you_seconds": null,
+    "last_activity_at": "2026-10-10T09:38:00Z"
+  },
   "coverage": {
     "source": "sentence",
     "files": []

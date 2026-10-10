@@ -24,7 +24,8 @@
       "round": 1,
       "severities": { "blocker": 1, "should": 2, "nit": 4, "question": 0 },
       "held_back": 4,
-      "is_delta": false
+      "is_delta": false,
+      "draft_ready_at": "2026-10-08T11:21:00Z"
     },
     {
       "review_id": 16,
@@ -36,7 +37,8 @@
       "round": 2,
       "severities": { "blocker": 0, "should": 1, "nit": 0, "question": 0 },
       "held_back": 0,
-      "is_delta": true
+      "is_delta": true,
+      "draft_ready_at": "2026-10-09T16:40:00Z"
     }
   ],
   "author_replies": [
@@ -60,7 +62,8 @@
           "kind": "code_changed_after",
           "detail": "Fixed in a later commit."
         }
-      ]
+      ],
+      "replied_at": "2026-10-09T08:12:00Z"
     }
   ],
   "own_prs_without_reviewer": [
@@ -104,7 +107,9 @@
       "layer_name": "code_review",
       "layers_total": 7,
       "session_id": "ses_7f2a91c4",
-      "session_alive": true
+      "session_alive": true,
+      "in_state_since": "2026-10-10T09:04:00Z",
+      "last_activity_at": "2026-10-10T09:11:00Z"
     },
     {
       "review_id": 19,
@@ -117,7 +122,9 @@
       "layer_name": "alternatives",
       "layers_total": 7,
       "session_id": "ses_0b4de115",
-      "session_alive": null
+      "session_alive": null,
+      "in_state_since": "2026-10-10T08:12:00Z",
+      "last_activity_at": null
     }
   ],
   "handled_without_you": {

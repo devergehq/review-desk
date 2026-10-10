@@ -5,7 +5,7 @@ holds no implementation of either.
 
 | File | What it is |
 |---|---|
-| `openapi.yaml` | OpenAPI 3.1 for the local JSON API. 19 operations. |
+| `openapi.yaml` | OpenAPI 3.1 for the local JSON API. 20 operations. |
 | `examples/` | One example response per endpoint, one request body per write, and the error shape. A `.<variant>.` form adds a second shape where one example cannot show an optional field both present and absent. `getReview.response.round-two.json` is the second round of the same pull request as the canonical one. |
 | `validate-examples.mjs` | Checks every example against its schema, and fails when an endpoint has no example. |
 
@@ -34,10 +34,11 @@ npm test           # both
 `.github/workflows/contract.yml` runs the same two commands on every pull request that
 touches `contract/`.
 
-**`npm run lint` reports two warnings and exits 0.** Both are `operation-4xx-response`
-against `getInbox` and `listRepos`, which take no input and so have no 4xx to declare.
-The rule is left on because it is doing real work on the other fourteen operations. CI
-gates on errors, which is what redocly exits non-zero for.
+**`npm run lint` reports three warnings and exits 0.** All three are
+`operation-4xx-response`, against `getInbox`, `listRepos` and `listReviewTimings`, which
+take no input a request can get wrong and so have no 4xx to declare. The rule is left on
+because it is doing real work on the other seventeen operations. CI gates on errors, which
+is what redocly exits non-zero for.
 
 ## There is no authentication
 
@@ -62,6 +63,8 @@ goes back on in the same change that adds it.
 | Nothing **posts** to GitHub | No operation writes to GitHub. Approving a draft sets a status; the review session reads it and posts. One operation *reads* GitHub — `POST /reviews` resolves a head commit when the caller omits one — and that is the only one. |
 | Review Desk's own ids are integers | Review id, finding `seq` and rule id, matching `crates/store/src/model.rs`. |
 | Null is not zero | A count the store cannot yet answer is `null`. Zero is a measurement; null is the absence of one. |
+| Durations are whole seconds | Every `*_seconds` field is an integer, never formatted text: "17 min" is the screen's decision. Null is a duration the record cannot answer — for a review from before DEV-890 that is most of them, and a nought there would say the review took no time at all. |
+| The store stamps every time | No request body and no command argument carries a time. A duration a caller could supply is a duration that could be backdated, so the store reads its own clock — `crates/store/src/clock.rs`. |
 | A derived field states how it is derived | `Rule.stale` is the one with a threshold in it — no finding has cited the rule for 60 days and it has not been deferred past today — so the number is written in `openapi.yaml` and the server's constant is tied to it by `crates/server/tests/staleness.rs`. It was undefined until DEV-862, and the server used 60 days because a mockup said so. |
 
 `F1` and `R-09` are display keys, derived rather than stored: `F` plus the finding's `seq`,
@@ -77,12 +80,19 @@ Each screen is one GET. The dashboard does no joining.
 | Inbox | `GET /inbox` | `POST /reviews` |
 | One review | `GET /reviews/{reviewId}` | `POST /reviews/{reviewId}/brief/confirm`, `PATCH /reviews/{reviewId}/findings/{seq}`, `POST /reviews/{reviewId}/findings/{seq}/decide` |
 | — not a screen | `GET /reviews/{reviewId}/brief/problem-statement` | — |
+| — not a screen | `GET /timings` | — |
 | Draft preview | `GET /reviews/{reviewId}/draft` | `PUT …/draft`, `POST …/findings/{seq}/decide`, `POST …/draft/approve`, `POST …/draft/ticket-and-approve`, `POST …/draft/send-back`, `POST …/held-back/ticket` |
 | Rules | `GET /rules?repo=`, `GET /repos` | `POST /rules/{ruleId}/promote`, `/dismiss`, `/retire`, `/defer` |
 
 The Inbox's `POST /reviews` is a write that DEV-854's own table records as "—". The
 mockup has a "Start a review" field and a button, and DEV-855 lists it too, so the
 endpoint exists. Flagged rather than quietly dropped.
+
+**`GET /timings` is read by no screen either.** It serves every finished review's timings
+in one read so that statistics can be computed from it, and DEV-890 deliberately builds no
+statistics page: averages, a window and a chart are somebody's later decision, and a server
+that had already made them would have decided it. One review's own figures reach the screen
+through `GET /reviews/{reviewId}`.
 
 **`GET …/brief/problem-statement` is the one operation no screen reads**, and it is in the
 contract rather than only on the command line because a session may be running anywhere.
@@ -126,9 +136,11 @@ Everything else on the four screens is below.
 | "1 blocker, 2 should" | `drafts_to_approve[].severities` |
 | "4 nits held back for a ticket" | `drafts_to_approve[].held_back` |
 | "delta since your last review" | `drafts_to_approve[].is_delta` |
+| "ready 20 min ago" | `drafts_to_approve[].draft_ready_at` |
 | "Author replied · 1" | length of `author_replies` |
 | "finding F2 rejected with a reason" | `author_replies[].events[]` — `finding_key`, `kind: rejected`, `detail` |
 | "F1 fixed in a later commit" | `author_replies[].events[]` — `kind: code_changed_after` |
+| "replied 2 hours ago" | `author_replies[].replied_at` |
 | "Your PRs with no reviewer · 2" | length of `own_prs_without_reviewer` |
 | "open 3 days" | `own_prs_without_reviewer[].opened_at` |
 | "description lint passes" | `own_prs_without_reviewer[].description_lint.passes` |
@@ -139,6 +151,8 @@ Everything else on the four screens is below.
 | "In progress · 2" | length of `in_progress` |
 | "Layer 5 of 7 · code review" | `in_progress[].layer_number`, `.layers_total`, `.layer_name` |
 | "session alive" | `in_progress[].session_alive` |
+| "running 20 min" | `in_progress[].in_state_since` |
+| "last activity 4 min ago" | `in_progress[].last_activity_at` |
 | the progress bar's fill | derived from `layer_number / layers_total` |
 | "Handled without you this week" | `handled_without_you.window_days` |
 | "9 description problems caught by the CI check" | `handled_without_you.description_problems_caught` |
@@ -158,6 +172,12 @@ Everything else on the four screens is below.
 | "214 changed lines" | `review.changed_lines` |
 | the seven layer chips | `layers[].number`, `.name`, `.state`, `.detail` |
 | the chip's dark / dashed / plain styling | `layers[].state` — `waiting_on_you` and `running` are current, `pending` is not started |
+| "17 min" under a finished step | `layers[].seconds` |
+| "ran twice · 10 min, then 6 min" | `layers[].runs[]` — `state`, `started_at`, `finished_at`, `seconds` |
+| "34 min with the agent" | `timings.with_the_agent_seconds` |
+| "10 min waiting on you" | `timings.waiting_on_you_seconds` |
+| "requested at 10:31" | `timings.requested_at` |
+| "draft ready at 11:21" | `timings.draft_ready_at` |
 | the problem paragraph | `brief.problem` |
 | "from the ticket and the code · you corrected one sentence" | `brief.provenance` |
 | the three-box diagram | `brief.diagram`, as mermaid source |
@@ -804,6 +824,48 @@ one that has not run, which is exactly the distinction "what was not checked" ex
 make. The brief also says each layer writes one thing to the record, and this is layer 1's
 and layer 4's one thing.
 
+### Where each step's timings live
+
+**A new `review_layer_states` table: one row per state a step entered, with when it
+entered it. Append-only — nothing updates or deletes a row.** `review_layers` above holds
+one `updated_at` and overwrites it, which is the defect DEV-890 fixes, and two more columns
+on that table would be overwritten by a second run just as surely.
+
+The passes a step has made are **derived from those rows and never stored**, which is the
+same argument `coverage` makes: a stored total sitting next to the times it was computed
+from is two records of one fact, and a page showing both could show a disagreement. A pass
+is one continuous occupancy of a working state, so a draft written, sent back and written
+again is two passes at `running` with the developer's own wait between them, and
+`layers[].runs` serves both.
+
+| The state entered | What it does to the passes |
+|---|---|
+| `running`, `waiting_on_you` | closes the pass that was open, and opens a new one |
+| `done`, `failed`, `skipped` | closes the pass that was open — or, with none open, records a finish whose start nothing knows |
+| `pending` | closes the pass that was open and opens nothing: the step is back to not started |
+
+**A row is appended only when the state changes.** `set_review_layer` is deliberately
+idempotent — writing the same state twice is how a session reports progress without
+checking first — so a row per write would turn one pass that is still going into ten passes
+of a few seconds.
+
+**A review recorded before DEV-890 is never given a made-up start.** Migration 11 backfills
+one row per existing `review_layers` row from `updated_at`, which is the only time such a
+review holds and whose honest reading is that the step entered the state it is in then. So
+a step it had already finished comes out of the middle row of that table as a finish with
+no start, every figure needing that start is null, and `timings.last_activity_at` is null
+too rather than being drawn from the review's creation.
+
+**`reviews.last_activity_at`** is the other half: when anything last wrote to the review.
+Every write moves it and no read does, which is the nearest thing Review Desk can say about
+whether a session is alive — Allele owns that and tells this server nothing, which is what
+`session_alive: null` has always meant.
+
+**Writing a draft as ready now moves layer 6 to `waiting_on_you`.** It is where
+`timings.draft_ready_at` comes from, and it was the one transition of the four that left
+the trail stale: the draft holds `approved_at`, `sent_back_at` and `posted_at`, and had no
+record of the state the developer is actually waiting in.
+
 ### Where the held-back nits' ticket id lives
 
 **On the review: `nit_ticket_status`, `nit_ticket_id`, `nit_ticket_requested_at`,
@@ -1010,6 +1072,36 @@ Migration 9 on this branch — the number is always the next free one, for the r
       not a request nobody can see.
 - [x] **S34 — `Finding::is_posted`.** The one rule the composed body is filtered by, in one
       place: disposition `in_draft` and an open round status.
+
+### Added by DEV-890, for how long each of the seven steps took
+
+Migration 11 on this branch — the number is always the next free one, for the reason
+`migrations.rs` gives.
+
+- [x] **S35 — `review_layer_states`.** `(review_id, number, state, detail, entered_at)`,
+      append-only, read in `id` order. The table specified above. Needed by:
+      `layers[].runs`, `layers[].seconds`, `timings`, and `GET /timings`.
+- [x] **S36 — `reviews.last_activity_at`.** Nullable, moved by every write to a review and
+      by no read. Needed by: `timings.last_activity_at` and
+      `in_progress[].last_activity_at`.
+- [x] **S37 — an injected clock.** `Store::open_with_clock`, and `Clock::fixed` behind the
+      `fixed-clock` feature so a release binary cannot build a clock that lies. It is what
+      lets a test assert a duration without sleeping for it, and it is why no write
+      function takes a timestamp.
+- [x] **S38 — `Store::review_timings`** and **`Store::finished_review_timings`**. One read
+      each: one review's figures, and every posted review's. Needed by:
+      `getReview.timings` and `listReviewTimings`.
+- [x] **S39 — `Store::draft_ready_at`.** When step 6 last entered `waiting_on_you`. Needed
+      by: `drafts_to_approve[].draft_ready_at`.
+- [x] **S40 — `put_draft` writes layer 6.** On `ready` only, in the same transaction, which
+      is where S39's answer comes from.
+
+**What DEV-888 will have to do about this.** `review_layer_states` is keyed on the review
+and the step, so an attempt that is set aside must keep its own rows: either the restarted
+attempt is a new review id — in which case nothing here changes — or one review id covers
+several attempts, in which case the table needs an attempt column and the derivation needs
+to group by it. Nothing in this slice deletes or rewrites a row, so a set-aside attempt's
+record is already left alone.
 
 ### Not a store change, but do not miss it
 

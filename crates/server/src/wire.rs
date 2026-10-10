@@ -20,9 +20,9 @@ use review_desk_store::{
     BriefFlowBox, BriefFlowRow, BriefOpenChoice, BriefOption, BriefOptionVerdict, BriefPart,
     BriefPartFile, BriefProblem, BriefSupportTable, DescriptionLintResult, Disposition, Draft,
     DraftLint, DraftSection, FileChange, Finding, FindingHunk, FindingInRound, NitTicket, Outcome,
-    ProblemStatement, RepoSummary, Review, ReviewLayer, ReviewProvenance, ReviewSource,
-    RoundCommit, RoundStatusCounts, RoundSummary, Rule, RuleCounts, RuleScope, RuleStage,
-    RulesSummary, Severity, Timestamp,
+    ProblemStatement, RepoSummary, Review, ReviewLayer, ReviewLayerRun, ReviewProvenance,
+    ReviewSource, ReviewTimings, RoundCommit, RoundStatusCounts, RoundSummary, Rule, RuleCounts,
+    RuleScope, RuleStage, RulesSummary, Severity, Timestamp,
 };
 use serde_json::{json, Value};
 
@@ -485,6 +485,42 @@ pub fn review_layer(layer: &ReviewLayer) -> Value {
         "state": layer.state.as_str(),
         "detail": layer.detail,
         "updated_at": rfc3339_or_null(layer.updated_at),
+        // **The passes, on the layer they belong to.** A second list of the same figures
+        // beside `layers` is a second answer a page could render, and the contract's rule
+        // about two coverage records applies here for the same reason.
+        "runs": layer.runs.iter().map(review_layer_run).collect::<Vec<_>>(),
+        "seconds": layer.seconds(),
+    })
+}
+
+/// The contract's `ReviewLayerRun`: one pass a step made.
+///
+/// Every duration is whole seconds and the store derives it. Formatting one as "17 min" is
+/// the dashboard's decision, and a server that had made it would have decided it.
+pub fn review_layer_run(run: &ReviewLayerRun) -> Value {
+    json!({
+        "state": run.state.map(|state| state.as_str()),
+        "started_at": rfc3339_or_null(run.started_at),
+        "ended_as": run.ended_as.map(|state| state.as_str()),
+        "finished_at": rfc3339_or_null(run.finished_at),
+        "seconds": run.seconds(),
+        "detail": run.detail,
+    })
+}
+
+/// The contract's `ReviewTimings`: how long the review took, as totals.
+///
+/// **The per-step figures are not here.** They are on `layers[]`, with the passes they
+/// were computed from.
+pub fn review_timings(timings: &ReviewTimings) -> Value {
+    json!({
+        "requested_at": rfc3339(timings.requested_at),
+        "draft_ready_at": rfc3339_or_null(timings.draft_ready_at),
+        "signed_off_at": rfc3339_or_null(timings.signed_off_at),
+        "posted_at": rfc3339_or_null(timings.posted_at),
+        "with_the_agent_seconds": timings.with_the_agent_seconds,
+        "waiting_on_you_seconds": timings.waiting_on_you_seconds,
+        "last_activity_at": rfc3339_or_null(timings.last_activity_at),
     })
 }
 
