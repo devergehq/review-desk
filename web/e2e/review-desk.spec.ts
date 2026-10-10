@@ -450,6 +450,66 @@ test.describe('the whole path, on a seeded database', () => {
     expect(waiting?.sign_off).toBe('waived')
   })
 
+  test('a diagram that is not a diagram is shown as written, and leaves nothing behind', async ({
+    page,
+  }) => {
+    /*
+     * **DEV-880, end to end.** The waived review's brief carries the text sketch a review
+     * session really wrote into a `diagram` field. mermaid rejects it, and before the fix
+     * it drew its own error graphic — a bomb, "Syntax error in text", "mermaid version
+     * 12.1.0" — into a `<div>` it appends to `document.body` and then threw before
+     * removing it. The dashboard is one page, so it stayed there for the rest of the
+     * session.
+     *
+     * Three things are asserted and they fail separately: the sketch is readable where the
+     * diagram would be, nothing of mermaid's is outside the component, and the graphic is
+     * still absent two navigations later.
+     */
+    await page.goto(`${seeded}reviews/${waivedReviewId}`)
+
+    const figure = page.locator('figure')
+    await expect(figure.locator('pre')).toContainText(
+      'FortifyServiceProvider reads url.intended',
+    )
+    await expect(figure.getByText('Shown as written.')).toBeVisible()
+    await expect(figure.getByText('could not be drawn')).toHaveCount(0)
+
+    /** Everything mermaid leaves behind on a failed render, looked for at the document. */
+    const leavings = async () => page.evaluate(() => ({
+      orphans: [...document.body.children]
+        .filter(element => /^d?i?mermaid-/.test(element.id))
+        .map(element => element.id),
+      bombs: document.querySelectorAll('path.error-icon').length,
+      saysSyntaxError: document.body.textContent?.includes('Syntax error in text') ?? false,
+    }))
+
+    expect(await leavings()).toEqual({ orphans: [], bombs: 0, saysSyntaxError: false })
+
+    /* Away from the review, and back past it: the page it was on is not the only one. */
+    await page.getByRole('link', { name: 'Rules' }).click()
+    await expect(page).toHaveURL(/\/rules$/)
+    expect(await leavings()).toEqual({ orphans: [], bombs: 0, saysSyntaxError: false })
+
+    await page.getByRole('link', { name: 'Queue' }).click()
+    await expect(page).toHaveURL(new RegExp(`^${seeded}$`))
+    expect(await leavings()).toEqual({ orphans: [], bombs: 0, saysSyntaxError: false })
+  })
+
+  test('a diagram that is a diagram is still drawn', async ({ page }) => {
+    /*
+     * The other half of DEV-880, and the reason the sketch above went on the waived review
+     * rather than this one. The seed's brief carries a `flowchart`, and a browser is the
+     * only thing in this repository that can say it was drawn — jsdom has no `getBBox`, so
+     * the component tests cannot.
+     */
+    await page.goto(`${seeded}reviews/${reviewId}`)
+    const drawing = page.locator('figure svg')
+    await expect(drawing).toBeVisible()
+    await expect(drawing).toContainText('Deliver')
+    await expect(page.locator('figure').getByText('could not be drawn')).toHaveCount(0)
+    await expect(page.locator('figure').getByText('Shown as written.')).toHaveCount(0)
+  })
+
   test('the command line refuses to withdraw a confirmation already asked for', async () => {
     /*
      * The other half of the waiver, and the whole reason it is safe to have. The main

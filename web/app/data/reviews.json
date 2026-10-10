@@ -577,7 +577,7 @@
     "brief": {
       "review_id": 16,
       "problem": "Every request re-reads the permission table. The ticket asks for a cache, and round 1 asked what happens to a cached entry when a permission is revoked.",
-      "diagram": null,
+      "diagram": "BEFORE (shared surface, implicit flow record)\n\nconsumer app --> GET /oauth/authorize --(guest)--> redirect()->guest() writes url.intended\n    |\n    v\nGET /login  (SHARED staff page)\n    |\n    FortifyServiceProvider reads url.intended",
       "options": [
         {
           "key": "A",

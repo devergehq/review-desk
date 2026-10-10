@@ -28,6 +28,24 @@ database**, written by `review-desk review open`, `brief put`, `finding add`, `l
 and `draft put`. Nothing on these screens came from a fixture — that is what the absence of
 the "Sample data" marker means.
 
+## DEV-880 — a diagram that is not a diagram
+
+| File | What it is |
+| -- | -- |
+| `dev-880-before.png` | A brief whose `diagram` field holds a hand-drawn text sketch, **before** the fix. mermaid rejected it and left its own error graphic — a bomb, "Syntax error in text", "mermaid version 12.1.0" — at the bottom of the document, outside the card that asked for the diagram and outside the app's root element. It then stayed there on every page the developer opened. |
+| `dev-880-after.png` | The same page after. The sketch is where the diagram would be, shown as written, and nothing is below the last card. |
+
+Both are sample mode, because sample mode is the only place with a brief that carries one
+of these. Made the same way as the `uplift/` shots below:
+
+```sh
+cd web && pnpm run dev
+```
+
+then Playwright at `{width: 1440, height: 1000}`, `deviceScaleFactor: 2`, `fullPage`, on
+`/reviews/16?sample`. For the "before", `app/components/MermaidFigure.vue` at its state
+before this pull request and nothing else changed.
+
 ## `uplift/` — the approved boards beside the pages built from them
 
 DEV-876 rebuilt the queue and the rules page from the boards in
