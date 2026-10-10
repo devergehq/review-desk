@@ -181,6 +181,13 @@ const unchanged = computed(() => drawsNoChange(props.hunk))
   display: flex;
   flex-direction: column;
   margin: 0;
+  /*
+   * **A container, so the pinned comment can be measured against the width it is read in.**
+   * Everything inside the scroller is sized by the longest line of code, so a percentage
+   * resolves against that — `max-width: 100%` on the comment would be no bound at all. The
+   * container's inline size is the *visible* width, which is the one that matters.
+   */
+  container-type: inline-size;
   border: 1px solid var(--rd-line);
   border-radius: var(--rd-radius-control);
   /*
@@ -303,8 +310,16 @@ const unchanged = computed(() => drawsNoChange(props.hunk))
   grid-column: 1 / -1;
   /* `max-content` and nothing wider: the row must not stretch the grid for the code. */
   width: max-content;
+  /* The indent, named so the width below can subtract exactly it at both widths. */
+  --indent: 62px;
+  /*
+   * `46ch` first as the answer for a browser with no container queries, then the real one:
+   * as wide as the hunk is read in, less the indent and the right padding, and never more
+   * than a readable measure. A comment is a paragraph, not a line of code.
+   */
   max-width: 46ch;
-  padding: 6px 14px 8px 62px;
+  max-width: min(52ch, calc(100cqi - var(--indent) - 14px));
+  padding: 6px 14px 8px var(--indent);
 }
 
 .card {
@@ -341,8 +356,7 @@ const unchanged = computed(() => drawsNoChange(props.hunk))
  */
 @media (max-width: 560px) {
   .note {
-    max-width: 38ch;
-    padding-left: 18px;
+    --indent: 18px;
   }
 
   .code {
