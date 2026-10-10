@@ -1,20 +1,45 @@
-//! Only the developer signs off.
+//! Only the developer signs off, and only the developer decides.
 //!
 //! Decided by Patrick on 9 October 2026: confirming a brief and approving a draft
 //! happen in the dashboard. The command line that agent sessions call has no command
 //! for either, and this file is what keeps that true — the rest of the codebase could
 //! drift back towards it one convenience at a time, and none of the other tests would
 //! notice.
+//!
+//! **DEV-877 widened it from two functions to four.** Keeping, cutting, regrading and
+//! rewriting a finding, the three choices on a held-back nit, the four replies to a
+//! carried finding, and "ticket what is left, and approve" are all the developer's, made
+//! through the dashboard's API and recorded as the developer. `decide_finding` and
+//! `ticket_rest_and_approve` are the store functions behind them, and they are guarded by
+//! name here exactly as the first two are.
+//!
+//! What the command line still may do is *write the draft* — including the blocks it is
+//! composed of, with `draft put --sections` — and *record an outcome* with
+//! `outcome add`. Neither is a decision: writing a draft cannot approve it, and an outcome
+//! annotates a finding without moving it out of the draft, changing its severity or
+//! recomposing the body. The tests below hold both of those lines.
 
 mod common;
 
 use std::path::{Path, PathBuf};
 
 use common::{open_review, Desk};
-use review_desk_store::{Actor, DraftStatus, NewDraft, ReviewEvent};
+use review_desk_store::{
+    Actor, Decision, Disposition, DraftStatus, FindingDecision, NewDraft, NewDraftSection,
+    OutcomeKind, ReviewEvent, RoundStatus, Severity,
+};
 
-/// The two store functions that sign something off.
-const SIGN_OFF: [&str; 2] = ["confirm_brief", "approve_draft"];
+/// The store functions only the developer may reach.
+///
+/// The first two sign something off; the second two are DEV-877's decisions, which are
+/// sign-offs in everything but name — `ticket_rest_and_approve` approves a draft, and
+/// `decide_finding` changes what gets posted under the developer's name.
+const SIGN_OFF: [&str; 4] = [
+    "confirm_brief",
+    "approve_draft",
+    "decide_finding",
+    "ticket_rest_and_approve",
+];
 
 /// The crates whose source may not name them.
 fn guarded_source_directories() -> [PathBuf; 2] {
@@ -121,11 +146,172 @@ fn the_sign_off_functions_are_still_there_to_be_called() {
     assert!(confirmed.confirmed_at.is_some());
     assert_eq!(confirmed.confirmed_by, Some(Actor::Developer));
 
-    store.put_draft(id, NewDraft::ready("the body")).unwrap();
-    let approved = store
-        .approve_draft(id, ReviewEvent::Comment, Actor::Developer)
-        .expect("the dashboard approves the draft through this function");
+    desk.command()
+        .args(["finding", "add", "--review", &review, "--file", "-"])
+        .write_stdin(
+            r#"{"lens":"correctness","severity":"should","claim":"a finding to decide about"}"#,
+        )
+        .assert()
+        .success();
+
+    store
+        .put_draft(
+            id,
+            NewDraft::composed(vec![NewDraftSection::finding(
+                1,
+                "a finding to decide about",
+                "and a paragraph about it",
+            )]),
+        )
+        .unwrap();
+
+    let made = store
+        .decide_finding(id, 1, &Decision::of(FindingDecision::Cut), Actor::Developer)
+        .expect("the dashboard cuts a finding through this function");
+    assert_eq!(made.outcome.kind, OutcomeKind::Cut);
+    assert!(!made.draft.body.contains("F1"));
+
+    store
+        .decide_finding(
+            id,
+            1,
+            &Decision::of(FindingDecision::Keep),
+            Actor::Developer,
+        )
+        .expect("and keeps it again");
+    let settled = store
+        .ticket_rest_and_approve(id, None, Actor::Developer)
+        .expect("the dashboard tickets what is left and approves through this function");
+    assert_eq!(settled.draft.status, DraftStatus::Approved);
+    assert_eq!(settled.draft.event, Some(ReviewEvent::Approve));
+
+    let approved = store.get_draft(id).expect("the draft");
     assert_eq!(approved.status, DraftStatus::Approved);
+    assert_eq!(approved.approved_by, Some(Actor::Developer));
+}
+
+#[test]
+fn nothing_on_the_command_line_can_decide_about_a_finding() {
+    let desk = Desk::new();
+    let review = open_review(&desk, "acme/portal", "412", "3f9c2ab");
+    let id: i64 = review.parse().expect("the review id");
+
+    desk.command()
+        .args(["finding", "add", "--review", &review, "--file", "-"])
+        .write_stdin(
+            r#"{"lens":"correctness","severity":"blocker","claim":"a finding in the draft"}"#,
+        )
+        .assert()
+        .success();
+
+    let store = desk.store();
+    store
+        .put_draft(
+            id,
+            NewDraft::composed(vec![NewDraftSection::finding(
+                1,
+                "a finding in the draft",
+                "and a paragraph about it",
+            )]),
+        )
+        .expect("a draft written in parts, which a session may do");
+
+    // Every spelling of "decide this" a caller might reach for. Each must leave the
+    // finding in the draft, its severity as it was, and the body still raising it.
+    let attempts: [&[&str]; 8] = [
+        &["finding", "decide", "--review", &review, "--finding", "1"],
+        &["finding", "cut", "--review", &review, "--finding", "1"],
+        &["finding", "keep", "--review", &review, "--finding", "1"],
+        &["finding", "regrade", "--review", &review, "--finding", "1"],
+        &["finding", "rewrite", "--review", &review, "--finding", "1"],
+        &["draft", "decide", "--review", &review],
+        &["draft", "ticket-and-approve", "--review", &review],
+        &["draft", "approve", "--review", &review],
+    ];
+
+    for attempt in attempts {
+        let code = desk
+            .command()
+            .args(attempt)
+            .assert()
+            .get_output()
+            .status
+            .code();
+        // Exit 1 is Review Desk refusing and 2 is the argument parser refusing; which of
+        // the two depends on whether the words happen to name a command that exists.
+        // Neither is Review Desk being broken, and neither is success.
+        assert!(
+            code == Some(1) || code == Some(2),
+            "{attempt:?} must be refused, not answered; it exited {code:?}"
+        );
+    }
+
+    let finding = store.get_finding(id, 1).expect("the finding");
+    assert_eq!(finding.disposition, Disposition::InDraft);
+    assert_eq!(finding.severity, Severity::Blocker);
+    assert_eq!(finding.round_status, RoundStatus::New);
+    assert!(
+        store
+            .get_draft(id)
+            .expect("the draft")
+            .body
+            .contains("### Blocker · F1 · a finding in the draft"),
+        "and the body still raises it"
+    );
+    assert!(
+        store.list_outcomes(id).expect("the outcomes").is_empty(),
+        "and nothing was recorded as a decision"
+    );
+}
+
+#[test]
+fn the_command_line_may_write_the_draft_in_parts_without_deciding_anything() {
+    // **The line this file is really about.** A session has to be able to write the blocks
+    // the body is composed of — that is what makes the developer's decisions possible at
+    // all — and writing them must not be able to decide one. So the draft it writes is
+    // `ready`, every block posts, and no outcome exists.
+    let desk = Desk::new();
+    let review = open_review(&desk, "acme/portal", "412", "3f9c2ab");
+    let id: i64 = review.parse().expect("the review id");
+
+    desk.command()
+        .args(["finding", "add", "--review", &review, "--file", "-"])
+        .write_stdin(r#"{"lens":"correctness","severity":"should","claim":"a finding"}"#)
+        .assert()
+        .success();
+
+    let sections = desk.write_file(
+        "sections.json",
+        r#"[{"kind":"prose","text":"The approach fits the ticket."},
+            {"kind":"finding","finding_seq":1,"title":"a finding","text":"a paragraph."}]"#,
+    );
+
+    let written = desk.json(&[
+        "draft",
+        "put",
+        "--review",
+        &review,
+        "--sections",
+        sections.to_str().expect("a path"),
+    ]);
+
+    assert_eq!(written["draft"]["status"], "ready");
+    assert_eq!(
+        written["draft"]["body"],
+        "The approach fits the ticket.\n\n### Should · F1 · a finding\n\na paragraph.\n"
+    );
+    assert_eq!(written["sections"].as_array().expect("the blocks").len(), 2);
+
+    let store = desk.store();
+    assert!(
+        store.list_outcomes(id).expect("the outcomes").is_empty(),
+        "writing a draft is not deciding about one"
+    );
+    assert_eq!(
+        store.get_draft(id).expect("the draft").status,
+        DraftStatus::Ready,
+        "and it cannot approve it either"
+    );
 }
 
 #[test]

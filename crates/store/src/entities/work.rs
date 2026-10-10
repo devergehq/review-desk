@@ -11,9 +11,9 @@
 //!
 //! # Why the kind is decided in Rust and not in SQL
 //!
-//! [`decide`] is a total function over three small values, which is what makes "a review
-//! has at most one kind" checkable rather than asserted. Four `WHERE` clauses in four
-//! queries would be four chances for two of them to match the same review and hand an
+//! [`decide`] is a total function over four small values, which is what makes "a review
+//! has at most one kind" checkable rather than asserted. Five `WHERE` clauses in five
+//! queries would be five chances for two of them to match the same review and hand an
 //! agent two contradictory instructions — and that exact fault was found in this design
 //! before it was written, by an adversarial pass over the earlier version.
 //!
@@ -26,8 +26,18 @@
 //! afterwards and was invisible for ever.
 //!
 //! So nothing here asks what has started. It asks what is *outstanding*, from the draft's
-//! status and layer 2 — both of which a dead session leaves exactly as it found them. A
-//! dispatcher that restarts, or loses its ledger, converges on the same list.
+//! status, the ticket the developer asked for and layer 2 — all of which a dead session
+//! leaves exactly as it found them. A dispatcher that restarts, or loses its ledger,
+//! converges on the same list.
+//!
+//! # Where the fifth kind came from
+//!
+//! DEV-877 gave the developer "Ticket what is left, and approve", which records a request
+//! for the open findings to be filed as one ticket. Review Desk files no ticket, so the
+//! request is work for an agent and has to be visible here or it is a request nobody will
+//! ever see. `nits_to_ticket` is that item, and it also closes a gap that was already
+//! there: "File as one ticket for an agent" has been in the contract since DEV-854 and
+//! nothing reported it.
 //!
 //! **Review Desk still does not judge whether a session is alive.** Allele owns that, and
 //! `docs/brief.md` says so. An item carries `session_id` and the caller decides; being
@@ -38,7 +48,9 @@ use rusqlite::{params, Row};
 
 use crate::entities::inbox::{row_to_review, REVIEW_COLUMNS};
 use crate::error::Result;
-use crate::model::{DraftStatus, Review, SignOff, Timestamp, WorkFilter, WorkItem, WorkKind};
+use crate::model::{
+    DraftStatus, NitTicketStatus, Review, SignOff, Timestamp, WorkFilter, WorkItem, WorkKind,
+};
 use crate::{normalise, Store};
 
 impl Store {
@@ -159,8 +171,15 @@ struct DraftState {
 /// the developer has just approved does not need an agent to go back and reconsider
 /// layer 2, whatever the layers say.
 ///
-/// `ready` and `posted` answer `None` for opposite reasons — the first is waiting on the
-/// developer, the second is finished with — and `drafting` falls through to layer 2,
+/// The ticket is asked second, and so it is asked about a draft that is `ready` or
+/// `posted` as well — which is deliberate. A ticket the developer asked for is work for an
+/// agent whatever the draft is doing: while they are still reading a `ready` draft, and
+/// after a session has posted it. **A review waiting on the developer still yields no item
+/// of its own**; what yields one here is a thing the developer has explicitly asked an
+/// agent for.
+///
+/// `ready` and `posted` then answer `None` for opposite reasons — the first is waiting on
+/// the developer, the second is finished with — and `drafting` falls through to layer 2,
 /// because a draft nobody finished is not something the developer has been handed.
 fn decide(candidate: Candidate) -> Option<WorkItem> {
     let Candidate {
@@ -180,27 +199,40 @@ fn decide(candidate: Candidate) -> Option<WorkItem> {
         })
     };
 
-    if let Some(draft) = &draft {
-        match draft.status {
-            DraftStatus::Approved => {
-                return item(
-                    WorkKind::DraftApproved,
-                    draft.approved_at.unwrap_or(draft.updated_at),
-                    None,
-                )
-            }
-            DraftStatus::SentBack => {
-                return item(
-                    WorkKind::DraftSentBack,
-                    draft.sent_back_at.unwrap_or(draft.updated_at),
-                    draft.sent_back_note.clone(),
-                )
-            }
-            // The developer's turn, and nobody's turn.
-            DraftStatus::Ready | DraftStatus::Posted => return None,
-            // Unfinished, so what is outstanding is decided by layer 2 below.
-            DraftStatus::Drafting => {}
-        }
+    let from_the_draft = draft.as_ref().and_then(|draft| match draft.status {
+        DraftStatus::Approved => Some((
+            WorkKind::DraftApproved,
+            draft.approved_at.unwrap_or(draft.updated_at),
+            None,
+        )),
+        DraftStatus::SentBack => Some((
+            WorkKind::DraftSentBack,
+            draft.sent_back_at.unwrap_or(draft.updated_at),
+            draft.sent_back_note.clone(),
+        )),
+        DraftStatus::Ready | DraftStatus::Posted | DraftStatus::Drafting => None,
+    });
+    if let Some((kind, entered_at, note)) = from_the_draft {
+        return item(kind, entered_at, note);
+    }
+
+    if review.nit_ticket_status == NitTicketStatus::Requested {
+        return item(
+            WorkKind::NitsToTicket,
+            // The request's own time. The fallback cannot be reached — the column is
+            // written with the status — and is the review's creation rather than an unwrap,
+            // for the reason `DraftState::updated_at` gives.
+            review.nit_ticket_requested_at.unwrap_or(review.created_at),
+            None,
+        );
+    }
+
+    // The developer's turn, and nobody's turn.
+    if draft
+        .as_ref()
+        .is_some_and(|draft| matches!(draft.status, DraftStatus::Ready | DraftStatus::Posted))
+    {
+        return None;
     }
 
     match &brief {

@@ -32,6 +32,8 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
 
+pub use crate::entities::composition::finding_heading;
+pub use crate::entities::decision::{TicketedAndApproved, DEVELOPER_DECISIONS};
 pub use crate::entities::provenance::{
     AcceptanceCriterion, CriterionStatus, DescriptionLintResult, DescriptionLintStatus, FileChange,
     FileCheck, NewAcceptanceCriterion, NewDescriptionLintResult, NewFileChange, NewReviewSource,
@@ -40,14 +42,15 @@ pub use crate::entities::provenance::{
 pub use crate::error::{Result, StoreError};
 pub use crate::migrations::newest_version;
 pub use crate::model::{
-    now, Actor, Brief, BriefOption, Carryable, DecidedBy, Disposition, Draft, DraftLint,
-    DraftStatus, Finding, FindingCarry, FindingHunk, FindingInRound, FindingRef, FullReview,
-    HunkLine, HunkLineMarker, NewBrief, NewDraft, NewFinding, NewOutcome, NewReview,
-    NewRoundCommit, NewRule, NitTicket, NitTicketStatus, OpenedReview, Outcome, OutcomeKind,
-    PrState, RepoSummary, Review, ReviewAtLayer, ReviewEvent, ReviewFacts, ReviewLayer,
-    ReviewLayerName, ReviewLayerState, ReviewLinks, RoundCommit, RoundStatus, RoundStatusCounts,
-    RoundSummary, Rule, RuleCounts, RuleException, RuleScope, RuleStage, RulesSummary, Severity,
-    SignOff, Timestamp, Verification, WorkFilter, WorkItem, WorkKind, ACTIVE_RULES_CAP,
+    now, Actor, Brief, BriefOption, Carryable, DecidedBy, Decision, DecisionMade, Disposition,
+    Draft, DraftLint, DraftSection, DraftSectionKind, DraftStatus, Finding, FindingCarry,
+    FindingDecision, FindingHunk, FindingInRound, FindingRef, FullReview, HunkLine, HunkLineMarker,
+    NewBrief, NewDraft, NewDraftSection, NewFinding, NewOutcome, NewReview, NewRoundCommit,
+    NewRule, NitTicket, NitTicketStatus, OpenedReview, Outcome, OutcomeKind, PrState, RepoSummary,
+    Review, ReviewAtLayer, ReviewEvent, ReviewFacts, ReviewLayer, ReviewLayerName,
+    ReviewLayerState, ReviewLinks, RoundCommit, RoundStatus, RoundStatusCounts, RoundSummary, Rule,
+    RuleCounts, RuleException, RuleScope, RuleStage, RulesSummary, Severity, SignOff, Timestamp,
+    Verification, WorkFilter, WorkItem, WorkKind, ACTIVE_RULES_CAP,
 };
 pub use crate::path::{default_db_path, resolve_db_path, DB_ENV_VAR};
 

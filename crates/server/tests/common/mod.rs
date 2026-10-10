@@ -346,7 +346,7 @@ fn parse(raw: &[u8]) -> Answer {
     }
 }
 
-/// A record with enough in it that every one of the sixteen operations has something
+/// A record with enough in it that every one of the eighteen operations has something
 /// real to answer with.
 ///
 /// Built through the store's public API rather than by writing SQL, so it cannot drift
@@ -506,7 +506,24 @@ pub fn seed(store: &Store) -> Seeded {
         .put_draft(
             review_id,
             NewDraft {
-                body: "## Review\n\nOne blocker.".to_string(),
+                // **Written in parts**, as a session writes a draft since DEV-877: the
+                // summary sentence, a block per finding in the draft, and the not-checked
+                // line. The body is what they compose to, and `decideFinding` needs F1's
+                // block to be there to decide anything about it.
+                body: String::new(),
+                sections: Some(vec![
+                    review_desk_store::NewDraftSection::prose(
+                        "The queue-with-backoff approach fits the ticket.",
+                    ),
+                    review_desk_store::NewDraftSection::finding(
+                        1,
+                        "A retried delivery is sent without an idempotency key",
+                        "A customer whose endpoint answers slowly is charged twice.",
+                    ),
+                    review_desk_store::NewDraftSection::prose(
+                        "**Not checked:** the admin screens, which this change does not touch.",
+                    ),
+                ]),
                 status: DraftStatus::Ready,
                 lint: Some(DraftLint {
                     passes: Some(true),

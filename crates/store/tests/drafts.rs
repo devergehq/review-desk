@@ -44,12 +44,16 @@ fn a_draft_is_stored_with_its_lint_and_read_back() {
                     errors: None,
                     checked_at: Some(1_760_000_000),
                 }),
+                sections: None,
             },
         )
         .expect("put draft");
 
     assert_eq!(stored, store.get_draft(review.id).unwrap());
-    assert_eq!(stored.body, "## Blocker · F1\n\nthe body, verbatim");
+    assert_eq!(
+        stored.body, "## Blocker · F1\n\nthe body, verbatim\n",
+        "the body is what the blocks compose to, and a composition ends in one newline"
+    );
     assert_eq!(stored.status, DraftStatus::Ready);
     assert_eq!(stored.event, None, "nothing is chosen until approval");
     assert_eq!(stored.approved_at, None);
@@ -79,6 +83,7 @@ fn a_lint_that_reported_something_is_stamped_with_when_it_ran() {
                     errors: Some("the description is 2.3× its budget".to_string()),
                     ..DraftLint::default()
                 }),
+                sections: None,
             },
         )
         .unwrap();
@@ -109,6 +114,7 @@ fn a_draft_can_be_written_while_drafting_and_then_made_ready() {
                 body: String::new(),
                 status: DraftStatus::Drafting,
                 lint: None,
+                sections: None,
             },
         )
         .expect("a session may save work in progress");
@@ -119,7 +125,7 @@ fn a_draft_can_be_written_while_drafting_and_then_made_ready() {
         .put_draft(review.id, NewDraft::ready("finished"))
         .unwrap();
     assert_eq!(ready.status, DraftStatus::Ready);
-    assert_eq!(ready.body, "finished");
+    assert_eq!(ready.body, "finished\n");
 }
 
 #[test]
@@ -142,6 +148,7 @@ fn putting_a_draft_cannot_approve_it() {
                 body: "b".to_string(),
                 status,
                 lint: None,
+                sections: None,
             },
         ) {
             Err(StoreError::InvalidValue {
@@ -182,7 +189,7 @@ fn an_approved_draft_cannot_be_rewritten() {
 
     assert_eq!(
         store.get_draft(review).unwrap().body,
-        "the review body",
+        "the review body\n",
         "the body that was approved is the body that is held"
     );
 }
@@ -246,6 +253,7 @@ fn a_draft_can_only_be_approved_from_ready() {
                 body: "half written".to_string(),
                 status: DraftStatus::Drafting,
                 lint: None,
+                sections: None,
             },
         )
         .unwrap();
@@ -411,6 +419,7 @@ fn rewriting_a_draft_clears_a_lint_that_described_the_old_body() {
                     visible_words: Some(118),
                     ..DraftLint::default()
                 }),
+                sections: None,
             },
         )
         .unwrap();

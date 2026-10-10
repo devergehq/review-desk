@@ -82,6 +82,26 @@ pub enum ReviewCommand {
         pr: i64,
     },
 
+    /// Record the one ticket this review's held-back findings were filed as.
+    ///
+    /// **Reporting a filing, never asking for one.** The developer asks, in the
+    /// dashboard — "File as one ticket for an agent", or "Ticket what is left, and
+    /// approve" — and `work list` then reports the review as `nits_to_ticket`. This is how
+    /// the session that filed it says which ticket it became, which is what clears the
+    /// item. `--ticket` is required for that reason: there is no form of this command that
+    /// asks for a ticket nobody has filed.
+    ///
+    /// Review Desk files no ticket itself, for the same reason it posts no review: it owns
+    /// the record and the session performs the outward act.
+    NitTicket {
+        /// The review's id.
+        #[arg(long, value_name = "ID")]
+        review: i64,
+        /// The ticket the held-back findings were filed as.
+        #[arg(long = "ticket", value_name = "ID")]
+        ticket: String,
+    },
+
     /// Print the whole review: the layers, the brief, the findings, the outcomes and
     /// the draft.
     Show {
@@ -185,6 +205,27 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
             Ok(Report::new(
                 json!({ "repo": repo, "pr": pr, "reviews": reviews }),
                 plain,
+            ))
+        }
+
+        ReviewCommand::NitTicket { review, ticket } => {
+            let store = Store::open_default()?;
+            let filed = store.request_nit_ticket(*review, Some(ticket))?;
+
+            Ok(Report::new(
+                json!({ "nit_ticket": filed }),
+                format!(
+                    "the held-back findings of review {} are {} as {} ({})",
+                    filed.review_id,
+                    filed.status,
+                    ticket,
+                    filed
+                        .finding_seqs
+                        .iter()
+                        .map(|seq| format!("F{seq}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
             ))
         }
 

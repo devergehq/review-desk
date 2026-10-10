@@ -468,6 +468,7 @@ fn a_draft_whose_lint_has_not_run_serves_a_null_lint() {
                 body: String::new(),
                 status: review_desk_store::DraftStatus::Drafting,
                 lint: None,
+                sections: None,
             },
         )
         .unwrap();

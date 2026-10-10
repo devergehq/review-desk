@@ -222,6 +222,60 @@ paths:
         '500':
           $ref: '#/components/responses/StoreUnavailable'
 
+  /reviews/{reviewId}/findings/{seq}/decide:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+      - name: seq
+        in: path
+        required: true
+        description: The finding's number, which is its identity across rounds.
+        schema: { type: integer, format: int64, minimum: 1 }
+    post:
+      operationId: decideFinding
+      tags: [findings, draft]
+      summary: The developer's decision about one finding, and the draft recomposed
+      description: |
+        Behind the decision track on a finding — Keep, Cut, Regrade, Rewrite — the three
+        buttons on a held-back nit, and the replies to a carried finding in a later round.
+        **Eight decisions behind eleven buttons**; `FindingDecision` has the table.
+
+        Each decision is one transaction: the finding, its block of the body, the body
+        itself and the outcome recording who decided are written together, and the
+        draft's lint reads as **not checked** afterwards — never as passing, because the
+        lint the agent ran was over a different body.
+
+        **Only the developer decides.** The actor is not a parameter: it is `developer`,
+        and the store refuses any other. Nothing in the command line agents call reaches
+        the function behind this.
+
+        Refused when the draft is `approved` or `posted` — an approved draft is what the
+        review session posts under the developer's name — and refused with
+        `no_draft_section` when the decision needs a block the draft has none of, which is
+        every draft written as one block of markdown.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DecideFindingRequest' }
+      responses:
+        '200':
+          description: The finding, the outcome and the draft as recomposed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FindingDecisionMade' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            The draft is approved or posted, or it holds no block for this finding.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
   /reviews/{reviewId}/draft:
     parameters:
       - $ref: '#/components/parameters/ReviewId'
@@ -246,12 +300,20 @@ paths:
     put:
       operationId: saveDraft
       tags: [draft]
-      summary: Save an edited draft body
+      summary: 'Save a draft: the blocks it is composed of, or one block of prose'
       description: |
-        Replaces the body and re-runs the checks. The developer's edits are recorded as
-        outcomes against the findings they touched, which is the strongest signal in the
-        feedback loop, so the caller states them rather than leaving them to be guessed
-        from a text diff.
+        Replaces what the draft is made of. **Since DEV-877 a body is composed rather than
+        written**: the caller sends the blocks — the summary sentence, a block per finding,
+        the not-checked line, and whatever else the house style puts around them — and the
+        body is what they compose to. A caller that sends only a body is writing the draft
+        as one block, and the per-finding decisions then refuse, saying so.
+
+        The developer's edits are recorded as outcomes against the findings they touched,
+        which is the strongest signal in the feedback loop, so the caller states them
+        rather than leaving them to be guessed from a text diff. A decision made through
+        `decideFinding` records its own outcome and needs no `edits` entry.
+
+        The lint is cleared: whatever it said was about the body before this one.
 
         Refused once the draft is `approved` or `posted`: an approved draft is what the
         review session reads, and editing it underneath would change what gets posted.
@@ -308,6 +370,63 @@ paths:
               schema: { $ref: '#/components/schemas/DraftDetail' }
         '400':
           $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The draft is not in a state that can be approved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
+  /reviews/{reviewId}/draft/ticket-and-approve:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+    post:
+      operationId: ticketRestAndApprove
+      tags: [draft]
+      summary: File what is left as one ticket, and approve, in one step
+      description: |
+        Behind "Ticket what is left, and approve". **A sign-off, and it neither posts nor
+        files anything.** Every finding the draft would have posted is held back for the
+        ticket and recorded as `ticketed` this round by the developer, the review's one
+        nit ticket moves to `requested`, the body is recomposed without those findings,
+        and the draft is approved with the event `approve`.
+
+        The event is not the caller's to choose: the button says approve, and a request
+        for changes that ticketed everything it asked for would contradict itself.
+
+        **The approval cannot link to the ticket, and the design says it does.** Review
+        Desk files no ticket, so no ticket id exists at the moment of approval; only the
+        session that files it can add that line. Recorded here rather than quietly
+        dropped, as "Request review" is.
+
+        `work list` on the command line reports the request as `nits_to_ticket` once the
+        posting is done, and the approved draft carries the pending request until then, so
+        the dispatcher sees both.
+
+        Refused when the draft is not `ready`, and refused when the review has no open
+        finding: there would be nothing to file, and nits already held back are asked for
+        through `requestNitTicket` on their own.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TicketRestAndApproveRequest' }
+      responses:
+        '200':
+          description: The approved draft, the ticket asked for, and what moved into it.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TicketedAndApproved' }
+        '400':
+          description: |
+            The request was understood and refused — most often because the review has no
+            open finding to file.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -628,6 +747,51 @@ components:
     Disposition:
       type: string
       enum: [in_draft, held_back, suppressed]
+    DraftSectionKind:
+      type: string
+      description: |
+        What one block of a draft body is. `prose` is markdown carried through exactly as
+        written; `finding` is a heading the server composes from the finding's severity,
+        its number and the block's title, followed by the block's text.
+
+        The division is the whole of the composition: `finding` is the part a decision
+        changes, and `prose` is everything else — the summary sentence, the not-checked
+        line, an index, a method line, a folded proof — which is what lets an assembled
+        body reproduce what an agent wrote character for character.
+      enum: [prose, finding]
+    FindingDecision:
+      type: string
+      description: |
+        What the developer decided about one finding.
+
+        **Eight decisions behind the designs' eleven buttons**, and the collapsing is
+        deliberate: the same decision is labelled differently depending on where it is
+        drawn, and two wire values for one act would be two things to keep in step for
+        ever.
+
+        | Button | Value | The body | Disposition | Round status | Outcome |
+        | -- | -- | -- | -- | -- | -- |
+        | Keep · Post it | `keep` | its block posts, written if it had none | `in_draft` | unchanged | `kept` |
+        | Cut · Drop | `cut` | its block stops posting | `suppressed` | unchanged | `cut` |
+        | Regrade | `regrade` | its heading changes | unchanged | unchanged | `regraded` |
+        | Rewrite | `rewrite` | its title and paragraph change | unchanged | unchanged | `rewritten` |
+        | To a ticket · Move to a ticket | `to_ticket` | its block stops posting | `held_back` | `ticketed` | `ticketed` |
+        | Raise it again | `raise_again` | its block posts | `in_draft` | `still_open` | `raised_again` |
+        | Accept their reason | `accept_reason` | its block stops posting | `suppressed` | `accepted` | `rejected` |
+        | Withdraw | `withdraw` | its block stops posting | `suppressed` | `withdrawn` | `withdrawn` |
+
+        A round status a decision changes is recorded as decided by `developer`, and the
+        outcome's actor is `developer`. Only the developer decides, and the command line
+        agents call has no command for any of it.
+      enum:
+        - keep
+        - cut
+        - regrade
+        - rewrite
+        - to_ticket
+        - raise_again
+        - accept_reason
+        - withdraw
     OutcomeKind:
       type: string
       description: |
@@ -644,12 +808,25 @@ components:
         meant needs judgement, and the harvester is deterministic — it stores the reply as
         written and leaves the reading to a person or an agent. A client that wants
         "rejected with a reason" uses `rejected`, which only a person records.
+
+        **`ticketed` and `withdrawn` were added by DEV-877**, which made the developer's
+        decisions real actions: each of the eight leaves exactly one outcome, and
+        overloading `cut` for "moved to a ticket" and "no longer stands" would lose the
+        distinction the feedback loop exists to draw. The first eight are the developer's
+        and the last three the harvester's.
+
+        **Accepting the author's reason is recorded as `rejected`, with the reason as the
+        detail.** That is what `RuleCounts.rejected_with_reason` counts — "author
+        disagreed once, with a reason you accepted" — so it has to be that kind rather
+        than one of its own that nothing would read.
       enum:
         - cut
         - regraded
         - rewritten
         - kept
         - rejected
+        - ticketed
+        - withdrawn
         - raised_again
         - replied
         - thread_resolved
@@ -1379,6 +1556,75 @@ components:
           description: The lint's error lines, verbatim. Empty when it passes.
         checked_at: { type: string, format: date-time }
 
+    DraftSection:
+      type: object
+      additionalProperties: false
+      required: [position, kind, text, agent_text, rewritten, posted]
+      description: |
+        One block of the draft body. **The body is composed of these**, joined by a blank
+        line and ending in one newline, and a `finding` block composes only while its
+        finding is posted — which is what cutting a finding does to the review.
+
+        A block that does not post is still served: a cut finding's block stays on the
+        record, which is the difference between a decision and a deletion.
+      properties:
+        position:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Where it sits in the body, from 1. Assigned by the server.
+        kind: { $ref: '#/components/schemas/DraftSectionKind' }
+        finding_seq:
+          type: [integer, 'null']
+          format: int64
+          minimum: 1
+          description: The finding this block is about. Null on a block of prose.
+        finding_key: { type: [string, 'null'], pattern: '^F[0-9]+$' }
+        severity:
+          oneOf:
+            - $ref: '#/components/schemas/Severity'
+            - type: 'null'
+          description: |
+            The finding's severity, which the heading is composed with. Derived from the
+            finding and never stored against the block, so regrading changes it.
+        heading:
+          type: [string, 'null']
+          description: |
+            The heading line this block composes, as the posted body carries it:
+            `### Blocker · F1 · A retried delivery is sent without an idempotency key`.
+            Null on a block of prose. Served rather than left to the dashboard so the
+            format lives in one place.
+        title:
+          type: [string, 'null']
+          description: The heading's title — the part after the severity and the number.
+        text:
+          type: string
+          description: |
+            The paragraph, as it will post. The developer's words once they have rewritten
+            it. May be empty on a finding block: a heading on its own is a finding the
+            draft raises without elaborating.
+        agent_title:
+          type: [string, 'null']
+          description: The title as the agent wrote it.
+        agent_text:
+          type: string
+          description: |
+            The paragraph as the agent wrote it — **what a rewrite replaced**. Equal to
+            `text` until the developer rewrites the block.
+        rewritten:
+          type: boolean
+          description: |
+            Whether the developer has rewritten this block. Derived from `text` and
+            `agent_text` rather than stored, so it cannot disagree with them.
+        posted:
+          type: boolean
+          description: |
+            Whether this block is in `draft.body`. Always true for prose; for a finding
+            block, true while the finding is at disposition `in_draft` with round status
+            `new` or `still_open`. **A carried finding whose round status is `fixed`,
+            `accepted`, `withdrawn` or `ticketed` is not posted as an open finding**, and
+            what the round found about it belongs in a block of prose.
+
     DraftEdit:
       type: object
       additionalProperties: false
@@ -1443,7 +1689,7 @@ components:
     DraftDetail:
       type: object
       additionalProperties: false
-      required: [draft, review, lint, edits, held_back, nit_ticket]
+      required: [draft, review, lint, sections, edits, held_back, nit_ticket]
       description: Everything the Draft preview screen shows.
       properties:
         draft: { $ref: '#/components/schemas/Draft' }
@@ -1462,6 +1708,12 @@ components:
             not the same thing. This contract's own rule is that a count the store cannot
             answer is null and never zero; the same reasoning applies to the whole object.
             Made nullable in DEV-861, found by the DEV-860 session.
+        sections:
+          type: array
+          items: { $ref: '#/components/schemas/DraftSection' }
+          description: |
+            The blocks the body is composed of, in order — including the ones that do not
+            post. Empty on a draft with no body at all.
         edits:
           type: array
           items: { $ref: '#/components/schemas/DraftEdit' }
@@ -1473,9 +1725,55 @@ components:
     SaveDraftRequest:
       type: object
       additionalProperties: false
-      required: [body]
+      anyOf:
+        - required: [body]
+        - required: [sections]
+      description: |
+        **Either the blocks the body is composed of, or a body to store as one block of
+        prose.**
+
+        Sent with `sections`, the body is composed from them; a `body` sent as well is
+        *checked* against the composition and the save is refused when the two disagree by
+        anything but trailing newlines. That check is what makes "the assembled draft of a
+        review with no decisions is what the agent wrote" true of every write rather than
+        of the happy path.
+
+        Sent with a `body` alone it is stored as one block, which is the honest reading of
+        a draft nobody wrote in parts — and it has one visible consequence: the
+        per-finding decisions refuse on such a draft, because nothing can say which
+        characters are F1's without inferring it from the text. Every draft written before
+        this operation took blocks is in that state.
       properties:
         body: { type: string }
+        sections:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [kind, text]
+            properties:
+              kind: { $ref: '#/components/schemas/DraftSectionKind' }
+              finding_seq:
+                type: [integer, 'null']
+                format: int64
+                minimum: 1
+                description: Required on a `finding` block and refused on prose.
+              title:
+                type: [string, 'null']
+                description: |
+                  The heading's title. Required on a `finding` block and refused on prose;
+                  the severity and the number are composed from the finding.
+              text:
+                type: string
+                description: |
+                  The block's markdown, stored verbatim. Refused when it begins or ends
+                  with a newline: blocks are joined by exactly one blank line, and a block
+                  that brought its own would compose a body nobody wrote. Refused when
+                  blank on a prose block.
+          description: |
+            The blocks, in order. The server numbers them. A `finding` block naming a
+            finding that is not posted is refused, as is a second block about a finding
+            another block already names.
         edits:
           type: array
           items:
@@ -1489,6 +1787,97 @@ components:
           description: |
             The edits this save represents, recorded as outcomes with actor `developer`.
             Empty when the developer only reformatted.
+
+    DecideFindingRequest:
+      type: object
+      additionalProperties: false
+      required: [decision]
+      description: |
+        What the developer decided, and the words that go with it. See `FindingDecision`
+        for the table of what each decision changes.
+      properties:
+        decision: { $ref: '#/components/schemas/FindingDecision' }
+        severity:
+          oneOf:
+            - $ref: '#/components/schemas/Severity'
+            - type: 'null'
+          description: |
+            The severity to post the finding at. **Required by `regrade` and refused by
+            every other decision**, so that a severity cannot change without the record
+            saying it was regraded.
+        title:
+          type: [string, 'null']
+          description: |
+            The heading's new title, for a `rewrite`. Refused when the draft already holds
+            a block for this finding and the decision is not a rewrite: changing what gets
+            posted while the record said only "kept" is the thing this operation exists to
+            stop.
+        text:
+          type: [string, 'null']
+          description: |
+            The paragraph's new text, for a `rewrite`. A `rewrite` needs a title, a text,
+            or both.
+
+            On a `keep` for a finding the draft holds no block for — the designs' "Post
+            it" on a held-back nit — this is the paragraph the new block is written with.
+            Left out, the server uses the finding's own `why_it_matters`, or failing that
+            its `inline_comment`, and refuses when it has neither rather than inventing a
+            paragraph.
+        note:
+          type: [string, 'null']
+          description: |
+            Why, in the developer's words. Stored as the outcome's detail, and as
+            `round_status_checked` on a decision that changes the round status.
+
+            **Required by `accept_reason`**: it is the author's reason, and a rejection
+            with no reason is the one outcome the feedback loop cannot learn from.
+            Optional everywhere else — the designs are one click, and the outcome's kind
+            and actor are themselves the signal.
+
+    FindingDecisionMade:
+      type: object
+      additionalProperties: false
+      required: [finding, outcome, draft]
+      description: |
+        The decision, and everything it changed. All three are read inside the decision's
+        own transaction, so they are one instant of the record — and the review page draws
+        all three, so one call is one re-render.
+      properties:
+        finding: { $ref: '#/components/schemas/Finding' }
+        outcome: { $ref: '#/components/schemas/Outcome' }
+        draft: { $ref: '#/components/schemas/DraftDetail' }
+
+    TicketRestAndApproveRequest:
+      type: object
+      additionalProperties: false
+      description: |
+        Nothing is required, and the body may be omitted altogether.
+      properties:
+        note:
+          type: [string, 'null']
+          description: |
+            Why the rest is going to a ticket, in the developer's words. Stored against
+            every finding it moves, as the disposition's reason, the round status's check
+            and each outcome's detail.
+
+    TicketedAndApproved:
+      type: object
+      additionalProperties: false
+      required: [draft, nit_ticket, ticketed, ticketed_keys]
+      description: What "Ticket what is left, and approve" came to.
+      properties:
+        draft: { $ref: '#/components/schemas/DraftDetail' }
+        nit_ticket: { $ref: '#/components/schemas/NitTicket' }
+        ticketed:
+          type: array
+          items: { type: integer, format: int64, minimum: 1 }
+          description: |
+            The findings this act moved into the ticket, in number order. The nits that
+            were already held back are in `nit_ticket.finding_seqs` and not here: this is
+            what changed.
+        ticketed_keys:
+          type: array
+          items: { type: string, pattern: '^F[0-9]+$' }
 
     ApproveDraftRequest:
       type: object

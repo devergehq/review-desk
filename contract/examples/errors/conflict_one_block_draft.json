@@ -1,0 +1,5 @@
+{
+  "code": "conflict",
+  "message": "the draft of review 17 has no block for F6, so there is nothing to decide about: it was written as one block of markdown rather than in parts",
+  "field": "decision"
+}

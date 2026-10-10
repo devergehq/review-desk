@@ -1,0 +1,4 @@
+{
+  "decision": "cut",
+  "note": "Already covered by the idempotency key rule; not worth a second comment."
+}

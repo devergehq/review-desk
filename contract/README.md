@@ -5,7 +5,7 @@ holds no implementation of either.
 
 | File | What it is |
 |---|---|
-| `openapi.yaml` | OpenAPI 3.1 for the local JSON API. 16 operations. |
+| `openapi.yaml` | OpenAPI 3.1 for the local JSON API. 18 operations. |
 | `examples/` | One example response per endpoint, one request body per write, and the error shape. A `.<variant>.` form adds a second shape where one example cannot show an optional field both present and absent. `getReview.response.round-two.json` is the second round of the same pull request as the canonical one. |
 | `validate-examples.mjs` | Checks every example against its schema, and fails when an endpoint has no example. |
 
@@ -75,8 +75,8 @@ Each screen is one GET. The dashboard does no joining.
 | Screen | Reads | Writes |
 |---|---|---|
 | Inbox | `GET /inbox` | `POST /reviews` |
-| One review | `GET /reviews/{reviewId}` | `POST /reviews/{reviewId}/brief/confirm`, `PATCH /reviews/{reviewId}/findings/{seq}` |
-| Draft preview | `GET /reviews/{reviewId}/draft` | `PUT …/draft`, `POST …/draft/approve`, `POST …/draft/send-back`, `POST …/held-back/ticket` |
+| One review | `GET /reviews/{reviewId}` | `POST /reviews/{reviewId}/brief/confirm`, `PATCH /reviews/{reviewId}/findings/{seq}`, `POST /reviews/{reviewId}/findings/{seq}/decide` |
+| Draft preview | `GET /reviews/{reviewId}/draft` | `PUT …/draft`, `POST …/findings/{seq}/decide`, `POST …/draft/approve`, `POST …/draft/ticket-and-approve`, `POST …/draft/send-back`, `POST …/held-back/ticket` |
 | Rules | `GET /rules?repo=`, `GET /repos` | `POST /rules/{ruleId}/promote`, `/dismiss`, `/retire`, `/defer` |
 
 The Inbox's `POST /reviews` is a write that DEV-854's own table records as "—". The
@@ -417,8 +417,9 @@ each other.
 | On the mockup | Field |
 |---|---|
 | "#412" | `review.pr` |
-| the rendered review body | `draft.body`, GitHub-flavoured markdown |
+| the rendered review body | `draft.body`, GitHub-flavoured markdown, **composed from `sections`** |
 | the Markdown view | the same `draft.body`, unrendered |
+| each block of the body, and which finding it is about | `sections[]`, with `.finding_key`, `.heading` and `.posted` |
 | "Visible words 118 of 150" | `lint.visible_words`, `.word_budget` |
 | "Findings in the body 3 of 3" | `lint.findings_in_body`, `.findings_expected` |
 | "Review lint Passes" | `lint.passes`, with `lint.errors` when it does not |
@@ -480,8 +481,12 @@ and the screen renders the ones that are present.
 | One review | "Open draft" | none — a link |
 | Draft preview | "Rendered", "Markdown", "Edit" | none — view toggles over `draft.body` |
 | Draft preview | "Back to the review" | none — a link |
+| One review, Draft preview | "Keep", "Cut", "Regrade", "Rewrite" on a finding | `POST …/findings/{seq}/decide`, sending `keep`, `cut`, `regrade` with a `severity`, or `rewrite` with a `title` and a `text` |
+| One review, Draft preview | "To a ticket", "Post it", "Drop" on a held-back nit | the same endpoint, sending `to_ticket`, `keep` and `cut` |
+| One review | "Raise it again", "Accept their reason", "Move to a ticket", "Withdraw" on a carried finding | the same endpoint, sending `raise_again`, `accept_reason` with the author's reason as the `note`, `to_ticket`, `withdraw` |
 | Draft preview | "File as one ticket for an agent" | `POST /reviews/{reviewId}/held-back/ticket` |
-| Draft preview | "Approve and post" | `POST /reviews/{reviewId}/draft/approve` |
+| Draft preview | "Sign off and post" | `POST /reviews/{reviewId}/draft/approve` |
+| Draft preview | "Ticket what is left, and approve" | `POST /reviews/{reviewId}/draft/ticket-and-approve` |
 | Draft preview | "Send back with a note" | `POST /reviews/{reviewId}/draft/send-back` |
 | Rules | repository picker | `GET /rules?repo=` |
 | Rules | "Promote" | `POST /rules/{ruleId}/promote` |
@@ -504,15 +509,85 @@ posts it; it then records the GitHub review id through DEV-851's `review link
 the approval is an open question in the project brief, and nothing in this contract depends
 on the answer.
 
+**Eleven buttons, eight decisions.** The approved designs label the same decision
+differently depending on where it is drawn: "Keep" on a finding in the draft and "Post it"
+on a held-back nit both mean *this is posted*; "Cut" and "Drop" both mean *this is not*;
+"To a ticket" and "Move to a ticket" are one act on two screens. `FindingDecision` in
+`openapi.yaml` carries the table of what each one changes, and the collapsing is
+deliberate — two wire values for one act would be two things to keep in step for ever.
+
+**"Ticket what is left, and approve" cannot link to the ticket, and the design says it
+does.** Board A3's caption reads "files the open findings as one ticket and posts an
+approval that links to it". Review Desk files no ticket, so at the moment of approval no
+ticket id exists and the body cannot carry a link to it; only the session that files the
+ticket can add that line. This is the same class of thing as "Request review" above —
+recorded rather than quietly dropped. What the endpoint does record is everything else:
+the open findings held back and marked `ticketed` by the developer, the one nit ticket
+asked for, and the draft approved as `approve`.
+
 **Two writes this contract defines have no control on the mockups**: confirming a brief
 and changing a finding's disposition. DEV-854 requires both, and DEV-855's acceptance
 criteria require confirming a brief to remove it from the Inbox, so the endpoints are
 here. The One review mockup has no button for either — see "What looks wrong" below.
 
+`PATCH …/findings/{seq}` and `POST …/findings/{seq}/decide` both change a disposition, and
+they are different operations on purpose. The first is a disposition on its own, for a
+caller that is not making a decision about the posted review; the second is the
+developer's decision, and it recomposes the body, records who decided and leaves the
+lint reading as not checked.
+
 ## The draft record
 
 **The merged store has no table for the draft or its approval.** This is the
 specification; the migration is a later issue. One draft per review, replaced in place.
+
+### The body is composed, not edited
+
+**Since DEV-877 `draft.body` is what the draft's blocks compose to.** Before it, the
+developer dropped a finding from a review by deleting its paragraph out of one block of
+markdown — slow, and it left Review Desk with no record of what they did, which is the
+strongest signal the feedback loop has.
+
+A draft is an ordered list of blocks of two kinds, in `draft_sections`:
+
+| Kind | Composes to |
+|---|---|
+| `prose` | its text, exactly as written |
+| `finding` | `### {Severity} · F{seq} · {title}`, a blank line, then its text — **while the finding is posted** |
+
+Blocks are joined by a blank line and the body ends in one newline. The heading is the one
+derived piece, from the finding's live severity, which is what makes regrading a finding
+change its heading rather than leaving a second copy of the severity to disagree with it.
+
+**This is why the composition can reproduce what an agent writes.** Only the part a
+decision changes is modelled; everything else — the summary sentence, the not-checked line,
+an Open/Resolved index, a method line, a folded proof, a suppressed list — is a prose block
+carried through character for character. `contract/examples/getDraft.response.json` is the
+one record this repository holds of what an agent wrote, and
+`crates/store/tests/composition.rs` decomposes that body, writes it as blocks and asserts
+the stored body is the same bytes. The one constraint the composition imposes: a finding
+the developer can decide on has to have been written as a `finding` block. A body in the
+review-craft house style, where each finding is a `<details>` fold rather than a heading,
+stores and posts unchanged — and its findings are prose to Review Desk, so the per-finding
+decisions refuse, saying so.
+
+**A finding block posts while its finding does**: disposition `in_draft`, round status
+`new` or `still_open`. A carried finding whose round status is `fixed`, `accepted`,
+`withdrawn` or `ticketed` is not posted as an open finding, which is the question DEV-873
+left open and this answers. The write enforces it too: a `finding` block about a finding
+that is not posted is refused rather than stored and silently dropped from the body.
+
+**After any decision the lint reads as not checked.** The lint the agent ran was over a
+different body, and a result that still said "passes" would be the record vouching for
+words nobody checked. Re-running it is the session's, and out of scope here. It is also
+the mechanism that catches the one thing the composition cannot know: a prose block that
+*lists* findings — an index, "0 Blockers · 2 Should" — goes stale when the developer cuts
+one, and the lint is what reads the body against the findings.
+
+**The body is stored rather than derived.** Every write and every decision recomposes it
+in the same transaction. Composing it at read time would let a later change to the record
+alter an approved draft underneath the session that is about to post it, and `draft.body`
+is the one thing in this database that is posted verbatim.
 
 | Field | Type | Holds |
 |---|---|---|
@@ -554,10 +629,45 @@ drafting ──► ready ──► approved ──► posted
   what the session reads, and editing it underneath would change what gets posted.
 
 **The developer's edits are not stored on the draft.** They are `Outcome` rows with actor
-`developer` and kind `cut`, `regraded` or `rewritten`, which is where PR #1 already puts
-them, and they are the strongest signal in the feedback loop. `PUT …/draft` takes them in
-its body rather than inferring them from a text diff, because "regraded F3 from Blocker to
-Should" is not recoverable from the characters that changed.
+`developer`, which is where PR #1 already puts them, and they are the strongest signal in
+the feedback loop. `PUT …/draft` takes them in its body rather than inferring them from a
+text diff, because "regraded F3 from Blocker to Should" is not recoverable from the
+characters that changed.
+
+**Since DEV-877 there are eight kinds, not three**, and the decisions write them
+themselves: `cut`, `regraded`, `rewritten`, `kept`, `ticketed`, `raised_again`, `rejected`
+and `withdrawn`, each by actor `developer`. `edits[]` on the Draft preview is every outcome
+of those kinds — the server reads the list from one constant in the store, so a ninth
+decision cannot be added without the screen's list being revisited. A decision made through
+`decideFinding` records its own outcome and needs no `edits` entry on a save.
+
+**Accepting the author's reason is recorded as `rejected`, with the reason as the detail.**
+That is what `RuleCounts.rejected_with_reason` counts — "author disagreed once, with a
+reason you accepted" — so it has to be that kind rather than one of its own that nothing
+would read.
+
+### Where the blocks of the body live
+
+**`draft_sections`: `(review_id, position)` as the key**, plus `kind`, `finding_seq`,
+`title`, `text`, `agent_title` and `agent_text`. Migration 9. A composite foreign key to
+`findings (review_id, seq)` is what keeps a block from naming another review's F1, and a
+unique index on `(review_id, finding_seq)` is what keeps one finding to one block — the
+heading is composed from the finding, so a second block would repeat it.
+
+`agent_title` and `agent_text` are **what a rewrite replaced**. They are not a history:
+the newest rewrite replaces the one before it, and the outcomes are where the sequence of
+decisions lives. They are the one comparison the feedback loop asks for — what the
+developer changed, and from what.
+
+The position is the store's to assign; no caller numbers blocks. The whole list is replaced
+on every write, which is the arrangement `review_sources` uses and for the same reason: two
+prose blocks have nothing to tell them apart but their order.
+
+**Every draft written before migration 9 becomes one prose block holding its whole body**,
+and its own body is normalised to end in exactly one newline, so the column and the blocks
+agree from the first read. That is the honest reading of a body nothing wrote in parts, and
+it has a visible consequence: the per-finding decisions refuse on such a draft. A session
+that rewrites the draft in parts gets the buttons.
 
 ### Where a review's per-layer status lives
 
@@ -580,7 +690,19 @@ nits, which is what the mockup's single "File as one ticket for an agent" button
 
 `nit_ticket_id` is a `ForeignId` — a Linear ticket, opaque. The findings the ticket covers
 are not stored against it; they are every finding on the review at disposition
-`held_back`, which the API returns as `nit_ticket.finding_seqs`.
+`held_back`, which the API returns as `nit_ticket.finding_seqs`. That is also what makes
+"ticket what is left" need no table of its own: marking the open findings `held_back` puts
+them in the ticket.
+
+**A requested ticket is work for an agent, and `work list` reports it.** DEV-877 added a
+fifth `WorkKind`, `nits_to_ticket`: the developer asks for the ticket here, Review Desk
+files nothing, and the session that serves the review files it and records what it filed
+with `review-desk review nit-ticket --ticket ABC-246`. Until DEV-877 nothing reported the
+request at all, though the button has existed since DEV-854 — so this closes a gap as well
+as serving a new button. A review has at most one kind still: the draft is asked first, so
+a draft the developer has just approved *and* ticketed reports `draft_approved` carrying
+`nit_ticket_status: requested`, and the ticket becomes the item once the posting is
+reported.
 
 ### What migration 7 added, for a finding's identity across rounds
 
@@ -738,6 +860,35 @@ must name a finding on the same review; a file entry recorded as `not_reviewed` 
 why; one path gets one entry. Each is a refusal with the alternative named, and
 `crates/store/tests/provenance.rs` has one test per rule.
 
+### Added by DEV-877, for the developer's decisions and the assembled draft
+
+Migration 9 on this branch — the number is always the next free one, for the reason
+`migrations.rs` gives.
+
+- [x] **S28 — `draft_sections`.** The table specified above. Needed by:
+      `getDraft.sections`, `saveDraft`, `decideFinding`, and `draft.body` itself, which is
+      now what these compose to.
+- [x] **S29 — `OutcomeKind::ticketed` and `::withdrawn`.** Two values on a closed set, so
+      that each of the eight decisions leaves exactly one outcome. Overloading `cut` for
+      "moved to a ticket" and "no longer stands" would lose the distinction the feedback
+      loop exists to draw.
+- [x] **S30 — `FindingDecision` and `DraftSectionKind`**, as `string_enum!` sets, so they
+      name their own valid values in a refusal.
+- [x] **S31 — `Store::decide_finding`.** One transaction: the finding's severity, its
+      block, its disposition, its round status, the recomposed body and the outcome that
+      records who decided. Takes the actor and refuses anything but the developer, as
+      `confirm_brief` and `approve_draft` do.
+- [x] **S32 — `Store::ticket_rest_and_approve`.** One transaction: every open finding held
+      back and marked `ticketed` by the developer with an outcome each, the review's nit
+      ticket asked for, the body recomposed, the draft approved as `approve`, and layer 6
+      finished. It runs the same two statements `request_nit_ticket` and `approve_draft`
+      do, extracted rather than copied.
+- [x] **S33 — `WorkKind::nits_to_ticket`**, and the nit ticket's status and time on a work
+      item. Needed by: the Locus dispatcher, so that a ticket the developer asked for is
+      not a request nobody can see.
+- [x] **S34 — `Finding::is_posted`.** The one rule the composed body is filtered by, in one
+      place: disposition `in_draft` and an open round status.
+
 ### Not a store change, but do not miss it
 
 - **Times.** The store holds `Timestamp = i64`, epoch seconds. The contract is RFC 3339.
@@ -745,7 +896,8 @@ why; one path gets one entry. Each is a refusal with the alternative named, and
   listed because it is the one mismatch that will look like a bug the first time somebody
   serialises a `Review` straight out of the store crate.
 - **`Severity`, `Disposition`, `OutcomeKind`, `Actor`, `RuleStage`** are the same five
-  closed sets as `model.rs`, with the same wire strings. `DraftStatus`, `ReviewEvent`,
+  closed sets as `model.rs`, with the same wire strings. `FindingDecision` and
+  `DraftSectionKind` are two more, added by DEV-877. `DraftStatus`, `ReviewEvent`,
   `NitTicketStatus`, `ReviewLayerName` and `ReviewLayerState` are new and should be added
   as `string_enum!` sets so they keep naming their own valid values in errors.
 
@@ -843,6 +995,27 @@ Recorded here rather than acted on, because DEV-854 says to specify and not to i
    counts findings at `in_draft`, so a fixed finding carried as `in_draft` is still expected
    in the draft body — and the board says "Fixed · 2 · nothing to post". Nothing in DEV-873
    decides a disposition from a status, deliberately: that is the draft's composition, and
-   an agent sets it with `finding set`. Worth a line in whichever issue owns the draft.
-   `RoundStatus`'s own description in `openapi.yaml` claimed a fixed finding was "absent
-   from the draft", which was this gap written up as though it were closed; corrected.
+   an agent sets it with `finding set`. `RoundStatus`'s own description in `openapi.yaml`
+   claimed a fixed finding was "absent from the draft", which was this gap written up as
+   though it were closed; corrected.
+
+   **Answered by DEV-877, in the composition rather than in the disposition.** A finding
+   block posts only while its finding is at `in_draft` *and* its round status is open, so a
+   fixed finding is not posted as an open finding whatever disposition it carries — and a
+   write that tries to put one in the body is refused. `lint.findings_expected` is still
+   the count of `in_draft` findings, which is the agent's own measure of its draft and is
+   not derived here.
+
+11. **"Ticket what is left, and approve" cannot link to the ticket.** Board A3 says the
+   approval links to the ticket it files. No ticket id exists at the moment of approval,
+   because Review Desk files no ticket; only the session that files it can add that line.
+   The endpoint records everything else. See "Every button".
+
+12. **`outcome add` on the command line can write an outcome of a decision's kind with
+   actor `developer`.** It cannot *make* a decision — it changes no disposition, no
+   severity, no round status and no block of the body, so the draft and what gets posted
+   are untouched — but a row saying "the developer cut F2" can be written by an agent, and
+   the Draft preview's `edits[]` would list it. The actor has been an argument since PR #1
+   and the harvester needs it, so DEV-877 left it alone rather than narrowing an interface
+   two other crates are written against. Worth closing when something needs the edits list
+   to be evidence rather than a display.

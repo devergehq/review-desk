@@ -91,6 +91,7 @@ fn drafts_are_found_by_the_status_they_are_waiting_at() {
                 body: "half".to_string(),
                 status: DraftStatus::Drafting,
                 lint: None,
+                sections: None,
             },
         )
         .unwrap();

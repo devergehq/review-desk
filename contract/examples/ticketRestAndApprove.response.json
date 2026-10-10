@@ -1,0 +1,216 @@
+{
+  "draft": {
+    "draft": {
+      "review_id": 17,
+      "body": "The queue-with-backoff approach fits the ticket: deliveries are stored, retried for 24 hours and visible to the customer. One thing blocks the merge and two should be fixed with it.\n\n**Not checked:** worker behaviour across a deploy restart; production delivery volumes.\n",
+      "status": "approved",
+      "event": "approve",
+      "approved_at": "2026-10-08T11:34:00Z",
+      "sent_back_note": null,
+      "sent_back_at": null,
+      "posted_at": null,
+      "updated_at": "2026-10-08T11:34:00Z"
+    },
+    "review": {
+      "id": 17,
+      "repo": "acme/portal",
+      "pr": 412,
+      "head_sha": "3f9c2ab",
+      "round": 1,
+      "title": "Retry failed webhook deliveries",
+      "ticket_id": "ABC-231",
+      "changed_lines": 214,
+      "session_id": "ses_c81f40ad",
+      "ledger_id": "ledger-2026-10-08-412",
+      "github_review_id": null,
+      "created_at": "2026-10-08T10:31:00Z"
+    },
+    "lint": null,
+    "sections": [
+      {
+        "position": 1,
+        "kind": "prose",
+        "finding_seq": null,
+        "finding_key": null,
+        "severity": null,
+        "heading": null,
+        "title": null,
+        "text": "The queue-with-backoff approach fits the ticket: deliveries are stored, retried for 24 hours and visible to the customer. One thing blocks the merge and two should be fixed with it.",
+        "agent_title": null,
+        "agent_text": "The queue-with-backoff approach fits the ticket: deliveries are stored, retried for 24 hours and visible to the customer. One thing blocks the merge and two should be fixed with it.",
+        "rewritten": false,
+        "posted": true
+      },
+      {
+        "position": 2,
+        "kind": "finding",
+        "finding_seq": 1,
+        "finding_key": "F1",
+        "severity": "blocker",
+        "heading": "### Blocker · F1 · A retried delivery is sent without an idempotency key",
+        "title": "A retried delivery is sent without an idempotency key",
+        "text": "A retry re-sends the same payload with no key, so a customer whose endpoint accepted the first attempt slowly receives the event twice. See `jobs/DeliverWebhook.php:58`.\n\n```mermaid\nflowchart LR\n  A[Attempt 1 times out] --> B[Endpoint still processes it]\n  B --> C[Attempt 2 sends again]\n  C --> D[Two events for one]\n```\n\n<details>\n<summary>Proof: throwaway test, 2 deliveries for 1 event</summary>\n\n```php\n$event = Event::factory()->create();\nHttp::fake(['*' => Http::sequence()->pushStatus(504)->pushStatus(200)]);\nDeliverWebhook::dispatchSync($event);\n$this->artisan('queue:work --once');\n// 2 requests, same payload, no Idempotency-Key header on either\n$this->assertCount(2, Http::recorded());\n```\n\n</details>",
+        "agent_title": "A retried delivery is sent without an idempotency key",
+        "agent_text": "A retry re-sends the payload with no key, so a customer receives the event twice. See `jobs/DeliverWebhook.php:58`.",
+        "rewritten": true,
+        "posted": false
+      },
+      {
+        "position": 3,
+        "kind": "finding",
+        "finding_seq": 2,
+        "finding_key": "F2",
+        "severity": "should",
+        "heading": "### Should · F2 · No way to replay a delivery after the window closes",
+        "title": "No way to replay a delivery after the window closes",
+        "text": "After 24 hours a failed delivery is marked dead and nothing can send it again. Acceptance criterion 3 on ABC-231 asks for the customer to recover from a long outage.",
+        "agent_title": "No way to replay a delivery after the window closes",
+        "agent_text": "After 24 hours a failed delivery is marked dead and nothing can send it again. Acceptance criterion 3 on ABC-231 asks for the customer to recover from a long outage.",
+        "rewritten": false,
+        "posted": false
+      },
+      {
+        "position": 4,
+        "kind": "finding",
+        "finding_seq": 3,
+        "finding_key": "F3",
+        "severity": "should",
+        "heading": "### Should · F3 · The failure test passes with the retry code reverted",
+        "title": "The failure test passes with the retry code reverted",
+        "text": "I reverted the retry and `tests/WebhookRetryTest.php:31` still passed, so it does not pin the behaviour.",
+        "agent_title": "The failure test passes with the retry code reverted",
+        "agent_text": "I reverted the retry and `tests/WebhookRetryTest.php:31` still passed, so it does not pin the behaviour.",
+        "rewritten": false,
+        "posted": false
+      },
+      {
+        "position": 5,
+        "kind": "prose",
+        "finding_seq": null,
+        "finding_key": null,
+        "severity": null,
+        "heading": null,
+        "title": null,
+        "text": "**Not checked:** worker behaviour across a deploy restart; production delivery volumes.",
+        "agent_title": null,
+        "agent_text": "**Not checked:** worker behaviour across a deploy restart; production delivery volumes.",
+        "rewritten": false,
+        "posted": true
+      }
+    ],
+    "edits": [
+      {
+        "finding_seq": 6,
+        "finding_key": "F6",
+        "kind": "cut",
+        "summary": "rename suggestion",
+        "occurred_at": "2026-10-08T11:23:00Z"
+      },
+      {
+        "finding_seq": 3,
+        "finding_key": "F3",
+        "kind": "regraded",
+        "summary": "Blocker to Should",
+        "occurred_at": "2026-10-08T11:24:00Z"
+      },
+      {
+        "finding_seq": 1,
+        "finding_key": "F1",
+        "kind": "rewritten",
+        "summary": "first sentence",
+        "occurred_at": "2026-10-08T11:25:00Z"
+      },
+      {
+        "finding_seq": 1,
+        "finding_key": "F1",
+        "kind": "ticketed",
+        "summary": "Filed as one ticket for an agent; the merge is not waiting on them.",
+        "occurred_at": "2026-10-08T11:34:00Z"
+      },
+      {
+        "finding_seq": 2,
+        "finding_key": "F2",
+        "kind": "ticketed",
+        "summary": "Filed as one ticket for an agent; the merge is not waiting on them.",
+        "occurred_at": "2026-10-08T11:34:00Z"
+      },
+      {
+        "finding_seq": 3,
+        "finding_key": "F3",
+        "kind": "ticketed",
+        "summary": "Filed as one ticket for an agent; the merge is not waiting on them.",
+        "occurred_at": "2026-10-08T11:34:00Z"
+      }
+    ],
+    "held_back": [
+      {
+        "finding_seq": 1,
+        "finding_key": "F1",
+        "severity": "blocker",
+        "claim": "A retried delivery is sent without an idempotency key"
+      },
+      {
+        "finding_seq": 2,
+        "finding_key": "F2",
+        "severity": "should",
+        "claim": "No way to replay a delivery after the window closes"
+      },
+      {
+        "finding_seq": 3,
+        "finding_key": "F3",
+        "severity": "should",
+        "claim": "The failure test passes with the retry code reverted"
+      },
+      {
+        "finding_seq": 4,
+        "finding_key": "F4",
+        "severity": "nit",
+        "claim": "Backoff schedule is repeated in two files"
+      },
+      {
+        "finding_seq": 5,
+        "finding_key": "F5",
+        "severity": "nit",
+        "claim": "Unused import left in the job class"
+      }
+    ],
+    "nit_ticket": {
+      "review_id": 17,
+      "status": "requested",
+      "ticket_id": null,
+      "finding_seqs": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "requested_at": "2026-10-08T11:34:00Z",
+      "filed_at": null
+    }
+  },
+  "nit_ticket": {
+    "review_id": 17,
+    "status": "requested",
+    "ticket_id": null,
+    "finding_seqs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "requested_at": "2026-10-08T11:34:00Z",
+    "filed_at": null
+  },
+  "ticketed": [
+    1,
+    2,
+    3
+  ],
+  "ticketed_keys": [
+    "F1",
+    "F2",
+    "F3"
+  ]
+}

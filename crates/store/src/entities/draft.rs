@@ -7,19 +7,25 @@
 //! can therefore write a draft and read its status, and cannot sign it off, without
 //! that resting on the agent's good manners.
 //!
+//! **Since DEV-877 a draft body is composed rather than written.** What a caller stores
+//! is the blocks it is made of — see [`super::composition`] — and the body is what those
+//! blocks compose to. A caller that sends no blocks is writing the draft as one block of
+//! prose, which is honest and has one visible consequence: the developer's per-finding
+//! decisions refuse on such a draft, because nothing can say which characters are F1's.
+//!
 //! **Each of the three transitions below also writes its layer row, in the same
 //! transaction.** Approving finishes layer 6, sending back puts it in progress carrying
 //! the developer's note, and marking a draft posted leaves layer 7 `pending` — waiting
 //! for a harvest that has not happened — rather than `done`. Until DEV-864 none of them
 //! wrote a layer at all, so the trail went stale the moment the developer acted.
 
-use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior};
+use rusqlite::{params, Connection, OptionalExtension, Row, Transaction, TransactionBehavior};
 
-use crate::entities::only_the_developer;
+use crate::entities::{composition, only_the_developer};
 use crate::error::{Result, StoreError};
 use crate::model::{
-    now, Actor, Draft, DraftLint, DraftStatus, NewDraft, ReviewEvent, ReviewLayerName,
-    ReviewLayerState, Timestamp,
+    now, Actor, Draft, DraftLint, DraftStatus, NewDraft, NewDraftSection, ReviewEvent,
+    ReviewLayerName, ReviewLayerState, Timestamp,
 };
 use crate::{is_foreign_key_violation, Store};
 
@@ -78,6 +84,12 @@ impl Store {
             }
         }
 
+        // Checked before the transaction opens, so a draft is never left with a body
+        // written and its blocks refused.
+        if let Some(sections) = &new.sections {
+            composition::validate(sections)?;
+        }
+
         let lint = new.lint.unwrap_or_default();
         // A lint that reported something is stamped with when it ran. A caller that
         // supplied no time gets now, because a lint result with no time cannot be told
@@ -123,6 +135,45 @@ impl Store {
             ],
         )
         .map_err(|error| unknown_review(error, review_id))?;
+
+        // The blocks, then the body they compose to — in that order, because the draft row
+        // has to exist before a block can refer to it.
+        //
+        // **A body given alongside the blocks is checked, not stored.** The one difference
+        // forgiven is trailing newlines, which markdown does not distinguish; anything
+        // else means the caller and the record would disagree about what gets posted, and
+        // this is the check that keeps "the assembled draft of a review with no decisions
+        // is what the agent wrote" true of every write rather than of the happy path.
+        match &new.sections {
+            Some(sections) => {
+                composition::write(&tx, review_id, sections)?;
+                let composed = composition::recompose(&tx, review_id, composition::Lint::Keep)?;
+                let given = new.body.trim_end_matches('\n');
+                if !given.is_empty() && given != composed.trim_end_matches('\n') {
+                    return Err(StoreError::InvalidValue {
+                        field: "body",
+                        value: "a body the blocks do not compose to".to_string(),
+                        expected: "the body these blocks compose to, or no body at all. \
+                                   The composition is what gets posted, and two answers to \
+                                   what that is would be one too many"
+                            .to_string(),
+                    });
+                }
+            }
+            // One prose block holding the whole body. Trimmed of the newlines around it
+            // and composed back with exactly one, so that the column and the blocks agree
+            // from the first write rather than from the second.
+            None => {
+                let whole = new.body.trim_matches('\n');
+                let sections = if whole.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![NewDraftSection::prose(whole)]
+                };
+                composition::write(&tx, review_id, &sections)?;
+                composition::recompose(&tx, review_id, composition::Lint::Keep)?;
+            }
+        }
 
         tx.commit()?;
         self.get_draft(review_id)
@@ -184,16 +235,7 @@ impl Store {
         };
 
         if !already_approved {
-            self.conn.execute(
-                "UPDATE drafts SET
-                     status      = ?2,
-                     event       = ?3,
-                     approved_at = ?4,
-                     approved_by = ?5,
-                     updated_at  = ?4
-                 WHERE review_id = ?1",
-                params![review_id, DraftStatus::Approved, event, now(), by],
-            )?;
+            write_approval(&self.conn, review_id, event, by, now())?;
         }
 
         self.set_review_layer(
@@ -343,6 +385,33 @@ impl Store {
         tx.commit()?;
         self.get_draft(review_id)
     }
+}
+
+/// Write the approval: the status, the event, the time and whose assent it was.
+///
+/// **One statement, two callers.** [`Store::approve_draft`] is "Sign off and post", and
+/// `Store::ticket_rest_and_approve` is "Ticket what is left, and approve" — which approves
+/// in the same transaction as it moves the open findings into a ticket. A second copy of
+/// this statement is a second place for `approved_by` to be left out.
+pub(crate) fn write_approval(
+    conn: &Connection,
+    review_id: i64,
+    event: ReviewEvent,
+    by: Actor,
+    at: Timestamp,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE drafts SET
+             status      = ?2,
+             event       = ?3,
+             approved_at = ?4,
+             approved_by = ?5,
+             updated_at  = ?4
+         WHERE review_id = ?1",
+        params![review_id, DraftStatus::Approved, event, at, by],
+    )?;
+
+    Ok(())
 }
 
 /// A draft whose review is absent is a named failure, not a raw SQLite one.

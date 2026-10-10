@@ -1,0 +1,5 @@
+{
+  "decision": "rewrite",
+  "title": "A retry carries no idempotency key",
+  "text": "A second delivery of the same event is indistinguishable from a new one, so a customer who was briefly down receives it twice."
+}

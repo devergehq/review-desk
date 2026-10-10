@@ -219,8 +219,9 @@ fn an_unknown_value_names_what_was_expected() {
     assert_eq!(Actor::valid_values(), "developer, author, harvester");
     assert_eq!(
         OutcomeKind::valid_values(),
-        "cut, regraded, rewritten, kept, rejected, raised_again, replied, thread_resolved, \
-         code_changed_after"
+        "cut, regraded, rewritten, kept, rejected, ticketed, withdrawn, raised_again, \
+         replied, thread_resolved, code_changed_after",
+        "the developer's eight decisions, then the three the harvester reads back"
     );
     assert_eq!(
         RuleStage::valid_values(),

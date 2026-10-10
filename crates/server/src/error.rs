@@ -154,7 +154,8 @@ impl From<StoreError> for ApiError {
             // conflicts in with bad input, because exit 1 covers both.
             StoreError::DuplicateReview { .. }
             | StoreError::DuplicateGithubComment { .. }
-            | StoreError::DraftStatus { .. } => ApiError::conflict(message),
+            | StoreError::DraftStatus { .. }
+            | StoreError::NoDraftSection { .. } => ApiError::conflict(message),
             StoreError::InvalidValue {
                 field, expected, ..
             } => ApiError::invalid_value(*field, message, expected.clone()),
