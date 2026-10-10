@@ -1243,6 +1243,15 @@ components:
             brief ready to confirmed, and draft ready to signed off. Null when no wait has
             finished — which is not the same as a review nobody has been waiting on, and
             the screen says which.
+
+            **This and `with_the_agent_seconds` do not add up to `draft_ready_at` minus
+            `requested_at`, and that is not an error.** They answer two different
+            questions. This one counts waits that have *ended*, because a wait still going
+            has no length. The other subtracts the developer's time *inside one span*,
+            where a wait still going does have one — it ran to the moment the draft was
+            ready. A review whose brief is still unconfirmed while its draft is ready
+            shows exactly that gap: the open wait is in the one figure and not in the
+            other.
         last_activity_at:
           type: [string, 'null']
           format: date-time

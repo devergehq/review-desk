@@ -206,10 +206,14 @@ impl Store {
         // **And the reverse: a ready draft taken back is no longer waiting on anybody.**
         // `put_draft` accepts `drafting` over a draft that is `ready`, which is a session
         // taking it back to work on — and leaving layer 6 at `waiting_on_you` would say
-        // the developer was being waited on while the agent typed, keep a wait run open
-        // that no one is in, and freeze "when the draft was ready" at an instant that is
-        // no longer true. That is the stale trail this change exists to remove, on the one
-        // transition that still had it.
+        // the developer was being waited on while the agent typed, and keep a wait run
+        // open that no one is in. That is the stale trail this change exists to remove, on
+        // the one transition that still had it.
+        //
+        // **`draft_ready_at` is unchanged by this, and that is correct**: it answers when
+        // the draft was *last* ready, which the taking-back does not alter. What moves is
+        // that the wait is now a closed pass with a length, so it reaches
+        // `waiting_on_you_seconds` instead of sitting open for ever.
         //
         // **Only from `waiting_on_you`.** A draft that was already `drafting` is the
         // session's business and the session reports it with `review-desk layer set`;
