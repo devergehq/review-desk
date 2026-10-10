@@ -32,6 +32,11 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
 
+pub use crate::entities::provenance::{
+    AcceptanceCriterion, CriterionStatus, DescriptionLintResult, DescriptionLintStatus, FileChange,
+    FileCheck, NewAcceptanceCriterion, NewDescriptionLintResult, NewFileChange, NewReviewSource,
+    ReviewProvenance, ReviewSource, SourceKind,
+};
 pub use crate::error::{Result, StoreError};
 pub use crate::migrations::newest_version;
 pub use crate::model::{

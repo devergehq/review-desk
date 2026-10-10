@@ -1240,7 +1240,16 @@ components:
       type: object
       additionalProperties: false
       required:
-        [review, layers, findings, outcomes, finding_severities, finding_dispositions, nit_ticket]
+        - review
+        - layers
+        - findings
+        - outcomes
+        - finding_severities
+        - finding_dispositions
+        - nit_ticket
+        - sources
+        - criteria
+        - coverage
       description: Everything the One review screen shows.
       properties:
         review: { $ref: '#/components/schemas/Review' }
@@ -1264,14 +1273,48 @@ components:
         not_checked:
           type: [string, 'null']
           description: |
-            What the review did not look at, in the reviewer's own words. The one section
-            of a review with no adversary, so it is stored rather than derived.
+            What the review did not look at, in one sentence, in the reviewer's own words.
+            It is the sentence the posted review carries.
+
+            **Non-null only when `coverage.source` is `sentence`, and that is what stops a
+            screen showing two coverage answers.** Since DEV-875 a review can also record
+            a per-file change map, which is a better record of coverage than one sentence
+            and includes a row per area that was not reviewed. When it has one,
+            `coverage.source` is `files` and this field is null — not because the sentence
+            was deleted, but because it is no longer the coverage record. The store still
+            holds it, and the session that writes the draft body reads it back through
+            `review-desk review show`.
+
+            So a page cannot render a disagreement: when the table exists this is null, and
+            when this is set the table is empty. See `Coverage`.
         nit_ticket: { $ref: '#/components/schemas/NitTicket' }
         draft_status:
           oneOf:
             - $ref: '#/components/schemas/DraftStatus'
             - type: 'null'
           description: Null when no draft has been written yet.
+        sources:
+          type: array
+          items: { $ref: '#/components/schemas/ReviewSource' }
+          description: |
+            The "Read from" list under the title, in the order the session wrote it. Empty
+            for a review that recorded none.
+        criteria:
+          type: array
+          items: { $ref: '#/components/schemas/AcceptanceCriterion' }
+          description: |
+            "What the ticket asks for", in the order the session wrote it. Empty for a
+            review that recorded none.
+        description_lint:
+          oneOf:
+            - $ref: '#/components/schemas/ReviewDescriptionLint'
+            - type: 'null'
+          description: |
+            Layer 1's result, on the **pull request's description** — a different thing
+            from `DraftLint`, which is the lint over the review body this session will
+            post. Null when it has not run, for the reason `DraftDetail.lint` is nullable:
+            a failing lint and an absent one are not the same thing.
+        coverage: { $ref: '#/components/schemas/Coverage' }
 
         # -- the review's place in the pull request (DEV-873) ------------------------
         rounds:
@@ -2080,3 +2123,273 @@ components:
           type: integer
           minimum: 0
         statuses: { $ref: '#/components/schemas/RoundStatusCounts' }
+    # ---------------------------------------------------------------------------------
+    # Where a review's understanding came from. DEV-875, board A2 sections 1 to 4.
+    #
+    # **All of it is written by the agent through the command line** — `review-desk
+    # provenance sources|criteria|changes|lint`. No operation in this document writes any
+    # of it: none of it is the developer's to decide, and Review Desk reads no ticket.
+    # ---------------------------------------------------------------------------------
+
+    SourceKind:
+      type: string
+      description: |
+        What kind of thing a review read the problem from. Three values, because three are
+        what a review has to read from: the ticket, the author's own description of the
+        change, and what was said on the pull request before this round. The code is not
+        among them — a review always reads the code, so saying so carries nothing.
+      enum: [ticket, description, comment]
+
+    ReviewSource:
+      type: object
+      additionalProperties: false
+      required: [position, kind, label]
+      description: |
+        One thing the review read the problem from — a row of "Read from" under the title.
+
+        **Review Desk did not fetch any of this.** It is what the session said it read, in
+        the session's own words, and `link` is never followed.
+      properties:
+        position:
+          type: integer
+          format: int64
+          minimum: 1
+          description: |
+            Where it comes in the list, from 1. Assigned from the order written, because
+            two comments on one pull request have nothing else to tell them apart.
+        kind: { $ref: '#/components/schemas/SourceKind' }
+        label:
+          type: string
+          minLength: 1
+          description: |
+            What to call it on screen — "ABC-231 · Retry webhook deliveries for 24 hours",
+            "The pull request description", "2 earlier comments on the pull request".
+        link:
+          type: [string, 'null']
+          minLength: 1
+          description: Where to follow it to. Opaque — Review Desk never fetches it.
+
+    CriterionStatus:
+      type: string
+      description: |
+        Whether the change does what the ticket asked for. Three values and no fourth:
+        "partly" was considered and refused, because a criterion half met is a criterion
+        not met and the finding says which half.
+
+        **`not_met` names a finding**, and the store refuses one that does not: a review
+        that says the change fails a criterion and raises nothing about it posts a review
+        that never mentions the failure.
+      enum: [met, not_met, not_in_this_pr]
+
+    AcceptanceCriterion:
+      type: object
+      additionalProperties: false
+      required: [position, text, status]
+      description: |
+        One thing the ticket asks for, and whether the change does it — a row of "What the
+        ticket asks for".
+
+        **At most one pointer.** `finding_seq`, or `file` with an optional `line`, or
+        `note` — never two, because nothing could say which one a screen follows. A `met`
+        criterion may carry none; a `not_met` one always carries the finding.
+      properties:
+        position:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Where it comes in the list, from 1, as the session wrote it.
+        text:
+          type: string
+          minLength: 1
+          description: What the ticket asks for, in the ticket's own terms.
+        status: { $ref: '#/components/schemas/CriterionStatus' }
+        finding_seq:
+          type: [integer, 'null']
+          format: int64
+          minimum: 1
+          description: |
+            The finding that says this is not met. Non-null whenever `status` is
+            `not_met`, and it is a finding on this same review.
+        finding_key:
+          type: [string, 'null']
+          pattern: '^F[0-9]+$'
+          description: |
+            `finding_seq` as a person quotes it — `F1`. Derived, like `Finding.key`, so
+            the dashboard never computes an identifier.
+        file:
+          type: [string, 'null']
+          description: The file that answers for it.
+        line:
+          type: [integer, 'null']
+          minimum: 1
+          description: |
+            The line in that file. Never set without `file` — unlike a finding, where a
+            line alone is still worth saying, a criterion's pointer is somewhere to go.
+        note:
+          type: [string, 'null']
+          description: |
+            Anything else that answers for it — "The description says it follows in
+            ABC-240", which is what a `not_in_this_pr` criterion carries.
+
+    DescriptionLintStatus:
+      type: string
+      description: |
+        What one check of the pull request description reported. `warn` exists because the
+        review-craft description lint has warnings that do not fail it, and a warning
+        folded into `pass` is a warning nobody sees.
+      enum: [pass, warn, fail]
+
+    DescriptionLintResult:
+      type: object
+      additionalProperties: false
+      required: [position, label, status]
+      description: One named check of the pull request description — a line of the Lint section.
+      properties:
+        position:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Where it comes in the list, from 1, as the session wrote it.
+        label:
+          type: string
+          minLength: 1
+          description: What was checked — "Description length", "Working notes", "Template".
+        status: { $ref: '#/components/schemas/DescriptionLintStatus' }
+        detail:
+          type: [string, 'null']
+          description: |
+            What it found — "1,840 of 2,568 characters", "All 5 headings present". The
+            whole point of this record: `passes` alone could serve none of those lines.
+
+    ReviewDescriptionLint:
+      type: object
+      additionalProperties: false
+      required: [passes, results]
+      description: |
+        Layer 1's result on the pull request's description, as its individual checks.
+
+        Served only when the lint has run, so `results` is never empty — a lint with no
+        results is `description_lint: null`, not an object claiming to have measured
+        nothing.
+      properties:
+        passes:
+          type: boolean
+          description: |
+            **Derived: true when no result is `fail`.** A warning does not fail it,
+            matching `DraftLint.passes`.
+
+            Nothing stores this, deliberately. A stored verdict could sit above the list
+            the screen shows beside it and contradict it, and a page showing both must not
+            be able to show a disagreement.
+        results:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/DescriptionLintResult' }
+
+    FileCheck:
+      type: string
+      description: |
+        How a file in the change was looked at. The free sentence beside it says what was
+        done; this is the part a reader can count, and the part that makes an unreviewed
+        area impossible to overlook.
+
+        `not_reviewed` is the highlighted row, and the store refuses one with no reason.
+      enum: [read_in_full, read_in_part, run, not_reviewed]
+
+    FileChange:
+      type: object
+      additionalProperties: false
+      required:
+        - position
+        - path
+        - summary
+        - lines_added
+        - lines_removed
+        - checked
+        - finding_seqs
+        - finding_keys
+      description: |
+        One file the change touched, or one area it did not — a row of "What they built".
+      properties:
+        position:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Where it comes in the table, from 1, as the session wrote it.
+        path:
+          type: string
+          minLength: 1
+          description: |
+            The file's path, or a pattern for an area — `resources/admin/**`. One entry per
+            path: two rows for one file would be two coverage claims about it.
+        summary:
+          type: string
+          minLength: 1
+          description: What changed in it, in one line.
+        lines_added: { type: integer, minimum: 0 }
+        lines_removed: { type: integer, minimum: 0 }
+        checked: { $ref: '#/components/schemas/FileCheck' }
+        how_checked:
+          type: [string, 'null']
+          description: |
+            How it was checked, in the reviewer's own words — "Read in full. Compared with
+            2 sibling senders." **Non-null whenever `checked` is `not_reviewed`**, where it
+            is the reason: an area with no coverage owes a reader that much.
+        finding_seqs:
+          type: array
+          items: { type: integer, format: int64, minimum: 1 }
+          description: |
+            The review's findings on this path, in sequence order.
+
+            **Derived from the findings, not stored against this entry.** That is what
+            makes DEV-875's "a finding listed on a file exists and points at that file"
+            true by construction: there is no second copy of the join to go stale. A
+            finding added after the change map was written appears here without the map
+            being rewritten, and an area recorded as `not_reviewed` has none.
+            **Matched on the finding's own `file`**, which is where the finding is, not
+            where any code shown beside it comes from. The distinction is worth stating
+            because a finding may point at one file and draw its evidence from another — a
+            call site, a sibling implementation — so a reader otherwise has two plausible
+            columns to guess between. This row lists the findings *about* this path.
+        finding_keys:
+          type: array
+          items: { type: string, pattern: '^F[0-9]+$' }
+          description: |
+            The same findings as a person quotes them — `["F1", "F2"]`. One entry per
+            `finding_seqs` entry, in the same order.
+
+    CoverageSource:
+      type: string
+      description: |
+        Which record a screen renders as this review's coverage, and the only field it
+        should decide that from.
+
+        - `files` — the review has a per-file change map. Render it; `not_checked` is null.
+        - `sentence` — it has no change map and `not_checked` is set. Render that sentence.
+        - `none` — it has neither, and the screen shows no coverage section at all.
+
+        Derived, never stored. There is one place the question is answered, so the two
+        records cannot both be rendered and cannot disagree.
+      enum: [files, sentence, none]
+
+    Coverage:
+      type: object
+      additionalProperties: false
+      required: [source, files]
+      description: |
+        What the review looked at and what it did not, as one answer.
+
+        **This replaces the single "not checked" sentence as the source for coverage, and
+        the sentence stays for the posted review** — DEV-875. The two live in one object
+        with one arbiter, `source`, because two coverage records a page could render side
+        by side are two records that will eventually say different things.
+      properties:
+        source: { $ref: '#/components/schemas/CoverageSource' }
+        files:
+          type: array
+          items: { $ref: '#/components/schemas/FileChange' }
+          description: |
+            The change map, in the order the session wrote it. Empty exactly when `source`
+            is not `files`. The rows with `checked: not_reviewed` are the highlighted ones;
+            a screen filters for them rather than reading a second list that could differ
+            from this one.

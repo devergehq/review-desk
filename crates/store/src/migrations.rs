@@ -30,6 +30,11 @@
 //! attributed to, and the commits between two rounds. It was written as 6 while version
 //! 6 was being written too, and renumbered on the rebase — which is the rule above doing
 //! exactly what it is for.
+//!
+//! Version 8 is where a review's understanding came from: its sources, the ticket's
+//! criteria, the description lint's individual results and the per-file change map. It
+//! was written as 6 and rebased twice, which is the rule above being used rather than
+//! quoted.
 
 use rusqlite::Connection;
 
@@ -566,6 +571,134 @@ CREATE TABLE round_commit_files (
 );
 
 CREATE INDEX round_commit_files_by_path ON round_commit_files (review_id, path);
+"#,
+    },
+    Migration {
+        version: 8,
+        name: "provenance",
+        sql: r#"
+-- Where the review read the problem from: the ticket, the pull request description, a
+-- comment. **Written by the agent through the command line; Review Desk reads no ticket.**
+--
+-- Keyed on the position rather than on the label, because two comments on one pull
+-- request are two sources with the same kind and nothing to tell them apart but their
+-- order. The whole list is replaced on every write, so the position is the store's to
+-- assign and no caller manages numbering.
+CREATE TABLE review_sources (
+    review_id INTEGER NOT NULL REFERENCES reviews (id) ON DELETE CASCADE,
+    position  INTEGER NOT NULL,
+    kind      TEXT    NOT NULL,
+    label     TEXT    NOT NULL,
+    link      TEXT,
+    PRIMARY KEY (review_id, position),
+    CHECK (position >= 1),
+    CHECK (kind IN ('ticket', 'description', 'comment')),
+    CHECK (label <> ''),
+    CHECK (link IS NULL OR link <> '')
+);
+
+-- What the ticket asks for, one row per criterion, with a status and one pointer.
+--
+-- The pointer is one of three things and never two: a finding, a place in the code, or a
+-- note. Two pointers on one criterion would leave nothing able to say which the screen
+-- follows, so the schema refuses it rather than the display choosing.
+--
+-- **A criterion that is not met names a finding.** DEV-875's rule, enforced here: a review
+-- that says the change fails a criterion and raises nothing about it posts a review that
+-- never mentions the failure. The finding has to exist on this review, which is why the
+-- foreign key is composite — the same shape `outcomes` uses, so a criterion cannot point
+-- at another review's F1.
+--
+-- Since migration 7 a finding's number is its identity across rounds, so `finding_seq`
+-- names one finding on the pull request rather than one per round, and a criterion in a
+-- later round pointing at F2 means the same F2 the first round raised. The foreign key
+-- still resolves because a carried finding is written as a row under the later review
+-- keeping its number — and a criterion pointing at a finding that was *not* carried is
+-- still refused, which is right: a criterion whose finding is closed is a criterion whose
+-- status should have changed.
+--
+-- **A criterion is not carried between rounds, and that is a decision rather than an
+-- omission.** It belongs to the review, not to the finding: it is this round's assessment
+-- of what the ticket asks for, and copying it forward would assert that a later round
+-- reached the same verdict with no agent having looked. DEV-873's
+-- `every_column_of_a_finding_is_decided_about_when_it_is_carried` is what forces that
+-- choice to be made for anything hanging off a finding, and it finds those tables by the
+-- name prefix `finding%` — which this table does not carry, so the guard cannot ask. The
+-- answer is recorded here instead, and `a_carried_finding_brings_no_criteria_with_it` in
+-- `crates/store/tests/provenance.rs` is what enforces it.
+CREATE TABLE review_criteria (
+    review_id   INTEGER NOT NULL REFERENCES reviews (id) ON DELETE CASCADE,
+    position    INTEGER NOT NULL,
+    text        TEXT    NOT NULL,
+    status      TEXT    NOT NULL,
+    finding_seq INTEGER,
+    file        TEXT,
+    line        INTEGER,
+    note        TEXT,
+    PRIMARY KEY (review_id, position),
+    CHECK (position >= 1),
+    CHECK (status IN ('met', 'not_met', 'not_in_this_pr')),
+    CHECK (text <> ''),
+    CHECK (file IS NULL OR file <> ''),
+    CHECK (note IS NULL OR note <> ''),
+    CHECK (line IS NULL OR (file IS NOT NULL AND line >= 1)),
+    -- At most one pointer. SQLite has no boolean type; a comparison yields 0 or 1, so
+    -- adding the three is the count of pointers given.
+    CHECK ((finding_seq IS NOT NULL) + (file IS NOT NULL) + (note IS NOT NULL) <= 1),
+    CHECK (status <> 'not_met' OR finding_seq IS NOT NULL),
+    FOREIGN KEY (review_id, finding_seq)
+        REFERENCES findings (review_id, seq) ON DELETE CASCADE
+);
+
+-- The change map: one row per file the pull request touched, plus a row per area that was
+-- deliberately not reviewed.
+--
+-- `checked` is how the file was looked at and `how_checked` is the sentence the screen
+-- shows — "Read in full. Compared with 2 sibling senders." A row that was **not reviewed
+-- must say why**, which is the one thing an area with no coverage owes a reader.
+--
+-- **The findings on a file are not a column here.** They are every finding on the review
+-- whose `file` is this path, read at the time of asking, so the table and the findings
+-- cannot drift apart — the same argument the held-back nits' ticket makes for reading its
+-- findings from the dispositions rather than storing them.
+CREATE TABLE review_files (
+    review_id     INTEGER NOT NULL REFERENCES reviews (id) ON DELETE CASCADE,
+    position      INTEGER NOT NULL,
+    path          TEXT    NOT NULL,
+    summary       TEXT    NOT NULL,
+    lines_added   INTEGER NOT NULL DEFAULT 0,
+    lines_removed INTEGER NOT NULL DEFAULT 0,
+    checked       TEXT    NOT NULL,
+    how_checked   TEXT,
+    PRIMARY KEY (review_id, path),
+    UNIQUE (review_id, position),
+    CHECK (position >= 1),
+    CHECK (path <> '' AND summary <> ''),
+    CHECK (lines_added >= 0 AND lines_removed >= 0),
+    CHECK (checked IN ('read_in_full', 'read_in_part', 'run', 'not_reviewed')),
+    CHECK (how_checked IS NULL OR how_checked <> ''),
+    CHECK (checked <> 'not_reviewed' OR how_checked IS NOT NULL)
+);
+
+-- Layer 1's result, as the individual checks rather than one verdict. The review page
+-- shows three named lines — the description's length against its budget, where the working
+-- notes are, which template headings are present — and "passes" alone can serve none of
+-- them.
+--
+-- **The overall verdict is not stored.** It is "no result failed", derived on the way out,
+-- so a stored `passes: true` can never sit above a list containing a failure.
+CREATE TABLE description_lint_results (
+    review_id INTEGER NOT NULL REFERENCES reviews (id) ON DELETE CASCADE,
+    position  INTEGER NOT NULL,
+    label     TEXT    NOT NULL,
+    status    TEXT    NOT NULL,
+    detail    TEXT,
+    PRIMARY KEY (review_id, position),
+    CHECK (position >= 1),
+    CHECK (status IN ('pass', 'warn', 'fail')),
+    CHECK (label <> ''),
+    CHECK (detail IS NULL OR detail <> '')
+);
 "#,
     },
 ];

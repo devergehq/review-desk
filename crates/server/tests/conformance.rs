@@ -314,6 +314,118 @@ fn a_review_with_nothing_on_it_still_validates() {
     assert!(answer.json()["brief"].is_null());
     assert!(answer.json()["draft_status"].is_null());
     assert_eq!(answer.json()["layers"].as_array().unwrap().len(), 7);
+    assert_eq!(answer.json()["coverage"]["source"], "none");
+    assert!(answer.json()["description_lint"].is_null());
+}
+
+#[test]
+fn a_review_that_recorded_where_its_understanding_came_from_validates_whole() {
+    // The other half of `a_review_with_nothing_on_it_still_validates`: every one of the
+    // four lists DEV-875 adds is present and non-empty, each closed set has a value on the
+    // wire, and the coverage record is the change map rather than the sentence.
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+
+    harness
+        .store
+        .put_review_sources(
+            seeded.review_id,
+            review_desk_store::SourceKind::ALL
+                .iter()
+                .map(|kind| review_desk_store::NewReviewSource {
+                    kind: *kind,
+                    label: format!("read from the {kind}"),
+                    link: Some("https://example.invalid/x".to_string()),
+                })
+                .collect(),
+        )
+        .expect("the sources");
+
+    harness
+        .store
+        .put_description_lint(
+            seeded.review_id,
+            review_desk_store::DescriptionLintStatus::ALL
+                .iter()
+                .map(|status| review_desk_store::NewDescriptionLintResult {
+                    label: format!("the {status} check"),
+                    status: *status,
+                    detail: Some("what it found".to_string()),
+                })
+                .collect(),
+        )
+        .expect("the description lint");
+
+    harness
+        .store
+        .put_acceptance_criteria(
+            seeded.review_id,
+            vec![
+                review_desk_store::NewAcceptanceCriterion {
+                    text: "met, pointing at a place".to_string(),
+                    status: review_desk_store::CriterionStatus::Met,
+                    finding_seq: None,
+                    file: Some("jobs/DeliverWebhook.php".to_string()),
+                    line: Some(61),
+                    note: None,
+                },
+                review_desk_store::NewAcceptanceCriterion {
+                    text: "not met, pointing at a finding".to_string(),
+                    status: review_desk_store::CriterionStatus::NotMet,
+                    finding_seq: Some(1),
+                    file: None,
+                    line: None,
+                    note: None,
+                },
+                review_desk_store::NewAcceptanceCriterion {
+                    text: "not in this pull request, with a note".to_string(),
+                    status: review_desk_store::CriterionStatus::NotInThisPr,
+                    finding_seq: None,
+                    file: None,
+                    line: None,
+                    note: Some("it follows in ABC-240".to_string()),
+                },
+            ],
+        )
+        .expect("the criteria");
+
+    harness
+        .store
+        .put_file_changes(
+            seeded.review_id,
+            review_desk_store::FileCheck::ALL
+                .iter()
+                .enumerate()
+                .map(|(index, checked)| review_desk_store::NewFileChange {
+                    path: format!("src/file{index}.rs"),
+                    summary: format!("looked at it: {checked}"),
+                    lines_added: index as i64,
+                    lines_removed: 0,
+                    checked: *checked,
+                    // Required for `not_reviewed` and harmless for the rest.
+                    how_checked: Some(format!("{checked}, and here is why")),
+                })
+                .collect(),
+        )
+        .expect("the change map");
+
+    let answer = harness.api("GET", &format!("/reviews/{}", seeded.review_id), None);
+    assert_eq!(answer.status, 200, "{}", answer.text());
+    assert_valid("ReviewDetail", &answer.json());
+
+    let detail = answer.json();
+    assert_eq!(detail["sources"].as_array().unwrap().len(), 3);
+    assert_eq!(detail["criteria"].as_array().unwrap().len(), 3);
+    assert_eq!(
+        detail["description_lint"]["passes"], false,
+        "one of the three results is a failure"
+    );
+    assert_eq!(detail["coverage"]["source"], "files");
+    assert_eq!(detail["coverage"]["files"].as_array().unwrap().len(), 4);
+    assert!(
+        detail["not_checked"].is_null(),
+        "the change map is the coverage record, so the sentence is not served as one"
+    );
 }
 
 #[test]

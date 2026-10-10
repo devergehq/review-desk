@@ -191,9 +191,30 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
         ReviewCommand::Show { review } => {
             let store = Store::open_default()?;
             let full = store.full_review(*review)?;
-            let plain = show_lines(&full);
+            let provenance = store.review_provenance(*review)?;
 
-            Ok(Report::new(serde_json::to_value(&full)?, plain))
+            // Merged into the document rather than added to `FullReview`. The record of
+            // where a review's understanding came from is its own module in the store, and
+            // `review show` is the one surface that prints everything — so this is the
+            // place the two meet, and `FullReview` stays the shape three other changes in
+            // flight are also editing.
+            let mut document = serde_json::to_value(&full)?;
+            if let Some(fields) = document.as_object_mut() {
+                fields.insert("provenance".to_string(), serde_json::to_value(&provenance)?);
+                fields.insert(
+                    "description_lint_passes".to_string(),
+                    json!(provenance.description_lint_passes()),
+                );
+            }
+
+            let findings_by_path = super::provenance::findings_by_path(&store, &provenance)?;
+            let plain = format!(
+                "{}\n{}",
+                show_lines(&full),
+                super::provenance::show_lines(&provenance, &findings_by_path)
+            );
+
+            Ok(Report::new(document, plain))
         }
     }
 }

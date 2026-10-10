@@ -11,6 +11,7 @@ mod finding;
 mod harvest;
 mod layer;
 mod outcome;
+mod provenance;
 mod review;
 mod round;
 mod rules;
@@ -75,6 +76,12 @@ enum Command {
         #[command(subcommand)]
         command: outcome::OutcomeCommand,
     },
+    /// Record where the review's understanding came from: its sources, the ticket's
+    /// criteria, the description lint's results and the per-file change map.
+    Provenance {
+        #[command(subcommand)]
+        command: provenance::ProvenanceCommand,
+    },
     /// Record what changed between two rounds, and read the rounds so far.
     Round {
         #[command(subcommand)]
@@ -106,6 +113,7 @@ pub fn run(cli: &Cli) -> Result<Report> {
         Command::Draft { command } => draft::run(command),
         Command::Finding { command } => finding::run(command),
         Command::Outcome { command } => outcome::run(command),
+        Command::Provenance { command } => provenance::run(command),
         Command::Round { command } => round::run(command),
         Command::Rules { command } => rules::run(command),
         Command::Harvest(args) => harvest::run(args),
