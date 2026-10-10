@@ -200,7 +200,7 @@ impl Records {
     pub fn finished_review_timings(
         &self,
         repo: Option<&str>,
-    ) -> Result<Vec<ReviewTimings>, ApiError> {
+    ) -> Result<Vec<(Review, ReviewTimings)>, ApiError> {
         self.with(|store| store.finished_review_timings(repo))
     }
 

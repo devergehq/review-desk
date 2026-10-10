@@ -255,15 +255,25 @@ fn the_finished_review_list_is_one_read_and_holds_the_totals() {
         .finished_review_timings(None)
         .expect("the finished reviews");
     assert_eq!(
-        finished.iter().map(|t| t.review_id).collect::<Vec<_>>(),
+        finished
+            .iter()
+            .map(|(review, _)| review.id)
+            .collect::<Vec<_>>(),
         vec![posted.id],
         "finished means posted: a draft waiting to be signed off is not a measurement yet"
     );
-    assert_eq!(finished[0].with_the_agent_seconds, Some(60));
-    assert_eq!(finished[0].waiting_on_you_seconds, Some(60));
-    assert_eq!(finished[0].posted_at, Some(START + 150));
+    let (review, timings) = &finished[0];
     assert_eq!(
-        finished[0].layers.len(),
+        review.title.as_deref(),
+        None,
+        "the review comes back with the figures, so no caller reads it twice"
+    );
+    assert_eq!(timings.review_id, review.id);
+    assert_eq!(timings.with_the_agent_seconds, Some(60));
+    assert_eq!(timings.waiting_on_you_seconds, Some(60));
+    assert_eq!(timings.posted_at, Some(START + 150));
+    assert_eq!(
+        timings.layers.len(),
         7,
         "all seven steps, so a per-step figure can be computed from this read alone"
     );
@@ -729,7 +739,7 @@ fn a_review_from_before_this_change_is_never_given_a_made_up_start() {
         .finished_review_timings(None)
         .expect("the finished reviews");
     assert_eq!(listed.len(), 1);
-    assert_eq!(listed[0].with_the_agent_seconds, None);
+    assert_eq!(listed[0].1.with_the_agent_seconds, None);
 
     // A write now starts the record, from this change onwards.
     migrated

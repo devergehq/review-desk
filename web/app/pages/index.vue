@@ -276,8 +276,12 @@ const rows = computed(() => {
     needingYou(data).filter(row => showing(row.repo)).map(queueRow),
     row => row.at,
   )
-  const withAgent: InboxInProgressItem[] = data.in_progress.filter(item =>
-    showing(item.pull_request.repo),
+  // Sorted like every other group, now that it has a time to sort by: the caption over
+  // the page says "oldest first", and until DEV-890 this group was the one it could not
+  // be true of. The store serves these newest first, which is the opposite.
+  const withAgent: InboxInProgressItem[] = oldestFirst(
+    data.in_progress.filter(item => showing(item.pull_request.repo)),
+    item => item.in_state_since ?? null,
   )
   const ownPrs = oldestFirst(
     data.own_prs_without_reviewer.filter(item => showing(item.pull_request.repo)),

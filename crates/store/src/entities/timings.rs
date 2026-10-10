@@ -19,7 +19,9 @@
 use rusqlite::params;
 
 use crate::error::Result;
-use crate::model::{ReviewLayer, ReviewLayerName, ReviewLayerRun, ReviewTimings, Timestamp};
+use crate::model::{
+    Review, ReviewLayer, ReviewLayerName, ReviewLayerRun, ReviewTimings, Timestamp,
+};
 use crate::Store;
 
 impl Store {
@@ -28,12 +30,19 @@ impl Store {
     /// One read of the record per layer plus two rows, which is what keeps "each screen
     /// is one GET" true of the review page.
     pub fn review_timings(&self, review_id: i64) -> Result<ReviewTimings> {
-        let review = self.get_review(review_id)?;
-        let draft = self.find_draft(review_id)?;
-        let layers = self.list_review_layers(review_id)?;
+        self.timings_of(&self.get_review(review_id)?)
+    }
+
+    /// The same, for a review already read.
+    ///
+    /// The list below reads its reviews in one query and would otherwise read each of them
+    /// again by id, which is a second read of a row it is holding.
+    fn timings_of(&self, review: &Review) -> Result<ReviewTimings> {
+        let draft = self.find_draft(review.id)?;
+        let layers = self.list_review_layers(review.id)?;
 
         Ok(timings_from(
-            review_id,
+            review.id,
             review.created_at,
             review.last_activity_at,
             draft.as_ref().and_then(|draft| draft.approved_at),
@@ -53,20 +62,32 @@ impl Store {
     /// out would make "how long does a review take" quietly a question about the reviews
     /// recorded since this change, which is a different question and not the one anybody
     /// asked.
-    pub fn finished_review_timings(&self, repo: Option<&str>) -> Result<Vec<ReviewTimings>> {
+    pub fn finished_review_timings(
+        &self,
+        repo: Option<&str>,
+    ) -> Result<Vec<(Review, ReviewTimings)>> {
         let repo = repo.map(crate::normalise::repo);
-        let mut statement = self.conn.prepare(
-            "SELECT v.id FROM reviews v
+        // The reviews themselves, not their ids: every caller wants both, and the join is
+        // already selecting the rows.
+        let mut statement = self.conn.prepare(&format!(
+            "SELECT {columns} FROM reviews v
              JOIN drafts d ON d.review_id = v.id
              WHERE d.posted_at IS NOT NULL
                AND (?1 IS NULL OR v.repo = ?1)
              ORDER BY d.posted_at DESC, v.id DESC",
-        )?;
-        let ids = statement
-            .query_map(params![repo], |row| row.get::<_, i64>("id"))?
+            columns = super::inbox::REVIEW_COLUMNS,
+        ))?;
+        let reviews = statement
+            .query_map(params![repo], super::inbox::row_to_review)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
 
-        ids.into_iter().map(|id| self.review_timings(id)).collect()
+        reviews
+            .into_iter()
+            .map(|review| {
+                let timings = self.timings_of(&review)?;
+                Ok((review, timings))
+            })
+            .collect()
     }
 
     /// When this review's draft was last ready for the developer.

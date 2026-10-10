@@ -23,15 +23,24 @@ const withTheAgent = computed(() => durationLabel(props.timings.with_the_agent_s
 const waiting = computed(() => durationLabel(props.timings.waiting_on_you_seconds))
 
 /**
- * Why a figure is absent, in the words the record would use.
+ * Why the agent's total is absent, in the words the record would use.
  *
  * Two different absences, and the difference matters to whoever is reading: a review from
- * before this change can never have the figure, and a review still with the agent does
+ * before this change can never have the figure, and a review still being worked on does
  * not have it *yet*.
+ *
+ * **Told apart by whether the draft was ever signed off**, not by `draft_ready_at`. The
+ * total is null exactly when `draft_ready_at` is — the server derives one from the other —
+ * so keying on it would make one of these branches unreachable and send a review posted
+ * last week down the "not ready yet" one.
  */
+const everReady = computed(() =>
+  Boolean(props.timings.signed_off_at || props.timings.posted_at),
+)
+
 const whyNoAgentTotal = computed(() =>
-  props.timings.draft_ready_at
-    ? 'the review was recorded before Review Desk kept when each step started'
+  everReady.value
+    ? 'this review was signed off before Review Desk kept when a draft became ready'
     : 'the draft is not ready yet, so the span it measures has no end',
 )
 </script>
@@ -44,7 +53,7 @@ const whyNoAgentTotal = computed(() =>
         with the agent:
         <NotMeasured
           :because="whyNoAgentTotal"
-          :says="timings.draft_ready_at ? 'not recorded' : 'not recorded yet'"
+          :says="everReady ? 'not recorded' : 'not recorded yet'"
         />
       </template>
     </span>

@@ -580,7 +580,13 @@ paths:
           schema: { $ref: '#/components/schemas/RepoName' }
       responses:
         '200':
-          description: The finished reviews and their timings.
+          description: |
+            The finished reviews and their timings, newest first.
+
+            **Unpaginated, deliberately.** This is one developer's own record on their own
+            machine, and the read exists so that every finished review can be counted;
+            answering with a page would make a count of "how long does a review take" a
+            count of the last page of them.
           content:
             application/json:
               schema:
@@ -591,6 +597,8 @@ paths:
                   reviews:
                     type: array
                     items: { $ref: '#/components/schemas/ReviewTimingRow' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '500':
           $ref: '#/components/responses/StoreUnavailable'
 

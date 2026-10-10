@@ -34,11 +34,11 @@ npm test           # both
 `.github/workflows/contract.yml` runs the same two commands on every pull request that
 touches `contract/`.
 
-**`npm run lint` reports three warnings and exits 0.** All three are
-`operation-4xx-response`, against `getInbox`, `listRepos` and `listReviewTimings`, which
-take no input a request can get wrong and so have no 4xx to declare. The rule is left on
-because it is doing real work on the other seventeen operations. CI gates on errors, which
-is what redocly exits non-zero for.
+**`npm run lint` reports two warnings and exits 0.** Both are `operation-4xx-response`
+against `getInbox` and `listRepos`, which take no input and so have no 4xx to declare. The
+rule is left on because it is doing real work on the other eighteen operations — including
+`listReviewTimings`, which takes a repository and therefore declares a 400 like every other
+read that takes one. CI gates on errors, which is what redocly exits non-zero for.
 
 ## There is no authentication
 

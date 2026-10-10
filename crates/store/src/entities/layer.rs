@@ -49,18 +49,6 @@ impl Store {
         // either would then depend on which one a later reader picked.
         let at = self.now();
 
-        // **The state alone, not the whole layer.** `find_review_layer` reads the layer's
-        // passes as well, and this is on every write path there is — a read of a record
-        // that grows, on every write, for a value thrown away.
-        let held: Option<ReviewLayerState> = self
-            .conn
-            .query_row(
-                "SELECT state FROM review_layers WHERE review_id = ?1 AND number = ?2",
-                params![review_id, number],
-                |row| row.get("state"),
-            )
-            .optional()?;
-
         self.conn
             .execute(
                 "INSERT INTO review_layers (review_id, number, state, detail, updated_at)
@@ -88,13 +76,30 @@ impl Store {
         // reports progress without checking first — and a row for each of those would
         // turn one pass that is still going into ten passes of a few seconds. Whatever
         // the caller said about the detail still lands, on the row above.
-        if held != Some(state) {
-            self.conn.execute(
-                "INSERT INTO review_layer_states (review_id, number, state, detail, entered_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![review_id, number, state, detail, at],
-            )?;
-        }
+        //
+        // **The test and the insert are one statement**, rather than a read and then a
+        // write. `review-desk layer set` calls this with no transaction around it, one
+        // process per invocation, so two sessions reporting the same step at the same
+        // moment would otherwise both read the old state and both append — a pass of no
+        // length that every total would then count. SQLite evaluates this as one write.
+        //
+        // The state tested is the newest one *in this record*, not the layer row's: they
+        // agree by construction, and reading the record it is about leaves one source.
+        self.conn.execute(
+            "INSERT INTO review_layer_states (review_id, number, state, detail, entered_at)
+             SELECT ?1, ?2, ?3, ?4, ?5
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM review_layer_states newest
+                 WHERE newest.review_id = ?1
+                   AND newest.number = ?2
+                   AND newest.state = ?3
+                   AND newest.id = (
+                       SELECT MAX(id) FROM review_layer_states
+                       WHERE review_id = ?1 AND number = ?2
+                   )
+             )",
+            params![review_id, number, state, detail, at],
+        )?;
 
         // Plain statements, in whatever transaction the caller opened, for the reason
         // `layer_trail.rs` gives about the sign-offs: a layer write that is rolled back

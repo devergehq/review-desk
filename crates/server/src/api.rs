@@ -151,13 +151,27 @@ impl Api {
                 // — and the queue showed "no time recorded" over a row it could date from
                 // the brief in front of it. The step first, because a step that *has* been
                 // written is the one that says whose turn it is and when it became theirs.
-                let ready_at = at_two.and_then(|layer| layer.updated_at).or_else(|| {
-                    self.records
-                        .find_brief(review.id)
-                        .ok()
-                        .flatten()
-                        .map(|brief| brief.updated_at)
-                });
+                // **When step 2 entered the state it is in, not when its row was last
+                // written.** `set_review_layer` is idempotent, so a session re-reporting
+                // the same state moves `updated_at` and would reset "brief ready 6 min
+                // ago" — and its place in the oldest-first sort — without anything having
+                // changed. The pass's own start is the stable answer, and it is what
+                // `draft_ready_at` uses.
+                //
+                // **Falling back to the brief's own time**, for a session that wrote a
+                // brief and never reported the step (DEV-864 leaves that step unwritten on
+                // a first write). `briefs.updated_at` is written by the write that made
+                // the brief ready, which is the thing being dated. The draft has no such
+                // fallback on purpose: `drafts.updated_at` moves when the *developer*
+                // edits the draft, so it would date their wait from their own last
+                // keystroke.
+                let ready_at = match at_two.and_then(|layer| layer.in_state_since()) {
+                    Some(entered) => Some(entered),
+                    None => self
+                        .records
+                        .find_brief(review.id)?
+                        .map(|brief| brief.updated_at),
+                };
                 Ok(json!({
                     "review_id": review.id,
                     "pull_request": wire::inbox_pr(review),
@@ -924,22 +938,35 @@ impl Api {
     /// would grow every time this was read.
     fn review_timings(&self, query: &str) -> Result<(u16, Value), ApiError> {
         let repo = query_value(query, "repo");
+        // Checked, as `listRules` checks the same parameter. An unchecked filter answers a
+        // typed repository with an empty list, which reads as "nothing finished there"
+        // rather than "there is no such repository".
+        if let Some(repo) = &repo {
+            if !wire::is_repo_name(repo) {
+                return Err(ApiError::invalid_value(
+                    "repo",
+                    format!("{repo:?} is not a repository"),
+                    "a repository as owner/repo",
+                ));
+            }
+        }
+
         let rows = self
             .records
             .finished_review_timings(repo.as_deref())?
             .iter()
-            .map(|timings| -> Result<Value, ApiError> {
-                Ok(json!({
-                    "review": wire::review(&self.records.review(timings.review_id)?),
+            .map(|(review, timings)| {
+                json!({
+                    "review": wire::review(review),
                     "timings": wire::review_timings(timings),
                     "layers": timings
                         .layers
                         .iter()
                         .map(wire::review_layer)
                         .collect::<Vec<_>>(),
-                }))
+                })
             })
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Vec<_>>();
 
         Ok((200, json!({ "reviews": rows })))
     }

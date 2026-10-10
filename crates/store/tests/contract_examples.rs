@@ -1272,10 +1272,8 @@ fn review_timing_rows(store: &Store) -> Value {
             .finished_review_timings(None)
             .expect("the finished reviews")
             .iter()
-            .map(|timings| json!({
-                "review": review_document(
-                    &store.get_review(timings.review_id).expect("the review"),
-                ),
+            .map(|(review, timings)| json!({
+                "review": review_document(review),
                 "timings": timings_document(timings),
                 "layers": timings.layers.iter().map(layer_document).collect::<Vec<_>>(),
             }))
