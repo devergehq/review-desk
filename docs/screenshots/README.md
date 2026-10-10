@@ -57,7 +57,7 @@ before this pull request and nothing else changed.
 
 | File | What it is |
 | -- | -- |
-| `dev-890-queue.png` | The queue. The row with the agent says which step it is on **and how long it has been on it** — "Alternatives · 9 hr 34 min" — and reads "Last activity 9 hours ago" where it read "Session state unknown". A row the record still holds no time for says "no time recorded" in the age cell, which is the state this change does not remove. |
+| `dev-890-queue.png` | The queue. The row with the agent says which step it is on **and how long it has been on it** — "Alternatives · 26 min" — and reads "Last activity 9 min ago" where it read "Session state unknown". **Every row carries a time**, so the caption reads "Oldest first" with nothing after it: the clause about rows with no recorded time is drawn only when there is one. |
 | `dev-890-trail.png` | A step page. Each finished step carries its duration under its outcome, and step 4 — reported straight to `done` with no start — says "time not recorded". Under the trail: the total with the agent, and the total waiting on the developer, which this review has not finished one of. |
 | `dev-890-old-review.png` | **A review as it was recorded before this change.** Every step says "time not recorded", both totals say "not recorded", and nothing anywhere says 0. That is the acceptance criterion: an old review is never given a made-up start. |
 
