@@ -137,7 +137,7 @@ const checkNotDoingItsJob = computed(
         <template v-if="decidedOn">
           Decided on <NuxtLink
             v-if="rule.origin_review_id"
-            :to="`/reviews/${rule.origin_review_id}`"
+            :to="`/reviews/${rule.origin_review_id}/understand`"
           >#{{ decidedOn }}</NuxtLink><span v-else>#{{ decidedOn }}</span><template v-if="facts">
             ·
           </template>

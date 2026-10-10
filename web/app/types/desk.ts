@@ -101,6 +101,33 @@ export type Review = Schema['Review']
 export type ReviewLayer = Schema['ReviewLayer']
 export type BriefOption = Schema['BriefOption']
 export type Brief = Schema['Brief']
+
+/*
+ * The twelve rows the three approved step pages draw, named the same way everything else
+ * here is: an alias over the generated contract, never a second description of a field.
+ * `contract/README.md`'s "The brief, by page" is the table that says which row feeds which
+ * page.
+ */
+
+/** Who put an option forward: the ticket, a blind pass, or both independently. */
+export type OptionProposer = Schema['OptionProposer']
+/** What one option does about one numbered problem. `not_assessed` is a verdict. */
+export type BriefOptionVerdict = Schema['BriefOptionVerdict']
+/** A flow is rows; a row is one to three boxes. Nothing carries a layout number. */
+export type BriefFlow = Schema['BriefFlow']
+export type BriefFlowRow = BriefFlow[number]
+export type BriefFlowBox = Schema['BriefFlowBox']
+export type BriefProblem = Schema['BriefProblem']
+export type BriefSupportTable = Schema['BriefSupportTable']
+export type BriefBlindPass = Schema['BriefBlindPass']
+/** Three states, three wordings: it never ran, it ran and found nothing, it ran. */
+export type BlindPassState = Schema['BlindPassState']
+export type BriefPart = Schema['BriefPart']
+export type BriefPartFile = Schema['BriefPartFile']
+export type BriefOpenChoice = Schema['BriefOpenChoice']
+export type BriefDisagreement = Schema['BriefDisagreement']
+/** The problem half on its own, which is what a blind pass may be handed. */
+export type ProblemStatement = Schema['ProblemStatement']
 export type Finding = Schema['Finding']
 export type Outcome = Schema['Outcome']
 export type NitTicket = Schema['NitTicket']

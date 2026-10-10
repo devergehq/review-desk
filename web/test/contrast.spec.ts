@@ -49,9 +49,23 @@ const TEXT_PAIRS: Array<[string, string, string]> = [
   ['a link on the ground', 'accent', 'ground'],
   ['the accent wash tag', 'accent-dark', 'accent-wash'],
   ['the warning tag', 'warn-ink', 'warn-wash'],
+  /*
+   * The two flows on the Understand page. A mark's numeral is reversed out of its fill, and
+   * the box it sits in carries the wash — so the wash has to hold body text as well.
+   */
+  ['a wrong mark on a card', 'wrong', 'surface'],
+  ['a wrong mark on the ground', 'wrong', 'ground'],
+  ['a wrong mark on its own wash', 'wrong', 'wrong-wash'],
+  ['a box on the wrong wash', 'ink-dim', 'wrong-wash'],
+  ['a note on the wrong wash', 'ink-muted', 'wrong-wash'],
+  ['a box on the fixed wash', 'ink-dim', 'fixed-wash'],
+  ['a note on the fixed wash', 'ink-muted', 'fixed-wash'],
+  ['a fixed mark on its own wash', 'accent', 'fixed-wash'],
 ]
 
 const ON_FILL_PAIRS: Array<[string, string, string]> = [
+  ['a wrong mark\u2019s numeral', 'surface', 'wrong'],
+  ['a fixed mark\u2019s numeral', 'surface', 'accent'],
   ['a primary button', 'surface', 'accent'],
   ['a primary button, hovered', 'surface', 'accent-dark'],
   ['an ink button', 'surface', 'ink'],

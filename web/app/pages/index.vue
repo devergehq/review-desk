@@ -129,6 +129,24 @@ function needingYou(data: Inbox): Waiting[] {
   return [...byReview.values()]
 }
 
+/**
+ * Where a row goes: **Understand, whatever the row is waiting for.**
+ *
+ * Patrick, on tc-portal #9584: "when we click a review, we want to go to the review, not to
+ * the draft." In a page-per-step review the review *starts* at Understand — his order is
+ * understand, alternatives, solution, then the code, then the draft — so every row lands
+ * there and the reading happens in the order it was designed to happen in.
+ *
+ * **The trail is what says which step is waiting**, and it is a better place for that than
+ * the destination of a click: it says so about all seven steps at once, where a
+ * destination can only say it about one. From Understand the draft is one click along the
+ * trail, which is also the click that walks you past the alternatives and the solution on
+ * the way — the reading that precedes a sign-off.
+ */
+function stepFor(row: Waiting): string {
+  return `/reviews/${row.review_id}/understand`
+}
+
 /** The next thing the developer does about this review, and what to say about it. */
 function nextAction(row: Waiting) {
   if (row.brief) {
@@ -138,7 +156,7 @@ function nextAction(row: Waiting) {
         ? 'nothing else runs until you confirm'
         : 'nothing posts until you confirm',
       action: 'Read the brief',
-      to: `/reviews/${row.review_id}`,
+      to: stepFor(row),
       at: row.brief.brief_ready_at ?? null,
       atUnknown: 'the brief carries no ready time',
     }
@@ -151,15 +169,7 @@ function nextAction(row: Waiting) {
       what: 'Draft ready',
       detail: [tally, held].filter(Boolean).join(' · ') || 'nothing in the draft yet',
       action: 'Read and sign off',
-      /*
-       * **The review, not the draft.** A row is a review, and clicking one goes to the
-       * review — Patrick, on tc-portal #9584: "when we click a review, we want to go to
-       * the review, not to the draft." The draft is one click further on, behind the
-       * review page's own "Open draft", which is where the reading that precedes a
-       * sign-off starts anyway. Every row in this queue now goes to the same kind of
-       * place, which is the point.
-       */
-      to: `/reviews/${row.review_id}`,
+      to: stepFor(row),
       at: null,
       atUnknown: 'a draft waiting to be signed off carries no time in the inbox',
     }
@@ -169,7 +179,7 @@ function nextAction(row: Waiting) {
     what: `The author replied to ${first.finding_key}`,
     detail: first.detail ?? replyLabel(first),
     action: 'Read the reply',
-    to: `/reviews/${row.review_id}`,
+    to: stepFor(row),
     at: null,
     atUnknown: 'an author reply carries no time in the inbox',
   }
@@ -454,7 +464,7 @@ function handledLine(data: Inbox): string {
             :pr="item.pull_request.pr"
             :title="item.pull_request.title ?? 'no title recorded'"
             :meta="`· ${item.pull_request.repo}`"
-            :to="`/reviews/${item.review_id}`"
+            :to="`/reviews/${item.review_id}/understand`"
             :action="sessionAction(item.session_alive)"
             :action-tone="item.session_alive === false ? 'warn' : 'quiet'"
             age-unknown-because="the inbox carries no time for a running session"

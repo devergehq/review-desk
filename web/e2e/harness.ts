@@ -14,6 +14,9 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
+/** The contract's invented brief at real length, which the three step pages are seeded from. */
+const REAL_LENGTH_BRIEF = resolve('../contract/examples/confirmBrief.response.real-length.json')
+
 /**
  * A diagram field holding something that is not a diagram.
  *
@@ -55,6 +58,17 @@ export interface Addresses {
   seededDatabase: string
   empty: string
   reviewId: number
+  /**
+   * A third review carrying the **structured** brief: the twelve rows DEV-882 added, at the
+   * length the approved boards draw. It is what the Understand, Alternatives and Solution
+   * pages are seeded from, and what their screenshots are taken of.
+   *
+   * Deliberately in nobody's queue, like the waived review below: its brief is confirmed
+   * and it has no draft, so it changes none of the Inbox's counts and is reachable only by
+   * going to it. A third row in "Needs you" would rewrite every other assertion in the
+   * suite for a review that is here to be looked at rather than acted on.
+   */
+  structuredReviewId: number
   /**
    * A second review on the same repository whose brief was recorded as needing no
    * confirmation. It is deliberately not in anybody's queue: no brief to confirm and no
@@ -108,9 +122,292 @@ export function scratch(): string {
  * two acts — confirming the brief and approving the draft — are deliberately absent,
  * because there is no command for either. That is the boundary this test exists to exercise.
  */
+/**
+ * The invented brief, with the nine fields the server derives taken back off it.
+ *
+ * `contract/examples/confirmBrief.response.real-length.json` is a **response**, and
+ * `NewBrief` and every one of its sub-structures is `serde(deny_unknown_fields)` — so
+ * feeding the example to `brief put` as it stands is refused, naming the first extra field
+ * and nothing about the other eight. What is removed is exactly what the server works out
+ * for itself: the review it belongs to, whether it is confirmed and when, the blind pass's
+ * derived state, when it was last written, a part's line totals (summed from its files so
+ * the card cannot disagree with the list) and the `F`-prefixed keys (built from a sequence
+ * number, because the dashboard builds no ids).
+ *
+ * **Stripping rather than hand-writing a second copy** is the point: the pages, their unit
+ * tests and these screenshots are then all drawn from one invented example, and an example
+ * that changes changes all three.
+ */
+function structuredBrief(): Record<string, unknown> {
+  const served = JSON.parse(readFileSync(REAL_LENGTH_BRIEF, 'utf8')) as Record<string, unknown>
+
+  const {
+    review_id: _reviewId,
+    confirmed: _confirmed,
+    confirmed_at: _confirmedAt,
+    blind_pass_state: _blindPassState,
+    updated_at: _updatedAt,
+    ...written
+  } = served
+
+  written.parts = (written.parts as Array<Record<string, unknown>>).map(
+    ({ lines_added: _added, lines_removed: _removed, ...part }) => part,
+  )
+  written.open_choices = (written.open_choices as Array<Record<string, unknown>>).map(
+    ({ finding_key: _key, ...choice }) => choice,
+  )
+  written.disagreements = (written.disagreements as Array<Record<string, unknown>>).map(
+    ({ finding_key: _key, ...clash }) => clash,
+  )
+
+  /*
+   * **Recorded as needing no confirmation, and the reason is in the record.**
+   *
+   * There is no `review-desk brief confirm`: the binary's own help says "Confirming one is
+   * in the dashboard", because confirming is the developer's act and the command line
+   * cannot perform it — which is the boundary this whole suite exists to exercise. So an
+   * unconfirmed brief seeded here would put a third row in the Inbox's "Needs you" and
+   * rewrite every count the other specs assert.
+   *
+   * This is the third of layer 2's three states rather than a way round the second: a brief
+   * an agent recorded as needing no confirmation is settled, unsigned and in nobody's
+   * queue. None of the three step pages draws the confirmation state at all — DEV-878's
+   * pages do — so what is seeded here is exactly what they read either way.
+   */
+  written.confirmation_required = false
+  written.confirmation_not_required_because
+    = 'the brief gate is off for this repository (brief_gate: never)'
+
+  return written
+}
+
+/**
+ * The thirteen findings the structured review's parts account for.
+ *
+ * **Every path is one the invented brief's own `parts[].files[].path` names**, because the
+ * Solution page joins the review's findings to a part by file — `contract/README.md`: "the
+ * review's findings whose `file` is one of `brief.parts[].files[].path`" — and a seed whose
+ * findings sat elsewhere would leave every part reading "nothing found here" while the
+ * page looked like it was working.
+ *
+ * Four of the sequence numbers are load-bearing. `brief_open_choices` and
+ * `brief_disagreements` each carry a foreign key to `findings (review_id, seq)`, and the
+ * invented example points at 3, 7, 9 and 13 — so those findings have to exist **before**
+ * `brief put` runs, or the write is refused by the database rather than by a validator.
+ */
+const STRUCTURED_FINDINGS: Array<{
+  lens: string
+  severity: string
+  claim: string
+  file: string
+  line: number
+  disposition: string
+  disposition_reason?: string
+  evidence?: string
+}> = [
+  {
+    lens: 'sibling diff',
+    severity: 'should',
+    claim: 'The context is built with an empty allowed-columns list when the report '
+      + 'definition names none, and an empty list means every column downstream.',
+    file: 'app/Reporting/ExportContext.php',
+    line: 44,
+    disposition: 'in_draft',
+    evidence: 'PROVED by a throwaway test: a definition with allowed_columns null '
+      + 'exported all 31 columns.',
+  },
+  {
+    lens: 'repetition',
+    severity: 'nit',
+    claim: 'The superseded accessor is still public with nothing marking it superseded.',
+    file: 'app/Reporting/TenantContext.php',
+    line: 12,
+    disposition: 'held_back',
+    disposition_reason: 'a nit; it goes in the ticket',
+  },
+  {
+    lens: 'boundary',
+    severity: 'should',
+    claim: 'A schedule whose tenant row has gone is dispatched anyway, and the job fails '
+      + 'after the context is built rather than before.',
+    file: 'app/Console/Commands/DispatchScheduledExports.php',
+    line: 61,
+    disposition: 'in_draft',
+  },
+  {
+    lens: 'naming',
+    severity: 'nit',
+    claim: 'The class converts a schedule to a context and is named for the direction '
+      + 'rather than for the thing it makes.',
+    file: 'app/Reporting/ScheduleToContext.php',
+    line: 18,
+    disposition: 'in_draft',
+  },
+  {
+    lens: 'boundary',
+    severity: 'question',
+    claim: 'Two schedules for one tenant running at once would write the audit entry '
+      + 'twice; nothing says whether that can happen.',
+    file: 'app/Reporting/ExportPipeline.php',
+    line: 73,
+    disposition: 'in_draft',
+  },
+  {
+    lens: 'sibling diff',
+    severity: 'should',
+    claim: 'The policy is applied after the query is built, so a hidden column is still '
+      + 'selected from the database before being dropped.',
+    file: 'app/Reporting/ColumnPolicy.php',
+    line: 31,
+    disposition: 'in_draft',
+  },
+  {
+    lens: 'boundary',
+    severity: 'question',
+    claim: 'Nothing in the change says what should happen to a schedule whose tenant has '
+      + 'been deleted.',
+    file: 'app/Jobs/RunScheduledExport.php',
+    line: 96,
+    disposition: 'in_draft',
+  },
+  {
+    lens: 'repetition',
+    severity: 'nit',
+    claim: 'The redaction pattern list repeats the one in the web exporter.',
+    file: 'app/Reporting/Redaction.php',
+    line: 15,
+    disposition: 'suppressed',
+    disposition_reason: 'the web copy goes in the next change; raising it twice is noise',
+  },
+  {
+    lens: 'contract',
+    severity: 'blocker',
+    claim: 'The column policy applies only where a report definition names its allowed '
+      + 'columns, and the backfill leaves older definitions naming none.',
+    file: 'app/Reporting/ColumnPolicy.php',
+    line: 52,
+    disposition: 'in_draft',
+    evidence: 'PROVED by running the backfill against a copy of the development '
+      + 'database: 14 of 22 definitions were left with allowed_columns null.',
+  },
+  {
+    lens: 'naming',
+    severity: 'nit',
+    claim: 'The removed branch leaves a comment describing it.',
+    file: 'app/Reporting/ReportBuilder.php',
+    line: 28,
+    disposition: 'in_draft',
+  },
+  {
+    lens: 'boundary',
+    severity: 'should',
+    claim: 'The web path now constructs its context from the request without checking '
+      + 'that the signed-in person may export that report.',
+    file: 'app/Http/Controllers/ExportController.php',
+    line: 41,
+    disposition: 'in_draft',
+  },
+  {
+    /*
+     * In `app/Audit/RecordsAnExport.php`, which the brief's fourth part claims with
+     * `in_diff: false`. It is the finding that makes a part's claim on a file outside the
+     * diff worth anything: without it that file belongs to no part and so does this.
+     */
+    lens: 'coverage',
+    severity: 'question',
+    claim: 'The audit trait is in no diff, so whether its entry shape fits a scheduled '
+      + 'export was not checked by reading the change alone.',
+    file: 'app/Audit/RecordsAnExport.php',
+    line: 22,
+    disposition: 'in_draft',
+  },
+  {
+    lens: 'contract',
+    severity: 'should',
+    claim: 'An export is skipped only when the tenant row is gone; a soft-deleted tenant '
+      + 'still exports, which the description says it does not.',
+    file: 'app/Jobs/RunScheduledExport.php',
+    line: 118,
+    disposition: 'in_draft',
+  },
+]
+
+/**
+ * A third review, with the structured brief the three step pages draw.
+ *
+ * **In the order the record requires**: the review, then its findings — because the brief's
+ * open choices and disagreements point at four of them by sequence number through a foreign
+ * key — then the brief, then the layers so the trail has an outcome under every step.
+ */
+function seedStructured(directory: string, database: string): number {
+  const opened = cli(database, [
+    'review',
+    'open',
+    '--repo',
+    'acme/portal',
+    '--pr',
+    '514',
+    '--head',
+    'd41c8e2',
+    '--title',
+    'Give a scheduled export its own context',
+    '--ticket',
+    'ABC-402',
+    '--changed-lines',
+    '1442',
+    '--not-checked',
+    'The reporting front end, which reads the same definitions but was not changed.',
+  ])
+  const reviewId = Number(opened.match(/\d+/)?.[0])
+  if (!Number.isInteger(reviewId)) {
+    throw new Error(`review open printed no id: ${opened}`)
+  }
+
+  STRUCTURED_FINDINGS.forEach((finding, index) => {
+    const path = join(directory, `structured-finding-${index}.json`)
+    writeFileSync(path, JSON.stringify(finding))
+    cli(database, ['finding', 'add', '--review', String(reviewId), '--file', path])
+  })
+
+  const brief = join(directory, 'structured-brief.json')
+  writeFileSync(brief, JSON.stringify(structuredBrief()))
+  cli(database, ['brief', 'put', '--review', String(reviewId), '--file', brief])
+
+  const layers: Array<[number, string, string]> = [
+    [1, 'done', 'passes, 2 warnings'],
+    [2, 'done', 'brief settled'],
+    [3, 'done', '8 options, C built'],
+    [4, 'done', 'right shape'],
+    [5, 'done', '13 findings, 1 blocker'],
+    [6, 'waiting_on_you', 'waiting on you'],
+    [7, 'pending', 'after posting'],
+  ]
+  for (const [number, state, detail] of layers) {
+    cli(database, [
+      'layer',
+      'set',
+      '--review',
+      String(reviewId),
+      '--layer',
+      String(number),
+      '--state',
+      state,
+      '--detail',
+      detail,
+    ])
+  }
+
+  return reviewId
+}
+
 export function seed(
   directory: string,
-): { database: string, reviewId: number, waivedReviewId: number } {
+): {
+  database: string
+  reviewId: number
+  waivedReviewId: number
+  structuredReviewId: number
+} {
   const database = join(directory, 'seeded.db')
 
   const opened = cli(database, [
@@ -342,7 +639,12 @@ Ran the job twice against a local endpoint that 500s once, and counted the deliv
     waivedBrief,
   ])
 
-  return { database, reviewId, waivedReviewId }
+  return {
+    database,
+    reviewId,
+    waivedReviewId,
+    structuredReviewId: seedStructured(directory, database),
+  }
 }
 
 /** A database with nothing in it: what the first `review-desk serve` serves. */

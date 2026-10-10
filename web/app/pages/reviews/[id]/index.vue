@@ -68,6 +68,25 @@ async function changeDisposition(payload: {
       <div class="review">
         <div class="head">
           <div class="heading">
+            <!--
+              **One link back, and the only thing DEV-885 changes on this screen.**
+
+              Step 5 of the trail links here, because this is the only place the findings
+              are drawn until DEV-878 rebuilds it, and this screen carries no trail of its
+              own. Every row in the queue now lands on Understand, so without a way back
+              the trail would send a reader somewhere they could not leave. Worded and
+              placed as the draft screen's, which has carried one all along — but named
+              for where it goes, not "Back to the review". This *is* a review page, and a
+              reader who arrived from the header nav or from a rule never navigated forward
+              from anywhere, so "back to the review" would point at a page they have not
+              seen and name it something they are already looking at.
+            -->
+            <NuxtLink
+              :to="`/reviews/${data.review.id}/understand`"
+              class="back"
+            >
+              Back to Understand
+            </NuxtLink>
             <h1>
               <PrRef :pr="data.review.pr" />
               {{ data.review.title ?? 'no title recorded' }}
@@ -340,6 +359,11 @@ async function changeDisposition(payload: {
 .heading {
   flex: 1 1 420px;
   min-width: 0;
+}
+
+/* The draft screen's own `.back`, so the two read the same. */
+.back {
+  font-size: 14px;
 }
 
 .meta {

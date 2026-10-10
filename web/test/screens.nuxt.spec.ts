@@ -322,12 +322,74 @@ describe('the queue', () => {
     expect(row.text()).toContain('Read and sign off')
     expect(page.findAll('.row').filter(one => one.text().includes('#412'))).toHaveLength(1)
     /*
-     * **And it goes to the review, not to the draft.** Every row in this queue opens the
-     * review it is about; the draft is behind the review page's own "Open draft". This
-     * row was the exception until DEV-880's pull request, and it is pinned here so it
-     * does not become one again.
+     * **And it still goes to the review, not to the draft.** Patrick, on tc-portal #9584:
+     * "when we click a review, we want to go to the review, not to the draft." In a
+     * page-per-step review the review starts at Understand, and the draft is one click
+     * along the trail — which is also the click that walks past the alternatives and the
+     * solution on the way.
      */
-    expect(row.attributes('href')).toBe('/reviews/17')
+    expect(row.attributes('href')).toBe('/reviews/17/understand')
+  })
+
+  it('opens Understand, whatever the row is waiting for', async () => {
+    const page = await shown(Inbox)
+
+    /*
+     * **Every row, whatever it is waiting for.** A brief to confirm, a draft to sign off
+     * and an author's reply are three different steps, and all three land on Understand:
+     * the trail is what says which step is waiting, and it says it about all seven at once
+     * where a destination could only say it about one.
+     */
+    const brief = page.findAll('.row').find(one => one.text().includes('Problem brief ready'))!
+    expect(brief.attributes('href')).toBe('/reviews/17/understand')
+
+    const reply = page.findAll('.row').find(one => one.text().includes('The author replied'))
+    expect(reply, 'the fixtures hold a review whose only waiting thing is a reply').toBeTruthy()
+    expect(reply!.attributes('href')).toMatch(/^\/reviews\/\d+\/understand$/)
+
+    /*
+     * And no row anywhere goes anywhere else. Asserted over every row rather than as a
+     * predicate that could pass on an empty list.
+     */
+    const everywhere = page
+      .findAll('.row')
+      .map(one => one.attributes('href'))
+      .filter((href): href is string => href != null)
+      .filter(href => href.startsWith('/reviews/'))
+    expect(everywhere.length).toBeGreaterThan(2)
+    for (const href of everywhere) expect(href).toMatch(/^\/reviews\/\d+\/understand$/)
+  })
+
+  it('leaves a way back from the two screens the trail reaches', async () => {
+    /*
+     * Steps 5 and 6 of the trail land on the one-page review and the draft, and neither
+     * carries a trail of its own until DEV-878 rebuilds them. One link back each, so the
+     * queue — which lands every row on Understand — does not lead somewhere you cannot
+     * leave. The draft screen has carried one all along; only where it goes has moved.
+     */
+    for (const [component, route] of [
+      [OneReview, '/reviews/17'],
+      [DraftPreview, '/reviews/17/draft'],
+    ] as const) {
+      const screen = await shown(component, { route })
+      const back = screen
+        .findAll('a')
+        .find(one => /^Back to (the review|Understand)$/.test(one.text()))
+      expect(back, `${route} has no way back`).toBeTruthy()
+      expect(back!.attributes('href')).toBe('/reviews/17/understand')
+    }
+  })
+
+  it('sends every "the review" link to Understand, not to the findings', async () => {
+    /*
+     * The queue, the two screens' back links, the header nav and a rule's origin all
+     * meant `/reviews/{id}` before DEV-885. Once "the review" means Understand, an item
+     * still landing on the findings takes a reader somewhere the page it lands on calls
+     * not-the-review — which is what the header's "Reviews" was doing.
+     */
+    const layout = await shown(Layout)
+    const reviews = layout.findAll('nav a').find(one => one.text() === 'Reviews')
+    expect(reviews!.attributes('href')).toMatch(/^\/reviews\/\d+\/understand$/)
   })
 
   it('keeps the figures the boards do not draw, rather than dropping them', async () => {
