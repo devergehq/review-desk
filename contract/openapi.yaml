@@ -189,6 +189,49 @@ paths:
         '500':
           $ref: '#/components/responses/StoreUnavailable'
 
+  /reviews/{reviewId}/brief/problem-statement:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+    get:
+      operationId: getProblemStatement
+      tags: [review]
+      summary: The problem half of the brief, with nothing of the change in it
+      description: |
+        **The one read a session may hand to a blind pass.** It carries how the system
+        works today, the before flow, and what was wrong with each numbered problem. That
+        is the whole of it.
+
+        Absent, and each for its own reason: `headline`, because it states the answer and
+        is the one sentence that would anchor a fresh pair of eyes hardest; `flow_after`
+        and every problem's `now_fixed`, because they *are* the change; each problem's
+        named detail, because it is split before and after and the two sides travel
+        together; the supporting table, the options with their verdicts, the blind pass,
+        the parts, the open choices and the disagreements.
+
+        The superseded `diagram` is absent too. One free-text field held the before and
+        the after at once and nothing can separate them, which is why the flows are rows.
+
+        `problem` is here because it is the problem half by name, and because it is the
+        only thing a brief written the old way holds.
+
+        **Review Desk runs no blind pass.** This read exists so a session can run one and
+        record what it reported; see `Brief.blind_pass`.
+      responses:
+        '200':
+          description: The problem half.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProblemStatement' }
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The review has no brief, so it has no problem statement.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
   /reviews/{reviewId}/findings/{seq}:
     parameters:
       - $ref: '#/components/parameters/ReviewId'
@@ -1015,13 +1058,366 @@ components:
         chosen:
           type: boolean
           description: Whether this is what the author built.
+        proposed_by:
+          $ref: '#/components/schemas/OptionProposer'
+        verdicts:
+          type: array
+          items: { $ref: '#/components/schemas/BriefOptionVerdict' }
+          description: |
+            What this option does about each numbered problem, in problem order. Empty for
+            a brief that numbers no problems, or that recorded no verdicts.
+
+            Feeds the Alternatives page's matrix: one row per option, one column per
+            numbered problem.
+
+    OptionProposer:
+      type: string
+      enum: [ticket, blind_pass, both]
+      description: |
+        Who put an option forward. **`ticket` is what every option already on the record
+        carries**, and that is the honest answer rather than a convenience: Review Desk
+        runs no blind pass, and nothing had run one when those options were written.
+
+        `both` is the strongest signal the Alternatives page draws — the ticket and an
+        independent pass arrived at the same shape.
+
+    BriefOptionVerdict:
+      type: object
+      additionalProperties: false
+      required: [problem, verdict]
+      description: What one option does about one numbered problem.
+      properties:
+        problem:
+          type: integer
+          format: int64
+          minimum: 1
+          description: |
+            The `Brief.problems[].number` being judged. A verdict against a number the
+            brief does not carry is refused on the way in, naming the field and the
+            number.
+        verdict:
+          type: string
+          enum: [fixed, partly, stays, not_assessed]
+          description: |
+            **`not_assessed` is a verdict, not the absence of one.** The board this comes
+            from has an option the blind pass never came up with, so nothing scored it
+            against the three problems — and "nobody judged this" is a different
+            statement from "the brief forgot to judge this".
+        why:
+          type: [string, 'null']
+          description: |
+            One line of why. Non-null for every verdict but `not_assessed`, which is the
+            one that is the absence of a judgement rather than one.
+
+    BriefFlowBox:
+      type: object
+      additionalProperties: false
+      required: [title]
+      description: |
+        One box of a flow: a title and a short note. A box with no `problem` is a step
+        nothing is wrong with — the plain boxes on the board, neither red nor green.
+      properties:
+        title: { type: string, minLength: 1 }
+        note:
+          type: [string, 'null']
+          description: The line underneath the title.
+        problem:
+          type: [integer, 'null']
+          format: int64
+          minimum: 1
+          description: |
+            The `Brief.problems[].number` this box is marked with. On the before flow it
+            marks what is wrong; on the after flow, what fixes it.
+
+    BriefFlow:
+      type: array
+      description: |
+        One flow, as rows of one to three boxes. **The nesting carries the layout**: a row
+        of two boxes is the split the board draws side by side, and the store assigns the
+        row and the slot from the order written so no caller numbers anything.
+
+        Three is the cap because it is a property of the picture: the page draws a row as a
+        grid inside one column, and a fourth box is a row that does not fit.
+      items:
+        type: array
+        minItems: 1
+        maxItems: 3
+        items: { $ref: '#/components/schemas/BriefFlowBox' }
+
+    BriefProblem:
+      type: object
+      additionalProperties: false
+      required: [number, was_wrong, detail_before, detail_after]
+      description: |
+        One numbered problem. **The number is the brief's one internal identity**: a flow
+        box marks it, an option is judged against it and a solution part fixes it.
+      properties:
+        number: { type: integer, format: int64, minimum: 1 }
+        was_wrong:
+          type: string
+          minLength: 1
+          description: >-
+            One line: what was wrong. The Understand page's "Was wrong" column.
+        now_fixed:
+          type: [string, 'null']
+          description: |
+            One line: what it is now. The "Now" column.
+
+            **Null until the change has been described**, which is what lets the problem
+            half be written on its own — understand first, then the blind pass, then the
+            solution.
+        detail_title:
+          type: [string, 'null']
+          description: What to head the named detail with — "The shared session slot".
+        detail_before:
+          type: array
+          items: { type: string, minLength: 1 }
+          description: The named detail behind a click, before the change. One line each.
+        detail_after:
+          type: array
+          items: { type: string, minLength: 1 }
+          description: The same, after the change.
+
+    BriefSupportTable:
+      type: object
+      additionalProperties: false
+      required: [columns, rows]
+      description: |
+        The one small supporting table. On the board it is three questions and who owns
+        each, with a before and an after column.
+
+        Every row holds exactly one cell per column, which the store enforces: a ragged
+        row would leave the page unable to say which heading a trailing cell sits under.
+      properties:
+        title:
+          type: [string, 'null']
+          description: >-
+            The heading — "The idea: three questions, each with one owner".
+        columns:
+          type: array
+          minItems: 1
+          items: { type: string, minLength: 1 }
+        rows:
+          type: array
+          items:
+            type: array
+            items: { type: string }
+
+    BriefBlindPass:
+      type: object
+      additionalProperties: false
+      required: [given, looked_up, questions]
+      description: |
+        The blind pass a session reported running, as it reported it.
+
+        **Review Desk ran nothing and depends on nothing.** `given` is the problem
+        statement the session says it handed over and `looked_up` is the session's own
+        answer to "what else did you read". Neither can be checked here, and holding them
+        is not a claim that they were.
+      properties:
+        given:
+          type: string
+          minLength: 1
+          description: What the pass was given, verbatim.
+        pick_key:
+          type: [string, 'null']
+          description: |
+            The `Brief.options[].key` it would pick. Null when it recommended nothing. The
+            key has to be one of the brief's own options.
+        pick_why:
+          type: [string, 'null']
+          description: Why it would pick that one. Non-null exactly when `pick_key` is.
+        looked_up:
+          type: string
+          minLength: 1
+          description: What it says it looked up — the word "nothing", or a list.
+        questions:
+          type: array
+          items: { type: string, minLength: 1 }
+          description: What it would need to know that the statement did not say.
+
+    BlindPassState:
+      type: string
+      enum: [not_run, ran_and_found_nothing, ran]
+      description: |
+        Which of three states the brief's blind pass is in. **Derived from the record,
+        never stored**, so it cannot sit above an option list that contradicts it.
+
+        `not_run` — no pass was recorded. `ran_and_found_nothing` — one was, and no option
+        carries `proposed_by` of `blind_pass` or `both`. `ran` — one was, and at least one
+        option came from it. Three different things for the Alternatives page to draw: no
+        blind column, a column saying a fresh pair of eyes proposed nothing, and the
+        column itself.
+
+    BriefPart:
+      type: object
+      additionalProperties: false
+      required: [title, summary, fixes, files, lines_added, lines_removed]
+      description: |
+        One part of the change, as the Solution page draws it: a title, one line, the
+        files, and which numbered problems it fixes.
+
+        `coverage.files` is a flat list of every file the change touched and answers "was
+        this read". This answers "what was built".
+      properties:
+        title: { type: string, minLength: 1 }
+        summary:
+          type: string
+          minLength: 1
+          description: The one line under the title.
+        fixes:
+          type: array
+          items: { type: integer, format: int64, minimum: 1 }
+          description: |
+            The `Brief.problems[].number`s this part fixes, in number order. Empty for a
+            part that fixes none — tests and generated types are part of a change and fix
+            nothing.
+        files:
+          type: array
+          items: { $ref: '#/components/schemas/BriefPartFile' }
+        lines_added:
+          type: integer
+          format: int64
+          minimum: 0
+          description: |
+            The part's files' `lines_added`, summed. Derived on the way out so the card's
+            figure cannot disagree with the list underneath it.
+        lines_removed:
+          type: integer
+          format: int64
+          minimum: 0
+          description: The same for `lines_removed`.
+
+    BriefPartFile:
+      type: object
+      additionalProperties: false
+      required: [path, lines_added, lines_removed, in_diff]
+      description: One file of a part, with what the change did to it.
+      properties:
+        path: { type: string, minLength: 1 }
+        lines_added: { type: integer, format: int64, minimum: 0 }
+        lines_removed: { type: integer, format: int64, minimum: 0 }
+        in_diff:
+          type: boolean
+          description: |
+            Whether the pull request changed this file.
+
+            **False is how a part claims a file outside the diff.** Two findings on the
+            review this came from sat in files the pull request never touched, and a part
+            that could not name them would leave those findings belonging to no part. A
+            file outside the diff has no lines added or removed, which is what being
+            outside it means; the store refuses a row claiming both.
+
+    BriefOpenChoice:
+      type: object
+      additionalProperties: false
+      required: [left_open, chosen, why, departs_from_ticket]
+      description: |
+        One choice the ticket left open, and what the change chose. A departure from the
+        ticket is the same row with `departs_from_ticket` set: the reader wants the same
+        two columns either way.
+      properties:
+        left_open:
+          type: string
+          minLength: 1
+          description: What the ticket left open, or said and the change did otherwise.
+        chosen: { type: string, minLength: 1 }
+        why: { type: string, minLength: 1 }
+        departs_from_ticket:
+          type: boolean
+          description: Whether this departs from the ticket rather than filling a gap in it.
+        finding_seq:
+          type: [integer, 'null']
+          format: int64
+          minimum: 1
+          description: |
+            The finding that raises it, if one does. A pointer rather than a requirement:
+            an open choice is a choice, not a fault.
+        finding_key:
+          type: [string, 'null']
+          description: '`F` and the sequence number. Derived; the dashboard builds no ids.'
+
+    BriefDisagreement:
+      type: object
+      additionalProperties: false
+      required: [description_says, code_does, finding_seq, finding_key]
+      description: |
+        One place the description and the code disagree.
+
+        **The finding is required.** DEV-875's rule applies again: a brief that says the
+        description claims one thing and the code does another, and raises nothing about
+        it, posts a review that never mentions the disagreement — and the author goes on
+        reading a description the record knows is wrong.
+      properties:
+        description_says: { type: string, minLength: 1 }
+        code_does: { type: string, minLength: 1 }
+        finding_seq: { type: integer, format: int64, minimum: 1 }
+        finding_key: { type: string }
+
+    ProblemStatement:
+      type: object
+      additionalProperties: false
+      required: [review_id, problem, flow_before, problems]
+      description: |
+        The problem half of a brief, and nothing else. What `getProblemStatement` serves,
+        and what a session may hand to a blind pass.
+
+        **Built by naming what belongs in it, never by removing what does not.** A read
+        that subtracts grows a leak every time the brief grows a field; a read that adds
+        cannot. The five fields below are the whole of it.
+      properties:
+        review_id: { type: integer, format: int64, minimum: 1 }
+        problem:
+          type: string
+          description: |
+            What problem the change is solving, as free text. The problem half by name,
+            and the only thing a brief written the old way holds.
+        how_it_works_today:
+          type: [string, 'null']
+          description: The context a newcomer needs, in plain words.
+        flow_before_caption:
+          type: [string, 'null']
+          description: The sub-caption above the before flow.
+        flow_before: { $ref: '#/components/schemas/BriefFlow' }
+        problems:
+          type: array
+          description: What is wrong, numbered. **`was_wrong` only.**
+          items:
+            type: object
+            additionalProperties: false
+            required: [number, was_wrong]
+            properties:
+              number: { type: integer, format: int64, minimum: 1 }
+              was_wrong: { type: string, minLength: 1 }
 
     Brief:
       type: object
       additionalProperties: false
       required:
-        [review_id, problem, options, confirmed, confirmation_required, updated_at]
-      description: What the review understood before it read the diff. One per review.
+        - review_id
+        - problem
+        - options
+        - confirmed
+        - confirmation_required
+        - flow_before
+        - flow_after
+        - problems
+        - blind_pass_state
+        - parts
+        - open_choices
+        - disagreements
+        - updated_at
+      description: |
+        What the review understood before it read the diff. One per review.
+
+        **The arrays are required and empty for a brief that recorded none**, the way
+        `getReview`'s `sources` and `criteria` are: a dashboard that had to check for a
+        field's existence as well as its contents would be checking two things to draw
+        one. A brief written the old way — `problem`, `diagram`, `provenance` and options
+        with a paragraph each way — serves every array empty and every new string null,
+        and reads back exactly as it did before.
+
+        Which field feeds which page is in `contract/README.md`, "The brief, by page".
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         problem: { type: string, minLength: 1 }
@@ -1053,18 +1449,83 @@ components:
             none.
 
             **False is the one place an agent decides a developer step was unnecessary.**
-            The threshold behind that decision is the caller's: a brief is confirmed on
-            pull requests changing more than 200 lines (Patrick, 9 October 2026), and
-            Review Desk holds neither the number nor the measurement. A brief needing no
-            confirmation is absent from the Inbox's `briefs_to_confirm`, and the One
-            review screen shows it with no confirm button. The developer can still read
-            it and can still send the draft back.
+            Whether it is decided at all is the caller's, and **there is no size
+            threshold**: Patrick ruled on 9 October 2026 that the setting is
+            `brief_gate: never | always` in Locus, and that it is not a function of how
+            many lines a pull request changes. An earlier reading of that decision is why
+            this field used to say "more than 200 lines"; it never was the rule, and
+            Review Desk holds no number either way. A brief needing no confirmation is
+            absent from the Inbox's `briefs_to_confirm`, and the One review screen shows
+            it with no confirm button. The developer can still read it and can still send
+            the draft back.
         confirmation_not_required_because:
           type: [string, 'null']
           description: |
             Why the caller said no confirmation was needed, in its own words. Non-null
             exactly when `confirmation_required` is false, and the only record of why a
             developer step was skipped. It is also layer 2's detail.
+        headline:
+          type: [string, 'null']
+          description: |
+            The one headline sentence the Understand page opens with.
+
+            **It states the answer**, which is why `ProblemStatement` does not carry it:
+            it is the one sentence that would anchor a fresh pair of eyes hardest.
+        how_it_works_today:
+          type: [string, 'null']
+          description: |
+            How the system works today, in plain words — the context a newcomer needs. It
+            was mixed into `problem`, which is why the problem half could not be handed to
+            anything on its own.
+        flow_before_caption:
+          type: [string, 'null']
+          description: |
+            The sub-caption above the before flow — "The staff page handles OAuth
+            sign-in".
+        flow_after_caption:
+          type: [string, 'null']
+          description: The sub-caption above the after flow.
+        flow_before:
+          allOf:
+            - $ref: '#/components/schemas/BriefFlow'
+          description: How it works today, as rows of one to three boxes.
+        flow_after:
+          allOf:
+            - $ref: '#/components/schemas/BriefFlow'
+          description: How it works after the change, in the same shape.
+        problems:
+          type: array
+          items: { $ref: '#/components/schemas/BriefProblem' }
+          description: |
+            What is wrong, numbered. The numbers `flow_before[][].problem`,
+            `flow_after[][].problem`, `options[].verdicts[].problem` and `parts[].fixes`
+            refer to; a write naming a number no problem carries is refused, with the
+            field and the number.
+        support_table:
+          oneOf:
+            - $ref: '#/components/schemas/BriefSupportTable'
+            - type: 'null'
+          description: The one small supporting table. Null when the brief holds none.
+        blind_pass:
+          oneOf:
+            - $ref: '#/components/schemas/BriefBlindPass'
+            - type: 'null'
+          description: |
+            The blind pass a session reported running. Null when none ran. Review Desk
+            runs none.
+        blind_pass_state: { $ref: '#/components/schemas/BlindPassState' }
+        parts:
+          type: array
+          items: { $ref: '#/components/schemas/BriefPart' }
+          description: The change in parts, in the order they are to be drawn.
+        open_choices:
+          type: array
+          items: { $ref: '#/components/schemas/BriefOpenChoice' }
+          description: The choices the ticket left open, and the departures from it.
+        disagreements:
+          type: array
+          items: { $ref: '#/components/schemas/BriefDisagreement' }
+          description: Where the description and the code disagree. Each names a finding.
         updated_at: { type: string, format: date-time }
 
     FindingHunkLine:

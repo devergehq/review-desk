@@ -106,6 +106,7 @@ impl Api {
             Operation::StartReview => self.start_review(body),
             Operation::GetReview { review_id } => self.review(review_id),
             Operation::ConfirmBrief { review_id } => self.confirm_brief(review_id),
+            Operation::GetProblemStatement { review_id } => self.problem_statement(review_id),
             Operation::SetFindingDisposition { review_id, seq } => {
                 self.set_finding_disposition(review_id, seq, body)
             }
@@ -488,6 +489,25 @@ impl Api {
         let brief = self.records.confirm_brief(review_id)?;
         let options = self.records.brief_options(review_id)?;
         Ok((200, wire::brief(&brief, &options)))
+    }
+
+    /// `GET /reviews/{reviewId}/brief/problem-statement`: the problem, with nothing of
+    /// the change in it.
+    ///
+    /// **The one read a blind pass may be given.** It serves how the system works today,
+    /// the before flow and what was wrong with each numbered problem. The headline, the
+    /// after flow, every problem's `now_fixed`, the named detail, the supporting table,
+    /// the options, the blind pass, the parts, the choices and the disagreements are all
+    /// absent — an independent view of a problem stops being independent the moment it is
+    /// shown the answer.
+    ///
+    /// It is a read and it decides nothing: no confirmation, no layer, no write.
+    fn problem_statement(&self, review_id: i64) -> Result<(u16, Value), ApiError> {
+        // Checked first so an unknown review is 404 and a review with no brief is 409 —
+        // the two things `confirmBrief` distinguishes, for the same reason.
+        self.records.review(review_id)?;
+        let statement = self.records.problem_statement(review_id)?;
+        Ok((200, wire::problem_statement(&statement)))
     }
 
     /// `PATCH /reviews/{reviewId}/findings/{seq}`: move a finding between the draft, held

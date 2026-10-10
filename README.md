@@ -163,17 +163,18 @@ screen shows it with no confirm button.
 {
   "problem": "The delivery log prints `null` for a latency it never measured.",
   "confirmation_required": false,
-  "confirmation_not_required_because": "61 changed lines, under this caller's 200-line threshold"
+  "confirmation_not_required_because": "brief_gate is never for this repository"
 }
 ```
 
-**The threshold is the caller's.** A brief is confirmed by the developer on pull requests
-changing more than 200 lines — Patrick, 9 October 2026 — and Review Desk holds neither the
-number nor the measurement. It records that the caller said no confirmation was needed, and
-what the caller gave as the reason. The reason is required when the flag is false and
-refused when it is true: a brief that needed no confirmation with nothing saying why would
-put layer 2 at `done` with no record of who decided that, which is the state the field
-exists to avoid.
+**Whether a brief is confirmed at all is the caller's setting, and it is not a size.**
+Patrick ruled on 9 October 2026 that the gate is `brief_gate: never|always` in Locus; an
+earlier reading of that decision had it as "more than 200 lines", and it never was. Review
+Desk holds no number either way. It records that the caller said no confirmation was
+needed, and what the caller gave as the reason. The reason is required when the flag is
+false and refused when it is true: a brief that needed no confirmation with nothing saying
+why would put layer 2 at `done` with no record of who decided that, which is the state the
+field exists to avoid.
 
 **A brief already written as requiring confirmation cannot be rewritten as needing none.**
 That refusal is the whole of the protection, and it exits 1:

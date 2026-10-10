@@ -2,6 +2,7 @@
 
 use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior};
 
+use crate::entities::brief_structure::{validate_brief_structure, FlowSide};
 use crate::entities::only_the_developer;
 use crate::error::{Result, StoreError};
 use crate::model::{now, Actor, Brief, BriefOption, NewBrief, ReviewLayerName, ReviewLayerState};
@@ -16,7 +17,9 @@ pub(crate) const CONFIRMED_DETAIL: &str = "confirmed by the developer";
 
 const COLUMNS: &str = "review_id, problem, diagram, option_map, approach_verdict, \
                        provenance, confirmed_at, confirmed_by, confirmation_required, \
-                       confirmation_not_required_because, updated_at";
+                       confirmation_not_required_because, headline, how_it_works_today, \
+                       flow_before_caption, flow_after_caption, support_table_title, \
+                       updated_at";
 
 impl Store {
     /// Store the review's brief, replacing any brief already held.
@@ -98,6 +101,11 @@ impl Store {
         for option in &new.options {
             validate_option(option)?;
         }
+
+        // **Before the transaction, because every refusal here is answerable from the
+        // document alone.** A problem number is checked against the problems in this same
+        // document rather than the ones on the record, because this write replaces them.
+        validate_brief_structure(&new)?;
         if let Some(duplicate) = first_duplicate_key(&new.options) {
             return Err(StoreError::InvalidValue {
                 field: "options",
@@ -135,8 +143,11 @@ impl Store {
                 "INSERT INTO briefs
                      (review_id, problem, diagram, option_map, approach_verdict,
                       provenance, confirmed_at, confirmed_by, confirmation_required,
-                      confirmation_not_required_because, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, NULL, ?7, ?8, ?9)
+                      confirmation_not_required_because, headline, how_it_works_today,
+                      flow_before_caption, flow_after_caption, support_table_title,
+                      updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, NULL, ?7, ?8, ?9, ?10, ?11, ?12,
+                         ?13, ?14)
                  ON CONFLICT (review_id) DO UPDATE SET
                      problem          = excluded.problem,
                      diagram          = excluded.diagram,
@@ -148,6 +159,11 @@ impl Store {
                      confirmation_required = excluded.confirmation_required,
                      confirmation_not_required_because
                          = excluded.confirmation_not_required_because,
+                     headline            = excluded.headline,
+                     how_it_works_today  = excluded.how_it_works_today,
+                     flow_before_caption = excluded.flow_before_caption,
+                     flow_after_caption  = excluded.flow_after_caption,
+                     support_table_title = excluded.support_table_title,
                      updated_at       = excluded.updated_at",
                 params![
                     review_id,
@@ -158,11 +174,25 @@ impl Store {
                     new.provenance,
                     new.confirmation_required,
                     because,
+                    new.headline,
+                    new.how_it_works_today,
+                    new.flow_before_caption,
+                    new.flow_after_caption,
+                    new.support_table
+                        .as_ref()
+                        .and_then(|table| table.title.clone()),
                     updated_at,
                 ],
             )
             .map_err(|error| unknown_review(error, review_id))?;
 
+        // Checked inside the transaction, so a finding cannot be added or the review
+        // removed between the check and the insert.
+        self.check_brief_findings(review_id, &new)?;
+
+        // The structure goes before the options, because the verdicts and the blind pass's
+        // pick hang off them.
+        self.clear_brief_structure(review_id)?;
         self.conn.execute(
             "DELETE FROM brief_options WHERE review_id = ?1",
             params![review_id],
@@ -170,8 +200,9 @@ impl Store {
         for option in &new.options {
             self.conn.execute(
                 "INSERT INTO brief_options
-                     (review_id, key, title, argument_for, argument_against, chosen)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                     (review_id, key, title, argument_for, argument_against, chosen,
+                      proposed_by)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     review_id,
                     option.key,
@@ -179,9 +210,11 @@ impl Store {
                     option.argument_for,
                     option.argument_against,
                     option.chosen,
+                    option.proposed_by,
                 ],
             )?;
         }
+        self.write_brief_structure(review_id, &new)?;
 
         // **Layer 2 in the same transaction as the brief**, for the reason the options
         // are: a trail that disagrees with the record is worse than a trail that is
@@ -274,7 +307,7 @@ impl Store {
     /// The alternatives the review considered, in key order.
     pub fn list_brief_options(&self, review_id: i64) -> Result<Vec<BriefOption>> {
         let mut statement = self.conn.prepare(
-            "SELECT key, title, argument_for, argument_against, chosen
+            "SELECT key, title, argument_for, argument_against, chosen, proposed_by
              FROM brief_options WHERE review_id = ?1 ORDER BY key ASC",
         )?;
         let rows = statement.query_map(params![review_id], |row| {
@@ -284,9 +317,18 @@ impl Store {
                 argument_for: row.get("argument_for")?,
                 argument_against: row.get("argument_against")?,
                 chosen: row.get("chosen")?,
+                proposed_by: row.get("proposed_by")?,
+                // Read separately, for the reason the brief's own options are: a row
+                // builder has no connection to read them through.
+                verdicts: Vec::new(),
             })
         })?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+
+        let mut options = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        for option in &mut options {
+            option.verdicts = self.brief_option_verdicts(review_id, &option.key)?;
+        }
+        Ok(options)
     }
 
     /// Read the review's brief. Fails with [`StoreError::NotFound`] if there is none.
@@ -311,6 +353,15 @@ impl Store {
         match held {
             Some(brief) => Ok(Some(Brief {
                 options: self.list_brief_options(review_id)?,
+                flow_before: self.brief_flow(review_id, FlowSide::Before)?,
+                flow_after: self.brief_flow(review_id, FlowSide::After)?,
+                problems: self.brief_problems(review_id)?,
+                support_table: self
+                    .brief_support_table(review_id, brief.support_table.and_then(|t| t.title))?,
+                blind_pass: self.brief_blind_pass(review_id)?,
+                parts: self.brief_parts(review_id)?,
+                open_choices: self.brief_open_choices(review_id)?,
+                disagreements: self.brief_disagreements(review_id)?,
                 ..brief
             })),
             None => Ok(None),
@@ -347,6 +398,28 @@ fn row_to_brief(row: &Row<'_>) -> rusqlite::Result<Brief> {
         confirmed_by: row.get("confirmed_by")?,
         confirmation_required: row.get("confirmation_required")?,
         confirmation_not_required_because: row.get("confirmation_not_required_because")?,
+        headline: row.get("headline")?,
+        how_it_works_today: row.get("how_it_works_today")?,
+        flow_before_caption: row.get("flow_before_caption")?,
+        flow_after_caption: row.get("flow_after_caption")?,
+        // The title is all this row holds of the supporting table; the columns and the
+        // cells are read by the caller that builds the brief, which is what decides
+        // whether there is a table at all.
+        support_table: row
+            .get::<_, Option<String>>("support_table_title")?
+            .map(|title| crate::BriefSupportTable {
+                title: Some(title),
+                columns: Vec::new(),
+                rows: Vec::new(),
+            }),
+        // Read separately, by the caller that builds the brief.
+        flow_before: Vec::new(),
+        flow_after: Vec::new(),
+        problems: Vec::new(),
+        blind_pass: None,
+        parts: Vec::new(),
+        open_choices: Vec::new(),
+        disagreements: Vec::new(),
         updated_at: row.get("updated_at")?,
     })
 }

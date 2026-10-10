@@ -41,6 +41,14 @@
 //! backfills one prose block per draft already held, which is the honest reading of a body
 //! nothing wrote in parts — and it normalises that body to end in exactly one newline,
 //! because from here on the body is composed and the composition ends in one.
+//!
+//! Version 10 is what the three boards Patrick approved on 10 October 2026 draw and a brief
+//! of three free-text fields could not hold: a headline, how the system works today, a
+//! before flow and an after flow, numbered problems with their detail, one supporting table,
+//! who proposed each option and how each option scores against each problem, the blind pass
+//! a session reported, the change in parts, and the choices and disagreements the change
+//! left behind. Thirteen tables, because every one of them is a list a page draws and the
+//! store holds no opaque blobs.
 
 use rusqlite::Connection;
 
@@ -785,6 +793,335 @@ SET body = TRIM(body, char(10)) || char(10)
 WHERE TRIM(body, char(10)) <> '';
 
 UPDATE drafts SET body = '' WHERE TRIM(body, char(10)) = '';
+"#,
+    },
+    Migration {
+        version: 10,
+        name: "brief-structure",
+        sql: r#"
+-- The twelve things the three boards Patrick approved on 10 October 2026 draw, and a
+-- brief of three free-text fields could hold none of.
+--
+-- **Every field here is plain text.** The pages interpolate; nothing renders markup, and
+-- `briefs.diagram` stays exactly as it was for the briefs that already use it.
+--
+-- **No length is enforced anywhere below.** The recorded brief ran 310 words where the
+-- approved board shows 85, and that is a writing fault: it belongs to the linter in Locus,
+-- not to a CHECK constraint. What is refused here is structural nonsense only -- a flow row
+-- of four boxes, a verdict against a problem that does not exist, a title over an empty
+-- table.
+--
+-- Two vocabulary words run through all of it. `position` is the row, from 1; `slot` is the
+-- place across that row, from 1. Both are the store's to assign, from the order written, so
+-- no caller manages numbering -- the bargain `review_sources` struck in migration 8. The one
+-- exception is `brief_problems.number`, which is an **identity** rather than an order: a
+-- flow box, an option verdict and a solution part all name it, so the caller owns it.
+
+-- Row 1: the one headline sentence, and row 7: how the system works today.
+--
+-- `how_it_works_today` is the context a newcomer needs, and on 10 October it was mixed into
+-- `problem` -- which is why the problem half could not be handed to anything. It is also the
+-- larger half of what a blind pass may be shown; see `problem_statement`.
+ALTER TABLE briefs ADD COLUMN headline           TEXT;
+ALTER TABLE briefs ADD COLUMN how_it_works_today TEXT;
+
+-- The two sub-captions above the flows -- "The staff page handles OAuth sign-in", "OAuth
+-- sign-in has a page of its own". They are the one part of rows 2 and 3 that is not a box.
+ALTER TABLE briefs ADD COLUMN flow_before_caption TEXT;
+ALTER TABLE briefs ADD COLUMN flow_after_caption  TEXT;
+
+-- Row 6's heading -- "The idea: three questions, each with one owner". Non-null only when
+-- the table has a column, which `put_brief` enforces: a heading over nothing is a section
+-- the page draws empty.
+ALTER TABLE briefs ADD COLUMN support_table_title TEXT;
+
+-- Rows 4 and 5: the numbered problems.
+--
+-- **The number is the brief's one internal identity.** A flow box marks a problem, an option
+-- is judged against it and a solution part fixes it, so it is the caller's to choose and the
+-- store's to enforce the existence of.
+--
+-- `was_wrong` is required and `now_fixed` is not, and that asymmetry is the whole reason the
+-- problem half can be written on its own: a numbered problem with nothing wrong is not a
+-- problem, but a problem whose fix has not been described yet is exactly what step 2 holds
+-- before step 4 has run. DEV-883's order -- understand, then the blind pass, then the
+-- solution -- is only writable because of it.
+CREATE TABLE brief_problems (
+    review_id    INTEGER NOT NULL REFERENCES briefs (review_id) ON DELETE CASCADE,
+    number       INTEGER NOT NULL,
+    was_wrong    TEXT    NOT NULL,
+    now_fixed    TEXT,
+    detail_title TEXT,
+    PRIMARY KEY (review_id, number),
+    CHECK (number >= 1),
+    CHECK (was_wrong <> ''),
+    CHECK (now_fixed IS NULL OR now_fixed <> ''),
+    CHECK (detail_title IS NULL OR detail_title <> '')
+);
+
+-- Row 5's named detail, split before and after. One row per line of it.
+--
+-- Hung off the problem rather than the brief, so detail for a problem that is not there
+-- cannot exist -- and a brief rewritten with one problem fewer takes its detail with it.
+CREATE TABLE brief_problem_detail (
+    review_id INTEGER NOT NULL,
+    number    INTEGER NOT NULL,
+    side      TEXT    NOT NULL,
+    position  INTEGER NOT NULL,
+    text      TEXT    NOT NULL,
+    PRIMARY KEY (review_id, number, side, position),
+    CHECK (side IN ('before', 'after')),
+    CHECK (position >= 1),
+    CHECK (text <> ''),
+    FOREIGN KEY (review_id, number)
+        REFERENCES brief_problems (review_id, number) ON DELETE CASCADE
+);
+
+-- Rows 2 and 3: the before flow and the after flow, as rows of one to three boxes.
+--
+-- One table with a `side`, not two tables: the two flows are the same shape drawn twice,
+-- and the approved board's own rule is that they are read side by side. They are served as
+-- two lists, which is what makes the problem half separable -- `problem_statement` selects
+-- `before` and there is nothing in it that could carry `after`.
+--
+-- **Three boxes is the cap and the schema holds it**, because "rows of one to three boxes"
+-- is a property of the picture: a fourth box on a row is not a wider row, it is a row that
+-- does not fit the column the page draws it in.
+--
+-- `problem` is nullable, and the composite foreign key is satisfied when it is null, which
+-- is right: the plain boxes on the approved board -- the ones that are neither red nor green
+-- -- are the steps of the flow that nothing is wrong with.
+CREATE TABLE brief_flow_boxes (
+    review_id INTEGER NOT NULL REFERENCES briefs (review_id) ON DELETE CASCADE,
+    side      TEXT    NOT NULL,
+    position  INTEGER NOT NULL,
+    slot      INTEGER NOT NULL,
+    title     TEXT    NOT NULL,
+    note      TEXT,
+    problem   INTEGER,
+    PRIMARY KEY (review_id, side, position, slot),
+    CHECK (side IN ('before', 'after')),
+    CHECK (position >= 1),
+    CHECK (slot BETWEEN 1 AND 3),
+    CHECK (title <> ''),
+    CHECK (note IS NULL OR note <> ''),
+    FOREIGN KEY (review_id, problem)
+        REFERENCES brief_problems (review_id, number) ON DELETE CASCADE
+);
+
+-- Row 6: the one small supporting table. On the approved board it is three questions and
+-- who owns each, with a before and an after column.
+--
+-- Two tables rather than one, because a cell has to sit in a column that was declared. The
+-- foreign key is what says so; without it a brief could hold a four-cell row under three
+-- headings and nothing would be able to say which heading the fourth belongs to.
+CREATE TABLE brief_support_columns (
+    review_id INTEGER NOT NULL REFERENCES briefs (review_id) ON DELETE CASCADE,
+    position  INTEGER NOT NULL,
+    heading   TEXT    NOT NULL,
+    PRIMARY KEY (review_id, position),
+    CHECK (position >= 1),
+    CHECK (heading <> '')
+);
+
+-- `slot` names the column, by its position. A cell may be empty -- a blank in a small table
+-- is a real answer, and the approved board has none only because that review had none.
+CREATE TABLE brief_support_cells (
+    review_id INTEGER NOT NULL,
+    position  INTEGER NOT NULL,
+    slot      INTEGER NOT NULL,
+    text      TEXT    NOT NULL,
+    PRIMARY KEY (review_id, position, slot),
+    CHECK (position >= 1),
+    CHECK (slot >= 1),
+    FOREIGN KEY (review_id, slot)
+        REFERENCES brief_support_columns (review_id, position) ON DELETE CASCADE
+);
+
+-- Row 9: who put each option forward.
+--
+-- **`ticket` is the honest backfill, not a convenience.** Review Desk runs no blind pass and
+-- nothing had run one when these rows were written -- DEV-883 is the issue that adds it --
+-- so there is no option already on the record that could have come from anywhere else.
+--
+-- SQLite cannot add a CHECK to a table that already exists, so the closed set is enforced on
+-- the way in and on the way out by `OptionProposer`, the way `NitTicketStatus` is for the
+-- column migration 4 added to `reviews`.
+ALTER TABLE brief_options ADD COLUMN proposed_by TEXT NOT NULL DEFAULT 'ticket';
+
+-- Row 8: per option, a verdict against each numbered problem.
+--
+-- Four verdicts, and `not_assessed` is one of them rather than the absence of a row. The
+-- approved board's option D is the case: the blind pass never came up with it, so it has no
+-- score against the three problems, and "nobody judged this" is a different statement from
+-- "the brief forgot to". The linter in DEV-884 can only ask for a verdict per option per
+-- problem because the difference is on the record.
+--
+-- `why` is the one line beside the verdict, required for the three verdicts that are a
+-- judgement and optional for the one that is the absence of one.
+CREATE TABLE brief_option_verdicts (
+    review_id INTEGER NOT NULL,
+    key       TEXT    NOT NULL,
+    problem   INTEGER NOT NULL,
+    verdict   TEXT    NOT NULL,
+    why       TEXT,
+    PRIMARY KEY (review_id, key, problem),
+    CHECK (verdict IN ('fixed', 'partly', 'stays', 'not_assessed')),
+    CHECK (why IS NULL OR why <> ''),
+    CHECK (verdict = 'not_assessed' OR why IS NOT NULL),
+    FOREIGN KEY (review_id, key)
+        REFERENCES brief_options (review_id, key) ON DELETE CASCADE,
+    FOREIGN KEY (review_id, problem)
+        REFERENCES brief_problems (review_id, number) ON DELETE CASCADE
+);
+
+-- Row 10: the blind pass itself.
+--
+-- **Review Desk runs no blind pass.** This records what a session reported running, and it
+-- depends on nothing: `given` is the problem statement the session says it handed over, and
+-- `looked_up` is the session's own answer to "what did you read apart from this" -- the word
+-- "nothing", or a list. Review Desk cannot check either, and storing them is not a claim
+-- that it did.
+--
+-- **The row's existence is the first of three states.** No row means the pass did not run.
+-- A row with no pick means it ran and recommended nothing. A row with a pick means it ran
+-- and reported. The second and third are told apart by `pick_key`, and `pick_why` travels
+-- with it so a pick can never appear without its reason. See `Brief::blind_pass_state`.
+--
+-- The pick names one of the brief's own options, because an option list that the pass's
+-- choice is not in would leave the page drawing a title nothing else on it refers to.
+CREATE TABLE brief_blind_pass (
+    review_id INTEGER PRIMARY KEY REFERENCES briefs (review_id) ON DELETE CASCADE,
+    given     TEXT    NOT NULL,
+    pick_key  TEXT,
+    pick_why  TEXT,
+    looked_up TEXT    NOT NULL,
+    CHECK (given <> ''),
+    CHECK (looked_up <> ''),
+    CHECK (pick_key IS NULL OR pick_key <> ''),
+    CHECK (pick_why IS NULL OR pick_why <> ''),
+    CHECK ((pick_key IS NULL) = (pick_why IS NULL)),
+    FOREIGN KEY (review_id, pick_key)
+        REFERENCES brief_options (review_id, key) ON DELETE CASCADE
+);
+
+-- The questions the pass said it would need answered. Hung off the pass, so a brief whose
+-- pass did not run cannot hold its questions.
+CREATE TABLE brief_blind_questions (
+    review_id INTEGER NOT NULL REFERENCES brief_blind_pass (review_id) ON DELETE CASCADE,
+    position  INTEGER NOT NULL,
+    text      TEXT    NOT NULL,
+    PRIMARY KEY (review_id, position),
+    CHECK (position >= 1),
+    CHECK (text <> '')
+);
+
+-- Row 11: the change in parts.
+--
+-- `coverage.files` from migration 8 is a flat list of every file the change touched, which
+-- answers "was this read" and cannot answer "what was built". A part is the grouping: a
+-- title, one line, its files, and which problems it fixes.
+CREATE TABLE brief_parts (
+    review_id INTEGER NOT NULL REFERENCES briefs (review_id) ON DELETE CASCADE,
+    position  INTEGER NOT NULL,
+    title     TEXT    NOT NULL,
+    summary   TEXT    NOT NULL,
+    PRIMARY KEY (review_id, position),
+    CHECK (position >= 1),
+    CHECK (title <> '' AND summary <> '')
+);
+
+-- The files of one part, with what the change did to each.
+--
+-- **`in_diff` is how a part claims a file the pull request did not change.** Two findings on
+-- the review of 10 October sat in files outside the diff, and a part that could not name
+-- them would have left those two findings belonging to no part at all. A file outside the
+-- diff has no lines added or removed -- that is what being outside it means -- and the CHECK
+-- is what stops a row claiming both.
+--
+-- One part per file, which is the point of the primary key: "which findings sit on which
+-- part" is derived from a finding's path, and a path owned twice would answer it twice.
+CREATE TABLE brief_part_files (
+    review_id     INTEGER NOT NULL,
+    part          INTEGER NOT NULL,
+    position      INTEGER NOT NULL,
+    path          TEXT    NOT NULL,
+    lines_added   INTEGER NOT NULL DEFAULT 0,
+    lines_removed INTEGER NOT NULL DEFAULT 0,
+    in_diff       INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (review_id, path),
+    -- The order is the order within its own part, so the uniqueness is too. One list per
+    -- review -- the shape `review_files` uses -- would make the second part's first file
+    -- collide with the first part's.
+    UNIQUE (review_id, part, position),
+    CHECK (position >= 1),
+    CHECK (path <> ''),
+    CHECK (lines_added >= 0 AND lines_removed >= 0),
+    CHECK (in_diff IN (0, 1)),
+    CHECK (in_diff = 1 OR (lines_added = 0 AND lines_removed = 0)),
+    FOREIGN KEY (review_id, part)
+        REFERENCES brief_parts (review_id, position) ON DELETE CASCADE
+);
+
+-- Which numbered problems a part fixes. A set, not a list: a part fixing problems 1 and 3
+-- says nothing about which it fixes more.
+CREATE TABLE brief_part_problems (
+    review_id INTEGER NOT NULL,
+    part      INTEGER NOT NULL,
+    problem   INTEGER NOT NULL,
+    PRIMARY KEY (review_id, part, problem),
+    FOREIGN KEY (review_id, part)
+        REFERENCES brief_parts (review_id, position) ON DELETE CASCADE,
+    FOREIGN KEY (review_id, problem)
+        REFERENCES brief_problems (review_id, number) ON DELETE CASCADE
+);
+
+-- Row 12, first half: the choices the ticket left open, and what the change chose.
+--
+-- `departs_from_ticket` is the one on the approved board that was not left open at all --
+-- the ticket said where the pending record gets written and the change wrote it somewhere
+-- else, with a reason. A departure and an open choice are the same row with that flag
+-- flipped, because what the reader wants is the same column either way: what was chosen and
+-- why.
+--
+-- The finding is a pointer and is optional here. An open choice is a choice, not a fault.
+CREATE TABLE brief_open_choices (
+    review_id           INTEGER NOT NULL REFERENCES briefs (review_id) ON DELETE CASCADE,
+    position            INTEGER NOT NULL,
+    left_open           TEXT    NOT NULL,
+    chosen              TEXT    NOT NULL,
+    why                 TEXT    NOT NULL,
+    departs_from_ticket INTEGER NOT NULL DEFAULT 0,
+    finding_seq         INTEGER,
+    PRIMARY KEY (review_id, position),
+    CHECK (position >= 1),
+    CHECK (left_open <> '' AND chosen <> '' AND why <> ''),
+    CHECK (departs_from_ticket IN (0, 1)),
+    FOREIGN KEY (review_id, finding_seq)
+        REFERENCES findings (review_id, seq) ON DELETE CASCADE
+);
+
+-- Row 12, second half: where the description and the code disagree.
+--
+-- **The finding is required**, which is DEV-875's rule applied where it applies again: a
+-- brief that says the description claims one thing and the code does another, and raises
+-- nothing about it, posts a review that never mentions the disagreement. The author then
+-- reads a description the record knows is wrong. Raise the finding first.
+--
+-- The composite foreign key is the same shape `outcomes` uses, so a disagreement cannot
+-- point at another review's F3.
+CREATE TABLE brief_disagreements (
+    review_id        INTEGER NOT NULL REFERENCES briefs (review_id) ON DELETE CASCADE,
+    position         INTEGER NOT NULL,
+    description_says TEXT    NOT NULL,
+    code_does        TEXT    NOT NULL,
+    finding_seq      INTEGER NOT NULL,
+    PRIMARY KEY (review_id, position),
+    CHECK (position >= 1),
+    CHECK (description_says <> '' AND code_does <> ''),
+    FOREIGN KEY (review_id, finding_seq)
+        REFERENCES findings (review_id, seq) ON DELETE CASCADE
+);
 "#,
     },
 ];

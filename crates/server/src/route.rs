@@ -1,4 +1,4 @@
-//! The contract's eighteen operations, as a type.
+//! The contract's nineteen operations, as a type.
 //!
 //! [`Operation::ALL`] is the point of this module: a test can walk every operation the
 //! contract declares and assert that each one is routed and answers, rather than the set
@@ -19,6 +19,7 @@ pub enum Operation {
     StartReview,
     GetReview { review_id: i64 },
     ConfirmBrief { review_id: i64 },
+    GetProblemStatement { review_id: i64 },
     SetFindingDisposition { review_id: i64, seq: i64 },
     DecideFinding { review_id: i64, seq: i64 },
     GetDraft { review_id: i64 },
@@ -42,6 +43,7 @@ impl Operation {
         Operation::StartReview,
         Operation::GetReview { review_id: 1 },
         Operation::ConfirmBrief { review_id: 1 },
+        Operation::GetProblemStatement { review_id: 1 },
         Operation::SetFindingDisposition {
             review_id: 1,
             seq: 1,
@@ -71,6 +73,7 @@ impl Operation {
             Operation::StartReview => "startReview",
             Operation::GetReview { .. } => "getReview",
             Operation::ConfirmBrief { .. } => "confirmBrief",
+            Operation::GetProblemStatement { .. } => "getProblemStatement",
             Operation::SetFindingDisposition { .. } => "setFindingDisposition",
             Operation::DecideFinding { .. } => "decideFinding",
             Operation::GetDraft { .. } => "getDraft",
@@ -97,6 +100,9 @@ impl Operation {
             Operation::GetReview { review_id } => format!("GET /reviews/{review_id}"),
             Operation::ConfirmBrief { review_id } => {
                 format!("POST /reviews/{review_id}/brief/confirm")
+            }
+            Operation::GetProblemStatement { review_id } => {
+                format!("GET /reviews/{review_id}/brief/problem-statement")
             }
             Operation::SetFindingDisposition { review_id, seq } => {
                 format!("PATCH /reviews/{review_id}/findings/{seq}")
@@ -169,6 +175,13 @@ pub fn match_route(method: &str, path: &str) -> Target {
             Some(review_id) => (
                 Target::Operation(Operation::ConfirmBrief { review_id }),
                 method == "POST",
+            ),
+            None => (Target::Unknown, true),
+        },
+        ["reviews", id, "brief", "problem-statement"] => match number(id) {
+            Some(review_id) => (
+                Target::Operation(Operation::GetProblemStatement { review_id }),
+                method == "GET",
             ),
             None => (Target::Unknown, true),
         },

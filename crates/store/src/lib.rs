@@ -32,6 +32,11 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
 
+pub use crate::entities::brief_structure::{
+    BlindPassState, BriefBlindPass, BriefDisagreement, BriefFlowBox, BriefFlowRow, BriefOpenChoice,
+    BriefOptionVerdict, BriefPart, BriefPartFile, BriefProblem, BriefSupportTable, FlowSide,
+    OptionProposer, ProblemStatement, ProblemVerdict, WhatIsWrong, MOST_BOXES_IN_A_FLOW_ROW,
+};
 pub use crate::entities::composition::finding_heading;
 pub use crate::entities::decision::{TicketedAndApproved, DEVELOPER_DECISIONS};
 pub use crate::entities::provenance::{

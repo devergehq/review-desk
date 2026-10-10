@@ -8,21 +8,60 @@
       "title": "Retry inside the request",
       "argument_for": "Smallest change, no new tables.",
       "argument_against": "Holds the user's request open; cannot span 24 hours.",
-      "chosen": false
+      "chosen": false,
+      "proposed_by": "ticket",
+      "verdicts": [
+        {
+          "problem": 1,
+          "verdict": "partly",
+          "why": "A retry inside the request covers a blip and nothing longer."
+        },
+        {
+          "problem": 2,
+          "verdict": "stays",
+          "why": "Still nothing is written down."
+        }
+      ]
     },
     {
       "key": "B",
       "title": "Queue with backoff",
       "argument_for": "Meets the 24-hour window; failures are stored and visible.",
       "argument_against": "Needs an idempotency key so a retry is not a duplicate.",
-      "chosen": true
+      "chosen": true,
+      "proposed_by": "both",
+      "verdicts": [
+        {
+          "problem": 1,
+          "verdict": "fixed",
+          "why": "Backoff runs to the 24 hours the ticket asks for."
+        },
+        {
+          "problem": 2,
+          "verdict": "fixed",
+          "why": "The row per attempt is the record."
+        }
+      ]
     },
     {
       "key": "C",
       "title": "Dead-letter and manual replay",
       "argument_for": "A person can replay one delivery after fixing an endpoint.",
       "argument_against": "Nothing happens automatically.",
-      "chosen": false
+      "chosen": false,
+      "proposed_by": "blind_pass",
+      "verdicts": [
+        {
+          "problem": 1,
+          "verdict": "stays",
+          "why": "Nothing happens until a person replays it."
+        },
+        {
+          "problem": 2,
+          "verdict": "fixed",
+          "why": "A dead-letter row is a record of the attempt."
+        }
+      ]
     }
   ],
   "approach_verdict": "B is the right shape for this ticket. It leaves out the one useful part of C: once the 24 hours run out there is no way to replay a delivery by hand. That is finding F2.",
@@ -31,5 +70,192 @@
   "confirmed_at": "2026-10-08T10:58:00Z",
   "confirmation_required": true,
   "confirmation_not_required_because": null,
+  "headline": "Deliveries move to a queue, so one that fails is retried instead of lost.",
+  "how_it_works_today": "An event is delivered inside the request that caused it. The sender posts to the customer's endpoint, waits for the answer, and logs whatever came back. There is no record of a delivery anywhere apart from that log line, and nothing reads the log.",
+  "flow_before_caption": "The delivery is sent inside the request",
+  "flow_after_caption": "The delivery is queued, and a failure is kept",
+  "flow_before": [
+    [
+      {
+        "title": "An event happens",
+        "note": "A subscription is created, changed or cancelled",
+        "problem": null
+      }
+    ],
+    [
+      {
+        "title": "The delivery is sent inline",
+        "note": "Inside the request that caused the event",
+        "problem": 1
+      }
+    ],
+    [
+      {
+        "title": "The endpoint answers",
+        "note": "Logged and forgotten",
+        "problem": 2
+      },
+      {
+        "title": "The endpoint is down",
+        "note": "Logged and forgotten, and nothing retries",
+        "problem": 1
+      }
+    ]
+  ],
+  "flow_after": [
+    [
+      {
+        "title": "An event happens",
+        "note": "A subscription is created, changed or cancelled",
+        "problem": null
+      }
+    ],
+    [
+      {
+        "title": "A delivery row is written first",
+        "note": "One row per attempt, with the event it is for",
+        "problem": 2
+      }
+    ],
+    [
+      {
+        "title": "A worker sends it",
+        "note": "Retried with backoff for up to 24 hours",
+        "problem": 1
+      }
+    ]
+  ],
+  "problems": [
+    {
+      "number": 1,
+      "was_wrong": "A delivery that fails is never tried again.",
+      "now_fixed": "A worker retries it with backoff for 24 hours.",
+      "detail_title": "The delivery sent inside the request",
+      "detail_before": [
+        "The sender posts to the endpoint and waits, inside the request that caused the event.",
+        "A timeout or a 500 is logged and the delivery is dropped.",
+        "The customer finds out when their own records drift."
+      ],
+      "detail_after": [
+        "A delivery row is written before anything is sent.",
+        "A queue worker sends it and records what came back.",
+        "Backoff runs to 24 hours, after which the row stays failed."
+      ]
+    },
+    {
+      "number": 2,
+      "was_wrong": "Nothing records that a delivery was attempted.",
+      "now_fixed": "Every attempt is a row the customer can see.",
+      "detail_title": "No record of an attempt",
+      "detail_before": [
+        "The only trace of a delivery is a log line nothing reads."
+      ],
+      "detail_after": [
+        "One row per attempt, with its status and what came back.",
+        "The customer's own page lists the failed ones."
+      ]
+    }
+  ],
+  "support_table": {
+    "title": "The idea: two questions, each with one owner",
+    "columns": [
+      "The question",
+      "Who should answer it",
+      "Before",
+      "After"
+    ],
+    "rows": [
+      [
+        "Has this delivery been attempted?",
+        "The delivery row",
+        "A log line nothing reads",
+        "A row with a status"
+      ],
+      [
+        "Should it be tried again?",
+        "The queue worker",
+        "Nobody asked",
+        "Backoff, to 24 hours"
+      ]
+    ]
+  },
+  "blind_pass": {
+    "given": "A web application delivers events to customer endpoints inside the request that caused them. A delivery that fails is logged and dropped. There is no record of an attempt anywhere else. Two things are wrong: a failed delivery is never tried again, and nothing records that a delivery was attempted.",
+    "pick_key": "B",
+    "pick_why": "A queued delivery with its own row answers both problems at once, and the row is what the customer's page needs in any case.",
+    "looked_up": "nothing",
+    "questions": [
+      "Is an endpoint allowed to receive the same delivery twice, or must a retry be idempotent?",
+      "How long after an event does a delivery stop being worth sending at all?"
+    ]
+  },
+  "blind_pass_state": "ran",
+  "parts": [
+    {
+      "title": "The delivery row and its states",
+      "summary": "One row per attempt, written before anything is sent.",
+      "fixes": [
+        2
+      ],
+      "files": [
+        {
+          "path": "app/Models/WebhookDelivery.php",
+          "lines_added": 74,
+          "lines_removed": 0,
+          "in_diff": true
+        },
+        {
+          "path": "database/migrations/2026_10_07_000000_create_webhook_deliveries_table.php",
+          "lines_added": 41,
+          "lines_removed": 0,
+          "in_diff": true
+        }
+      ],
+      "lines_added": 115,
+      "lines_removed": 0
+    },
+    {
+      "title": "The queue worker and its backoff",
+      "summary": "Sends a delivery, records the answer, and retries for 24 hours.",
+      "fixes": [
+        1,
+        2
+      ],
+      "files": [
+        {
+          "path": "jobs/DeliverWebhook.php",
+          "lines_added": 96,
+          "lines_removed": 31,
+          "in_diff": true
+        },
+        {
+          "path": "app/Support/Backoff.php",
+          "lines_added": 0,
+          "lines_removed": 0,
+          "in_diff": false
+        }
+      ],
+      "lines_added": 96,
+      "lines_removed": 31
+    }
+  ],
+  "open_choices": [
+    {
+      "left_open": "How long a failed delivery is kept",
+      "chosen": "Thirty days, then the row is pruned",
+      "why": "The ticket asks for a 24-hour retry window and says nothing about the row afterwards.",
+      "departs_from_ticket": false,
+      "finding_seq": 1,
+      "finding_key": "F1"
+    }
+  ],
+  "disagreements": [
+    {
+      "description_says": "A retry carries the same idempotency key as the first attempt.",
+      "code_does": "The key is generated per attempt, so a retry is a new delivery to the endpoint.",
+      "finding_seq": 2,
+      "finding_key": "F2"
+    }
+  ],
   "updated_at": "2026-10-08T10:58:00Z"
 }

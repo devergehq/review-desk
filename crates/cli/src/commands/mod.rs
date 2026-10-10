@@ -51,7 +51,7 @@ enum Command {
         #[command(subcommand)]
         command: review::ReviewCommand,
     },
-    /// Store a review's brief. Confirming one is done in the dashboard.
+    /// Store a review's brief and read its problem half. Confirming one is in the dashboard.
     Brief {
         #[command(subcommand)]
         command: brief::BriefCommand,

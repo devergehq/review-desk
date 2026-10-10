@@ -18,6 +18,15 @@
 //! `outcome add`. Neither is a decision: writing a draft cannot approve it, and an outcome
 //! annotates a finding without moving it out of the draft, changing its severity or
 //! recomposing the body. The tests below hold both of those lines.
+//!
+//! **DEV-882 added twelve rows to the brief and one read of it, and neither is a
+//! decision.** A brief with a headline, two flows, numbered problems, a supporting table,
+//! option verdicts, a blind pass, solution parts, open choices and disagreements on it is
+//! still a brief the developer has not confirmed; and `brief problem-statement` is a read,
+//! which cannot confirm anything by definition and is held to that here anyway. The store
+//! function behind it, `problem_statement`, is deliberately **not** in `SIGN_OFF`: adding a
+//! read to a list of things the command line may not call would stop an agent session
+//! reading its own record.
 
 mod common;
 
@@ -188,6 +197,78 @@ fn the_sign_off_functions_are_still_there_to_be_called() {
     let approved = store.get_draft(id).expect("the draft");
     assert_eq!(approved.status, DraftStatus::Approved);
     assert_eq!(approved.approved_by, Some(Actor::Developer));
+}
+
+#[test]
+fn a_brief_with_every_row_on_it_is_still_the_developers_to_confirm() {
+    let desk = Desk::new();
+    let review = open_review(&desk, "acme/portal", "412", "3f9c2ab");
+    let id: i64 = review.parse().expect("the review id");
+    let store = desk.store();
+
+    // Every row the three approved boards draw, written from the command line.
+    desk.command()
+        .args(["brief", "put", "--review", &review, "--file", "-"])
+        .write_stdin(
+            r#"{"problem": "a problem worth confirming",
+                "headline": "the answer, in one sentence",
+                "how_it_works_today": "how it works today, in plain words",
+                "flow_before": [[{"title": "a before box", "problem": 1}]],
+                "flow_after": [[{"title": "an after box", "problem": 1}]],
+                "problems": [{"number": 1, "was_wrong": "what was wrong",
+                              "now_fixed": "what it is now",
+                              "detail_title": "the detail",
+                              "detail_before": ["a line"], "detail_after": ["a line"]}],
+                "support_table": {"title": "the idea", "columns": ["q"], "rows": [["a"]]},
+                "options": [{"key": "A", "title": "an option", "argument_for": "for",
+                             "argument_against": "against", "chosen": true,
+                             "proposed_by": "both",
+                             "verdicts": [{"problem": 1, "verdict": "fixed",
+                                           "why": "it does"}]}],
+                "blind_pass": {"given": "the problem, as handed over", "pick_key": "A",
+                               "pick_why": "it answers it", "looked_up": "nothing",
+                               "questions": ["a question"]},
+                "parts": [{"title": "a part", "summary": "one line", "fixes": [1],
+                           "files": [{"path": "a.php", "lines_added": 1}]}],
+                "open_choices": [{"left_open": "something", "chosen": "something else",
+                                  "why": "because"}]}"#,
+        )
+        .assert()
+        .success();
+
+    // **Nothing about writing it confirms it**, and that is the whole of the rule twelve
+    // new rows could have quietly broken: a brief this complete looks finished.
+    let written = store.get_brief(id).expect("the brief");
+    assert!(
+        !written.is_confirmed(),
+        "writing a brief does not confirm it"
+    );
+    assert!(!written.is_settled());
+    assert_eq!(written.confirmed_by, None);
+
+    // Reading the problem half does not either. It is a read, and it is the read a session
+    // hands to a blind pass — so it runs on exactly the briefs nobody has confirmed yet.
+    desk.run(&["brief", "problem-statement", "--review", &review]);
+    let after_reading = store.get_brief(id).expect("the brief");
+    assert!(!after_reading.is_confirmed());
+    assert_eq!(
+        after_reading.updated_at, written.updated_at,
+        "a read writes nothing"
+    );
+
+    // And there is still exactly one way to confirm it, which is the dashboard's.
+    let refusal = desk.refused_json(&["brief", "confirm", "--review", &review]);
+    assert!(
+        refusal["error"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("dashboard")),
+        "the refusal says where confirmation happens: {refusal}"
+    );
+
+    let confirmed = store
+        .confirm_brief(id, Actor::Developer)
+        .expect("the dashboard confirms it");
+    assert_eq!(confirmed.confirmed_by, Some(Actor::Developer));
 }
 
 #[test]
