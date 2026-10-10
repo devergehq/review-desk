@@ -19,6 +19,15 @@
  * record, and a session that drew a flow by hand in text wrote content — showing it as
  * written is the right answer, not an apology.
  *
+ * **Unless the source was declared a diagram**, which is what [`declared`] is for. A
+ * brief's `diagram` field is free text and a session may reasonably draw in it; a
+ * ```` ```mermaid ```` fence in a draft is the session saying "this is a diagram". A
+ * mistyped type keyword inside that fence — `sequencediagram` for `sequenceDiagram` — is
+ * `UnknownDiagramError` just the same, and calling it "shown as written" would tell the
+ * developer that a broken diagram was deliberate on the one screen that exists to show
+ * what GitHub will show. GitHub will show a render error for that fence, so the draft
+ * preview says the same thing.
+ *
  * ## Why nothing may escape this component
  *
  * `mermaid.render(id, source)` with no container element makes mermaid append its own
@@ -41,7 +50,21 @@
  * Any one of the three would cover today's bug. All three are here because the first two
  * are promises mermaid makes and the third is the only one this repository can keep.
  */
-const props = defineProps<{ source: string, label?: string }>()
+const props = withDefaults(
+  defineProps<{
+    source: string
+    label?: string
+    /**
+     * Whoever wrote this source said it was a diagram, so it is never a sketch.
+     *
+     * True for a ```` ```mermaid ```` fence, false for a field that merely *may* hold a
+     * diagram. See the note above: the difference is intent, and it is not something this
+     * component can read off the text.
+     */
+    declared?: boolean
+  }>(),
+  { declared: false },
+)
 
 const svg = ref('')
 /** mermaid knows this diagram and could not draw it. */
@@ -108,7 +131,8 @@ onMounted(async () => {
        * the sketch. Anything else is a diagram whose grammar it rejected. The class is a
        * type-only export, so the name is what there is to match on.
        */
-      if ((error as Error | undefined)?.name === 'UnknownDiagramError') sketch.value = true
+      const unknown = (error as Error | undefined)?.name === 'UnknownDiagramError'
+      if (unknown && !props.declared) sketch.value = true
       else failed.value = true
       return
     }
