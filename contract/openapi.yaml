@@ -974,7 +974,7 @@ components:
             takes the next number unused on the pull request, so no two findings of one
             pull request share a number.
 
-            Findings written before migration 6 were numbered within their review, so two
+            Findings written before migration 7 were numbered within their review, so two
             rounds of one pull request may hold the same number. Such a round has no links
             and reads as a first round.
         key:
@@ -1098,6 +1098,12 @@ components:
 
             The number is not repeated beside it, because it cannot differ: a carried
             finding keeps its number, so this plus `seq` names the finding it continues.
+
+            **A carried finding keeps everything it *is*** — its claim, its evidence, its
+            hunk, its inline comment, its consequence, its proof and its fix — so this page
+            can be read without reading the earlier round's. A carried hunk is the code as
+            it stood at that round's head commit, which is correct by definition for a
+            `still_open` finding and is why a `fixed` one draws no hunk.
         continues_round:
           type: [integer, 'null']
           format: int64
@@ -1951,7 +1957,7 @@ components:
         records as a known gap rather than a thing this field fixes.
 
         `new` is every finding in the round it was raised in, and every finding written
-        before migration 6 — nothing before that migration could carry one, so `new` is
+        before migration 7 — nothing before that migration could carry one, so `new` is
         the honest reading of a review from before this change.
 
         **Nothing derives one of these.** An agent or the developer sets it and says how

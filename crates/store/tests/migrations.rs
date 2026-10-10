@@ -117,7 +117,7 @@ fn an_older_database_is_migrated_forward_and_keeps_its_rows() {
     assert_eq!(finding.claim, "the old claim");
     assert_eq!(finding.github_comment_id, None);
 
-    // Migration 6's columns on a finding that predates it. **A review from before the
+    // Migration 7's columns on a finding that predates it. **A review from before the
     // migration reads as a first round**, which is what DEV-873 asks for: its rounds were
     // numbered independently, so a link inferred from a matching number would join two
     // findings with nothing to do with each other.
@@ -293,7 +293,7 @@ fn an_older_database_is_migrated_forward_and_keeps_its_rows() {
         .confirm_brief(1, Actor::Developer)
         .expect("the brief can be confirmed after the migration");
 
-    // And migration 6's two tables are usable against the migrated database rather than
+    // And migration 7's two tables are usable against the migrated database rather than
     // merely present in it.
     let commits = migrated
         .put_round_commits(

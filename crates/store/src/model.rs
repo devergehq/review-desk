@@ -704,7 +704,7 @@ pub struct Finding {
     /// one pull request share a number. That is what makes [`Finding::introduced_by_seq`]
     /// able to name a finding with a number alone.
     ///
-    /// Findings written before migration 6 were numbered within their review, so two
+    /// Findings written before migration 7 were numbered within their review, so two
     /// rounds of one pull request may hold the same number. Such a round has no links and
     /// reads as a first round.
     pub seq: i64,
@@ -755,7 +755,7 @@ pub struct Finding {
     /// Sibling code the fix should look like, in the order given.
     pub fix_references: Vec<String>,
     /// The earlier round this finding was carried from. `None` for a finding raised fresh
-    /// in this round, and for every finding written before migration 6.
+    /// in this round, and for every finding written before migration 7.
     ///
     /// The seq is not repeated here, because it cannot differ: a carried finding keeps its
     /// number, so this plus [`Finding::seq`] names the finding it continues.
@@ -776,7 +776,7 @@ pub struct Finding {
     /// The commit a new finding is attributed to.
     pub introduced_by_commit: Option<String>,
     /// The earlier finding whose fix caused this one, by its number. A number alone is
-    /// enough: after migration 6 a number is an identity across the whole pull request.
+    /// enough: after migration 7 a number is an identity across the whole pull request.
     pub introduced_by_seq: Option<i64>,
     pub created_at: Timestamp,
 }
@@ -1289,7 +1289,7 @@ string_enum! {
     /// purpose: an agent or the developer sets it, and says how they checked.
     RoundStatus as "round_status" {
         /// Raised in this round. Every finding starts here, including every finding
-        /// written before migration 6.
+        /// written before migration 7.
         New => "new",
         /// The author fixed it, and somebody checked that they had.
         Fixed => "fixed",

@@ -35,7 +35,14 @@ use rusqlite::Connection;
 pub use crate::error::{Result, StoreError};
 pub use crate::migrations::newest_version;
 pub use crate::model::{
-    now, Actor, Brief, BriefOption, Carryable, DecidedBy, Disposition, Draft, DraftLint, DraftStatus, Finding, FindingCarry, FindingHunk, FindingInRound, FindingRef, FullReview, HunkLine, HunkLineMarker, NewBrief, NewDraft, NewFinding, NewOutcome, NewReview, NewRoundCommit, NewRule, NitTicket, NitTicketStatus, OpenedReview, Outcome, OutcomeKind, PrState, RepoSummary, Review, ReviewAtLayer, ReviewEvent, ReviewFacts, ReviewLayer, ReviewLayerName, ReviewLayerState, ReviewLinks, RoundCommit, RoundStatus, RoundStatusCounts, RoundSummary, Rule, RuleCounts, RuleException, RuleScope, RuleStage, RulesSummary, Severity, SignOff, Timestamp, Verification, WorkFilter, WorkItem, WorkKind, ACTIVE_RULES_CAP,
+    now, Actor, Brief, BriefOption, Carryable, DecidedBy, Disposition, Draft, DraftLint,
+    DraftStatus, Finding, FindingCarry, FindingHunk, FindingInRound, FindingRef, FullReview,
+    HunkLine, HunkLineMarker, NewBrief, NewDraft, NewFinding, NewOutcome, NewReview,
+    NewRoundCommit, NewRule, NitTicket, NitTicketStatus, OpenedReview, Outcome, OutcomeKind,
+    PrState, RepoSummary, Review, ReviewAtLayer, ReviewEvent, ReviewFacts, ReviewLayer,
+    ReviewLayerName, ReviewLayerState, ReviewLinks, RoundCommit, RoundStatus, RoundStatusCounts,
+    RoundSummary, Rule, RuleCounts, RuleException, RuleScope, RuleStage, RulesSummary, Severity,
+    SignOff, Timestamp, Verification, WorkFilter, WorkItem, WorkKind, ACTIVE_RULES_CAP,
 };
 pub use crate::path::{default_db_path, resolve_db_path, DB_ENV_VAR};
 

@@ -8,7 +8,8 @@ use std::path::PathBuf;
 
 use clap::Subcommand;
 use review_desk_store::{
-    DecidedBy, Disposition, Finding, FindingCarry, HunkLineMarker, NewFinding, RoundStatus, Severity, Store, Verification,
+    DecidedBy, Disposition, Finding, FindingCarry, HunkLineMarker, NewFinding, RoundStatus,
+    Severity, Store, Verification,
 };
 use serde_json::json;
 

@@ -142,6 +142,32 @@
       "disposition_reason": null,
       "rule_id": null,
       "rule_key": null,
+      "hunk": {
+        "file": "jobs/DeliverWebhook.php",
+        "start_line": 71,
+        "lines": [
+          {
+            "marker": "unchanged",
+            "line": 71,
+            "text": "    $delays = [30, 120, 600];"
+          },
+          {
+            "marker": "unchanged",
+            "line": 72,
+            "text": "    $wait = $delays[$attempt] ?? end($delays);"
+          }
+        ]
+      },
+      "flagged_line": 72,
+      "inline_comment": "There is no ceiling here, so a dead endpoint is retried for ever.",
+      "why_it_matters": "A permanently dead endpoint keeps a worker busy indefinitely.",
+      "proof": "attempt 14 scheduled at +600s\nattempt 15 scheduled at +600s",
+      "proof_note": "Read from the queue table, not reproduced.",
+      "verification": "read_not_run",
+      "suggested_fix": "Stop after the last delay and mark the delivery dead.",
+      "fix_references": [
+        "jobs/SendInvoiceEmail.php:44"
+      ],
       "created_at": "2026-10-08T11:11:00Z",
       "round_status": "still_open",
       "round_status_by": "agent",

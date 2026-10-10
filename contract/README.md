@@ -262,6 +262,25 @@ still open, one new" was unanswerable.
 | The rounds so far | `ReviewDetail.rounds` |
 | What changed between two rounds | `ReviewDetail.commits_since_previous_round` |
 
+**A carried finding keeps everything a finding *is*, including what DEV-874 added.** Its
+claim, evidence, disposition, rule citation, hunk, inline comment, consequence, proof, proof
+note, verification, suggested fix and fix references all come with it, so a round-two page
+can be read without reading round one. The hunk is carried with `INSERT ... SELECT` so the
+text never passes through the server process — Review Desk does not fetch code, and that
+hunk is the only copy of it there is.
+
+**A carried hunk is the code as it stood at the earlier round's head commit.** For a finding
+carried as `still_open` that is correct by definition, which is what the page means by "code
+unchanged"; for one carried as `fixed` the page draws no hunk. Where the code did move, the
+agent replaces the hunk — nothing in the record can tell that it has, because a hunk is text
+rather than a reference to a commit.
+
+**`github_comment_id` is the one column a carry does not copy.** A round posts its own
+comments, and `findings_by_github_comment` is unique, so copying it would make the carry
+itself fail. `crates/store/tests/rounds.rs` holds a test that fails when a column is added
+to `findings`, or a table beside it, and nothing says whether a carry keeps it — which is
+how DEV-874's seven columns and three tables were found the moment it merged.
+
 **Three fields are derived, not stored**, so none of them can drift from the chain they
 come from: `continues_round`, `rounds_open` and `late`. They are served by `getReview` only,
 because each needs a read the other operations have no reason to make — the contract
@@ -308,7 +327,7 @@ through the harvest crate's four read-only methods. No operation in this contrac
 them; the API serves what was recorded.
 
 **A review from before this change reads as a first round.** Its findings have no links and
-every `round_status` is `new`, which is true: nothing before migration 6 could carry one, and
+every `round_status` is `new`, which is true: nothing before migration 7 could carry one, and
 inferring a link from a matching number would join two findings that have nothing to do with
 each other.
 
@@ -482,7 +501,7 @@ nits, which is what the mockup's single "File as one ticket for an agent" button
 are not stored against it; they are every finding on the review at disposition
 `held_back`, which the API returns as `nit_ticket.finding_seqs`.
 
-### What migration 6 added, for a finding's identity across rounds
+### What migration 7 added, for a finding's identity across rounds
 
 Eight columns on `findings` and two tables. DEV-873.
 

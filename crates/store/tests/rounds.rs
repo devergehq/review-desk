@@ -9,8 +9,9 @@ mod common;
 
 use common::temp_store;
 use review_desk_store::{
-    DecidedBy, Disposition, FindingCarry, NewDraft, NewFinding, NewOutcome, NewReview,
-    NewRoundCommit, OutcomeKind, ReviewEvent, RoundStatus, Severity, Store, StoreError,
+    DecidedBy, Disposition, FindingCarry, FindingHunk, HunkLine, HunkLineMarker, NewDraft,
+    NewFinding, NewOutcome, NewReview, NewRoundCommit, OutcomeKind, ReviewEvent, RoundStatus,
+    Severity, Store, StoreError, Verification,
 };
 
 const REPO: &str = "acme/portal";
@@ -42,6 +43,7 @@ fn raise(store: &Store, review: i64, claim: &str, file: Option<&str>) -> i64 {
                 rule_id: None,
                 introduced_by_commit: None,
                 introduced_by_seq: None,
+                ..Default::default()
             },
         )
         .expect("raise a finding")
@@ -427,6 +429,7 @@ fn a_new_finding_names_the_commit_and_the_finding_it_was_introduced_by() {
                 rule_id: None,
                 introduced_by_commit: Some("A41C9E2".to_string()),
                 introduced_by_seq: Some(f1),
+                ..Default::default()
             },
         )
         .expect("the fix for F1 introduced it");
@@ -463,6 +466,7 @@ fn an_attribution_naming_a_finding_nobody_raised_is_refused() {
             rule_id: None,
             introduced_by_commit: None,
             introduced_by_seq: Some(99),
+            ..Default::default()
         },
     );
 
@@ -852,6 +856,18 @@ const CARRIED: &[&str] = &[
     // round 3, that a fix had caused F5 at all.
     "introduced_by_commit",
     "introduced_by_seq",
+    // What the finding is *about*, added by DEV-874 and carried for the same reason as the
+    // claim: **these are the only copy there is.** Review Desk does not fetch code, so a
+    // carried finding that lost its comment, its proof or its fix would be a different
+    // finding wearing the same number, and nothing could get them back. This test is how
+    // they were found — it named all seven the moment DEV-874 merged.
+    "flagged_line",
+    "inline_comment",
+    "why_it_matters",
+    "proof",
+    "proof_note",
+    "verification",
+    "suggested_fix",
 ];
 
 /// Columns the carry writes itself, because they are about this round rather than the
@@ -875,8 +891,25 @@ const NOT_CARRIED: &[(&str, &str)] = &[(
          copying it would make the carry itself fail",
 )];
 
-/// Child tables of `findings` a carry copies, each with its reason. Empty today.
-const CARRIED_TABLES: &[(&str, &str)] = &[];
+/// Child tables of `findings` a carry copies, each with its reason.
+///
+/// Copied with `INSERT ... SELECT`, so the text never passes through this process: the hunk
+/// is the only copy of that code there is, and a round trip through Rust is a chance to
+/// lose a tab or a line that is nothing but a space.
+const CARRIED_TABLES: &[(&str, &str)] = &[
+    (
+        "finding_hunks",
+        "the code the finding is about, as it stood at the earlier round's head commit",
+    ),
+    (
+        "finding_hunk_lines",
+        "its lines, in the order they are drawn",
+    ),
+    (
+        "finding_fix_references",
+        "the sibling code the fix should look like",
+    ),
+];
 
 #[test]
 fn every_column_of_a_finding_is_decided_about_when_it_is_carried() {
@@ -927,9 +960,35 @@ fn every_column_of_a_finding_is_decided_about_when_it_is_carried() {
         );
     }
 
-    assert!(
-        CARRIED_TABLES.is_empty(),
-        "a child table of `findings` is listed as carried, so the carry has to copy it"
+    // Every table keyed on a finding is either carried or is `findings` itself. A fourth
+    // one added beside them has to be decided about the same way the columns are.
+    let mut statement = conn
+        .prepare(
+            "SELECT name FROM pragma_table_list
+             WHERE schema = 'main' AND type = 'table' AND name LIKE 'finding%'",
+        )
+        .expect("read the tables");
+    let tables: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .expect("the table names")
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .expect("the table names");
+
+    for table in &tables {
+        if table == "findings" {
+            continue;
+        }
+        assert!(
+            CARRIED_TABLES.iter().any(|(name, _)| name == table),
+            "`{table}` hangs off a finding and nothing says whether a carry copies it. \
+             Add it to `carry_evidence_tables` and to CARRIED_TABLES with the reason — see \
+             DEV-873."
+        );
+    }
+    assert_eq!(
+        tables.len(),
+        CARRIED_TABLES.len() + 1,
+        "the tables read were {tables:?}, which is not `findings` plus the carried ones"
     );
 }
 
@@ -1019,6 +1078,7 @@ fn a_carried_finding_still_says_which_fix_introduced_it() {
                 rule_id: None,
                 introduced_by_commit: Some("a41c9e2".to_string()),
                 introduced_by_seq: Some(f1),
+                ..Default::default()
             },
         )
         .expect("the fix for F1 introduced it")
@@ -1047,7 +1107,7 @@ fn a_carried_finding_still_says_which_fix_introduced_it() {
 
 #[test]
 fn two_rounds_written_before_the_migration_are_not_joined_by_their_numbers() {
-    // **The case a wrong inference would be visible in.** Before migration 6 each round
+    // **The case a wrong inference would be visible in.** Before migration 7 each round
     // numbered its findings from 1, so a pull request reviewed twice holds two findings
     // called F1 that have nothing to do with each other. Deriving the chain from a
     // matching number — rather than from the link `carry_finding` writes — would join
@@ -1057,8 +1117,10 @@ fn two_rounds_written_before_the_migration_are_not_joined_by_their_numbers() {
     let path = dir.path().join("review-desk.db");
 
     {
-        let old = Store::open_at_version(&path, 5).expect("a database at version 5");
-        assert_eq!(old.schema_version().unwrap(), 5);
+        // Version 6, the one immediately before this change, so the rows below are
+        // written under the schema that actually preceded it rather than an older one.
+        let old = Store::open_at_version(&path, 6).expect("a database at version 6");
+        assert_eq!(old.schema_version().unwrap(), 6);
     }
     {
         let conn = rusqlite::Connection::open(&path).unwrap();
@@ -1288,6 +1350,7 @@ fn an_attributed_commit_that_is_a_word_is_refused_too() {
             rule_id: None,
             introduced_by_commit: Some("HEAD~1".to_string()),
             introduced_by_seq: None,
+            ..Default::default()
         },
     );
 
@@ -1320,4 +1383,156 @@ fn a_rounds_commit_that_is_not_an_object_name_is_refused() {
         Err(StoreError::InvalidValue { field, .. }) => assert_eq!(field, "sha"),
         other => panic!("the record keys on object names: {other:?}"),
     }
+}
+
+// -- what DEV-874 added, carried --------------------------------------------------------
+
+/// A finding carrying everything DEV-874 added, with the awkward text that module exists
+/// for: a tab, a trailing double space, a line that is nothing but spaces, a removal in the
+/// middle, and a proof with a newline and a non-ASCII character in it.
+fn a_finding_with_its_code_and_its_proof(claim: &str) -> NewFinding {
+    NewFinding {
+        lens: "sibling diff".to_string(),
+        severity: Severity::Blocker,
+        file: Some("jobs/DeliverWebhook.php".to_string()),
+        line: Some(58),
+        claim: claim.to_string(),
+        hunk: Some(FindingHunk {
+            file: "jobs/DeliverWebhook.php".to_string(),
+            start_line: 56,
+            lines: vec![
+                HunkLine {
+                    marker: HunkLineMarker::Unchanged,
+                    text: "{".to_string(),
+                },
+                HunkLine {
+                    marker: HunkLineMarker::Removed,
+                    text: "    $client->post($this->endpoint->url);".to_string(),
+                },
+                HunkLine {
+                    marker: HunkLineMarker::Added,
+                    text: "\t$response = $client->post($this->endpoint->url);  ".to_string(),
+                },
+                HunkLine {
+                    marker: HunkLineMarker::Added,
+                    text: "   ".to_string(),
+                },
+            ],
+        }),
+        flagged_line: Some(57),
+        inline_comment: Some("This retry re-sends the payload with no key.".to_string()),
+        why_it_matters: Some("The customer is charged twice.".to_string()),
+        proof: Some("attempt 1 key: 6f1c…e2\nattempt 2 key: b83a…07".to_string()),
+        proof_note: Some("A throwaway test, not committed.".to_string()),
+        verification: Verification::Reproduced,
+        suggested_fix: Some("Send the delivery id as the key.".to_string()),
+        fix_references: vec!["SendInvoiceEmail.php:44".to_string()],
+        ..Default::default()
+    }
+}
+
+#[test]
+fn a_carried_finding_keeps_the_code_and_the_proof_it_was_about() {
+    // **DEV-874 merged after this was written, and the guard test above named all seven of
+    // its columns and all three of its tables.** They are carried for the same reason the
+    // claim is: Review Desk does not fetch code, so a carried finding that lost its hunk,
+    // its comment or its proof would be a different finding wearing the same number, and
+    // nothing could get them back.
+    let (_dir, store) = temp_store();
+    let first = round(&store, "aaaaaaa");
+    let f1 = store
+        .add_finding(
+            first,
+            a_finding_with_its_code_and_its_proof("no idempotency key"),
+        )
+        .expect("raise it with everything")
+        .seq;
+
+    let earlier = store.get_finding(first, f1).expect("read it back");
+    let second = round(&store, "bbbbbbb");
+    let carried = store
+        .carry_finding(first, second, f1, &as_(RoundStatus::StillOpen))
+        .expect("carry it forward");
+
+    assert_eq!(carried.flagged_line, earlier.flagged_line);
+    assert_eq!(carried.inline_comment, earlier.inline_comment);
+    assert_eq!(carried.why_it_matters, earlier.why_it_matters);
+    assert_eq!(carried.proof, earlier.proof);
+    assert_eq!(carried.proof_note, earlier.proof_note);
+    assert_eq!(carried.verification, earlier.verification);
+    assert_eq!(carried.suggested_fix, earlier.suggested_fix);
+    assert_eq!(carried.fix_references, earlier.fix_references);
+
+    // **The hunk byte for byte, which is the point of copying it in SQL.** The tab, the
+    // trailing double space and the line that is nothing but spaces are what
+    // `finding_evidence` exists to protect, and a round trip through this process is where
+    // they would be lost.
+    let hunk = carried.hunk.as_ref().expect("the hunk came with it");
+    assert_eq!(hunk, earlier.hunk.as_ref().unwrap());
+    assert_eq!(hunk.start_line, 56);
+    assert_eq!(
+        hunk.lines[2].text,
+        "\t$response = $client->post($this->endpoint->url);  "
+    );
+    assert_eq!(hunk.lines[3].text, "   ");
+    assert_eq!(
+        hunk.numbered_lines()
+            .iter()
+            .map(|(number, _)| *number)
+            .collect::<Vec<_>>(),
+        [Some(56), None, Some(57), Some(58)],
+        "and it still numbers from 56 with the removal taking no number"
+    );
+    assert!(
+        hunk.draws_line(57),
+        "so the flagged line is still a line the hunk draws"
+    );
+}
+
+#[test]
+fn carrying_a_finding_again_replaces_its_hunk_rather_than_doubling_it() {
+    let (_dir, store) = temp_store();
+    let first = round(&store, "aaaaaaa");
+    let f1 = store
+        .add_finding(first, a_finding_with_its_code_and_its_proof("no key"))
+        .unwrap()
+        .seq;
+    let second = round(&store, "bbbbbbb");
+
+    store
+        .carry_finding(first, second, f1, &as_(RoundStatus::StillOpen))
+        .unwrap();
+    let again = store
+        .carry_finding(first, second, f1, &as_(RoundStatus::Accepted))
+        .expect("the developer accepts the reason");
+
+    let hunk = again.hunk.as_ref().expect("still there");
+    assert_eq!(
+        hunk.lines.len(),
+        4,
+        "re-carrying replaces the hunk; doubling it would renumber every line after the \
+         first copy"
+    );
+    assert_eq!(
+        again.fix_references,
+        ["SendInvoiceEmail.php:44"],
+        "and the references are replaced, not appended"
+    );
+}
+
+#[test]
+fn a_finding_with_no_hunk_carries_without_one() {
+    let (_dir, store) = temp_store();
+    let first = round(&store, "aaaaaaa");
+    let f1 = raise(&store, first, "a claim about the whole change", None);
+    let second = round(&store, "bbbbbbb");
+
+    let carried = store
+        .carry_finding(first, second, f1, &as_(RoundStatus::StillOpen))
+        .expect("every one of DEV-874's fields is optional and independent");
+
+    assert_eq!(carried.hunk, None);
+    assert_eq!(carried.proof, None);
+    assert_eq!(carried.verification, Verification::Unknown);
+    assert!(carried.fix_references.is_empty());
 }

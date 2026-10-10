@@ -112,18 +112,20 @@ impl Store {
         tx.execute(
             "INSERT INTO findings
                  (review_id, seq, lens, severity, file, line, claim, evidence,
-                  disposition, disposition_reason, rule_id, introduced_by_commit,
-                  introduced_by_seq, continues_review_id, round_status, round_status_by,
-                  round_status_checked, round_status_at, round_status_commit, created_at)
+                  disposition, disposition_reason, rule_id, flagged_line, inline_comment,
+                  why_it_matters, proof, proof_note, verification, suggested_fix,
+                  introduced_by_commit, introduced_by_seq, continues_review_id,
+                  round_status, round_status_by, round_status_checked, round_status_at,
+                  round_status_commit, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
-                     ?17, ?18, ?19, ?20)
+                     ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)
              ON CONFLICT (review_id, seq) DO UPDATE SET
-                 continues_review_id  = ?14,
-                 round_status         = ?15,
-                 round_status_by      = ?16,
-                 round_status_checked = ?17,
-                 round_status_at      = ?18,
-                 round_status_commit  = ?19",
+                 continues_review_id  = ?21,
+                 round_status         = ?22,
+                 round_status_by      = ?23,
+                 round_status_checked = ?24,
+                 round_status_at      = ?25,
+                 round_status_commit  = ?26",
             params![
                 into_review_id,
                 seq,
@@ -136,6 +138,17 @@ impl Store {
                 earlier.disposition,
                 earlier.disposition_reason,
                 earlier.rule_id,
+                // What the finding is about, carried whole. **These are the only copy
+                // there is** — Review Desk does not fetch code — so a carried finding that
+                // lost its comment, its proof or its fix would be a different finding
+                // wearing the same number, and nothing could get them back.
+                earlier.flagged_line,
+                earlier.inline_comment,
+                earlier.why_it_matters,
+                earlier.proof,
+                earlier.proof_note,
+                earlier.verification,
+                earlier.suggested_fix,
                 // Where the finding came from, carried: "introduced by a41c9e2, the
                 // commit that fixed F1" stays true in every later round, and the count of
                 // findings a fix introduced is read across the whole pull request.
@@ -150,6 +163,8 @@ impl Store {
                 at,
             ],
         )?;
+
+        carry_evidence_tables(&tx, from_review_id, into_review_id, seq)?;
 
         tx.commit()?;
         self.get_finding(into_review_id, seq)
@@ -672,4 +687,64 @@ pub(super) fn commit_sha_for(field: &'static str, sha: Option<&str>) -> Result<O
     }
 
     Ok(Some(sha))
+}
+
+/// Copy a finding's hunk, its hunk lines and its fix references into the round it is being
+/// carried into.
+///
+/// **`INSERT ... SELECT`, so the text never passes through this process.** The hunk is the
+/// only copy of that code there is — Review Desk does not fetch code, which is Patrick's
+/// rule and the whole argument of `finding_evidence` — and a round trip through Rust is a
+/// chance to lose a tab, a trailing space or a line that is nothing but a space. SQLite
+/// copies the bytes.
+///
+/// The three deletes come first, so re-carrying a finding replaces its evidence rather than
+/// doubling its hunk. They are inside the carry's transaction.
+///
+/// **A carried hunk is the code as it stood at the earlier round's head commit.** For a
+/// finding carried as `still_open` that is correct by definition — the page says "code
+/// unchanged" — and for one carried as `fixed` the page shows no hunk at all. Where the code
+/// did move, the agent replaces the hunk; nothing here can tell that it has, because the
+/// hunk is text rather than a reference to a commit.
+fn carry_evidence_tables(
+    tx: &Transaction<'_>,
+    from_review_id: i64,
+    into_review_id: i64,
+    seq: i64,
+) -> Result<()> {
+    for table in [
+        "finding_hunk_lines",
+        "finding_fix_references",
+        "finding_hunks",
+    ] {
+        tx.execute(
+            &format!("DELETE FROM {table} WHERE review_id = ?1 AND finding_seq = ?2"),
+            params![into_review_id, seq],
+        )?;
+    }
+
+    tx.execute(
+        "INSERT INTO finding_hunks (review_id, finding_seq, file, start_line)
+         SELECT ?2, finding_seq, file, start_line
+         FROM finding_hunks WHERE review_id = ?1 AND finding_seq = ?3",
+        params![from_review_id, into_review_id, seq],
+    )?;
+
+    tx.execute(
+        "INSERT INTO finding_hunk_lines
+             (review_id, finding_seq, position, marker, text)
+         SELECT ?2, finding_seq, position, marker, text
+         FROM finding_hunk_lines WHERE review_id = ?1 AND finding_seq = ?3",
+        params![from_review_id, into_review_id, seq],
+    )?;
+
+    tx.execute(
+        "INSERT INTO finding_fix_references
+             (review_id, finding_seq, position, reference)
+         SELECT ?2, finding_seq, position, reference
+         FROM finding_fix_references WHERE review_id = ?1 AND finding_seq = ?3",
+        params![from_review_id, into_review_id, seq],
+    )?;
+
+    Ok(())
 }
