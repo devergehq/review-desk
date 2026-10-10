@@ -73,8 +73,11 @@ fn add_findings(store: &Store, review_id: i64) {
                     claim: claim.to_string(),
                     evidence: None,
                     disposition: review_desk_store::Disposition::InDraft,
-                    disposition_reason: None,
-                    rule_id: None,
+                    // The rest from the hand-written `Default`, which is the shape every
+                    // call site in these crates uses. Reading it first was the point: it
+                    // gives `verification: unknown` rather than serde's first variant,
+                    // `reproduced`, so a finding built here does not claim to have been run.
+                    ..Default::default()
                 },
             )
             .expect("a finding");

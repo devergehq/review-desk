@@ -573,7 +573,6 @@ CREATE TABLE round_commit_files (
 CREATE INDEX round_commit_files_by_path ON round_commit_files (review_id, path);
 "#,
     },
-
     Migration {
         version: 8,
         name: "provenance",

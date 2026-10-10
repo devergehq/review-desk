@@ -28,7 +28,12 @@ use std::path::{Path, PathBuf};
 
 use common::temp_store;
 use review_desk_store::{
-    now, Actor, Brief, BriefOption, CriterionStatus, DescriptionLintStatus, Disposition, Draft, DraftLint, FileCheck, Finding, FindingHunk, FindingRef, HunkLine, HunkLineMarker, NewAcceptanceCriterion, NewBrief, NewDescriptionLintResult, NewDraft, NewFileChange, NewFinding, NewOutcome, NewReview, NewReviewSource, NewRule, NitTicket, Outcome, OutcomeKind, Review, ReviewEvent, ReviewFacts, ReviewLayer, ReviewLayerName, ReviewProvenance, Rule, RuleScope, RuleStage, Severity, SourceKind, Store, Verification,
+    now, Actor, Brief, BriefOption, CriterionStatus, DescriptionLintStatus, Disposition, Draft,
+    DraftLint, FileCheck, Finding, FindingHunk, FindingRef, HunkLine, HunkLineMarker,
+    NewAcceptanceCriterion, NewBrief, NewDescriptionLintResult, NewDraft, NewFileChange,
+    NewFinding, NewOutcome, NewReview, NewReviewSource, NewRule, NitTicket, Outcome, OutcomeKind,
+    Review, ReviewEvent, ReviewFacts, ReviewLayer, ReviewLayerName, ReviewProvenance, Rule,
+    RuleScope, RuleStage, Severity, SourceKind, Store, Verification,
 };
 use serde_json::{json, Map, Value};
 

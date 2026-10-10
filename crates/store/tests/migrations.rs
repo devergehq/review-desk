@@ -4,7 +4,11 @@ mod common;
 
 use common::{db_path, temp_store};
 use review_desk_store::{
-    newest_version, Actor, CriterionStatus, DescriptionLintStatus, DraftStatus, FileCheck, FindingHunk, HunkLine, HunkLineMarker, NewAcceptanceCriterion, NewDescriptionLintResult, NewDraft, NewFileChange, NewFinding, NewReviewSource, NewRoundCommit, NitTicketStatus, ReviewLayerName, ReviewLayerState, RoundStatus, Severity, SourceKind, Store, StoreError, Verification, WorkFilter,
+    newest_version, Actor, CriterionStatus, DescriptionLintStatus, DraftStatus, FileCheck,
+    FindingHunk, HunkLine, HunkLineMarker, NewAcceptanceCriterion, NewDescriptionLintResult,
+    NewDraft, NewFileChange, NewFinding, NewReviewSource, NewRoundCommit, NitTicketStatus,
+    ReviewLayerName, ReviewLayerState, RoundStatus, Severity, SourceKind, Store, StoreError,
+    Verification, WorkFilter,
 };
 use tempfile::TempDir;
 

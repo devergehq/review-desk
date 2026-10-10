@@ -9,9 +9,9 @@ mod common;
 
 use common::{new_review, temp_store};
 use review_desk_store::{
-    AcceptanceCriterion, CriterionStatus, DescriptionLintStatus, FileCheck, NewAcceptanceCriterion,
-    NewDescriptionLintResult, NewFileChange, NewFinding, NewReviewSource, Severity, SourceKind,
-    Store, StoreError,
+    AcceptanceCriterion, CriterionStatus, DecidedBy, DescriptionLintStatus, FileCheck,
+    FindingCarry, NewAcceptanceCriterion, NewDescriptionLintResult, NewFileChange, NewFinding,
+    NewReviewSource, RoundStatus, Severity, SourceKind, Store, StoreError,
 };
 
 /// A review with three findings, two of them on files, matching board A2.
@@ -53,8 +53,11 @@ fn seeded() -> (tempfile::TempDir, Store, i64) {
                     claim: claim.to_string(),
                     evidence: None,
                     disposition: review_desk_store::Disposition::InDraft,
-                    disposition_reason: None,
-                    rule_id: None,
+                    // The rest from the hand-written `Default`, which is the shape every
+                    // call site in these crates uses. Reading it first was the point: it
+                    // gives `verification: unknown` rather than serde's first variant,
+                    // `reproduced`, so a finding built here does not claim to have been run.
+                    ..Default::default()
                 },
             )
             .expect("the finding");
@@ -670,8 +673,7 @@ fn the_findings_on_a_file_come_from_the_findings_and_not_from_the_entry() {
                 claim: "the test asserts the delay twice".to_string(),
                 evidence: None,
                 disposition: review_desk_store::Disposition::InDraft,
-                disposition_reason: None,
-                rule_id: None,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -881,4 +883,227 @@ fn every_closed_set_names_its_own_values() {
     assert!("partly".parse::<CriterionStatus>().is_err());
     assert!("skimmed".parse::<FileCheck>().is_err());
     assert!("warning".parse::<DescriptionLintStatus>().is_err());
+}
+
+/* --------------------------- across rounds (DEV-873) ------------------------- */
+
+#[test]
+fn a_criterion_can_point_at_a_finding_carried_into_a_later_round() {
+    // **Since migration 7 a finding's number is its identity across rounds**, so a
+    // criterion naming F1 in round 2 names the same F1 round 1 raised. This is the case
+    // that would have broken quietly: `review_criteria`'s foreign key is to
+    // `findings (review_id, seq)`, and a carried finding is a *new row* under the later
+    // review keeping its number — so the key resolves only because the carry writes it.
+    let (_dir, store) = temp_store();
+    let first = store
+        .open_review("acme/portal", 412, "3f9c2ab")
+        .expect("round 1")
+        .review
+        .id;
+    let seq = store
+        .add_finding(
+            first,
+            NewFinding {
+                lens: "sibling diff".to_string(),
+                severity: Severity::Blocker,
+                file: Some("jobs/DeliverWebhook.php".to_string()),
+                line: Some(58),
+                claim: "A retried delivery is sent without an idempotency key".to_string(),
+                evidence: None,
+                disposition: review_desk_store::Disposition::InDraft,
+                disposition_reason: None,
+                ..Default::default()
+            },
+        )
+        .expect("the finding")
+        .seq;
+
+    let second = store
+        .open_review("acme/portal", 412, "bbbbbbb")
+        .expect("round 2")
+        .review
+        .id;
+    assert_ne!(first, second, "a new head commit is a new round");
+
+    store
+        .carry_finding(
+            first,
+            second,
+            seq,
+            &FindingCarry {
+                status: RoundStatus::StillOpen,
+                by: DecidedBy::Agent,
+                checked: None,
+                commit: None,
+            },
+        )
+        .expect("carry it into round 2");
+
+    let written = store
+        .put_acceptance_criteria(
+            second,
+            vec![NewAcceptanceCriterion {
+                text: "A customer never processes the same event twice.".to_string(),
+                status: CriterionStatus::NotMet,
+                finding_seq: Some(seq),
+                file: None,
+                line: None,
+                note: None,
+            }],
+        )
+        .expect("round 2's criterion points at the carried finding");
+
+    assert_eq!(written[0].finding_seq, Some(seq));
+    assert_eq!(
+        written[0].status,
+        CriterionStatus::NotMet,
+        "still not met, and the finding saying so is the same finding"
+    );
+}
+
+#[test]
+fn a_criterion_cannot_point_at_a_finding_that_was_not_carried() {
+    // The other side of the same rule, and it is the right refusal: a criterion whose
+    // finding was fixed and left behind is a criterion whose status should have changed to
+    // `met`, not one pointing at a number that means nothing in this round.
+    let (_dir, store) = temp_store();
+    let first = store
+        .open_review("acme/portal", 412, "3f9c2ab")
+        .expect("round 1")
+        .review
+        .id;
+    let seq = store
+        .add_finding(
+            first,
+            NewFinding {
+                lens: "sibling diff".to_string(),
+                severity: Severity::Blocker,
+                file: Some("jobs/DeliverWebhook.php".to_string()),
+                line: Some(58),
+                claim: "A retried delivery is sent without an idempotency key".to_string(),
+                evidence: None,
+                disposition: review_desk_store::Disposition::InDraft,
+                disposition_reason: None,
+                ..Default::default()
+            },
+        )
+        .expect("the finding")
+        .seq;
+
+    let second = store
+        .open_review("acme/portal", 412, "bbbbbbb")
+        .expect("round 2")
+        .review
+        .id;
+
+    let refused = store
+        .put_acceptance_criteria(
+            second,
+            vec![NewAcceptanceCriterion {
+                text: "A customer never processes the same event twice.".to_string(),
+                status: CriterionStatus::NotMet,
+                finding_seq: Some(seq),
+                file: None,
+                line: None,
+                note: None,
+            }],
+        )
+        .expect_err("round 2 has no such finding, because it was not carried");
+
+    assert!(
+        matches!(
+            refused,
+            StoreError::UnknownParent {
+                parent: "finding",
+                ..
+            }
+        ),
+        "got {refused:?}"
+    );
+}
+
+#[test]
+fn a_carried_finding_brings_no_criteria_with_it() {
+    // **A criterion is not carried, and that is a decision.** It belongs to the review,
+    // not to the finding: it is this round's assessment of what the ticket asks for, and
+    // copying it forward would assert that round 2 reached the same verdict with no agent
+    // having looked.
+    //
+    // DEV-873's `every_column_of_a_finding_is_decided_about_when_it_is_carried` forces
+    // that choice for anything hanging off a finding, but it finds those tables by the
+    // name prefix `finding%` — which `review_criteria` does not carry, so the guard cannot
+    // ask. This is the answer, enforced rather than asserted in a comment.
+    let (_dir, store) = temp_store();
+    let first = store
+        .open_review("acme/portal", 412, "3f9c2ab")
+        .expect("round 1")
+        .review
+        .id;
+    let seq = store
+        .add_finding(
+            first,
+            NewFinding {
+                lens: "sibling diff".to_string(),
+                severity: Severity::Blocker,
+                file: Some("jobs/DeliverWebhook.php".to_string()),
+                line: Some(58),
+                claim: "A retried delivery is sent without an idempotency key".to_string(),
+                evidence: None,
+                disposition: review_desk_store::Disposition::InDraft,
+                disposition_reason: None,
+                ..Default::default()
+            },
+        )
+        .expect("the finding")
+        .seq;
+    store
+        .put_acceptance_criteria(
+            first,
+            vec![NewAcceptanceCriterion {
+                text: "A customer never processes the same event twice.".to_string(),
+                status: CriterionStatus::NotMet,
+                finding_seq: Some(seq),
+                file: None,
+                line: None,
+                note: None,
+            }],
+        )
+        .expect("round 1's criterion");
+
+    let second = store
+        .open_review("acme/portal", 412, "bbbbbbb")
+        .expect("round 2")
+        .review
+        .id;
+    store
+        .carry_finding(
+            first,
+            second,
+            seq,
+            &FindingCarry {
+                status: RoundStatus::StillOpen,
+                by: DecidedBy::Agent,
+                checked: None,
+                commit: None,
+            },
+        )
+        .expect("carry the finding");
+
+    assert!(
+        store.list_acceptance_criteria(second).unwrap().is_empty(),
+        "round 2 has to be told what the ticket asks for; the carry does not say it"
+    );
+    assert_eq!(
+        store.list_acceptance_criteria(first).unwrap().len(),
+        1,
+        "and round 1 keeps its own"
+    );
+
+    // The same for the other three lists: none of them hangs off a finding at all, and a
+    // carry is about one finding.
+    let provenance = store.review_provenance(second).unwrap();
+    assert!(
+        provenance.is_empty(),
+        "a carry moves a finding, not the review's understanding: {provenance:?}"
+    );
 }

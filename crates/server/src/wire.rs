@@ -16,7 +16,10 @@
 //! dashboard silently never sees.
 
 use review_desk_store::{
-    AcceptanceCriterion, Brief, BriefOption, DescriptionLintResult, Disposition, Draft, DraftLint, FileChange, Finding, FindingHunk, FindingInRound, NitTicket, Outcome, RepoSummary, Review, ReviewLayer, ReviewProvenance, ReviewSource, RoundCommit, RoundStatusCounts, RoundSummary, Rule, RuleCounts, RuleScope, RuleStage, RulesSummary, Severity, Timestamp,
+    AcceptanceCriterion, Brief, BriefOption, DescriptionLintResult, Disposition, Draft, DraftLint,
+    FileChange, Finding, FindingHunk, FindingInRound, NitTicket, Outcome, RepoSummary, Review,
+    ReviewLayer, ReviewProvenance, ReviewSource, RoundCommit, RoundStatusCounts, RoundSummary,
+    Rule, RuleCounts, RuleScope, RuleStage, RulesSummary, Severity, Timestamp,
 };
 use serde_json::{json, Value};
 
