@@ -21,6 +21,7 @@
 
 #![deny(missing_debug_implementations)]
 
+pub mod clock;
 mod entities;
 pub mod error;
 pub mod migrations;
@@ -32,6 +33,7 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
 
+pub use crate::clock::Clock;
 pub use crate::entities::brief_structure::{
     BlindPassState, BriefBlindPass, BriefDisagreement, BriefFlowBox, BriefFlowRow, BriefOpenChoice,
     BriefOptionVerdict, BriefPart, BriefPartFile, BriefProblem, BriefSupportTable, FlowSide,
@@ -52,10 +54,10 @@ pub use crate::model::{
     FindingDecision, FindingHunk, FindingInRound, FindingRef, FullReview, HunkLine, HunkLineMarker,
     NewBrief, NewDraft, NewDraftSection, NewFinding, NewOutcome, NewReview, NewRoundCommit,
     NewRule, NitTicket, NitTicketStatus, OpenedReview, Outcome, OutcomeKind, PrState, RepoSummary,
-    Review, ReviewAtLayer, ReviewEvent, ReviewFacts, ReviewLayer, ReviewLayerName,
-    ReviewLayerState, ReviewLinks, RoundCommit, RoundStatus, RoundStatusCounts, RoundSummary, Rule,
-    RuleCounts, RuleException, RuleScope, RuleStage, RulesSummary, Severity, SignOff, Timestamp,
-    Verification, WorkFilter, WorkItem, WorkKind, ACTIVE_RULES_CAP,
+    Review, ReviewAtLayer, ReviewEvent, ReviewFacts, ReviewLayer, ReviewLayerName, ReviewLayerRun,
+    ReviewLayerState, ReviewLinks, ReviewTimings, RoundCommit, RoundStatus, RoundStatusCounts,
+    RoundSummary, Rule, RuleCounts, RuleException, RuleScope, RuleStage, RulesSummary, Severity,
+    SignOff, Timestamp, Verification, WorkFilter, WorkItem, WorkKind, ACTIVE_RULES_CAP,
 };
 pub use crate::path::{default_db_path, resolve_db_path, DB_ENV_VAR};
 
@@ -64,6 +66,7 @@ pub use crate::path::{default_db_path, resolve_db_path, DB_ENV_VAR};
 pub struct Store {
     conn: Connection,
     path: PathBuf,
+    clock: Clock,
 }
 
 impl Store {
@@ -74,6 +77,19 @@ impl Store {
     /// about is refused rather than guessed at.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         Self::open_at_version(path, migrations::newest_version())
+    }
+
+    /// Open the database at `path`, stamping every write from `clock`.
+    ///
+    /// **The store stamps the clock, and this is where the stamp comes from** — DEV-890.
+    /// Nothing a caller passes to a write function carries a time, so a duration cannot
+    /// be backdated or invented; a test that needs to measure one opens the store with a
+    /// clock it can move. See [`crate::clock`] for why that is a constructor rather than
+    /// an argument on every write, and why the clock a test moves cannot be built in a
+    /// release binary.
+    pub fn open_with_clock(path: impl AsRef<Path>, clock: Clock) -> Result<Self> {
+        let store = Self::open(path)?;
+        Ok(Store { clock, ..store })
     }
 
     /// Open the database the environment points at: `REVIEW_DESK_DB` if set, else
@@ -114,7 +130,11 @@ impl Store {
 
         migrations::migrate_to(&conn, target)?;
 
-        Ok(Self { conn, path })
+        Ok(Self {
+            conn,
+            path,
+            clock: Clock::system(),
+        })
     }
 
     /// Where this database is.
@@ -125,6 +145,16 @@ impl Store {
     /// The schema version this database is at.
     pub fn schema_version(&self) -> Result<i64> {
         migrations::applied_version(&self.conn)
+    }
+
+    /// What the store's clock reads.
+    ///
+    /// Every time the record holds comes from here. `pub(crate)` rather than public:
+    /// a caller that wants the time has [`crate::model::now`], and one that wants the
+    /// *store's* idea of the time is asking to compare its own clock with the record's,
+    /// which is the backdating this exists to prevent.
+    pub(crate) fn now(&self) -> Timestamp {
+        self.clock.now()
     }
 
     /// Whether this connection is enforcing foreign keys.

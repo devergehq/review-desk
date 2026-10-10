@@ -17,6 +17,7 @@ pub(crate) mod provenance;
 pub(crate) mod review;
 mod round;
 mod rule;
+mod timings;
 mod work;
 
 use crate::error::{Result, StoreError};

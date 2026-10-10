@@ -55,6 +55,14 @@
 //! review says is wrong, in the review's voice, and on the review this was measured against
 //! one ran to 56 words. The draft holds a title per block, but only once a draft exists, and
 //! this page is read before that.
+//!
+//! Version 12 is when each of a review's seven steps started and finished. Each step held
+//! one `updated_at`, overwritten on every write, so a step's start was lost the moment it
+//! finished and Review Desk could not say how long a review took. It adds an append-only
+//! row per state a step entered — a step that ran twice keeps both runs — and the one
+//! column that answers "is the session still alive": when anything last wrote to the
+//! review. It was written as 11 and renumbered when DEV-878's own 11 merged first, which
+//! is the rule above being used rather than quoted.
 
 use rusqlite::Connection;
 
@@ -1161,6 +1169,62 @@ CREATE TABLE brief_disagreements (
 -- than an omission. A column added by ALTER is NULL on every row already held, which is
 -- what "no finding has a title yet" means.
 ALTER TABLE findings ADD COLUMN title TEXT;
+"#,
+    },
+    Migration {
+        version: 12,
+        name: "step-timings",
+        sql: r#"
+-- One row per state a step entered, with when it entered it. **Append-only: nothing
+-- updates or deletes a row here.**
+--
+-- `review_layers` keeps one `updated_at` per step and overwrites it, which is the defect
+-- DEV-890 fixes: two more columns on that table would be overwritten by a second run just
+-- as surely. A step that ran twice — a draft sent back and redrafted — has two rows that
+-- say `running` here, and both runs are reported.
+--
+-- **`entered_at` is when the step entered this state**, and that one reading is what makes
+-- the backfill below honest as well as the rows written from here on. A row whose state is
+-- a finished one therefore carries that step's finish; the run it finished has a start only
+-- if an earlier row opened one.
+--
+-- No row is written for a state that has not changed. `set_review_layer` is deliberately
+-- idempotent — "writing the same state twice is the same as writing it once, except that
+-- the time moves" — so a session reporting progress ten times would otherwise be ten runs
+-- of a few seconds each instead of one run that is still going.
+--
+-- The detail is kept with the state it was written against, so a step that ran twice can
+-- say what each run reported: "waiting on you", then the developer's own note back.
+CREATE TABLE review_layer_states (
+    id         INTEGER PRIMARY KEY,
+    review_id  INTEGER NOT NULL REFERENCES reviews (id) ON DELETE CASCADE,
+    number     INTEGER NOT NULL,
+    state      TEXT    NOT NULL,
+    detail     TEXT,
+    entered_at INTEGER NOT NULL,
+    CHECK (number BETWEEN 1 AND 7),
+    CHECK (state IN ('pending', 'running', 'done', 'waiting_on_you', 'failed', 'skipped'))
+);
+
+-- Read by review and step, in the order the rows were written. `id` is the order: the
+-- table is append-only and two states entered in the same second are still ordered by it,
+-- where `entered_at` alone would leave them a coin toss.
+CREATE INDEX review_layer_states_by_step ON review_layer_states (review_id, number, id);
+
+-- **What a review already held, read as what it is and nothing more.** A review recorded
+-- before this migration has exactly one time per step, `updated_at`, and the honest reading
+-- of it is that the step entered the state it is in then. So a step already finished gets
+-- its finish from it and no start at all, and every figure that would need a start reads as
+-- not recorded rather than as zero. Nothing here invents a start.
+INSERT INTO review_layer_states (review_id, number, state, detail, entered_at)
+SELECT review_id, number, state, detail, updated_at
+FROM review_layers;
+
+-- When anything last wrote to this review. **Null for every review recorded before this
+-- migration**, which is why it is nullable and not defaulted: "nothing has written since
+-- the record started keeping this" and "written a long time ago" are different answers, and
+-- the queue says the first one rather than drawing a figure from the review's creation.
+ALTER TABLE reviews ADD COLUMN last_activity_at INTEGER;
 "#,
     },
 ];

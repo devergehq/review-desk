@@ -5,7 +5,7 @@ use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior}
 use crate::entities::brief_structure::{validate_brief_structure, FlowSide};
 use crate::entities::only_the_developer;
 use crate::error::{Result, StoreError};
-use crate::model::{now, Actor, Brief, BriefOption, NewBrief, ReviewLayerName, ReviewLayerState};
+use crate::model::{Actor, Brief, BriefOption, NewBrief, ReviewLayerName, ReviewLayerState};
 use crate::{is_foreign_key_violation, Store};
 
 /// What layer 2 says once the developer has confirmed the brief.
@@ -137,7 +137,7 @@ impl Store {
             }
         }
 
-        let updated_at = now();
+        let updated_at = self.now();
         self.conn
             .execute(
                 "INSERT INTO briefs
@@ -257,6 +257,7 @@ impl Store {
             (None, false) => {}
         }
 
+        self.mark_review_active(review_id)?;
         tx.commit()?;
         self.get_brief(review_id)
     }
@@ -289,7 +290,7 @@ impl Store {
         if !brief.is_confirmed() {
             self.conn.execute(
                 "UPDATE briefs SET confirmed_at = ?2, confirmed_by = ?3 WHERE review_id = ?1",
-                params![review_id, now(), by],
+                params![review_id, self.now(), by],
             )?;
         }
 
@@ -300,6 +301,7 @@ impl Store {
             Some(CONFIRMED_DETAIL),
         )?;
 
+        self.mark_review_active(review_id)?;
         tx.commit()?;
         self.get_brief(review_id)
     }

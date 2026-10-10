@@ -4,15 +4,16 @@ use rusqlite::{params, Connection, OptionalExtension, Row, Transaction, Transact
 
 use crate::error::{Result, StoreError};
 use crate::model::{
-    now, Disposition, NewReview, NitTicket, NitTicketStatus, OpenedReview, PrState, Review,
-    ReviewFacts, ReviewLinks, Timestamp,
+    Disposition, NewReview, NitTicket, NitTicketStatus, OpenedReview, PrState, Review, ReviewFacts,
+    ReviewLinks, Timestamp,
 };
 use crate::{is_unique_violation, normalise, Store};
 
 pub(super) const COLUMNS: &str = "id, repo, pr, head_sha, round, title, ticket_id, changed_lines, \
                        not_checked, session_id, ledger_id, github_review_id, pr_state, \
                        pr_state_at, harvested_at, nit_ticket_status, nit_ticket_id, \
-                       nit_ticket_requested_at, nit_ticket_filed_at, created_at";
+                       nit_ticket_requested_at, nit_ticket_filed_at, last_activity_at, \
+                       created_at";
 
 impl Store {
     /// Create a review.
@@ -22,13 +23,16 @@ impl Store {
     pub fn create_review(&self, new: NewReview) -> Result<Review> {
         let new = validate(new)?;
 
-        let created_at = now();
+        let created_at = self.now();
         self.conn
             .execute(
+                // `last_activity_at` is the creation itself: opening a review is a write, and
+                // the first one a session makes. Set here rather than by a second statement so
+                // that a review never exists with its activity unset.
                 "INSERT INTO reviews
                      (repo, pr, head_sha, round, title, ticket_id, changed_lines,
-                      session_id, ledger_id, github_review_id, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                      session_id, ledger_id, github_review_id, last_activity_at, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
                 params![
                     new.repo,
                     new.pr,
@@ -181,6 +185,7 @@ impl Store {
             ],
         )?;
 
+        self.mark_review_active(id)?;
         self.get_review(id)
     }
 
@@ -211,8 +216,9 @@ impl Store {
             Some(_) => NitTicketStatus::Filed,
             None => NitTicketStatus::Requested,
         };
-        write_nit_ticket(&self.conn, review.id, status, ticket_id, now())?;
+        write_nit_ticket(&self.conn, review.id, status, ticket_id, self.now())?;
 
+        self.mark_review_active(id)?;
         tx.commit()?;
         self.nit_ticket(id)
     }
@@ -240,6 +246,28 @@ impl Store {
         )?;
         let rows = statement.query_map(params![id, Disposition::HeldBack], |row| row.get(0))?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Move this review's last-activity time to now.
+    ///
+    /// **Called by every write that belongs to a review, and by no read.** It is the one
+    /// answer Review Desk can give to "is the session still alive": Allele owns session
+    /// liveness and tells this store nothing, so how long the record has been silent is
+    /// what the queue has to say instead.
+    ///
+    /// A plain statement rather than a transaction of its own, so it joins whatever
+    /// transaction the write that called it opened. A sign-off whose layer row cannot be
+    /// written writes neither, and its activity must not survive either.
+    ///
+    /// `review_writes_move_the_last_activity_time` walks every write the command line can
+    /// make and fails when one of them does not move it, which is the only way a caller
+    /// added later gets caught.
+    pub(crate) fn mark_review_active(&self, review_id: i64) -> Result<()> {
+        self.conn.execute(
+            "UPDATE reviews SET last_activity_at = ?2 WHERE id = ?1",
+            params![review_id, self.now()],
+        )?;
+        Ok(())
     }
 
     /// Read a review by id. Fails with [`StoreError::NotFound`] if it is not there.
@@ -347,6 +375,7 @@ impl Store {
             ],
         )?;
 
+        self.mark_review_active(id)?;
         self.get_review(id)
     }
 
@@ -368,6 +397,7 @@ impl Store {
             params![id, state, state_at],
         )?;
 
+        self.mark_review_active(id)?;
         self.get_review(id)
     }
 
@@ -380,6 +410,7 @@ impl Store {
             params![id, at],
         )?;
 
+        self.mark_review_active(id)?;
         self.get_review(id)
     }
 
@@ -483,6 +514,7 @@ pub(super) fn row_to_review(row: &Row<'_>) -> rusqlite::Result<Review> {
         nit_ticket_id: row.get("nit_ticket_id")?,
         nit_ticket_requested_at: row.get("nit_ticket_requested_at")?,
         nit_ticket_filed_at: row.get("nit_ticket_filed_at")?,
+        last_activity_at: row.get("last_activity_at")?,
         created_at: row.get("created_at")?,
     })
 }

@@ -312,6 +312,7 @@ impl Store {
             )?;
         }
 
+        self.mark_review_active(review_id)?;
         tx.commit()?;
         self.list_review_sources(review_id)
     }
@@ -408,6 +409,7 @@ impl Store {
             )?;
         }
 
+        self.mark_review_active(review_id)?;
         tx.commit()?;
         self.list_acceptance_criteria(review_id)
     }
@@ -477,6 +479,7 @@ impl Store {
             )?;
         }
 
+        self.mark_review_active(review_id)?;
         tx.commit()?;
         self.list_file_changes(review_id)
     }
@@ -558,6 +561,7 @@ impl Store {
             )?;
         }
 
+        self.mark_review_active(review_id)?;
         tx.commit()?;
         self.list_description_lint(review_id)
     }

@@ -40,6 +40,7 @@ impl Store {
                 }
             })?;
 
+        self.mark_review_active(finding.review_id)?;
         self.get_outcome(self.conn.last_insert_rowid())
     }
 
@@ -95,6 +96,7 @@ impl Store {
             return Ok(None);
         }
 
+        self.mark_review_active(finding.review_id)?;
         self.get_outcome(self.conn.last_insert_rowid()).map(Some)
     }
 

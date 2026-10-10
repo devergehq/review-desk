@@ -27,7 +27,7 @@ pub(super) const REVIEW_COLUMNS: &str = "v.id, v.repo, v.pr, v.head_sha, v.round
                               v.ledger_id, v.github_review_id, v.pr_state, v.pr_state_at, \
                               v.harvested_at, v.nit_ticket_status, v.nit_ticket_id, \
                               v.nit_ticket_requested_at, v.nit_ticket_filed_at, \
-                              v.created_at";
+                              v.last_activity_at, v.created_at";
 
 impl Store {
     /// Every review whose brief is written, needs confirming, and has not been
@@ -249,6 +249,7 @@ pub(super) fn row_to_review(row: &Row<'_>) -> rusqlite::Result<Review> {
         nit_ticket_id: row.get("nit_ticket_id")?,
         nit_ticket_requested_at: row.get("nit_ticket_requested_at")?,
         nit_ticket_filed_at: row.get("nit_ticket_filed_at")?,
+        last_activity_at: row.get("last_activity_at")?,
         created_at: row.get("created_at")?,
     })
 }
