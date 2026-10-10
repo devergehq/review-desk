@@ -479,6 +479,7 @@ pub fn seed(store: &Store) -> Seeded {
                 verification: Verification::Reproduced,
                 suggested_fix: Some("Send the delivery id as the key.".to_string()),
                 fix_references: vec!["SendInvoiceEmail.php:44".to_string()],
+                ..Default::default()
             },
         )
         .expect("writing a finding");

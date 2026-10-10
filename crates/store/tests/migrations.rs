@@ -5,8 +5,8 @@ mod common;
 use common::{db_path, temp_store};
 use review_desk_store::{
     newest_version, Actor, DraftStatus, FindingHunk, HunkLine, HunkLineMarker, NewDraft,
-    NewFinding, NitTicketStatus, ReviewLayerName, ReviewLayerState, Severity, Store, StoreError,
-    Verification, WorkFilter,
+    NewFinding, NewRoundCommit, NitTicketStatus, ReviewLayerName, ReviewLayerState, RoundStatus,
+    Severity, Store, StoreError, Verification, WorkFilter,
 };
 use tempfile::TempDir;
 
@@ -116,6 +116,47 @@ fn an_older_database_is_migrated_forward_and_keeps_its_rows() {
     let finding = migrated.get_finding(1, 1).expect("the finding survived");
     assert_eq!(finding.claim, "the old claim");
     assert_eq!(finding.github_comment_id, None);
+
+    // Migration 7's columns on a finding that predates it. **A review from before the
+    // migration reads as a first round**, which is what DEV-873 asks for: its rounds were
+    // numbered independently, so a link inferred from a matching number would join two
+    // findings with nothing to do with each other.
+    assert_eq!(
+        finding.round_status,
+        RoundStatus::New,
+        "a finding raised before anything could carry one was new in its round, which is          the only honest reading of it"
+    );
+    assert_eq!(
+        finding.continues_review_id, None,
+        "and it continues nothing"
+    );
+    assert_eq!(finding.round_status_by, None);
+    assert_eq!(finding.round_status_checked, None);
+    assert_eq!(finding.round_status_at, None);
+    assert_eq!(finding.round_status_commit, None);
+    assert_eq!(finding.introduced_by_commit, None);
+    assert_eq!(finding.introduced_by_seq, None);
+    assert_eq!(
+        migrated
+            .rounds_open(1, 1)
+            .expect("the rounds it has been open"),
+        1,
+        "it is open, and this is its first round"
+    );
+    assert!(
+        migrated
+            .carryable(1)
+            .expect("the carryable findings")
+            .is_none(),
+        "a first round has no earlier round to carry from"
+    );
+    assert!(
+        migrated
+            .list_round_commits(1)
+            .expect("the round's commits")
+            .is_empty(),
+        "and nothing has been recorded about what changed before it"
+    );
 
     let outcomes = migrated.list_outcomes(1).expect("the outcome survived");
     assert_eq!(outcomes.len(), 1);
@@ -251,6 +292,22 @@ fn an_older_database_is_migrated_forward_and_keeps_its_rows() {
     migrated
         .confirm_brief(1, Actor::Developer)
         .expect("the brief can be confirmed after the migration");
+
+    // And migration 7's two tables are usable against the migrated database rather than
+    // merely present in it.
+    let commits = migrated
+        .put_round_commits(
+            1,
+            &[NewRoundCommit {
+                sha: "a41c9e2".to_string(),
+                summary: "Send an idempotency key with each delivery".to_string(),
+                committed_at: Some(2000),
+                files: vec!["jobs/DeliverWebhook.php".to_string()],
+            }],
+        )
+        .expect("a round's commits can be recorded after the migration");
+    assert_eq!(commits.len(), 1);
+    assert_eq!(commits[0].files, ["jobs/DeliverWebhook.php"]);
 
     // And the one query migration 5 made answerable runs against the migrated database.
     // The brief is confirmed now and the draft above is `ready`, so the review is waiting

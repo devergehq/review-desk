@@ -500,3 +500,105 @@ fn the_trait_is_the_only_way_the_harvester_reaches_github() {
     fn takes_any(_github: &dyn GitHub) {}
     takes_any(&Recorded::nothing());
 }
+
+// -- the commits between two rounds (DEV-873) ----------------------------------------
+
+/// The commits between two rounds, read through the same recorded responses the rest of
+/// this file uses. `compare.json` was captured before DEV-873 read a commit message, which
+/// makes it the regression case: an old recording must still parse.
+#[test]
+fn the_commits_between_two_rounds_are_read_with_their_summaries_and_files() {
+    let github = recording();
+    let commits = review_desk_harvest::commits_between(
+        &github,
+        "devergehq/locus",
+        "9535132",
+        "46f6ea1645a9bbc9308f791411b2cac1a093367b",
+    )
+    .expect("read the comparison");
+
+    assert_eq!(commits.len(), 4, "the four commits the comparison holds");
+    assert_eq!(
+        commits[0].sha, "cf4f69c6466e3f6d1f83eb864c15e5be94f7db57",
+        "oldest first, in GitHub's own order"
+    );
+    assert_eq!(
+        commits[0].summary, commits[0].sha,
+        "a recording captured before the message was read has no summary, so the sha \
+         stands in for it — the commit is still in the pull request, and the store \
+         refuses a blank summary"
+    );
+    assert!(
+        commits.iter().any(|commit| !commit.files.is_empty()),
+        "and the per-commit files were read: {commits:?}"
+    );
+}
+
+#[test]
+fn a_commit_message_is_read_as_its_first_line() {
+    // The shape `gh api repos/OWNER/REPO/compare/BASE...HEAD` returns, with the message
+    // DEV-873 reads. One line out of a message with a body, which is what the page shows.
+    let json = r#"{"status":"ahead","commits":[{"sha":"a41c9e2",
+                    "commit":{"message":"Send an idempotency key with each delivery\n\nThe endpoint cannot tell a retry from a new event otherwise.",
+                              "committer":{"date":"2026-10-09T22:14:00Z"}}}],"files":[]}"#;
+
+    let comparison = review_desk_harvest::wire::comparison(json).expect("read it");
+
+    assert_eq!(comparison.commits.len(), 1);
+    assert_eq!(
+        comparison.commits[0].summary.as_deref(),
+        Some("Send an idempotency key with each delivery"),
+        "the first line, and not the body"
+    );
+    assert_eq!(comparison.commits[0].committed_at, Some(1_791_584_040));
+}
+
+#[test]
+fn a_commit_whose_files_cannot_be_read_fails_the_call() {
+    // **This asserted the opposite until reviewing DEV-873 showed why it was wrong.** It
+    // used to keep the commit with an empty file list, on the argument that losing the
+    // commit would take a line off "what changed since round 1". But `Finding.late` is
+    // computed from exactly these paths, so a commit recorded with no files turns a
+    // transient GitHub failure into "the previous round could have caught this and did
+    // not" — a false accusation on the page. `round commits` replaces what it recorded, so
+    // failing leaves the previous answer intact.
+    let github = Recorded::nothing().with("compare", fixtures().join("compare.json"));
+
+    let error = review_desk_harvest::commits_between(
+        &github,
+        "devergehq/locus",
+        "9535132",
+        "46f6ea1645a9bbc9308f791411b2cac1a093367b",
+    )
+    .expect_err("the comparison alone is not enough");
+
+    assert!(
+        !error.is_refusal(),
+        "a GitHub read that failed is Review Desk unable to run, not a refused request"
+    );
+}
+
+#[test]
+fn a_range_longer_than_github_will_list_is_refused_rather_than_truncated() {
+    // GitHub's comparison endpoint caps at 250 commits and says so in `total_commits`.
+    // Recording the 250 it sent would make "what changed since round 1" a truncated list
+    // that nothing says is truncated — and `late` is computed from that list.
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("compare-long.json");
+    std::fs::write(
+        &path,
+        r#"{"status":"ahead","total_commits":312,"commits":[
+             {"sha":"a41c9e2","commit":{"message":"One of three hundred","committer":{"date":"2026-10-09T22:14:00Z"}}}
+           ],"files":[]}"#,
+    )
+    .unwrap();
+    let github = Recorded::nothing().with("compare", &path);
+
+    let error = review_desk_harvest::commits_between(&github, "acme/portal", "3f9c2ab", "9d02e71")
+        .expect_err("a truncated range is not an answer");
+
+    assert_eq!(error.code(), "commit_range_too_long");
+    let said = error.to_string();
+    assert!(said.contains("312"), "it says how many there are: {said}");
+    assert!(said.contains("--base"), "and the way out: {said}");
+}

@@ -31,5 +31,14 @@
   "verification": "read_not_run",
   "suggested_fix": "Read the schedule from one place.",
   "fix_references": [],
-  "created_at": "2026-10-08T11:15:00Z"
+  "created_at": "2026-10-08T11:15:00Z",
+  "round_status": "new",
+  "round_status_by": null,
+  "round_status_checked": null,
+  "round_status_at": null,
+  "round_status_commit": null,
+  "continues_review_id": null,
+  "introduced_by_commit": null,
+  "introduced_by_seq": null,
+  "introduced_by_key": null
 }

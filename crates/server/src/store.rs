@@ -14,9 +14,10 @@
 use std::sync::{Arc, Mutex};
 
 use review_desk_store::{
-    Actor, Brief, BriefOption, Disposition, Draft, Finding, FullReview, NewDraft, NewOutcome,
-    NitTicket, OpenedReview, RepoSummary, Review, ReviewAtLayer, ReviewEvent, ReviewFacts,
-    ReviewLayer, Rule, RuleCounts, RuleStage, RulesSummary, Store, StoreError, Timestamp,
+    Actor, Brief, BriefOption, Disposition, Draft, Finding, FindingInRound, FullReview, NewDraft,
+    NewOutcome, NitTicket, OpenedReview, RepoSummary, Review, ReviewAtLayer, ReviewEvent,
+    ReviewFacts, ReviewLayer, RoundCommit, RoundSummary, Rule, RuleCounts, RuleStage, RulesSummary,
+    Store, StoreError, Timestamp,
 };
 
 use crate::error::{ApiError, Code};
@@ -216,6 +217,35 @@ impl Records {
                 .add_outcome(review_desk_store::FindingRef { review_id, seq }, new)
                 .map(|_| ())
         })
+    }
+
+    /// Every finding of a round, with the round it was carried from, how many consecutive
+    /// rounds it has been open, and whether it is late.
+    ///
+    /// **One call, not one query.** It walks each carried finding's chain to count the
+    /// rounds it has been open, so it is a handful of primary-key reads per finding rather
+    /// than a single statement. That is deliberate: the count is derived so it cannot
+    /// drift, and one developer's SQLite file serves a page in well under the time a
+    /// stored copy would cost in correctness. What it does keep is the contract's rule
+    /// that each screen is one *GET* — the handler makes this call once.
+    pub fn findings_in_round(&self, review_id: i64) -> Result<Vec<FindingInRound>, ApiError> {
+        self.with(|store| store.findings_in_round(review_id))
+    }
+
+    // -- rounds -------------------------------------------------------------------
+
+    /// Every round of a pull request, oldest first, with what each posted and what came
+    /// back.
+    pub fn rounds(&self, repo: &str, pr: i64) -> Result<Vec<RoundSummary>, ApiError> {
+        self.with(|store| store.rounds(repo, pr))
+    }
+
+    /// The commits recorded between the previous round's head commit and this one's.
+    ///
+    /// **Read, never fetched.** `review-desk round commits` reads GitHub and records them;
+    /// this server has one GitHub read and it is `POST /reviews`.
+    pub fn round_commits(&self, review_id: i64) -> Result<Vec<RoundCommit>, ApiError> {
+        self.with(|store| store.list_round_commits(review_id))
     }
 
     /// The findings held back from this review's draft.

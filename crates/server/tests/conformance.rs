@@ -595,3 +595,142 @@ fn looks_like_rfc_3339_utc(text: &str) -> bool {
         && bytes[17..19].iter().all(u8::is_ascii_digit)
         && bytes[19] == b'Z'
 }
+
+// -- a second round of the same pull request (DEV-873) -------------------------------
+
+#[test]
+fn a_second_round_validates_whole_and_carries_the_timeline() {
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+    let store = &harness.store;
+
+    // The seeded review is round 1 of acme/portal#412 with two findings. Post it, let
+    // something come back, and open round 2 on a new head commit.
+    store
+        .approve_draft(
+            seeded.review_id,
+            review_desk_store::ReviewEvent::RequestChanges,
+            review_desk_store::Actor::Developer,
+        )
+        .expect("the developer approves round 1");
+    store
+        .post_draft(seeded.review_id, "gh-review-1")
+        .expect("the session reports it posted");
+    store
+        .add_outcome(
+            review_desk_store::FindingRef {
+                review_id: seeded.review_id,
+                seq: 1,
+            },
+            review_desk_store::NewOutcome {
+                kind: review_desk_store::OutcomeKind::Replied,
+                actor: review_desk_store::Actor::Author,
+                detail: Some("I would rather do it in ABC-240.".to_string()),
+                occurred_at: None,
+            },
+        )
+        .expect("the author replied");
+
+    let second = store
+        .open_review("acme/portal", 412, "9d02e71")
+        .expect("round 2")
+        .review
+        .id;
+
+    store
+        .put_round_commits(
+            second,
+            &[review_desk_store::NewRoundCommit {
+                sha: "a41c9e2".to_string(),
+                summary: "Send an idempotency key with each delivery".to_string(),
+                committed_at: Some(1_791_584_040),
+                files: vec!["jobs/DeliverWebhook.php".to_string()],
+            }],
+        )
+        .expect("what changed since round 1");
+
+    store
+        .carry_finding(
+            seeded.review_id,
+            second,
+            1,
+            &review_desk_store::FindingCarry {
+                status: review_desk_store::RoundStatus::Fixed,
+                by: review_desk_store::DecidedBy::Agent,
+                checked: Some("Their new test fails with the fix reverted.".to_string()),
+                commit: Some("a41c9e2".to_string()),
+            },
+        )
+        .expect("carry F1 as fixed");
+
+    let answer = harness.api("GET", &format!("/reviews/{second}"), None);
+    assert_eq!(answer.status, 200, "{}", answer.text());
+    assert_valid("ReviewDetail", &answer.json());
+
+    let detail = answer.json();
+
+    // The timeline.
+    let rounds = detail["rounds"].as_array().expect("the rounds");
+    assert_eq!(rounds.len(), 2, "oldest first: {detail}");
+    assert_eq!(rounds[0]["round"], 1);
+    assert_eq!(rounds[0]["event"], "request_changes");
+    assert!(
+        rounds[0]["posted_at"].is_string(),
+        "round 1 was posted, and the time is RFC 3339 at this boundary: {detail}"
+    );
+    assert_eq!(rounds[0]["replies"], 1, "and one reply came back");
+    assert_eq!(rounds[1]["round"], 2);
+    assert_eq!(rounds[1]["posted_at"], Value::Null);
+    assert_eq!(rounds[1]["commits"], 1);
+    assert_eq!(rounds[1]["statuses"]["fixed"], 1);
+
+    // What changed since the previous round.
+    let commits = detail["commits_since_previous_round"]
+        .as_array()
+        .expect("the commits");
+    assert_eq!(commits.len(), 1);
+    assert_eq!(commits[0]["sha"], "a41c9e2");
+    assert_eq!(commits[0]["position"], 0);
+    assert_eq!(commits[0]["files"][0], "jobs/DeliverWebhook.php");
+
+    // And the finding's place in this round.
+    let carried = &detail["findings"][0];
+    assert_eq!(carried["seq"], 1, "F1 in round 1 is F1 in round 2");
+    assert_eq!(carried["key"], "F1");
+    assert_eq!(carried["round_status"], "fixed");
+    assert_eq!(carried["round_status_by"], "agent");
+    assert_eq!(carried["round_status_commit"], "a41c9e2");
+    assert_eq!(carried["continues_review_id"], seeded.review_id);
+    assert_eq!(carried["continues_round"], 1, "\"raised in round 1\"");
+    assert_eq!(carried["rounds_open"], 0, "it is fixed, so it is not open");
+    assert_eq!(
+        carried["late"],
+        Value::Null,
+        "a carried finding is not late; it is open or it is answered"
+    );
+}
+
+#[test]
+fn a_first_round_serves_a_timeline_of_one_and_no_commits() {
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+
+    let detail = harness
+        .api("GET", &format!("/reviews/{}", seeded.review_id), None)
+        .json();
+
+    assert_eq!(
+        detail["rounds"].as_array().unwrap().len(),
+        1,
+        "a review is itself a round, so the timeline is never empty: {detail}"
+    );
+    assert_eq!(detail["rounds"][0]["round"], 1);
+    assert_eq!(
+        detail["commits_since_previous_round"],
+        json!([]),
+        "a first round has nothing before it to have changed"
+    );
+    assert_eq!(detail["findings"][0]["round_status"], "new");
+    assert_eq!(detail["findings"][0]["continues_review_id"], Value::Null);
+    assert_eq!(detail["findings"][0]["late"], Value::Null);
+}

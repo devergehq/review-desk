@@ -103,11 +103,13 @@ pub fn comparison(json: &str) -> Result<Comparison> {
 
     Ok(Comparison {
         status: wire.status,
+        total_commits: wire.total_commits,
         commits: wire
             .commits
             .into_iter()
             .map(|commit| Commit {
                 committed_at: commit.committed_at(),
+                summary: commit.summary(),
                 sha: commit.sha,
             })
             .collect(),
@@ -260,6 +262,9 @@ struct WireComment {
 #[derive(Debug, Deserialize)]
 struct WireComparison {
     status: String,
+    /// GitHub's own count of the range, which exceeds `commits` once the range passes 250.
+    #[serde(default)]
+    total_commits: Option<i64>,
     #[serde(default)]
     commits: Vec<WireCommit>,
     #[serde(default)]
@@ -274,6 +279,19 @@ struct WireCommit {
 }
 
 impl WireCommit {
+    /// The commit message's first line, trimmed. A blank message is no summary.
+    fn summary(&self) -> Option<String> {
+        self.commit
+            .as_ref()?
+            .message
+            .as_deref()?
+            .lines()
+            .next()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_string)
+    }
+
     fn committed_at(&self) -> Option<Timestamp> {
         self.commit
             .as_ref()?
@@ -288,6 +306,8 @@ impl WireCommit {
 #[derive(Debug, Deserialize)]
 struct WireCommitDetail {
     committer: Option<WireCommitter>,
+    /// The whole message. Only its first line is kept.
+    message: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

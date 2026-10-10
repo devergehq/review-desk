@@ -79,7 +79,14 @@ pub struct Comparison {
     /// GitHub's comparison status: `ahead`, `behind`, `identical` or `diverged`.
     pub status: String,
     /// The commits after the base, oldest first.
+    ///
+    /// **GitHub returns at most 250 of them on this endpoint**, so this can be shorter
+    /// than [`Comparison::total_commits`]. A caller that needs the whole range has to say
+    /// so rather than treat a truncated list as the answer.
     pub commits: Vec<Commit>,
+    /// How many commits the range holds, as GitHub counts it. `None` when the response
+    /// carried no count — a recording captured before it was read.
+    pub total_commits: Option<i64>,
     pub files: Vec<ChangedFile>,
 }
 
@@ -95,6 +102,13 @@ impl Comparison {
 pub struct Commit {
     pub sha: String,
     pub committed_at: Option<Timestamp>,
+    /// The commit message's first line, as GitHub sent it.
+    ///
+    /// `None` when the response carried no message. A commit always has one, so this is
+    /// nullable for the narrower reason `PullRequest::title` is: a response captured
+    /// before DEV-873 read it does not hold one, and an absent summary is a fact to
+    /// record as absent rather than a run to fail.
+    pub summary: Option<String>,
 }
 
 /// One file that changed between the two commits.

@@ -645,7 +645,17 @@ fn brief_document(brief: &Brief) -> Value {
     })
 }
 
-fn finding_document(finding: &Finding) -> Value {
+fn finding_document(store: &Store, finding: &Finding) -> Value {
+    // The three facts the store derives rather than stores, read the way the server reads
+    // them: one call for the whole round. A per-finding read here would pass while the
+    // server's one call was broken.
+    let found = store
+        .findings_in_round(finding.review_id)
+        .expect("the round's findings")
+        .into_iter()
+        .find(|found| found.finding.seq == finding.seq)
+        .expect("the finding is in its own round");
+
     json!({
         "review_id": finding.review_id,
         "seq": finding.seq,
@@ -686,6 +696,53 @@ fn finding_document(finding: &Finding) -> Value {
         "suggested_fix": finding.suggested_fix,
         "fix_references": finding.fix_references,
         "created_at": finding.created_at,
+        "round_status": finding.round_status,
+        "round_status_by": finding.round_status_by,
+        "round_status_checked": finding.round_status_checked,
+        "round_status_at": finding.round_status_at,
+        "round_status_commit": finding.round_status_commit,
+        "continues_review_id": finding.continues_review_id,
+        "introduced_by_commit": finding.introduced_by_commit,
+        "introduced_by_seq": finding.introduced_by_seq,
+        // Derived: `F` and the number it was introduced by.
+        "introduced_by_key": finding.introduced_by_seq.map(|seq| format!("F{seq}")),
+        // Derived from the carry chain and the round's commits.
+        "continues_round": found.continues_round,
+        "rounds_open": found.rounds_open,
+        "late": found.late,
+    })
+}
+
+fn round_document(round: &review_desk_store::RoundSummary) -> Value {
+    json!({
+        "review_id": round.review_id,
+        "round": round.round,
+        "head_sha": round.head_sha,
+        "created_at": round.created_at,
+        "posted_at": round.posted_at,
+        "event": round.event,
+        "findings": round.findings,
+        "commits": round.commits,
+        "replies": round.replies,
+        "threads_resolved": round.threads_resolved,
+        "statuses": {
+            "new": round.statuses.new,
+            "fixed": round.statuses.fixed,
+            "still_open": round.statuses.still_open,
+            "accepted": round.statuses.accepted,
+            "withdrawn": round.statuses.withdrawn,
+            "ticketed": round.statuses.ticketed,
+        },
+    })
+}
+
+fn round_commit_document(commit: &review_desk_store::RoundCommit) -> Value {
+    json!({
+        "sha": commit.sha,
+        "position": commit.position,
+        "summary": commit.summary,
+        "committed_at": commit.committed_at,
+        "files": commit.files,
     })
 }
 
@@ -858,7 +915,12 @@ fn review_detail(store: &Store, review_id: i64) -> Value {
     );
     document.insert(
         "findings".to_string(),
-        Value::Array(full.findings.iter().map(finding_document).collect()),
+        Value::Array(
+            full.findings
+                .iter()
+                .map(|finding| finding_document(store, finding))
+                .collect(),
+        ),
     );
     document.insert(
         "outcomes".to_string(),
@@ -886,6 +948,28 @@ fn review_detail(store: &Store, review_id: i64) -> Value {
             .as_ref()
             .map(|draft| json!(draft.status))
             .unwrap_or(Value::Null),
+    );
+    document.insert(
+        "rounds".to_string(),
+        Value::Array(
+            store
+                .rounds(&full.review.repo, full.review.pr)
+                .expect("the rounds")
+                .iter()
+                .map(round_document)
+                .collect(),
+        ),
+    );
+    document.insert(
+        "commits_since_previous_round".to_string(),
+        Value::Array(
+            store
+                .list_round_commits(review_id)
+                .expect("the round's commits")
+                .iter()
+                .map(round_commit_document)
+                .collect(),
+        ),
     );
     Value::Object(document)
 }
@@ -1205,7 +1289,7 @@ fn every_response_example_can_be_produced_from_the_store() {
     );
     fields += check(
         "setFindingDisposition",
-        &finding_document(&store.get_finding(review, 4).expect("the finding")),
+        &finding_document(&store, &store.get_finding(review, 4).expect("the finding")),
     );
     fields += check(
         "requestNitTicket",
