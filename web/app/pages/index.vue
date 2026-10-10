@@ -129,6 +129,32 @@ function needingYou(data: Inbox): Waiting[] {
   return [...byReview.values()]
 }
 
+/**
+ * Where a row goes: **the step that is waiting on the developer**, or Understand.
+ *
+ * DEV-885 asks for exactly that, and it is a change of destination rather than of
+ * behaviour. A review is no longer one page, so "go to the review" has stopped naming a
+ * place: it is seven steps, and the one worth landing on is the one that is waiting.
+ *
+ * | What is waiting | Step | Where |
+ * |---|---|---|
+ * | a brief to confirm | 2 · Understand | `/reviews/{id}/understand` |
+ * | a draft to sign off | 6 · Draft | `/reviews/{id}/draft` |
+ * | an author's reply | 7 · Harvest, which has no page yet | `/reviews/{id}/understand` |
+ *
+ * **This supersedes a narrower instruction, and the reason it does is worth recording.**
+ * On tc-portal #9584 Patrick said "when we click a review, we want to go to the review, not
+ * to the draft" — against a queue where every row went to the draft screen, skipping the
+ * reading that precedes a sign-off. The reading now has a page of its own: a row with a
+ * brief waiting lands on Understand, which *is* the review. A row whose only waiting step
+ * is the draft lands on the draft, because there is nothing else to read first.
+ */
+function stepFor(row: Waiting): string {
+  if (row.brief) return `/reviews/${row.review_id}/understand`
+  if (row.draft) return `/reviews/${row.review_id}/draft`
+  return `/reviews/${row.review_id}/understand`
+}
+
 /** The next thing the developer does about this review, and what to say about it. */
 function nextAction(row: Waiting) {
   if (row.brief) {
@@ -138,7 +164,7 @@ function nextAction(row: Waiting) {
         ? 'nothing else runs until you confirm'
         : 'nothing posts until you confirm',
       action: 'Read the brief',
-      to: `/reviews/${row.review_id}`,
+      to: stepFor(row),
       at: row.brief.brief_ready_at ?? null,
       atUnknown: 'the brief carries no ready time',
     }
@@ -151,15 +177,7 @@ function nextAction(row: Waiting) {
       what: 'Draft ready',
       detail: [tally, held].filter(Boolean).join(' · ') || 'nothing in the draft yet',
       action: 'Read and sign off',
-      /*
-       * **The review, not the draft.** A row is a review, and clicking one goes to the
-       * review — Patrick, on tc-portal #9584: "when we click a review, we want to go to
-       * the review, not to the draft." The draft is one click further on, behind the
-       * review page's own "Open draft", which is where the reading that precedes a
-       * sign-off starts anyway. Every row in this queue now goes to the same kind of
-       * place, which is the point.
-       */
-      to: `/reviews/${row.review_id}`,
+      to: stepFor(row),
       at: null,
       atUnknown: 'a draft waiting to be signed off carries no time in the inbox',
     }
@@ -169,7 +187,7 @@ function nextAction(row: Waiting) {
     what: `The author replied to ${first.finding_key}`,
     detail: first.detail ?? replyLabel(first),
     action: 'Read the reply',
-    to: `/reviews/${row.review_id}`,
+    to: stepFor(row),
     at: null,
     atUnknown: 'an author reply carries no time in the inbox',
   }
@@ -454,7 +472,7 @@ function handledLine(data: Inbox): string {
             :pr="item.pull_request.pr"
             :title="item.pull_request.title ?? 'no title recorded'"
             :meta="`· ${item.pull_request.repo}`"
-            :to="`/reviews/${item.review_id}`"
+            :to="`/reviews/${item.review_id}/understand`"
             :action="sessionAction(item.session_alive)"
             :action-tone="item.session_alive === false ? 'warn' : 'quiet'"
             age-unknown-because="the inbox carries no time for a running session"

@@ -21,7 +21,7 @@ import { readAddresses } from './harness'
 
 const addresses = readAddresses()
 
-const { seeded, empty, reviewId, waivedReviewId } = addresses
+const { seeded, empty, reviewId, waivedReviewId, structuredReviewId } = addresses
 
 const INTO = resolve('../docs/screenshots')
 
@@ -85,6 +85,62 @@ test.describe('a seeded database', () => {
     await page.goto(`${seeded}reviews/${waivedReviewId}`)
     await expect(page.getByText('Confirmation not required.')).toBeVisible()
     await shot(page, 'seeded-5-review-no-confirmation')
+  })
+})
+
+/*
+ * **The three step pages DEV-885 builds**, at the width of a laptop and at the width of a
+ * phone, from the contract's invented example.
+ *
+ * `confirmBrief.response.real-length.json` is what the seed feeds the binary, so these are
+ * pictures of the real pages reading a real record at the length the approved boards were
+ * drawn at: three numbered problems, flows of five and six rows with a split in each, eight
+ * options from two sources, six parts over twenty-six files, and thirteen findings joined
+ * to those parts by file.
+ *
+ * **Nothing here comes from the reference boards.** They hold a real review of a client's
+ * private repository, and nothing from them is committed to this repository — which is why
+ * the example was invented at the same lengths in the first place.
+ */
+test.describe('the three step pages', () => {
+  test('Understand, Alternatives and Solution', async ({ page }) => {
+    const steps = ['understand', 'alternatives', 'solution'] as const
+
+    for (const [at, step] of steps.entries()) {
+      await page.goto(`${seeded}reviews/${structuredReviewId}/${step}`)
+      await expect(page.locator('h1')).toBeVisible()
+      /*
+       * One fold open on each, because a fold is half of what these pages are for —
+       * Patrick wants to "go down the rabbit holes when I need to", and a picture of three
+       * pages with everything closed shows only the half that is always visible.
+       */
+      await page.locator('button[aria-expanded="false"]').first().click()
+      await shot(page, `dev-885-${at + 1}-${step}`)
+    }
+
+    /*
+     * And at a phone's width. The assertion that nothing scrolls sideways is in the
+     * acceptance suite; these are the pictures of what it looks like when it does not —
+     * the six-column matrix as a card per option, and the four-column tables as labelled
+     * lists.
+     */
+    await page.setViewportSize({ width: 390, height: 844 })
+    for (const [at, step] of steps.entries()) {
+      await page.goto(`${seeded}reviews/${structuredReviewId}/${step}`)
+      await expect(page.locator('h1')).toBeVisible()
+      await page.locator('button[aria-expanded="false"]').first().click()
+      await shot(page, `dev-885-${at + 1}-${step}-390`)
+    }
+    await page.setViewportSize({ width: 1440, height: 900 })
+
+    /*
+     * The one state the three pages have that the invented example cannot show: a brief
+     * written before the structured one existed. The seeded review's own brief is three
+     * free-text fields, and the criterion is that Understand still shows it.
+     */
+    await page.goto(`${seeded}reviews/${reviewId}/understand`)
+    await expect(page.getByText('Written before the structured brief.')).toBeVisible()
+    await shot(page, 'dev-885-4-understand-old-brief')
   })
 })
 

@@ -322,12 +322,36 @@ describe('the queue', () => {
     expect(row.text()).toContain('Read and sign off')
     expect(page.findAll('.row').filter(one => one.text().includes('#412'))).toHaveLength(1)
     /*
-     * **And it goes to the review, not to the draft.** Every row in this queue opens the
-     * review it is about; the draft is behind the review page's own "Open draft". This
-     * row was the exception until DEV-880's pull request, and it is pinned here so it
-     * does not become one again.
+     * **And it goes to the step that is waiting**, which is now the draft.
+     *
+     * This assertion used to read `/reviews/17`, pinning "every row opens the review, not
+     * the draft" — Patrick on tc-portal #9584, against a queue where every row skipped
+     * straight to the draft screen. DEV-885 supersedes it rather than undoing it: a review
+     * is no longer one page, so "the review" has stopped naming a place. Before the brief
+     * is confirmed this row goes to Understand, which *is* the review; once it is
+     * confirmed the only step still waiting is the draft, and there is nothing left to
+     * read first.
      */
-    expect(row.attributes('href')).toBe('/reviews/17')
+    expect(row.attributes('href')).toBe('/reviews/17/draft')
+  })
+
+  it('opens the step that is waiting, and Understand when nothing is', async () => {
+    const page = await shown(Inbox)
+
+    /* A brief waiting to be confirmed is step 2, and step 2 has a page. */
+    const brief = page.findAll('.row').find(one => one.text().includes('Problem brief ready'))!
+    expect(brief.attributes('href')).toBe('/reviews/17/understand')
+
+    /*
+     * A review with nothing waiting on the developer. Step 7 has no page until DEV-878
+     * builds it, and Understand is where a reader starts anyway — so a row with no step to
+     * land on lands there rather than nowhere.
+     */
+    const withAgent = page
+      .findAll('.row')
+      .map(one => one.attributes('href'))
+      .filter((href): href is string => href != null)
+    expect(withAgent.every(href => !/^\/reviews\/\d+$/.test(href))).toBe(true)
   })
 
   it('keeps the figures the boards do not draw, rather than dropping them', async () => {

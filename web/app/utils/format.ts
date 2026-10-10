@@ -92,6 +92,31 @@ export function layerDetail(detail: string | null | undefined): string {
   return LAYER_DETAILS[detail] ?? detail
 }
 
+/**
+ * What a step's outcome says on the trail, in a few words.
+ *
+ * **The store's own words wherever it has them**, which is `layer.detail` — "3 options",
+ * "9 findings, 0 blockers", "waiting on you". A step whose detail is empty still has to say
+ * something, because the trail's whole claim is that you can read the state of a review
+ * off seven labels; so the fallback is the state, worded, rather than a blank cell.
+ */
+const LAYER_OUTCOMES: Record<ReviewLayerState, string> = {
+  pending: 'not yet',
+  running: 'running',
+  done: 'done',
+  waiting_on_you: 'waiting on you',
+  failed: 'failed',
+  skipped: 'skipped',
+}
+
+/** A step's outcome on the trail: what the store recorded, else its state. */
+export function layerOutcome(layer: {
+  state: ReviewLayerState
+  detail?: string | null
+}): string {
+  return layerDetail(layer.detail) || LAYER_OUTCOMES[layer.state]
+}
+
 /** Which of the three ways a layer pill is drawn. */
 export function layerTone(state: ReviewLayerState): 'done' | 'current' | 'pending' | 'failed' {
   if (state === 'done') return 'done'

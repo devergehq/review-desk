@@ -65,6 +65,23 @@
   --rd-warn-ink: #6b3a00;
   --rd-warn-line: #8a4b00;
 
+  /*
+   * ---- A numbered problem, and what fixes it ----
+   *
+   * The Understand board marks what is wrong in red on the before flow and what fixes it
+   * in green on the after flow, with **the same number on both**. The number is the signal
+   * and the colour is the reinforcement, never the other way round — `ProblemMark` writes
+   * the words "what is wrong" and "what fixes it" into the accessible name, so a reader
+   * who cannot tell the two hues apart still reads the pair.
+   *
+   * The green is the app's one accent, unchanged. The red is the boards' `#B3261E`:
+   * 6.54:1 on white, 5.96:1 on its own wash, and 6.54:1 reversed out for the numeral.
+   * `test/contrast.spec.ts` computes all three.
+   */
+  --rd-wrong: #b3261e;
+  --rd-wrong-wash: #fdf2f0;
+  --rd-fixed-wash: #eef6f3;
+
   /* ---- The other two severities. Each has a shape as well as a colour. ---- */
   --rd-nit-wash: #eceeef;
   --rd-nit-ink: #3c434a;
