@@ -632,7 +632,7 @@ fn no_write_takes_a_time_for_a_step() {
 
 #[test]
 fn a_review_from_before_this_change_is_never_given_a_made_up_start() {
-    // **Migration 11's backfill, against a review that really predates it.** The only time
+    // **Migration 12's backfill, against a review that really predates it.** The only time
     // such a review holds for a step is `review_layers.updated_at`, and the honest reading
     // of it is that the step entered the state it is in then. So a step it had already
     // finished has a finish and no start, and every figure that would need the start reads
@@ -640,14 +640,16 @@ fn a_review_from_before_this_change_is_never_given_a_made_up_start() {
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir);
 
-    const FROM: i64 = 10;
+    // The version immediately before the step-timings one, so the review really is from
+    // before it. It was 10 until DEV-878's own migration landed between them.
+    const FROM: i64 = 11;
     assert!(
         newest_version() > FROM,
-        "this test needs the step-timings migration to come from version 10"
+        "this test needs a review recorded before the step-timings migration"
     );
 
     {
-        let old = Store::open_at_version(&path, FROM).expect("open at version 10");
+        let old = Store::open_at_version(&path, FROM).expect("open at the version before");
         assert_eq!(old.schema_version().unwrap(), FROM);
     }
     {

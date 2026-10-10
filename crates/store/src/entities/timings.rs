@@ -58,7 +58,7 @@ impl Store {
     /// and the reason this read exists at all — DEV-890 makes the numbers available in one
     /// read and deliberately builds no statistics page over them.
     ///
-    /// A review from before migration 11 is here too, with its figures absent. Leaving it
+    /// A review from before migration 12 is here too, with its figures absent. Leaving it
     /// out would make "how long does a review take" quietly a question about the reviews
     /// recorded since this change, which is a different question and not the one anybody
     /// asked.
@@ -272,7 +272,7 @@ mod tests {
 
     #[test]
     fn a_review_from_before_this_change_reports_nothing_rather_than_nought() {
-        // What migration 11 backfilled: one finish per layer, no starts anywhere.
+        // What migration 12 backfilled: one finish per layer, no starts anywhere.
         let finished = |number| {
             layer(
                 number,

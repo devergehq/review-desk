@@ -9,7 +9,7 @@
 //!
 //! **Beside that row is an append-only record of every state the layer has entered**, and
 //! that is DEV-890. The row above holds one `updated_at` and overwrites it, so until
-//! migration 11 a layer's start was lost the moment it finished and Review Desk could not
+//! migration 12 a layer's start was lost the moment it finished and Review Desk could not
 //! say how long a review took. The passes a layer has made are derived from that record
 //! and never stored: there is one copy of when each state was entered, so a total and the
 //! times it was computed from cannot come to disagree.
@@ -155,7 +155,7 @@ impl Store {
     /// | `pending` | closes the pass that was open and opens nothing: the layer is back to not started |
     ///
     /// The second half of the middle row is the whole of DEV-890's rule about reviews
-    /// recorded before it. Migration 11 backfilled one state per layer from `updated_at`,
+    /// recorded before it. Migration 12 backfilled one state per layer from `updated_at`,
     /// which is the only time such a review holds, so a layer it had already finished
     /// comes out as a finish with no start — and every figure that would need that start
     /// reads as not recorded rather than as zero.
@@ -250,7 +250,7 @@ fn runs_from(changes: &[(ReviewLayerState, Option<String>, Timestamp)]) -> Vec<R
             runs.push(going);
         } else if state.is_finished() {
             // A layer finished with nothing before it. The finish is real and the start
-            // was never recorded, which is what a review from before migration 11 knows
+            // was never recorded, which is what a review from before migration 12 knows
             // about a layer it had already finished.
             runs.push(ReviewLayerRun {
                 state: None,
@@ -334,7 +334,7 @@ mod tests {
 
     #[test]
     fn a_layer_finished_before_anything_recorded_a_start_has_no_start() {
-        // What migration 11 backfilled for a layer a review had already finished: one
+        // What migration 12 backfilled for a layer a review had already finished: one
         // state, carrying `updated_at`. The finish is real; nothing knows when it began.
         let runs = runs_from(&changes(&[(Done, 1_760_000_000)]));
 

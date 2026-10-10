@@ -849,7 +849,7 @@ idempotent — writing the same state twice is how a session reports progress wi
 checking first — so a row per write would turn one pass that is still going into ten passes
 of a few seconds.
 
-**A review recorded before DEV-890 is never given a made-up start.** Migration 11 backfills
+**A review recorded before DEV-890 is never given a made-up start.** Migration 12 backfills
 one row per existing `review_layers` row from `updated_at`, which is the only time such a
 review holds and whose honest reading is that the step entered the state it is in then. So
 a step it had already finished comes out of the middle row of that table as a finish with
@@ -1075,8 +1075,9 @@ Migration 9 on this branch — the number is always the next free one, for the r
 
 ### Added by DEV-890, for how long each of the seven steps took
 
-Migration 11 on this branch — the number is always the next free one, for the reason
-`migrations.rs` gives.
+Migration 12 on this branch. It was written as 11 and renumbered when DEV-878's own 11
+merged first — the number is always the next free one, for the reason `migrations.rs`
+gives.
 
 - [x] **S35 — `review_layer_states`.** `(review_id, number, state, detail, entered_at)`,
       append-only, read in `id` order. The table specified above. Needed by:
