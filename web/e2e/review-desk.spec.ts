@@ -101,10 +101,10 @@ test.describe('the whole path, on a seeded database', () => {
     await expect(page.getByText('ABC-231')).toBeVisible()
 
     /*
-     * **And the row opens the step that is waiting**, which is DEV-885's criterion. The
-     * brief is layer 2, and layer 2 is Understand. This is the only point in this sequence
-     * where it can be checked: two tests on, the brief is confirmed and the same row's
-     * waiting step is the draft — which is asserted there.
+     * **And the row opens the review, which starts at Understand** — Patrick on
+     * tc-portal #9584, "when we click a review, we want to go to the review, not to the
+     * draft". Every row lands here however much is waiting behind it; the trail is what
+     * says which step that is, and it says it about all seven at once.
      */
     await expect(page.locator('.row').first()).toHaveAttribute(
       'href',
@@ -734,14 +734,32 @@ test.describe('the three step pages of one review', () => {
      */
     await page.locator('.trail').getByRole('link', { name: /5 Code review/ }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}`)
-    await page.getByRole('link', { name: 'Back to the review' }).click()
+    /*
+     * **"Back to Understand" here, "Back to the review" on the draft.** This *is* a review
+     * page — the findings are on it — so naming the destination is the only wording that
+     * does not point at a page the reader has not seen and call it the one they are on.
+     */
+    await page.getByRole('link', { name: 'Back to Understand' }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/understand`)
 
     /* ---- and back to 2 · Understand, which is what "move back freely" means ---- */
 
+    /*
+     * **With the URL asserted in between.** Without it this proved nothing: step 2 is a
+     * self-link on the Understand page, so Playwright could resolve and click it before
+     * the navigation to `/alternatives` finished and the closing assertion would pass
+     * either way.
+     */
     await page.locator('.trail').getByRole('link', { name: /3 Alternatives/ }).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/alternatives`)
     await page.locator('.trail').getByRole('link', { name: /2 Understand/ }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/understand`)
+
+    /*
+     * And step 6 is a **label** on this review, because it has no draft — the one guard
+     * that stops the trail sending a reader to a refusal with no way back.
+     */
+    await expect(page.locator('.trail').getByRole('link', { name: /6 Draft/ })).toHaveCount(0)
 
     /* Lint and Harvest are labels, not links: neither has a page until DEV-878. */
     await expect(page.locator('.trail').getByRole('link', { name: /1 Lint/ })).toHaveCount(0)

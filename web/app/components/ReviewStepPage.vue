@@ -49,6 +49,7 @@ defineProps<{
         :review-id="detail.review.id"
         :active="step"
         :round="detail.review.round"
+        :draft-status="detail.draft_status"
       />
 
       <h1 class="rd-display headline">

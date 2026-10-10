@@ -150,17 +150,48 @@ describe('the shell every step page sits in', () => {
      * lead somewhere a reader could not leave. Steps 1 and 7 have no page until DEV-878,
      * and a link to a page that does not exist is worse than a label.
      */
+    /*
+     * **Four, not five, on this review: it has no draft.** `draft_status` is null and
+     * `GET /reviews/{id}/draft` refuses, so step 6 is a label. An unguarded link here sent
+     * the flagship structured review to a blocking not-found panel that carries no trail
+     * and no way back — the dead end steps 1 and 7 are labels to avoid.
+     */
     expect(links).toEqual([
       `/reviews/${STRUCTURED}/understand`,
       `/reviews/${STRUCTURED}/alternatives`,
       `/reviews/${STRUCTURED}/solution`,
       `/reviews/${STRUCTURED}`,
-      `/reviews/${STRUCTURED}/draft`,
     ])
-    /* Lint and Harvest are labels. */
+    /* Lint, Draft and Harvest are labels. */
     const labels = page.findAll('.trail .face:not(a)').map(one => one.text())
-    expect(labels.some(one => one.includes('1 Lint'))).toBe(true)
-    expect(labels.some(one => one.includes('7 Harvest'))).toBe(true)
+    for (const step of ['1 Lint', '6 Draft', '7 Harvest']) {
+      expect(labels.some(one => one.includes(step)), `${step} should be a label`).toBe(true)
+    }
+  })
+
+  it('links step 6 once there is a draft to read', async () => {
+    const detail = fixture(STRUCTURED)
+    detail.draft_status = 'ready'
+    await withReview(detail)
+
+    const page = await understand(STRUCTURED)
+    expect(page.findAll('.trail a').map(one => one.attributes('href')))
+      .toContain(`/reviews/${STRUCTURED}/draft`)
+  })
+
+  it('leaves step 6 a label while a session is still writing the draft', async () => {
+    const detail = fixture(STRUCTURED)
+    detail.draft_status = 'drafting'
+    await withReview(detail)
+
+    const page = await understand(STRUCTURED)
+    /*
+     * `drafting` is a session part-way through writing one, and the document may not
+     * exist yet — `getDraft` refuses on the row, not on the status. Two sample reviews
+     * carry exactly that. A label for a few seconds costs nothing; a dead end does not.
+     */
+    expect(page.findAll('.trail a').map(one => one.attributes('href')))
+      .not.toContain(`/reviews/${STRUCTURED}/draft`)
   })
 
   it('still says which step is waiting, whichever page you are on', async () => {

@@ -372,10 +372,24 @@ describe('the queue', () => {
       [DraftPreview, '/reviews/17/draft'],
     ] as const) {
       const screen = await shown(component, { route })
-      const back = screen.findAll('a').find(one => one.text() === 'Back to the review')
+      const back = screen
+        .findAll('a')
+        .find(one => /^Back to (the review|Understand)$/.test(one.text()))
       expect(back, `${route} has no way back`).toBeTruthy()
       expect(back!.attributes('href')).toBe('/reviews/17/understand')
     }
+  })
+
+  it('sends every "the review" link to Understand, not to the findings', async () => {
+    /*
+     * The queue, the two screens' back links, the header nav and a rule's origin all
+     * meant `/reviews/{id}` before DEV-885. Once "the review" means Understand, an item
+     * still landing on the findings takes a reader somewhere the page it lands on calls
+     * not-the-review — which is what the header's "Reviews" was doing.
+     */
+    const layout = await shown(Layout)
+    const reviews = layout.findAll('nav a').find(one => one.text() === 'Reviews')
+    expect(reviews!.attributes('href')).toMatch(/^\/reviews\/\d+\/understand$/)
   })
 
   it('keeps the figures the boards do not draw, rather than dropping them', async () => {

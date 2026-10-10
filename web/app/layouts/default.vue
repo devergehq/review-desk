@@ -10,7 +10,10 @@
  * listed one review three times.
  *
  * "Reviews" has no index of its own in this slice, so it goes to the review that is
- * waiting; the boards' own Reviews link points at the review page, which is a later issue.
+ * waiting — **at Understand, where a review starts.** It pointed at `/reviews/{id}` until
+ * DEV-885, and once the queue, the draft screen and the review page itself all agreed that
+ * "the review" means Understand, the one item still landing on the findings was taking a
+ * reader somewhere the page it landed on called not-the-review.
  */
 const route = useRoute()
 const inbox = useReviewDesk().inbox()
@@ -39,7 +42,7 @@ const links = computed(() => [
   { label: 'Queue', to: '/', match: (path: string) => path === '/' },
   {
     label: 'Reviews',
-    to: firstReview.value == null ? null : `/reviews/${firstReview.value}`,
+    to: firstReview.value == null ? null : `/reviews/${firstReview.value}/understand`,
     match: (path: string) => path.startsWith('/reviews'),
   },
   { label: 'Rules', to: '/rules', match: (path: string) => path.startsWith('/rules') },

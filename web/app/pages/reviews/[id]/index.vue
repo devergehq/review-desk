@@ -75,13 +75,17 @@ async function changeDisposition(payload: {
               are drawn until DEV-878 rebuilds it, and this screen carries no trail of its
               own. Every row in the queue now lands on Understand, so without a way back
               the trail would send a reader somewhere they could not leave. Worded and
-              placed exactly as the draft screen's, which has carried one all along.
+              placed as the draft screen's, which has carried one all along — but named
+              for where it goes, not "Back to the review". This *is* a review page, and a
+              reader who arrived from the header nav or from a rule never navigated forward
+              from anywhere, so "back to the review" would point at a page they have not
+              seen and name it something they are already looking at.
             -->
             <NuxtLink
               :to="`/reviews/${data.review.id}/understand`"
               class="back"
             >
-              Back to the review
+              Back to Understand
             </NuxtLink>
             <h1>
               <PrRef :pr="data.review.pr" />

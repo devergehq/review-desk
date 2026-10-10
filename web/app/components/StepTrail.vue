@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ReviewLayer, ReviewLayerName } from '~/types/desk'
+import type { DraftStatus, ReviewLayer, ReviewLayerName } from '~/types/desk'
 
 /**
  * The seven steps of a review, in the two groups they actually fall into.
@@ -32,8 +32,12 @@ import type { ReviewLayer, ReviewLayerName } from '~/types/desk'
  * |---|---|
  * | 2, 3, 4 | the pages DEV-885 builds |
  * | 5 Code review | `/reviews/{id}`, the one-page review, which is where the findings are |
- * | 6 Draft | `/reviews/{id}/draft` |
+ * | 6 Draft | `/reviews/{id}/draft`, **when there is a draft to read** |
  * | 1 Lint, 7 Harvest | nowhere — no page until DEV-878, and a link to a page that does not exist is worse than a label |
+ *
+ * Step 6 is a link only when `draft_status` says there is a draft to read. The flagship
+ * structured review has none, and an unguarded link sent it to a blocking not-found panel
+ * with no trail on it — the same dead end steps 1 and 7 are labels to avoid.
  *
  * The board draws only three links, and drew them against a queue that landed elsewhere.
  * Steps 5 and 6 go to the two screens this slice does not rebuild; **each of those carries
@@ -54,6 +58,16 @@ const props = defineProps<{
   active: ReviewLayerName
   /** Which round the second group is. */
   round: number
+  /**
+   * The review's draft status, which decides whether step 6 is a link.
+   *
+   * **`GET /reviews/{id}/draft` is a refusal when there is no draft**, so step 6 has to
+   * know. `null` is a review no session has drafted; `drafting` is one being written and
+   * the document may not exist yet — two of the sample reviews are exactly that. Either
+   * way the link would land on a blocking not-found panel carrying no trail and no way
+   * back, which is the thing this trail exists to prevent.
+   */
+  draftStatus?: DraftStatus | null
 }>()
 
 /**
@@ -71,6 +85,18 @@ const PAGES: Partial<Record<ReviewLayerName, (id: number) => string>> = {
   code_review: id => `/reviews/${id}`,
   draft: id => `/reviews/${id}/draft`,
 }
+
+/**
+ * The draft statuses that mean there is a draft to read.
+ *
+ * **Not "the status is set".** `drafting` is a session part-way through writing one, and
+ * the document may not exist yet — `getDraft` refuses on the row, not on the status, and
+ * two of the sample reviews carry `drafting` with nothing behind it. Excluding it can at
+ * worst turn a readable draft into a label for a few seconds; including it turns a trail
+ * step into a dead end, and the rule this component states for steps 1 and 7 is that a
+ * link to a page that does not exist is worse than a label.
+ */
+const DRAFT_IS_READABLE: DraftStatus[] = ['ready', 'approved', 'sent_back', 'posted']
 
 interface Step {
   number: number
@@ -97,7 +123,10 @@ const steps = computed<Step[]>(() =>
       name: layer.name,
       label: layerLabel(layer.name),
       outcome: layerOutcome(layer),
-      to: PAGES[layer.name]?.(props.reviewId) ?? null,
+      to: layer.name === 'draft'
+        && !DRAFT_IS_READABLE.includes(props.draftStatus as DraftStatus)
+        ? null
+        : PAGES[layer.name]?.(props.reviewId) ?? null,
       current: layer.name === props.active,
       tone: layerTone(layer.state),
     })),
