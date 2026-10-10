@@ -1725,12 +1725,17 @@ components:
     SaveDraftRequest:
       type: object
       additionalProperties: false
-      anyOf:
-        - required: [body]
-        - required: [sections]
       description: |
         **Either the blocks the body is composed of, or a body to store as one block of
-        prose.**
+        prose.** The server refuses a save with neither, naming both; `decisions.rs`'s
+        `a_draft_saved_with_neither_a_body_nor_blocks_is_refused` holds that.
+
+        **That rule is not written as an `anyOf` of two `required` lists**, which is how it
+        reads most naturally and which cannot be used here: `openapi-typescript` generates
+        `unknown` for a schema whose root carries both `anyOf` and `properties`, so the
+        dashboard's `SaveDraftRequest['edits']` stops type-checking and the generated types
+        are worse than the guarantee is worth. Recorded so it is not re-added by someone
+        reading the prose above as an oversight.
 
         Sent with `sections`, the body is composed from them; a `body` sent as well is
         *checked* against the composition and the save is refused when the two disagree by
