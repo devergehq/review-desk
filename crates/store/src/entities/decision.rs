@@ -231,7 +231,7 @@ impl Store {
             )?;
         }
 
-        match (decision.decision, &held) {
+        match (decision.decision, &words) {
             (FindingDecision::Rewrite, _) => {
                 let rewritten = composition::rewrite_finding_block(
                     &tx,
@@ -244,8 +244,10 @@ impl Store {
                     return Err(StoreError::NoDraftSection { review_id, seq });
                 }
             }
-            (chosen, None) if chosen.writes_a_block() => {
-                let (title, text) = words.as_ref().expect("worked out above");
+            // `words` is `Some` exactly when this decision has a block to write and the
+            // draft holds none, which is worked out above — so matching on it rather than
+            // on the decision again is what keeps the two from disagreeing.
+            (_, Some((title, text))) => {
                 composition::add_finding_block(&tx, review_id, seq, title, text)?;
             }
             // A block the draft already holds, and a decision that does not rewrite its
