@@ -255,7 +255,8 @@ describe('the decision track', () => {
       },
     })
     expect(page.text()).toContain('acme/portal')
-    expect(page.find('.count').text()).toBe('6')
+    /* The board writes the count as part of the label: "acme/portal · 6". */
+    expect(page.find('.count').text()).toBe('· 6')
   })
 
   it('is a group of buttons, not a radio group, when the options are actions', async () => {

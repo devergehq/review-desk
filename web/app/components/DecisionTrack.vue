@@ -153,7 +153,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <span
         v-if="option.count != null"
         class="count"
-      >{{ option.count }}</span>
+      >· {{ option.count }}</span>
       <!--
         The key, drawn as a key. `aria-hidden`, because a screen reader reads the option's
         label and announcing "Y" after it would be a shortcut nobody using one would press
@@ -226,6 +226,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 }
 
 .count {
+  /* The board writes it as part of the label — "acme/portal · 6" — not as a badge. */
+  margin-left: -4px;
   color: var(--rd-ink-muted);
   font-weight: 400;
 }

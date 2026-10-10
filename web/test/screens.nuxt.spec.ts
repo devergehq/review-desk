@@ -231,8 +231,8 @@ describe('the queue', () => {
     const page = await shown(Inbox)
     const tabs = page.findAll('[role="radiogroup"] [role="radio"]').map(tab => tab.text())
     expect(tabs[0]).toBe('All repositories')
-    expect(tabs).toContain('acme/portal5')
-    expect(tabs).toContain('acme/billing-api3')
+    expect(tabs).toContain('acme/portal· 5')
+    expect(tabs).toContain('acme/billing-api· 3')
 
     const billing = page
       .findAll('[role="radio"]')
