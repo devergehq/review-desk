@@ -125,9 +125,25 @@ describe('the app asks nothing of the network', () => {
     expect(offenders).toEqual([])
   })
 
-  it('the fonts are bundled, not fetched', () => {
+  /*
+   * The three typefaces the approved boards are drawn in. The boards themselves ask Google
+   * Fonts for them in a `<link>`; this app cannot, and the whole point of naming all three
+   * here is that adding a fourth family by `<link>` fails rather than works on the one
+   * machine with internet and breaks on the one without.
+   */
+  it.each([
+    ['@fontsource/newsreader', 'Newsreader, the display face'],
+    ['@fontsource/instrument-sans', 'Instrument Sans, everything read'],
+    ['@fontsource/jetbrains-mono', 'JetBrains Mono, a number or a key'],
+  ])('%s is bundled rather than fetched', (packageName) => {
     const config = readFileSync(resolve('nuxt.config.ts'), 'utf8')
-    expect(config).toContain('@fontsource/ibm-plex-sans')
+    expect(config).toContain(packageName)
     expect(config).not.toContain('fonts.googleapis.com')
+  })
+
+  it('every family the stylesheet names is one of the three that are bundled', () => {
+    const css = readFileSync(resolve('app/assets/css/tokens.css'), 'utf8')
+    const families = [...css.matchAll(/--rd-font-[a-z]+:\s*'([^']+)'/g)].map(hit => hit[1])
+    expect(families).toEqual(['Newsreader', 'Instrument Sans', 'JetBrains Mono'])
   })
 })

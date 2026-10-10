@@ -47,8 +47,8 @@ test.describe.configure({ mode: 'serial' })
 test.describe('a seeded database', () => {
   test('the four pages', async ({ page }) => {
     await page.goto(seeded)
-    await expect(page.getByRole('heading', { name: 'Waiting on you' })).toBeVisible()
-    await shot(page, 'seeded-1-inbox')
+    await expect(page.getByRole('heading', { name: '1 review needs you' })).toBeVisible()
+    await shot(page, 'seeded-1-queue')
 
     await page.goto(`${seeded}reviews/${reviewId}`)
     await expect(page.getByText('Confirm the problem before anything is posted')).toBeVisible()
@@ -63,6 +63,17 @@ test.describe('a seeded database', () => {
     await page.goto(`${seeded}rules`)
     await expect(page.getByRole('heading', { name: 'No rules yet' })).toBeVisible()
     await shot(page, 'seeded-4-rules')
+
+    /*
+     * **The queue at a phone's width**, which DEV-876 asks for by name: "Both pages are
+     * usable at 390 pixels wide." The assertion that nothing scrolls sideways is in the
+     * acceptance suite; this is the picture of it.
+     */
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto(seeded)
+    await expect(page.getByRole('heading', { name: '1 review needs you' })).toBeVisible()
+    await shot(page, 'seeded-6-queue-390')
+    await page.setViewportSize({ width: 1440, height: 900 })
 
     /*
      * The third state of layer 2, which no screenshot could show before DEV-864: a brief
@@ -81,7 +92,7 @@ test.describe('a fresh database', () => {
   test('the four pages', async ({ page }) => {
     await page.goto(empty)
     await expect(page.getByRole('heading', { name: 'Nothing here yet' })).toBeVisible()
-    await shot(page, 'fresh-1-inbox')
+    await shot(page, 'fresh-1-queue')
 
     /*
      * A review and a draft that are not there. These are the same two screens as above,

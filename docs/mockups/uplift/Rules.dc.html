@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Rules</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap">
+<style>
+body{margin:0}
+a{color:#0E6E5C}a:hover{color:#094A3E}
+</style>
+</helmet>
+<div style="min-height: 1760px; background: #FFFFFF; color: #14171A; font-family: 'Instrument Sans', 'Helvetica Neue', sans-serif; font-size: 15px; line-height: 1.5">
+
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px; padding: 14px 40px; border-bottom: 1px solid #14171A">
+<div style="font-family: 'Newsreader', Georgia, serif; font-size: 22px; font-weight: 500; letter-spacing: -0.01em">Review Desk</div>
+<nav style="display: flex; flex-wrap: wrap; gap: 4px">
+<a href="Queue.dc.html" style="padding: 12px 12px; color: #5A626B; text-decoration: none">Queue</a>
+<a href="BriefRefined.dc.html" style="padding: 12px 12px; color: #5A626B; text-decoration: none">Reviews</a>
+<a href="Rules.dc.html" style="padding: 12px 12px; color: #14171A; text-decoration: none; font-weight: 600; border-bottom: 2px solid #14171A">Rules</a>
+</nav>
+<div style="margin-left: auto; font-size: 13px; color: #5A626B">Sample data</div>
+</header>
+
+<div style="max-width: 1240px; margin: 0 auto; padding: 44px 40px 96px; display: flex; flex-direction: column; gap: 48px">
+
+<div style="display: flex; flex-wrap: wrap; gap: 20px 40px; align-items: flex-end">
+<div style="flex: 1 1 420px; min-width: 0">
+<h1 style="margin: 0; font-family: 'Newsreader', Georgia, serif; font-weight: 400; font-size: 48px; line-height: 1.05; letter-spacing: -0.02em">What the reviewer has learned</h1>
+<div style="margin-top: 10px; color: #2C3238; max-width: 620px">Every rule names the failure it prevents. The app proposes them from what you keep and cut; only you promote one.</div>
+</div>
+<div style="display: inline-flex; flex-wrap: wrap; gap: 4px; background: #E8EAE9; border-radius: 14px; padding: 4px">
+<button type="button" style="min-height: 46px; padding: 0 16px; border: 0; border-radius: 10px; background: transparent; color: #2C3238; font: inherit; font-weight: 500">All repositories</button>
+<button type="button" style="min-height: 46px; padding: 0 16px; border: 0; border-radius: 10px; background: #FFFFFF; color: #14171A; font: inherit; font-weight: 600; box-shadow: 0 1px 2px rgba(20, 23, 26, 0.22), 0 4px 10px -6px rgba(20, 23, 26, 0.35)">acme/portal</button>
+<button type="button" style="min-height: 46px; padding: 0 16px; border: 0; border-radius: 10px; background: transparent; color: #2C3238; font: inherit; font-weight: 500">acme/billing-api</button>
+</div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 0 32px">
+<div style="border-top: 1px solid #14171A; padding: 14px 0 6px"><div style="font-family: 'Newsreader', Georgia, serif; font-size: 40px; line-height: 1.05">14</div><div style="font-weight: 600">rules in force</div><div style="font-size: 13px; color: #5A626B">of at most 20 for a repository</div></div>
+<div style="border-top: 1px solid #14171A; padding: 14px 0 6px"><div style="font-family: 'Newsreader', Georgia, serif; font-size: 40px; line-height: 1.05">31 of 40</div><div style="font-weight: 600">findings you kept</div><div style="font-size: 13px; color: #5A626B">last 30 days, draft to posted</div></div>
+<div style="border-top: 1px solid #14171A; padding: 14px 0 6px"><div style="font-family: 'Newsreader', Georgia, serif; font-size: 40px; line-height: 1.05">9 of 10</div><div style="font-weight: 600">same answer on a re-run</div><div style="font-size: 13px; color: #5A626B">the last replay of one review</div></div>
+<div style="border-top: 1px solid #14171A; padding: 14px 0 6px"><div style="font-family: 'Newsreader', Georgia, serif; font-size: 40px; line-height: 1.05; color: #6B3A00">2</div><div style="font-weight: 600">reviews went in a circle</div><div style="font-size: 13px; color: #5A626B">a finding open for 3 rounds or more</div></div>
+</div>
+
+<section style="display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; align-items: baseline; gap: 12px"><div style="font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600">Proposed</div><div style="font-size: 13px; color: #5A626B">1 · waiting on you</div></div>
+<div style="border-radius: 20px; padding: 30px 32px; background: #FFFFFF; box-shadow: 0 0 0 1.5px #0E6E5C, 0 18px 40px -24px rgba(14, 110, 92, 0.55); display: flex; flex-wrap: wrap; gap: 24px 40px; align-items: flex-start">
+<div style="flex: 3 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 12px">
+<div style="font-family: 'Newsreader', Georgia, serif; font-size: 30px; line-height: 1.15">Stop raising rename-for-clarity suggestions</div>
+<div><span style="font-weight: 600">Why it is proposed.</span> You cut this kind of finding from 5 of the last 5 drafts that raised it. None of them named a consequence.</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<a href="BriefRefined.dc.html" style="font-family: 'JetBrains Mono', monospace; font-size: 13px; background: #F6F7F6; border-radius: 8px; padding: 6px 10px; text-decoration: none">#412 F6</a>
+<a href="BriefRefined.dc.html" style="font-family: 'JetBrains Mono', monospace; font-size: 13px; background: #F6F7F6; border-radius: 8px; padding: 6px 10px; text-decoration: none">#409 F3</a>
+<a href="BriefRefined.dc.html" style="font-family: 'JetBrains Mono', monospace; font-size: 13px; background: #F6F7F6; border-radius: 8px; padding: 6px 10px; text-decoration: none">#401 F4</a>
+<a href="BriefRefined.dc.html" style="font-family: 'JetBrains Mono', monospace; font-size: 13px; background: #F6F7F6; border-radius: 8px; padding: 6px 10px; text-decoration: none">#398 F5</a>
+<a href="BriefRefined.dc.html" style="font-family: 'JetBrains Mono', monospace; font-size: 13px; background: #F6F7F6; border-radius: 8px; padding: 6px 10px; text-decoration: none">#377 F2</a>
+</div>
+<div style="font-size: 13px; color: #5A626B">If promoted, these findings are still recorded with their reason. They are just not put in a draft.</div>
+</div>
+<div style="flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; gap: 10px">
+<button type="button" style="min-height: 52px; padding: 0 20px; border: 0; border-radius: 13px; background: #0E6E5C; color: #FFFFFF; font: inherit; font-size: 16px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 12px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 0 #094A3E, 0 10px 20px -12px rgba(14, 110, 92, 0.7)"><span>Make it a rule</span><svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="#FFFFFF" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 7h15M11 1.5L16.5 7 11 12.5"/></svg></button>
+<button type="button" style="min-height: 46px; padding: 0 18px; border: 1px solid #D5D9DC; border-radius: 12px; background: #FFFFFF; color: #14171A; font: inherit; font-weight: 500; text-align: left; box-shadow: 0 1px 0 #E3E6E8">Dismiss, and say why</button>
+<div style="font-size: 13px; color: #5A626B">A dismissal with a reason stops it being proposed again.</div>
+</div>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column">
+<div style="display: flex; align-items: baseline; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid #14171A"><div style="font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600">In force</div><div style="font-size: 13px; color: #5A626B">3 of 14 shown</div></div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 14px 40px; padding: 24px 0; border-bottom: 1px solid #E3E6E8">
+<div style="flex: 3 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 8px">
+<div style="font-family: 'Newsreader', Georgia, serif; font-size: 24px; line-height: 1.2"><span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #5A626B; margin-right: 10px">R-09</span>A new test must fail when the fix is reverted</div>
+<div><span style="font-weight: 600">Prevents.</span> A regression shipping behind a test that cannot fail.</div>
+<div style="font-size: 13px; color: #5A626B">Decided on <a href="BriefRefined.dc.html">#377</a> · cited by 6 later findings · last cited 2 days ago</div>
+</div>
+<div style="flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; gap: 20px; font-size: 14px"><span><span style="font-weight: 600">7</span> raised</span><span><span style="font-weight: 600">7</span> kept by you</span><span><span style="font-weight: 600">0</span> rejected</span></div>
+<div style="display: flex; align-items: center; gap: 6px; font-size: 13px"><span style="width: 22px; height: 6px; border-radius: 3px; background: #14171A"></span><span style="width: 22px; height: 6px; border-radius: 3px; background: #14171A"></span><span style="width: 22px; height: 6px; border-radius: 3px; background: #D5D9DC"></span><span style="width: 22px; height: 6px; border-radius: 3px; background: #D5D9DC"></span><span style="margin-left: 6px; font-weight: 500">Repository rule</span></div>
+</div>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 14px 40px; padding: 24px 0; border-bottom: 1px solid #E3E6E8">
+<div style="flex: 3 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 8px">
+<div style="font-family: 'Newsreader', Georgia, serif; font-size: 24px; line-height: 1.2"><span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #5A626B; margin-right: 10px">R-03</span>A description stays within its budget; working notes go in a comment</div>
+<div><span style="font-weight: 600">Prevents.</span> A transcript becoming the permanent commit message on squash-merge.</div>
+<div style="font-size: 13px; color: #5A626B">Checked without a model · last said by a human reviewer 19 days ago</div>
+</div>
+<div style="flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; gap: 20px; font-size: 14px"><span><span style="font-weight: 600">9</span> caught by the check</span><span><span style="font-weight: 600">0</span> raised in review since</span></div>
+<div style="display: flex; align-items: center; gap: 6px; font-size: 13px"><span style="width: 22px; height: 6px; border-radius: 3px; background: #0E6E5C"></span><span style="width: 22px; height: 6px; border-radius: 3px; background: #0E6E5C"></span><span style="width: 22px; height: 6px; border-radius: 3px; background: #0E6E5C"></span><span style="width: 22px; height: 6px; border-radius: 3px; background: #0E6E5C"></span><span style="margin-left: 6px; font-weight: 600; color: #0E6E5C">CI check</span></div>
+</div>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 14px 40px; padding: 24px 0; border-bottom: 1px solid #E3E6E8">
+<div style="flex: 3 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 8px">
+<div style="font-family: 'Newsreader', Georgia, serif; font-size: 24px; line-height: 1.2"><span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #5A626B; margin-right: 10px">R-14</span>Money is stored as whole cents</div>
+<div><span style="font-weight: 600">Prevents.</span> An invoice header and its lines disagreeing by a cent.</div>
+<div style="font-size: 13px; color: #5A626B">Decided on <a href="BriefRefined.dc.html">#407</a> · 1 exception: reporting tables, accepted from the author</div>
+</div>
+<div style="flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; gap: 20px; font-size: 14px"><span><span style="font-weight: 600">4</span> raised</span><span><span style="font-weight: 600">3</span> kept by you</span><span><span style="font-weight: 600">1</span> rejected</span></div>
+<div style="display: flex; align-items: center; gap: 6px; font-size: 13px"><span style="width: 22px; height: 6px; border-radius: 3px; background: #14171A"></span><span style="width: 22px; height: 6px; border-radius: 3px; background: #14171A"></span><span style="width: 22px; height: 6px; border-radius: 3px; background: #D5D9DC"></span><span style="width: 22px; height: 6px; border-radius: 3px; background: #D5D9DC"></span><span style="margin-left: 6px; font-weight: 500">Repository rule</span></div>
+</div>
+</div>
+<div style="padding-top: 14px; font-size: 13px; color: #5A626B">The four bars are the stages a rule moves through: noticed, repository rule, lint check, CI check.</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; align-items: baseline; gap: 12px"><div style="font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600">Going stale</div><div style="font-size: 13px; color: #5A626B">1</div></div>
+<div style="background: #F6F7F6; border-radius: 20px; padding: 26px 30px; display: flex; flex-wrap: wrap; gap: 18px 40px; align-items: center">
+<div style="flex: 3 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 6px">
+<div style="font-family: 'Newsreader', Georgia, serif; font-size: 24px; line-height: 1.2"><span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #5A626B; margin-right: 10px">R-05</span>Legacy importer calls need the tenant guard</div>
+<div style="color: #2C3238">No finding has cited it in 60 days. The importer is being removed in #415.</div>
+</div>
+<div style="display: inline-flex; flex-wrap: wrap; gap: 4px; background: #E8EAE9; border-radius: 14px; padding: 4px">
+<button type="button" style="min-height: 46px; padding: 0 16px; border: 0; border-radius: 10px; background: #FFFFFF; color: #14171A; font: inherit; font-weight: 600; box-shadow: 0 1px 2px rgba(20, 23, 26, 0.22), 0 4px 10px -6px rgba(20, 23, 26, 0.35)">Retire it</button>
+<button type="button" style="min-height: 46px; padding: 0 16px; border: 0; border-radius: 10px; background: transparent; color: #2C3238; font: inherit; font-weight: 500">Keep 60 more days</button>
+</div>
+</div>
+</section>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1760}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

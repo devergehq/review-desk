@@ -78,12 +78,26 @@ export default defineNuxtConfig({
     },
   },
 
+  /*
+   * The three typefaces the approved boards are drawn in, and every weight they use:
+   * Newsreader for display, Instrument Sans for everything read, JetBrains Mono for a
+   * pull request number, a rule key and a keyboard hint.
+   *
+   * **The latin subset of each, not the whole family.** The boards ask Google Fonts for
+   * these at run time, which this app cannot do: it is served from a binary on loopback
+   * to a developer who may have no internet, and `test/architecture.spec.ts` holds that.
+   * Bundling the full families instead shipped woff2 files of Cyrillic and Vietnamese
+   * that this interface has no glyphs to draw — the page is `lang="en"` and nothing in it
+   * is translated.
+   */
   css: [
-    '@fontsource/ibm-plex-sans/400.css',
-    '@fontsource/ibm-plex-sans/500.css',
-    '@fontsource/ibm-plex-sans/600.css',
-    '@fontsource/ibm-plex-mono/400.css',
-    '@fontsource/ibm-plex-mono/500.css',
+    '@fontsource/newsreader/latin-400.css',
+    '@fontsource/newsreader/latin-500.css',
+    '@fontsource/instrument-sans/latin-400.css',
+    '@fontsource/instrument-sans/latin-500.css',
+    '@fontsource/instrument-sans/latin-600.css',
+    '@fontsource/jetbrains-mono/latin-400.css',
+    '@fontsource/jetbrains-mono/latin-500.css',
     '~/assets/css/tokens.css',
   ],
 

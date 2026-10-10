@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A — The brief</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap">
+<style>
+body{margin:0}
+a{color:#0E6E5C}a:hover{color:#094A3E}
+</style>
+</helmet>
+<div style="min-height: 3100px; background: #FFFFFF; color: #14171A; font-family: 'Instrument Sans', 'Helvetica Neue', sans-serif; font-size: 15px; line-height: 1.5">
+
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px; padding: 14px 40px; border-bottom: 1px solid #14171A">
+<div style="font-family: 'Newsreader', Georgia, serif; font-size: 22px; font-weight: 500; letter-spacing: -0.01em">Review Desk</div>
+<nav style="display: flex; flex-wrap: wrap; gap: 4px">
+<a href="Queue.dc.html" style="padding: 12px 12px; color: #5A626B; text-decoration: none">Queue</a>
+<a href="Main.dc.html" style="padding: 12px 12px; color: #14171A; text-decoration: none; font-weight: 600; border-bottom: 2px solid #14171A">Reviews</a>
+<a href="Main.dc.html" style="padding: 12px 12px; color: #5A626B; text-decoration: none">Rules</a>
+</nav>
+<div style="margin-left: auto; font-size: 13px; color: #5A626B">Sample data</div>
+</header>
+
+<div style="max-width: 1240px; margin: 0 auto; padding: 48px 40px 96px; display: flex; flex-wrap: wrap; gap: 56px; align-items: flex-start">
+
+<article style="flex: 999 1 620px; min-width: 0; display: flex; flex-direction: column; gap: 56px">
+
+<div style="display: flex; flex-direction: column; gap: 14px">
+<div style="font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: #5A626B">acme/portal · ABC-231 · round 1 · 214 changed lines</div>
+<h1 style="margin: 0; font-family: 'Newsreader', Georgia, serif; font-weight: 400; font-size: 48px; line-height: 1.08; letter-spacing: -0.02em; text-wrap: balance"><span style="color: #8A9199">#412</span> Retry failed webhook deliveries</h1>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0; margin-top: 10px; font-size: 13px">
+<div style="display: flex; align-items: center; gap: 8px"><span style="width: 10px; height: 10px; border-radius: 50%; background: #14171A"></span><span>Lint</span></div>
+<span style="flex: 1 1 16px; min-width: 16px; height: 1px; background: #14171A; margin: 0 10px"></span>
+<div style="display: flex; align-items: center; gap: 8px"><span style="width: 10px; height: 10px; border-radius: 50%; background: #14171A"></span><span>Understand</span></div>
+<span style="flex: 1 1 16px; min-width: 16px; height: 1px; background: #14171A; margin: 0 10px"></span>
+<div style="display: flex; align-items: center; gap: 8px"><span style="width: 10px; height: 10px; border-radius: 50%; background: #14171A"></span><span>Alternatives</span></div>
+<span style="flex: 1 1 16px; min-width: 16px; height: 1px; background: #14171A; margin: 0 10px"></span>
+<div style="display: flex; align-items: center; gap: 8px"><span style="width: 10px; height: 10px; border-radius: 50%; background: #14171A"></span><span>Solution</span></div>
+<span style="flex: 1 1 16px; min-width: 16px; height: 1px; background: #14171A; margin: 0 10px"></span>
+<div style="display: flex; align-items: center; gap: 8px"><span style="width: 10px; height: 10px; border-radius: 50%; background: #14171A"></span><span>Code review</span></div>
+<span style="flex: 1 1 16px; min-width: 16px; height: 1px; background: #14171A; margin: 0 10px"></span>
+<div style="display: flex; align-items: center; gap: 8px"><span style="width: 14px; height: 14px; border-radius: 50%; border: 3px solid #0E6E5C; box-sizing: border-box"></span><span style="font-weight: 600; color: #0E6E5C">Draft — yours</span></div>
+<span style="flex: 1 1 16px; min-width: 16px; height: 1px; background: #C9CED3; margin: 0 10px"></span>
+<div style="display: flex; align-items: center; gap: 8px"><span style="width: 10px; height: 10px; border-radius: 50%; border: 1px solid #8A9199; box-sizing: border-box"></span><span style="color: #5A626B">Harvest</span></div>
+</div>
+</div>
+
+<section style="display: flex; flex-direction: column; gap: 20px">
+<div style="font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: #5A626B">1 · The problem</div>
+<p style="margin: 0; font-family: 'Newsreader', Georgia, serif; font-size: 26px; line-height: 1.35; max-width: 760px; text-wrap: pretty">A webhook delivery that fails once is never tried again, so a customer whose endpoint was briefly down loses the event entirely.</p>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 6px">
+<div style="padding: 14px 20px; border: 1px solid #14171A; font-weight: 500">Event happens</div>
+<svg width="34" height="12" viewBox="0 0 34 12" fill="none" stroke="#14171A" stroke-width="1.2" aria-hidden="true"><path d="M0 6h32M27 1.5l5 4.5-5 4.5"/></svg>
+<div style="padding: 14px 20px; border: 1px solid #14171A; font-weight: 500">Delivery is sent</div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 2px"><span style="font-size: 12px; color: #8A4B00; font-weight: 600">endpoint is down</span><svg width="64" height="12" viewBox="0 0 64 12" fill="none" stroke="#14171A" stroke-width="1.2" aria-hidden="true"><path d="M0 6h62M57 1.5l5 4.5-5 4.5"/></svg></div>
+<div style="padding: 14px 20px; background: #14171A; color: #FFFFFF; font-weight: 500">Dropped. No retry, no record.</div>
+</div>
+<div style="font-size: 13px; color: #5A626B">From the ticket and the code. Confirmation was not required for this review.</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 20px">
+<div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline"><div style="font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: #5A626B">2 · Ways to solve it</div><div style="font-size: 13px; color: #5A626B">written before the diff was read</div></div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 28px">
+<div style="border-top: 1px solid #C9CED3; padding-top: 16px; display: flex; flex-direction: column; gap: 10px">
+<div style="font-family: 'Newsreader', Georgia, serif; font-size: 22px; line-height: 1.2">A. Retry inside the request</div>
+<div style="color: #2C3238"><span style="font-weight: 600">For.</span> The smallest change, and no new table.</div>
+<div style="color: #2C3238"><span style="font-weight: 600">Against.</span> Holds the request open for as long as the endpoint is down.</div>
+</div>
+<div style="border-top: 4px solid #0E6E5C; padding-top: 13px; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center"><div style="font-family: 'Newsreader', Georgia, serif; font-size: 22px; line-height: 1.2">B. Queue with backoff</div><span style="font-size: 12px; font-weight: 600; color: #FFFFFF; background: #0E6E5C; padding: 2px 8px">What they built</span></div>
+<div style="color: #2C3238"><span style="font-weight: 600">For.</span> Meets the 24-hour window the ticket asks for.</div>
+<div style="color: #2C3238"><span style="font-weight: 600">Against.</span> Needs an idempotency key, which is finding F1.</div>
+</div>
+<div style="border-top: 1px solid #C9CED3; padding-top: 16px; display: flex; flex-direction: column; gap: 10px">
+<div style="font-family: 'Newsreader', Georgia, serif; font-size: 22px; line-height: 1.2">C. Dead-letter and replay by hand</div>
+<div style="color: #2C3238"><span style="font-weight: 600">For.</span> Nothing is ever delivered twice.</div>
+<div style="color: #2C3238"><span style="font-weight: 600">Against.</span> Somebody has to notice, which is the failure being fixed.</div>
+</div>
+</div>
+<p style="margin: 0; font-family: 'Newsreader', Georgia, serif; font-size: 20px; max-width: 760px"><span style="font-family: 'Instrument Sans', sans-serif; font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: #5A626B; margin-right: 10px">Verdict</span>B is the right shape for this ticket.</p>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 28px">
+<div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline"><div style="font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: #5A626B">3 · Findings</div><div style="font-size: 13px; color: #5A626B">2 will be posted · 1 goes to a ticket</div></div>
+
+<div style="border-top: 1px solid #14171A; padding-top: 20px; display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline">
+<span style="font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; background: #14171A; color: #FFFFFF; padding: 3px 9px">Blocker</span>
+<h2 style="margin: 0; flex: 1 1 320px; font-family: 'Newsreader', Georgia, serif; font-weight: 400; font-size: 26px; line-height: 1.2"><span style="color: #8A9199">F1</span> A retried delivery is sent without an idempotency key</h2>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 28px">
+<div style="flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 12px">
+<p style="margin: 0">A second delivery of the same event is indistinguishable from a new one, so a customer who was briefly down receives it twice.</p>
+<div style="font-size: 14px; color: #2C3238"><span style="font-weight: 600">Evidence.</span> A throwaway test produced 2 deliveries for 1 event.</div>
+<div style="font-size: 14px; color: #2C3238"><span style="font-weight: 600">Lens.</span> Sibling diff: the two other senders in this codebase both set a key.</div>
+<button type="button" style="align-self: flex-start; min-height: 44px; padding: 0 2px; border: 0; border-bottom: 1px solid #14171A; background: transparent; font: inherit; font-size: 14px; color: #14171A">Show the test and its output</button>
+</div>
+<div style="flex: 1.4 1 380px; min-width: 0; display: flex; flex-direction: column; gap: 0">
+<div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #5A626B; padding: 0 0 6px">jobs/DeliverWebhook.php</div>
+<div style="background: #F3F4F2; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.7; overflow-x: auto">
+<div style="display: flex; gap: 16px; padding: 0 14px; white-space: pre"><span style="color: #5A626B">56</span><span>public function handle(WebhookClient $client): void</span></div>
+<div style="display: flex; gap: 16px; padding: 0 14px; white-space: pre"><span style="color: #5A626B">57</span><span>{</span></div>
+<div style="display: flex; gap: 16px; padding: 0 14px; white-space: pre; background: #FFE9BF; box-shadow: inset 3px 0 0 #8A4B00"><span style="color: #5A626B">58</span><span>    $response = $client-&gt;post($this-&gt;endpoint-&gt;url, $this-&gt;payload);</span></div>
+<div style="display: flex; gap: 16px; padding: 0 14px; white-space: pre"><span style="color: #5A626B">59</span><span> </span></div>
+<div style="display: flex; gap: 16px; padding: 0 14px; white-space: pre"><span style="color: #5A626B">60</span><span>    if ($response-&gt;failed()) {</span></div>
+</div>
+<div style="border: 1px solid #14171A; border-top: 0; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px">
+<div style="font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; color: #5A626B">Inline comment on line 58, as it will post</div>
+<div style="font-size: 14px">This retry re-sends the payload with no idempotency key, so an endpoint that accepted the first attempt slowly gets the event twice. The other two senders set <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px">Idempotency-Key</span> from the delivery id.</div>
+</div>
+</div>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+<button type="button" style="min-height: 44px; padding: 0 18px; border: 1px solid #14171A; background: #14171A; color: #FFFFFF; font: inherit; font-weight: 600">Keep</button>
+<button type="button" style="min-height: 44px; padding: 0 18px; border: 1px solid #14171A; background: #FFFFFF; color: #14171A; font: inherit">Cut</button>
+<button type="button" style="min-height: 44px; padding: 0 18px; border: 1px solid #14171A; background: #FFFFFF; color: #14171A; font: inherit">Regrade</button>
+<button type="button" style="min-height: 44px; padding: 0 18px; border: 1px solid #14171A; background: #FFFFFF; color: #14171A; font: inherit">Rewrite</button>
+<span style="font-size: 13px; color: #5A626B; margin-left: 8px">In the body and as an inline comment</span>
+</div>
+</div>
+
+<div style="border-top: 1px solid #14171A; padding-top: 20px; display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline">
+<span style="font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; background: #FFE9BF; color: #6B3A00; padding: 3px 9px">Should</span>
+<h2 style="margin: 0; flex: 1 1 320px; font-family: 'Newsreader', Georgia, serif; font-weight: 400; font-size: 26px; line-height: 1.2"><span style="color: #8A9199">F2</span> The backoff schedule has no ceiling</h2>
+<span style="font-size: 13px; color: #6B3A00; font-weight: 600">You regraded this from Blocker</span>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 28px">
+<div style="flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 12px">
+<p style="margin: 0">A permanently dead endpoint is retried forever, which keeps the queue busy with deliveries nobody will receive.</p>
+<div style="font-size: 14px; color: #2C3238"><span style="font-weight: 600">Lens.</span> Boundary: what happens at attempt 25 and beyond.</div>
+</div>
+<div style="flex: 1.4 1 380px; min-width: 0; display: flex; flex-direction: column">
+<div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #5A626B; padding: 0 0 6px">jobs/DeliverWebhook.php</div>
+<div style="background: #F3F4F2; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.7; overflow-x: auto">
+<div style="display: flex; gap: 16px; padding: 0 14px; white-space: pre"><span style="color: #5A626B">90</span><span>if ($response-&gt;failed()) {</span></div>
+<div style="display: flex; gap: 16px; padding: 0 14px; white-space: pre; background: #FFE9BF; box-shadow: inset 3px 0 0 #8A4B00"><span style="color: #5A626B">91</span><span>    $this-&gt;release($this-&gt;delayFor($this-&gt;attempts()));</span></div>
+<div style="display: flex; gap: 16px; padding: 0 14px; white-space: pre"><span style="color: #5A626B">92</span><span>}</span></div>
+</div>
+</div>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+<button type="button" style="min-height: 44px; padding: 0 18px; border: 1px solid #14171A; background: #14171A; color: #FFFFFF; font: inherit; font-weight: 600">Keep</button>
+<button type="button" style="min-height: 44px; padding: 0 18px; border: 1px solid #14171A; background: #FFFFFF; color: #14171A; font: inherit">Cut</button>
+<button type="button" style="min-height: 44px; padding: 0 18px; border: 1px solid #14171A; background: #FFFFFF; color: #14171A; font: inherit">Regrade</button>
+<button type="button" style="min-height: 44px; padding: 0 18px; border: 1px solid #14171A; background: #FFFFFF; color: #14171A; font: inherit">Rewrite</button>
+</div>
+</div>
+
+<div style="border-top: 1px solid #C9CED3; padding-top: 20px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center">
+<span style="font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; background: #ECEEEF; color: #3C434A; padding: 3px 9px">Nit</span>
+<div style="flex: 1 1 320px; min-width: 0"><span style="color: #8A9199">F3</span> Backoff schedule is repeated in two files. <span style="color: #5A626B">Not posted; it goes in one ticket for an agent.</span></div>
+<button type="button" style="min-height: 44px; padding: 0 16px; border: 1px solid #14171A; background: #FFFFFF; color: #14171A; font: inherit">Post it after all</button>
+<button type="button" style="min-height: 44px; padding: 0 16px; border: 1px solid #14171A; background: #FFFFFF; color: #14171A; font: inherit">Drop</button>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 16px">
+<div style="font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: #5A626B">4 · What was looked at</div>
+<div style="overflow-x: auto">
+<div style="min-width: 620px; display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(0, 0.7fr) minmax(0, 2fr) minmax(0, 0.8fr); font-size: 14px">
+<div style="padding: 8px 0; border-bottom: 1px solid #14171A; font-weight: 600">File</div><div style="padding: 8px 0; border-bottom: 1px solid #14171A; font-weight: 600">Lines</div><div style="padding: 8px 0; border-bottom: 1px solid #14171A; font-weight: 600">What was done</div><div style="padding: 8px 0; border-bottom: 1px solid #14171A; font-weight: 600">Findings</div>
+<div style="padding: 10px 0; border-bottom: 1px solid #E3E6E8; font-family: 'JetBrains Mono', monospace; font-size: 13px">jobs/DeliverWebhook.php</div><div style="padding: 10px 0; border-bottom: 1px solid #E3E6E8">118</div><div style="padding: 10px 0; border-bottom: 1px solid #E3E6E8">Read in full · compared with 2 sibling senders</div><div style="padding: 10px 0; border-bottom: 1px solid #E3E6E8">F1, F2</div>
+<div style="padding: 10px 0; border-bottom: 1px solid #E3E6E8; font-family: 'JetBrains Mono', monospace; font-size: 13px">tests/WebhookRetryTest.php</div><div style="padding: 10px 0; border-bottom: 1px solid #E3E6E8">61</div><div style="padding: 10px 0; border-bottom: 1px solid #E3E6E8">Run · re-run with the fix reverted, and it failed</div><div style="padding: 10px 0; border-bottom: 1px solid #E3E6E8">None</div>
+<div style="padding: 10px 0; border-bottom: 1px solid #E3E6E8; font-family: 'JetBrains Mono', monospace; font-size: 13px">config/webhooks.php</div><div style="padding: 10px 0; border-bottom: 1px solid #E3E6E8">14</div><div style="padding: 10px 0; border-bottom: 1px solid #E3E6E8">Read in full</div><div style="padding: 10px 0; border-bottom: 1px solid #E3E6E8">F3</div>
+<div style="padding: 10px 0; border-bottom: 1px solid #E3E6E8; font-family: 'JetBrains Mono', monospace; font-size: 13px">migrations/add_attempts.php</div><div style="padding: 10px 0; border-bottom: 1px solid #E3E6E8">21</div><div style="padding: 10px 0; border-bottom: 1px solid #E3E6E8">Read in full</div><div style="padding: 10px 0; border-bottom: 1px solid #E3E6E8">None</div>
+<div style="padding: 10px 0 10px 10px; background: #FFE9BF; font-family: 'JetBrains Mono', monospace; font-size: 13px">resources/admin/**</div><div style="padding: 10px 0; background: #FFE9BF">0</div><div style="padding: 10px 0; background: #FFE9BF; font-weight: 600; color: #6B3A00">Not reviewed. The change does not touch it.</div><div style="padding: 10px 0; background: #FFE9BF">—</div>
+</div>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline"><div style="font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: #5A626B">5 · What will be posted</div><div style="font-size: 13px; color: #5A626B">96 of 150 words · lint passes</div></div>
+<div style="border: 1px solid #14171A; padding: 28px 32px; max-width: 760px; display: flex; flex-direction: column; gap: 14px">
+<p style="margin: 0">The queue-with-backoff approach fits the ticket, and the two findings below are about the retry path rather than the choice.</p>
+<div style="font-weight: 600; font-size: 17px">Blocker · F1 · A retried delivery is sent without an idempotency key</div>
+<p style="margin: 0">A second delivery of the same event is indistinguishable from a new one, so a customer who was briefly down receives it twice.</p>
+<div style="font-weight: 600; font-size: 17px">Should · F2 · The backoff schedule has no ceiling</div>
+<p style="margin: 0">A permanently dead endpoint is retried forever, which keeps the queue busy with deliveries nobody will receive.</p>
+<p style="margin: 0; font-size: 14px; color: #2C3238"><span style="font-weight: 600">Not checked:</span> the admin screens, which this change does not touch.</p>
+</div>
+</section>
+</article>
+
+<aside style="flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 36px">
+<div style="border: 1px solid #14171A; padding: 22px; display: flex; flex-direction: column; gap: 14px">
+<div style="font-family: 'Newsreader', Georgia, serif; font-size: 24px; line-height: 1.15">Ready for your sign-off</div>
+<div style="font-size: 14px; color: #2C3238">2 findings and 2 inline comments will be posted. Nothing has been posted yet.</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="post-as" style="font-size: 13px; color: #5A626B">Post as</label>
+<select id="post-as" style="min-height: 44px; padding: 0 10px; border: 1px solid #14171A; background: #FFFFFF; font: inherit">
+<option>Request changes</option><option>Comment</option><option>Approve</option>
+</select>
+</div>
+<button type="button" style="min-height: 52px; border: 0; background: #0E6E5C; color: #FFFFFF; font: inherit; font-size: 16px; font-weight: 600">Sign off and post</button>
+<button type="button" style="min-height: 44px; border: 1px solid #14171A; background: #FFFFFF; color: #14171A; font: inherit">Send back with a note</button>
+<div style="font-size: 13px; color: #5A626B; border-top: 1px solid #E3E6E8; padding-top: 12px">The review session posts it under your name. It checks for your sign-off every 90 seconds.</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 10px">
+<div style="font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: #5A626B">Your edits · 2</div>
+<div style="font-size: 14px; border-top: 1px solid #E3E6E8; padding-top: 10px"><span style="font-weight: 600">Regraded</span> F2 from Blocker to Should</div>
+<div style="font-size: 14px; border-top: 1px solid #E3E6E8; padding-top: 10px"><span style="font-weight: 600">Moved</span> F3 out of the post, into a ticket</div>
+<div style="font-size: 13px; color: #5A626B">Saved as feedback when you sign off.</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 10px">
+<div style="font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: #5A626B">Review session</div>
+<div style="font-size: 14px; border-top: 1px solid #E3E6E8; padding-top: 10px">gh-portal-412 · linked</div>
+<a href="Main.dc.html" style="font-size: 14px">Open the session to ask it something</a>
+</div>
+</aside>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":3100}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

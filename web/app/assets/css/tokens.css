@@ -1,50 +1,126 @@
 /*
  * The whole visual vocabulary of Review Desk, in one place.
  *
- * Every value comes from the mockups in `docs/mockups/`. Two things were added that a
- * mockup does not need and a real app does: `--rd-control-line`, because the mockups'
- * border grey is 2.1:1 against a white surface and an interactive border has to clear
- * 3:1; and `--rd-focus`, because a mockup has no keyboard.
+ * **Every value here is copied from the boards in `docs/mockups/uplift/`**, which Patrick
+ * approved on 10 October 2026 — hex for hex, pixel for pixel, shadow for shadow. Nothing is
+ * rounded to a nicer number and nothing is a framework's default. Where a value looks
+ * arbitrary it is because a designer chose it: `0 10px 20px -12px rgba(14, 110, 92, 0.7)`
+ * is the lift under the one action, and `-12px` is part of it.
+ *
+ * Two values are **not** the boards', and both are in the app's favour. A board has no
+ * keyboard and no contrast requirement; an app has both.
+ *
+ * | Token | The boards | Here | Why |
+ * |---|---|---|---|
+ * | `--rd-control-line` | `#D5D9DC`, 1.42:1 on white | `#868C99`, 3.37:1 | The edge of a text field is the only thing identifying it, and WCAG 2.2 wants 3:1. The repository already made this call for the first dashboard; `#D5D9DC` is kept as `--rd-line-strong` for the drawing it does. |
+ * | `--rd-focus-ring` | `#9AD3C3`, 1.68:1 on white | the accent, 6.17:1 | The board's 3px outline at 2px offset is kept exactly; only the colour changes, because a focus ring nobody can see is not one. |
+ *
+ * `test/contrast.spec.ts` computes both, and every text pair, from this file.
  */
 
 :root {
-  /* Surfaces, from the ground up. */
-  --rd-ground: #f4f5f7;
+  /* ---- Surfaces, from the ground up ---- */
+
+  /* The page itself. White on the boards, which is why a card needs a shadow. */
+  --rd-page: #ffffff;
+  /* The recessive well a section sits in. */
+  --rd-ground: #f6f7f6;
+  /* What a card is. */
   --rd-surface: #ffffff;
-  --rd-rail: #eceef1;
+  /* The track a segmented choice sits in, and the fill of something unavailable. */
+  --rd-rail: #e8eae9;
+  /* A quiet control while it is held down. */
+  --rd-rail-pressed: #f1f2f3;
 
-  /* Ink. Every pair below is at or above 4.5:1 on ground, surface and rail. */
-  --rd-ink: #16181d;
-  --rd-ink-dim: #454a54;
-  --rd-ink-muted: #565b66;
+  /* ---- Ink. Every pair below is at or above 4.5:1 on page, ground and rail. ---- */
+  --rd-ink: #14171a;
+  --rd-ink-dim: #2c3238;
+  --rd-ink-muted: #5a626b;
+  /*
+   * Display sizes only, and only on the page. 3.19:1 on white, which clears WCAG's large
+   * text threshold and nothing smaller. It draws the `F1` in front of a 24px finding.
+   */
+  --rd-ink-faint: #8a9199;
 
-  /* Lines. `line` and `line-strong` draw; `control-line` encloses something you touch. */
-  --rd-line: #d9dce2;
-  --rd-line-strong: #aeb3bd;
+  /* ---- Lines. `line` and `line-strong` draw; `control-line` encloses what you touch. ---- */
+  --rd-line: #e3e6e8;
+  --rd-line-strong: #d5d9dc;
   --rd-control-line: #868c99;
+  /* The edge of the key drawn on a control that has a keyboard shortcut. */
+  --rd-key-line: #c9ced3;
 
-  /* The one accent, and its two washes. */
-  --rd-accent: #1f4fd8;
-  --rd-accent-dark: #163a9e;
-  --rd-accent-wash: #e3eafc;
+  /* ---- The one accent: a deep green, and the four steps around it ---- */
+  --rd-accent: #0e6e5c;
+  --rd-accent-hover: #128470;
+  --rd-accent-pressed: #0b5a4b;
+  --rd-accent-dark: #094a3e;
+  --rd-accent-wash: #e3f2ee;
+  /* The halo on a field in use. */
+  --rd-accent-halo: #d9efe9;
+  /* The rubric on a dark accent fill — "Post as", above the event. */
+  --rd-accent-pale: #bfe3da;
 
-  /* Reserved for one state: a finding that matters but does not block. */
-  --rd-warn-wash: #fce9d9;
-  --rd-warn-ink: #6b2f04;
+  /* ---- A finding that matters but does not block, and a refusal ---- */
+  --rd-warn-wash: #ffe9bf;
+  --rd-warn-ink: #6b3a00;
+  --rd-warn-line: #8a4b00;
 
-  --rd-radius: 8px;
-  --rd-radius-sm: 6px;
-  --rd-radius-xs: 4px;
+  /* ---- The other two severities. Each has a shape as well as a colour. ---- */
+  --rd-nit-wash: #eceeef;
+  --rd-nit-ink: #3c434a;
+  --rd-question-wash: #e4ebfa;
+  --rd-question-ink: #1f3f8f;
 
-  /* Nothing you can press is shorter than this. */
+  /* ---- Radii. Six of them, and the boards use every one. ---- */
+  --rd-radius-section: 20px;
+  --rd-radius-card: 18px;
+  --rd-radius: 14px;
+  --rd-radius-action: 13px;
+  --rd-radius-control: 12px;
+  --rd-radius-sm: 10px;
+  --rd-radius-xs: 8px;
+  --rd-radius-key: 5px;
+  --rd-radius-pill: 999px;
+  --rd-radius-bar: 3px;
+  --rd-radius-dot: 2px;
+
+  /* ---- Lift. A card on the boards is told from the page by shadow, not by a border. ---- */
+  --rd-lift-card: 0 1px 2px rgb(20 23 26 / 8%);
+  --rd-lift-raised: 0 1px 2px rgb(20 23 26 / 8%), 0 12px 32px -18px rgb(20 23 26 / 35%);
+  --rd-lift-chosen: 0 1px 2px rgb(20 23 26 / 22%), 0 4px 10px -6px rgb(20 23 26 / 35%);
+  --rd-lift-chosen-quiet: 0 1px 2px rgb(20 23 26 / 18%);
+  --rd-lift-action: inset 0 1px 0 rgb(255 255 255 / 18%), 0 1px 0 var(--rd-accent-dark),
+    0 10px 20px -12px rgb(14 110 92 / 70%);
+  --rd-lift-action-hover: inset 0 1px 0 rgb(255 255 255 / 22%), 0 1px 0 var(--rd-accent-dark),
+    0 14px 24px -12px rgb(14 110 92 / 80%);
+  --rd-lift-action-pressed: inset 0 2px 4px rgb(0 0 0 / 25%);
+  --rd-lift-split: 0 1px 0 var(--rd-accent-dark), 0 10px 22px -12px rgb(14 110 92 / 70%);
+  --rd-lift-quiet: 0 1px 0 var(--rd-line);
+  --rd-lift-quiet-hover: 0 4px 10px -6px rgb(20 23 26 / 40%);
+  --rd-lift-quiet-pressed: inset 0 2px 3px rgb(20 23 26 / 12%);
+  --rd-ring-proposal: 0 0 0 1.5px var(--rd-accent), 0 18px 40px -24px rgb(14 110 92 / 55%);
+  --rd-halo-in-use: 0 0 0 4px var(--rd-accent-halo);
+  --rd-halo-refused: 0 0 0 4px var(--rd-warn-wash);
+
+  /* ---- Heights. Nothing you can press is shorter than the first one. ---- */
   --rd-control-min: 44px;
+  /* A segmented choice's item, and a secondary button. */
+  --rd-control-item: 46px;
+  /* The one action on a screen. */
+  --rd-action-min: 50px;
+  /* The one action when it is the whole point of the card it is in. */
+  --rd-action-tall: 56px;
 
-  --rd-font-sans: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
-  --rd-font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+  /* ---- The three typefaces. Bundled by `nuxt.config.ts`; nothing is fetched. ---- */
+  --rd-font-display: 'Newsreader', georgia, serif;
+  --rd-font-sans: 'Instrument Sans', 'Helvetica Neue', sans-serif;
+  --rd-font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
 
-  --rd-shell-max: 1180px;
-  --rd-measure: 760px;
+  --rd-shell-max: 1240px;
+  --rd-measure: 720px;
 
+  /* The board's geometry; see the table at the top for the colour. */
+  --rd-focus-ring: var(--rd-accent);
   --rd-focus: 0 0 0 2px var(--rd-surface), 0 0 0 4px var(--rd-accent);
 }
 
@@ -56,11 +132,11 @@
 
 body {
   margin: 0;
-  background: var(--rd-ground);
+  background: var(--rd-page);
   color: var(--rd-ink);
   font-family: var(--rd-font-sans);
   font-size: 15px;
-  line-height: 1.45;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -73,9 +149,8 @@ a:hover {
 }
 
 :focus-visible {
-  outline: 2px solid var(--rd-accent);
+  outline: 3px solid var(--rd-focus-ring);
   outline-offset: 2px;
-  border-radius: var(--rd-radius-xs);
 }
 
 h1,
@@ -85,18 +160,64 @@ h3 {
   font-weight: 600;
 }
 
-h1 {
-  font-size: 26px;
+/* ---- Display type. Newsreader, at the sizes the boards set. ---- */
+
+.rd-display {
+  margin: 0;
+  font-family: var(--rd-font-display);
+  font-weight: 400;
+  font-size: 48px;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
 }
 
-h2 {
-  font-size: 18px;
+.rd-display-figure {
+  font-family: var(--rd-font-display);
+  font-weight: 400;
+  font-size: 40px;
+  line-height: 1.05;
+  /*
+   * Proportional figures, not tabular: at 40px `tabular-nums` gives every digit the width
+   * of a nought and `14` reads loose. Tabular is for a column of numbers, which is what
+   * `FactRow` is.
+   */
+  font-variant-numeric: proportional-nums;
+}
+
+.rd-display-lead {
+  font-family: var(--rd-font-display);
+  font-weight: 400;
+  font-size: 30px;
+  line-height: 1.15;
+}
+
+.rd-display-card {
+  font-family: var(--rd-font-display);
+  font-weight: 400;
+  font-size: 26px;
+  line-height: 1.15;
+}
+
+.rd-display-statement {
+  margin: 0;
+  font-family: var(--rd-font-display);
+  font-weight: 400;
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.rd-display-row {
+  font-family: var(--rd-font-display);
+  font-weight: 400;
+  font-size: 21px;
+  line-height: 1.2;
 }
 
 /* ---- Primitives. A page composes these; no page restates a colour. ---- */
 
 .rd-mono {
   font-family: var(--rd-font-mono);
+  font-size: 13px;
 }
 
 .rd-meta {
@@ -124,16 +245,42 @@ h2 {
   align-items: center;
 }
 
-/* Buttons and link-buttons share one shape so a link and a button never disagree. */
+/* The uppercase rubric over a group, with its count beside it. */
+.rd-rubric {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--rd-ink-muted);
+}
+
+.rd-group-heading {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--rd-ink);
+}
+
+/*
+ * Buttons and link-buttons share one shape so a link and a button never disagree.
+ *
+ * Four kinds, and the boards draw five states of each: resting, the pointer over it,
+ * pressed, working, and not available. Hover and press are here; working and unavailable
+ * are a `disabled` attribute and a modifier, because they are facts about the record
+ * rather than about the pointer.
+ */
 .rd-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 9px;
   min-height: var(--rd-control-min);
-  padding: 0 16px;
+  padding: 0 18px;
   border: 1px solid var(--rd-control-line);
-  border-radius: var(--rd-radius-sm);
+  border-radius: var(--rd-radius-control);
   background: var(--rd-surface);
   color: var(--rd-ink);
   font: inherit;
@@ -141,71 +288,125 @@ h2 {
   text-decoration: none;
   cursor: pointer;
   white-space: nowrap;
+  box-shadow: var(--rd-lift-quiet);
+  transition:
+    background-color 0.14s ease,
+    box-shadow 0.14s ease,
+    transform 0.08s ease,
+    color 0.14s ease;
+}
+
+/* The boards' controls answer back. One frame down, and nothing moves for a reader who
+   has asked not to be moved. */
+@media (prefers-reduced-motion: reduce) {
+  .rd-btn {
+    transition: none;
+  }
 }
 
 .rd-btn:hover:not(:disabled) {
-  background: var(--rd-rail);
-  color: var(--rd-ink);
+  border-color: var(--rd-ink);
+  box-shadow: var(--rd-lift-quiet-hover);
+}
+
+/* Pressed: one pixel down, which is the boards' `transform: translateY(1px)`. */
+.rd-btn:active:not(:disabled) {
+  transform: translateY(1px);
+  background: var(--rd-rail-pressed);
+  box-shadow: var(--rd-lift-quiet-pressed);
 }
 
 .rd-btn:disabled {
   cursor: not-allowed;
   color: var(--rd-ink-muted);
-  background: var(--rd-rail);
+  background: var(--rd-ground);
   border-color: var(--rd-line);
+  box-shadow: none;
 }
 
+/* The one action on a screen. */
 .rd-btn--primary {
+  min-height: var(--rd-action-min);
   border-color: transparent;
+  border-radius: var(--rd-radius-action);
   background: var(--rd-accent);
   color: var(--rd-surface);
   font-weight: 600;
+  box-shadow: var(--rd-lift-action);
 }
 
 .rd-btn--primary:hover:not(:disabled) {
-  background: var(--rd-accent-dark);
+  border-color: transparent;
+  background: var(--rd-accent-hover);
   color: var(--rd-surface);
+  box-shadow: var(--rd-lift-action-hover);
 }
 
+.rd-btn--primary:active:not(:disabled) {
+  background: var(--rd-accent-pressed);
+  box-shadow: var(--rd-lift-action-pressed);
+}
+
+.rd-btn--primary:disabled {
+  background: var(--rd-rail);
+  color: var(--rd-ink-muted);
+  box-shadow: none;
+}
+
+/* Something the developer starts that is not the decision: "Start". */
 .rd-btn--ink {
   border-color: transparent;
   background: var(--rd-ink);
   color: var(--rd-surface);
+  font-weight: 600;
+  box-shadow: none;
 }
 
 .rd-btn--ink:hover:not(:disabled) {
+  border-color: transparent;
   background: #000000;
   color: var(--rd-surface);
+  box-shadow: none;
+}
+
+.rd-btn--ink:disabled {
+  background: var(--rd-rail);
+  color: var(--rd-ink-muted);
 }
 
 .rd-btn--quiet {
   border-color: transparent;
   background: transparent;
   color: var(--rd-ink-dim);
-  font-weight: 400;
-  padding: 0 14px;
+  box-shadow: none;
 }
 
-.rd-btn--quiet[aria-selected='true'],
-.rd-btn--quiet.is-current {
-  background: var(--rd-rail);
-  color: var(--rd-ink);
-  font-weight: 500;
+.rd-btn--quiet:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--rd-surface);
+  box-shadow: var(--rd-lift-chosen-quiet);
 }
 
+/* A field, and the field with an action inside it, which `LinkField` draws. */
 .rd-field {
   min-height: var(--rd-control-min);
   width: 100%;
-  padding: 0 12px;
+  padding: 0 16px;
   border: 1px solid var(--rd-control-line);
-  border-radius: var(--rd-radius-sm);
+  border-radius: var(--rd-radius);
   background: var(--rd-surface);
   color: var(--rd-ink);
   font: inherit;
+  box-shadow: var(--rd-lift-quiet);
+}
+
+.rd-field:focus-visible {
+  border-color: var(--rd-accent);
+  box-shadow: var(--rd-halo-in-use);
 }
 
 textarea.rd-field {
-  padding: 10px 12px;
+  padding: 12px 16px;
   line-height: 1.5;
   font-family: var(--rd-font-mono);
   font-size: 13px;
@@ -213,20 +414,11 @@ textarea.rd-field {
 }
 
 .rd-label {
-  font-weight: 600;
-}
-
-/* A group heading: the uppercase rubric above a list, with its count. */
-.rd-group-heading {
-  margin: 0;
   font-size: 13px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--rd-ink-muted);
+  font-weight: 500;
 }
 
-/* What an empty list says. A mockup never has one; an app always does. */
+/* What an empty list says. A board never has one; an app always does. */
 .rd-empty {
   padding: 14px 16px;
   border: 1px dashed var(--rd-line-strong);
