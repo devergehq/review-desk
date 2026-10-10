@@ -48,7 +48,18 @@ impl Store {
         // and the state's `entered_at` a tick apart, and every duration measured from
         // either would then depend on which one a later reader picked.
         let at = self.now();
-        let held = self.find_review_layer(review_id, number)?;
+
+        // **The state alone, not the whole layer.** `find_review_layer` reads the layer's
+        // passes as well, and this is on every write path there is — a read of a record
+        // that grows, on every write, for a value thrown away.
+        let held: Option<ReviewLayerState> = self
+            .conn
+            .query_row(
+                "SELECT state FROM review_layers WHERE review_id = ?1 AND number = ?2",
+                params![review_id, number],
+                |row| row.get("state"),
+            )
+            .optional()?;
 
         self.conn
             .execute(
@@ -77,7 +88,7 @@ impl Store {
         // reports progress without checking first — and a row for each of those would
         // turn one pass that is still going into ten passes of a few seconds. Whatever
         // the caller said about the detail still lands, on the row above.
-        if held.as_ref().map(|layer| layer.state) != Some(state) {
+        if held != Some(state) {
             self.conn.execute(
                 "INSERT INTO review_layer_states (review_id, number, state, detail, entered_at)
                  VALUES (?1, ?2, ?3, ?4, ?5)",
