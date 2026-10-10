@@ -32,10 +32,17 @@ function render(markdown: string): string {
       v-for="(block, index) in blocks"
       :key="index"
     >
+      <!--
+        `declared`, because this block came out of a ```mermaid fence: the session said it
+        was a diagram. One that does not draw is shown as a diagram that did not draw, not
+        as a sketch — GitHub will show a render error for the same fence, and this screen
+        exists so that nothing is posted unread.
+      -->
       <MermaidFigure
         v-if="block.kind === 'mermaid'"
         :source="block.content"
         label="Diagram from the draft"
+        declared
       />
       <!--
         Sanitised in `render` above. markdown-it's raw-HTML mode is what keeps a fold
