@@ -303,16 +303,23 @@ function onWheel(event: WheelEvent) {
 }
 
 /**
- * Every key the enlarged view answers, **on the dialog rather than on the stage**.
+ * Every key the enlarged view answers, **on the window**, while it is open.
  *
- * It was on the stage, and that was a half-answer: pressing the zoom button moves focus to
- * the button, and from there the arrow keys and `+` did nothing at all — a reader who zoomed
- * with the mouse and then reached for the keyboard found it dead. Keydown bubbles out of the
- * stage to here, so focus on the stage still works exactly as it did.
+ * It was on the stage, then on the dialog, and both were half-answers for the same reason:
+ * a key is only heard where the focus is, and the focus does not stay where this component
+ * would like it.
  *
- * Escape is not here: it is on the window, because it should close this from anywhere.
+ * - On the stage: pressing a zoom button moves focus to the button, and the arrow keys died.
+ * - On the dialog: **a control that disables itself drops the focus to `<body>` on Linux**,
+ *   and from the body nothing inside the dialog hears anything. Found by CI, which runs
+ *   Chromium on Linux — macOS kept the focus on the disabled button, so every local run of
+ *   the test that was supposed to catch this passed.
+ *
+ * So the keys are heard where Escape has always been heard: on the window, gated on this
+ * figure being the open one. A page with two diagrams has at most one of these listening,
+ * because `large` is per figure.
  */
-function onDialogKey(event: KeyboardEvent) {
+function onViewKey(event: KeyboardEvent) {
   const by = panByKey(event.key)
   if (by) {
     event.preventDefault()
@@ -423,13 +430,15 @@ function trapTab(event: KeyboardEvent) {
  */
 function onKey(event: KeyboardEvent) {
   if (!large.value) return
-  if (event.key === 'Escape') closeLarge()
-  /*
-   * **Tab is heard here and not on the dialog**, for the same reason Escape is: a key
-   * pressed while the focus has fallen to the body never reaches a listener on the sheet,
-   * and the whole job of a trap is to act in exactly that case.
-   */
-  if (event.key === 'Tab') trapTab(event)
+  if (event.key === 'Escape') {
+    closeLarge()
+    return
+  }
+  if (event.key === 'Tab') {
+    trapTab(event)
+    return
+  }
+  onViewKey(event)
 }
 
 onMounted(() => window.addEventListener('keydown', onKey))
@@ -530,7 +539,6 @@ onBeforeUnmount(() => {
           aria-modal="true"
           tabindex="-1"
           :aria-label="`${label ?? 'This diagram'}, larger`"
-          @keydown="onDialogKey"
         >
           <div class="bar">
             <p class="rd-meta reading">

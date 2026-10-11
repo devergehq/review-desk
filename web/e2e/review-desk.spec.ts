@@ -1858,11 +1858,30 @@ test.describe('a drawing opens larger', () => {
     await page.keyboard.press('Tab')
     expect(await inside(), 'and after Tab from there').toBe(true)
 
-    /* A control that disables itself under the pointer keeps it too. */
+    /*
+     * **And a control that disables itself leaves the keyboard working**, which is a
+     * different claim from where the focus is — and the right one. Focus cannot stay on a
+     * disabled element, and on Linux Chromium it drops to `<body>`; on macOS it does not.
+     * CI found that, after a local run of the first version of this passed. So what is
+     * asserted is the thing that matters either way: every key the view answers is heard on
+     * the window, so Tab, the arrows and `+` all still work from wherever focus landed.
+     */
     await sheet.getByRole('button', { name: 'Zoom in' }).click()
     await sheet.getByRole('button', { name: 'Fit' }).click()
     await expect(sheet.getByRole('button', { name: 'Fit' })).toBeDisabled()
-    expect(await inside(), 'after a control disabled itself').toBe(true)
+
+    await page.keyboard.press('Tab')
+    expect(await inside(), 'Tab, after a control disabled itself').toBe(true)
+
+    await page.keyboard.press('+')
+    await expect(sheet.locator('.reading')).toContainText('130%')
+    await page.keyboard.press('+')
+    await expect(sheet.locator('.reading')).toContainText('169%')
+    await page.keyboard.press('ArrowRight')
+    expect(
+      await sheet.locator('.moved').getAttribute('style'),
+      'the arrow keys, after a control disabled itself',
+    ).toContain('translate(-')
 
     await page.keyboard.press('Escape')
     await expect(page.getByRole('dialog')).toHaveCount(0)
