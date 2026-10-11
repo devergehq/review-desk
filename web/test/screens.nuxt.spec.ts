@@ -474,6 +474,18 @@ describe('the queue', () => {
       screen.findAll('a').some(one => /^Back to /.test(one.text())),
       'and no back link beside it',
     ).toBe(false)
+
+    /*
+     * **And DEV-936's first criterion on step 6**, which names each of the six pages. The
+     * header is `ReviewStepPage`'s and is tested there; each page a spec already mounts
+     * says it for itself rather than inheriting the claim from the component. Review 17
+     * holds a ticket address, so both links are here.
+     */
+    const out = screen.findAll('.where a.out').map(one => one.attributes('href'))
+    expect(out).toEqual([
+      'https://github.com/acme/portal/pull/412',
+      'https://linear.app/acme/issue/ABC-231',
+    ])
   })
 
   it('sends the header’s Reviews item to the list, and every row from it to Understand', async () => {
