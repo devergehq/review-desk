@@ -308,7 +308,7 @@ describe('the shell every step page sits in', () => {
     expect(page.find('.floating').exists()).toBe(false)
   })
 
-  it('draws no card and no control on a step that recorded no facts', async () => {
+  it('draws no card and no control on a step with nothing behind it', async () => {
     const page = await understand(STRUCTURED)
     const steps = page.findAll('.steps li')
 

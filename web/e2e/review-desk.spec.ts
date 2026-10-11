@@ -1140,7 +1140,7 @@ test.describe('the three step pages of one review', () => {
    * seed leaves it `pending`: a read time is written only while it is `running`, and it is
    * the one step that can draw a card without facts.
    */
-  test('a step with no facts draws no control', async ({ page }) => {
+  test('a step with nothing behind it draws no control', async ({ page }) => {
     await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
     await expect(page.locator('h1')).toBeVisible()
 

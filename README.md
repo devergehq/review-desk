@@ -224,8 +224,10 @@ A fact is `label=value`, split on the first `=` alone, so a value may contain ot
 **Giving none leaves the facts as they were**, because this is also the command a session
 calls to report progress and would otherwise clear them by saying nothing about them;
 giving any replaces the whole list, and `--clear-facts` empties it. A step with no facts
-draws no card and no control for one — except step 7 while a harvest is watching it, which
-draws a card for the read time alone.
+draws no card and no control for one — except step 7 while it is `running`, which draws a
+card for when it was last written. That is the harvest's read time in practice, and this
+command is the other way in: `layer set --layer 7 --state running` with no `--fact` is a
+step whose card says only when you wrote it.
 
 The states are `pending`, `running`, `done`, `waiting_on_you`, `failed` and `skipped`.
 This is stored rather than worked out from the rest of the record, for two reasons:
