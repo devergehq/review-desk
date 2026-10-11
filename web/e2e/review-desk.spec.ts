@@ -1490,6 +1490,247 @@ test.describe('the three step pages of one review', () => {
     await expect(page.locator('.flow')).toHaveCount(0)
   })
 
+  /**
+   * **A Before line holding six code names is one paragraph beside its dash.**
+   *
+   * DEV-939, measured. The `li` is a flex row so the en-dash sits beside the words, and
+   * `TickedText` is `display: contents` so it adds no box — and with nothing between them
+   * every word run and every code chip became a flex item of its own. A line with five or
+   * six names drew as eight narrow columns with the names broken mid-word, `url.inte /
+   * nded`, and the fixtures never caught it because their lines held at most one name.
+   *
+   * **It cannot be checked from a rendered tree.** The markup was never wrong: what was
+   * wrong was which box laid the pieces out, so the only thing that can answer it is a
+   * layout engine. Four things are measured, at a laptop's width and at a phone's:
+   *
+   * 1. the `li` has exactly one element in it, and every chip and every run of words is
+   *    inside that one box;
+   * 2. the box starts where the dash ends and reaches the column's far edge — the column
+   *    less the dash, which is the criterion's own wording;
+   * 3. no chip is narrower than its own text while the box still has room for it, which is
+   *    what a flex item sized to its content was;
+   * 4. no chip is taller than the lines its own text needs at that width.
+   *
+   * The sixth name is 46 characters, which is the case the fixtures were missing: long
+   * enough that it has to break at a phone's width and must not break at a laptop's.
+   */
+  test('a detail line of six code names is one paragraph, at both widths', async ({ page }) => {
+    /**
+     * The widest line in problem 1's Before list, as the browser laid it out.
+     *
+     * The unbroken widths come from a clone with `white-space: nowrap`, appended inside the
+     * `li` itself rather than to the body — the chip's size is `0.86em` of its parent, so a
+     * probe anywhere else would be measured in the wrong font.
+     */
+    const measure = () => page.evaluate(() => {
+      const lines = [...document.querySelectorAll('#problem-1 .lines li')]
+      const li = lines.find(one => one.querySelectorAll('code').length >= 5)
+      if (!li) return { found: false as const, lines: lines.length }
+
+      const unbroken = (element: Element) => {
+        const probe = element.cloneNode(true) as HTMLElement
+        probe.style.cssText
+          = 'position:absolute;visibility:hidden;white-space:nowrap;width:auto;max-width:none'
+        li.append(probe)
+        const width = probe.getBoundingClientRect().width
+        probe.remove()
+        return width
+      }
+
+      const wrappers = [...li.querySelectorAll('.line-text')]
+      const wrapper = wrappers[0] as HTMLElement | undefined
+      const box = li.getBoundingClientRect()
+      const inner = wrapper?.getBoundingClientRect()
+
+      /* Every run of words in the line, not only the chips. */
+      const runs = [...li.childNodes].filter(node =>
+        node.nodeType === Node.TEXT_NODE && node.textContent!.trim() !== '')
+
+      return {
+        found: true as const,
+        children: li.childElementCount,
+        childTags: [...li.children].map(child =>
+          `${child.tagName.toLowerCase()}.${[...child.classList].join('.')}`),
+        wrappers: wrappers.length,
+        /*
+         * **Whether the box exists, not whether the element does.** The element was always
+         * there; what was missing was a box. A wrapper left at `display: contents` passes
+         * every assertion that reads the tree and fails every one that measures it, so the
+         * layout fact is asserted as a layout fact.
+         */
+        wrapperDisplay: wrapper && getComputedStyle(wrapper).display,
+        /* Nothing of the line's text is a child of the `li` itself. */
+        looseRuns: runs.length,
+        proseInsideWrapper: [...li.querySelectorAll('.prose')]
+          .every(prose => prose.parentElement === wrapper),
+        chipsInsideWrapper: [...li.querySelectorAll('code')]
+          .every(code => wrapper?.contains(code) ?? false),
+        /* The dash is a `::before`, so it is measured as the gap it leaves in front. */
+        dashAndGap: inner && Math.round(inner.left - box.left),
+        dashWidth: Math.round(
+          Number.parseFloat(getComputedStyle(li, '::before').width) || 0),
+        gap: Math.round(Number.parseFloat(getComputedStyle(li).columnGap) || 0),
+        liContent: Math.round(li.clientWidth),
+        innerWidth: inner && Math.round(inner.width),
+        innerRightGap: inner && Math.round(box.right - inner.right),
+        innerHeight: inner && inner.height,
+        lineHeight: wrapper
+          ? Number.parseFloat(getComputedStyle(wrapper).lineHeight)
+          || Number.parseFloat(getComputedStyle(wrapper).fontSize) * 1.2
+          : 0,
+        /*
+         * **The defect and the fix, measured against each other.** Taking the box away
+         * again is exactly what the page did before this: the wrapper stops laying the
+         * pieces out and every one of them becomes a flex item of the `li`. So the height
+         * of the line without the box is the height of the bug, and no constant has to be
+         * written down for the test to know what it is comparing against.
+         */
+        ...(() => {
+          const asBuilt = li.getBoundingClientRect().height
+          if (!wrapper) return { asBuilt, asColumns: asBuilt }
+          wrapper.style.display = 'contents'
+          const asColumns = li.getBoundingClientRect().height
+          wrapper.style.removeProperty('display')
+          return { asBuilt, asColumns }
+        })(),
+        chips: [...li.querySelectorAll('code')].map((code) => {
+          const style = getComputedStyle(code)
+          return {
+            text: code.textContent!,
+            width: code.getBoundingClientRect().width,
+            height: code.getBoundingClientRect().height,
+            clientWidth: code.clientWidth,
+            scrollWidth: code.scrollWidth,
+            lineHeight: Number.parseFloat(style.lineHeight)
+              || Number.parseFloat(style.fontSize) * 1.2,
+            /* The chip is a box with padding, so its height is its lines plus that. */
+            padding: Number.parseFloat(style.paddingTop)
+              + Number.parseFloat(style.paddingBottom),
+            unbroken: Math.round(unbroken(code)),
+          }
+        }),
+      }
+    })
+
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
+      await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
+      await expect(page.locator('h1')).toBeVisible()
+      await page.waitForLoadState('networkidle')
+
+      await page.getByRole('button', { name: /A scheduled export read its tenant/ }).click()
+      await expect(page.locator('#problem-1')).toBeVisible()
+
+      const seen = await measure()
+      expect(
+        seen.found,
+        `at ${width}px no line in problem 1 holds five code names; `
+        + `the fixture is what this measures and it has ${'lines' in seen ? seen.lines : 0} lines`,
+      ).toBe(true)
+      if (!seen.found) return
+
+      const at = `at ${width}px`
+
+      /* ---- 1 · One box, and everything in it ---- */
+
+      expect(
+        seen.children,
+        `${at} the line is laid out as ${seen.children} items: ${seen.childTags.join(', ')}`,
+      ).toBe(1)
+      expect(seen.wrappers, `${at} the line's text has one box`).toBe(1)
+      expect(
+        seen.wrapperDisplay,
+        `${at} the line's box is \`display: ${seen.wrapperDisplay}\`, so it lays nothing out`,
+      ).not.toBe('contents')
+      expect(seen.looseRuns, `${at} runs of words outside that box`).toBe(0)
+      expect(seen.proseInsideWrapper, `${at} every text run shares the one box`).toBe(true)
+      expect(seen.chipsInsideWrapper, `${at} every code chip shares the one box`).toBe(true)
+
+      /* ---- 2 · The column less the dash ---- */
+
+      expect(
+        seen.dashAndGap,
+        `${at} the box starts ${seen.dashAndGap}px in, past a ${seen.dashWidth}px dash `
+        + `and a ${seen.gap}px gap`,
+      ).toBe(seen.dashWidth + seen.gap)
+      expect(
+        seen.innerRightGap,
+        `${at} the box stops ${seen.innerRightGap}px short of the column's edge`,
+      ).toBe(0)
+      expect(
+        seen.innerWidth,
+        `${at} the box is ${seen.innerWidth}px of a ${seen.liContent}px column`,
+      ).toBe(seen.liContent - seen.dashAndGap!)
+
+      /* ---- 3 · Six chips, one of them over 40 characters ---- */
+
+      expect(seen.chips.length, `${at} the line's code chips`).toBeGreaterThanOrEqual(5)
+      const longest = seen.chips.reduce((a, b) => (a.text.length >= b.text.length ? a : b))
+      expect(
+        longest.text.length,
+        `${at} the longest name is ${longest.text.length} characters: ${longest.text}`,
+      ).toBeGreaterThan(40)
+
+      /* ---- 4 · No chip narrower than its text, none taller than it needs ---- */
+
+      for (const chip of seen.chips) {
+        /* Nothing of the chip's own text sits outside the chip. */
+        expect(
+          chip.scrollWidth,
+          `${at} \`${chip.text}\` holds ${chip.scrollWidth}px of text in ${chip.clientWidth}px`,
+        ).toBeLessThanOrEqual(chip.clientWidth + 1)
+
+        /*
+         * **The lines its width requires, and no more.** A chip whose unbroken text fits
+         * the box does not break at all; one wider than the box breaks as many times as it
+         * takes, and one more time than that is allowed because a chip starts wherever the
+         * words before it left off rather than at the box's left edge. A chip that fits
+         * gets no such allowance — not breaking a name that had room is the criterion.
+         *
+         * This is the assertion the broken layout failed, and it failed it at both widths:
+         * a chip sized to its own flex item was five lines of one or two letters.
+         */
+        const needed = Math.max(1, Math.ceil(chip.unbroken / seen.innerWidth!))
+        const allowed = needed === 1 ? 1 : needed + 1
+        expect(
+          chip.height,
+          `${at} \`${chip.text}\` is ${Math.round(chip.height)}px tall — `
+          + `${chip.unbroken}px of text in a ${seen.innerWidth}px box needs ${needed} line(s) `
+          + `of ${Math.round(chip.lineHeight)}px, and ${allowed} is the most it may use`,
+        ).toBeLessThanOrEqual(chip.lineHeight * allowed + chip.padding + 1)
+
+        /*
+         * **And no chip is narrower than its own text while the box has room for it**,
+         * which is the second criterion and the thing the eye actually saw: a chip sized to
+         * its own flex item was narrower than the name in it.
+         */
+        if (chip.unbroken <= seen.innerWidth!) {
+          expect(
+            Math.round(chip.width),
+            `${at} \`${chip.text}\` is drawn ${Math.round(chip.width)}px wide `
+            + `for ${chip.unbroken}px of text, in a box with ${seen.innerWidth}px`,
+          ).toBeGreaterThanOrEqual(chip.unbroken - 1)
+        }
+      }
+
+      /*
+       * **One paragraph, and the proof that it is.** Putting the box back to
+       * `display: contents` is the page as it was, so this compares the fix against the
+       * defect rather than against a number somebody chose: the line was half again as
+       * tall, because each chip was a column sized to its own content.
+       */
+      expect(
+        seen.asColumns,
+        `${at} the line is ${Math.round(seen.asBuilt)}px tall as one paragraph and `
+        + `${Math.round(seen.asColumns)}px with every piece its own flex item — `
+        + `if those are close, this test is no longer measuring the defect`,
+      ).toBeGreaterThan(seen.asBuilt * 1.5)
+    }
+
+    /* Put the viewport back: every test below this one reads the same page. */
+    await page.setViewportSize({ width: 1440, height: 900 })
+  })
+
   /*
    * Where the queue's destinations are checked, and why not here.
    *

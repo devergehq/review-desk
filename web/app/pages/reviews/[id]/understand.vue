@@ -487,11 +487,19 @@ function sources(data: ReviewDetail) {
                       v-if="problem.detail_before?.length"
                       class="lines"
                     >
+                      <!--
+                        **The line's text is one box.** The `li` is a flex row so the
+                        en-dash sits beside the words, and `TickedText` adds no box of its
+                        own — so without this span every word run and every code chip in
+                        the line would be a flex item of the `li` and the line would draw
+                        as a row of narrow columns. `.line-text` is what makes it a
+                        paragraph again.
+                      -->
                       <li
                         v-for="(line, index) in problem.detail_before"
                         :key="index"
                       >
-                        <TickedText :text="line" />
+                        <span class="line-text"><TickedText :text="line" /></span>
                       </li>
                     </ul>
                     <p
@@ -509,11 +517,12 @@ function sources(data: ReviewDetail) {
                       v-if="problem.detail_after?.length"
                       class="lines"
                     >
+                      <!-- One box for the line's text, as in the Before list above. -->
                       <li
                         v-for="(line, index) in problem.detail_after"
                         :key="index"
                       >
-                        <TickedText :text="line" />
+                        <span class="line-text"><TickedText :text="line" /></span>
                       </li>
                     </ul>
                     <p
@@ -926,7 +935,15 @@ function sources(data: ReviewDetail) {
   min-width: 0;
 }
 
-/* The board's en-dash bullet, drawn rather than read out as a list marker. */
+/*
+ * The board's en-dash bullet, drawn rather than read out as a list marker.
+ *
+ * **A flex row here has exactly two items: the dash and `.line-text`.** This row had one
+ * item per word run and one per code chip instead, which is DEV-939: `TickedText` is
+ * `display: contents` so that it adds no box, and a line holding five code names came out
+ * as eight narrow columns with the names broken mid-word — `url.inte / nded`. Each rule is
+ * right on its own; what was missing was the box between them.
+ */
 .lines li {
   display: flex;
   gap: 10px;
@@ -937,6 +954,18 @@ function sources(data: ReviewDetail) {
   content: '–';
   flex: none;
   color: var(--rd-ink-faint);
+}
+
+/*
+ * The line's words and chips, as one paragraph beside the dash.
+ *
+ * `min-width: 0` because a flex item's minimum is its content: without it a 40-character
+ * code name sets the item's width and the row grows past the column it is in, which at
+ * 390px is the difference between a line that wraps and a page that scrolls sideways. The
+ * chip's own `overflow-wrap: anywhere` is what then breaks the name, inside this box.
+ */
+.line-text {
+  min-width: 0;
 }
 
 /* ------------------------------- Already decided ----------------------------------- */
