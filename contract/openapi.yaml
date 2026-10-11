@@ -1396,6 +1396,18 @@ components:
         box marks it, an option is judged against it and a solution part fixes it.
       properties:
         number: { type: integer, format: int64, minimum: 1 }
+        label:
+          type: [string, 'null']
+          minLength: 1
+          description: |
+            Two or three words naming this problem, for a heading — "The shared slot".
+
+            **Not a shortening of `was_wrong`, and null on every problem recorded before
+            10 October 2026.** The Alternatives page heads one matrix column per numbered
+            problem; with no label it heads the column with the number alone and puts the
+            sentence one click away. It never draws the sentence as a heading. No length is
+            enforced here or in the store — a label that runs long is a writing fault and
+            belongs to the linter in Locus.
         was_wrong:
           type: string
           minLength: 1

@@ -55,10 +55,13 @@ pub enum BriefCommand {
     ///   Two boxes in one row are the split row the board draws side by side.
     ///   `flow_before_caption` and `flow_after_caption` are the sub-captions above them.
     /// * `problems` — the numbered problems:
-    ///   `{"number": 1, "was_wrong": "...", "now_fixed": "...", "detail_title": "...",
-    ///   "detail_before": ["..."], "detail_after": ["..."]}`. **The number is the brief's
-    ///   one internal identity**, and a flow box, an option verdict or a solution part
-    ///   naming a number no problem carries is refused, with the field and the number.
+    ///   `{"number": 1, "label": "...", "was_wrong": "...", "now_fixed": "...",
+    ///   "detail_title": "...", "detail_before": ["..."], "detail_after": ["..."]}`. **The
+    ///   number is the brief's one internal identity**, and a flow box, an option verdict
+    ///   or a solution part naming a number no problem carries is refused, with the field
+    ///   and the number. `label` is two or three words naming the problem, for a column
+    ///   heading — **not a shortening of `was_wrong`**, which is a line of prose. Leave it
+    ///   out and the Alternatives page heads the column with the number alone.
     /// * `support_table` — `{"title": "...", "columns": ["..."], "rows": [["..."]]}`. Every
     ///   row holds one cell per column.
     /// * `options[].proposed_by` — `ticket`, `blind_pass` or `both`. Defaults to `ticket`.

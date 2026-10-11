@@ -567,6 +567,7 @@ pub fn seed(store: &Store) -> Seeded {
                 problems: vec![
                     BriefProblem {
                         number: 1,
+                        label: Some("The inline delivery".to_string()),
                         was_wrong: "A delivery that fails is never tried again.".to_string(),
                         now_fixed: Some("A worker retries it for 24 hours.".to_string()),
                         detail_title: Some("The delivery sent inline".to_string()),
@@ -575,6 +576,7 @@ pub fn seed(store: &Store) -> Seeded {
                     },
                     BriefProblem {
                         number: 2,
+                        label: Some("No record of an attempt".to_string()),
                         was_wrong: "Nothing records that a delivery was attempted.".to_string(),
                         now_fixed: Some("Every attempt is a row the customer sees.".to_string()),
                         detail_title: Some("No record of an attempt".to_string()),

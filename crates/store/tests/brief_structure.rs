@@ -54,6 +54,7 @@ fn flow_box(title: &str, problem: Option<i64>) -> BriefFlowBox {
 fn problem(number: i64) -> BriefProblem {
     BriefProblem {
         number,
+        label: Some(format!("problem {number}")),
         was_wrong: format!("what was wrong, number {number}"),
         now_fixed: Some(format!("what it is now, number {number}")),
         detail_title: Some(format!("the detail behind {number}")),
@@ -794,6 +795,106 @@ fn a_blank_line_on_the_brief_is_refused_rather_than_stored() {
         .expect("an absent headline is not a blank one");
 }
 
+/// A numbered problem's short label: kept as written, absent when it was not written, and
+/// never the empty string.
+///
+/// **The three states are what the Alternatives page branches on.** It heads a matrix
+/// column with the label when there is one and with the number alone when there is not, and
+/// it never prints `was_wrong` as a heading — so a blank label stored as a label would head
+/// a column with nothing at all, which looks exactly like a page that failed to draw.
+#[test]
+fn a_problem_keeps_the_short_label_it_was_written_with() {
+    let (_dir, store) = temp_store();
+    let review = seed(&store);
+
+    let stored = store
+        .put_brief(
+            review.id,
+            NewBrief {
+                problems: vec![
+                    BriefProblem {
+                        label: Some("The shared slot".to_string()),
+                        ..problem(1)
+                    },
+                    BriefProblem {
+                        label: None,
+                        ..problem(2)
+                    },
+                ],
+                flow_before: vec![vec![flow_box("a box", Some(1))]],
+                flow_after: vec![vec![flow_box("a fixed box", Some(1))]],
+                options: Vec::new(),
+                blind_pass: None,
+                parts: Vec::new(),
+                open_choices: Vec::new(),
+                disagreements: Vec::new(),
+                ..whole_brief()
+            },
+        )
+        .expect("a label is optional, one problem each way");
+
+    assert_eq!(
+        stored.problems[0].label.as_deref(),
+        Some("The shared slot"),
+        "the label is kept as written, not shortened from was_wrong"
+    );
+    assert_eq!(
+        stored.problems[1].label, None,
+        "a problem written with no label reads back with none"
+    );
+
+    // And no length is enforced, here or anywhere: a label that runs long is a writing
+    // fault and belongs to the linter in Locus, the same ruling migration 10 made about
+    // every other field of the brief.
+    let long = "a label nobody should write ".repeat(12);
+    let stored = store
+        .put_brief(
+            review.id,
+            NewBrief {
+                problems: vec![BriefProblem {
+                    label: Some(long.clone()),
+                    ..problem(1)
+                }],
+                flow_before: vec![vec![flow_box("a box", Some(1))]],
+                flow_after: vec![vec![flow_box("a fixed box", Some(1))]],
+                options: Vec::new(),
+                blind_pass: None,
+                parts: Vec::new(),
+                open_choices: Vec::new(),
+                disagreements: Vec::new(),
+                ..whole_brief()
+            },
+        )
+        .expect("no length is enforced on a label");
+    assert_eq!(stored.problems[0].label.as_deref(), Some(long.as_str()));
+}
+
+#[test]
+fn a_blank_label_on_a_problem_is_refused_rather_than_stored() {
+    let (_dir, store) = temp_store();
+    let review = seed(&store);
+
+    let (refused, _, expected) = refusal(store.put_brief(
+        review.id,
+        NewBrief {
+            problems: vec![BriefProblem {
+                label: Some("  ".to_string()),
+                ..problem(1)
+            }],
+            flow_before: vec![vec![flow_box("a box", Some(1))]],
+            flow_after: vec![vec![flow_box("a fixed box", Some(1))]],
+            options: Vec::new(),
+            blind_pass: None,
+            parts: Vec::new(),
+            open_choices: Vec::new(),
+            disagreements: Vec::new(),
+            ..whole_brief()
+        },
+    ));
+    assert_eq!(refused, "problems.label");
+    assert!(expected.contains("leave the field out"), "{expected}");
+}
+
 #[test]
 fn a_caption_over_an_empty_flow_is_refused() {
     let (_dir, store) = temp_store();
@@ -1050,6 +1151,7 @@ fn brief_marked_through_the_change_half() -> NewBrief {
         // Rows 4 and 5: the "now" column, and the named detail on both sides.
         problems: vec![BriefProblem {
             number: 1,
+            label: Some(marked("the label")),
             was_wrong: "a delivery that fails is never tried again".to_string(),
             now_fixed: Some(marked("what it is now")),
             detail_title: Some(marked("the detail title")),

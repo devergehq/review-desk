@@ -281,6 +281,7 @@ Every field is **plain text**. The pages interpolate and never use `v-html`.
 | 4 | Understand | the numbered marks on the boxes | `brief.problems[].number`, referenced by `flow_before[][].problem` and `flow_after[][].problem` |
 | 5 | Understand | "Was wrong" and "Now", one line each | `brief.problems[].was_wrong`, `.now_fixed` |
 | 5 | Understand | the named detail behind a click, split | `brief.problems[].detail_title`, `.detail_before[]`, `.detail_after[]` |
+| 5 | Alternatives | what heads a problem's matrix column | `brief.problems[].label`, else the number alone |
 | 6 | Understand | the one small supporting table | `brief.support_table.title`, `.columns[]`, `.rows[][]` |
 | 7 | Understand | how the system works today, in plain words | `brief.how_it_works_today` |
 | 8 | Alternatives | the matrix: a verdict per option per problem | `brief.options[].verdicts[].problem`, `.verdict`, `.why` |
@@ -303,6 +304,11 @@ Five things about that table are decisions rather than consequences.
 2. **`problems[].number` is the brief's one internal identity**, and the only number a
    caller assigns. A flow box, an option verdict or a solution part naming a number no
    problem carries is refused on the way in, with the field and the number in the message.
+   **`problems[].label` is the only other thing a page may head a column with**, and it is
+   optional: DEV-892 added it because the Alternatives matrix was heading each column with
+   the whole `was_wrong` sentence, which wrapped ten lines deep on a real review. With no
+   label the heading is the number alone and the sentence is one click away — never the
+   sentence as a heading.
 3. **`in_diff: false` is how a part claims a file the pull request did not change.** Two
    findings on the review this came from sat in files outside the diff, and a part that
    could not name them would leave those findings belonging to no part. Such a file has no
@@ -321,7 +327,8 @@ Five things about that table are decisions rather than consequences.
 
 **Which is why there is a read for the problem half.**
 `GET /reviews/{reviewId}/brief/problem-statement` serves rows 2, 4 and 7 and the
-`was_wrong` line of row 5, and nothing else — so a session can hand a problem to an
+`was_wrong` line of row 5, and nothing else — not `label` either, which names a problem for
+a column heading and is no use to a pass that reads sentences — so a session can hand a problem to an
 independent pass without handing it the answer. The absences are each argued in `openapi.yaml`; the shortest version
 is that the headline states the answer, the after flow and `now_fixed` *are* the change, row
 5's detail travels as a pair, and the superseded `diagram` held both flows at once with no
