@@ -196,6 +196,23 @@ function matrixTemplate(brief: Brief): string {
   return `2.4fr 150px${middle} 110px`
 }
 
+/**
+ * What heads a problem's column, in the narrow layout's own words.
+ *
+ * **The number and its label, or the number alone — never the sentence.** DEV-892's defect
+ * 2: this matrix headed each problem column with the whole `was_wrong` line, which on a
+ * real review wrapped ten lines deep over a column of three verdicts. `problems[].label` is
+ * the two or three words a heading can be; it is optional, and a brief that recorded none
+ * leaves the number doing the work with the sentence one click away in the fold below.
+ *
+ * Used for `columns` and for each cell's `data-label`, which is what the narrow layout
+ * prints above a verdict — so the sentence is gone from there too, where it was the same
+ * defect in a card instead of a column.
+ */
+function problemHeading(problem: BriefProblem): string {
+  return problem.label ? `${problem.number} \u00b7 ${problem.label}` : String(problem.number)
+}
+
 /** The matrix's label, which names how many options and how many problems it holds. */
 function matrixLabel(brief: Brief): string {
   return `${count(options(brief).length, 'option')} against `
@@ -230,7 +247,7 @@ function matrixLabel(brief: Brief): string {
             :columns="[
               'Option',
               'Seen by',
-              ...problems(data.brief).map(problem => `${problem.number} · ${problem.was_wrong}`),
+              ...problems(data.brief).map(problem => problemHeading(problem)),
               '',
             ]"
             :template="matrixTemplate(data.brief)"
@@ -256,11 +273,19 @@ function matrixLabel(brief: Brief): string {
               >
                 Seen by
               </th>
+              <!--
+                The number, and the label when the brief wrote one. **Never `was_wrong`**:
+                that is a line of prose, and as a heading over a column of three verdicts it
+                wrapped ten lines deep on the review this was measured against. A column
+                with no label is headed by its number, and every sentence is in the fold
+                under the matrix.
+              -->
               <th
                 v-for="problem in problems(data.brief)"
                 :key="problem.number"
                 scope="col"
-                class="th th--sentence"
+                role="columnheader"
+                class="th th--marked"
               >
                 <ProblemMark
                   :number="problem.number"
@@ -268,7 +293,7 @@ function matrixLabel(brief: Brief): string {
                   size="inline"
                   says="the problem this column is about"
                 />
-                <span>{{ problem.was_wrong }}</span>
+                <span v-if="problem.label">{{ problem.label }}</span>
               </th>
               <th
                 scope="col"
@@ -346,7 +371,7 @@ function matrixLabel(brief: Brief): string {
                       v-for="problem in problems(data.brief)"
                       :key="problem.number"
                       class="cell"
-                      :data-label="`${problem.number} · ${problem.was_wrong}`"
+                      :data-label="problemHeading(problem)"
                     >
                       <VerdictCell :verdict="verdictOn(option, problem.number)" />
                     </span>
@@ -386,6 +411,39 @@ function matrixLabel(brief: Brief): string {
               the Understand page
             </NuxtLink>. Open an option for the reasoning recorded for it.
           </p>
+
+          <!--
+            **Every number said in full, one click away.** The headings carry two or three
+            words each, so this is where the sentence lives — and it is on this page rather
+            than only behind the link above, because a reader working down a column should
+            not have to leave the matrix to find out what column 2 is. A brief that recorded
+            no label needs it most: the heading is then the bare number.
+          -->
+          <details
+            v-if="problems(data.brief).length"
+            class="numbers"
+          >
+            <summary>What each number is, in full</summary>
+            <ul class="said">
+              <li
+                v-for="problem in problems(data.brief)"
+                :key="problem.number"
+                class="says"
+              >
+                <ProblemMark
+                  :number="problem.number"
+                  tone="wrong"
+                  size="inline"
+                  says="the problem"
+                />
+                <span
+                  v-if="problem.label"
+                  class="says-label"
+                >{{ problem.label }}</span>
+                <span class="says-line">{{ problem.was_wrong }}</span>
+              </li>
+            </ul>
+          </details>
         </section>
 
         <!-- ------------------------- Built against the blind pick --------------------- -->
@@ -765,8 +823,46 @@ function matrixLabel(brief: Brief): string {
   color: var(--rd-ink-faint);
 }
 
+/* ------------------------------ What each number is -------------------------------- */
+
+/*
+ * The same control as the fold at the foot of the page, and deliberately: this page has one
+ * way of saying "there is more of this, here". `.numbers` and `.given` share every rule
+ * below.
+ */
+.said {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  max-width: var(--rd-measure);
+  min-width: 0;
+}
+
+.says {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.says-label {
+  font-weight: 600;
+}
+
+.says-line {
+  flex: 1 1 240px;
+  min-width: 0;
+  color: var(--rd-ink-dim);
+  overflow-wrap: break-word;
+}
+
 /* ------------------------------- What it was given --------------------------------- */
 
+.numbers summary,
 .given summary {
   display: flex;
   align-items: center;
@@ -776,6 +872,7 @@ function matrixLabel(brief: Brief): string {
   cursor: pointer;
 }
 
+.numbers summary:focus-visible,
 .given summary:focus-visible {
   outline: 3px solid var(--rd-focus-ring);
   outline-offset: 2px;

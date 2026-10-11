@@ -780,9 +780,87 @@ describe('Alternatives', () => {
     expect(page.findAll('.option')).toHaveLength(8)
     /* Option, Seen by, three problems, and the column the opener sits in. */
     expect(page.findAll('thead th')).toHaveLength(6)
-    expect(page.find('thead').text()).toContain(
-      'A scheduled export read its tenant from a slot the web middleware also writes.',
-    )
+  })
+
+  /**
+   * **A problem column is headed by its number and its label, never by its sentence.**
+   *
+   * DEV-892's defect 2. This heading used to be `was_wrong` — a line of prose over a
+   * column of three verdicts, which on the real review wrapped ten lines deep. The test
+   * above asserted the sentence was there, which is how the defect survived an invented
+   * example: it was a measurement of the wrong thing.
+   */
+  it('heads a problem column with its number and its label', async () => {
+    const page = await alternatives(STRUCTURED)
+    const head = page.find('thead').text()
+
+    expect(head).toContain('The shared slot')
+    expect(head).toContain('The builder\'s branch')
+    expect(head).toContain('Filters skipped')
+
+    for (const problem of fixture(STRUCTURED).brief!.problems) {
+      expect(head, `problem ${problem.number}'s sentence is not a heading`)
+        .not.toContain(problem.was_wrong)
+    }
+  })
+
+  it('heads a problem column with the number alone when the brief wrote no label', async () => {
+    const detail = fixture(STRUCTURED)
+    detail.brief!.problems = detail.brief!.problems.map(problem => ({
+      ...problem,
+      label: null,
+    }))
+    await withReview(detail)
+
+    const page = await alternatives(STRUCTURED)
+    const head = page.find('thead')
+
+    /* Still three problem columns, each with its mark and nothing else. */
+    expect(head.findAll('.th--marked')).toHaveLength(3)
+    for (const problem of detail.brief!.problems) {
+      expect(head.text(), 'the sentence is never promoted to a heading')
+        .not.toContain(problem.was_wrong)
+    }
+    /* And the number is still there, which is all a reader has to go on. */
+    expect(head.findAll('.th--marked')[0]!.text()).toContain('1')
+  })
+
+  /**
+   * And the sentence is one click away **on this page**.
+   *
+   * A reader working down column 2 should not have to leave the matrix to find out what
+   * column 2 is, and a brief with no labels needs this most — the headings are then bare
+   * numbers.
+   */
+  it('says what every number is, in full, one click away', async () => {
+    const page = await alternatives(STRUCTURED)
+
+    const fold = page.find('details.numbers')
+    expect(fold.exists()).toBe(true)
+    expect(fold.find('summary').text()).toContain('What each number is')
+
+    const said = fold.findAll('.says')
+    expect(said).toHaveLength(3)
+    for (const problem of fixture(STRUCTURED).brief!.problems) {
+      expect(fold.text(), `problem ${problem.number} is said in full`)
+        .toContain(problem.was_wrong)
+    }
+  })
+
+  /*
+   * The narrow layout names each verdict's column above it, and that label is the heading
+   * too — so the sentence is gone from there as well. It was the same defect in a card
+   * rather than in a column, and a page tested only at one width would have kept it.
+   */
+  it('names a verdict’s column by number and label at a phone’s width', async () => {
+    const page = await alternatives(STRUCTURED)
+    const labels = page.findAll('.option .cell[data-label]')
+      .map(cell => cell.attributes('data-label'))
+
+    expect(labels).toContain('1 · The shared slot')
+    for (const problem of fixture(STRUCTURED).brief!.problems) {
+      expect(labels.join(' | ')).not.toContain(problem.was_wrong)
+    }
   })
 
   it('tells the three real verdicts apart, by word as well as by colour', async () => {

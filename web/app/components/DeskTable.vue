@@ -137,17 +137,19 @@ defineProps<{
 }
 
 /*
- * A heading that is a sentence rather than a column name. Uppercase with letter-spacing is
- * right for "The question" and wrong for "A scheduled export read its tenant from a slot
- * the web middleware also writes" — which is what a numbered problem's heading is.
+ * A heading with a mark beside its words — the Alternatives matrix, where each problem
+ * column is headed by its number and the two or three words naming it.
+ *
+ * **It keeps the column-name style, which the sentence version could not.** This used to be
+ * `th--sentence`: the heading was the problem's whole `was_wrong` line, so the uppercase and
+ * the letter-spacing had to go, and on a real review the result wrapped ten lines deep.
+ * A label is a column name, so it is drawn like one; the mark is a 22px circle beside it and
+ * `align-items: center` is what sits the two on the same line.
  */
-.table :deep(.th--sentence) {
+.table :deep(.th--marked) {
   display: flex;
   gap: 8px;
-  align-items: flex-start;
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--rd-ink-dim);
+  align-items: center;
   overflow-wrap: break-word;
 }
 
