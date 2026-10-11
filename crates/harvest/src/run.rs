@@ -193,7 +193,7 @@ impl Report {
                     review.findings_without_comment,
                     review.findings,
                 ) + settled
-                    + &step_seven(review.step_seven.as_ref())
+                    + &step_seven_line(review.step_seven.as_ref())
             })
             .collect()
     }
@@ -516,7 +516,7 @@ fn count(written: bool, recorded: &mut usize, already: &mut usize) {
 /// **A review nothing has posted says nothing**, rather than "step 7: not written" — the
 /// step is not that review's yet, and a line per review saying so would be noise on every
 /// sweep.
-fn step_seven(step: Option<&StepSeven>) -> String {
+fn step_seven_line(step: Option<&StepSeven>) -> String {
     match step {
         Some(step) => format!(
             "; step 7 {}{}",

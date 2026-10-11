@@ -53,10 +53,18 @@ impl Store {
 
     /// Every finished review's timings, newest first.
     ///
-    /// **Finished means posted**: a session has reported the review on GitHub, so nothing
-    /// further will move its figures. It is the set statistics should be computed over,
-    /// and the reason this read exists at all — DEV-890 makes the numbers available in one
-    /// read and deliberately builds no statistics page over them.
+    /// **Finished means posted**: a session has reported the review on GitHub. It is the
+    /// set statistics should be computed over, and the reason this read exists at all —
+    /// DEV-890 makes the numbers available in one read and deliberately builds no
+    /// statistics page over them.
+    ///
+    /// **Posted is not the last write, and this said it was until DEV-933.** A harvest
+    /// moves step 7 on every sweep after posting and finishes it when the pull request
+    /// settles, so a finished review's `layers` go on changing and step 7 ends up with a
+    /// duration running from the first harvest to the merge — days or weeks. The two
+    /// totals are unaffected: both are measured over layers 2 and 6, and a pass still
+    /// going has no length. A figure computed here over *every* step would be reading a
+    /// review that is still moving.
     ///
     /// A review from before migration 12 is here too, with its figures absent. Leaving it
     /// out would make "how long does a review take" quietly a question about the reviews

@@ -65,6 +65,16 @@ export const STRUCTURED_LONG_NOTE
     + 'split them and numbered three problems before the options pass was asked for '
     + 'anything at all.'
 
+/**
+ * What the seed leaves on step 7: posted, and no harvest has read it yet.
+ *
+ * Exported for the same reason the note above is — `review-desk.spec.ts` writes a
+ * harvested step 7 to measure the trail with one and has to put this back exactly. A copy
+ * typed into the spec would drift from the seed the first time either changed, and the
+ * drift is invisible: a blank step-7 line is only wrong next to what the seed meant.
+ */
+export const STRUCTURED_STEP_SEVEN_DETAIL = 'after posting'
+
 /** The binary, as `cargo build` leaves it. */
 export const BINARY = resolve(
   process.env.REVIEW_DESK_BIN ?? '../target/debug/review-desk',
@@ -489,7 +499,7 @@ function seedStructured(directory: string, database: string): number {
     [4, 'done', 'right shape'],
     [5, 'done', `${findings.length} findings, 1 blocker`],
     [6, 'waiting_on_you', 'waiting on you'],
-    [7, 'pending', 'after posting'],
+    [7, 'pending', STRUCTURED_STEP_SEVEN_DETAIL],
   ]
   for (const [number, state, detail] of layers) {
     cli(database, [

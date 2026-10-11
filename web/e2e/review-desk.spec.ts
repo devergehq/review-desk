@@ -10,6 +10,7 @@ import {
   serversUnderTest,
   stillServing,
   STRUCTURED_LONG_NOTE,
+  STRUCTURED_STEP_SEVEN_DETAIL,
 } from './harness'
 
 /*
@@ -1241,7 +1242,10 @@ test.describe('the three step pages of one review', () => {
       }
     }
     finally {
-      setStepSeven('pending', 'posted, waiting for the harvest', ['--clear-facts'])
+      /* Exactly what `seedStructured` wrote, word for word — every other test in this
+         file reads the same database, and the screenshots project reads it too when both
+         projects are run under one global setup. */
+      setStepSeven('pending', STRUCTURED_STEP_SEVEN_DETAIL, ['--clear-facts'])
     }
   })
 

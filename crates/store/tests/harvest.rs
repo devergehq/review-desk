@@ -589,3 +589,45 @@ fn a_harvest_moves_step_seven_off_what_posting_wrote() {
         "the pass starts when the harvest does, not when the review was posted"
     );
 }
+
+#[test]
+fn a_review_whose_only_running_step_is_the_harvest_is_not_with_the_agent() {
+    // **Found by the review of this branch.** The Queue's "With the agent · nothing for
+    // you to do" is every review with a `running` layer, and step 7 is `running` for as
+    // long as the pull request stays open — so without this a posted review sat in that
+    // group for weeks at "Layer 7 of 7", refreshed by every quarter-hourly sweep, and a
+    // review whose author had replied was listed twice on one page.
+    let (_dir, store, finding) = a_posted_review();
+    for number in 1..=6 {
+        store
+            .set_review_layer(finding.review_id, number, ReviewLayerState::Done, None)
+            .unwrap();
+    }
+    assert!(store.reviews_in_progress(None).unwrap().is_empty());
+
+    store.record_harvest_step(finding.review_id).unwrap();
+
+    assert!(
+        store.reviews_in_progress(None).unwrap().is_empty(),
+        "a harvest reading GitHub is not a session working on the review"
+    );
+}
+
+#[test]
+fn a_step_a_session_left_running_is_still_reported_under_a_harvested_step_seven() {
+    // The other half of the same rule: leaving step 7 out must not lose the review. The
+    // layer reported is the highest-numbered running one of the six, which is what
+    // "Layer 5 of 7" on the Queue is.
+    let (_dir, store, finding) = a_posted_review();
+    store
+        .set_review_layer(finding.review_id, 5, ReviewLayerState::Running, None)
+        .unwrap();
+    store.record_harvest_step(finding.review_id).unwrap();
+
+    let in_progress = store.reviews_in_progress(None).unwrap();
+    assert_eq!(in_progress.len(), 1);
+    assert_eq!(
+        in_progress[0].layer.number, 5,
+        "the step the session left running, not the harvest's"
+    );
+}

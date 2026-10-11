@@ -30,7 +30,9 @@
 use rusqlite::params;
 
 use crate::error::Result;
-use crate::model::{NewLayerFact, PrState, ReviewLayer, ReviewLayerName, ReviewLayerState};
+use crate::model::{
+    NewLayerFact, OutcomeKind, PrState, ReviewLayer, ReviewLayerName, ReviewLayerState,
+};
 use crate::Store;
 
 /// What step 7 says while the pull request is open and nothing has come back.
@@ -39,6 +41,15 @@ use crate::Store;
 /// point of DEV-933: that one means no harvest has read this review, and this one means
 /// one has and GitHub had nothing to say yet.
 pub(crate) const NOTHING_BACK_DETAIL: &str = "nothing back yet";
+
+/// The three outcome kinds a harvest writes, which are the three step 7 counts.
+///
+/// One list, read by the query and checked against the match that reads its rows.
+const HARVESTED: [OutcomeKind; 3] = [
+    OutcomeKind::Replied,
+    OutcomeKind::ThreadResolved,
+    OutcomeKind::CodeChangedAfter,
+];
 
 impl Store {
     /// Record on step 7 what the harvest has just read, and when it read it.
@@ -52,7 +63,14 @@ impl Store {
     ///
     /// **Two statements rather than one transaction**, because
     /// [`Store::put_review_layer_facts`] opens its own — which is what
-    /// `review-desk layer set --fact` has always done, in that order.
+    /// `review-desk layer set --fact` has always done, in that order. **So this must not
+    /// be called inside a transaction of the caller's**: SQLite refuses a transaction
+    /// within a transaction, and it would refuse it at run time. The house pattern next
+    /// door is the other way round — `post_draft` writes its layer row *in* the
+    /// transaction it opened — so the difference is worth stating rather than discovering.
+    /// What it costs: a facts write that fails after the layer write leaves step 7's line
+    /// saying "merged, 3 replies back" with the previous harvest's pairs on its card,
+    /// until the next sweep writes both again.
     ///
     /// **The facts are replaced whole**, so a fact something else wrote on step 7 does not
     /// survive a harvest. That is the bargain `put_review_layer_facts` documents: the list
@@ -75,9 +93,9 @@ impl Store {
             } else {
                 ReviewLayerState::Running
             },
-            Some(&detail(ended, &found)),
+            Some(&detail_for(ended, &found)),
         )?;
-        let facts = self.put_review_layer_facts(review_id, number, facts(ended, &found))?;
+        let facts = self.put_review_layer_facts(review_id, number, facts_for(ended, &found))?;
 
         Ok(Some(ReviewLayer { facts, ..layer }))
     }
@@ -88,18 +106,36 @@ impl Store {
     /// one row is one reply, one row is one thread — and `code_changed_after` by finding,
     /// because a finding whose file was touched by a later commit and then by a later one
     /// still is two rows about one finding.
+    ///
+    /// **The kinds come from the enum, going in and coming out**, the way
+    /// `rules_for_repo` builds its list of stages: three quoted words typed in here would
+    /// be a second spelling of each kind, and the day one of them was renamed this would
+    /// go on compiling and count nothing. The words are formatted in rather than bound for
+    /// the reason that function gives — an `OutcomeKind` is this crate's own closed set,
+    /// and no caller's string reaches the statement.
+    ///
+    /// **And the match below names every other kind rather than ending in `_`**, so a
+    /// twelfth outcome kind stops this compiling and whoever adds it decides whether a
+    /// harvest counts it. Asked for and not counted is the one failure neither the query
+    /// nor the types would otherwise catch: the rows come back and step 7 says "nothing
+    /// back yet" about outcomes it has just read.
     fn harvested_so_far(&self, review_id: i64) -> Result<Found> {
-        let mut statement = self.conn.prepare(
+        let kinds = HARVESTED
+            .iter()
+            .map(|kind| format!("'{}'", kind.as_str()))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let mut statement = self.conn.prepare(&format!(
             "SELECT kind, COUNT(*) AS rows_held, COUNT(DISTINCT finding_seq) AS findings
              FROM outcomes
-             WHERE review_id = ?1
-               AND kind IN ('replied', 'thread_resolved', 'code_changed_after')
-             GROUP BY kind",
-        )?;
+             WHERE review_id = ?1 AND kind IN ({kinds})
+             GROUP BY kind"
+        ))?;
         let counted = statement
             .query_map(params![review_id], |row| {
                 Ok((
-                    row.get::<_, String>("kind")?,
+                    row.get::<_, OutcomeKind>("kind")?,
                     row.get::<_, i64>("rows_held")?,
                     row.get::<_, i64>("findings")?,
                 ))
@@ -108,12 +144,21 @@ impl Store {
 
         let mut found = Found::default();
         for (kind, rows_held, findings) in counted {
-            match kind.as_str() {
-                "replied" => found.replies = rows_held,
-                "thread_resolved" => found.threads_resolved = rows_held,
-                "code_changed_after" => found.findings_overtaken = findings,
-                // The `IN` above is the whole set; a kind outside it cannot arrive here.
-                _ => {}
+            match kind {
+                OutcomeKind::Replied => found.replies = rows_held,
+                OutcomeKind::ThreadResolved => found.threads_resolved = rows_held,
+                OutcomeKind::CodeChangedAfter => found.findings_overtaken = findings,
+                // The developer's own outcomes. The query never asks for them, and they
+                // are named here rather than swept up by a `_` so that a new kind is a
+                // decision somebody makes instead of a count that quietly stays at nought.
+                OutcomeKind::Cut
+                | OutcomeKind::Regraded
+                | OutcomeKind::Rewritten
+                | OutcomeKind::Kept
+                | OutcomeKind::Rejected
+                | OutcomeKind::Ticketed
+                | OutcomeKind::Withdrawn
+                | OutcomeKind::RaisedAgain => {}
             }
         }
         Ok(found)
@@ -121,10 +166,10 @@ impl Store {
 
     /// Whether anything has moved step 7 past `pending`.
     ///
-    /// What `post_draft` asks before writing "posted, waiting for the harvest" over it. Reporting
-    /// the same GitHub review twice is a supported call, and step 7 is the one layer whose
-    /// true state can be past what posting writes — so a session retrying after a crash
-    /// must not throw a harvest's `running` back to `pending`.
+    /// What `post_draft` asks before writing "posted, waiting for the harvest" over it.
+    /// Reporting the same GitHub review twice is a supported call, and step 7 is the one
+    /// layer whose true state can be past what posting writes — so a session retrying
+    /// after a crash must not throw a harvest's `running` back to `pending`.
     pub(crate) fn harvest_step_has_moved(&self, review_id: i64) -> Result<bool> {
         Ok(self
             .find_review_layer(review_id, ReviewLayerName::Harvest.number())?
@@ -188,7 +233,7 @@ fn settled_as(state: Option<PrState>) -> Option<&'static str> {
 ///
 /// Four words at most in every case this can produce, including a three-digit count,
 /// which is the limit the other steps keep. The unit test below is what holds it.
-fn detail(ended: Option<&'static str>, found: &Found) -> String {
+fn detail_for(ended: Option<&'static str>, found: &Found) -> String {
     let what = found
         .strongest()
         .unwrap_or_else(|| NOTHING_BACK_DETAIL.to_string());
@@ -204,7 +249,7 @@ fn detail(ended: Option<&'static str>, found: &Found) -> String {
 /// to say, then the counts. **A count of nothing is left out** rather than written as a
 /// nought: "Replies 0" fills the card of a review nobody has replied to with three facts
 /// that say nothing, and the detail already says nothing came back.
-fn facts(ended: Option<&'static str>, found: &Found) -> Vec<NewLayerFact> {
+fn facts_for(ended: Option<&'static str>, found: &Found) -> Vec<NewLayerFact> {
     let mut facts = Vec::new();
 
     if let Some(ended) = ended {
@@ -295,7 +340,7 @@ mod tests {
     #[test]
     fn no_step_seven_detail_runs_past_four_words() {
         for (ended, found) in every_wording() {
-            let said = detail(ended, &found);
+            let said = detail_for(ended, &found);
             let words = said.split_whitespace().count();
             assert!(
                 words <= 4,
@@ -307,7 +352,7 @@ mod tests {
     #[test]
     fn no_step_seven_records_more_than_five_facts() {
         for (ended, found) in every_wording() {
-            let recorded = facts(ended, &found);
+            let recorded = facts_for(ended, &found);
             assert!(
                 recorded.len() <= 5,
                 "{} facts for {ended:?} {found:?}, and a step keeps to five",
@@ -322,9 +367,9 @@ mod tests {
 
     #[test]
     fn a_harvest_that_found_nothing_says_so_and_records_no_facts() {
-        assert_eq!(detail(None, &Found::default()), "nothing back yet");
+        assert_eq!(detail_for(None, &Found::default()), "nothing back yet");
         assert!(
-            facts(None, &Found::default()).is_empty(),
+            facts_for(None, &Found::default()).is_empty(),
             "nothing came back, so there is nothing to put on a card — and a step with \
              no facts draws no card and no control for one"
         );
@@ -337,21 +382,21 @@ mod tests {
             threads_resolved: 3,
             findings_overtaken: 4,
         };
-        assert_eq!(detail(None, &replies_and_more), "2 replies back");
+        assert_eq!(detail_for(None, &replies_and_more), "2 replies back");
 
         let no_replies = Found {
             replies: 0,
             threads_resolved: 3,
             findings_overtaken: 4,
         };
-        assert_eq!(detail(None, &no_replies), "3 threads resolved");
+        assert_eq!(detail_for(None, &no_replies), "3 threads resolved");
 
         let only_commits = Found {
             replies: 0,
             threads_resolved: 0,
             findings_overtaken: 4,
         };
-        assert_eq!(detail(None, &only_commits), "code changed since");
+        assert_eq!(detail_for(None, &only_commits), "code changed since");
     }
 
     #[test]
@@ -361,20 +406,20 @@ mod tests {
             threads_resolved: 1,
             findings_overtaken: 1,
         };
-        assert_eq!(detail(None, &one), "1 reply back");
+        assert_eq!(detail_for(None, &one), "1 reply back");
 
         let resolved = Found {
             threads_resolved: 1,
             ..Found::default()
         };
-        assert_eq!(detail(None, &resolved), "1 thread resolved");
+        assert_eq!(detail_for(None, &resolved), "1 thread resolved");
 
         let overtaken = Found {
             findings_overtaken: 1,
             ..Found::default()
         };
         assert_eq!(
-            facts(None, &overtaken)
+            facts_for(None, &overtaken)
                 .first()
                 .map(|fact| fact.value.clone()),
             Some("1 finding".to_string())
@@ -389,10 +434,10 @@ mod tests {
             findings_overtaken: 0,
         };
 
-        assert_eq!(detail(Some("merged"), &found), "merged, 2 replies back");
-        assert_eq!(detail(Some("closed"), &found), "closed, 2 replies back");
+        assert_eq!(detail_for(Some("merged"), &found), "merged, 2 replies back");
+        assert_eq!(detail_for(Some("closed"), &found), "closed, 2 replies back");
 
-        let recorded = facts(Some("merged"), &found);
+        let recorded = facts_for(Some("merged"), &found);
         assert_eq!(recorded[0].label, "Pull request");
         assert_eq!(recorded[0].value, "merged");
         assert_eq!(

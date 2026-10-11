@@ -317,9 +317,16 @@ impl Store {
     /// progress — it is the developer's turn, and those reviews are what the other
     /// groups are made of, so counting them here would show every waiting review twice.
     ///
-    /// The layer reported is the highest-numbered running one: a session that left an
-    /// earlier layer running is further on than that layer suggests, and the screen's
-    /// "Layer 5 of 7" should say how far it got.
+    /// **Step 7 is not a session's work, and is left out.** A harvest sets it `running`
+    /// for as long as the pull request stays open (DEV-933), which is a quarter-hourly
+    /// read of GitHub rather than anybody working — so counting it would put every posted
+    /// review under "With the agent · nothing for you to do" for weeks, and a review whose
+    /// author had replied would be listed twice on one page, which is the double-listing
+    /// the paragraph above exists to prevent.
+    ///
+    /// The layer reported is the highest-numbered running one *of the six*: a session that
+    /// left an earlier layer running is further on than that layer suggests, and the
+    /// screen's "Layer 5 of 7" should say how far it got.
     pub fn reviews_in_progress(&self, repo: Option<&str>) -> Result<Vec<ReviewAtLayer>> {
         let repo = repo.map(normalise::repo);
         let mut statement = self.conn.prepare(&format!(
@@ -327,17 +334,23 @@ impl Store {
              FROM reviews v
              JOIN review_layers l ON l.review_id = v.id
              WHERE l.state = ?1
+               AND l.number <> ?3
                AND (?2 IS NULL OR v.repo = ?2)
                AND l.number = (
                    SELECT MAX(number) FROM review_layers
-                   WHERE review_id = v.id AND state = ?1
+                   WHERE review_id = v.id AND state = ?1 AND number <> ?3
                )
              ORDER BY v.id DESC"
         ))?;
         let rows = statement
-            .query_map(params![ReviewLayerState::Running, repo], |row| {
-                Ok((row_to_review(row)?, row.get::<_, i64>("number")?))
-            })?
+            .query_map(
+                params![
+                    ReviewLayerState::Running,
+                    repo,
+                    ReviewLayerName::Harvest.number()
+                ],
+                |row| Ok((row_to_review(row)?, row.get::<_, i64>("number")?)),
+            )?
             .collect::<rusqlite::Result<Vec<_>>>()?;
 
         rows.into_iter()
