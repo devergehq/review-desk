@@ -922,9 +922,21 @@ components:
         entry, a GitHub review, a Linear ticket. Opaque: Review Desk stores and returns
         it and never parses it.
 
-        **One exception, stated where it applies**: `Review.ticket_id` is trimmed, and a
-        blank one is read as absent — which leaves a stored id alone rather than clearing
-        it. Nothing else here is.
+        **Two exceptions, and they differ from each other**, both on a ticket id:
+
+        | Where | What happens to `" ABC-231 "` | What happens to `" "` |
+        |---|---|---|
+        | `Review.ticket_id` | stored as `ABC-231` | read as **absent**: a stored id is left alone |
+        | `nit_ticket_id`, through `requestNitTicket` | stored as `ABC-231` | **refused** with `invalid_value` |
+
+        The two are not inconsistent, they are different acts. A review's facts are
+        optional and "left out" has to mean "leave it as it was", or `--ticket ""` from an
+        unset shell variable wipes a recorded id. Asking for a nit ticket, by contrast, is
+        a report that a specific ticket was filed — there is no form of it that reports a
+        filing nobody made, so a blank id there is a mistake rather than a field left out.
+
+        Every other `ForeignId` — `session_id`, `ledger_id`, `github_review_id` — is stored
+        and returned exactly as given.
 
         A review's ticket is a fact about *that round*. Round 2 of a pull request does not
         inherit round 1's, any more than it inherits its title or its changed-line count —
@@ -1160,12 +1172,14 @@ components:
             exception to `ForeignId`'s round-trip: `" ABC-231 "` is stored and returned as
             `ABC-231`.
 
-            **Absent means "leave it as it was", not "clear it".** A blank id does not null
-            a stored one — the write is `COALESCE(?, ticket_id)`, which only a `NULL` tells
+            **Absent means "leave it as it was", not "clear it".** A whitespace-only id —
+            `" "`; the empty string is already refused by `minLength` above — does not null
+            a stored one. The write is `COALESCE(?, ticket_id)`, which only a `NULL` tells
             to leave the column alone, so reading blank as absent is exactly what stops
-            `--ticket ""` from wiping a recorded `ABC-231`. On a review being created there
-            is nothing to leave, so it simply has no ticket. A request whose only field is a
-            blank id writes nothing at all, and does not even mark the review as written to.
+            `--ticket ""` on the command line, where no schema applies, from wiping a
+            recorded `ABC-231`. On a review being created there is nothing to leave, so it
+            simply has no ticket. A request whose only field is a blank id writes nothing at
+            all, and does not even mark the review as written to.
 
             It exists because this id is checked against `ticket_url` — an address beside a
             blank id would reach no screen — and a field read one way by a check and another

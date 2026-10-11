@@ -607,31 +607,35 @@ fn paired(url: Option<String>, passed: Option<&str>, held: Option<&str>) -> Resu
         return Ok(url);
     }
 
-    // **Which of the two cases this is belongs in the sentence, not in the value.**
-    // `InvalidValue` formats as `{field} holds {value:?}`, and two attempts to carry the
-    // distinction through that slot were both wrong: a hard-coded `""` told a caller who
-    // passed `--ticket "  "` that the field held nothing, and a `"<none>"` sentinel asserts
-    // the field holds a value *and* is a legal `ForeignId`, so it cannot be told from a
-    // caller who passed the literal id `<none>`. The value is what arrived; the clause says
-    // what was missing.
+    // **`expected` says what would have been accepted, and nothing else.** The contract
+    // defines it that way, and three attempts to smuggle *what happened* through this
+    // refusal all misreported it: a hard-coded `""` in the value slot told a caller who
+    // passed `--ticket "  "` that the field held nothing; a `"<none>"` sentinel asserts the
+    // field holds a value, and `<none>` is a legal opaque `ForeignId`, so it cannot be told
+    // from a caller who passed it; and a trailing "no id was passed" fought the opener
+    // `ticket_id holds ""` in the same sentence.
     //
-    // **"on this review", not "on the record".** The held id is this review's own, and a
-    // review is one round: round 2 of a pull request does not inherit round 1's ticket, any
-    // more than it inherits its title. Saying "on the record" sent a caller opening a later
-    // round to look at `review find`, which shows the id plainly on the round before — and
-    // tells them nothing about why this call was refused.
-    let missing = match passed {
-        Some(_) => "the id passed is blank, and this review holds none",
-        None => "no id was passed, and this review holds none",
-    };
-
+    // `InvalidValue` formats as `{field} holds {value:?}`, which cannot say "this field is
+    // missing" — the right fix is a variant of its own, and that is a contract change
+    // (`ErrorCode`) rather than something to bolt on here. Until then the value is what
+    // arrived and the clause describes only the accepted shape, which is true in every
+    // case: the id absent, the id blank, and a review that does not exist yet.
+    //
+    // **"or already on the review"** is the part that must not be dropped. It was, for one
+    // commit, and it is the only place this refusal tells a caller the id may come from the
+    // record — which is the two-call pattern `review open`'s own help documents: the id when
+    // the review is opened, the address on a later call. A review is one round, so round 2
+    // of a pull request does not inherit round 1's ticket, any more than it inherits its
+    // title.
     Err(StoreError::InvalidValue {
         field: "ticket_id",
         value: passed.unwrap_or_default().to_string(),
-        expected: format!(
-            "a ticket id beside the address — an address is drawn as its id, so one with \
-             no id reaches no screen; {missing}"
-        ),
+        expected: concat!(
+            "a ticket id to go with the address — passed in this call, or already on the ",
+            "review the address is being set against; an address is drawn as its id, so ",
+            "one with no id reaches no screen",
+        )
+        .to_string(),
     })
 }
 
