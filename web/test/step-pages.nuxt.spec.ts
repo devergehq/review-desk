@@ -1218,12 +1218,119 @@ describe('Solution', () => {
     expect(tests.text()).toContain('Nothing found here')
   })
 
-  it('counts a set-aside finding apart from the ones going in the draft', async () => {
+  it('counts a finding that is not going to the author apart from the rest', async () => {
     const page = await solution(STRUCTURED)
     /* F2 is held back and F8 suppressed; neither is something the author will read. */
     const parts = page.findAll('.part')
     const context = parts.find(one => one.text().includes('The export context'))!
-    expect(context.text()).toContain('1 set aside')
+    expect(context.text()).toContain('1 not posting')
+  })
+
+  /**
+   * **A part's tally counts what will post, not what carries the disposition.**
+   *
+   * DEV-892's comment of 11 October: this filtered `disposition === 'in_draft'` into a list
+   * it called `posted`, under a docstring about what the author will read. A finding
+   * carried into this round as `fixed` keeps whatever disposition it was carried with, so
+   * it sits at `in_draft` and is not composed into the draft — which is the mistake PR #32
+   * fixed on the code review page's headline and left standing here.
+   */
+  it('leaves a finding this round closed out of the part’s severities', async () => {
+    const detail = fixture(STRUCTURED)
+    const part = detail.brief!.parts[0]!
+    const paths = new Set(part.files.map(file => file.path))
+    const on = detail.findings.filter(
+      finding => finding.file != null && paths.has(finding.file),
+    )
+    const posting = on.filter(
+      finding => finding.disposition === 'in_draft'
+        && (finding.round_status == null || finding.round_status === 'new'
+          || finding.round_status === 'still_open'),
+    )
+    expect(posting.length, 'the part has something to post before we close one').toBeGreaterThan(0)
+
+    /* What the card says before anything is closed, read off the card itself. */
+    const was = await solution(STRUCTURED)
+    const firstCard = was.findAll('.part')[0]!
+    const severitiesBefore = firstCard.findAll('.part-tally .pill').map(pill => pill.text())
+    const wasNotPosting = Number(/(\d+) not posting/.exec(firstCard.text())?.[1] ?? 0)
+    expect(severitiesBefore.length, 'the card announces a severity to lose').toBeGreaterThan(0)
+
+    /*
+     * One of them carried from an earlier round and fixed there. Its disposition is
+     * untouched — that is the whole point: the record still says `in_draft`.
+     */
+    const closed = posting[0]!
+    detail.findings = detail.findings.map(finding =>
+      finding.seq === closed.seq
+        ? { ...finding, round_status: 'fixed' as const, continues_review_id: 40 }
+        : finding)
+    await withReview(detail)
+
+    const page = await solution(STRUCTURED)
+    const card = page.findAll('.part')[0]!
+
+    /*
+     * One more finding is not posting than before, and the severity pills are the
+     * difference: the card counts what the author receives, and the disposition on the
+     * record did not move.
+     */
+    expect(card.text()).toContain(`${wasNotPosting + 1} not posting`)
+    expect(
+      card.findAll('.part-tally .pill').map(pill => pill.text()),
+      'the closed finding is out of the severities the card announces',
+    ).not.toEqual(severitiesBefore)
+
+    /* And the row in the fold says why, rather than leaving the arithmetic unexplained. */
+    await open(page, part.title)
+    const row = page.find('#part-0').findAll('.finding')
+      .find(one => one.text().includes(closed.key))!
+    expect(row.classes()).toContain('finding--aside')
+    expect(row.text()).toContain('Fixed')
+  })
+
+  /**
+   * **One layout for every part card's head**, which is the first half of DEV-892's defect
+   * 5: a title that did not fit beside its marks went under them, so some cards read across
+   * and others read down.
+   *
+   * The arrangement is what is asserted here — a lane of marks, then the title, in that
+   * order, in every card that has marks, and the title alone in one that has none. Whether
+   * it *stays* beside them is layout, and `e2e/review-desk.spec.ts` measures that in a real
+   * browser along with the heights of a row.
+   */
+  it('arranges every part card’s head the same way', async () => {
+    const page = await solution(STRUCTURED)
+    const cards = page.findAll('.part')
+    expect(cards.length).toBeGreaterThan(1)
+
+    const parts = fixture(STRUCTURED).brief!.parts
+    let withMarks = 0
+    let withNone = 0
+
+    for (const [at, card] of cards.entries()) {
+      const head = card.find('.part-head')
+      const title = head.find('.part-title')
+      expect(title.exists(), `part ${at + 1} has its title in the head`).toBe(true)
+      expect(title.text()).toBe(parts[at]!.title)
+
+      const marks = head.find('.part-marks')
+      if (parts[at]!.fixes.length === 0) {
+        /* No mark rather than a nought, and no empty lane either. */
+        expect(marks.exists(), `part ${at + 1} fixes nothing and draws no lane`).toBe(false)
+        withNone += 1
+        continue
+      }
+      withMarks += 1
+      expect(marks.findAll('.mark')).toHaveLength(parts[at]!.fixes.length)
+      /* The lane comes first, every time: the title is never above or inside it. */
+      expect(head.element.children[0]).toBe(marks.element)
+      expect(head.element.children[1]).toBe(title.element)
+    }
+
+    /* Both cases are in the example, so this is a test of two shapes rather than one. */
+    expect(withMarks, 'a part that fixes something').toBeGreaterThan(0)
+    expect(withNone, 'a part that fixes nothing').toBeGreaterThan(0)
   })
 
   it('opens a part to its files, with what the change did to each', async () => {

@@ -875,6 +875,66 @@ test.describe('the three step pages of one review', () => {
   })
 
   /**
+   * **Every part card's head reads the same way, and a row of them lines up.**
+   *
+   * DEV-892's defect 5, measured where it can be. A title that did not fit beside its
+   * marks went under them, so on one grid some cards read "2 · the title" across and others
+   * put the number on one line and the title on the next; and every card took its own
+   * height, so a row of three stood at three heights with holes between them.
+   *
+   * Both are layout, so both are read off the rendered boxes: the title's left edge is past
+   * the marks' right edge in every card that has marks, and every card sharing a row shares
+   * a height.
+   */
+  test('a part card’s title is beside its marks, and a row of cards lines up', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(`${seeded}reviews/${structuredReviewId}/solution`)
+    await expect(page.locator('h1')).toBeVisible()
+    await expect(page.locator('.part').first()).toBeVisible()
+
+    const cards = await page.locator('.part').evaluateAll(elements =>
+      elements.map((element) => {
+        const box = element.getBoundingClientRect()
+        const marks = element.querySelector('.part-marks')?.getBoundingClientRect() ?? null
+        const title = element.querySelector('.part-title')!.getBoundingClientRect()
+        return {
+          top: Math.round(box.top),
+          height: Math.round(box.height),
+          beside: marks == null ? null : title.left >= marks.right,
+          /* The title's first line sits against the marks rather than below them. */
+          level: marks == null ? null : title.top < marks.bottom,
+        }
+      }),
+    )
+
+    expect(cards.length, 'the example describes the change in several parts')
+      .toBeGreaterThan(3)
+    expect(
+      cards.filter(card => card.beside !== null).length,
+      'some of them fix a numbered problem',
+    ).toBeGreaterThan(0)
+
+    for (const [at, card] of cards.entries()) {
+      if (card.beside === null) continue
+      expect(card.beside, `part ${at + 1}'s title is beside its marks`).toBe(true)
+      expect(card.level, `part ${at + 1}'s title is not under its marks`).toBe(true)
+    }
+
+    /* Grouped by the row they are drawn on; a row of cards is one height. */
+    const rows = new Map<number, number[]>()
+    for (const card of cards) {
+      rows.set(card.top, [...(rows.get(card.top) ?? []), card.height])
+    }
+    expect([...rows.values()].some(row => row.length > 1), 'the grid draws a row of cards')
+      .toBe(true)
+    for (const [top, heights] of rows) {
+      expect(new Set(heights).size, `the cards on the row at ${top}px are one height`).toBe(1)
+    }
+  })
+
+  /**
    * **Nothing scrolls sideways**, at the width of a laptop and at the width of a phone.
    *
    * The first acceptance criterion, and the one a board cannot be checked against: a board
