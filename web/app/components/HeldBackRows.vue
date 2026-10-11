@@ -47,15 +47,7 @@ import type { HeldBackRow } from '~/utils/draft'
  * lines. The edits list is a derived list of `<p>`s with no state at all, and wrapping that
  * in a component would be a file to open to find out that it is a paragraph.
  */
-const props = defineProps<{
-  rows: HeldBackRow[]
-  /**
-   * The id this panel's rows prefix their detail with, so two panels on one page cannot
-   * collide in `aria-controls`. There is one today; `useId` is not used because the value
-   * has to be readable in a test's failure message.
-   */
-  idPrefix?: string
-}>()
+const props = defineProps<{ rows: HeldBackRow[] }>()
 
 const groups = computed(() => heldBackGroups(props.rows))
 
@@ -72,40 +64,43 @@ function toggle(seq: number) {
   open.value = open.value === seq ? null : seq
 }
 
-const prefix = computed(() => props.idPrefix ?? 'held-back')
-
+/**
+ * The id a row's detail carries, for `aria-controls`.
+ *
+ * A fixed prefix. It took a prop for a while, so that two of these panels on one page could
+ * not collide — and nothing ever passed one, which review measured: the draft page's aside
+ * holds exactly one list of held-back findings, because the record holds one. A second
+ * panel can have the prop back on the day it exists.
+ */
 function detailId(seq: number): string {
-  return `${prefix.value}-${seq}`
+  return `held-back-${seq}`
 }
 
 /**
- * The row's name for a screen reader.
+ * The row's name for a screen reader: the line as `spoken` says it, after the key.
  *
- * **Without the backticks**, which is the one thing a label made of recorded text has to do
- * and which this got wrong on its first run: `TickedText` draws a pair of them as a code
- * chip on screen, but `OpenRow`'s accessible name is a plain string, so a title holding
- * `report_definitions.allowed_columns` was announced as "backtick report underscore
- * definitions… backtick". Found by the test that asserts no backtick reaches the page.
- *
- * It drops the marks rather than reading the words out of them: the code name *is* the
- * title's subject, so a label without it would name the wrong row.
+ * **`OpenRow`'s accessible name is a plain string, and the line is recorded prose** — so
+ * every rule `TickedText` applies to the drawing has to be applied to the name as well, or
+ * the two disagree about the same words. This stripped the backticks by hand for a while
+ * and that was half an answer: it left a commit id shown as seven characters and announced
+ * as forty, which review found. `spoken` derives both from one split, so a third rule
+ * cannot leave the name behind the way the second one did.
  */
 function said(row: HeldBackRow): string {
-  return `${row.key}, ${row.line.replace(/`/g, '')}`
+  return `${row.key}, ${spoken(row.line)}`
 }
 
 /**
- * How the panel's own heading counts what is in it.
+ * How the panel's own heading counts what is in it: findings, always.
  *
- * "8 nits" where every one of them is a nit, and "8 findings" where they are not — which is
- * the wording this panel already had and the one thing about it that was right. The groups
- * below say the rest, so the heading does not list four severities in a 290-pixel line.
+ * **It said "4 nits" when every one of them was a nit**, which is what this panel said
+ * before the rows existed and was right then. It is not right now: the group heading
+ * immediately under it says "4 nits" too, so a reader of review 15's draft met the same
+ * three words twice, three lines apart. Found by review, measured against the fixtures.
+ *
+ * The severities are the groups' to say. This counts the list.
  */
-const heading = computed(() =>
-  props.rows.every(row => row.severity === 'nit')
-    ? count(props.rows.length, 'nit')
-    : count(props.rows.length, 'finding'),
-)
+const heading = computed(() => count(props.rows.length, 'finding'))
 </script>
 
 <template>
@@ -140,7 +135,7 @@ const heading = computed(() =>
             class="held-row"
             @toggle="toggle(row.seq)"
           >
-            <span class="cell cell--key rd-mono">{{ row.key }}</span>
+            <span class="cell cell--key rd-mono rd-meta">{{ row.key }}</span>
 
             <!--
               **The severity as a word, with no tag and no colour.** Drawn only where the
@@ -149,7 +144,7 @@ const heading = computed(() =>
               own heading says it as well, which is deliberate — a row read on its own, or
               read out by a screen reader, carries its own severity.
             -->
-            <span class="cell cell--severity">
+            <span class="cell cell--severity rd-meta">
               <span class="rd-visually-hidden">Severity:</span>
               <span v-if="row.severity">{{ row.severity }}</span>
               <span
@@ -315,10 +310,15 @@ const heading = computed(() =>
   min-width: 0;
 }
 
+/*
+ * **`.rd-meta` carries the size and the ink**, applied rather than restated: it is the one
+ * definition of the desk's quiet text, and a cell that declared `13px` and
+ * `--rd-ink-muted` for itself would keep the old pair the day that definition changed, with
+ * nothing failing. Found by review, which pointed out that two of the panel's three cells
+ * had copied it out.
+ */
 .cell--key {
   grid-area: key;
-  color: var(--rd-ink-muted);
-  font-size: 13px;
 }
 
 /*
@@ -328,8 +328,6 @@ const heading = computed(() =>
  */
 .cell--severity {
   grid-area: severity;
-  font-size: 13px;
-  color: var(--rd-ink-muted);
   text-transform: capitalize;
 }
 

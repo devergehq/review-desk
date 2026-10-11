@@ -588,26 +588,17 @@ describe('the draft preview', () => {
     expect(page.find('.held').findAll('.tag')).toHaveLength(0)
   })
 
-  it('opens one held-back row at a time, in place', async () => {
+  /*
+   * **That a row opens, and nothing more.** One-row-at-a-time, the `aria-controls` pairing
+   * and the detail's contents are the panel's own rule and are asserted on the panel, in
+   * `test/held-back-rows.nuxt.spec.ts`. This is the page test, so it asserts the one thing
+   * only the page can answer: that the panel is mounted against the draft's own record and
+   * opens against it. Raised by review, which found the same four facts in both files.
+   */
+  it('opens a held-back row against the draft’s own record', async () => {
     const page = await open(17)
-    const rows = () => page.findAll('.held-row')
-
-    /* Nothing is open, so no claim and no file are on the page. */
-    expect(page.findAll('.held-opened')).toHaveLength(0)
-
-    await rows()[0]!.trigger('click')
-    expect(rows()[0]!.attributes('aria-expanded')).toBe('true')
-    const opened = page.find('.held-opened')
-    expect(opened.attributes('id')).toBe(rows()[0]!.attributes('aria-controls'))
-    expect(opened.text()).toContain('config/webhooks.php:31')
-
-    await rows()[1]!.trigger('click')
-    expect(page.findAll('.held-opened')).toHaveLength(1)
-    expect(rows()[0]!.attributes('aria-expanded')).toBe('false')
-    expect(rows()[1]!.attributes('aria-expanded')).toBe('true')
-
-    await rows()[1]!.trigger('click')
-    expect(page.findAll('.held-opened')).toHaveLength(0)
+    await page.findAll('.held-row')[0]!.trigger('click')
+    expect(page.find('.held-opened').text()).toContain('config/webhooks.php:31')
   })
 
   it('records an edit and updates the checks without a reload', async () => {

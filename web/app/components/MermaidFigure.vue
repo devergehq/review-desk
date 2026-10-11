@@ -208,6 +208,8 @@ const inline = ref<HTMLElement | null>(null)
 const stage = ref<HTMLElement | null>(null)
 /** The box inside the stage that carries the zoom and the offset. The drawing goes in it. */
 const moved = ref<HTMLElement | null>(null)
+/** The dialog itself, which is what Tab is kept inside. */
+const sheet = ref<HTMLElement | null>(null)
 
 /** The height the figure holds while its drawing is elsewhere, so the page does not jump. */
 const held = ref<string | null>(null)
@@ -295,18 +297,34 @@ function clampedPan(to: Pan): Pan {
   return clampPan(to, drawn, { width: size.width, height: size.height }, scale.value)
 }
 
+/* `@wheel.prevent` in the template stops the page scrolling; this only has to zoom. */
 function onWheel(event: WheelEvent) {
-  event.preventDefault()
   zoom(wheelFactor(event.deltaY))
 }
 
-function onStageKey(event: KeyboardEvent) {
+/**
+ * Every key the enlarged view answers, **on the dialog rather than on the stage**.
+ *
+ * It was on the stage, and that was a half-answer: pressing the zoom button moves focus to
+ * the button, and from there the arrow keys and `+` did nothing at all — a reader who zoomed
+ * with the mouse and then reached for the keyboard found it dead. Keydown bubbles out of the
+ * stage to here, so focus on the stage still works exactly as it did.
+ *
+ * Escape is not here: it is on the window, because it should close this from anywhere.
+ */
+function onDialogKey(event: KeyboardEvent) {
+  if (event.key === 'Tab') {
+    trapTab(event)
+    return
+  }
+
   const by = panByKey(event.key)
   if (by) {
     event.preventDefault()
     pan.value = clampedPan({ x: pan.value.x + by.x, y: pan.value.y + by.y })
     return
   }
+
   /*
    * `+` and `-` zoom, which is what every image viewer does and what a reader will try
    * before they look for a button. `=` is the unshifted key `+` lives on.
@@ -321,32 +339,68 @@ function onStageKey(event: KeyboardEvent) {
   }
 }
 
-/** Dragging, by pointer. The id is kept so a second finger does not fight the first. */
-const dragging = ref(false)
-let dragFrom: { x: number, y: number, pan: Pan } | null = null
-let dragId: number | null = null
+/**
+ * The drag in progress, or `null`.
+ *
+ * **One value, not three.** It was a boolean, a starting point and a pointer id, set
+ * together in three statements and cleared together in three more — so "is a drag running"
+ * had three spellings and an invariant held by hand, and the guard in `onPointerMove` tested
+ * two of them for the same fact. Raised by review. The id is in it because a second finger
+ * must not fight the first.
+ */
+const drag = ref<{ id: number, x: number, y: number, pan: Pan } | null>(null)
 
 function onPointerDown(event: PointerEvent) {
-  if (dragId != null) return
-  dragId = event.pointerId
-  dragging.value = true
-  dragFrom = { x: event.clientX, y: event.clientY, pan: pan.value }
+  /*
+   * **The primary button only.** `pointerdown` fires for a right-click too, so without this
+   * a reader opening the context menu over the diagram started a drag they never asked for
+   * and could not end — the matching `pointerup` goes to the menu. Touch and pen both report
+   * button 0, so this costs them nothing.
+   */
+  if (event.button !== 0 || drag.value) return
+  drag.value = { id: event.pointerId, x: event.clientX, y: event.clientY, pan: pan.value }
   ;(event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId)
 }
 
 function onPointerMove(event: PointerEvent) {
-  if (!dragFrom || event.pointerId !== dragId) return
+  const from = drag.value
+  if (!from || event.pointerId !== from.id) return
   pan.value = clampedPan({
-    x: dragFrom.pan.x + (event.clientX - dragFrom.x),
-    y: dragFrom.pan.y + (event.clientY - dragFrom.y),
+    x: from.pan.x + (event.clientX - from.x),
+    y: from.pan.y + (event.clientY - from.y),
   })
 }
 
 function onPointerUp(event: PointerEvent) {
-  if (event.pointerId !== dragId) return
-  dragId = null
-  dragging.value = false
-  dragFrom = null
+  if (event.pointerId === drag.value?.id) drag.value = null
+}
+
+/**
+ * **Tab stays inside the dialog**, because `aria-modal="true"` says the rest of the page is
+ * not there — and a reader who tabbed out of it would be moving around a page their screen
+ * reader has been told is inert, with no way of knowing where they had got to.
+ *
+ * A cycle rather than `inert` on the app root: this component is mounted inside the page it
+ * would have to reach up and disable, and a figure that reached for `#__nuxt` would break
+ * the first time it was rendered anywhere else.
+ */
+function trapTab(event: KeyboardEvent) {
+  if (!sheet.value) return
+  const stops = [...sheet.value.querySelectorAll<HTMLElement>(
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+  )].filter(stop => !stop.hasAttribute('disabled'))
+  const first = stops[0]
+  const last = stops.at(-1)
+  if (!first || !last) return
+
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last.focus()
+  }
+  else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  }
 }
 
 /**
@@ -393,7 +447,7 @@ onBeforeUnmount(() => {
       class="canvas"
       :style="held ? { minHeight: held } : undefined"
       :aria-label="`${label ?? 'This diagram'} — open it larger`"
-      :aria-expanded="large"
+      aria-haspopup="dialog"
       @click="openLarge"
       v-html="svg"
     />
@@ -452,10 +506,12 @@ onBeforeUnmount(() => {
           this covers the page.
         -->
         <div
+          ref="sheet"
           class="sheet"
           role="dialog"
           aria-modal="true"
           :aria-label="`${label ?? 'This diagram'}, larger`"
+          @keydown="onDialogKey"
         >
           <div class="bar">
             <p class="rd-meta reading">
@@ -506,10 +562,9 @@ onBeforeUnmount(() => {
           <div
             ref="stage"
             class="stage"
-            :class="{ 'stage--dragging': dragging }"
+            :class="{ 'stage--dragging': drag }"
             tabindex="0"
             @wheel.prevent="onWheel"
-            @keydown="onStageKey"
             @pointerdown="onPointerDown"
             @pointermove="onPointerMove"
             @pointerup="onPointerUp"

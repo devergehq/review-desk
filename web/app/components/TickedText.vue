@@ -44,70 +44,25 @@
  * | `` a ` b `` | the backtick, printed as it is |
  * | 40 hex characters | seven of them, as code, the whole on focus |
  * | `<script>` | eight characters of text |
+ *
+ * **Both rules are `utils/ticked.ts`'s**, and so is the table above. This component is what
+ * draws them; `spoken()` in the same module is what says them where there is no markup.
  */
 const props = defineProps<{
   /** What the session wrote. Drawn as it is, apart from the two rules above. */
   text: string | null | undefined
 }>()
 
-/** One piece of the string, and how it is drawn. */
-interface Piece {
-  kind: 'text' | 'code' | 'commit'
-  /** What to draw. For a commit, the first seven characters. */
-  text: string
-  /** The whole 40 characters, for a commit. */
-  whole?: string
-}
-
 /**
- * A run of exactly 40 hexadecimal characters, bounded by something that is not one.
+ * **The split lives in `utils/ticked.ts`**, and this component draws what it answers.
  *
- * `\b` would not do: it treats `_` as a word character, so `commit_<40 hex>` would not
- * match at all, and it counts a letter beyond `f` as a boundary, so 41 hex characters would
- * match the first 40 of them. The look-arounds say what is meant — nothing alphanumeric
- * either side — which also leaves a 41-character run alone, as a thing this rule has no
- * opinion about rather than one it half-shortens.
+ * It was here until DEV-928, which added a second caller: a held-back row's accessible name
+ * is a plain string, so it needs the same two rules applied and nothing to draw them with.
+ * A hand-written version of that got the backticks right and the commit ids wrong — a title
+ * shown as seven characters and announced as forty — so the rules have one home and both
+ * forms are derived from it.
  */
-const COMMIT = /(?<![0-9a-z])[0-9a-f]{40}(?![0-9a-z])/gi
-
-/** Everything between a pair of backticks. Non-empty, so `` prints as two backticks. */
-const TICKED = /`([^`]+)`/g
-
-/** Split one run of plain text into its text and its commit ids. */
-function commits(text: string, inCode: boolean): Piece[] {
-  const pieces: Piece[] = []
-  let at = 0
-  for (const found of text.matchAll(COMMIT)) {
-    const start = found.index
-    if (start > at) pieces.push({ kind: inCode ? 'code' : 'text', text: text.slice(at, start) })
-    pieces.push({ kind: 'commit', text: found[0].slice(0, 7), whole: found[0] })
-    at = start + found[0].length
-  }
-  if (at < text.length) pieces.push({ kind: inCode ? 'code' : 'text', text: text.slice(at) })
-  return pieces
-}
-
-/**
- * The string, as the pieces it is drawn in.
- *
- * **An unpaired backtick comes out as a backtick.** The pairs are matched left to right and
- * whatever is left over is plain text, so a sentence with three backticks in it draws one
- * code chip and one literal tick — which is a session's typing error shown rather than a
- * page swallowing a character.
- */
-const pieces = computed<Piece[]>(() => {
-  const text = props.text ?? ''
-  const out: Piece[] = []
-  let at = 0
-  for (const found of text.matchAll(TICKED)) {
-    const start = found.index
-    if (start > at) out.push(...commits(text.slice(at, start), false))
-    out.push(...commits(found[1]!, true))
-    at = start + found[0].length
-  }
-  if (at < text.length) out.push(...commits(text.slice(at), false))
-  return out
-})
+const drawn = computed(() => pieces(props.text))
 </script>
 
 <!--
@@ -123,7 +78,7 @@ const pieces = computed<Piece[]>(() => {
 -->
 <template>
   <span class="prose"><template
-    v-for="(piece, index) in pieces"
+    v-for="(piece, index) in drawn"
     :key="index"
   ><code
     v-if="piece.kind === 'code'"

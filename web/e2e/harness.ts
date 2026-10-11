@@ -854,31 +854,30 @@ function claimOf(n: number, about: string): string {
  * | F4 | a title carrying `report_definitions.allowed_columns` |
  */
 function heldBackFindings(): Array<Record<string, unknown>> {
-  const nit = (seq: number, title: string | null, file: string, line: number, words: number, about: string) => ({
+  /*
+   * One factory. The two severities differed in three fields and repeated eleven, which
+   * review pointed out — and the eleven are the shape of a held-back record, so they are
+   * the ones that would have to be edited in both places.
+   */
+  const heldBack = (
+    lens: string,
+    severity: string,
+    reason: string,
+  ) => (seq: number, title: string | null, file: string, line: number, words: number, about: string) => ({
     seq,
-    lens: 'repetition',
-    severity: 'nit',
+    lens,
+    severity,
     file,
     line,
     claim: claimOf(words, about),
     title,
     disposition: 'held_back',
-    disposition_reason: 'a nit; it goes in the ticket',
+    disposition_reason: reason,
     verification: 'read_not_run',
   })
 
-  const question = (seq: number, title: string, file: string, line: number, words: number, about: string) => ({
-    seq,
-    lens: 'correctness',
-    severity: 'question',
-    file,
-    line,
-    claim: claimOf(words, about),
-    title,
-    disposition: 'held_back',
-    disposition_reason: 'a question for the author; it goes in the ticket',
-    verification: 'read_not_run',
-  })
+  const nit = heldBack('repetition', 'nit', 'a nit; it goes in the ticket')
+  const question = heldBack('correctness', 'question', 'a question for the author; it goes in the ticket')
 
   return [
     {

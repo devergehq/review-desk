@@ -1,7 +1,7 @@
 import { rmSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 import {
   cli,
@@ -1477,6 +1477,20 @@ test.describe('the three step pages of one review', () => {
  * and jsdom has no `getBBox` — and the rest are about a panel at a width, which is a
  * measurement and not a render.
  */
+/**
+ * Open the fourth review's draft page, at a width, with the page settled.
+ *
+ * Nine tests below opened it with the same three lines — raised by review, and the literal
+ * `1440, 900` went from three places in this file to fourteen. A change to how the page is
+ * reached is one edit now rather than nine.
+ */
+async function draftPage(page: Page, width = 1440) {
+  await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
+  await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
+  await expect(page.locator('h1')).toBeVisible()
+  await page.waitForLoadState('networkidle')
+}
+
 test.describe('the findings held back, as rows', () => {
   /**
    * The state the issue was raised from: eight rows in a column about 290 pixels wide.
@@ -1486,9 +1500,7 @@ test.describe('the findings held back, as rows', () => {
    * it is asserted as an absence rather than as a layout.
    */
   test('eight rows, grouped and counted, with no claim until one is opened', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 })
-    await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
-    await expect(page.locator('h1')).toBeVisible()
+    await draftPage(page)
 
     const panel = page.locator('.held')
     await expect(panel.getByText('Held back · 8 findings')).toBeVisible()
@@ -1515,9 +1527,7 @@ test.describe('the findings held back, as rows', () => {
    * and it is under the row rather than somewhere else on the page.
    */
   test('a row opens in place to its claim and its file', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 })
-    await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
-    await expect(page.locator('h1')).toBeVisible()
+    await draftPage(page)
 
     const row = page.locator('.held-row').filter({ hasText: 'F4' }).first()
     await expect(row).toHaveAttribute('aria-expanded', 'false')
@@ -1540,9 +1550,7 @@ test.describe('the findings held back, as rows', () => {
 
   /** One at a time, by keyboard alone. Enter and Space, because the row is a button. */
   test('a row opens and folds by keyboard, and only one is open', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 })
-    await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
-    await expect(page.locator('h1')).toBeVisible()
+    await draftPage(page)
 
     const rows = page.locator('.held-row')
     await rows.first().focus()
@@ -1572,9 +1580,7 @@ test.describe('the findings held back, as rows', () => {
    * backticks — backticks printed literally is the defect this is measured against.
    */
   test('a shortened line says so, and a code name is drawn as code', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 })
-    await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
-    await expect(page.locator('h1')).toBeVisible()
+    await draftPage(page)
 
     const panel = page.locator('.held')
     await expect(panel.getByText('`')).toHaveCount(0)
@@ -1597,15 +1603,10 @@ test.describe('the findings held back, as rows', () => {
    * is the defect, so the column is what is measured — closed and with a row open, since a
    * panel that fits closed and overflows open fits nothing.
    */
-  for (const [label, width, height] of [
-    ['a laptop', 1440, 900],
-    ['a phone', 390, 844],
-  ] as const) {
+  /* The height goes with the width, inside `draftPage`: a phone is 844 and a laptop 900. */
+  for (const [label, width] of [['a laptop', 1440], ['a phone', 390]] as const) {
     test(`no held-back text leaves the card at ${label}`, async ({ page }) => {
-      await page.setViewportSize({ width, height })
-      await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
-      await expect(page.locator('h1')).toBeVisible()
-      await page.waitForLoadState('networkidle')
+      await draftPage(page, width)
 
       /*
        * **Measured against the card, not against the panel inside it.** The rows carry a
@@ -1666,9 +1667,7 @@ test.describe('the findings held back, as rows', () => {
    * kind into `summary` and the panel printed "Kept F1 · kept" four times over.
    */
   test('a finding toggled five times is one line, with the verb once', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 })
-    await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
-    await expect(page.locator('h1')).toBeVisible()
+    await draftPage(page)
 
     const lines = page.locator('.edit')
     await expect(lines).toHaveCount(1)
@@ -1689,15 +1688,12 @@ test.describe('a drawing opens larger', () => {
    * render and jsdom cannot draw.
    */
   test('the diagram in the draft preview opens, zooms, drags and closes', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 })
-    await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
-    await expect(page.locator('h1')).toBeVisible()
-    await page.waitForLoadState('networkidle')
+    await draftPage(page)
 
     const canvas = page.locator('button.canvas').first()
     await expect(canvas).toBeVisible()
     await expect(canvas.locator('svg')).toHaveCount(1)
-    await expect(canvas).toHaveAttribute('aria-expanded', 'false')
+    await expect(canvas).toHaveAttribute('aria-haspopup', 'dialog')
 
     await canvas.click()
     const sheet = page.getByRole('dialog')
@@ -1757,15 +1753,11 @@ test.describe('a drawing opens larger', () => {
     await expect(page.getByRole('dialog')).toHaveCount(0)
     await expect(canvas).toBeFocused()
     await expect(canvas.locator('svg')).toHaveCount(1)
-    await expect(canvas).toHaveAttribute('aria-expanded', 'false')
   })
 
   /** By keyboard alone, which is the half a pointer test cannot show. */
   test('it opens by keyboard, pans by arrow key, and closes on Escape', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 })
-    await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
-    await expect(page.locator('h1')).toBeVisible()
-    await page.waitForLoadState('networkidle')
+    await draftPage(page)
 
     const canvas = page.locator('button.canvas').first()
     await canvas.focus()
@@ -1786,6 +1778,44 @@ test.describe('a drawing opens larger', () => {
     const panned = await sheet.locator('.moved').getAttribute('style')
     expect(panned).toContain('translate(-')
 
+    /*
+     * **Tab stays inside the dialog.** `aria-modal="true"` tells a screen reader the rest
+     * of the page is not there, so a Tab that walked out of it would leave a reader moving
+     * around a page they have been told is inert.
+     */
+    const inside = () => page.evaluate(
+      () => document.activeElement?.closest('[role="dialog"]') != null,
+    )
+    for (let press = 0; press < 8; press += 1) {
+      await page.keyboard.press('Tab')
+      expect(await inside(), `after ${press + 1} presses of Tab`).toBe(true)
+    }
+    await page.keyboard.press('Shift+Tab')
+    expect(await inside()).toBe(true)
+
+    /*
+     * **And the keys still answer with focus on a button**, which they did not when they
+     * were bound to the stage: clicking a zoom control moves focus to it, and a reader who
+     * zoomed with the mouse and then reached for the keyboard found nothing there.
+     */
+    await sheet.getByRole('button', { name: 'Zoom in' }).click()
+    await expect(sheet.getByRole('button', { name: 'Zoom in' })).toBeFocused()
+    await page.keyboard.press('-')
+    await expect(sheet.locator('.reading')).toContainText('169%')
+
+    /*
+     * **One step back, not a fixed place.** The view is already at its pan limit from the
+     * two ArrowRights above, so ArrowLeft moves it by one `PAN_STEP` towards the middle —
+     * which is what is asserted. The first version of this expected an absolute offset and
+     * failed on correct behaviour.
+     */
+    const offset = async () => Number(
+      /translate\((-?[\d.]+)px/.exec(await sheet.locator('.moved').getAttribute('style') ?? '')?.[1],
+    )
+    const atLimit = await offset()
+    await page.keyboard.press('ArrowLeft')
+    expect(await offset()).toBeCloseTo(atLimit + 48, 1)
+
     /* Fit puts it back, and then Escape leaves. */
     await sheet.getByRole('button', { name: 'Fit' }).click()
     await expect(sheet.locator('.reading')).toContainText('100%')
@@ -1796,10 +1826,7 @@ test.describe('a drawing opens larger', () => {
 
   /** A click outside closes it, and a click on the drawing does not. */
   test('a click outside closes it, and one inside does not', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 })
-    await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
-    await expect(page.locator('h1')).toBeVisible()
-    await page.waitForLoadState('networkidle')
+    await draftPage(page)
 
     await page.locator('button.canvas').first().click()
     await expect(page.getByRole('dialog')).toBeVisible()
@@ -1859,10 +1886,7 @@ test.describe('a drawing opens larger', () => {
    * reader comes back to the scroll position they left.
    */
   test('the page behind it neither jumps nor scrolls', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 })
-    await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
-    await expect(page.locator('h1')).toBeVisible()
-    await page.waitForLoadState('networkidle')
+    await draftPage(page)
 
     const canvas = page.locator('button.canvas').first()
     /*

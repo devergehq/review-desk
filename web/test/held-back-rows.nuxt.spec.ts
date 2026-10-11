@@ -200,16 +200,4 @@ describe('eight findings held back, which is what the complaint was about', () =
     await page.find('.held-row').trigger('click')
     expect(page.find('.held-opened').text()).toContain('The record names no file')
   })
-
-  /*
-   * Two panels on one page would collide in `aria-controls` without this, which is a pair of
-   * rows that open each other's detail — and nothing on screen would look wrong.
-   */
-  it('keys its detail on a prefix a caller can set', async () => {
-    const page = await mountSuspended(HeldBackRows, {
-      props: { rows: ROWS, idPrefix: 'second-panel' },
-    })
-    await page.findAll('.held-row')[0]!.trigger('click')
-    expect(page.find('.held-opened').attributes('id')).toBe('second-panel-10')
-  })
 })

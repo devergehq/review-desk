@@ -16,8 +16,8 @@
 
 import type { DraftEdit, Finding, HeldBackFinding, OutcomeKind, Severity } from '~/types/desk'
 
-import { SEVERITY_ORDER } from './findings'
-import { count, editVerb } from './format'
+import { SEVERITY_ORDER, whereOf } from './findings'
+import { SEVERITY_WORDS, count, editVerb } from './format'
 
 export interface MarkdownBlock {
   kind: 'markdown' | 'mermaid'
@@ -264,10 +264,19 @@ export function shortenClaim(claim: string): { text: string, shortened: boolean 
   return { text: `${words.slice(0, TITLE_WORDS).join(' ')}…`, shortened: true }
 }
 
-/** Where a finding is, as one string. `null` for a finding about the description. */
+/**
+ * Where a finding is, as one string. `null` for a finding about the description.
+ *
+ * **`whereOf` does the composing**, which is the code review page's own answer to the same
+ * question — found by review, which pointed out that this had written `path:line` a second
+ * time. The difference is only what to do with a finding that names no file: that page says
+ * "The pull request itself" in a row that always has a second line, and this panel draws
+ * nothing and lets the caller say so, because a row that is not open has no room for a
+ * sentence. So the absence is decided here and the composing is not.
+ */
 export function whereInCode(finding: Finding | undefined): string | null {
   if (!finding?.file) return null
-  return finding.line == null ? finding.file : `${finding.file}:${finding.line}`
+  return whereOf(finding)
 }
 
 /**
@@ -308,19 +317,6 @@ export interface HeldBackGroup {
   /** "6 nits", "2 questions" — the severity as a word, counted. */
   heading: string
   rows: HeldBackRow[]
-}
-
-/**
- * How a group of one severity is counted. `should` has no plural, as the tally has it.
- *
- * Keyed off the record's four severities so a fifth added to the contract is a type error
- * here rather than a heading reading "3 criticals" with no `s` rule.
- */
-const SEVERITY_WORDS: Record<Severity, [string, string]> = {
-  blocker: ['blocker', 'blockers'],
-  should: ['should', 'should'],
-  question: ['question', 'questions'],
-  nit: ['nit', 'nits'],
 }
 
 /**
@@ -372,8 +368,6 @@ export interface EditLine {
   detail: string | null
   /** "changed 5 times", or null for a finding edited once. */
   changed: string | null
-  /** How many edits there were, which `changed` words. */
-  times: number
 }
 
 /**
@@ -389,9 +383,17 @@ export interface EditLine {
  * once":
  *
  * 1. A summary that is only the kind, or only the verb, says nothing. Dropped.
- * 2. A summary that **opens** with the kind keeps the rest. `detectEdits` writes "cut from
- *    the body", and "Cut F6 · cut from the body" is the same defect in a longer coat; "Cut
- *    F6 · from the body" is the whole fact, once.
+ * 2. A summary that **opens** with the kind keeps the rest, so "cut from the body" reads
+ *    "Cut F6 · from the body" rather than "Cut F6 · cut from the body", which is the same
+ *    defect in a longer coat.
+ *
+ *    **That one string is written by `detectEdits`, forty lines up this file** — so for
+ *    `cut` this is a shim for wording this module chose, not a rule about the server. The
+ *    deeper fix is to write "from the body" there; it is not taken here because every
+ *    outcome already stored carries the old wording and would still have to be read, so the
+ *    shim narrows rather than disappears, and narrowing it is worth its own issue. Raised
+ *    by review, which was right that the comment read as though the duplication arrived
+ *    from somewhere else.
  *
  * Anything else is kept as the record wrote it. "Blocker to Should" is not a repetition of
  * "Regraded" and trimming real detail to satisfy a rule about repetition would lose what the
@@ -448,7 +450,6 @@ export function editLines(edits: DraftEdit[]): EditLine[] {
       verb: editVerb(latest.kind),
       detail: editDetail(latest.kind, latest.summary),
       changed: mine.length > 1 ? `changed ${mine.length} times` : null,
-      times: mine.length,
       /* Not part of the line; the sort below is the only thing that reads it. */
       when: at(latest),
     }

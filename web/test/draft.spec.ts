@@ -99,26 +99,31 @@ describe('the word budget counts what is read', () => {
   })
 })
 
-function finding(seq: number, key: string): Finding {
+/**
+ * One finding, with whatever this test needs set on it.
+ *
+ * **The file had two of these for a while**, and review pointed out that they disagreed on
+ * every default that matters — severity, file, disposition — so a reader of a failing
+ * assertion had to work out which one it came from. Declared here, above its first use, and
+ * used by both halves of the file.
+ */
+function raised(seq: number, extra: Partial<Finding> = {}): Finding {
   return {
-    review_id: 1,
+    review_id: 41,
     seq,
-    key,
-    lens: 'test',
-    severity: 'should',
-    file: null,
-    line: null,
-    claim: 'a claim',
-    evidence: null,
-    disposition: 'in_draft',
-    disposition_reason: null,
-    rule_id: null,
-    rule_key: null,
-    created_at: '2026-10-08T11:00:00Z',
-  }
+    key: `F${seq}`,
+    lens: 'correctness',
+    severity: 'nit',
+    file: 'app/Reporting/ExportContext.php',
+    line: 44,
+    claim: 'something is worth saying about this',
+    disposition: 'held_back',
+    created_at: '2026-10-11T00:00:00Z',
+    ...extra,
+  } as Finding
 }
 
-const FINDINGS = [finding(1, 'F1'), finding(2, 'F2')]
+const FINDINGS = [raised(1, { key: 'F1', severity: 'should', file: null, line: null }), raised(2, { key: 'F2', severity: 'should', file: null, line: null })]
 
 describe('what changed between two versions of a draft', () => {
   it('reports nothing when nothing changed', () => {
@@ -167,22 +172,6 @@ describe('what changed between two versions of a draft', () => {
 /** A claim of a given number of words, so a length is a length rather than a guess. */
 function words(n: number): string {
   return Array.from({ length: n }, (_, at) => `word${at + 1}`).join(' ')
-}
-
-function raised(seq: number, extra: Partial<Finding> = {}): Finding {
-  return {
-    review_id: 41,
-    seq,
-    key: `F${seq}`,
-    lens: 'correctness',
-    severity: 'nit',
-    file: 'app/Reporting/ExportContext.php',
-    line: 44,
-    claim: 'something is worth saying about this',
-    disposition: 'held_back',
-    created_at: '2026-10-11T00:00:00Z',
-    ...extra,
-  } as Finding
 }
 
 function held(seq: number, extra: Partial<HeldBackFinding> = {}): HeldBackFinding {
@@ -420,7 +409,6 @@ describe('the developer’s edits as one line a finding', () => {
 
   it('says how many times it changed', () => {
     expect(editLines(FIVE)[0]!.changed).toBe('changed 5 times')
-    expect(editLines(FIVE)[0]!.times).toBe(5)
   })
 
   it('says nothing about a count for a finding edited once', () => {

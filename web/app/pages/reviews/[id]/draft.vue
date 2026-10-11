@@ -102,6 +102,25 @@ watch(
 
 const dirty = computed(() => editing.value !== loadedBody.value)
 
+/**
+ * The aside's two derived lists, computed rather than called from the template.
+ *
+ * **The editor is in the same slot.** `v-model="editing"` on the textarea is tracked by the
+ * slot's render effect, so a call in the template re-ran both derivations on every keystroke
+ * — and, because each handed back a fresh array, re-rendered the whole held-back panel with
+ * them. Measured by review at 76µs a keystroke against 7µs from a stable identity: sub-
+ * millisecond either way and nothing a reader could feel, which is why this is three lines
+ * and not a component.
+ *
+ * They read the two resources rather than the slot's `data`, which is the same object: the
+ * slot cannot be closed over, and it does not need to be.
+ */
+const editRows = computed(() => editLines(detail.data.value?.edits ?? []))
+
+const heldRows = computed(() =>
+  heldBackRows(detail.data.value?.held_back ?? [], review.data.value?.findings ?? []),
+)
+
 function decided(data: DraftDetail): boolean {
   return data.draft.status !== 'ready'
 }
@@ -460,7 +479,7 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                       finding ended up and how many times it moved to get there.
                     -->
                     <p
-                      v-for="line in editLines(data.edits)"
+                      v-for="line in editRows"
                       :key="line.key"
                       class="edit"
                     >
@@ -471,10 +490,7 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                         margin would move the boxes apart and leave the text nodes touching —
                         which is what a screen reader reads and what a copy gives. The
                         Solution page learned this on a finding's round status.
-                      --><span
-                        v-if="line.detail"
-                        class="edit-detail"
-                      > · {{ line.detail }}</span><span
+                      --><span v-if="line.detail"> · {{ line.detail }}</span><span
                         v-if="line.changed"
                         class="rd-meta edit-times"
                       > · {{ line.changed }}</span>
@@ -496,7 +512,7 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                       already reading for the frame and the trail. Nothing about the record
                       or the contract changed to allow it.
                     -->
-                    <HeldBackRows :rows="heldBackRows(data.held_back, owner.findings)" />
+                    <HeldBackRows :rows="heldRows" />
                     <button
                       type="button"
                       class="rd-btn"
@@ -792,11 +808,6 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
 
 .edit-verb {
   font-weight: 500;
-}
-
-/* What the latest edit said beyond its verb. Inherits the line; it is part of the sentence. */
-.edit-detail {
-  font-weight: 400;
 }
 
 /*
