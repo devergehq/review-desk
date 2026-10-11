@@ -62,8 +62,19 @@ export default defineConfig({
 
   projects: [
     {
+      /*
+       * The acceptance path, and DEV-936's measurement of the header beside it. Both are
+       * assertions about the built binary in a browser, and `pnpm run e2e` runs this
+       * project — so a header that overflows at 390 fails the same run the acceptance path
+       * does rather than waiting for somebody to remember a second command.
+       *
+       * `header-links.spec.ts` starts a server of its own in `beforeAll` rather than using
+       * the two this config's global setup starts: the seeded database is asserted against
+       * by name and by count, and a fourth review added to it for one measurement would
+       * rewrite assertions with nothing to do with these links.
+       */
       name: 'desk',
-      testMatch: /review-desk\.spec\.ts/,
+      testMatch: /(review-desk|header-links)\.spec\.ts/,
     },
     {
       /*

@@ -640,6 +640,11 @@ export function seed(
     'Retry failed webhook deliveries',
     '--ticket',
     'ABC-231',
+    // The ticket's address beside its id, as `contract/examples/getReview.response.json`
+    // holds it — so the header on the seeded review draws the id as a link, which is the
+    // state DEV-936 is about and the one the screenshots then show.
+    '--ticket-url',
+    'https://linear.app/acme/issue/ABC-231',
     '--changed-lines',
     '214',
     '--not-checked',

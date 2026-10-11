@@ -162,7 +162,13 @@ test.describe('the whole path, on a seeded database', () => {
     await expect(page.getByText('nothing posts until you confirm')).toBeVisible()
     await expect(page.getByText('a draft is ready behind it')).toBeVisible()
     await expect(page.getByText('Read the brief')).toBeVisible()
-    await expect(page.getByText('ABC-231')).toBeVisible()
+    /*
+     * **The ticket is on the row's own line**, named rather than matched loosely: since
+     * DEV-936 the row also carries a *link* to the ticket, so a bare `getByText('ABC-231')`
+     * matches two elements and fails on strictness. Both are wanted and the link is asserted
+     * in its own test; what this line is about is the meta line saying which ticket it is.
+     */
+    await expect(page.getByText('acme/portal · round 1 · ABC-231')).toBeVisible()
 
     /*
      * **And the row opens the review, which starts at Understand** — Patrick on
