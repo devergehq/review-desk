@@ -2455,9 +2455,9 @@ test.describe('a harvested review, on the queue and in the list', () => {
      * step's name after it, "Layer 7 of 7, harvest", so the pattern matched nothing on
      * any page. Found by the review of the commit that was fixing the same mistake.
      *
-     * **And it names step 7 rather than any bar.** `\d+` passes today only because
-     * nothing else in this seed has a step running, so the first seed that adds one
-     * fails this line with a comment about the harvest.
+     * It names step 7 rather than any bar, which is what this test is about. Both lines
+     * rest on nothing else in this seed having a step running; a seed that adds one has
+     * to revisit them together.
      */
     await expect(page.getByText('With the agent')).toHaveCount(0)
     await expect(page.getByLabel(/^Layer 7 of 7, /)).toHaveCount(0)

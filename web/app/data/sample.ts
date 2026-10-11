@@ -380,21 +380,24 @@ function inbox(): Inbox {
    * harvest step no longer counts, and a session has gone back to its code review to work
    * the author's replies — which is the next thing that happens in this loop, and the
    * case the deduplication is for. Its step 7 carries what `record_harvest_step` would
-   * write for its outcomes, so the wording and the pairs here are ones the real path
-   * could have produced.
+   * write for its outcomes.
    *
-   * **The last of them, not the first.** `reviews_in_progress` reports `MAX(number)` —
-   * a session that left an earlier step running is further on than that step suggests —
-   * and this read the first match until the review of this change, which no fixture
-   * happened to expose. Review 12 is the shape that would have: a session back on an
-   * earlier step while a later one runs.
+   * **The highest-numbered of them, not the first.** `reviews_in_progress` reports
+   * `MAX(number)` — a session that left an earlier step running is further on than that
+   * step suggests — and this read the first match until the review of this change. No
+   * fixture has two non-harvest steps running, so nothing here tells the two apart; the
+   * server's rule is written out anyway rather than left to the order a list arrives in,
+   * which nothing fixes.
    */
   const in_progress = source.reviews
     .map(detail => ({
       detail,
       running: detail.layers
         .filter(item => item.state === 'running' && item.name !== 'harvest')
-        .at(-1),
+        .reduce<typeof detail.layers[number] | undefined>(
+          (furthest, item) => (furthest == null || item.number > furthest.number ? item : furthest),
+          undefined,
+        ),
     }))
     .filter(pair => pair.running != null)
     .map(({ detail, running }) => ({

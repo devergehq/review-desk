@@ -514,9 +514,7 @@ fn a_closed_pull_request_finishes_step_seven_too() {
     // **And it still records a fact, which is what keeps its card.** A settled step 7
     // has no read time — that is written only while one is `running` — so this pair is
     // the whole of what the trail opens a card for here, and the card is the only way to
-    // whatever the record holds about how long the step took. Three other tests assert
-    // the pair, and all three are of a *running* step, where the read time keeps the
-    // card whatever the facts say; this is the only settled one.
+    // whatever the record holds about how long the step took.
     assert_eq!(
         written
             .facts
