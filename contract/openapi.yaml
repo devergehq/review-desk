@@ -2737,10 +2737,18 @@ components:
             severity and the finding's number in bold, an em dash, the title, and where the
             finding stands as a code span — `Open` or `Still open`.
 
+            **It ends with an HTML comment naming the finding** — `<!-- review-desk:F3 -->`
+            — and that line is load-bearing. GitHub's review call answers with the review
+            and not with the comments it made, so a session has to read them back and match
+            each one to its finding before it can record which comment a finding was posted
+            as; and the obvious key, the path and the line, is not unique, because a Should
+            and a Nit on the same line is ordinary. An HTML comment is invisible on GitHub
+            and comes back verbatim in the comment's `body`.
+
             The `in diff` / `pre-existing` tag stays where the session wrote it, on the
             block's first line, because it is prose no part of this record carries. A session
-            that signs its comments appends its own `agent:` marker; Review Desk composes
-            none.
+            that signs its comments appends its own `agent:` marker after the line above;
+            Review Desk composes none.
 
     DraftEdit:
       type: object

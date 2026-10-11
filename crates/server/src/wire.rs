@@ -779,7 +779,7 @@ fn heading_of(section: &DraftSection) -> Value {
 pub fn draft_thread(thread: &DraftThread) -> Value {
     json!({
         "finding_seq": thread.finding_seq,
-        "finding_key": finding_key(thread.finding_seq),
+        "finding_key": thread.finding_key,
         "severity": thread.severity.as_str(),
         "title": thread.title,
         "path": thread.path,

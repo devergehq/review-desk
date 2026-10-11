@@ -202,7 +202,8 @@ fn rewriting_a_finding_posts_the_developers_words_and_keeps_the_agents() {
     assert_eq!(
         threads[0].body,
         "> [!CAUTION]\n> **Blocker · F1** — A retry carries no idempotency key · `Open`\n>\n\
-         > The customer receives the event twice."
+         > The customer receives the event twice.\n\n<!-- review-desk:F1 -->",
+        "and the comment ends with the line the session matches it back by"
     );
 }
 

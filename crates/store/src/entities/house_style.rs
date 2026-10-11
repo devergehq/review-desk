@@ -40,6 +40,7 @@ use std::collections::BTreeMap;
 
 use rusqlite::{params, Connection};
 
+use crate::entities::composition;
 use crate::error::{Result, StoreError};
 use crate::model::{
     DraftHandover, DraftSection, DraftSectionKind, DraftStatus, DraftThread, FindingAnchor,
@@ -121,6 +122,30 @@ impl Store {
                          the dashboard, and nothing else can: a body and its threads are \
                          posted under their name",
             });
+        }
+
+        // **An approved body the blocks no longer compose to is refused, loudly.** A draft
+        // approved before DEV-929 was composed in the old shape — every finding a section,
+        // no index — and the threads are composed from the record *now*. Handing the two
+        // over together would post each anchored finding twice, as a section and as a
+        // comment, on somebody's pull request under the developer's name.
+        //
+        // Checked on an approved draft and not on a posted one. After posting, the record
+        // is allowed to move on — the harvest reads outcomes back and a finding's round
+        // status changes with them — and the body that was posted is the stored one, which
+        // is what a session retrying step 2's "is it already up" check has to match on.
+        if draft.status == DraftStatus::Approved {
+            let composed = composition::compose(&self.conn, review_id)?;
+            if composed.trim_end_matches('\n') != draft.body.trim_end_matches('\n') {
+                return Err(StoreError::DraftStatus {
+                    review_id,
+                    found: draft.status,
+                    wanted: "a draft whose body is what its blocks compose to. This one was \
+                             approved in an older shape, so posting it with the threads \
+                             would carry each anchored finding twice. Send it back and have \
+                             the session write it again",
+                });
+            }
         }
 
         let review = self.get_review(review_id)?;
@@ -534,10 +559,18 @@ pub(crate) fn threads(
             let posting = postings.get(&seq)?;
             let anchor = posting.anchor.clone()?;
 
+            let key = format!("F{seq}");
             Some(DraftThread {
                 finding_seq: seq,
                 severity,
-                body: thread_body(severity, seq, &title, standing(posting.status), &block.text),
+                body: thread_body(
+                    severity,
+                    &key,
+                    &title,
+                    standing(posting.status),
+                    &block.text,
+                ),
+                finding_key: key,
                 title,
                 path: anchor.path,
                 line: anchor.line,
@@ -563,16 +596,20 @@ pub(crate) fn threads(
 /// part of this record carries, so nothing here lifts it into the title line. The title
 /// line is composed: the severity, the finding's number, the title, and where the finding
 /// stands as a code span, which is what `review_lint.py`'s `threads.disposition_top` reads.
-fn thread_body(severity: Severity, seq: i64, title: &str, standing: &str, text: &str) -> String {
-    let title_line = format!("**{} · F{seq}** — {title} · `{standing}`", severity.label());
+fn thread_body(severity: Severity, key: &str, title: &str, standing: &str, text: &str) -> String {
+    let title_line = format!("**{} · {key}** — {title} · `{standing}`", severity.label());
+    // **Outside the rail, on its own line.** The house style puts the `agent:` marker
+    // outside the alert because it is provenance rather than finding, and this is the same
+    // kind of thing: it is how the comment is matched back, not part of what is claimed.
+    let marker = thread_marker(key);
 
     let Some(alert) = alert(severity) else {
         // The nit's shape: the glyph does the work the rail does above, and the text follows
         // on the next line, as `house-style.md`'s own example has it.
         return if text.is_empty() {
-            format!("{} {title_line}", severity.glyph())
+            format!("{} {title_line}\n\n{marker}", severity.glyph())
         } else {
-            format!("{} {title_line}\n{text}", severity.glyph())
+            format!("{} {title_line}\n{text}\n\n{marker}", severity.glyph())
         };
     };
 
@@ -587,8 +624,22 @@ fn thread_body(severity: Severity, seq: i64, title: &str, standing: &str, text: 
             }
         }));
     }
+    lines.push(String::new());
+    lines.push(marker);
 
     lines.join("\n")
+}
+
+/// The line a composed comment ends with, so a session can match it back to its finding.
+///
+/// **The path and the line are not a key.** A Should and a Nit on one line is ordinary, and
+/// GitHub's `pulls/<n>/reviews` answers with the review rather than with the comments it
+/// made — so a session reading the comments back and pairing them on `(path, line)` would
+/// link the wrong comment to the wrong finding, silently. Measured by the DEV-929 worker
+/// half. An HTML comment is invisible on GitHub and comes back verbatim in the comment's
+/// `body`, which is what makes it a join rather than a hope.
+pub fn thread_marker(key: &str) -> String {
+    format!("<!-- review-desk:{key} -->")
 }
 
 /// Which alert a severity picks, and `None` for the one that takes no rail.

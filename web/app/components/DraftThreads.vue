@@ -82,6 +82,18 @@ const heading = computed(() => count(props.threads.length, 'thread'))
         <div class="comment">
           <MarkdownView :source="thread.body" />
         </div>
+        <!--
+          **The line GitHub does not show, shown.** Every comment ends with it, and it is
+          what the session matches the comment GitHub gives back to this finding — the path
+          and the line are not a key, because a Should and a Nit on one line is ordinary. It
+          renders as nothing in the preview above, exactly as it will on GitHub, so it is
+          said here instead: what the developer signs off is what posts, invisible parts
+          included.
+        -->
+        <p class="rd-meta marker">
+          Ends with <code>{{ threadMarker(thread.finding_key) }}</code>, which GitHub does
+          not draw: it is how the session matches the comment it gets back to this finding.
+        </p>
       </li>
     </ol>
 
@@ -155,5 +167,19 @@ const heading = computed(() => count(props.threads.length, 'thread'))
 .comment {
   padding-left: 16px;
   border-left: 2px solid var(--rd-rail);
+}
+
+/*
+ * Quiet, and outside the rail: it is not part of the finding, which is the same reason the
+ * house style puts the `agent:` marker outside the alert.
+ */
+.marker {
+  margin: 6px 0 0;
+  max-width: var(--rd-measure);
+}
+
+.marker code {
+  font-family: var(--rd-font-mono);
+  overflow-wrap: anywhere;
 }
 </style>

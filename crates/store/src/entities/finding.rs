@@ -8,7 +8,7 @@ use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior}
 
 use crate::entities::{composition, finding_evidence};
 use crate::error::{Result, StoreError};
-use crate::model::{Disposition, Finding, NewFinding};
+use crate::model::{Disposition, DraftStatus, Finding, NewFinding};
 use crate::{is_foreign_key_violation, Store};
 
 pub(super) const COLUMNS: &str = "review_id, seq, lens, severity, file, line, claim, title, \
@@ -248,7 +248,10 @@ impl Store {
 
         let draft = self.find_draft(review_id)?;
         if let Some(draft) = &draft {
-            if changes_what_posts && !draft.status.is_writable() {
+            // **Approved, and not posted.** What the refusal protects is a body the session
+            // is about to post: once it is on GitHub the body is history, the record is
+            // allowed to move on, and the harvest does exactly that.
+            if changes_what_posts && draft.status == DraftStatus::Approved {
                 return Err(StoreError::DraftStatus {
                     review_id,
                     found: draft.status,

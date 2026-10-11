@@ -31,7 +31,8 @@ function thread(seq: number, over: Partial<DraftThread> = {}): DraftThread {
     line: 40 + seq,
     side: 'RIGHT',
     body: `> [!WARNING]\n> **Should · F${seq}** — what F${seq} says is wrong · \`Open\`\n>\n`
-      + '> **in diff** · `Open — needs a decision`\n>\n> **What** · the mechanism.',
+      + '> **in diff** · `Open — needs a decision`\n>\n> **What** · the mechanism.'
+      + `\n\n<!-- review-desk:F${seq} -->`,
     ...over,
   } as DraftThread
 }
@@ -83,6 +84,18 @@ describe('the threads the draft hands over', () => {
      */
     expect(panel.find('.comment figure, .comment .mermaid, .comment svg').exists()).toBe(false)
     expect(panel.text()).toContain('flowchart LR')
+  })
+
+  it('shows the line GitHub does not draw, because it is posted all the same', async () => {
+    const panel = await mountSuspended(DraftThreads, { props: { threads: [thread(9)] } })
+
+    /*
+     * The marker renders as nothing inside the comment — it is an HTML comment, which is
+     * the point of it — so the card says it in words instead. What the developer signs off
+     * is what posts, invisible parts included.
+     */
+    expect(panel.find('.marker').text()).toContain('<!-- review-desk:F9 -->')
+    expect(panel.find('.marker').text()).toContain('matches the comment it gets back')
   })
 
   it('says what it means for a review with nothing to anchor', async () => {

@@ -5,6 +5,7 @@ import {
   composeBody,
   composeThreads,
   INDEX_HEADING,
+  threadMarker,
 } from '../app/utils/houseStyle'
 
 import type { DraftSection, Finding, FindingHunk, Severity } from '../app/types/desk'
@@ -296,8 +297,43 @@ describe('the threads handed over', () => {
 
   it('gives a nit the lighter shape, with a glyph and no rail', () => {
     expect(threads[2]!.body).toBe(
-      '⚪ **Nit · F2** — The comment is stale · `Open`\nDelete it with the branch.',
+      '⚪ **Nit · F2** — The comment is stale · `Open`\nDelete it with the branch.'
+      + '\n\n<!-- review-desk:F2 -->',
     )
+  })
+
+  it('ends every comment with the line the session matches it back by', () => {
+    for (const thread of threads) {
+      expect(thread.body.endsWith(`\n\n${threadMarker(thread.finding_key)}`)).toBe(true)
+    }
+  })
+
+  it('tells two findings on one line apart by the marker, not by the line', () => {
+    /*
+     * A Should and a Nit on the same line is ordinary, and GitHub answers a review call
+     * with the review rather than with the comments it made — so `(path, line)` is not a
+     * key a session can join on. Measured by the DEV-929 worker half.
+     */
+    const place = { file: 'app/Policy.php', line: 52, flagged_line: 52 }
+    const pair = [
+      finding(1, 'should', { ...place, hunk: diffHunk('app/Policy.php', 50) }),
+      finding(2, 'nit', { ...place, hunk: diffHunk('app/Policy.php', 50) }),
+    ]
+    const both = composeThreads(
+      [
+        block(1, 'should', 'The should on line 52', '**in diff** · `Open`'),
+        block(2, 'nit', 'The nit on line 52', 'A name, nothing more.'),
+      ],
+      pair,
+    )
+
+    expect(both.map(one => [one.path, one.line])).toEqual([
+      ['app/Policy.php', 52],
+      ['app/Policy.php', 52],
+    ])
+    expect(both.map(one => one.finding_key)).toEqual(['F1', 'F2'])
+    expect(both[0]!.body.endsWith('<!-- review-desk:F1 -->')).toBe(true)
+    expect(both[1]!.body.endsWith('<!-- review-desk:F2 -->')).toBe(true)
   })
 
   it('carries the block’s own text through, blockquoted and otherwise untouched', () => {

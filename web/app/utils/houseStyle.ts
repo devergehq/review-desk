@@ -57,6 +57,19 @@ const INDEX_HEAD = '| | Where | Finding | Status |\n| -- | -- | -- | -- |'
 const CELL_PROSE = 140
 const CELL_TOKEN = 40
 
+/**
+ * The line a composed comment ends with, so a session can match it back to its finding.
+ *
+ * **The path and the line are not a key.** A Should and a Nit on one line is ordinary, and
+ * GitHub answers a review call with the review rather than with the comments it made — so a
+ * session reading them back and pairing on `(path, line)` would link the wrong comment to
+ * the wrong finding, silently. An HTML comment is invisible on GitHub and comes back
+ * verbatim in the comment's body.
+ */
+export function threadMarker(key: string): string {
+  return `<!-- review-desk:${key} -->`
+}
+
 /** One finding's heading, as the posted body carries it. */
 export function findingHeading(severity: Severity, seq: number, title: string): string {
   return `### ${SEVERITY_LABELS[severity]} · F${seq} · ${title}`
@@ -280,7 +293,7 @@ export function composeThreads(
         side: 'RIGHT' as const,
         body: threadBody(
           section.severity,
-          section.finding_seq,
+          `F${section.finding_seq}`,
           section.title,
           standing(finding),
           section.text,
@@ -295,19 +308,21 @@ export function composeThreads(
 /** One thread, as the house style shapes it. */
 function threadBody(
   severity: Severity,
-  seq: number,
+  key: string,
   title: string,
   standingNow: string,
   text: string,
 ): string {
-  const titleLine = `**${SEVERITY_LABELS[severity]} · F${seq}** — ${title} · \`${standingNow}\``
+  const titleLine = `**${SEVERITY_LABELS[severity]} · ${key}** — ${title} · \`${standingNow}\``
   const alert = SEVERITY_ALERTS[severity]
+  /* Outside the rail, as the house style puts the `agent:` marker: it is not the finding. */
+  const marker = threadMarker(key)
 
   if (alert == null) {
     /* The nit's lighter shape: the glyph does the work the rail does, and no labels. */
     return text.length === 0
-      ? `${SEVERITY_GLYPHS[severity]} ${titleLine}`
-      : `${SEVERITY_GLYPHS[severity]} ${titleLine}\n${text}`
+      ? `${SEVERITY_GLYPHS[severity]} ${titleLine}\n\n${marker}`
+      : `${SEVERITY_GLYPHS[severity]} ${titleLine}\n${text}\n\n${marker}`
   }
 
   const lines = [`> [!${alert}]`, `> ${titleLine}`]
@@ -315,5 +330,6 @@ function threadBody(
     lines.push('>')
     lines.push(...text.split('\n').map(line => (line.length === 0 ? '>' : `> ${line}`)))
   }
+  lines.push('', marker)
   return lines.join('\n')
 }

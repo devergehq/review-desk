@@ -1883,6 +1883,12 @@ pub struct DraftThread {
     /// The finding this thread is, by its number — the id the index row and the record
     /// share, and what `review-desk finding link` needs once GitHub has answered.
     pub finding_seq: i64,
+    /// The same number as the key a person quotes: `F3`.
+    ///
+    /// **Served rather than built by the caller**, because it is also the string the
+    /// comment's own marker carries, and two places that format it are two places it can
+    /// drift. See [`DraftThread::body`].
+    pub finding_key: String,
     /// The finding's live severity, which picked the alert.
     pub severity: Severity,
     /// The heading's title, as the index row carries it too.
@@ -1898,6 +1904,18 @@ pub struct DraftThread {
     /// Which side of the diff, and it is always `RIGHT` — see [`FindingAnchor::SIDE`].
     pub side: String,
     /// The comment as it will post, GitHub-flavoured markdown.
+    ///
+    /// **It ends with `<!-- review-desk:F3 -->`, and that line is load-bearing.** GitHub's
+    /// `pulls/<n>/reviews` call answers with the review and not with the comments it made,
+    /// so a session has to read them back and match each one to its finding before
+    /// `review-desk finding link` can be called — and the obvious key, the path and the
+    /// line, is not unique: a Should and a Nit on the same line is ordinary, and pairing on
+    /// it attaches the wrong comment to the wrong finding with nothing to show for it.
+    /// Measured by the DEV-929 worker half. An HTML comment is invisible on GitHub and
+    /// comes back verbatim in the comment's `body`, so the join is carried by the thing
+    /// being joined.
+    ///
+    /// A session that signs its comments appends its `agent:` marker **after** this line.
     pub body: String,
 }
 

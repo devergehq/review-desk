@@ -41,6 +41,7 @@ pub use crate::entities::brief_structure::{
 };
 pub use crate::entities::composition::finding_heading;
 pub use crate::entities::decision::{TicketedAndApproved, DEVELOPER_DECISIONS};
+pub use crate::entities::house_style::thread_marker;
 pub use crate::entities::provenance::{
     AcceptanceCriterion, CriterionStatus, DescriptionLintResult, DescriptionLintStatus, FileChange,
     FileCheck, NewAcceptanceCriterion, NewDescriptionLintResult, NewFileChange, NewReviewSource,

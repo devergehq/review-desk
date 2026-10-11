@@ -425,9 +425,12 @@ review-desk draft handover --review "$REVIEW" --json \
 `side` is always `RIGHT` and `line` is always the new file's numbering: a removed line
 carries no number in this record, so a flagged line is always a line still in the file.
 Where a finding is about a line the change deleted, the line to flag is the one that
-replaced it, and the comment says the code at fault is gone. `threads[].finding_seq` is
-what `review-desk finding link` needs once GitHub has answered — match each comment to its
-finding by `path` and `line`.
+replaced it, and the comment says the code at fault is gone. **Match each comment GitHub gives back by the marker, not by the line.** Every composed
+comment ends with `<!-- review-desk:F9 -->`, which GitHub does not draw and does return in
+the comment's `body`. The path and the line are not a key — a Should and a Nit on one line
+is ordinary — so pairing on them attaches the wrong comment to the wrong finding with
+nothing to show for it. `threads[].finding_key` is the same string, for the
+`review-desk finding link` that follows.
 
 `draft posted` records that the session has posted it, and which GitHub review it
 became. **Refused unless the draft is approved.** This is the only transition that
