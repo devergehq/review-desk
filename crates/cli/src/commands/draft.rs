@@ -118,8 +118,13 @@ pub enum DraftCommand {
     /// (.draft.event | ascii_upcase), body: .body, comments: [.threads[] | {path, line,
     /// side, body}]}'` into `gh api repos/OWNER/REPO/pulls/<n>/reviews --input -`.
     ///
-    /// `threads[].finding_seq` is what `review-desk finding link` needs afterwards: match
-    /// each comment GitHub answers with to its finding by `path` and `line`.
+    /// **Match each comment GitHub gives back by the marker, not by the line.** Every
+    /// composed comment ends with an HTML comment naming the finding — `review-desk:F9` —
+    /// which GitHub does not draw and does return verbatim in the comment's body. The path
+    /// and the line are not a key: a Should and a Nit on one line is ordinary, and pairing
+    /// on them links the wrong comment to the wrong finding with nothing to show for it.
+    /// `threads[].finding_key` is the same string, for the `review-desk finding link` that
+    /// follows.
     Handover {
         /// The review's id.
         #[arg(long, value_name = "ID")]
