@@ -3514,8 +3514,23 @@ components:
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }
-        layer_number: { type: integer, minimum: 1, maximum: 7 }
-        layer_name: { $ref: '#/components/schemas/ReviewLayerName' }
+        layer_number:
+          type: integer
+          minimum: 1
+          maximum: 6
+          description: |
+            **Six, not seven: step 7 is never "with the agent".** A harvest sets it
+            `running` for as long as the pull request stays open (DEV-933), which is a
+            quarter-hourly read of GitHub rather than anybody working — so a posted review
+            would otherwise sit in this group for weeks, and one whose author had replied
+            would appear in two groups of the same Inbox.
+        layer_name:
+          allOf:
+            - $ref: '#/components/schemas/ReviewLayerName'
+            - not: { const: harvest }
+          description: >-
+            The step the session is at. Any of the seven but `harvest`, for the reason
+            `layer_number` gives.
         layers_total:
           type: integer
           const: 7

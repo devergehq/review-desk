@@ -546,6 +546,78 @@ fn the_reviews_list_validates() {
 const REVIEWS_SCHEMA: &str = "#/paths/~1reviews/get/responses/200/content/application~1json/schema";
 
 #[test]
+fn the_contract_says_step_seven_is_never_with_the_agent() {
+    // **DEV-933 made this a rule the contract has to hold.** A harvest sets step 7
+    // `running` while the pull request is open, which is a quarter-hourly read of GitHub
+    // and not a session working — so "in progress" leaves it out, and a contract that
+    // still allowed 7 here would let the server regress with nothing to catch it.
+    let at_the_harvest = json!({
+        "review_id": 1,
+        "pull_request": { "repo": "acme/portal", "pr": 412 },
+        "layer_number": 7,
+        "layer_name": "harvest",
+        "layers_total": 7,
+    });
+    assert_invalid(
+        "InboxInProgressItem",
+        &at_the_harvest,
+        "step 7 is the harvest, and a harvest is not a session at work",
+    );
+
+    // Every other step still passes, which is what makes the refusal above mean
+    // something rather than being a schema nobody can satisfy.
+    assert_valid(
+        "InboxInProgressItem",
+        &json!({
+            "review_id": 1,
+            "pull_request": { "repo": "acme/portal", "pr": 412 },
+            "layer_number": 5,
+            "layer_name": "code_review",
+            "layers_total": 7,
+        }),
+    );
+}
+
+#[test]
+fn a_harvested_review_is_not_served_as_in_progress() {
+    // The same rule from the other end: the live response, with a review whose only
+    // running step is the harvest. Without the exclusion in `reviews_in_progress` this
+    // body fails the schema above — which is the point of writing both.
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+
+    let store = &harness.store;
+    store
+        .set_review_links(
+            seeded.review_id,
+            review_desk_store::ReviewLinks {
+                github_review_id: Some("PRR_kwDOA1".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("the session reports the review posted");
+    store
+        .record_harvest_step(seeded.review_id)
+        .expect("a harvest reads it")
+        .expect("a posted review has a harvest step");
+
+    let answer = harness.api("GET", "/inbox", None);
+    assert_eq!(answer.status, 200, "{}", answer.text());
+    assert_valid("Inbox", &answer.json());
+
+    let numbers: Vec<i64> = answer.json()["in_progress"]
+        .as_array()
+        .expect("a list")
+        .iter()
+        .map(|item| item["layer_number"].as_i64().expect("a layer number"))
+        .collect();
+    assert!(
+        !numbers.contains(&7),
+        "a harvest reading GitHub is not a session at work: {numbers:?}"
+    );
+}
+
+#[test]
 fn an_empty_inbox_still_validates() {
     // Nothing seeded. Every group is an empty array and every figure is a real zero or a
     // null — the shape a first run serves, which is the one nobody tests and everybody
