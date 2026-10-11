@@ -95,7 +95,9 @@ describe('the threads the draft hands over', () => {
      * is what posts, invisible parts included.
      */
     expect(panel.find('.marker').text()).toContain('<!-- review-desk:F9 -->')
-    expect(panel.find('.marker').text()).toContain('matches the comment it gets back')
+    /* The reason is said once, in the card's own sentence, and not under every comment. */
+    expect(panel.find('.help').text()).toContain('GitHub does not draw')
+    expect(panel.find('.marker').text()).not.toContain('GitHub')
   })
 
   it('says what it means for a review with nothing to anchor', async () => {

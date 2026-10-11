@@ -28,7 +28,9 @@ import type { DraftThread } from '~/types/desk'
  *    second opinion about how bad a finding is.
  * 2. **Nothing is printed twice.** The caption is the finding's number, its severity and
  *    the place; the title, the tag and the disposition chip are in the comment below it,
- *    because that is where they post.
+ *    because that is where they post. The same rule is why the marker's *reason* is in the
+ *    card's one sentence and only the marker itself sits under each comment: the first
+ *    version of this card printed two lines of explanation under all nine of them.
  * 3. **The comment is drawn through `MarkdownView`**, the same renderer the body preview
  *    uses, so a fold stays folded and a backticked path is code. The alert's `[!CAUTION]`
  *    marker shows as text in a quote, which is honest: it is what is in the characters
@@ -60,7 +62,9 @@ const heading = computed(() => count(props.threads.length, 'thread'))
       class="rd-meta help"
     >
       Each of these is a row of the index, and posts as a comment on the line it names.
-      Nothing here is in the body.
+      Nothing here is in the body. Each ends with a line GitHub does not draw — it is how
+      the session matches the comment it gets back to the finding, which the line alone
+      cannot do when two findings sit on one.
     </p>
 
     <ol
@@ -83,16 +87,15 @@ const heading = computed(() => count(props.threads.length, 'thread'))
           <MarkdownView :source="thread.body" />
         </div>
         <!--
-          **The line GitHub does not show, shown.** Every comment ends with it, and it is
-          what the session matches the comment GitHub gives back to this finding — the path
-          and the line are not a key, because a Should and a Nit on one line is ordinary. It
-          renders as nothing in the preview above, exactly as it will on GitHub, so it is
-          said here instead: what the developer signs off is what posts, invisible parts
-          included.
+          **The line GitHub does not show, shown — and the reason said once.** It renders as
+          nothing in the preview above, exactly as it will on GitHub, so what the developer
+          signs off would otherwise be missing a line of itself. What it is *for* is in the
+          card's own sentence at the top: nine threads is nine of these, and the same two
+          lines of prose under each of them is the repetition `HeldBackRows` exists to undo.
         -->
         <p class="rd-meta marker">
-          Ends with <code>{{ threadMarker(thread.finding_key) }}</code>, which GitHub does
-          not draw: it is how the session matches the comment it gets back to this finding.
+          <span class="rd-visually-hidden">Ends with the marker</span>
+          <code>{{ threadMarker(thread.finding_key) }}</code>
         </p>
       </li>
     </ol>

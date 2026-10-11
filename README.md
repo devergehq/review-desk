@@ -442,10 +442,13 @@ review-desk draft posted --review "$REVIEW" --github-review gh-review-3312
 
 A draft goes `drafting → ready → approved → posted`, with `ready ⇄ sent_back`. The
 command line can reach `drafting`, `ready` and `posted`. It cannot reach `approved` or
-`sent_back`: those are the developer's, in the dashboard. **And moving a finding between
-the draft, the held-back list and the suppressed one is refused once the draft is
-approved**, for the same reason a decision is: an approved draft is what the session
-posts, and it does not move underneath it.
+`sent_back`: those are the developer's, in the dashboard. **And a change that would alter what the
+review posts is refused once the draft is approved** — moving a finding between the draft,
+the held-back list and the suppressed one, or giving it a round status that stops it being
+posted — for the same reason a decision is: an approved draft is what the session posts,
+and it does not move underneath it. A change that cannot alter what posts is not refused,
+and neither is any of them once the draft is `posted`: by then the body is history, and
+recording what the author did with it is the harvest's whole job.
 
 ### Asking what is waiting
 
