@@ -1585,6 +1585,23 @@ fn the_contracts_real_length_brief_is_at_real_length() {
     // this was measured against actually ran to. Both are briefs written before these
     // caps, so writing them in here would mean the linter and the example could not both
     // be right.
+    // **The slots the linter's plain rule actually governs**, which this guard did not
+    // reach: its `top_layer` is the headline and every problem's `was_wrong` and
+    // `now_fixed`. A class name written into the headline passed CI while the same word in
+    // a part's summary failed, which is the guard covering the one slot `brief_lint.py`
+    // has never heard of and skipping the three it reads. Found reviewing this file.
+    reads_as_plain_english(
+        brief["headline"].as_str().expect("a headline"),
+        "the headline",
+    );
+    for problem in rows("problems") {
+        let number = problem["number"].as_i64().expect("a number");
+        for slot in ["was_wrong", "now_fixed"] {
+            let line = problem[slot].as_str().expect("a line");
+            reads_as_plain_english(line, &format!("problem {number}'s {slot}"));
+        }
+    }
+
     for part in &parts {
         let where_ = part["title"].as_str().expect("a title");
 
@@ -1698,25 +1715,38 @@ fn reads_as_plain_english(line: &str, at: &str) {
             "{at} calls something -- {word:?}: {line}"
         );
 
+        // **A path needs a letter in it.** The linter filters its own path matches on
+        // `[A-Za-z]`, and without that "11/10/2026" is a path -- a date written the way
+        // the comments in this file write them.
         assert!(
-            word.matches('/').count() < 2,
+            word.matches('/').count() < 2 || !word.chars().any(|c| c.is_ascii_alphabetic()),
             "{at} carries a path -- {word:?}: {line}"
         );
-        if let Some((_, extension)) = bare.rsplit_once('.') {
+
+        // **Any dot segment, not only the last.** `schema.sql.gz` is a file the linter
+        // catches and `rsplit_once` did not, which is a false negative in the guard whose
+        // whole job is catching this early.
+        for segment in bare.split('.').skip(1) {
             assert!(
-                !EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str()),
+                !EXTENSIONS.contains(&segment.to_ascii_lowercase().as_str()),
                 "{at} names a file -- {word:?}: {line}"
             );
         }
 
-        let humped = bare
-            .chars()
-            .zip(bare.chars().skip(1))
-            .any(|(one, two)| one.is_ascii_lowercase() && two.is_ascii_uppercase());
-        assert!(
-            !humped || HUMPED_ENGLISH.contains(&bare.to_ascii_lowercase().as_str()),
-            "{at} names a class -- {word:?}: {line}"
-        );
+        // **Each maximal run of letters, not the trimmed word.** The linter's own pattern
+        // matches a letter run, so `GitHub's`, `TypeScript-only` and `GitHub/GitLab` are
+        // humped English to it and were class names here -- the guard being stricter than
+        // its authority on the very word the allowance exists for.
+        for run in bare.split(|c: char| !c.is_ascii_alphabetic()) {
+            let humped = run
+                .chars()
+                .zip(run.chars().skip(1))
+                .any(|(one, two)| one.is_ascii_lowercase() && two.is_ascii_uppercase());
+            assert!(
+                !humped || HUMPED_ENGLISH.contains(&run.to_ascii_lowercase().as_str()),
+                "{at} names a class -- {run:?}: {line}"
+            );
+        }
     }
 }
 
