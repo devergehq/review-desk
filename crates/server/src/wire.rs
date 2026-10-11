@@ -93,6 +93,7 @@ pub fn review(review: &Review) -> Value {
         "round": review.round,
         "title": review.title,
         "ticket_id": review.ticket_id,
+        "ticket_url": review.ticket_url,
         "changed_lines": review.changed_lines,
         "session_id": review.session_id,
         "ledger_id": review.ledger_id,

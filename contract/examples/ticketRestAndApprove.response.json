@@ -19,6 +19,7 @@
       "round": 1,
       "title": "Retry failed webhook deliveries",
       "ticket_id": "ABC-231",
+      "ticket_url": "https://linear.app/acme/issue/ABC-231",
       "changed_lines": 214,
       "session_id": "ses_c81f40ad",
       "ledger_id": "ledger-2026-10-08-412",

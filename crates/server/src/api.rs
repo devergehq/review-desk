@@ -185,6 +185,11 @@ impl Api {
                     "review_id": review.id,
                     "pull_request": wire::inbox_pr(review),
                     "ticket_id": review.ticket_id,
+                    // The address beside the id, so the queue's row can link the ticket
+                    // without the review being opened first. Served on this item and not
+                    // on the others because this is the only one carrying the id, and the
+                    // queue draws one row per review and reads the ticket from here.
+                    "ticket_url": review.ticket_url,
                     "brief_ready_at": wire::rfc3339_or_null(ready_at),
                     // True when the session is holding at layer 2 for this confirmation,
                     // which is what justifies "nothing else runs until you confirm" on

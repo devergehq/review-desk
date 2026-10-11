@@ -211,7 +211,7 @@ fn seed(store: &Store) -> Seeded {
             &ReviewFacts {
                 title: Some("Retry failed webhook deliveries".to_string()),
                 ticket_id: Some("ABC-231".to_string()),
-                ticket_url: None,
+                ticket_url: Some("https://linear.app/acme/issue/ABC-231".to_string()),
                 changed_lines: Some(214),
                 not_checked: Some(
                     "The queue worker's behaviour under a deploy restart was not run.".to_string(),
@@ -779,6 +779,10 @@ fn seed(store: &Store) -> Seeded {
             round: 1,
             title: Some("Remove the legacy importer".to_string()),
             ticket_id: Some("ABC-244".to_string()),
+            // The address too, because the Inbox's brief item serves it and the example
+            // this is checked against has one. A null here and a value there is the
+            // disagreement this file exists to catch.
+            ticket_url: Some("https://linear.app/acme/issue/ABC-244".to_string()),
             ..Default::default()
         })
         .expect("a review waiting on a confirmation");
@@ -1088,6 +1092,7 @@ fn review_document(review: &Review) -> Value {
         "round": review.round,
         "title": review.title,
         "ticket_id": review.ticket_id,
+        "ticket_url": review.ticket_url,
         "changed_lines": review.changed_lines,
         "session_id": review.session_id,
         "ledger_id": review.ledger_id,
@@ -1851,6 +1856,7 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
                 "review_id": review.id,
                 "pull_request": pull_request(review),
                 "ticket_id": review.ticket_id,
+                "ticket_url": review.ticket_url,
                 "brief_ready_at": brief.updated_at,
                 "blocks_later_layers": layer
                     == Some(review_desk_store::ReviewLayerState::WaitingOnYou),
@@ -2350,6 +2356,7 @@ fn every_response_example_can_be_produced_from_the_store() {
             round: 1,
             title: Some("Record the delivery attempt count".to_string()),
             ticket_id: Some("ABC-247".to_string()),
+            ticket_url: Some("https://linear.app/acme/issue/ABC-247".to_string()),
             changed_lines: Some(64),
             ..Default::default()
         })

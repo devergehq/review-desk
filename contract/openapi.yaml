@@ -922,6 +922,28 @@ components:
         entry, a GitHub review, a Linear ticket. Opaque: Review Desk stores and returns
         it and never parses it.
 
+    TicketUrl:
+      type: [string, 'null']
+      pattern: '^https://'
+      examples: ['https://linear.app/acme/issue/ABC-231']
+      description: |
+        Where a ticket is — the address the calling session was given, beside the opaque
+        `ticket_id` it goes with.
+
+        **Given, never derived, and never fetched.** A `ForeignId` is opaque by rule, and
+        turning `ABC-231` into an address needs the tracker and the workspace, which the
+        session knows from its dispatch and Review Desk does not. So this is an address
+        somebody passed or it is null; Review Desk reads nothing from it and asks the
+        tracker nothing.
+
+        **`https` only, and refused on the way in.** The one thing a stored address is for
+        is being drawn as a link, so a `javascript:` or `data:` value in an `href` is the
+        whole of the risk. A request carrying anything else is refused with
+        `invalid_value`, naming `ticket_url`. `http` is refused with the rest: nothing here
+        reads the address, so there is no case where the insecure form is the only one
+        available. A client draws the ticket's **id** as the link's text and never the
+        address.
+
     Severity:
       type: string
       enum: [blocker, should, nit, question]
@@ -1090,7 +1112,8 @@ components:
     Review:
       type: object
       additionalProperties: false
-      required: [id, repo, pr, head_sha, round, created_at, pr_state, harvested_at]
+      required:
+        [id, repo, pr, head_sha, round, created_at, pr_state, harvested_at, ticket_url]
       description: One review of one pull request at one head commit.
       properties:
         id: { type: integer, format: int64, minimum: 1 }
@@ -1115,6 +1138,24 @@ components:
             The pull request's title, as the caller supplied it — or, for a caller that
             supplied none, as `POST /reviews` resolved it from the pull request.
         ticket_id: { $ref: '#/components/schemas/ForeignId' }
+        ticket_url:
+          allOf:
+            - $ref: '#/components/schemas/TicketUrl'
+          description: |
+            Where that ticket is. **Null is a review nobody passed an address for**, which
+            is every review opened before the field existed — and a client then draws
+            `ticket_id` as text rather than as a link. Nothing derives it from the id.
+
+            **Required, for the reason `pr_state` below is**, and it is the same reason
+            read twice. The convention here has been to leave a new field out of
+            `required`, so that a response written before it existed is missing it rather
+            than wrong. Optional, every check passes while the server, the examples and
+            the dashboard's sample records hold three different answers: the example
+            validator skips a field the example omits, the store's example test walks the
+            example's fields, and the generated type becomes `ticket_url?` so a fixture
+            without it is not a type error. The one thing this field does is decide
+            whether the header draws a link, so a silently absent one is a feature that
+            quietly is not there. Required, all three fail loudly.
         changed_lines:
           type: [integer, 'null']
           minimum: 0
@@ -1194,6 +1235,13 @@ components:
             Resolved by the same read as the head commit when omitted. Pass it to record a
             title of your own, which nothing then overwrites.
         ticket_id: { $ref: '#/components/schemas/ForeignId' }
+        ticket_url:
+          allOf:
+            - $ref: '#/components/schemas/TicketUrl'
+          description: |
+            Where that ticket is. **Not resolved when omitted**, unlike the head commit,
+            the title and the changed-line count: nothing fetches a tracker and GitHub does
+            not know which ticket a pull request is for. Pass it or the review has none.
         changed_lines:
           type: [integer, 'null']
           minimum: 0
@@ -3401,6 +3449,14 @@ components:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }
         ticket_id: { $ref: '#/components/schemas/ForeignId' }
+        ticket_url:
+          allOf:
+            - $ref: '#/components/schemas/TicketUrl'
+          description: |
+            Where that ticket is, so the queue's row can link it without the review being
+            opened first. **Served on this item and not on the others**, because this is
+            the only inbox item that carries `ticket_id` — the queue draws one row per
+            review and reads the ticket from here.
         brief_ready_at:
           type: [string, 'null']
           format: date-time
