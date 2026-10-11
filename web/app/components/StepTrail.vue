@@ -30,9 +30,9 @@ import type { LayerFact, ReviewLayer, ReviewLayerName } from '~/types/desk'
  * **So the rest floats.** A step with something behind it draws its `detail` line as a
  * button, and activating it opens a [`FloatingCard`] anchored to the step: the step's
  * name, how long it took or when a harvest last read the review, and the facts as two
- * columns. The card is out of flow, so nothing on the
- * page moves when it opens — which is the acceptance criterion, measured in
- * `e2e/review-desk.spec.ts` by comparing positions either side of the click.
+ * columns. The card is out of flow, so nothing on the page moves when it opens — which is
+ * the acceptance criterion, measured in `e2e/review-desk.spec.ts` by comparing positions
+ * either side of the click.
  *
  * **A step with nothing behind it draws no card and no control for one.** Its `detail`
  * line is a plain span. That is most steps of most reviews and every step of every review

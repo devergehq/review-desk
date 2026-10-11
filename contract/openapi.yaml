@@ -1240,8 +1240,9 @@ components:
             line and opens these on a card anchored to the step.
 
             Empty for a step that recorded none, and a step with none draws no card and
-            no control for one. Not required here, for the reason `runs` is not: a
-            response written before DEV-917 is missing it rather than wrong.
+            no control for one — except step 7 while a harvest is watching it, which draws
+            a card for when it was last read. Not required here, for the reason `runs` is
+            not: a response written before DEV-917 is missing it rather than wrong.
 
     LayerFact:
       type: object

@@ -470,7 +470,7 @@ function seedStructured(directory: string, database: string): number {
   /*
    * **The facts behind each step's one line**, which is what the card beside it draws.
    * Invented, like everything else in this example. Steps 4 and 7 are given none on
-   * purpose: a step that recorded no facts draws no card and no control, and a seed where
+   * purpose: a step with nothing behind it draws no card and no control, and a seed where
    * every step had one could not show that.
    */
   const facts: Record<number, string[]> = {

@@ -224,7 +224,8 @@ A fact is `label=value`, split on the first `=` alone, so a value may contain ot
 **Giving none leaves the facts as they were**, because this is also the command a session
 calls to report progress and would otherwise clear them by saying nothing about them;
 giving any replaces the whole list, and `--clear-facts` empties it. A step with no facts
-draws no card and no control for one.
+draws no card and no control for one — except step 7 while a harvest is watching it, which
+draws a card for the read time alone.
 
 The states are `pending`, `running`, `done`, `waiting_on_you`, `failed` and `skipped`.
 This is stored rather than worked out from the rest of the record, for two reasons:
@@ -712,9 +713,11 @@ no read time to say.
 **It is not on the step's line, and that was measured rather than argued.** A step's column
 holds 154 pixels of text at 1440 and 175 at 390; the four-word detail fills it exactly, and
 every way of writing both on one line ran 186 to 239 pixels — so whichever went first, the
-other was cut. The line keeps what the four-word rule protects. That is also why a harvest
-always records `Pull request` as a fact: the trail draws a card only for a step that
-recorded some, and the card is where the read time lives.
+other was cut. The line keeps what the four-word rule protects, and the card takes the
+read time — and the trail opens one for a step with facts **or** a read time, so step 7
+has a card from the moment a harvest reads it. A harvest records `Pull request` every time
+anyway, because an open pull request is why the step is still running and it is the pair a
+settled step answers with `merged` or `closed`.
 
 DEV-933's own table asked for "read 3 min ago" *in the detail*. It is not stored, and that
 is the one place this slice departs from the issue: a detail is a frozen string, so a

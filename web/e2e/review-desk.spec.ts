@@ -1133,10 +1133,12 @@ test.describe('the three step pages of one review', () => {
   })
 
   /**
-   * **A step that recorded no facts has no card and no control for one.**
+   * **A step with nothing behind it has no card and no control for one.**
    *
-   * Steps 4 and 7 of the seeded review recorded none, which is most steps of most reviews
-   * and every step of every review recorded before DEV-917.
+   * Steps 4 and 7 of the seeded review have none, which is most steps of most reviews and
+   * every step of every review recorded before DEV-917. Step 7 counts here because the
+   * seed leaves it `pending`: a read time is written only while it is `running`, and it is
+   * the one step that can draw a card without facts.
    */
   test('a step with no facts draws no control', async ({ page }) => {
     await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)

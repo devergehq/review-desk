@@ -21,9 +21,10 @@
 //!
 //! It was also, for one commit, what gave a harvested step a card at all — the trail drew
 //! one only for a step with facts, and the card is where the page says when the harvest
-//! last read the review, which the step's own line has no room for. **The trail no longer
-//! depends on it**: it opens a card for a step with facts *or* a read time, so this fact
-//! may be changed on its own merits and nothing on the page disappears with it.
+//! last read the review, which the step's own line has no room for. **A running step no
+//! longer depends on it**: the trail opens a card for a step with facts *or* a read time.
+//! A settled one still does, because the read time is written only while the step is
+//! running — see [`facts_for`].
 //!
 //! **The counts are read from the outcomes the record holds, not from what the run just
 //! wrote.** Running a harvest twice records nothing twice — that is the whole of
@@ -279,9 +280,13 @@ fn detail_for(ended: Option<&'static str>, found: &Found) -> String {
 ///
 /// **Always at least that first pair.** "open" is not filler: on a step that is still
 /// running it is the reason it is still running, and it is the pair the settled rows
-/// answer with `merged` or `closed`. The module header has the rest of the argument,
-/// including what this pair is *not* load-bearing for any more — the trail opens a card
-/// for a step with facts or a read time, so changing this costs the page nothing.
+/// answer with `merged` or `closed`.
+///
+/// **A running step no longer needs it to have a card; a settled one does.** The trail
+/// opens a card for a step with facts *or* a read time, and the read time is there only
+/// while the step is `running` — so taking this pair away would cost a merged step 7 with
+/// every count at nought its card, and the duration on it, which is the one place the
+/// page says how long the harvest ran.
 fn facts_for(ended: Option<&'static str>, found: &Found) -> Vec<NewLayerFact> {
     let mut facts = vec![fact("Pull request", ended.unwrap_or("open").to_string())];
     if found.replies > 0 {
