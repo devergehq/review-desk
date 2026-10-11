@@ -42,14 +42,47 @@ use crate::Store;
 /// one has and GitHub had nothing to say yet.
 pub(crate) const NOTHING_BACK_DETAIL: &str = "nothing back yet";
 
-/// The three outcome kinds a harvest writes, which are the three step 7 counts.
+/// Which of step 7's three counts an outcome feeds, if any.
 ///
-/// One list, read by the query and checked against the match that reads its rows.
-const HARVESTED: [OutcomeKind; 3] = [
-    OutcomeKind::Replied,
-    OutcomeKind::ThreadResolved,
-    OutcomeKind::CodeChangedAfter,
-];
+/// **One exhaustive match, and both ends of the query are driven off it**: the kinds the
+/// statement asks for are the kinds this answers `Some` to, and the rows that come back
+/// are added up by asking it again. A twelfth outcome kind stops this compiling, and
+/// whatever arm it is given is the whole of the decision.
+///
+/// The first attempt at this kept a list of three kinds beside a match over eleven, and
+/// the review of it said why that was not the same thing: exhaustiveness forces an *arm*,
+/// not membership in the list. A kind added to the match and not to the list would be a
+/// kind the query never asked for, and step 7 would say "nothing back yet" about outcomes
+/// the harvester had just written — the one failure neither the types nor the SQL catch.
+fn counts_toward(kind: OutcomeKind) -> Option<Count> {
+    match kind {
+        OutcomeKind::Replied => Some(Count::Replies),
+        OutcomeKind::ThreadResolved => Some(Count::ThreadsResolved),
+        OutcomeKind::CodeChangedAfter => Some(Count::FindingsOvertaken),
+        // The developer's own outcomes. Named rather than swept up by a `_` so that a new
+        // kind is a decision somebody makes instead of a count that stays at nought.
+        OutcomeKind::Cut
+        | OutcomeKind::Regraded
+        | OutcomeKind::Rewritten
+        | OutcomeKind::Kept
+        | OutcomeKind::Rejected
+        | OutcomeKind::Ticketed
+        | OutcomeKind::Withdrawn
+        | OutcomeKind::RaisedAgain => None,
+    }
+}
+
+/// One of the three figures step 7 reports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Count {
+    /// Counted by row: one row is one reply.
+    Replies,
+    /// Counted by row: one row is one thread.
+    ThreadsResolved,
+    /// Counted by finding: a finding whose file two later commits touched is two rows
+    /// about one finding.
+    FindingsOvertaken,
+}
 
 impl Store {
     /// Record on step 7 what the harvest has just read, and when it read it.
@@ -102,26 +135,18 @@ impl Store {
 
     /// What the record holds for this review of the three facts a harvest reads back.
     ///
-    /// One query over the outcomes. `replied` and `thread_resolved` are counted by row —
-    /// one row is one reply, one row is one thread — and `code_changed_after` by finding,
-    /// because a finding whose file was touched by a later commit and then by a later one
-    /// still is two rows about one finding.
-    ///
-    /// **The kinds come from the enum, going in and coming out**, the way
-    /// `rules_for_repo` builds its list of stages: three quoted words typed in here would
-    /// be a second spelling of each kind, and the day one of them was renamed this would
-    /// go on compiling and count nothing. The words are formatted in rather than bound for
-    /// the reason that function gives — an `OutcomeKind` is this crate's own closed set,
-    /// and no caller's string reaches the statement.
-    ///
-    /// **And the match below names every other kind rather than ending in `_`**, so a
-    /// twelfth outcome kind stops this compiling and whoever adds it decides whether a
-    /// harvest counts it. Asked for and not counted is the one failure neither the query
-    /// nor the types would otherwise catch: the rows come back and step 7 says "nothing
-    /// back yet" about outcomes it has just read.
+    /// One query over the outcomes, asking for the kinds [`counts_toward`] answers for and
+    /// adding each row up the way it says. **The kinds come from the enum, going in and
+    /// coming out**, the way `rules_for_repo` builds its list of stages: three quoted
+    /// words typed in here would be a second spelling of each kind, and the day one of
+    /// them was renamed this would go on compiling and count nothing. The words are
+    /// formatted in rather than bound for the reason that function gives — an
+    /// `OutcomeKind` is this crate's own closed set, and no caller's string reaches the
+    /// statement.
     fn harvested_so_far(&self, review_id: i64) -> Result<Found> {
-        let kinds = HARVESTED
+        let kinds = OutcomeKind::ALL
             .iter()
+            .filter(|kind| counts_toward(**kind).is_some())
             .map(|kind| format!("'{}'", kind.as_str()))
             .collect::<Vec<_>>()
             .join(", ");
@@ -144,21 +169,12 @@ impl Store {
 
         let mut found = Found::default();
         for (kind, rows_held, findings) in counted {
-            match kind {
-                OutcomeKind::Replied => found.replies = rows_held,
-                OutcomeKind::ThreadResolved => found.threads_resolved = rows_held,
-                OutcomeKind::CodeChangedAfter => found.findings_overtaken = findings,
-                // The developer's own outcomes. The query never asks for them, and they
-                // are named here rather than swept up by a `_` so that a new kind is a
-                // decision somebody makes instead of a count that quietly stays at nought.
-                OutcomeKind::Cut
-                | OutcomeKind::Regraded
-                | OutcomeKind::Rewritten
-                | OutcomeKind::Kept
-                | OutcomeKind::Rejected
-                | OutcomeKind::Ticketed
-                | OutcomeKind::Withdrawn
-                | OutcomeKind::RaisedAgain => {}
+            match counts_toward(kind) {
+                Some(Count::Replies) => found.replies = rows_held,
+                Some(Count::ThreadsResolved) => found.threads_resolved = rows_held,
+                Some(Count::FindingsOvertaken) => found.findings_overtaken = findings,
+                // Unreachable: the statement above asked for these kinds and no other.
+                None => {}
             }
         }
         Ok(found)
@@ -458,6 +474,23 @@ mod tests {
         assert_eq!(settled_as(Some(PrState::Open)), None);
         assert_eq!(settled_as(Some(PrState::Merged)), Some("merged"));
         assert_eq!(settled_as(Some(PrState::Closed)), Some("closed"));
+    }
+
+    #[test]
+    fn the_kinds_a_harvest_counts_are_the_kinds_it_writes() {
+        // Named here so that a kind added to `counts_toward` — or taken out of it — is a
+        // line in a diff rather than a figure that quietly changes on the page.
+        let counted: Vec<&str> = OutcomeKind::ALL
+            .iter()
+            .filter(|kind| counts_toward(**kind).is_some())
+            .map(|kind| kind.as_str())
+            .collect();
+
+        assert_eq!(
+            counted,
+            vec!["replied", "thread_resolved", "code_changed_after"],
+            "the three a harvest writes, and nothing the developer writes by hand"
+        );
     }
 
     #[test]

@@ -1160,35 +1160,53 @@ test.describe('the three step pages of one review', () => {
    * The step is put back at the end, because every other test in this file reads the same
    * database and the one above counts the trail's controls.
    */
-  test('a harvested step 7 draws on the trail and moves nothing', async ({ page }) => {
-    const understand = `${seeded}reviews/${structuredReviewId}/understand`
+  /*
+   * **The write and the putting back, outside the test.**
+   *
+   * `--clear-facts` is a flag and `--fact` takes a pair, so the caller passes whichever
+   * whole arguments it means rather than a list this helper has to guess at.
+   *
+   * **Put back in an `afterEach`, not in a `finally`.** Found by the review of the fix
+   * commit: a `finally` does not run when Playwright abandons a test at its 60-second
+   * timeout, and this one does two viewport passes with two reloads and three full-page
+   * measurements. One timeout would then leave step 7 harvested on the database every
+   * later test and the screenshots project share — the test above would count six trail
+   * controls instead of five, and nine committed screenshots would regenerate with a
+   * harvested step 7. A hook runs either way.
+   */
+  const setStepSeven = (state: string, detail: string, aboutTheFacts: string[]) =>
+    cli(seededDatabase, [
+      'layer',
+      'set',
+      '--review',
+      String(structuredReviewId),
+      '--layer',
+      '7',
+      '--state',
+      state,
+      '--detail',
+      detail,
+      ...aboutTheFacts,
+    ])
 
-    /* Every element with a box on this page, by where it is. */
-    const positions = () => page.evaluate(() =>
-      [...document.querySelectorAll('h1, h2, .steps li, section, .totals, .pair, .key')]
-        .map((element) => {
-          const box = element.getBoundingClientRect()
-          return `${element.tagName}.${element.className}@${Math.round(box.top + window.scrollY)}x${Math.round(box.left)}`
-        }))
+  test.describe('a harvested step 7', () => {
+    /* Exactly what `seedStructured` wrote, word for word, whatever the test did or how it
+       ended. */
+    test.afterEach(() => {
+      setStepSeven('pending', STRUCTURED_STEP_SEVEN_DETAIL, ['--clear-facts'])
+    })
 
-    /* `--clear-facts` is a flag and `--fact` takes a pair, so the caller passes whichever
-       whole arguments it means rather than a list this helper has to guess at. */
-    const setStepSeven = (state: string, detail: string, aboutTheFacts: string[]) =>
-      cli(seededDatabase, [
-        'layer',
-        'set',
-        '--review',
-        String(structuredReviewId),
-        '--layer',
-        '7',
-        '--state',
-        state,
-        '--detail',
-        detail,
-        ...aboutTheFacts,
-      ])
+    test('draws on the trail and moves nothing', async ({ page }) => {
+      const understand = `${seeded}reviews/${structuredReviewId}/understand`
 
-    try {
+      /* Every element with a box on this page, by where it is. */
+      const positions = () => page.evaluate(() =>
+        [...document.querySelectorAll('h1, h2, .steps li, section, .totals, .pair, .key')]
+          .map((element) => {
+            const box = element.getBoundingClientRect()
+            return `${element.tagName}.${element.className}@${Math.round(box.top + window.scrollY)}x${Math.round(box.left)}`
+          }))
+
       for (const [label, width, height] of [
         ['a laptop', 1440, 900],
         ['a phone', 390, 844],
@@ -1247,13 +1265,7 @@ test.describe('the three step pages of one review', () => {
         await expect(card).toContainText('3 findings')
         expect(await positions(), `the card moved nothing either at ${label}`).toEqual(before)
       }
-    }
-    finally {
-      /* Exactly what `seedStructured` wrote, word for word — every other test in this
-         file reads the same database, and the screenshots project reads it too when both
-         projects are run under one global setup. */
-      setStepSeven('pending', STRUCTURED_STEP_SEVEN_DETAIL, ['--clear-facts'])
-    }
+    })
   })
 
   /**
