@@ -206,7 +206,7 @@ for (const { name, width, height } of WIDTHS) {
      */
     await page.goto(`${serving.url}reviews`)
 
-    const row = page.locator('.line').filter({ hasText: '#1284' })
+    const row = page.locator('.queue-line').filter({ hasText: '#1284' })
     await expect(row).toBeVisible()
     await expect(row.getByRole('link', { name: /pull request #1284/ })).toHaveAttribute(
       'href',
@@ -228,8 +228,67 @@ for (const { name, width, height } of WIDTHS) {
      * the row and its links, which is what DEV-936 changed.
      */
     expect(
-      await tooWide(page, width, '.line'),
+      await tooWide(page, width, '.queue-line'),
       `nothing in a row is wider than ${name}`,
     ).toEqual([])
   })
 }
+
+/**
+ * **Pressing a row's link does not open the review**, which is DEV-936's seventh criterion
+ * and the reason the links are a sibling of the row's own link rather than a cell inside it.
+ *
+ * The unit tests assert the structure — no link out is a descendant of the link to the
+ * review — and this presses the thing. A structural assertion is the stronger of the two
+ * because it cannot be satisfied by accident, but it is still an argument about HTML; this
+ * is a browser doing it.
+ *
+ * **Nothing leaves the machine**, and that is what decides how the address is read.
+ * Every `https` request is aborted before the click, because Review Desk never talks to
+ * GitHub and a test of it must not either — and an aborted navigation leaves the popup
+ * sitting at `chrome-error://chromewebdata/`, so `page.url()` cannot say where it was
+ * going. The address the browser was **asked** for can, and it is the whole of what the
+ * row promises.
+ *
+ * At one width only. Which element a click lands on is what the two widths above measure;
+ * what this is about is where it goes, and that does not change with the viewport.
+ */
+test('pressing a row’s link opens that link, and leaves the review alone', async ({ page, context }) => {
+  const asked: string[] = []
+  context.on('request', request => asked.push(request.url()))
+  await context.route('https://**', route => route.abort())
+
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto(`${serving.url}reviews`)
+
+  const row = page.locator('.queue-line').filter({ hasText: '#1284' })
+  await expect(row).toBeVisible()
+  const before = page.url()
+
+  for (const [what, name, wanted] of [
+    ['the pull request', /pull request #1284/, `https://github.com/${LONG_REPO}/pull/1284`],
+    ['the ticket', /on the tracker/, TICKET_URL],
+  ] as const) {
+    const [opened] = await Promise.all([
+      page.waitForEvent('popup'),
+      row.getByRole('link', { name }).click(),
+    ])
+
+    /*
+     * Polled, because `waitForEvent('popup')` resolves when the tab is *created* and the
+     * request it was created for is issued after that — read once, the list is empty.
+     */
+    await expect
+      .poll(() => asked, { message: `${what} is what the new tab asked for` })
+      .toContain(wanted)
+    await opened.close()
+
+    /* And the review was not opened behind it. */
+    expect(page.url(), `${what} left the list where it was`).toBe(before)
+    await expect(row).toBeVisible()
+  }
+
+  /* The row's own link still does open the review, which is what the row is for. */
+  await row.locator('.row').click()
+  await expect(page).toHaveURL(new RegExp(`/reviews/${reviewId}/understand$`))
+})

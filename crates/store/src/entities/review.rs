@@ -173,13 +173,20 @@ impl Store {
         // having no ticket id while the review it names held one, and the same call spelled
         // in lower case succeeded. One repository spelled two ways is one repository, which
         // this file's own tests say in as many words.
-        let (looked_up_repo, looked_up_head) =
-            (normalise::repo(repo), normalise::head_sha(head_sha));
-        check_ticket(
-            facts,
-            self.find_review_by_head(&looked_up_repo, pr, &looked_up_head)?
-                .and_then(|review| review.ticket_id),
-        )?;
+        //
+        // **And only when there is an address to check**, which is the common case not
+        // paying for the rare one: every `review open` reaches here, and without the guard
+        // each one ran this lookup and then `open_review`'s own identical lookup on the
+        // next line. The authoritative check is in `set_review_facts` either way.
+        if facts.ticket_url.is_some() {
+            let (looked_up_repo, looked_up_head) =
+                (normalise::repo(repo), normalise::head_sha(head_sha));
+            check_ticket(
+                facts,
+                self.find_review_by_head(&looked_up_repo, pr, &looked_up_head)?
+                    .and_then(|review| review.ticket_id),
+            )?;
+        }
 
         let opened = self.open_review(repo, pr, head_sha)?;
         if facts.is_empty() {
@@ -602,15 +609,20 @@ fn paired(url: Option<String>, passed: Option<&str>, held: Option<&str>) -> Resu
 
     Err(StoreError::InvalidValue {
         field: "ticket_id",
-        // **What was passed, not an empty string regardless.** `InvalidValue` formats as
+        // **What was passed, and `<none>` when nothing was.** `InvalidValue` formats as
         // `{field} holds {value:?}`, so a hard-coded `""` told a caller who passed
-        // `--ticket "  "` that the field held nothing, and told one who passed no
-        // `--ticket` at all about a value they never gave. The id as it arrived is true in
-        // both cases, and the `expected` clause below carries the reason without claiming
-        // anything about which case this is.
-        value: passed.unwrap_or_default().to_string(),
+        // `--ticket "  "` that the field held nothing, *and* told one who passed no
+        // `--ticket` at all about a value they never gave. Reporting the value as it
+        // arrived fixed the first and not the second — `unwrap_or_default` turns absence
+        // straight back into `""`. The two cases are different and the message says which.
+        value: passed.map_or_else(|| "<none>".to_string(), str::to_string),
+        // **"on this review", not "on the record".** The held id is this review's own, and
+        // a review is one round: round 2 of a pull request does not inherit round 1's
+        // ticket, any more than it inherits its title. Saying "on the record" sent a caller
+        // opening a later round to look at `review find`, which shows the id plainly on the
+        // round before — and tells them nothing about why this call was refused.
         expected: concat!(
-            "a ticket id beside the address, in this call or already on the record: ",
+            "a ticket id beside the address, in this call or already on this review: ",
             "an address is drawn as its id, so one with no id reaches no screen",
         )
         .to_string(),

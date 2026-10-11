@@ -38,15 +38,15 @@
  * thing that can be got wrong and a thing a keyboard gets round.
  *
  * ```
- * ┌─ .line ─────────────────────────────────────────────────────────────────┐
+ * ┌─ .queue-line ───────────────────────────────────────────────────────────┐
  * │ ┌─ .row, the link to the review ───────────────────────┐ ┌─ .out ─────┐ │
  * │ │ #412 │ Retry failed … │ Draft ready │ 4 min │ Read … │ │ GitHub     │ │
  * │ └──────────────────────────────────────────────────────┘ │ ABC-231    │ │
  * └─────────────────────────────────────────────────────────────────────────┘
  * ```
  *
- * The line under a row is on `.line` now rather than on `.row`, so it runs the width of
- * the row *and* its links instead of stopping short of them.
+ * The line under a row is on the wrapper now rather than on `.row`, so it runs the width
+ * of the row *and* its links instead of stopping short of them.
  */
 /*
  * **`NuxtLink` resolved to the component, not named as a string.** Measured in the built
@@ -112,8 +112,8 @@ withDefaults(
 
 <template>
   <div
-    class="line"
-    :class="{ 'line--emphasis': emphasis }"
+    class="queue-line"
+    :class="{ 'queue-line--emphasis': emphasis }"
   >
     <component
       :is="to ? NuxtLink : href ? 'a' : 'div'"
@@ -190,12 +190,24 @@ withDefaults(
  * **The row and its two links, on one line with one rule under it.** The rule is here and
  * not on `.row` so that it runs under the links as well; before DEV-936 there was nothing
  * beside the row for it to stop short of.
+ *
+ * **`queue-line` rather than `line`**, which is what it was called for one commit.
+ * `ReasonPrompt` and `SignOffCard` both have a `.line` of their own, and scoped CSS does
+ * not care — but the tests that measure this wrapper are not scoped: one passes `.line` to
+ * a page-wide overflow check and another maps every `.line` on the page to its `.row`. The
+ * first queue row to share a screen with one of those components would have had the
+ * overflow assertion silently measuring something else.
+ *
+ * **`flex-start`, not `center`.** The row's cells and the links both carry the same 12 or
+ * 16 pixels of padding so that the two columns begin at the same height; centred, a short
+ * links cell floats against the middle of a row whose title has wrapped, and the padding
+ * was doing nothing.
  */
-.line {
+.queue-line {
   display: flex;
   flex-wrap: wrap;
   gap: 0 20px;
-  align-items: center;
+  align-items: flex-start;
   border-bottom: 1px solid var(--rd-line);
 }
 
@@ -336,7 +348,7 @@ withDefaults(
 }
 
 /* The same air the needs-you row gives itself, so the two cells line up vertically. */
-.line--emphasis .out {
+.queue-line--emphasis .out {
   padding: 16px 0;
 }
 
@@ -371,14 +383,21 @@ withDefaults(
    * end, and they sit side by side there: two stacked lines of one word each is three
    * lines of furniture under one row.
    */
+  /*
+   * **`wrap`, so the row gap can apply.** Without it the two links could not fall onto a
+   * second line — only shrink and break mid-word through `overflow-wrap: anywhere` — so a
+   * long ticket id beside "GitHub" read as two broken stacks rather than the two words
+   * this is meant to be.
+   */
   .out {
     flex: 1 1 100%;
+    flex-wrap: wrap;
     flex-direction: row;
     gap: 4px 12px;
     padding: 0 0 12px;
   }
 
-  .line--emphasis .out {
+  .queue-line--emphasis .out {
     padding: 0 0 16px;
   }
 }

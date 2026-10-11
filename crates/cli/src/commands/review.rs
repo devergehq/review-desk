@@ -28,6 +28,12 @@ pub enum ReviewCommand {
     /// value that does not is refused rather than stored: the one thing a stored address
     /// is for is being drawn as a link. Nothing is ever fetched from it.
     ///
+    /// **An address with no ticket is refused too**, because the dashboard draws the id as
+    /// the link's text — so an address beside no id reaches no screen. The id can come from
+    /// this call or already be on the review, so learning the address afterwards is one
+    /// more `review open` on the same head commit. A later round is its own review and
+    /// inherits nothing, so it needs its own `--ticket`.
+    ///
     /// **Opening a later round hands back the previous round's findings**, ready to be
     /// carried with `finding carry`. A second-round review that cannot see round 1's
     /// findings cannot say "two fixed, two still open, one new", which is the whole of a
@@ -49,7 +55,8 @@ pub enum ReviewCommand {
         /// The Linear ticket the change is for.
         #[arg(long = "ticket", value_name = "ID")]
         ticket: Option<String>,
-        /// Where that ticket is. Must start `https://`; nothing is fetched from it.
+        /// Where that ticket is. Must start `https://`, and needs a ticket on this
+        /// review; nothing is fetched from it.
         #[arg(long = "ticket-url", value_name = "URL")]
         ticket_url: Option<String>,
         /// Additions plus deletions in the change.

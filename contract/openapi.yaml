@@ -922,6 +922,13 @@ components:
         entry, a GitHub review, a Linear ticket. Opaque: Review Desk stores and returns
         it and never parses it.
 
+        **One exception, stated where it applies**: `Review.ticket_id` is trimmed, and a
+        blank one is null. Nothing else here is.
+
+        A review's ticket is a fact about *that round*. Round 2 of a pull request does not
+        inherit round 1's, any more than it inherits its title or its changed-line count —
+        a caller passes what it knows on each `POST /reviews`.
+
     TicketUrl:
       type: [string, 'null']
       pattern: '^https://'
@@ -1142,7 +1149,18 @@ components:
           description: |
             The pull request's title, as the caller supplied it — or, for a caller that
             supplied none, as `POST /reviews` resolved it from the pull request.
-        ticket_id: { $ref: '#/components/schemas/ForeignId' }
+        ticket_id:
+          allOf:
+            - $ref: '#/components/schemas/ForeignId'
+          description: |
+            The ticket the change is for, opaque.
+
+            **Trimmed on the way in, and blank is null**, which is the one exception to
+            `ForeignId`'s round-trip: `" ABC-231 "` is stored and returned as `ABC-231`,
+            and `" "` is stored as null. It exists because this id is now checked against
+            `ticket_url` — an address beside a blank id would reach no screen — and a field
+            read one way by a check and another by a writer is what let that fault through
+            twice. The other `ForeignId`s on this object are untouched.
         ticket_url:
           allOf:
             - $ref: '#/components/schemas/TicketUrl'

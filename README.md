@@ -101,6 +101,20 @@ is being drawn as a link, and that is the whole of the reason: `http` is refused
 rest, because Review Desk never fetches a tracker and so never needs the insecure form.
 Nothing is ever read from the address.
 
+**An address with no id is refused too**, because the dashboard draws the **id** as the
+link's text — so an address beside no id reaches no screen, which is worse than a refusal
+because it looks like the flag worked. The id can come from the same call or already be on
+the review, so learning the address afterwards is one more call:
+
+```sh
+review-desk review open --repo devergehq/review-desk --pr 851 --head c0ffee1 \
+  --ticket-url https://linear.app/deverge/issue/DEV-860   # the id is already on it
+```
+
+**On the review, not on the pull request.** A later round is its own review and inherits
+nothing — not the ticket, not the title, not the changed-line count — so a session passes
+what it knows each time it opens one.
+
 `review find` lists a pull request's rounds, newest first, for an agent that has lost
 an id:
 

@@ -958,7 +958,7 @@ fn a_blank_ticket_address_is_no_address_rather_than_an_error() {
     let (_dir, store) = temp_store();
     let review = seed_review(&store);
     // The id first, because an address with no id anywhere is refused — see
-    // `a_ticket_address_with_no_id_is_refused_because_nothing_would_draw_it` below.
+    // `a_ticket_address_with_no_id_is_refused_because_nothing_would_draw_it` above.
     store
         .set_review_facts(
             review.id,

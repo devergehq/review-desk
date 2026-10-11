@@ -513,11 +513,12 @@ describe('the queue', () => {
   /**
    * The links beside a row, and the row they are beside.
    *
-   * Found by `.line` rather than by `.row`, because the point of the assertion below is
-   * that they are **not** inside the row.
+   * Found by the row's wrapper rather than by `.row`, because the point of the assertion
+   * below is that they are **not** inside the row. `.queue-line` and not `.line`: two other
+   * components have a `.line`, and this locator is not scoped to one component.
    */
   function lines(page: VueWrapper) {
-    return page.findAll('.line').map(line => ({
+    return page.findAll('.queue-line').map(line => ({
       row: line.find('.row'),
       out: line.findAll('.out-link'),
     }))
