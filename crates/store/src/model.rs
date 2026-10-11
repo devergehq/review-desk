@@ -1469,6 +1469,118 @@ pub struct ReviewAtLayer {
     pub layer: ReviewLayer,
 }
 
+/// What the record holds of the author's response to a posted review.
+///
+/// Counts of recorded outcomes, so each one is a count of facts GitHub stated — never a
+/// judgement about whether the author has engaged.
+///
+/// **Zero is only a measurement when something could have found one**, and that is a
+/// different question for each of the three. A caller serving these to a screen has to
+/// read `Review::harvested_at` and `PostedReview::findings_linked` and say which it is;
+/// printing a nought over an unread thread is the one thing this project forbids.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct AuthorResponse {
+    /// Replies **the pull request's author** wrote in a linked finding's thread.
+    ///
+    /// **The actor, not only the kind.** `review_desk_harvest`'s `actor_for` records a
+    /// reply from any login that is not the pull request's author as
+    /// [`Actor::Developer`], so counting `replied` rows alone credits the author with the
+    /// developer's own replies. A reply the harvester could not attribute to the author
+    /// is not counted here; the one review screen shows every outcome either way.
+    pub replies: i64,
+    /// Linked findings whose thread **the author** resolved.
+    ///
+    /// Counted by actor for the reason `replies` is, and it matters more here: on most
+    /// repositories the author cannot resolve a review thread, so the reviewer usually
+    /// does — and those resolutions are the developer's own.
+    pub threads_resolved: i64,
+    /// Findings whose code the harvester found changed after the commit the review read.
+    ///
+    /// **Not counted by actor, unlike the other two**: the harvester attributes this to
+    /// nobody, because it is an observation about the code rather than an act by a person.
+    ///
+    /// **And distinct findings, counted once each.** The harvester keys this outcome on the
+    /// commit it saw the change in — `code_changed:<sha>` — so a finding whose file is
+    /// touched by three successive pushes gets three rows. Counting the rows would have
+    /// drawn "6 findings with code changed since" on a review holding two, a figure that
+    /// can exceed the findings it is about.
+    ///
+    /// **And not "commits since".** DEV-930 asks for that phrase and the record has no
+    /// such figure: `round_commits` counts the commits *before* a round rather than after
+    /// its posting, and this counts findings. Named as what it is.
+    pub code_changed_after: i64,
+}
+
+/// A posted review whose pull request has not been merged or closed, and what has come
+/// back on it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PostedReview {
+    pub review: Review,
+    /// When the review session reported it posted. `None` for a review whose GitHub
+    /// review id was recorded by `review link` without a draft transition — it is posted,
+    /// and nothing holds the time.
+    pub posted_at: Option<Timestamp>,
+    /// The GitHub review event it was posted as, chosen by the developer at approval.
+    pub posted_as: Option<ReviewEvent>,
+    /// How many findings the review holds.
+    pub findings: i64,
+    /// How many of them carry the id of the GitHub comment they were posted as.
+    ///
+    /// **This is what says whether a reply could have been seen at all.** The harvester
+    /// reads a thread through a finding's `github_comment_id` and skips thread reading
+    /// altogether when no finding has one — then marks the review harvested regardless.
+    /// So zero here means there is nothing a reply could attach to, and zero replies is
+    /// the absence of a measurement rather than one.
+    pub findings_linked: i64,
+    /// The counts, always. **Whether each one means anything is a question about its own
+    /// source** — see [`AuthorResponse`], `Review::harvested_at` and `findings_linked`.
+    pub response: AuthorResponse,
+}
+
+/// One of a review's seven steps, as a list needs it: where the review has got to.
+///
+/// **The four fields a row draws, and not the step's passes or its facts.** A
+/// [`ReviewLayer`] carries both, and reading them costs two statements per step — which
+/// for a list of every review on the record is a statement per review per step. Handing
+/// back a `ReviewLayer` with its `runs` left empty would be worse than costly: an empty
+/// `runs` means a step nothing has written, so a list would be claiming that of every
+/// step it reported.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReviewStep {
+    /// Which of the seven, from 1.
+    pub number: i64,
+    /// Fixed by the number, and derived from it rather than stored.
+    pub name: ReviewLayerName,
+    pub state: ReviewLayerState,
+    /// The short phrase written against the state — "passed", "3 options", "waiting on
+    /// you". `None` for a step that recorded none.
+    pub detail: Option<String>,
+}
+
+/// A review and the step it has reached.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReviewAtStep {
+    pub review: Review,
+    /// The highest round this pull request has reached, so a list can say "round 1 of 3".
+    ///
+    /// A bare round number in a column of its own reads as a count of rework against the
+    /// author named two columns to its left. Said as one of a total, it is where this
+    /// review sits in a sequence.
+    pub rounds_on_pr: i64,
+    /// The furthest step that is **not** `pending` — the highest-numbered one anything
+    /// has moved off not-started.
+    ///
+    /// `None` when every step is pending, which is a review nothing has reported on at
+    /// all. That is a different answer from step 1 pending, and the two are told apart
+    /// here rather than by a screen reading a number: "nothing has started" and "the
+    /// lint is pending" are different sentences.
+    ///
+    /// **Not "the furthest step anything has written".** [`Store::post_draft`] writes
+    /// step 7 as `pending` the moment a review is posted, so that rule would report
+    /// step 7 — the harvest — for a review whose harvest has not begun.
+    pub step: Option<ReviewStep>,
+}
+
 /// What running the review-craft lint over a draft body reported.
 ///
 /// Every field is optional, and `None` means the lint has not run rather than that it

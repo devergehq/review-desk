@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import type { InboxPostedItem, ReviewListItem } from '../app/types/desk'
+
 import {
   activityLabel,
+  authorResponseLabel,
   count,
   descriptionLintLabel,
   durationLabel,
@@ -11,9 +14,11 @@ import {
   layerLabel,
   layerTone,
   openForLabel,
+  prStateLabel,
   sessionLabel,
   severityTally,
   sinceLabel,
+  stepLabel,
   stepDurationLabel,
 } from '../app/utils/format'
 
@@ -204,5 +209,166 @@ describe('the seven layers', () => {
     expect(editVerb('cut')).toBe('Cut')
     expect(editVerb('rewritten')).toBe('Rewrote')
     expect(editVerb('code_changed_after')).toBe('Code changed after')
+  })
+})
+
+/*
+ * What has come back on a posted review — **four states, and the rule that a nought and
+ * an absence are different things**.
+ *
+ * The three counts are nulled on their own sources, so these are not variations of one
+ * sentence: a figure may be measured while the two beside it are not, and a review may
+ * hold a reply the harvester never wrote.
+ */
+describe('what came back on a posted review', () => {
+  const posted = (over: Partial<InboxPostedItem> = {}): InboxPostedItem => ({
+    review_id: 12,
+    pull_request: { repo: 'acme/portal', pr: 398, title: 'Split the export job' },
+    round: 1,
+    rounds_on_pr: 1,
+    posted_at: '2026-10-08T16:02:00Z',
+    posted_as: 'request_changes',
+    pr_state: 'open',
+    harvested_at: '2026-10-09T08:15:00Z',
+    findings: 3,
+    findings_linked: 3,
+    replies: 2,
+    threads_resolved: 1,
+    code_changed_after: 1,
+    ...over,
+  })
+
+  it('says nothing has looked, rather than nought, on a review no harvest has read', () => {
+    const said = authorResponseLabel(posted({
+      harvested_at: null,
+      pr_state: null,
+      findings_linked: 0,
+      replies: null,
+      threads_resolved: null,
+      code_changed_after: null,
+    }))
+    expect(said).toContain('Not harvested yet')
+    expect(said).not.toMatch(/\b0\b/)
+    /* And it does not date an absence. */
+    expect(said).not.toContain('as at')
+  })
+
+  it('names the figures and when they were taken', () => {
+    const said = authorResponseLabel(posted())
+    expect(said).toContain('2 replies')
+    expect(said).toContain('1 thread resolved')
+    expect(said).toContain('1 finding with code changed since')
+    /*
+     * **The measurement's own time.** A bare nought over a figure taken two hours ago
+     * reads as a statement about now, and the record only supports one about then.
+     */
+    expect(said).toContain('as at')
+  })
+
+  /*
+   * **The state the harvester actually leaves most reviews in.** It reaches a thread
+   * through a finding's `github_comment_id`, skips thread reading when no finding has
+   * one, and marks the review harvested regardless — so "0 replies" there would be a
+   * nought over something nobody could see.
+   */
+  it('says no reply could be read when no finding is linked to a comment', () => {
+    const said = authorResponseLabel(posted({
+      findings_linked: 0,
+      replies: null,
+      threads_resolved: null,
+    }))
+    expect(said).toContain('No finding is linked to a comment on GitHub')
+    expect(said).toContain('3 findings')
+  })
+
+  /*
+   * And that absence must not silence the figure beside it: `code_changed_after` is
+   * measured on its own source and is a real count even when no thread could be read.
+   */
+  it('keeps a measured figure when the two beside it are unknown', () => {
+    const said = authorResponseLabel(posted({
+      findings_linked: 0,
+      replies: null,
+      threads_resolved: null,
+      code_changed_after: 4,
+    }))
+    expect(said).toContain('No finding is linked')
+    expect(said).toContain('4 findings with code changed since')
+  })
+
+  /*
+   * The converse: the harvest writes its outcomes and its own timestamp in separate
+   * statements, and `outcome add` writes outcomes with no harvest at all. A reply the
+   * record holds is counted, and the row says it did not come from a harvest.
+   */
+  it('counts a reply the record holds even with no harvest behind it', () => {
+    const said = authorResponseLabel(posted({ harvested_at: null, replies: 3 }))
+    expect(said).toContain('3 replies')
+    expect(said).toContain('recorded without a harvest')
+    expect(said).not.toContain('Not harvested yet')
+  })
+
+  /*
+   * **The mixed state, which `?? 0` printed a nought over.** An outcome recorded by hand
+   * gives a review a reply count with no harvest behind it — and the resolution beside it
+   * is still unmeasured, so it is left out rather than drawn as none.
+   */
+  it('draws no figure for the half of a pair that is still unmeasured', () => {
+    const said = authorResponseLabel(posted({
+      harvested_at: null,
+      findings_linked: 0,
+      replies: 3,
+      threads_resolved: null,
+      code_changed_after: null,
+    }))
+    expect(said).toContain('3 replies')
+    expect(said).not.toContain('0 threads resolved')
+    expect(said).not.toContain('thread')
+  })
+
+  /*
+   * **The step and what it says, through the same helper the trail uses.** Writing the
+   * detail out raw here skipped `layerDetail`, which rewrites the one phrase the store and
+   * the screen disagree about: the store writes layer 6's detail as "approved by the
+   * developer" and DEV-870 reserves "approve" for the GitHub review event.
+   */
+  it('says a signed-off step in the screen’s words, not the store’s', () => {
+    const row = {
+      review: { id: 1 },
+      rounds_on_pr: 1,
+      step_number: 6,
+      step_name: 'draft',
+      step_state: 'done',
+      step_detail: 'approved by the developer',
+      steps_total: 7,
+      last_activity_at: null,
+    } as unknown as ReviewListItem
+    expect(stepLabel(row)).toBe('Draft · signed off by the developer')
+  })
+
+  it('falls back to the state when a step recorded no note, and says so in words', () => {
+    const row = (over: Record<string, unknown>) => ({
+      review: { id: 1 },
+      rounds_on_pr: 1,
+      step_number: 5,
+      step_name: 'code_review',
+      step_state: 'running',
+      step_detail: null,
+      steps_total: 7,
+      last_activity_at: null,
+      ...over,
+    } as unknown as ReviewListItem)
+
+    expect(stepLabel(row({}))).toBe('Code review · running')
+    /* A detail that is present and empty is a step with nothing written, not a blank cell. */
+    expect(stepLabel(row({ step_detail: '' }))).toBe('Code review · running')
+    /* And a review nothing has reported on is not step 1 pending. */
+    expect(stepLabel(row({ step_number: null, step_name: null, step_state: null })))
+      .toBe('Not started')
+  })
+
+  it('does not claim a pull request is open when nothing has looked', () => {
+    expect(prStateLabel(null)).toBe('pull request state not established')
+    expect(prStateLabel('open')).toBe('pull request open at the last harvest')
   })
 })

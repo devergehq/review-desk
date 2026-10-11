@@ -1,5 +1,5 @@
 /*
- * What a source of records can do: the contract's eighteen operations, and nothing else.
+ * What a source of records can do: the contract's nineteen operations, and nothing else.
  *
  * Two things implement it — `api.ts`, which calls the Rust server, and `sample.ts`, which
  * patches invented records in memory. **The point of writing it down is that the composable
@@ -26,6 +26,7 @@ import type {
   Review,
   ReviewDetail,
   ReviewEvent,
+  ReviewList,
   Rule,
   RuleStage,
   RulesPage,
@@ -44,14 +45,15 @@ export interface DeskBackend {
   /** Whether these records are invented. The header's marker reads it. */
   readonly isSampleData: boolean
 
-  /* The four reads — one per screen, so no screen joins anything. */
+  /* The six reads — one per screen, so no screen joins anything. */
   getInbox: () => Promise<Inbox>
+  listReviews: (repo: string | null) => Promise<ReviewList>
   getReview: (reviewId: number) => Promise<ReviewDetail>
   getDraft: (reviewId: number) => Promise<DraftDetail>
   listRules: (repo: string | null) => Promise<RulesPage>
   listRepos: () => Promise<RepoSummary[]>
 
-  /* The fourteen writes. */
+  /* The thirteen writes. */
   startReview: (prUrl: string) => Promise<Review>
   confirmBrief: (reviewId: number) => Promise<Brief>
   setFindingDisposition: (

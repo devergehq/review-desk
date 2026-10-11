@@ -300,7 +300,7 @@ fn set_finding_disposition_validates_as_a_finding() {
 #[test]
 fn the_inbox_validates() {
     let harness = common::start_with_no_github();
-    common::seed(&harness.store);
+    let seeded = common::seed(&harness.store);
 
     let answer = harness.api("GET", "/inbox", None);
     assert_eq!(answer.status, 200, "{}", answer.text());
@@ -324,7 +324,226 @@ fn the_inbox_validates() {
         "Allele owns session liveness and nothing tells this server about it; null is \
          the honest answer and the screen has to render it"
     );
+
+    // **`totals.items` is the five waiting groups and nothing else**, which nothing
+    // asserted until DEV-930 — and by then three files computed it three ways: the server
+    // left out the developer's own pull requests, sample mode put them in, and the store's
+    // example test added the reviews in progress as well. The sum is written down here so
+    // a fourth answer fails rather than ships.
+    let group = |name: &str| inbox[name].as_array().expect(name).len();
+    assert_eq!(
+        inbox["totals"]["items"]
+            .as_u64()
+            .map(|items| items as usize),
+        Some(
+            group("briefs_to_confirm")
+                + group("drafts_to_approve")
+                + group("author_replies")
+                + group("own_prs_without_reviewer")
+                + group("proposed_rules")
+        ),
+        "totals.items is the five waiting groups' combined length: {inbox}"
+    );
+    // **`in_progress` is not empty**, or the sum above would hold whether it counted or
+    // not. Nothing in it asks the developer for anything, and the screen's headline counts
+    // what does.
+    //
+    // The posted group *is* empty here — the seeded record has nothing posted — so its
+    // term in that sum was vacuous. Posting one below is what makes it carry weight.
+    assert!(
+        group("in_progress") > 0,
+        "the seeded record has a session running: {inbox}"
+    );
+
+    harness
+        .store
+        .approve_draft(
+            seeded.review_id,
+            review_desk_store::ReviewEvent::RequestChanges,
+            review_desk_store::Actor::Developer,
+        )
+        .expect("signed off");
+    harness
+        .store
+        .post_draft(seeded.review_id, "gh-review-3401")
+        .expect("posted");
+
+    let after = harness.api("GET", "/inbox", None).json();
+    assert_valid("Inbox", &after);
+    let group = |name: &str| after[name].as_array().expect(name).len();
+    assert!(
+        group("posted_awaiting_author") > 0,
+        "a posted review with an open pull request: {after}"
+    );
+    assert_eq!(
+        after["totals"]["items"]
+            .as_u64()
+            .map(|items| items as usize),
+        Some(
+            group("briefs_to_confirm")
+                + group("drafts_to_approve")
+                + group("author_replies")
+                + group("own_prs_without_reviewer")
+                + group("proposed_rules")
+        ),
+        "the sum still names the five waiting groups once a review has been posted. \
+         Posting changes what is in them — an approved draft leaves `drafts_to_approve` — \
+         and what it must not change is which groups are counted: {after}"
+    );
 }
+
+#[test]
+fn a_posted_review_whose_pull_request_is_open_is_served_as_waiting_on_its_author() {
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+
+    // Before anything is posted the group is empty, and an empty array is a claim: it
+    // says the record holds no posted review with an open pull request.
+    let before = harness.api("GET", "/inbox", None).json();
+    assert_valid("Inbox", &before);
+    assert_eq!(
+        before["posted_awaiting_author"].as_array().map(Vec::len),
+        Some(0)
+    );
+
+    harness
+        .store
+        .approve_draft(
+            seeded.review_id,
+            review_desk_store::ReviewEvent::RequestChanges,
+            review_desk_store::Actor::Developer,
+        )
+        .expect("signed off");
+    harness
+        .store
+        .post_draft(seeded.review_id, "gh-review-3312")
+        .expect("posted");
+
+    let answer = harness.api("GET", "/inbox", None);
+    assert_eq!(answer.status, 200, "{}", answer.text());
+    let inbox = answer.json();
+    assert_valid("Inbox", &inbox);
+
+    let posted = &inbox["posted_awaiting_author"];
+    assert_eq!(
+        posted.as_array().map(Vec::len),
+        Some(1),
+        "an empty group would validate and check nothing: {inbox}"
+    );
+    let item = &posted[0];
+    assert_eq!(item["review_id"], seeded.review_id);
+    assert_eq!(item["posted_as"], "request_changes");
+    assert!(item["posted_at"].is_string());
+    assert_eq!(
+        item["rounds_on_pr"], item["round"],
+        "the group holds only the newest round, so these are the same number"
+    );
+
+    // **Nothing has harvested it, so the three figures are absent and not nought.**
+    // Zero replies on a review nobody has read back is the absence of a measurement.
+    assert!(item["harvested_at"].is_null());
+    assert!(item["pr_state"].is_null(), "nothing has looked");
+    for field in ["replies", "threads_resolved", "code_changed_after"] {
+        assert!(
+            item[field].is_null(),
+            "{field} is served as null until something has looked: {item}"
+        );
+    }
+
+    // And a merged pull request leaves the group: there is no author left to wait for.
+    harness
+        .store
+        .set_review_pr_state(
+            seeded.review_id,
+            review_desk_store::PrState::Merged,
+            Some(review_desk_store::now()),
+        )
+        .expect("merged");
+    let after = harness.api("GET", "/inbox", None).json();
+    assert_valid("Inbox", &after);
+    assert_eq!(
+        after["posted_awaiting_author"].as_array().map(Vec::len),
+        Some(0),
+        "merged at its last harvest: {after}"
+    );
+}
+
+#[test]
+fn every_pull_request_state_the_store_has_validates_on_the_wire() {
+    // **Every value, not the one the happy path writes.** A contract enum missing a Rust
+    // variant is caught here and nowhere else, which is the idiom the provenance tests
+    // already use for `SourceKind` and `FileCheck`.
+    for state in review_desk_store::PrState::ALL {
+        let harness = common::start_with_no_github();
+        let seeded = common::seed(&harness.store);
+        harness
+            .store
+            .set_review_pr_state(seeded.review_id, *state, Some(review_desk_store::now()))
+            .expect("the state");
+
+        let answer = harness.api("GET", &format!("/reviews/{}", seeded.review_id), None);
+        assert_eq!(answer.status, 200, "{}", answer.text());
+        assert_valid("ReviewDetail", &answer.json());
+        assert_eq!(
+            answer.json()["review"]["pr_state"],
+            state.as_str(),
+            "the wire word for {state:?}"
+        );
+    }
+}
+
+#[test]
+fn the_reviews_list_validates() {
+    let harness = common::start_with_no_github();
+
+    // Empty first: a list with nothing in it still has to be the shape it says, and that
+    // is the shape a first run serves.
+    let empty = harness.api("GET", "/reviews", None);
+    assert_eq!(empty.status, 200, "{}", empty.text());
+    assert_valid(REVIEWS_SCHEMA, &empty.json());
+    assert!(
+        empty.json()["repo"].is_null(),
+        "no repository was asked for"
+    );
+
+    let seeded = common::seed(&harness.store);
+    let answer = harness.api("GET", "/reviews", None);
+    assert_eq!(answer.status, 200, "{}", answer.text());
+    let listed = answer.json();
+    assert_valid(REVIEWS_SCHEMA, &listed);
+
+    let rows = listed["reviews"].as_array().expect("the rows");
+    assert!(
+        !rows.is_empty(),
+        "an empty list would validate and check nothing: {listed}"
+    );
+    let row = rows
+        .iter()
+        .find(|row| row["review"]["id"] == seeded.review_id)
+        .expect("the seeded review is listed");
+    assert_eq!(row["steps_total"], 7, "stated, so no screen carries a 7");
+    assert!(
+        row["step_state"].is_string(),
+        "the state comes with the number: a bare step name reads as the step the review \
+         is waiting at, and for a finished step that is the step it has left — {row}"
+    );
+
+    // The repository filter, and the refusal that stops a typo reading as an empty
+    // record: "nothing here" and "no such repository" are different answers.
+    let filtered = harness.api("GET", "/reviews?repo=acme/portal", None);
+    assert_eq!(filtered.status, 200, "{}", filtered.text());
+    assert_valid(REVIEWS_SCHEMA, &filtered.json());
+    assert_eq!(filtered.json()["repo"], "acme/portal");
+
+    let refused = harness.api("GET", "/reviews?repo=notarepo", None);
+    assert_eq!(refused.status, 400);
+    assert_eq!(refused.error_code(), "invalid_value");
+    assert_valid("Error", &refused.json());
+}
+
+/// The inline 200 schema of `listReviews`, by pointer: like `listReviewTimings`, it has no
+/// named component because only this operation serves that shape.
+const REVIEWS_SCHEMA: &str = "#/paths/~1reviews/get/responses/200/content/application~1json/schema";
 
 #[test]
 fn an_empty_inbox_still_validates() {

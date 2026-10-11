@@ -116,13 +116,24 @@ export interface Addresses {
    * **It is here because one or two rows prove nothing.** What went wrong on the real review
    * — a code name running out of the card, 63 words printed where a title belongs, eight
    * paragraphs where a reader wanted a list — are properties of the panel at that volume,
-   * and the only place they can be measured is a browser at a real width. The other three
-   * reviews between them hold one held-back finding and three.
+   * and the only place they can be measured is a browser at a real width. The other four
+   * reviews between them hold one held-back finding and three; DEV-930's posted review,
+   * added after this comment was written, holds none.
    *
    * It has a ready draft, so it is a fourth thing waiting on the developer: "Needs you"
    * holds three rows and the counts in this suite say three.
    */
   heldBackReviewId: number
+  /**
+   * A fifth review, **posted and with no draft**: its GitHub review id was recorded by
+   * `review link`, which is the one way the command line can post a review at all.
+   *
+   * It is in no waiting group — no brief to confirm, no draft to approve, no outcome — so
+   * it changes none of the counts the other specs assert, and it is the whole of what
+   * "Waiting on the author" has to draw from. Before DEV-930 it was in no group on any
+   * screen, which is the complaint the issue quotes.
+   */
+  postedReviewId: number
 }
 
 /** The addresses, as the setup wrote them. */
@@ -536,6 +547,73 @@ function seedStructured(directory: string, database: string): number {
   return reviewId
 }
 
+/**
+ * A review that is **posted and has no draft**, recorded the way an agent records one.
+ *
+ * `review link --github-review` writes the review's GitHub id with no draft transition —
+ * and `/repos` has always counted that as the review no longer being open, so before
+ * DEV-930 such a review was in no group on any screen and reachable only by typing its id.
+ * That is the complaint the issue was opened about, and this is the record it is about.
+ *
+ * **It is the only posted review the command line can make.** Approving a draft is the
+ * developer's act and happens in the dashboard, and `draft posted` refuses a draft that is
+ * not approved — so a seed cannot carry a review posted the ordinary way at all. Nothing in
+ * this suite runs `draft posted`: the acceptance path signs a draft off in the browser and
+ * stops there, which is where the boundary it exists to test ends.
+ *
+ * Nothing has harvested it, which is every review until `review-desk harvest` runs: its
+ * pull-request state is unknown and its three figures are unmeasured, which is the half of
+ * the group's rule that says a nought is not an absence.
+ */
+function seedPosted(directory: string, database: string): number {
+  const opened = cli(database, [
+    'review',
+    'open',
+    '--repo',
+    'acme/portal',
+    '--pr',
+    '405',
+    '--head',
+    'a9f3b21',
+    '--title',
+    'Record the delivery attempt count',
+    '--ticket',
+    'ABC-244',
+    '--changed-lines',
+    '132',
+  ])
+  const reviewId = Number(opened.match(/\d+/)?.[0])
+  if (!Number.isInteger(reviewId)) {
+    throw new Error(`review open printed no id: ${opened}`)
+  }
+
+  const finding = join(directory, 'posted-finding.json')
+  writeFileSync(
+    finding,
+    JSON.stringify({
+      lens: 'correctness',
+      severity: 'should',
+      claim: 'The attempt count is written outside the transaction',
+      file: 'jobs/DeliverWebhook.php',
+      line: 73,
+      disposition: 'in_draft',
+    }),
+  )
+  cli(database, ['finding', 'add', '--review', String(reviewId), '--file', finding])
+
+  /* Posted, with the GitHub review it became. No draft, and that is the point. */
+  cli(database, [
+    'review',
+    'link',
+    '--review',
+    String(reviewId),
+    '--github-review',
+    'PRR_kwDOseeded',
+  ])
+
+  return reviewId
+}
+
 export function seed(
   directory: string,
 ): {
@@ -544,6 +622,7 @@ export function seed(
   waivedReviewId: number
   structuredReviewId: number
   heldBackReviewId: number
+  postedReviewId: number
 } {
   const database = join(directory, 'seeded.db')
 
@@ -782,6 +861,7 @@ Ran the job twice against a local endpoint that 500s once, and counted the deliv
     waivedReviewId,
     structuredReviewId: seedStructured(directory, database),
     heldBackReviewId: seedHeldBack(directory, database),
+    postedReviewId: seedPosted(directory, database),
   }
 }
 
@@ -1014,7 +1094,7 @@ function heldBackFindings(): Array<Record<string, unknown>> {
  * of the length, so a seed that drifted shorter would leave them untested while every test
  * still passed.
  *
- * Three states the other three reviews cannot show, and each is one of the issue's criteria:
+ * Three states the other four reviews cannot show, and each is one of the issue's criteria:
  * a claim past 60 words, a title carrying a long code name, and a finding with **no title at
  * all**, whose row has to stand in with the claim's first twelve words and say that it did.
  */

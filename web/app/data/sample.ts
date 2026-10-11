@@ -1,5 +1,5 @@
 /*
- * Sample mode: invented records, in memory, behind the same sixteen operations.
+ * Sample mode: invented records, in memory, behind the same nineteen operations.
  *
  * **This is the only file in `web/` that names a fixture**, and nothing imports it unless
  * `source.ts` decides to — which a production build has already decided not to, so none of
@@ -8,7 +8,7 @@
  *
  * ## Why it survived the switch to the API
  *
- * Two reasons, and neither is nostalgia. The component tests mount four screens and assert
+ * Two reasons, and neither is nostalgia. The component tests mount five screens and assert
  * what they render; against a real server they would be a server test wearing a component
  * test's clothes, and they would need one running to say anything at all. And a developer
  * changing a screen can see it with records on it without starting a binary and seeding a
@@ -55,11 +55,13 @@ import type {
   Review,
   ReviewDetail,
   ReviewEvent,
+  ReviewList,
   RoundStatus,
   Rule,
   RuleStage,
   RulesPage,
   Severity,
+  SeverityCounts,
   TicketedAndApproved,
 } from '~/types/desk'
 
@@ -159,6 +161,26 @@ function prOf(detail: ReviewDetail): InboxPr {
   }
 }
 
+/**
+ * The severities of the findings that are **in the draft**, which is what the inbox's
+ * "Draft ready" row counts.
+ *
+ * Not `severityTally`, which `utils/format` exports as the inverse — counts in, a
+ * sentence out — and which this file already imports a sibling of. One name for two
+ * functions with opposite signatures, one import statement apart, is a redeclaration
+ * waiting for the first person who reaches for the other one.
+ *
+ * Separate from `retally` below, which counts the whole review for the One review
+ * screen's own figures. Two questions, two counts, one place each.
+ */
+function draftSeverities(findings: Finding[]): SeverityCounts {
+  const counts: SeverityCounts = { blocker: 0, should: 0, nit: 0, question: 0 }
+  for (const finding of findings) {
+    if (finding.disposition === 'in_draft') counts[finding.severity] += 1
+  }
+  return counts
+}
+
 /** Recount the tallies the API serves precomputed, after a disposition has changed. */
 function retally(detail: ReviewDetail) {
   const severities = { blocker: 0, should: 0, nit: 0, question: 0 }
@@ -233,6 +255,22 @@ function inScope(rule: Rule, repo: string | null): boolean {
   return rule.scope.kind === 'global' || rule.scope.repo === repo
 }
 
+/**
+ * The highest round each pull request has reached, keyed `owner/repo#number`.
+ *
+ * Read by both the posted group and the reviews list, and built once for each rather than
+ * twice: the two had the same four lines, the same key format and the same fold, which is
+ * two places for one rule about what supersedes what.
+ */
+function newestRoundByPr(): Map<string, number> {
+  const rounds = new Map<string, number>()
+  for (const detail of source.reviews) {
+    const key = `${detail.review.repo}#${detail.review.pr}`
+    rounds.set(key, Math.max(rounds.get(key) ?? 0, detail.review.round))
+  }
+  return rounds
+}
+
 /** The whole Inbox, recomputed from the desk — the shape `GET /inbox` serves. */
 function inbox(): Inbox {
   /*
@@ -273,7 +311,16 @@ function inbox(): Inbox {
       review_id: owner!.review.id,
       pull_request: prOf(owner!),
       round: owner!.review.round,
-      severities: owner!.finding_severities,
+      /*
+       * **The findings in the draft, not the review's**, which is what the binary sends
+       * and what the row is captioned as: "Draft ready · 1 blocker, 2 should". This sent
+       * `finding_severities` — every finding on the review — so the tally counted nits
+       * that had been held back for a ticket and findings that had been set aside, beside
+       * a cell saying how many of them were held back. Found during DEV-919 and named in
+       * DEV-930's note; the contract now says which findings the figure counts, because
+       * saying nothing is how three implementations came to answer it three ways.
+       */
+      severities: draftSeverities(owner!.findings),
       held_back: owner!.finding_dispositions.held_back,
       is_delta: owner!.review.round > 1,
       /*
@@ -316,9 +363,19 @@ function inbox(): Inbox {
       scope: rule.scope,
     }))
 
+  /*
+   * **Any review with a running layer, which is what the server asks.**
+   * `Store::reviews_in_progress` has no draft-status condition — a layer `running` is the
+   * whole of it — and this carried `draft_status === 'drafting'`, so the one shape the
+   * queue's cross-group deduplication exists for was unreachable here: a posted review
+   * whose harvest step is running, in `author_replies` and `in_progress` at once. The
+   * behaviour shipped untested because the records could not express the state.
+   *
+   * Review 12 is now that shape, and the queue draws it once.
+   */
   const in_progress = source.reviews
     .map(detail => ({ detail, running: detail.layers.find(item => item.state === 'running') }))
-    .filter(pair => pair.running != null && pair.detail.draft_status === 'drafting')
+    .filter(pair => pair.running != null)
     .map(({ detail, running }) => ({
       review_id: detail.review.id,
       pull_request: prOf(detail),
@@ -340,6 +397,74 @@ function inbox(): Inbox {
       last_activity_at: detail.timings.last_activity_at,
     }))
 
+  /*
+   * **Posted, and with the author** — derived the way the server derives it, out of the
+   * same fields, so the two cannot come to disagree. Posted is a posted draft *or* a
+   * recorded GitHub review id; open is open or never looked at; and only a pull request's
+   * newest round, because nothing ever moves a superseded round's state again to retract
+   * it. The three counts are nulled on their own source, which is the server's rule and
+   * is copied rather than re-invented: null when a figure would be zero and nothing could
+   * have found one.
+   */
+  const newestRound = newestRoundByPr()
+
+  const posted_awaiting_author = source.reviews
+    .filter((detail) => {
+      const draft = draftById(detail.review.id)
+      const isPosted
+        = draft?.draft.posted_at != null || detail.review.github_review_id != null
+      const open = detail.review.pr_state == null || detail.review.pr_state === 'open'
+      const newest
+        = newestRound.get(`${detail.review.repo}#${detail.review.pr}`) === detail.review.round
+      return isPosted && open && newest
+    })
+    .map((detail) => {
+      const draft = draftById(detail.review.id)
+      const harvested = detail.review.harvested_at != null
+      const linked = detail.findings.filter(one => one.github_comment_id != null).length
+      /* A thread is reached through a finding's comment id; with none, none is read. */
+      const readable = harvested && linked > 0
+      const byAuthor = (kind: OutcomeKind) =>
+        detail.outcomes.filter(one => one.kind === kind && one.actor === 'author').length
+      const counted = (count: number, couldLook: boolean) =>
+        (count > 0 || couldLook ? count : null)
+
+      return {
+        review_id: detail.review.id,
+        pull_request: prOf(detail),
+        round: detail.review.round,
+        /* The group holds only the newest round, so these are one number. */
+        rounds_on_pr: detail.review.round,
+        posted_at: draft?.draft.posted_at ?? null,
+        posted_as: draft?.draft.event ?? null,
+        pr_state: detail.review.pr_state ?? null,
+        harvested_at: detail.review.harvested_at ?? null,
+        findings: detail.findings.length,
+        findings_linked: linked,
+        replies: counted(byAuthor('replied'), readable),
+        threads_resolved: counted(byAuthor('thread_resolved'), readable),
+        /*
+         * The harvester's own observation about the code, attributed to nobody — and
+         * **distinct findings**, because it records one of these per commit it saw the
+         * change in, so a finding touched by three pushes holds three.
+         */
+        code_changed_after: counted(
+          new Set(
+            detail.outcomes
+              .filter(one => one.kind === 'code_changed_after')
+              .map(one => one.finding_seq),
+          ).size,
+          harvested,
+        ),
+      }
+    })
+    .sort((a, b) => (b.posted_at ?? '').localeCompare(a.posted_at ?? ''))
+
+  /*
+   * **The five waiting groups, and deliberately not the other two.** `in_progress` is
+   * with the agent and `posted_awaiting_author` is with the author; neither asks the
+   * developer for anything, and `totals.items` is a count of what does.
+   */
   const groups = [
     briefs_to_confirm,
     drafts_to_approve,
@@ -371,8 +496,45 @@ function inbox(): Inbox {
     own_prs_without_reviewer: source.own_prs,
     proposed_rules,
     in_progress,
+    posted_awaiting_author,
     handled_without_you: source.handled_without_you,
   }
+}
+
+/**
+ * `GET /reviews` — every review, newest first, or one repository's.
+ *
+ * The step is the furthest that is **not** `pending`, which is the server's rule: not the
+ * last step written, because a posted review's step 7 is written as `pending` and that
+ * rule would report a harvest that has not begun.
+ */
+function reviewList(repo: string | null): ReviewList {
+  const rounds = newestRoundByPr()
+
+  const reviews = source.reviews
+    .filter(detail => repo == null || detail.review.repo === repo)
+    .slice()
+    .sort((a, b) => b.review.id - a.review.id)
+    .map((detail) => {
+      const reached = detail.layers.filter(layer => layer.state !== 'pending').at(-1)
+      return {
+        review: detail.review,
+        rounds_on_pr: rounds.get(`${detail.review.repo}#${detail.review.pr}`) ?? detail.review.round,
+        /* Absent together: "nothing has started" is not "the lint is pending". */
+        ...(reached
+          ? {
+              step_number: reached.number,
+              step_name: reached.name,
+              step_state: reached.state,
+              step_detail: reached.detail ?? null,
+            }
+          : {}),
+        steps_total: LAYERS_TOTAL,
+        last_activity_at: detail.timings.last_activity_at,
+      }
+    })
+
+  return { repo: (repo as RepoName | null) ?? null, reviews }
 }
 
 /** The Rules screen for one repository, or for all of them. */
@@ -1222,7 +1384,7 @@ function answered<T>(value: T): T {
 }
 
 /**
- * The eighteen operations over the records in memory.
+ * The nineteen operations over the records in memory.
  *
  * Every one is `async` so that the composable above cannot tell which backend it has. They
  * resolve immediately — there is nothing to wait for — which means a loading state is not
@@ -1234,6 +1396,7 @@ export function sampleBackend(): DeskBackend {
     isSampleData: true,
 
     getInbox: async () => answered(inbox()),
+    listReviews: async repo => answered(reviewList(repo)),
     getReview: async (id) => {
       const detail = reviewById(id)
       if (!detail) throw notFound(`review ${id}`)

@@ -119,7 +119,7 @@ describe('the built dashboard', () => {
    * render, which is a test that fails for a reason nobody can act on.
    *
    * What the criterion is about is the rendered page, so it is asserted on a rendered
-   * page: `web/e2e/review-desk.spec.ts` opens all four screens on a binary serving a real
+   * page: `web/e2e/review-desk.spec.ts` opens all five screens on a binary serving a real
    * database and fails if the marker is anywhere on them.
    */
 
@@ -138,16 +138,24 @@ describe('the built dashboard', () => {
 
   it('serves the two routes the binary prerenders, and relies on the fallback for the rest', () => {
     /*
-     * Two, and no parameterised ones. A review's route is resolved by the client router:
-     * the Rust server answers any path that cannot be a file with the index, which
-     * `crates/server/tests/assets.rs` holds. Naming `/reviews/17` here would mean reading a
-     * fixture at build time to find out which ids exist — the fixture data this file is
-     * about.
+     * Three, and no **parameterised** ones, which is the distinction this asserts. A
+     * review's own route is resolved by the client router: the Rust server answers any
+     * path that cannot be a file with the index, which `crates/server/tests/assets.rs`
+     * holds. Naming `/reviews/17` here would mean reading a fixture at build time to find
+     * out which ids exist — the fixture data this file is about.
      */
     expect(existsSync(join(BUILD, 'index.html'))).toBe(true)
     expect(existsSync(join(BUILD, 'rules/index.html'))).toBe(true)
+    expect(existsSync(join(BUILD, 'reviews/index.html'))).toBe(true)
 
-    const prerenderedReviews = files(BUILD).filter(path => path.includes('/reviews/'))
-    expect(prerenderedReviews).toEqual([])
+    /*
+     * **Narrowed rather than loosened.** This read `path.includes('/reviews/')`, which was
+     * right while no review route was prerendered at all and became wrong the moment
+     * `/reviews` was — `reviews/index.html` contains that string and is the file that
+     * should exist. Deleting the assertion would have given up on the thing it is for, so
+     * it names the shape it is against: a path with a review *id* in it.
+     */
+    const withAnId = files(BUILD).filter(path => /\/reviews\/\d/.test(path))
+    expect(withAnId).toEqual([])
   })
 })

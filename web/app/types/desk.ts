@@ -20,8 +20,10 @@
  * If the generated module is missing, `nuxt.config.ts` says so in one sentence before the
  * type checker gets a chance to report fifty-one unrelated errors and the real one last.
  *
- * Four reads, one per screen — `GET /inbox`, `GET /reviews/{id}`,
- * `GET /reviews/{id}/draft`, `GET /rules?repo=` — so no screen joins anything. Times are
+ * Six reads, one per screen and two lists — `GET /inbox`, `GET /reviews`,
+ * `GET /reviews/{id}`, `GET /reviews/{id}/draft`, `GET /rules?repo=`, `GET /repos` — so
+ * no screen joins anything. (It read "four reads" until DEV-930, and `GET /repos` had
+ * already made that five.) Times are
  * RFC 3339 strings. A nullable count means the server has no measurement, which is not the
  * same as zero, and a screen must say so rather than print a nought.
  */
@@ -47,6 +49,8 @@ export type ReviewEvent = Schema['ReviewEvent']
 export type ReviewLayerName = Schema['ReviewLayerName']
 export type ReviewLayerState = Schema['ReviewLayerState']
 export type NitTicketStatus = Schema['NitTicketStatus']
+/** What a pull request was last seen to be **at the last harvest**. Null is nobody looked. */
+export type PrState = Schema['PrState']
 /** What became of a finding in one round. Not the same question as `Disposition`. */
 export type RoundStatus = Schema['RoundStatus']
 /** Who decided a round status. Deliberately not `Actor`: an agent decides most of them. */
@@ -201,15 +205,36 @@ export type InboxOwnPrItem = Schema['InboxOwnPrItem']
 export type InboxProposedRuleItem = Schema['InboxProposedRuleItem']
 export type InboxInProgressItem = Schema['InboxInProgressItem']
 export type InboxHandled = Schema['InboxHandled']
+/**
+ * A posted review whose pull request has not been merged or closed.
+ *
+ * Its three counts are nullable and null is not zero: null is nothing having measured
+ * one, and `harvested_at` and `findings_linked` are what say which absence it is.
+ */
+export type InboxPostedItem = Schema['InboxPostedItem']
 export type Inbox = Schema['Inbox']
+
+/* ---- GET /reviews ---- */
+
+/**
+ * One row of the Reviews list.
+ *
+ * `step_number` and the two fields with it are absent together, for a review nothing has
+ * reported on. The page draws that in words — "not started" — rather than as a 1.
+ */
+export type ReviewListItem = Schema['ReviewListItem']
+
+/** `GET /reviews` serves an object, not an array; this is what is inside it. */
+export type ReviewList
+  = operations['listReviews']['responses']['200']['content']['application/json']
 
 /* ---- What sample mode holds. The server holds the same facts in SQLite. ---- */
 
 /**
  * The whole desk, as one object.
  *
- * Only sample mode has such a thing. The API serves four separate documents and joins
- * nothing, which is the contract's "each screen is one GET"; this is what the fixtures have
+ * Only sample mode has such a thing. The API serves each read as its own document and
+ * joins nothing, which is the contract's "each screen is one GET"; this is what the fixtures have
  * to be in order to recompute those four documents in memory as a write patches them.
  */
 export interface DeskSource {

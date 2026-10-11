@@ -75,6 +75,20 @@ test.describe('a seeded database', () => {
     await shot(page, 'seeded-4-rules')
 
     /*
+     * **The Reviews list**, which DEV-930 adds: every review the record holds, including
+     * the one that was posted and had left every group the queue serves.
+     */
+    await page.goto(`${seeded}reviews`)
+    await expect(page.getByRole('heading', { name: /\d+ reviews?$/ })).toBeVisible()
+    await shot(page, 'seeded-7-reviews')
+
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto(`${seeded}reviews`)
+    await expect(page.getByRole('heading', { name: /\d+ reviews?$/ })).toBeVisible()
+    await shot(page, 'seeded-8-reviews-390')
+    await page.setViewportSize({ width: 1440, height: 900 })
+
+    /*
      * **The queue at a phone's width**, which DEV-876 asks for by name: "Both pages are
      * usable at 390 pixels wide." The assertion that nothing scrolls sideways is in the
      * acceptance suite; this is the picture of it.

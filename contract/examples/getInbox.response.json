@@ -1,5 +1,8 @@
 {
-  "totals": { "items": 7, "repos": 2 },
+  "totals": {
+    "items": 7,
+    "repos": 2
+  },
   "briefs_to_confirm": [
     {
       "review_id": 17,
@@ -22,7 +25,12 @@
         "title": "Invoice totals in cents"
       },
       "round": 1,
-      "severities": { "blocker": 1, "should": 2, "nit": 4, "question": 0 },
+      "severities": {
+        "blocker": 1,
+        "should": 2,
+        "nit": 0,
+        "question": 0
+      },
       "held_back": 4,
       "is_delta": false,
       "draft_ready_at": "2026-10-08T11:21:00Z"
@@ -35,7 +43,12 @@
         "title": "Cache the permissions lookup"
       },
       "round": 2,
-      "severities": { "blocker": 0, "should": 1, "nit": 0, "question": 0 },
+      "severities": {
+        "blocker": 0,
+        "should": 1,
+        "nit": 0,
+        "question": 0
+      },
       "held_back": 0,
       "is_delta": true,
       "draft_ready_at": "2026-10-09T16:40:00Z"
@@ -74,7 +87,10 @@
         "title": "Remove the legacy importer"
       },
       "opened_at": "2026-10-05T09:12:00Z",
-      "description_lint": { "passes": true, "budget_ratio": 0.7 }
+      "description_lint": {
+        "passes": true,
+        "budget_ratio": 0.7
+      }
     },
     {
       "pull_request": {
@@ -83,7 +99,10 @@
         "title": "Rate-limit the token endpoint"
       },
       "opened_at": "2026-10-07T08:40:00Z",
-      "description_lint": { "passes": false, "budget_ratio": 2.3 }
+      "description_lint": {
+        "passes": false,
+        "budget_ratio": 2.3
+      }
     }
   ],
   "proposed_rules": [
@@ -92,7 +111,10 @@
       "rule_key": "R-22",
       "statement": "Do not raise rename-for-clarity suggestions",
       "why_proposed": "You cut this kind of finding from 5 of the last 5 drafts that raised it. None named a consequence.",
-      "scope": { "kind": "repo", "repo": "acme/portal" }
+      "scope": {
+        "kind": "repo",
+        "repo": "acme/portal"
+      }
     }
   ],
   "in_progress": [
@@ -125,6 +147,46 @@
       "session_alive": null,
       "in_state_since": "2026-10-10T08:12:00Z",
       "last_activity_at": null
+    }
+  ],
+  "posted_awaiting_author": [
+    {
+      "review_id": 12,
+      "pull_request": {
+        "repo": "acme/portal",
+        "pr": 398,
+        "title": "Split the export job"
+      },
+      "round": 1,
+      "rounds_on_pr": 1,
+      "posted_at": "2026-10-08T16:02:00Z",
+      "posted_as": "request_changes",
+      "pr_state": "open",
+      "harvested_at": "2026-10-09T08:15:00Z",
+      "findings": 3,
+      "findings_linked": 3,
+      "replies": 2,
+      "threads_resolved": 1,
+      "code_changed_after": 1
+    },
+    {
+      "review_id": 14,
+      "pull_request": {
+        "repo": "acme/portal",
+        "pr": 401,
+        "title": "Hold the queue connection open"
+      },
+      "round": 1,
+      "rounds_on_pr": 1,
+      "posted_at": "2026-10-07T14:48:00Z",
+      "posted_as": "approve",
+      "pr_state": null,
+      "harvested_at": null,
+      "findings": 2,
+      "findings_linked": 2,
+      "replies": null,
+      "threads_resolved": null,
+      "code_changed_after": null
     }
   ],
   "handled_without_you": {

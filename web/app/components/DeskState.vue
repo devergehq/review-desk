@@ -1,6 +1,6 @@
 <script setup lang="ts" generic="T">
 /**
- * The three states a read has, in one place for all four screens.
+ * The three states a read has, in one place for all five screens.
  *
  * A read over HTTP is in flight, or it failed, or it answered — and before the dashboard
  * called an API none of that existed, so each screen rendered a value and nothing else.

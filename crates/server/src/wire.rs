@@ -20,9 +20,10 @@ use review_desk_store::{
     BriefFlowBox, BriefFlowRow, BriefOpenChoice, BriefOption, BriefOptionVerdict, BriefPart,
     BriefPartFile, BriefProblem, BriefSupportTable, DescriptionLintResult, Disposition, Draft,
     DraftLint, DraftSection, FileChange, Finding, FindingHunk, FindingInRound, LayerFact,
-    NitTicket, Outcome, ProblemStatement, RepoSummary, Review, ReviewLayer, ReviewLayerRun,
-    ReviewProvenance, ReviewSource, ReviewTimings, RoundCommit, RoundStatusCounts, RoundSummary,
-    Rule, RuleCounts, RuleScope, RuleStage, RulesSummary, Severity, Timestamp,
+    NitTicket, Outcome, PostedReview, ProblemStatement, RepoSummary, Review, ReviewAtStep,
+    ReviewLayer, ReviewLayerName, ReviewLayerRun, ReviewProvenance, ReviewSource, ReviewTimings,
+    RoundCommit, RoundStatusCounts, RoundSummary, Rule, RuleCounts, RuleScope, RuleStage,
+    RulesSummary, Severity, Timestamp,
 };
 use serde_json::{json, Value};
 
@@ -79,6 +80,10 @@ pub fn finding_key(seq: i64) -> String {
 }
 
 /// The contract's `Review`.
+///
+/// `pr_state` and `harvested_at` are here and `pr_state_at` is not, which the contract
+/// states and argues: the first two are read by the posted-reviews group and the Reviews
+/// list, and nothing draws the third.
 pub fn review(review: &Review) -> Value {
     json!({
         "id": review.id,
@@ -93,7 +98,94 @@ pub fn review(review: &Review) -> Value {
         "ledger_id": review.ledger_id,
         "github_review_id": review.github_review_id,
         "created_at": rfc3339(review.created_at),
+        "pr_state": review.pr_state.map(|state| state.as_str()),
+        "harvested_at": rfc3339_or_null(review.harvested_at),
     })
+}
+
+/// The contract's `InboxPostedItem`: a posted review whose pull request is still open.
+///
+/// **Where the three counts are decided**, and the one thing this function is really
+/// for. Each is null when it would be zero *and* nothing could have found one, because
+/// zero is a measurement and the absence of one is not:
+///
+/// | The record | What is served |
+/// |---|---|
+/// | nothing has harvested the review, and it holds none of these outcomes | null, and the screen says "not harvested yet" |
+/// | harvested, but no finding carries the comment it was posted as | null for the two counts read off a thread — there was nothing for a reply to attach to |
+/// | harvested, something to read, nothing found | `0`, which is a measurement |
+/// | an outcome the record holds, with nothing having harvested it | the count — the harvest writes its outcomes and its own timestamp in separate statements, and `outcome add` writes outcomes with no harvest at all |
+///
+/// The last row is the converse failure and it mattered: `reviews_with_author_activity`
+/// has no `harvested_at` condition, so the same screen was about to draw those replies
+/// under "Needs you" while this group said nobody had measured whether the author had
+/// replied.
+pub fn inbox_posted(posted: &PostedReview) -> Value {
+    let review = &posted.review;
+    let harvested = review.harvested_at.is_some();
+
+    // Zero with a reason to doubt it is served as "not measured". A count the record
+    // holds is served whatever else is missing: something came back, however it arrived.
+    let counted = |count: i64, could_look: bool| {
+        if count > 0 || could_look {
+            json!(count)
+        } else {
+            Value::Null
+        }
+    };
+    // A thread is reached through a finding's GitHub comment id. With none, the
+    // harvester reads no thread at all and marks the review harvested regardless.
+    let threads_readable = harvested && posted.findings_linked > 0;
+
+    json!({
+        "review_id": review.id,
+        "pull_request": inbox_pr(review),
+        "round": review.round,
+        // **The same number as `round`, and read here rather than passed in.** The store
+        // returns only the newest round of a pull request, so the round this review is on
+        // *is* the highest that pull request has reached. Served because the contract's
+        // field exists so no screen has to know that; taken as a parameter it would have
+        // been a value only one caller could get right, with the reason it is equal
+        // living at that caller rather than here.
+        "rounds_on_pr": review.round,
+        "posted_at": rfc3339_or_null(posted.posted_at),
+        "posted_as": posted.posted_as.map(|event| event.as_str()),
+        "pr_state": review.pr_state.map(|state| state.as_str()),
+        "harvested_at": rfc3339_or_null(review.harvested_at),
+        "findings": posted.findings,
+        "findings_linked": posted.findings_linked,
+        "replies": counted(posted.response.replies, threads_readable),
+        "threads_resolved": counted(posted.response.threads_resolved, threads_readable),
+        "code_changed_after": counted(posted.response.code_changed_after, harvested),
+    })
+}
+
+/// The contract's `ReviewListItem`: one row of `GET /reviews`.
+///
+/// The step's three fields are absent together, for a review nothing has reported on at
+/// all. Absent rather than a number: "nothing has started" and "the lint is pending" are
+/// different sentences, and the page draws the first in words.
+pub fn review_list_item(at: &ReviewAtStep) -> Value {
+    let mut item = json!({
+        "review": review(&at.review),
+        "rounds_on_pr": at.rounds_on_pr,
+        "steps_total": ReviewLayerName::COUNT,
+        "last_activity_at": rfc3339_or_null(at.review.last_activity_at),
+    });
+
+    // `if let`, not `as_object_mut().expect(...)`: `finding_in_round` below grows a
+    // document the same way and without a panic path, and two idioms for one operation in
+    // one file is how the one that can panic ends up copied. The match always holds — the
+    // `json!` above is an object literal — which is exactly why nothing should panic if it
+    // somehow did not.
+    if let (Some(step), Value::Object(object)) = (&at.step, &mut item) {
+        object.insert("step_number".to_string(), json!(step.number));
+        object.insert("step_name".to_string(), json!(step.name.as_str()));
+        object.insert("step_state".to_string(), json!(step.state.as_str()));
+        object.insert("step_detail".to_string(), json!(step.detail));
+    }
+
+    item
 }
 
 /// The contract's `BriefOption`.
@@ -377,6 +469,10 @@ pub fn finding(finding: &Finding) -> Value {
         "evidence": finding.evidence,
         "disposition": finding.disposition.as_str(),
         "disposition_reason": finding.disposition_reason,
+        // The comment the finding was posted as, which is the only route anything can come
+        // back on it by. Null for a finding raised in the body alone, which is what
+        // `InboxPostedItem.findings_linked` counts and why it has to.
+        "github_comment_id": finding.github_comment_id,
         "rule_id": finding.rule_id,
         "rule_key": finding.rule_id.map(rule_key),
         // Null, not an empty hunk. A finding written with only a file and a line has no

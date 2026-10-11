@@ -11,13 +11,14 @@ import {
 import { loadSource } from '../app/data/sample'
 
 import Inbox from '../app/pages/index.vue'
+import Reviews from '../app/pages/reviews/index.vue'
 import OneReview from '../app/pages/reviews/[id]/index.vue'
 import DraftPreview from '../app/pages/reviews/[id]/draft.vue'
 import Rules from '../app/pages/rules.vue'
 import Layout from '../app/layouts/default.vue'
 
 /*
- * The four screens, mounted. These check that each one renders from the data layer and
+ * The five screens, mounted. These check that each one renders from the data layer and
  * that the controls are real, labelled elements — not that it looks right, which is what
  * the screenshots in the pull request are for.
  *
@@ -125,17 +126,18 @@ describe('the shell', () => {
     expect(places).toEqual(['Queue', 'Reviews', 'Rules'])
   })
 
-  it('does not link to a review when the desk holds none', async () => {
+  it('keeps its three places, and all three are links, on a database with nothing in it', async () => {
     await resetDesk({ reviews: [], drafts: [], rules: [] })
     const page = await shown(Layout)
     /*
-     * The item stays, so the navigation keeps its three places; it is not a link, because
-     * on a fresh database there is no review to link to. It used to point at `/reviews/1`,
-     * which was a link to a review that does not exist.
+     * **This asserted the opposite until DEV-930**, and the change is the point. "Reviews"
+     * used to go to whichever review happened to be waiting, so on a fresh database there
+     * was no review to point at and the item was a disabled label. It is a list now, and a
+     * list is somewhere worth being on an empty database — it says the database is empty.
      */
-    const reviews = page.findAll('nav a').map(link => link.text())
-    expect(reviews).not.toContain('Reviews')
-    expect(page.find('nav span[aria-disabled="true"]').text()).toBe('Reviews')
+    expect(page.findAll('nav a').map(link => link.text()))
+      .toEqual(['Queue', 'Reviews', 'Rules'])
+    expect(page.find('nav span[aria-disabled="true"]').exists()).toBe(false)
   })
 })
 
@@ -180,7 +182,7 @@ describe('the queue', () => {
     expect(page.text()).toContain('2 of your own')
   })
 
-  it('draws the board’s four groups, and hides a group with nothing in it', async () => {
+  it('draws the board’s five groups, and hides a group with nothing in it', async () => {
     const page = await shown(Inbox)
     const text = page.text()
     expect(text).toContain('Needs you')
@@ -196,15 +198,73 @@ describe('the queue', () => {
   })
 
   /*
-   * The board draws this group; `GET /inbox` has no source for it, and DEV-876 adds no API
-   * field. Drawn in the unmeasured state rather than hidden: hiding it would say no review
-   * is waiting on an author, which is a claim nothing here can make.
+   * **The group the board drew and nothing could fill.** It said "Not measured yet" with
+   * the reason beside it until DEV-930 gave `GET /inbox` a group for a posted review whose
+   * pull request is still open. The words are gone because the absence is.
    */
-  it('says that reviews waiting on the author are not measured, rather than showing none', async () => {
+  it('lists the posted reviews waiting on their author, and no longer says they are unmeasured', async () => {
     const page = await shown(Inbox)
-    expect(page.text()).toContain('Waiting on the author')
-    expect(page.text()).toContain('Not measured yet')
-    expect(page.text()).toContain('serves no group for a posted review awaiting a reply')
+    const text = page.text()
+    expect(text).toContain('Waiting on the author')
+    expect(text).not.toContain('Not measured yet')
+    expect(text).not.toContain('serves no group for a posted review awaiting a reply')
+
+    /* Review 43: posted, pull request open, and nothing has read it back. */
+    const row = page.findAll('.row').find(one => one.text().includes('#403'))!
+    expect(row, 'the posted review has a row').toBeDefined()
+    expect(row.text()).toContain('Posted as Comment')
+    expect(row.text()).toContain('Not harvested yet')
+    expect(row.text()).toContain('pull request state not established')
+    expect(row.attributes('href')).toBe('/reviews/43/understand')
+  })
+
+  /*
+   * **One row per review, across groups as well as within them.** Review 12 is posted with
+   * its pull request open, so `GET /inbox` serves it in the posted group — and its author
+   * has replied, so it is also under "Needs you". Drawing it in both is the defect DEV-876
+   * exists to prevent, so the group leaves it out and says it did.
+   */
+  it('draws a posted review whose author has replied once, under Needs you', async () => {
+    const page = await shown(Inbox)
+    const forThreeNineEight = page.findAll('.row').filter(row => row.text().includes('#398'))
+    expect(forThreeNineEight).toHaveLength(1)
+    expect(forThreeNineEight[0]!.text()).toContain('The author replied')
+
+    /*
+     * And the group says where it went, so its count cannot read as the whole truth.
+     * "drawn above" rather than a named group: the subtraction also removes reviews a
+     * session is working on, which is not something the author has done.
+     */
+    expect(page.text()).toContain('1 more is posted and is already drawn above')
+  })
+
+  /*
+   * And the figures about the author's response are on the row that is *about* the author's
+   * response. They would otherwise be drawn nowhere: a review only leaves the posted group
+   * when something has come back on it, which is exactly when the figures are non-zero.
+   */
+  it('puts what came back on the row that says the author replied', async () => {
+    const page = await shown(Inbox)
+    const row = page.findAll('.row').find(one => one.text().includes('#398'))!
+    expect(row.text()).toContain('2 replies')
+    expect(row.text()).toContain('1 thread resolved')
+    expect(row.text()).toContain('1 finding with code changed since')
+  })
+
+  /*
+   * **The same rule, one group earlier.** Review 12 is posted, its author has replied, and
+   * its harvest step is running — so `GET /inbox` serves it in `author_replies` *and* in
+   * `in_progress`. One row, under "Needs you", with what the other group would have said
+   * about the session on it; and "With the agent" says it held one back rather than
+   * quietly counting one fewer.
+   */
+  it('draws a review that needs you and has a session running once, saying both', async () => {
+    const page = await shown(Inbox)
+    const rows = page.findAll('.row').filter(row => row.text().includes('#398'))
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.text()).toContain('The author replied')
+    expect(rows[0]!.text()).toContain('a session is on step 7 of 7')
+    expect(page.text()).toContain('1 more is with the agent and is already drawn above')
   })
 
   it('shows which layer each running session is on, as a bar and in words', async () => {
@@ -250,7 +310,12 @@ describe('the queue', () => {
     const page = await shown(Inbox)
     const tabs = page.findAll('[role="radiogroup"] [role="radio"]').map(tab => tab.text())
     expect(tabs[0]).toBe('All repositories')
-    expect(tabs).toContain('acme/portal· 6')
+    /*
+     * Seven on portal, not six: review 43 is posted with its pull request open, so it is a
+     * row under "Waiting on the author" and the chip counts it. A chip whose number does
+     * not match the rows pressing it shows is worse than no chip.
+     */
+    expect(tabs).toContain('acme/portal· 7')
     expect(tabs).toContain('acme/billing-api· 3')
 
     const billing = page
@@ -398,16 +463,24 @@ describe('the queue', () => {
     ).toBe(false)
   })
 
-  it('sends every "the review" link to Understand, not to the findings', async () => {
+  it('sends the header’s Reviews item to the list, and every row from it to Understand', async () => {
     /*
-     * The queue, the two screens' back links, the header nav and a rule's origin all
-     * meant `/reviews/{id}` before DEV-885. Once "the review" means Understand, an item
-     * still landing on the findings takes a reader somewhere the page it lands on calls
-     * not-the-review — which is what the header's "Reviews" was doing.
+     * **The nav item changed kind in DEV-930 and the rule it was asserting did not.** It
+     * used to point at whichever review was waiting, so the thing being checked was that
+     * it landed on Understand rather than on the findings — DEV-885's rule. It points at
+     * the list now, and the rule moves to the list's rows: a review is still read from
+     * Understand, which is where a review starts.
      */
     const layout = await shown(Layout)
     const reviews = layout.findAll('nav a').find(one => one.text() === 'Reviews')
-    expect(reviews!.attributes('href')).toMatch(/^\/reviews\/\d+\/understand$/)
+    expect(reviews!.attributes('href')).toBe('/reviews')
+
+    const page = await shown(Reviews)
+    const rows = page.findAll('.row')
+    expect(rows.length).toBeGreaterThan(0)
+    for (const row of rows) {
+      expect(row.attributes('href')).toMatch(/^\/reviews\/\d+\/understand$/)
+    }
   })
 
   it('keeps the figures the boards do not draw, rather than dropping them', async () => {
@@ -1105,6 +1178,7 @@ describe('a read that is still in flight', () => {
       own_prs_without_reviewer: [],
       proposed_rules: [],
       in_progress: [],
+      posted_awaiting_author: [],
       handled_without_you: { window_days: 7 },
     }))
     await settle(page)
@@ -1139,6 +1213,7 @@ describe('the server stops while a page is open', () => {
               own_prs_without_reviewer: [],
               proposed_rules: [],
               in_progress: [],
+              posted_awaiting_author: [],
               handled_without_you: { window_days: 7 },
             }),
           ),

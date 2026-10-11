@@ -9,44 +9,43 @@
  * it is a queue of reviews, one row each, and "inbox" was the name of the thing that
  * listed one review three times.
  *
- * "Reviews" has no index of its own in this slice, so it goes to the review that is
- * waiting — **at Understand, where a review starts.** It pointed at `/reviews/{id}` until
- * DEV-885, and once the queue, the draft screen and the review page itself all agreed that
- * "the review" means Understand, the one item still landing on the findings was taking a
- * reader somewhere the page it landed on called not-the-review.
+ * **"Reviews" is a page now, and until DEV-930 it was an action.** It went to whichever
+ * review happened to be waiting — the brief to confirm, else the draft to approve, else the
+ * first reply — and greyed itself out on a database with none. That was the best available
+ * answer while there was no index to point at: it meant the one item in the header could
+ * not take a reader to a *particular* review, which is the whole of what Patrick asked for
+ * after posting review 2. It points at `/reviews`.
+ *
+ * Two things went with it, and both are a gain. The layout no longer reads `GET /inbox` on
+ * every page — it did so only to work out that link, so the header now renders with the
+ * server stopped. And the disabled-label branch is gone, because a list is somewhere worth
+ * being on a database with nothing in it: it says so.
+ *
+ * **`current` and `section` are two questions**, and the item needs both. The underline
+ * marks the part of the app you are in, so `/reviews/3/understand` still underlines
+ * Reviews. `aria-current="page"` is a narrower claim — *this* is the page — and setting it
+ * on a review page would tell a screen reader it was on the list.
  */
 const route = useRoute()
-const inbox = useReviewDesk().inbox()
 
-/*
- * Whichever review is waiting on the developer, so "Reviews" always lands somewhere worth
- * being: the brief to confirm, else the draft to approve, else the first reply.
+const LINKS = [
+  { label: 'Queue', to: '/' },
+  { label: 'Reviews', to: '/reviews' },
+  { label: 'Rules', to: '/rules' },
+]
+
+/** Whether this is the page being read. The narrower claim, and `aria-current`'s. */
+const isCurrent = (to: string, path: string) => path === to
+
+/**
+ * Whether this is the part of the app being read, which is what the underline marks.
  *
- * `null` while the inbox has not answered, and on a database with nothing in it. There is
- * then no review to link to, so the item is a disabled label rather than a link to
- * `/reviews/1` — which on a fresh database was a link to a review that does not exist.
+ * **The Queue is the exception and it is stated here rather than left to look like an
+ * inconsistency**: every path starts with `/`, so the prefix rule would underline Queue on
+ * every screen. It owns one path and no children.
  */
-const firstReview = computed(() => {
-  const waiting = inbox.data.value
-  if (!waiting) return null
-  return (
-    waiting.briefs_to_confirm[0]?.review_id
-    ?? waiting.drafts_to_approve[0]?.review_id
-    ?? waiting.author_replies[0]?.review_id
-    ?? waiting.in_progress[0]?.review_id
-    ?? null
-  )
-})
-
-const links = computed(() => [
-  { label: 'Queue', to: '/', match: (path: string) => path === '/' },
-  {
-    label: 'Reviews',
-    to: firstReview.value == null ? null : `/reviews/${firstReview.value}/understand`,
-    match: (path: string) => path.startsWith('/reviews'),
-  },
-  { label: 'Rules', to: '/rules', match: (path: string) => path.startsWith('/rules') },
-])
+const isSection = (to: string, path: string) =>
+  (to === '/' ? path === '/' : path.startsWith(to))
 </script>
 
 <template>
@@ -63,29 +62,16 @@ const links = computed(() => [
         class="nav"
         aria-label="Review Desk"
       >
-        <template
-          v-for="link in links"
+        <NuxtLink
+          v-for="link in LINKS"
           :key="link.label"
+          :to="link.to"
+          class="link"
+          :class="{ 'link--current': isSection(link.to, route.path) }"
+          :aria-current="isCurrent(link.to, route.path) ? 'page' : undefined"
         >
-          <NuxtLink
-            v-if="link.to"
-            :to="link.to"
-            class="link"
-            :class="{ 'link--current': link.match(route.path) }"
-            :aria-current="link.match(route.path) ? 'page' : undefined"
-          >
-            {{ link.label }}
-          </NuxtLink>
-          <!--
-            Nothing to link to. Shown rather than hidden, so the navigation keeps its three
-            places and the one that is empty says it is empty.
-          -->
-          <span
-            v-else
-            class="link link--none"
-            aria-disabled="true"
-          >{{ link.label }}</span>
-        </template>
+          {{ link.label }}
+        </NuxtLink>
       </nav>
       <SampleDataBadge />
     </header>
@@ -157,11 +143,6 @@ const links = computed(() => [
   color: var(--rd-ink);
   font-weight: 600;
   box-shadow: inset 0 -2px 0 var(--rd-ink);
-}
-
-.link--none {
-  color: var(--rd-line-strong);
-  cursor: default;
 }
 
 /* The marker sits at the far end, which is where every board puts it. */

@@ -6,12 +6,16 @@
 import type {
   DescriptionLint,
   DeskError,
+  InboxPostedItem,
   InboxReplyEvent,
   Rule,
   Instant,
   OutcomeKind,
+  PrState,
+  ReviewEvent,
   ReviewLayerName,
   ReviewLayerState,
+  ReviewListItem,
   SeverityCounts,
 } from '~/types/desk'
 
@@ -285,6 +289,157 @@ export function editVerb(kind: OutcomeKind | string): string {
 }
 
 /**
+ * A GitHub review event, as the developer chose it: "Request changes", not
+ * `request_changes`.
+ *
+ * **One map, two readers.** `SignOffCard` carried this and the posted rows on the queue
+ * needed the same three words; a second copy is how two screens come to call one event
+ * different things.
+ */
+export function eventLabel(event: ReviewEvent): string {
+  switch (event) {
+    case 'request_changes': return 'Request changes'
+    case 'comment': return 'Comment'
+    case 'approve': return 'Approve'
+    default: return event
+  }
+}
+
+/**
+ * What has come back on a posted review, in the record's own terms.
+ *
+ * **Three states, three sentences, and only one of them has figures in it.** The counts
+ * are null when nothing could have found one, and which absence it is matters: a review
+ * nothing has read back from GitHub is a different thing from one a harvest ran over and
+ * could read nothing of, because the posted review raised its findings in the body alone
+ * and there is no comment thread for a reply to attach to.
+ *
+ * The figures carry their measurement time, because the record only supports a statement
+ * about *then*: "0 replies" over a figure taken two hours ago reads as a statement about
+ * now, and the author may have answered since.
+ */
+export function authorResponseLabel(item: InboxPostedItem): string {
+  /*
+   * **Each figure speaks for itself, and an absent one never silences a measured one.**
+   * The three are nulled on their own sources, so a review can be harvested with nothing
+   * for a reply to attach to and still have a real count of the code that changed —
+   * dropping that because the other two are unknown would lose a measurement to an
+   * absence, which is the same fault as the nought this whole rule exists to prevent.
+   */
+  const said: string[] = []
+
+  /*
+   * **Both thread-derived figures absent means nothing could read a thread**, and the
+   * row says which absence it is. They are nulled together because they come off the
+   * same read: the harvester reaches a thread through a finding's comment id and gets
+   * both from it, or neither.
+   */
+  if (item.replies == null && item.threads_resolved == null) {
+    said.push(
+      item.harvested_at == null
+        ? 'Not harvested yet — nothing has read this review back from GitHub'
+        : item.findings === 0
+          ? 'No findings were posted, so there is nothing for the author to reply to'
+          : `No finding is linked to a comment on GitHub, so no reply could be read (${
+            count(item.findings, 'finding')})`,
+    )
+  }
+
+  /*
+   * **Each figure drawn only where there is one**, and never through a `?? 0`. A null
+   * coalesced to nought is the exact thing this function exists to prevent, and it is
+   * reachable on its own: an outcome recorded by hand gives a review a reply count with
+   * no harvest behind it, leaving the resolution count beside it still unmeasured.
+   */
+  if (item.replies != null) said.push(count(item.replies, 'reply', 'replies'))
+  if (item.threads_resolved != null) {
+    said.push(`${count(item.threads_resolved, 'thread')} resolved`)
+  }
+
+  /*
+   * **"findings whose code changed", not "commits since".** DEV-930 asks for the second
+   * and the record holds neither: the harvester writes one of these per finding whose
+   * file changed, so one commit touching three findings' files writes three.
+   */
+  if (item.code_changed_after != null) {
+    said.push(`${count(item.code_changed_after, 'finding')} with code changed since`)
+  }
+
+  /*
+   * **The measurement's own time, and only where there is a measurement to date.** "as at
+   * 2 hr ago" over a figure taken then is what stops a nought reading as a statement about
+   * now; over "not harvested yet" it would be dating an absence.
+   *
+   * And where a figure exists with no harvest behind it, the row says so — for *any* of
+   * the three, not only `replies`. They are nulled on their own sources, so the one that
+   * survives without a harvest is not always the first: `review-desk outcome add` can
+   * record a resolution without a reply, and that figure needs its basis as much.
+   */
+  const measured
+    = item.replies != null || item.threads_resolved != null || item.code_changed_after != null
+  /*
+   * **Not where the row has already said it.** When both thread-derived figures are
+   * absent the first sentence is "Not harvested yet", and adding "recorded without a
+   * harvest" after a figure between them states the same absence twice in one line —
+   * reachable through `outcome add --kind code_changed_after` on a review nothing has
+   * harvested.
+   */
+  const saidAlready = item.replies == null && item.threads_resolved == null
+  if (item.harvested_at != null) said.push(`as at ${sinceLabel(item.harvested_at)}`)
+  else if (measured && !saidAlready) said.push('recorded without a harvest')
+
+  return said.join(' · ')
+}
+
+/**
+ * What the record knows of a posted pull request's state.
+ *
+ * `null` is not "open": it is the harvester never having looked, which is every review
+ * until `review-desk harvest` runs over it. The group's heading says an author is being
+ * waited on, and this is the row saying how much of that the record can actually support.
+ */
+export function prStateLabel(state: PrState | null | undefined): string {
+  if (state == null) return 'pull request state not established'
+  return `pull request ${state} at the last harvest`
+}
+
+/**
+ * Where a review has got to, as the step **and what the step says** — never the step alone.
+ *
+ * A bare step name is the step a review is *waiting at* when the state is `waiting_on_you`
+ * and the step it has *left* when the state is `done`. A posted review's furthest started
+ * step is the draft, so a cell reading "Draft" tells a reader it still needs signing off
+ * while the queue says it is with the author. "Draft · signed off by the developer" says
+ * the same record and misleads nobody.
+ *
+ * **The outcome comes from `layerOutcome`, which the trail already uses.** Writing the
+ * detail out raw here looked like the same thing and was not: `layerDetail` rewrites the
+ * one phrase the store and the screen disagree about — the store writes layer 6's detail
+ * as "approved by the developer", and DEV-870 reserves "approve" for the GitHub review
+ * event, so the screen says "signed off". A second path to the same cell skipped that and
+ * would have drawn a word this app spent an issue deciding not to use. It also handles a
+ * detail that is present and empty, which `??` does not.
+ *
+ * A review nothing has reported on is "Not started" and not a step number: the record
+ * holds seven pending steps, which is a thing it knows rather than a thing it has not
+ * measured.
+ *
+ * **A posted review usually reports step 6**, because nothing in the harvest path writes
+ * step 7 — the posting writes it `pending` and the harvester writes no step. A session
+ * that records it is reported as `harvest` like any other step; there is no special case
+ * here, and there must not be one that derives a step from a harvest time.
+ */
+export function stepLabel(row: ReviewListItem): string {
+  if (row.step_number == null || row.step_name == null || row.step_state == null) {
+    return 'Not started'
+  }
+  return `${layerLabel(row.step_name)} · ${layerOutcome({
+    state: row.step_state,
+    detail: row.step_detail,
+  })}`
+}
+
+/**
  * One thing an author or the harvester did, as the Inbox words it.
  *
  * Moved out of the template it used to be a nested ternary in. That expression handled
@@ -353,7 +508,7 @@ export function sentence(text: string): string {
  *
  * The contract requires `invalid_value` to name what it would have accepted, and a refusal
  * that showed the complaint without the remedy would waste that. Written once, because
- * four screens refuse things and a message assembled differently on each would make the
+ * five screens refuse things and a message assembled differently on each would make the
  * same refusal read four ways.
  */
 export function refusal(error: DeskError): string {
@@ -405,7 +560,7 @@ export function staleLabel(rule: Rule, now: Date = new Date()): string {
 /**
  * What a write's answer becomes on screen.
  *
- * **One rule, one place, because it had already drifted.** Four screens turned a
+ * **One rule, one place, because it had already drifted.** Five screens turn a
  * `WriteResult` into a notice and three of them agreed; the One review screen wrote its own
  * shape — `{ text, ok }` — and never called [`refusalTone`], so a server that was not
  * answering was shown there in the same tone as a mistyped reason. A notice is the only

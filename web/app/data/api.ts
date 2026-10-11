@@ -1,10 +1,10 @@
 /*
- * The contract's eighteen operations, as eighteen functions.
+ * The contract's nineteen operations, as nineteen functions.
  *
  * **This file and `sample.ts` are the only two places in `web/` that produce records**, and
  * this is the only one that makes an HTTP request. `test/architecture.spec.ts` holds that.
  *
- * Four reads and fourteen writes, named after the `operationId` in `contract/openapi.yaml`,
+ * Six reads and thirteen writes, named after the `operationId` in `contract/openapi.yaml`,
  * at the paths its `servers` entry gives. Nothing here joins anything: each screen is one
  * GET, which is the contract's own rule and the reason the dashboard needs no client-side
  * model of the record.
@@ -48,6 +48,7 @@ import type {
   Review,
   ReviewDetail,
   ReviewEvent,
+  ReviewList,
   Rule,
   RuleStage,
   RulesPage,
@@ -241,11 +242,23 @@ async function send<T>(
   })
 }
 
-/* ------------------------------- The four reads ------------------------------- */
+/* ------------------------------- The six reads ------------------------------- */
 
 /** `GET /inbox` — the whole Inbox screen in one call. */
 export function getInbox(): Promise<Inbox> {
   return send<Inbox>('GET', '/inbox')
+}
+
+/**
+ * `GET /reviews?repo=` — every review, newest first, or one repository's.
+ *
+ * The repository is left off rather than sent empty, as `listRules` leaves it off: the
+ * picker's "All repositories" is the absence of the parameter, and saying it twice is one
+ * place for the two to disagree.
+ */
+export function listReviews(repo: string | null): Promise<ReviewList> {
+  const query = repo == null ? '' : `?repo=${encodeURIComponent(repo)}`
+  return send<ReviewList>('GET', `/reviews${query}`)
 }
 
 /** `GET /reviews/{reviewId}` — one review whole. */
@@ -276,7 +289,7 @@ export async function listRepos(): Promise<RepoSummary[]> {
   return answer.repos
 }
 
-/* ----------------------------- The fourteen writes ---------------------------- */
+/* ----------------------------- The thirteen writes ---------------------------- */
 
 /**
  * `POST /reviews` — start a review from a pull request link.

@@ -144,6 +144,14 @@ describe('the contract the generated types come from', () => {
       'OutcomeKind',
       'ErrorCode',
       'StartReviewRequest',
+      /*
+       * DEV-930's three. `PrState` is a new closed set, and the two items are what the
+       * posted group and the Reviews list are made of — a schema renamed in the contract
+       * would otherwise regenerate cleanly and break only when a page imported it.
+       */
+      'PrState',
+      'InboxPostedItem',
+      'ReviewListItem',
     ]) {
       expect(fresh).toContain(`${schema}: `)
     }

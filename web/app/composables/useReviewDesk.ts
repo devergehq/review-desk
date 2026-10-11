@@ -2,15 +2,17 @@
  * The data layer. Every screen reads and writes the desk through this composable and
  * through nothing else.
  *
- * The four reads mirror the four the API offers — one GET per screen, so no screen joins
+ * The reads mirror the ones the API offers — one GET per screen, so no screen joins
  * anything:
  *
  *   inbox()          GET /inbox
+ *   reviews(repo)    GET /reviews?repo=
  *   review(id)       GET /reviews/{id}
  *   draft(id)        GET /reviews/{id}/draft
  *   rules(repo)      GET /rules?repo=
+ *   repos()          GET /repos
  *
- * and the writes mirror its fourteen operations, one function each. Which records they reach
+ * and the writes mirror its thirteen writes, one function each. Which records they reach
  * — the Rust server, or invented ones in memory — is `app/data/source.ts`'s decision, and
  * nothing above this file can tell.
  *
@@ -19,7 +21,7 @@
  * A read over HTTP has three states a fixture never had: it is in flight, it failed, or it
  * answered. So a read hands back a [`DeskResource`] rather than a value, and a screen
  * renders it through `<DeskState>` — which is what put loading, "nothing here yet", and
- * "the server is not answering, retry" on all four screens from one place rather than four.
+ * "the server is not answering, retry" on all five screens from one place rather than five.
  *
  * ## A write refreshes what is on screen, and the screen does not ask it to
  *
@@ -67,6 +69,7 @@ import type {
   Review,
   ReviewDetail,
   ReviewEvent,
+  ReviewList,
   Rule,
   RuleStage,
   RulesPage,
@@ -110,7 +113,7 @@ const DECIDED: Record<FindingDecision, string> = {
  * The backend, resolved once for the whole page.
  *
  * A promise rather than a value, because sample mode is reached by a dynamic import and so
- * cannot be had synchronously. Shared, so four screens do not each load it.
+ * cannot be had synchronously. Shared, so five screens do not each load it.
  */
 let backend: Promise<DeskBackend> | null = null
 
@@ -151,11 +154,14 @@ async function refreshEverything(): Promise<void> {
 /**
  * Resources more than one component on a page wants, and the count of who still wants them.
  *
- * **One read, however many ask for it.** The layout reads the inbox to know which review to
- * link "Reviews" at, and the Inbox screen reads it to draw itself — so the Inbox issued
- * `GET /inbox` twice on load and twice more after every write, for one document that is the
- * same both times. Sharing it is also what keeps the two consistent: two resources could
- * answer differently for as long as one of them was in flight.
+ * **One read, however many ask for it.** The layout used to read the inbox to know which
+ * review to link "Reviews" at while the queue read it to draw itself, so the queue issued
+ * `GET /inbox` twice on load and twice more after every write, for one document that is
+ * the same both times. DEV-930 pointed that item at `/reviews` and deleted the layout's
+ * read, so **the double read this was written for is gone** — recorded here rather than
+ * left as a reason a reader would check and not find. What it still buys is the other
+ * half of the argument, which has no second reader to depend on: two resources over one
+ * document can answer differently for as long as one of them is in flight.
  *
  * Counted rather than kept forever: the last component to go takes the resource with it, so
  * a long-lived page does not hold a refresher nothing is watching.
@@ -288,9 +294,24 @@ export function useReviewDesk() {
 
   /* ------------------------------- The reads ------------------------------- */
 
-  /** `GET /inbox` — the five waiting groups, the reviews in progress, the week's figures. */
+  /**
+   * `GET /inbox` — the five waiting groups, the reviews in progress, the posted reviews
+   * waiting on their author, and the week's figures.
+   */
   function inbox(): DeskResource<Inbox> {
     return sharing('inbox', () => resource(from => from.getInbox()))
+  }
+
+  /**
+   * `GET /reviews?repo=` — every review, newest first, or one repository's.
+   *
+   * The filter is reactive, the way `rules` is and for the same reason: changing the
+   * picker is a new read rather than a filter over a list the dashboard already holds, so
+   * the picker cannot come to disagree with the server about what "this repository" means.
+   */
+  function reviews(repo: Ref<string> | ComputedRef<string>): DeskResource<ReviewList> {
+    return following(repo, (from, value) =>
+      from.listReviews(value === ALL_REPOSITORIES ? null : (value as RepoName)))
   }
 
   /** `GET /reviews/{id}` — one review whole, as the One review screen shows it. */
@@ -523,6 +544,7 @@ export function useReviewDesk() {
     sampleAvailable,
     useSampleRecords,
     inbox,
+    reviews,
     review,
     draft,
     repos,

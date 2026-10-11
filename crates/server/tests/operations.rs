@@ -1,16 +1,69 @@
-//! Every one of the contract's twenty operations is routed and answers.
+//! Every one of the contract's twenty-one operations is routed and answers.
 //!
 //! This walks `Operation::ALL` rather than listing routes by hand, so an operation added
 //! to the contract and not to the server fails here instead of 404ing in a browser.
 
 mod common;
 
-use review_desk_server::route::Operation;
+use std::collections::BTreeSet;
 
-/// The twenty operations, as `contract/README.md` counts them.
+use review_desk_server::route::Operation;
+use serde_json::Value;
+
+/// The twenty-one operations, as `contract/README.md` counts them.
 #[test]
-fn the_contract_has_twenty_operations() {
-    assert_eq!(Operation::ALL.len(), 20);
+fn the_contract_has_twenty_one_operations() {
+    assert_eq!(Operation::ALL.len(), 21);
+}
+
+/// The contract's own `paths` and this crate's `Operation` name the same set.
+///
+/// **`route.rs` claimed this test existed, and it did not.** The claim was that "an
+/// operation added to `openapi.yaml` and not to the server fails a test instead of 404ing
+/// in a browser", and nothing in the repository tied the two together: the count above was
+/// a literal that read no file, and the conformance test reads the contract only at three
+/// hard-coded schema pointers. So an operation could be added to the contract, given an
+/// example, made producible from the store — and left unrouted, with every Rust test green
+/// and the dashboard getting a 400 from a path the contract says answers.
+///
+/// Found by a reader attacking DEV-930's plan, which was about to walk into it: the whole
+/// of the work was contract, store, examples and screens, and nothing would have failed if
+/// `route.rs` had been missed.
+#[test]
+fn the_contract_and_this_type_name_the_same_operations() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contract/openapi.yaml");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("reading {}: {error}", path.display()));
+    let contract: Value =
+        serde_norway::from_str(&text).expect("contract/openapi.yaml is not readable as YAML");
+
+    let paths = contract["paths"]
+        .as_object()
+        .expect("the contract declares paths");
+    let declared: BTreeSet<&str> = paths
+        .values()
+        .filter_map(Value::as_object)
+        .flat_map(|methods| methods.values())
+        .filter_map(|operation| operation.get("operationId"))
+        .filter_map(Value::as_str)
+        .collect();
+
+    assert!(
+        declared.len() > 15,
+        "only {} operationIds were read out of the contract, so this check is vacuous",
+        declared.len()
+    );
+
+    let routed: BTreeSet<&str> = Operation::ALL.iter().map(|one| one.id()).collect();
+
+    assert_eq!(
+        declared,
+        routed,
+        "the contract's operations and this crate's are not the same set. \
+         In the contract and not routed: {:?}. Routed and not in the contract: {:?}",
+        declared.difference(&routed).collect::<Vec<_>>(),
+        routed.difference(&declared).collect::<Vec<_>>(),
+    );
 }
 
 #[test]
@@ -149,11 +202,35 @@ fn a_path_no_operation_claims_is_not_found() {
 fn a_wrong_method_is_refused_rather_than_answered() {
     let harness = common::start_with_no_github();
 
-    // `GET /reviews` is `POST /reviews` with the wrong verb. It must not be read as the
-    // inbox, and it must not be answered as though it were a route of its own.
-    let answer = harness.api("GET", "/reviews", None);
-    assert_eq!(answer.status, 400);
-    assert_eq!(answer.error_code(), "bad_request");
+    // **Repointed, not deleted.** `GET /reviews` was this test's only case, and DEV-930
+    // made that a real route — leaving the `not_found`/`bad_request` split, and the whole
+    // `(target, allowed)` mechanism in `route.rs` that draws it, with no test at all. A
+    // refactor collapsing `WrongMethod` into `Unknown` would then have turned every wrong
+    // verb into a 404 and passed everything.
+    //
+    // `POST /inbox` is a path with one verb; `DELETE /reviews` is a path with two, which
+    // is the shape `/reviews` now has and the one a third verb has to fall through.
+    for (method, path) in [("POST", "/inbox"), ("DELETE", "/reviews")] {
+        let answer = harness.api(method, path, None);
+        assert_eq!(
+            answer.status, 400,
+            "{method} {path} is a wrong verb on a path that exists, not an unknown path"
+        );
+        assert_eq!(answer.error_code(), "bad_request");
+    }
+
+    // And the path's two real verbs each reach their own handler, which is what stops one
+    // shadowing the other: a `GET` arm that swallowed `POST` would break starting a
+    // review, and both failures are a 400 — so the status cannot tell them apart.
+    assert_eq!(harness.api("GET", "/reviews", None).status, 200);
+    let started = harness.api("POST", "/reviews", Some("{}"));
+    assert_eq!(started.status, 400);
+    assert!(
+        started.text().contains("pr_url"),
+        "POST /reviews is refused by its own handler for want of a link, not by the \
+         router for want of a route; it said {}",
+        started.text()
+    );
 }
 
 /// Call one operation with a body it would accept, so a 400 never stands in for a

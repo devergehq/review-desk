@@ -48,13 +48,20 @@ const devApi = process.env.REVIEW_DESK_API ?? 'http://127.0.0.1:7777'
 /*
  * Every route a static file server has to answer.
  *
- * Two, and no parameterised ones. A review's route is resolved by the client router: the
- * Rust server answers any path that cannot be a file with the index, which
- * `crates/server/src/assets.rs` does deliberately and `crates/server/tests/assets.rs`
- * holds. Naming `/reviews/17` here would mean reading a fixture at build time to find out
- * which ids exist, which is the fixture data a production build must not contain.
+ * Three, and no parameterised ones. **The distinction is the point, not the count.** A
+ * review's own route is resolved by the client router: the Rust server answers any path
+ * that cannot be a file with the index, which `crates/server/src/assets.rs` does
+ * deliberately and `crates/server/tests/assets.rs` holds. Naming `/reviews/17` here would
+ * mean reading a fixture at build time to find out which ids exist, which is the fixture
+ * data a production build must not contain.
+ *
+ * `/reviews` itself is not parameterised and belongs here beside `/rules`, which it is the
+ * sibling of: a list with a repository picker, reached from the header.
+ * `test/build-output.spec.ts` is narrowed to match — it asserted that nothing under
+ * `/reviews/` was prerendered, and `/reviews/index.html` contains that string while being
+ * exactly the file that should exist.
  */
-const prerenderRoutes = ['/', '/rules']
+const prerenderRoutes = ['/', '/rules', '/reviews']
 
 export default defineNuxtConfig({
 

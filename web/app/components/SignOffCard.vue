@@ -49,13 +49,8 @@ const emit = defineEmits<{
   'update:event': [event: ReviewEvent]
 }>()
 
-const EVENT_LABELS: Record<ReviewEvent, string> = {
-  request_changes: 'Request changes',
-  comment: 'Comment',
-  approve: 'Approve',
-}
-
-const eventLabel = computed(() => EVENT_LABELS[props.event] ?? props.event)
+/* The three words, from `utils/format`, so this card and the queue cannot disagree. */
+const chosenEvent = computed(() => eventLabel(props.event))
 
 /**
  * "As Approve, 40 seconds after you signed off."
@@ -66,8 +61,8 @@ const eventLabel = computed(() => EVENT_LABELS[props.event] ?? props.event)
  */
 const postedSentence = computed(() =>
   props.postedAfter == null
-    ? `As ${eventLabel.value}.`
-    : `As ${eventLabel.value}, ${props.postedAfter} after you signed off.`,
+    ? `As ${chosenEvent.value}.`
+    : `As ${chosenEvent.value}, ${props.postedAfter} after you signed off.`,
 )
 </script>
 
@@ -131,7 +126,7 @@ const postedSentence = computed(() =>
             Signed off
           </div>
           <div class="rd-note">
-            It will be posted as {{ eventLabel }}.
+            It will be posted as {{ chosenEvent }}.
           </div>
         </div>
       </div>

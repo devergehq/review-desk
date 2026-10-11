@@ -1,9 +1,16 @@
-//! The contract's twenty operations, as a type.
+//! The contract's twenty-one operations, as a type.
 //!
-//! [`Operation::ALL`] is the point of this module: a test can walk every operation the
-//! contract declares and assert that each one is routed and answers, rather than the set
+//! [`Operation::ALL`] is the point of this module: a test walks every operation the
+//! contract declares and asserts that each one is routed and answers, rather than the set
 //! of routes being whatever the handlers happened to grow. An operation added to
 //! `openapi.yaml` and not to the server fails a test instead of 404ing in a browser.
+//!
+//! **That claim was false until DEV-930 and is now true.** `tests/operations.rs` asserted
+//! `ALL.len() == 20` against a literal and read no file, so nothing anywhere tied these
+//! variants to `openapi.yaml`'s `paths` — an operation could be added to the contract,
+//! given an example, made producible from the store, and left unrouted, with every Rust
+//! test green and the dashboard getting a 400. `the_contract_and_this_type_name_the_same_
+//! operations` reads the contract's `operationId`s and asserts set equality with these.
 //!
 //! This file briefly carried a second job. DEV-861 was written while a sibling issue was
 //! still changing the store, and thirteen operations could not be answered in full from
@@ -16,6 +23,7 @@
 pub enum Operation {
     GetInbox,
     ListRepos,
+    ListReviews,
     StartReview,
     GetReview { review_id: i64 },
     ConfirmBrief { review_id: i64 },
@@ -41,6 +49,7 @@ impl Operation {
     pub const ALL: &'static [Operation] = &[
         Operation::GetInbox,
         Operation::ListRepos,
+        Operation::ListReviews,
         Operation::StartReview,
         Operation::GetReview { review_id: 1 },
         Operation::ConfirmBrief { review_id: 1 },
@@ -72,6 +81,7 @@ impl Operation {
         match self {
             Operation::GetInbox => "getInbox",
             Operation::ListRepos => "listRepos",
+            Operation::ListReviews => "listReviews",
             Operation::StartReview => "startReview",
             Operation::GetReview { .. } => "getReview",
             Operation::ConfirmBrief { .. } => "confirmBrief",
@@ -99,6 +109,7 @@ impl Operation {
         match self {
             Operation::GetInbox => "GET /inbox".to_string(),
             Operation::ListRepos => "GET /repos".to_string(),
+            Operation::ListReviews => "GET /reviews".to_string(),
             Operation::StartReview => "POST /reviews".to_string(),
             Operation::GetReview { review_id } => format!("GET /reviews/{review_id}"),
             Operation::ConfirmBrief { review_id } => {
@@ -173,7 +184,16 @@ pub fn match_route(method: &str, path: &str) -> Target {
             Target::Operation(Operation::ListReviewTimings),
             method == "GET",
         ),
-        ["reviews"] => (Target::Operation(Operation::StartReview), method == "POST"),
+        // **Two methods on one path**, the shape `/reviews/{id}/draft` below already has:
+        // reading the list and starting a review are different operations at the same
+        // address. The fall-through carries `StartReview` because `Target::WrongMethod`
+        // discards the operation, so which of the two it names is immaterial — what
+        // matters is that a third verb is a wrong verb and not an unknown path.
+        ["reviews"] => match method {
+            "GET" => (Target::Operation(Operation::ListReviews), true),
+            "POST" => (Target::Operation(Operation::StartReview), true),
+            _ => (Target::Operation(Operation::StartReview), false),
+        },
 
         ["reviews", id] => match number(id) {
             Some(review_id) => (

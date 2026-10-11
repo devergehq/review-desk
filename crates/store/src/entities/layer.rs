@@ -274,7 +274,7 @@ impl Store {
     /// All seven layers of a review, in order.
     ///
     /// **A layer nothing has written comes back as `pending` with no time**, rather
-    /// than being left out. A reader always has seven, which is what the four screens
+    /// than being left out. A reader always has seven, which is what the five screens
     /// show, and no caller has to know that an absent row means not started.
     pub fn list_review_layers(&self, review_id: i64) -> Result<Vec<ReviewLayer>> {
         let mut statement = self.conn.prepare(&format!(

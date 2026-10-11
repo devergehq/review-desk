@@ -15,10 +15,10 @@ use std::sync::{Arc, Mutex};
 
 use review_desk_store::{
     Actor, Brief, Decision, DecisionMade, Disposition, Draft, DraftSection, Finding,
-    FindingInRound, FullReview, NewDraft, NewOutcome, NitTicket, OpenedReview, ProblemStatement,
-    RepoSummary, Review, ReviewAtLayer, ReviewEvent, ReviewFacts, ReviewLayer, ReviewProvenance,
-    ReviewTimings, RoundCommit, RoundSummary, Rule, RuleCounts, RuleStage, RulesSummary, Store,
-    StoreError, TicketedAndApproved, Timestamp,
+    FindingInRound, FullReview, NewDraft, NewOutcome, NitTicket, OpenedReview, PostedReview,
+    ProblemStatement, RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewEvent, ReviewFacts,
+    ReviewLayer, ReviewProvenance, ReviewTimings, RoundCommit, RoundSummary, Rule, RuleCounts,
+    RuleStage, RulesSummary, Store, StoreError, TicketedAndApproved, Timestamp,
 };
 
 use crate::error::{ApiError, Code};
@@ -175,6 +175,21 @@ impl Records {
     /// Reviews a session is still working on, with the layer each is at.
     pub fn reviews_in_progress(&self) -> Result<Vec<ReviewAtLayer>, ApiError> {
         self.with(|store| store.reviews_in_progress(None))
+    }
+
+    /// Posted reviews whose pull request has not been merged or closed, newest posting
+    /// first, with what has come back on each.
+    ///
+    /// The Inbox's "Waiting on the author". Only the newest round of a pull request, so
+    /// one pull request is one item; the store's own doc has the argument.
+    pub fn posted_reviews_awaiting_author(&self) -> Result<Vec<PostedReview>, ApiError> {
+        self.with(|store| store.posted_reviews_awaiting_author(None))
+    }
+
+    /// Every review on the record, newest first, with the step it has reached.
+    /// `GET /reviews`.
+    pub fn reviews_at_step(&self, repo: Option<&str>) -> Result<Vec<ReviewAtStep>, ApiError> {
+        self.with(|store| store.reviews_at_step(repo))
     }
 
     /// Nit tickets filed since a time, for the Inbox's "handled without you".
