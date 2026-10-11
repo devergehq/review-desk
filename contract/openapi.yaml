@@ -1460,9 +1460,9 @@ components:
 
         **A `harvested_at` does not by itself mean step 7, and the example beside this
         schema is such a record.** Two ways a review holds the stamp without the step.
-        One: it was read before DEV-933, when nothing in the harvest path wrote a step and
-        every harvested review reported `draft` — which is the example's review 12, posted
-        and read back and reporting `draft`. Two: the harvest reads every review whose
+        One: it was read before DEV-933, when nothing in the harvest path wrote a step, so
+        a harvested review reported whatever step a session had written — which for the
+        example's review 12, posted and read back, is `draft`. Two: the harvest reads every review whose
         pull request is open, including one still being drafted, and writes the step only
         where the record holds a `github_review_id`, because a step saying a feedback loop
         is running on a review nobody posted would be a lie.

@@ -380,15 +380,21 @@ function inbox(): Inbox {
    * harvest step no longer counts, and a session has gone back to its code review to work
    * the author's replies — which is the next thing that happens in this loop, and the
    * case the deduplication is for. Its step 7 carries what `record_harvest_step` would
-   * write for its outcomes, so the facts card and the wording are drawn here from a
-   * record the real path could have produced.
+   * write for its outcomes, so the wording and the pairs here are ones the real path
+   * could have produced.
+   *
+   * **The last of them, not the first.** `reviews_in_progress` reports `MAX(number)` —
+   * a session that left an earlier step running is further on than that step suggests —
+   * and this read the first match until the review of this change, which no fixture
+   * happened to expose. Review 12 is the shape that would have: a session back on an
+   * earlier step while a later one runs.
    */
   const in_progress = source.reviews
     .map(detail => ({
       detail,
-      running: detail.layers.find(
-        item => item.state === 'running' && item.name !== 'harvest',
-      ),
+      running: detail.layers
+        .filter(item => item.state === 'running' && item.name !== 'harvest')
+        .at(-1),
     }))
     .filter(pair => pair.running != null)
     .map(({ detail, running }) => ({

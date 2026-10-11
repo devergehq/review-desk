@@ -1104,11 +1104,11 @@
         "runs": [
           {
             "state": "running",
-            "started_at": "2026-10-06T14:30:00Z",
+            "started_at": "2026-10-07T09:50:00Z",
             "ended_as": null,
             "finished_at": null,
             "seconds": null,
-            "detail": "2 replies back"
+            "detail": "nothing back yet"
           }
         ],
         "seconds": null,

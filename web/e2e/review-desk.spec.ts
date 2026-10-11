@@ -1289,10 +1289,11 @@ test.describe('the three step pages of one review', () => {
 
         /*
            **A step 7 with no facts still says when it was read, and reachably.** A
-           harvest records a fact every time, so this is the hand-written case — and
-           `layer set` with no `--fact` is how a session would write it. Without a card
-           the answer would live only in a `title`, which a keyboard cannot reach and a
-           phone does not draw.
+           harvest records a fact every time, so this is the hand-written case, which
+           `layer set --clear-facts` is how to reach — without it the facts written above
+           would stay, by the rule that giving none keeps them. Without a card the answer
+           would live only in a `title`, which a keyboard cannot reach and a phone does
+           not draw.
         */
         setStepSeven('running', 'nothing back yet', ['--clear-facts'])
         await page.reload()
@@ -2453,9 +2454,13 @@ test.describe('a harvested review, on the queue and in the list', () => {
      * the first `getByLabel` I wrote**, anchored at the seven — the label carries the
      * step's name after it, "Layer 7 of 7, harvest", so the pattern matched nothing on
      * any page. Found by the review of the commit that was fixing the same mistake.
+     *
+     * **And it names step 7 rather than any bar.** `\d+` passes today only because
+     * nothing else in this seed has a step running, so the first seed that adds one
+     * fails this line with a comment about the harvest.
      */
     await expect(page.getByText('With the agent')).toHaveCount(0)
-    await expect(page.getByLabel(/^Layer \d+ of 7, /)).toHaveCount(0)
+    await expect(page.getByLabel(/^Layer 7 of 7, /)).toHaveCount(0)
     await expect(page.getByText('a session is on step 7 of 7')).toHaveCount(0)
   })
 
