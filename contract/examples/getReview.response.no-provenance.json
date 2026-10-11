@@ -426,6 +426,7 @@
       "evidence": "throwaway test, 2 deliveries for 1 event",
       "disposition": "in_draft",
       "disposition_reason": null,
+      "github_comment_id": null,
       "rule_id": null,
       "rule_key": null,
       "created_at": "2026-10-08T11:11:00Z"
@@ -442,6 +443,7 @@
       "evidence": "from the option map \u00b7 ticket acceptance criterion 3",
       "disposition": "in_draft",
       "disposition_reason": null,
+      "github_comment_id": null,
       "rule_id": null,
       "rule_key": null,
       "created_at": "2026-10-08T11:12:00Z"
@@ -458,6 +460,7 @@
       "evidence": "Reverted the retry locally; the test still passed.",
       "disposition": "in_draft",
       "disposition_reason": null,
+      "github_comment_id": null,
       "rule_id": 9,
       "rule_key": "R-09",
       "created_at": "2026-10-08T11:14:00Z"
@@ -474,6 +477,7 @@
       "evidence": null,
       "disposition": "held_back",
       "disposition_reason": "Held for one ticket with the other nits; not worth a review comment.",
+      "github_comment_id": null,
       "rule_id": null,
       "rule_key": null,
       "created_at": "2026-10-08T11:15:00Z"
@@ -490,6 +494,7 @@
       "evidence": null,
       "disposition": "held_back",
       "disposition_reason": "Held for one ticket with the other nits; not worth a review comment.",
+      "github_comment_id": null,
       "rule_id": null,
       "rule_key": null,
       "created_at": "2026-10-08T11:16:00Z"
@@ -506,6 +511,7 @@
       "evidence": null,
       "disposition": "suppressed",
       "disposition_reason": "No consequence named \u00b7 matches a proposed rule to stop raising these",
+      "github_comment_id": null,
       "rule_id": 22,
       "rule_key": "R-22",
       "created_at": "2026-10-08T11:17:00Z"

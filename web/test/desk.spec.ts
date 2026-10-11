@@ -108,10 +108,98 @@ describe('the inbox', () => {
     })
   })
 
-  it('carries the author’s two kinds of reply', async () => {
+  it('carries every kind of act the author and the harvester recorded', async () => {
     const inbox = await settled(desk().inbox())
     const kinds = inbox.author_replies[0]!.events.map(event => event.kind)
-    expect(kinds).toEqual(['rejected', 'code_changed_after'])
+    /*
+     * **Five, in the order the record holds them.** Two `replied` and a `thread_resolved`
+     * were added with DEV-930, because the posted group's figures are counts of exactly
+     * these and a fixture with none could not show a measurement. The `rejected` is the
+     * developer accepting the author's reason, which is a different act and is why the
+     * group counts by kind *and* actor.
+     */
+    expect(kinds).toEqual([
+      'replied',
+      'rejected',
+      'replied',
+      'thread_resolved',
+      'code_changed_after',
+    ])
+  })
+
+  /*
+   * **The group that did not exist, and the two absences it has to tell apart.** DEV-930:
+   * a posted review left every group this screen serves, so nothing linked to it.
+   */
+  it('serves a posted review whose pull request is open, saying what came back', async () => {
+    const inbox = await settled(desk().inbox())
+    const posted = inbox.posted_awaiting_author
+    expect(posted.map(item => item.review_id).sort()).toEqual([12, 43])
+
+    /* Harvested, with the author's own acts counted: two replies and one resolution. */
+    const answered = posted.find(item => item.review_id === 12)!
+    expect(answered.posted_as).toBe('request_changes')
+    expect(answered.pr_state).toBe('open')
+    expect(answered.replies).toBe(2)
+    expect(answered.threads_resolved).toBe(1)
+    expect(answered.code_changed_after).toBe(1)
+    expect(answered.findings_linked).toBe(2)
+
+    /*
+     * And one nothing has harvested. **Every figure is null, not nought**: zero replies on
+     * a review nobody has read back is the absence of a measurement rather than one.
+     */
+    const unlooked = posted.find(item => item.review_id === 43)!
+    expect(unlooked.harvested_at).toBeNull()
+    expect(unlooked.pr_state).toBeNull()
+    expect(unlooked.replies).toBeNull()
+    expect(unlooked.threads_resolved).toBeNull()
+    expect(unlooked.code_changed_after).toBeNull()
+  })
+
+  /*
+   * `totals.items` is the five waiting groups. Neither the reviews with the agent nor the
+   * posted reviews are in it: nothing in either asks the developer for anything, and the
+   * screen's headline counts what does.
+   */
+  it('leaves the posted reviews out of the count of what is waiting on you', async () => {
+    const inbox = await settled(desk().inbox())
+    expect(inbox.posted_awaiting_author.length).toBeGreaterThan(0)
+    expect(inbox.totals.items).toBe(
+      inbox.briefs_to_confirm.length
+      + inbox.drafts_to_approve.length
+      + inbox.author_replies.length
+      + inbox.own_prs_without_reviewer.length
+      + inbox.proposed_rules.length,
+    )
+  })
+})
+
+describe('the reviews list', () => {
+  it('names every review, newest first, with the step it reached', async () => {
+    const answer = await settled(desk().reviews(ref(ALL_REPOSITORIES)))
+    expect(answer.repo).toBeNull()
+    /* Every review the fixtures hold, including the two that were posted. */
+    expect(answer.reviews.map(row => row.review.id)).toEqual([43, 41, 19, 18, 17, 16, 15, 12])
+
+    /*
+     * **A posted review reports step 6, not step 7.** Posting writes the harvest step as
+     * `pending` and nothing records the harvest itself, so the furthest *started* step is
+     * the draft — and the row carries the state and the note, because "Draft" alone would
+     * read as a sign-off still owed.
+     */
+    const posted = answer.reviews.find(row => row.review.id === 43)!
+    expect(posted.step_number).toBe(6)
+    expect(posted.step_state).toBe('done')
+    expect(posted.step_detail).toBe('posted by you')
+    expect(posted.steps_total).toBe(7)
+  })
+
+  it('answers one repository when the picker names one', async () => {
+    const answer = await settled(desk().reviews(ref('acme/billing-api')))
+    expect(answer.repo).toBe('acme/billing-api')
+    expect(answer.reviews.every(row => row.review.repo === 'acme/billing-api')).toBe(true)
+    expect(answer.reviews.length).toBeGreaterThan(0)
   })
 })
 

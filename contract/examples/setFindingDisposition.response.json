@@ -10,6 +10,7 @@
   "evidence": null,
   "disposition": "held_back",
   "disposition_reason": "Held for one ticket with the other nits; not worth a review comment.",
+  "github_comment_id": null,
   "rule_id": null,
   "rule_key": null,
   "hunk": {

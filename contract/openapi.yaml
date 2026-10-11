@@ -2078,7 +2078,9 @@ components:
     Finding:
       type: object
       additionalProperties: false
-      required: [review_id, seq, key, lens, severity, claim, disposition, created_at]
+      required:
+        [review_id, seq, key, lens, severity, claim, disposition, created_at,
+         github_comment_id]
       description: |
         One thing the review found. Never deleted, only dispositioned.
 
@@ -2143,6 +2145,29 @@ components:
         disposition_reason:
           type: [string, 'null']
           description: Why it was held back or suppressed.
+        github_comment_id:
+          allOf:
+            - $ref: '#/components/schemas/ForeignId'
+          description: |
+            The GitHub review comment this finding was posted as. **How the finding
+            reached the author**, and the only route by which anything can come back on
+            it: the harvester reads a reply and a resolution out of that comment's thread
+            and reads neither without one.
+
+            Null for a finding the posted review raised only in its body, which is every
+            finding until something runs `review-desk finding link` — and that is why
+            `InboxPostedItem.findings_linked` exists. A review whose findings carry none
+            of these can receive no reply the harvester could see, so "0 replies" there is
+            the absence of a measurement rather than one.
+
+            Written by the session that posted the review. Nothing in this document writes
+            it, and nothing here posts a comment.
+
+            **Required**, unlike `rule_id` and the round fields beside it, and for the
+            reason `Review.pr_state` is: it is the input to a figure three
+            implementations derive — the server, the dashboard's sample records, and the
+            store's own example test — and optional is how such a field comes to have
+            three answers with every check green.
         rule_id:
           type: [integer, 'null']
           format: int64

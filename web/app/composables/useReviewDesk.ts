@@ -2,15 +2,17 @@
  * The data layer. Every screen reads and writes the desk through this composable and
  * through nothing else.
  *
- * The four reads mirror the four the API offers — one GET per screen, so no screen joins
+ * The reads mirror the ones the API offers — one GET per screen, so no screen joins
  * anything:
  *
  *   inbox()          GET /inbox
+ *   reviews(repo)    GET /reviews?repo=
  *   review(id)       GET /reviews/{id}
  *   draft(id)        GET /reviews/{id}/draft
  *   rules(repo)      GET /rules?repo=
+ *   repos()          GET /repos
  *
- * and the writes mirror its fourteen operations, one function each. Which records they reach
+ * and the writes mirror its thirteen writes, one function each. Which records they reach
  * — the Rust server, or invented ones in memory — is `app/data/source.ts`'s decision, and
  * nothing above this file can tell.
  *
@@ -67,6 +69,7 @@ import type {
   Review,
   ReviewDetail,
   ReviewEvent,
+  ReviewList,
   Rule,
   RuleStage,
   RulesPage,
@@ -288,9 +291,24 @@ export function useReviewDesk() {
 
   /* ------------------------------- The reads ------------------------------- */
 
-  /** `GET /inbox` — the five waiting groups, the reviews in progress, the week's figures. */
+  /**
+   * `GET /inbox` — the five waiting groups, the reviews in progress, the posted reviews
+   * waiting on their author, and the week's figures.
+   */
   function inbox(): DeskResource<Inbox> {
     return sharing('inbox', () => resource(from => from.getInbox()))
+  }
+
+  /**
+   * `GET /reviews?repo=` — every review, newest first, or one repository's.
+   *
+   * The filter is reactive, the way `rules` is and for the same reason: changing the
+   * picker is a new read rather than a filter over a list the dashboard already holds, so
+   * the picker cannot come to disagree with the server about what "this repository" means.
+   */
+  function reviews(repo: Ref<string> | ComputedRef<string>): DeskResource<ReviewList> {
+    return following(repo, (from, value) =>
+      from.listReviews(value === ALL_REPOSITORIES ? null : (value as RepoName)))
   }
 
   /** `GET /reviews/{id}` — one review whole, as the One review screen shows it. */
@@ -523,6 +541,7 @@ export function useReviewDesk() {
     sampleAvailable,
     useSampleRecords,
     inbox,
+    reviews,
     review,
     draft,
     repos,

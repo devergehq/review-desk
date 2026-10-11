@@ -11,6 +11,7 @@
     "evidence": null,
     "disposition": "suppressed",
     "disposition_reason": "Already covered by the idempotency key rule; not worth a second comment.",
+    "github_comment_id": null,
     "rule_id": null,
     "rule_key": null,
     "hunk": {

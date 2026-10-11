@@ -459,6 +459,10 @@ pub fn finding(finding: &Finding) -> Value {
         "evidence": finding.evidence,
         "disposition": finding.disposition.as_str(),
         "disposition_reason": finding.disposition_reason,
+        // The comment the finding was posted as, which is the only route anything can come
+        // back on it by. Null for a finding raised in the body alone, which is what
+        // `InboxPostedItem.findings_linked` counts and why it has to.
+        "github_comment_id": finding.github_comment_id,
         "rule_id": finding.rule_id,
         "rule_key": finding.rule_id.map(rule_key),
         // Null, not an empty hunk. A finding written with only a file and a line has no

@@ -1244,6 +1244,7 @@ fn finding_document(store: &Store, finding: &Finding) -> Value {
         "evidence": finding.evidence,
         "disposition": finding.disposition,
         "disposition_reason": finding.disposition_reason,
+        "github_comment_id": finding.github_comment_id,
         "rule_id": finding.rule_id,
         // Derived: `R-` and the rule id, zero-padded to two digits.
         "rule_key": finding.rule_id.map(|id| format!("R-{id:02}")),

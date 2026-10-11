@@ -6,12 +6,16 @@
 import type {
   DescriptionLint,
   DeskError,
+  InboxPostedItem,
   InboxReplyEvent,
   Rule,
   Instant,
   OutcomeKind,
+  PrState,
+  ReviewEvent,
   ReviewLayerName,
   ReviewLayerState,
+  ReviewListItem,
   SeverityCounts,
 } from '~/types/desk'
 
@@ -292,6 +296,109 @@ export function editVerb(kind: OutcomeKind | string): string {
  * underscores swapped for spaces — which is how `thread_resolved` would have read as
  * "thread resolved" on the one group built from exactly that kind.
  */
+/**
+ * A GitHub review event, as the developer chose it: "Request changes", not
+ * `request_changes`.
+ *
+ * **One map, two readers.** `SignOffCard` carried this and the posted rows on the queue
+ * needed the same three words; a second copy is how two screens come to call one event
+ * different things.
+ */
+export function eventLabel(event: ReviewEvent): string {
+  switch (event) {
+    case 'request_changes': return 'Request changes'
+    case 'comment': return 'Comment'
+    case 'approve': return 'Approve'
+    default: return event
+  }
+}
+
+/**
+ * What has come back on a posted review, in the record's own terms.
+ *
+ * **Three states, three sentences, and only one of them has figures in it.** The counts
+ * are null when nothing could have found one, and which absence it is matters: a review
+ * nothing has read back from GitHub is a different thing from one a harvest ran over and
+ * could read nothing of, because the posted review raised its findings in the body alone
+ * and there is no comment thread for a reply to attach to.
+ *
+ * The figures carry their measurement time, because the record only supports a statement
+ * about *then*: "0 replies" over a figure taken two hours ago reads as a statement about
+ * now, and the author may have answered since.
+ */
+export function authorResponseLabel(item: InboxPostedItem): string {
+  if (item.replies == null && item.threads_resolved == null) {
+    if (item.harvested_at == null) {
+      return 'Not harvested yet — nothing has read this review back from GitHub'
+    }
+    return item.findings == 0
+      ? 'No findings were posted, so there is nothing for the author to reply to'
+      : `No finding is linked to a comment on GitHub, so no reply could be read (${
+        count(item.findings, 'finding')})`
+  }
+
+  const said = [
+    count(item.replies ?? 0, 'reply', 'replies'),
+    `${count(item.threads_resolved ?? 0, 'thread')} resolved`,
+  ]
+  /*
+   * **"files changed since", not "commits since".** The issue asks for the second and the
+   * record holds neither: the harvester writes one of these per finding whose file
+   * changed, so one commit touching three findings' files writes three.
+   */
+  if (item.code_changed_after != null) {
+    said.push(`${count(item.code_changed_after, 'finding')} with code changed since`)
+  }
+  const at
+    = item.harvested_at == null ? 'not from a harvest' : `as at ${sinceLabel(item.harvested_at)}`
+  return `${said.join(' · ')} · ${at}`
+}
+
+/**
+ * What the record knows of a posted pull request's state.
+ *
+ * `null` is not "open": it is the harvester never having looked, which is every review
+ * until `review-desk harvest` runs over it. The group's heading says an author is being
+ * waited on, and this is the row saying how much of that the record can actually support.
+ */
+export function prStateLabel(state: PrState | null | undefined): string {
+  if (state == null) return 'pull request state not established'
+  return `pull request ${state} at the last harvest`
+}
+
+/**
+ * Where a review has got to, as the step **and its state** — never the step alone.
+ *
+ * A bare step name is the step a review is *waiting at* when the state is `waiting_on_you`
+ * and the step it has *left* when the state is `done`. A posted review's furthest started
+ * step is the draft, so a cell reading "Draft" tells a reader it still needs signing off
+ * while the queue says it is with the author. "Draft · approved by you" says the same
+ * record and misleads nobody.
+ *
+ * A review nothing has reported on is "Not started" and not a step number: the record
+ * holds seven pending steps, which is a thing it knows rather than a thing it has not
+ * measured.
+ */
+export function stepLabel(row: ReviewListItem): string {
+  if (row.step_number == null || row.step_name == null) return 'Not started'
+  const name = layerLabel(row.step_name)
+  const said = row.step_detail ?? stateLabel(row.step_state)
+  return said == null ? name : `${name} · ${said}`
+}
+
+/** A step's state, in words, for a step that recorded no note of its own. */
+function stateLabel(state: ReviewLayerState | undefined): string | null {
+  switch (state) {
+    case 'pending': return 'not started'
+    case 'running': return 'running'
+    case 'waiting_on_you': return 'waiting on you'
+    case 'done': return 'done'
+    case 'failed': return 'failed'
+    case 'skipped': return 'skipped'
+    default: return null
+  }
+}
+
 export function replyLabel(event: InboxReplyEvent): string {
   const key = event.finding_key
   switch (event.kind) {

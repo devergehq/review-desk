@@ -4,6 +4,7 @@ import type {
   InboxBriefItem,
   InboxDraftItem,
   InboxInProgressItem,
+  InboxPostedItem,
   InboxReplyItem,
 } from '~/types/desk'
 import type { DeskNotice } from '~/utils/format'
@@ -28,20 +29,32 @@ import type { DeskNotice } from '~/utils/format'
  *
  * | The board draws | Source |
  * |---|---|
- * | Waiting on the author | **None.** No `/inbox` group lists a posted review awaiting a reply |
+ * | Waiting on the author | `posted_awaiting_author` — **DEV-930** |
  * | The age of a draft, a reply or a running session | `draft_ready_at`, `replied_at`, `in_state_since` — **DEV-890** |
  * | "Session not seen for 20 min" | `last_activity_at`, which is when anything last wrote to the review |
  *
- * **Two of those three were "None" until DEV-890**, and the rows said so where the figure
- * goes. What changed is the record, not the screen's rule: each step now keeps every state
- * it entered, so there is a time to show for a draft waiting, a reply and a session's
- * current step — and how long the record has been silent is what the row says where it
- * said "Session state unknown". `session_alive` is still Allele's to answer and still null.
+ * **All three were "None" once**, and the rows said so where the figure goes. What changed
+ * each time is the record, not the screen's rule: each step keeps every state it entered,
+ * so there is a time to show for a draft waiting, a reply and a session's current step; and
+ * a posted review now has a group of its own, so the one group the board drew that nothing
+ * could fill is filled. `session_alive` is still Allele's to answer and still null, and the
+ * rows still say so rather than assuming a session is alive.
  *
- * The group nothing can answer is drawn in the state it is in rather than filled with a
- * number, and a row whose time is still absent says so where the time goes. Inventing
- * either would be the one thing the brief forbids — "a figure with no data source is shown
- * as unknown, never as a number".
+ * A row whose figure is still absent says so where the figure goes. Inventing one would be
+ * the one thing the brief forbids — "a figure with no data source is shown as unknown,
+ * never as a number" — and the posted group is where that rule earns its keep twice over:
+ * a review nothing has harvested and a review a harvest could read nothing of are two
+ * absences, and the row says which.
+ *
+ * ## One row per review, across groups as well as within them
+ *
+ * A posted review whose author has answered is **not** drawn under "Waiting on the author".
+ * It is already under "Needs you" — the author has replied and that is the developer's turn
+ * — and drawing it twice is the defect DEV-876 exists to prevent. The group says how many
+ * it left out and where they went, so it cannot read as "no review is waiting on an
+ * author", and **the figures about the author's response are drawn on the row that is about
+ * the author's response**: the needs-you row, which says "2 replies · 1 thread resolved"
+ * where it used to say only which finding was replied to.
  *
  * Two facts the boards do not draw and the API does serve are kept as one line each at the
  * foot: what was handled without the developer, and a rule proposal waiting on them.
@@ -88,6 +101,15 @@ interface Waiting {
   brief: InboxBriefItem | null
   draft: InboxDraftItem | null
   reply: InboxReplyItem | null
+  /**
+   * The posted-review item for this review, when there is one.
+   *
+   * **Joined in so that the author's figures are drawn on the row they describe.** A
+   * review whose author has replied is here rather than under "Waiting on the author",
+   * and the counts of what came back belong on the row saying what came back — not in a
+   * group this review is deliberately not in.
+   */
+  posted: InboxPostedItem | null
 }
 
 /** Every review that is waiting on the developer, merged into one row each. */
@@ -111,6 +133,7 @@ function needingYou(data: Inbox): Waiting[] {
       brief: null,
       draft: null,
       reply: null,
+      posted: null,
     }
     byReview.set(id, made)
     return made
@@ -130,6 +153,15 @@ function needingYou(data: Inbox): Waiting[] {
   for (const item of data.author_replies) {
     const row = slot(item.review_id, item.pull_request)
     row.reply = item
+  }
+  /*
+   * **Joined, never slotted.** A posted review only gets a needs-you row if one of the
+   * three groups above put it there; this adds figures to a row that exists and never
+   * makes one, because nothing in the posted group is waiting on the developer.
+   */
+  for (const item of data.posted_awaiting_author) {
+    const row = byReview.get(item.review_id)
+    if (row) row.posted = item
   }
 
   return [...byReview.values()]
@@ -183,7 +215,15 @@ function nextAction(row: Waiting) {
   const first = row.reply!.events[0]!
   return {
     what: `The author replied to ${first.finding_key}`,
-    detail: first.detail ?? replyLabel(first),
+    /*
+     * **What came back, in figures, where the record has them.** These are the counts the
+     * posted-review group carries, and this is the row they are about — the review is
+     * here rather than in that group precisely because something has come back on it, so
+     * drawing them there would have meant drawing them nowhere.
+     */
+    detail: row.posted
+      ? `${first.detail ?? replyLabel(first)} · ${authorResponseLabel(row.posted)}`
+      : (first.detail ?? replyLabel(first)),
     action: 'Read the reply',
     to: stepFor(row),
     at: row.reply!.replied_at ?? null,
@@ -225,6 +265,13 @@ function repoTabs(data: Inbox) {
   for (const row of needingYou(data)) bump(row.repo)
   for (const item of data.in_progress) bump(item.pull_request.repo)
   for (const item of data.own_prs_without_reviewer) bump(item.pull_request.repo)
+  /*
+   * The posted rows the page actually draws, which is the group minus the reviews already
+   * counted under "Needs you". A chip saying 4 over five rows is the failure the comment
+   * above names: "a filter whose count does not match what it filters to is worse than no
+   * count."
+   */
+  for (const item of waitingOnAuthor(data)) bump(item.pull_request.repo)
 
   return [
     { value: ALL_REPOSITORIES, label: 'All repositories' },
@@ -232,6 +279,25 @@ function repoTabs(data: Inbox) {
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([name, rows]) => ({ value: name, label: name, count: rows })),
   ]
+}
+
+/**
+ * The posted reviews this page draws under "Waiting on the author".
+ *
+ * **The group, minus the reviews already drawn under "Needs you".** One row per review is
+ * DEV-876's rule, and a review whose author has answered is waiting on the developer, not
+ * on the author — so it belongs to the earlier group, with the figures about the author's
+ * response on it. How many were left out is said beside the heading, because a count that
+ * silently disagrees with the record is worse than no count.
+ */
+function waitingOnAuthor(data: Inbox): InboxPostedItem[] {
+  const needing = new Set(needingYou(data).map(row => row.review_id))
+  return data.posted_awaiting_author.filter(item => !needing.has(item.review_id))
+}
+
+/** How many posted reviews the group left to "Needs you", for the note beside it. */
+function alsoPosted(data: Inbox): number {
+  return data.posted_awaiting_author.length - waitingOnAuthor(data).length
 }
 
 const showing = (name: string) => repo.value === ALL_REPOSITORIES || repo.value === name
@@ -270,7 +336,7 @@ function queueRow(row: Waiting) {
 
 const rows = computed(() => {
   const data = inbox.data.value
-  if (!data) return { needsYou: [], withAgent: [], ownPrs: [] }
+  if (!data) return { needsYou: [], withAgent: [], ownPrs: [], withAuthor: [], alsoPosted: 0 }
 
   const needsYou = oldestFirst(
     needingYou(data).filter(row => showing(row.repo)).map(queueRow),
@@ -287,7 +353,13 @@ const rows = computed(() => {
     data.own_prs_without_reviewer.filter(item => showing(item.pull_request.repo)),
     item => item.opened_at ?? null,
   )
-  return { needsYou, withAgent, ownPrs }
+  // Oldest posting first, like every other group, so the caption over the page stays
+  // true: the API serves these newest first, which is the opposite.
+  const withAuthor = oldestFirst(
+    waitingOnAuthor(data).filter(item => showing(item.pull_request.repo)),
+    item => item.posted_at ?? null,
+  )
+  return { needsYou, withAgent, ownPrs, withAuthor, alsoPosted: alsoPosted(data) }
 })
 
 /** Whether any row on the page has no recorded time, which the caption then says. */
@@ -295,7 +367,8 @@ const someTimesMissing = computed(
   () =>
     rows.value.needsYou.some(row => row.at == null)
     || rows.value.withAgent.some(item => item.in_state_since == null)
-    || rows.value.ownPrs.some(item => item.opened_at == null),
+    || rows.value.ownPrs.some(item => item.opened_at == null)
+    || rows.value.withAuthor.some(item => item.posted_at == null),
 )
 
 /**
@@ -318,11 +391,19 @@ function prUrl(repo: string, pr: number): string {
  *
  * The board reads "2 with the agent · 2 waiting on the author · 2 of your own". Only the
  * parts with something in them are said — "0 with the agent · 0 of your own" is noise on a
- * database with one review — and the author group is left out because nothing can count it.
+ * database with one review — and since DEV-930 the author's part is one of them, where
+ * before it had to be left out because nothing could count it.
+ *
+ * **It is also the signpost for a group that is below the fold at 390 pixels.** The posted
+ * group sits under the needs-you rows, and on a phone that is off the bottom of the first
+ * screen; this line is above it and says the number.
  */
 const besides = computed(() => {
   const said: string[] = []
   if (rows.value.withAgent.length) said.push(`${rows.value.withAgent.length} with the agent`)
+  if (rows.value.withAuthor.length) {
+    said.push(`${rows.value.withAuthor.length} waiting on the author`)
+  }
   if (rows.value.ownPrs.length) said.push(`${rows.value.ownPrs.length} of your own`)
   return said.join(' · ')
 })
@@ -339,6 +420,30 @@ const besides = computed(() => {
  */
 function sessionAction(item: InboxInProgressItem): string {
   return activityLabel(item.session_alive, item.last_activity_at)
+}
+
+/**
+ * The note beside the group's count: how many posted reviews are drawn elsewhere.
+ *
+ * **Said, because the count would otherwise be quietly short.** A posted review whose
+ * author has answered is under "Needs you" instead, and a reader scanning headings would
+ * take this number for the number of reviews out with authors. Empty when none was left
+ * out, so the usual case carries no footnote.
+ */
+const postedNote = computed(() => {
+  const held = rows.value.alsoPosted
+  if (held === 0) return 'nothing for you to do'
+  return held === 1
+    ? '1 more is posted and is under Needs you, because something has come back on it'
+    : `${held} more are posted and are under Needs you, because something has come back on them`
+})
+
+/** The first line of a posted row: what was posted, as what, and which round. */
+function postedTitle(item: InboxPostedItem): string {
+  const round
+    = item.rounds_on_pr > 1 ? `Round ${item.round} of ${item.rounds_on_pr} posted` : 'Posted'
+  const event = item.posted_as == null ? null : eventLabel(item.posted_as)
+  return event == null ? round : `${round} as ${event}`
 }
 
 /** The seven layers, as the bar's segments: done, the one running, then the rest. */
@@ -358,9 +463,20 @@ function layerSegments(item: InboxInProgressItem): Array<'done' | 'now' | 'todo'
  * empty desk, even though nothing is waiting on the developer — "nothing is waiting on you"
  * and "there is nothing here yet" are different sentences and a new database deserves the
  * second one.
+ *
+ * **The posted group counts here, and leaving it out was the reported bug surviving its own
+ * fix.** `totals.items` is the five waiting groups and deliberately excludes this one, so a
+ * desk whose only review was posted had `items === 0` and no session running — and this
+ * function sent it to the fresh-database card, which says "This database holds no reviews"
+ * over a record holding exactly the review the developer came to find. The group built to
+ * show it is inside the other branch and would never have drawn.
  */
 function isEmpty(data: Inbox): boolean {
-  return data.totals.items === 0 && data.in_progress.length === 0
+  return (
+    data.totals.items === 0
+    && data.in_progress.length === 0
+    && data.posted_awaiting_author.length === 0
+  )
 }
 
 /**
@@ -506,20 +622,43 @@ function handledLine(data: Inbox): string {
         </DeskSection>
 
         <!--
-          Waiting on the author. **The board draws this group and the API has no source for
-          it**: no `/inbox` group lists a review that was posted and is waiting for a reply.
-          Drawn rather than hidden, saying what is missing — hiding it would read as "no
-          review is waiting on an author", which is a claim nothing here can make.
+          Waiting on the author: posted, and the pull request not seen merged or closed.
+          **Hidden when empty, like the three groups above**, and that is a change of
+          position rather than of rule. It was drawn unconditionally while nothing could
+          fill it, because hiding it would have read as "no review is waiting on an
+          author" — a claim the API could not make. It can now: an empty
+          `posted_awaiting_author` says the record holds no posted review with an open
+          pull request, so an empty group is a true sentence and "Waiting on the author ·
+          0" on a fresh database is noise.
         -->
         <DeskSection
+          v-if="rows.withAuthor.length"
           heading="Waiting on the author"
-          note="not measured yet"
+          :count="rows.withAuthor.length"
+          :note="postedNote"
         >
-          <p class="rd-empty">
-            Reviews that have been posted and are waiting for the author are
-            <NotMeasured because="GET /inbox serves no group for a posted review awaiting a reply, and DEV-876 adds no API field" />.
-            Each one is still on its own review page.
-          </p>
+          <QueueRow
+            v-for="item in rows.withAuthor"
+            :key="item.review_id"
+            :pr="item.pull_request.pr"
+            :title="item.pull_request.title ?? 'no title recorded'"
+            :meta="`· ${item.pull_request.repo}`"
+            :to="`/reviews/${item.review_id}/understand`"
+            action="Read the review"
+            action-tone="quiet"
+            :age="item.posted_at ? sinceLabel(item.posted_at) : null"
+            age-unknown-because="this review's GitHub id was recorded without a draft, so nothing holds when it was posted"
+          >
+            <span class="what-title">{{ postedTitle(item) }}</span>
+            <!--
+              What came back, and where the record has no answer, which absence it is.
+              Never a nought over an unread thread: `authorResponseLabel` holds that rule
+              and says the measurement's own time beside the figures it has.
+            -->
+            <span class="rd-meta what-detail">
+              {{ authorResponseLabel(item) }} · {{ prStateLabel(item.pr_state) }}
+            </span>
+          </QueueRow>
         </DeskSection>
 
         <!-- The developer's own pull requests. GitHub's state, which Review Desk only reads. -->
