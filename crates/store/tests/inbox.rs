@@ -489,7 +489,7 @@ fn a_posted_review_carries_what_the_harvester_recorded() {
         .seq;
     post(&store, review.id, ReviewEvent::RequestChanges, "PRR_kwDOA1");
 
-    let recorded = |kind: OutcomeKind, at: i64| {
+    let recorded = |kind: OutcomeKind, actor: Actor, at: i64| {
         store
             .add_outcome(
                 FindingRef {
@@ -498,20 +498,21 @@ fn a_posted_review_carries_what_the_harvester_recorded() {
                 },
                 NewOutcome {
                     kind,
-                    actor: Actor::Harvester,
+                    actor,
                     detail: None,
                     occurred_at: Some(at),
                 },
             )
             .unwrap();
     };
-    recorded(OutcomeKind::Replied, 1_000);
-    recorded(OutcomeKind::Replied, 1_100);
-    recorded(OutcomeKind::ThreadResolved, 1_200);
-    recorded(OutcomeKind::CodeChangedAfter, 1_300);
+    recorded(OutcomeKind::Replied, Actor::Author, 1_000);
+    recorded(OutcomeKind::Replied, Actor::Author, 1_100);
+    recorded(OutcomeKind::ThreadResolved, Actor::Author, 1_200);
+    // The harvester's own observation about the code, which is nobody's act.
+    recorded(OutcomeKind::CodeChangedAfter, Actor::Harvester, 1_300);
     // A kind that is not the author answering, so the counts cannot be a count of
     // outcomes.
-    recorded(OutcomeKind::Kept, 1_400);
+    recorded(OutcomeKind::Kept, Actor::Developer, 1_400);
     store.mark_review_harvested(review.id, 2_000).unwrap();
 
     let waiting = store.posted_reviews_awaiting_author(None).unwrap();
@@ -525,6 +526,163 @@ fn a_posted_review_carries_what_the_harvester_recorded() {
         Some(2_000),
         "and something has looked, which is what makes those three figures"
     );
+}
+
+#[test]
+fn only_the_authors_own_replies_and_resolutions_are_counted_as_theirs() {
+    let (_dir, store) = temp_store();
+    let review = seed(&store, "acme/portal", 398, "aaaaaaa");
+    let seq = store
+        .add_finding(
+            review.id,
+            NewFinding {
+                lens: "boundary".to_string(),
+                severity: Severity::Should,
+                claim: "the retry writes the wrong bucket".to_string(),
+                disposition: Disposition::InDraft,
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .seq;
+    post(&store, review.id, ReviewEvent::RequestChanges, "PRR_kwDOA1");
+
+    // **What the harvester writes when the reply is not the author's.** `actor_for` maps
+    // any login that is not the pull request's author to `developer` — and on most
+    // repositories the author cannot resolve a review thread, so the reviewer does.
+    for (kind, actor) in [
+        (OutcomeKind::Replied, Actor::Developer),
+        (OutcomeKind::ThreadResolved, Actor::Developer),
+    ] {
+        store
+            .add_outcome(
+                FindingRef {
+                    review_id: review.id,
+                    seq,
+                },
+                NewOutcome {
+                    kind,
+                    actor,
+                    detail: None,
+                    occurred_at: Some(1_000),
+                },
+            )
+            .unwrap();
+    }
+    store.mark_review_harvested(review.id, 2_000).unwrap();
+
+    let waiting = store.posted_reviews_awaiting_author(None).unwrap();
+    let item = waiting.first().expect("the review is in the group");
+
+    assert_eq!(
+        (item.response.replies, item.response.threads_resolved),
+        (0, 0),
+        "the developer's own reply and their own resolution are not the author answering"
+    );
+}
+
+#[test]
+fn a_posted_review_says_how_many_of_its_findings_a_reply_could_attach_to() {
+    let (_dir, store) = temp_store();
+    let review = seed(&store, "acme/portal", 398, "aaaaaaa");
+    let finding = |claim: &str| {
+        store
+            .add_finding(
+                review.id,
+                NewFinding {
+                    lens: "boundary".to_string(),
+                    severity: Severity::Should,
+                    claim: claim.to_string(),
+                    disposition: Disposition::InDraft,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .seq
+    };
+    let linked = finding("the retry writes the wrong bucket");
+    finding("the backoff has no ceiling");
+    post(&store, review.id, ReviewEvent::RequestChanges, "PRR_kwDOA1");
+    store
+        .set_finding_github_comment(review.id, linked, "IC_kwDOA1")
+        .expect("the comment the finding was posted as");
+    store.mark_review_harvested(review.id, 2_000).unwrap();
+
+    let waiting = store.posted_reviews_awaiting_author(None).unwrap();
+    let item = waiting.first().expect("the review is in the group");
+
+    assert_eq!(item.findings, 2);
+    assert_eq!(
+        item.findings_linked, 1,
+        "the harvester reads a thread through this, so it is what says a reply could \
+         have been seen at all"
+    );
+}
+
+#[test]
+fn a_superseded_round_stops_waiting_on_the_author() {
+    let (_dir, store) = temp_store();
+    // Round 1 was posted. The author then pushed — which is the event this group waits
+    // for — so a session opened round 2 on the new head commit.
+    let first = store
+        .create_review(new_review("acme/portal", 398, "aaaaaaa", 1))
+        .expect("round 1");
+    post(&store, first.id, ReviewEvent::RequestChanges, "PRR_round1");
+
+    assert_eq!(
+        ids_of(&store.posted_reviews_awaiting_author(None).unwrap()),
+        [first.id],
+        "while it is the only round, it is the one waiting"
+    );
+
+    let second = store
+        .create_review(new_review("acme/portal", 398, "eeeeeee", 2))
+        .expect("round 2");
+
+    assert!(
+        store
+            .posted_reviews_awaiting_author(None)
+            .unwrap()
+            .is_empty(),
+        "round 1's wait ended at the commit that opened round 2, and nothing would ever \
+         move its state again to retract it"
+    );
+
+    post(&store, second.id, ReviewEvent::Comment, "PRR_round2");
+    assert_eq!(
+        ids_of(&store.posted_reviews_awaiting_author(None).unwrap()),
+        [second.id],
+        "and one pull request is one row, whatever round it is on"
+    );
+}
+
+#[test]
+fn a_review_posted_through_review_link_is_still_a_posted_review() {
+    let (_dir, store) = temp_store();
+    let review = seed(&store, "acme/portal", 398, "aaaaaaa");
+
+    // **No draft at all.** `review link --github-review` records the review as posted
+    // without a draft transition, and `list_repos` has always counted that as the review
+    // no longer being open — so a group that read `posted_at` alone left it in no group
+    // on any page, which is the complaint DEV-930 was opened about.
+    store
+        .set_review_links(
+            review.id,
+            review_desk_store::ReviewLinks {
+                github_review_id: Some("PRR_linked".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("the posted review's id");
+
+    let waiting = store.posted_reviews_awaiting_author(None).unwrap();
+    let item = waiting.first().expect("the review is in the group");
+    assert_eq!(item.review.id, review.id);
+    assert!(
+        item.posted_at.is_none(),
+        "it is posted and nothing holds the time, which the item says rather than guesses"
+    );
+    assert!(item.posted_as.is_none());
 }
 
 #[test]
@@ -605,6 +763,37 @@ fn every_review_is_listed_newest_first_with_the_step_it_reached() {
     assert!(
         step_of(untouched.id).is_none(),
         "a review nothing has reported on is at no step, which is not step 1 pending"
+    );
+}
+
+#[test]
+fn a_listed_review_says_which_round_of_how_many_it_is() {
+    let (_dir, store) = temp_store();
+    let first = store
+        .create_review(new_review("acme/portal", 398, "aaaaaaa", 1))
+        .expect("round 1");
+    let third = store
+        .create_review(new_review("acme/portal", 398, "ccccccc", 3))
+        .expect("round 3");
+    let alone = seed(&store, "acme/billing-api", 88, "bbbbbbb");
+
+    let listed = store.reviews_at_step(None).unwrap();
+    let rounds = |id: i64| {
+        listed
+            .iter()
+            .find(|at| at.review.id == id)
+            .expect("the review is listed")
+            .rounds_on_pr
+    };
+
+    // "round 1 of 3" rather than a bare 1: a round number alone, in a column beside the
+    // repository and the pull request, reads as a count of rework against their author.
+    assert_eq!((rounds(first.id), first.round), (3, 1));
+    assert_eq!((rounds(third.id), third.round), (3, 3));
+    assert_eq!(
+        (rounds(alone.id), alone.round),
+        (1, 1),
+        "and a pull request reviewed once is round 1 of 1"
     );
 }
 

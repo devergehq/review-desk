@@ -1471,25 +1471,38 @@ pub struct ReviewAtLayer {
 
 /// What the record holds of the author's response to a posted review.
 ///
-/// **All three are written by the harvester and by nothing else.** They are counts of
-/// outcomes by kind, so each one is a count of facts GitHub stated — not a judgement
-/// about whether the author has engaged.
+/// Counts of recorded outcomes, so each one is a count of facts GitHub stated — never a
+/// judgement about whether the author has engaged.
 ///
-/// Zero is a measurement here, and it is only a measurement when something has looked:
-/// `Review::harvested_at` is what says whether anything has, and a caller serving these
-/// to a screen has to read it. See [`PostedReview`].
+/// **Zero is only a measurement when something could have found one**, and that is a
+/// different question for each of the three. A caller serving these to a screen has to
+/// read `Review::harvested_at` and `PostedReview::findings_linked` and say which it is;
+/// printing a nought over an unread thread is the one thing this project forbids.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct AuthorResponse {
-    /// Replies the harvester read in a linked finding's thread.
+    /// Replies **the pull request's author** wrote in a linked finding's thread.
+    ///
+    /// **The actor, not only the kind.** `review_desk_harvest`'s `actor_for` records a
+    /// reply from any login that is not the pull request's author as
+    /// [`Actor::Developer`], so counting `replied` rows alone credits the author with the
+    /// developer's own replies. A reply the harvester could not attribute to the author
+    /// is not counted here; the one review screen shows every outcome either way.
     pub replies: i64,
-    /// Linked findings whose thread the harvester found resolved.
+    /// Linked findings whose thread **the author** resolved.
+    ///
+    /// Counted by actor for the reason `replies` is, and it matters more here: on most
+    /// repositories the author cannot resolve a review thread, so the reviewer usually
+    /// does — and those resolutions are the developer's own.
     pub threads_resolved: i64,
     /// Findings whose code the harvester found changed after the commit the review read.
     ///
-    /// **Not "commits since".** DEV-930 asks for that phrase and the record has no such
-    /// figure: the harvester checks the files a finding points at, one finding at a time,
-    /// and `round_commits` counts commits *before* a round rather than after its posting.
-    /// This is the fact the harvester actually writes.
+    /// **Counted whole, unlike the other two**: the harvester attributes this to nobody,
+    /// because it is an observation about the code rather than an act by a person.
+    ///
+    /// **And not "commits since".** DEV-930 asks for that phrase and the record has no
+    /// such figure: this is one outcome per finding whose file changed, so one commit
+    /// touching three findings' files writes three of them, and `round_commits` counts
+    /// the commits *before* a round rather than after its posting. Named as what it is.
     pub code_changed_after: i64,
 }
 
@@ -1498,15 +1511,24 @@ pub struct AuthorResponse {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PostedReview {
     pub review: Review,
-    /// When the review session reported it posted. The draft's own `posted_at`, which is
-    /// what put this review in the group.
+    /// When the review session reported it posted. `None` for a review whose GitHub
+    /// review id was recorded by `review link` without a draft transition — it is posted,
+    /// and nothing holds the time.
     pub posted_at: Option<Timestamp>,
     /// The GitHub review event it was posted as, chosen by the developer at approval.
     pub posted_as: Option<ReviewEvent>,
-    /// The counts, always. **Whether they mean anything is `review.harvested_at`**: a
-    /// review nothing has harvested has three zeroes here and no measurement behind
-    /// them, and a caller that draws them as figures would be saying the author did
-    /// nothing when nobody has looked.
+    /// How many findings the review holds.
+    pub findings: i64,
+    /// How many of them carry the id of the GitHub comment they were posted as.
+    ///
+    /// **This is what says whether a reply could have been seen at all.** The harvester
+    /// reads a thread through a finding's `github_comment_id` and skips thread reading
+    /// altogether when no finding has one — then marks the review harvested regardless.
+    /// So zero here means there is nothing a reply could attach to, and zero replies is
+    /// the absence of a measurement rather than one.
+    pub findings_linked: i64,
+    /// The counts, always. **Whether each one means anything is a question about its own
+    /// source** — see [`AuthorResponse`], `Review::harvested_at` and `findings_linked`.
     pub response: AuthorResponse,
 }
 
@@ -1534,6 +1556,12 @@ pub struct ReviewStep {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReviewAtStep {
     pub review: Review,
+    /// The highest round this pull request has reached, so a list can say "round 1 of 3".
+    ///
+    /// A bare round number in a column of its own reads as a count of rework against the
+    /// author named two columns to its left. Said as one of a total, it is where this
+    /// review sits in a sequence.
+    pub rounds_on_pr: i64,
     /// The furthest step that is **not** `pending` — the highest-numbered one anything
     /// has moved off not-started.
     ///
