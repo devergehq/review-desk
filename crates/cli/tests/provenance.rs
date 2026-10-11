@@ -450,3 +450,131 @@ fn nothing_here_confirms_approves_or_signs_anything_off() {
     assert!(help.contains("lint"));
     assert!(help.contains("show"));
 }
+
+/* ------------------------------- DEV-917's two writes ------------------------------- */
+
+/// `layer set --fact`, which is where the facts the step's card draws come from.
+#[test]
+fn a_steps_facts_are_written_from_the_command_line_and_survive_the_next_progress_report() {
+    let desk = Desk::new();
+    let review = open_review(&desk, "acme/portal", "412", "3f9c2ab");
+
+    let written = desk.json(&[
+        "layer",
+        "set",
+        "--review",
+        &review,
+        "--layer",
+        "3",
+        "--state",
+        "done",
+        "--detail",
+        "8 options, C built",
+        "--fact",
+        "On the ticket=3",
+        "--fact",
+        "Blind pass picked=C, without the second queue",
+    ]);
+
+    let facts = written["layer"]["facts"].as_array().expect("the facts");
+    assert_eq!(facts.len(), 2);
+    assert_eq!(facts[0]["label"], "On the ticket");
+    assert_eq!(facts[0]["value"], "3");
+    assert_eq!(
+        facts[1]["value"], "C, without the second queue",
+        "split on the first = alone, so a value may contain others"
+    );
+
+    // The call a session makes to report progress, saying nothing about the facts.
+    desk.run(&[
+        "layer",
+        "set",
+        "--review",
+        &review,
+        "--layer",
+        "3",
+        "--state",
+        "done",
+        "--detail",
+        "8 options, C built",
+    ]);
+    let shown = desk.json(&["review", "show", "--review", &review]);
+    assert_eq!(
+        shown["layers"][2]["facts"].as_array().unwrap().len(),
+        2,
+        "facts cleared by a call that said nothing about them would be facts nobody could keep"
+    );
+
+    // And the way to take them off.
+    let cleared = desk.json(&[
+        "layer",
+        "set",
+        "--review",
+        &review,
+        "--layer",
+        "3",
+        "--state",
+        "done",
+        "--clear-facts",
+    ]);
+    assert_eq!(cleared["layer"]["facts"], Value::Array(Vec::new()));
+}
+
+#[test]
+fn a_fact_without_an_equals_sign_is_refused_naming_the_shape_it_wanted() {
+    let desk = Desk::new();
+    let review = open_review(&desk, "acme/portal", "412", "3f9c2ab");
+
+    let refused = desk.refused_json(&[
+        "layer",
+        "set",
+        "--review",
+        &review,
+        "--layer",
+        "1",
+        "--state",
+        "done",
+        "--fact",
+        "three problems",
+    ]);
+    assert_eq!(refused["error"]["code"], "invalid_value");
+    let message = refused["error"]["message"].as_str().expect("a message");
+    assert!(
+        message.contains("label=value"),
+        "the refusal names the shape it wanted: {message}"
+    );
+}
+
+/// A source's two reading columns, through `provenance sources`.
+#[test]
+fn a_sources_state_and_note_are_written_from_the_command_line() {
+    let desk = Desk::new();
+    let review = open_review(&desk, "acme/portal", "412", "3f9c2ab");
+
+    let path = document(
+        &desk,
+        "sources-read.json",
+        r#"{"sources": [
+          {"kind": "ticket", "label": "ABC-388 · Retire the tenant slot",
+           "status": "Backlog", "note": "Names the helper this change deletes"},
+          {"kind": "comment", "label": "2 earlier comments on the pull request"}
+        ]}"#,
+    );
+    let written = desk.json(&[
+        "provenance",
+        "sources",
+        "--review",
+        &review,
+        "--file",
+        &path,
+    ]);
+
+    let sources = written["sources"].as_array().expect("the sources");
+    assert_eq!(sources[0]["status"], "Backlog");
+    assert_eq!(sources[0]["note"], "Names the helper this change deletes");
+    assert_eq!(
+        (&sources[1]["status"], &sources[1]["note"]),
+        (&Value::Null, &Value::Null),
+        "a source that reported neither shows its reference alone"
+    );
+}

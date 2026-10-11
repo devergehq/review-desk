@@ -1255,6 +1255,59 @@ ALTER TABLE reviews ADD COLUMN last_activity_at INTEGER;
 ALTER TABLE brief_problems ADD COLUMN label TEXT;
 "#,
     },
+    Migration {
+        version: 14,
+        name: "layer-facts-and-source-reading",
+        sql: r#"
+-- The facts a step recorded, as the card beside it draws them: a label and a value.
+--
+-- **The note was a paragraph pretending to be a phrase.** A step draws its `detail` on one
+-- line now, and the sentences that used to be crushed into a 150-pixel column have somewhere
+-- to go: an ordered list of short pairs, which is what the note was trying to be. "Problems"
+-- and "3" is a fact; "the brief was rewritten twice, because the first pass mixed how the
+-- system works today into the problem" is a paragraph, and no column was ever going to hold
+-- it.
+--
+-- **Ordered by the position the store assigns**, for the reason every other list on this
+-- record is: two facts of one step have nothing else to tell them apart, and a caller that
+-- numbered its own would be a caller that could number two the same.
+--
+-- **No length is enforced**, which is migration 10's reasoning and migration 13's: a label
+-- or a value that runs long is a writing fault and belongs to the linter in Locus, not to a
+-- CHECK that refuses the step. What is refused, in `put_review_layer_facts`, is a pair with
+-- an empty label or an empty value -- a field nobody filled in wearing the clothes of one
+-- somebody did.
+--
+-- The parent is the layer row, not the review: facts about a step nothing has written are
+-- facts about nothing. SQLite needs the composite key `review_layers` already declares
+-- UNIQUE for that, which it has.
+CREATE TABLE review_layer_facts (
+    review_id INTEGER NOT NULL,
+    number    INTEGER NOT NULL,
+    position  INTEGER NOT NULL,
+    label     TEXT    NOT NULL,
+    value     TEXT    NOT NULL,
+    PRIMARY KEY (review_id, number, position),
+    FOREIGN KEY (review_id, number) REFERENCES review_layers (review_id, number)
+        ON DELETE CASCADE
+) WITHOUT ROWID;
+
+-- What a source's ticket said, and what it tells us. Two fields, both optional.
+--
+-- "Already decided" was a heading, a small paragraph and seven source lines that all looked
+-- alike. It is three levels now -- what was decided, what is still open, then where it came
+-- from -- and the third is a table, which needs two columns the record did not hold: the
+-- state the session read off the ticket, and the one line saying what the source tells us.
+--
+-- **Both are what the session read, and neither is checked.** Review Desk fetches no ticket
+-- and follows no link; `status` is a state as the session reported it, which is why it is
+-- free text and not an enum -- every tracker names its own columns, and a fixed set here
+-- would either refuse a real board or quietly rename it. A row with no `note` shows its
+-- reference alone.
+ALTER TABLE review_sources ADD COLUMN status TEXT;
+ALTER TABLE review_sources ADD COLUMN note TEXT;
+"#,
+    },
 ];
 
 /// The version a freshly created database lands on.

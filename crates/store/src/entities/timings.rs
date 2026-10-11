@@ -230,6 +230,7 @@ mod tests {
             detail: None,
             updated_at: None,
             runs,
+            facts: Vec::new(),
         }
     }
 

@@ -99,11 +99,15 @@ fn a_review_serves_the_four_lists_the_command_line_wrote() {
                     kind: SourceKind::Ticket,
                     label: "ABC-231 · Retry webhook deliveries for 24 hours".to_string(),
                     link: Some("https://linear.app/acme/issue/ABC-231".to_string()),
+                    status: None,
+                    note: None,
                 },
                 NewReviewSource {
                     kind: SourceKind::Description,
                     label: "The pull request description".to_string(),
                     link: None,
+                    status: None,
+                    note: None,
                 },
             ],
         )
@@ -466,4 +470,84 @@ fn no_operation_in_the_contract_writes_any_of_it() {
             answer.text()
         );
     }
+}
+
+/// The two things DEV-917 put on the wire: a step's facts, and a source's reading.
+///
+/// Thin, like everything else here — the command line wrote both. What this says is that
+/// the dashboard can draw the card and the sources table from one read of
+/// `GET /reviews/{id}`, which is the contract's rule that no screen joins anything.
+#[test]
+fn a_step_serves_its_facts_and_a_source_its_state_and_note() {
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+
+    harness
+        .store
+        .set_review_layer(
+            seeded.review_id,
+            3,
+            review_desk_store::ReviewLayerState::Done,
+            Some("8 options, C built"),
+        )
+        .expect("layer 3");
+    harness
+        .store
+        .put_review_layer_facts(
+            seeded.review_id,
+            3,
+            vec![
+                review_desk_store::NewLayerFact {
+                    label: "On the ticket".to_string(),
+                    value: "3".to_string(),
+                },
+                review_desk_store::NewLayerFact {
+                    label: "Built".to_string(),
+                    value: "C".to_string(),
+                },
+            ],
+        )
+        .expect("the facts");
+    harness
+        .store
+        .put_review_sources(
+            seeded.review_id,
+            vec![
+                NewReviewSource {
+                    kind: SourceKind::Ticket,
+                    label: "ABC-388 · Retire the tenant slot".to_string(),
+                    link: None,
+                    status: Some("Backlog".to_string()),
+                    note: Some("Names the helper this change deletes".to_string()),
+                },
+                NewReviewSource {
+                    kind: SourceKind::Comment,
+                    label: "2 earlier comments on the pull request".to_string(),
+                    link: None,
+                    status: None,
+                    note: None,
+                },
+            ],
+        )
+        .expect("the sources");
+
+    let served = harness
+        .api("GET", &format!("/reviews/{}", seeded.review_id), None)
+        .json();
+
+    let facts = served["layers"][2]["facts"].as_array().expect("the facts");
+    assert_eq!(facts.len(), 2);
+    assert_eq!(facts[0]["label"], "On the ticket");
+    assert_eq!(facts[0]["value"], "3");
+    assert_eq!(
+        served["layers"][6]["facts"],
+        Value::Array(Vec::new()),
+        "a step that recorded none serves an empty list, and the page draws no card"
+    );
+
+    let sources = served["sources"].as_array().expect("the sources");
+    assert_eq!(sources[0]["status"], "Backlog");
+    assert_eq!(sources[0]["note"], "Names the helper this change deletes");
+    assert_eq!(sources[1]["status"], Value::Null);
+    assert_eq!(sources[1]["note"], Value::Null);
 }

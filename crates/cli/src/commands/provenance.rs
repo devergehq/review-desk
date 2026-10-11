@@ -28,9 +28,15 @@ use crate::report::Report;
 pub enum ProvenanceCommand {
     /// Record what the review read the problem from, replacing the whole list.
     ///
-    /// The document is `{"sources": [{"kind": "...", "label": "...", "link": "..."}]}`.
-    /// `kind` is one of `ticket`, `description` or `comment`; `label` is what to call it
-    /// on screen; `link` is optional and opaque — Review Desk never fetches it.
+    /// The document is `{"sources": [{"kind": "...", "label": "...", "link": "...",
+    /// "status": "...", "note": "..."}]}`. `kind` is one of `ticket`, `description` or
+    /// `comment`; `label` is what to call it on screen; `link` is optional and opaque —
+    /// Review Desk never fetches it.
+    ///
+    /// `status` and `note` are optional and are what the sources table draws beside the
+    /// reference: the ticket's state **as the session read it** — free text, because every
+    /// tracker names its own columns — and one line saying what the source tells us. A
+    /// source with no `note` shows its reference alone.
     ///
     /// **This is not Review Desk reading the ticket.** It is the session saying which
     /// ticket, description and comments it read, in its own words.

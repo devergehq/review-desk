@@ -347,6 +347,8 @@ fn an_older_database_is_migrated_forward_and_keeps_its_rows() {
                 kind: SourceKind::Description,
                 label: "The pull request description".to_string(),
                 link: None,
+                status: None,
+                note: None,
             }],
         )
         .expect("a source can be written after the migration");
@@ -536,4 +538,57 @@ fn a_draft_written_before_the_composition_becomes_one_block_of_prose() {
     // A draft that held no body at all gets no block, and still composes to nothing.
     assert!(migrated.draft_sections(2).expect("the blocks").is_empty());
     assert_eq!(migrated.get_draft(2).expect("the draft").body, "");
+}
+
+/// What migration 14 does to a database recorded before it: nothing it has to apologise
+/// for.
+///
+/// A source written at version 13 keeps its label and its link, and reads back with no
+/// state and no note — which is the honest answer, since nothing recorded either. A step
+/// written then has no facts, which is what makes the trail draw no card for it.
+#[test]
+fn a_source_written_before_the_two_reading_columns_keeps_its_label_and_gains_nulls() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+
+    const FROM: i64 = 13;
+    assert!(
+        newest_version() > FROM,
+        "this test needs migration 14 to come from"
+    );
+
+    {
+        let old = Store::open_at_version(&path, FROM).expect("open at 13");
+        assert_eq!(old.schema_version().unwrap(), FROM);
+    }
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "INSERT INTO reviews (id, repo, pr, head_sha, round, created_at)
+                 VALUES (1, 'acme/portal', 412, 'abc123', 1, 1000);
+             INSERT INTO review_layers (review_id, number, state, detail, updated_at)
+                 VALUES (1, 2, 'done', 'the whole note, printed in a narrow column', 1001);
+             INSERT INTO review_sources (review_id, position, kind, label, link)
+                 VALUES (1, 1, 'ticket', 'ABC-402 · the ticket as it was', NULL);",
+        )
+        .expect("write rows under the older schema");
+    }
+
+    let migrated = Store::open(&path).expect("reopen migrates");
+    assert_eq!(migrated.schema_version().unwrap(), newest_version());
+
+    let sources = migrated.list_review_sources(1).unwrap();
+    assert_eq!(sources.len(), 1);
+    assert_eq!(sources[0].label, "ABC-402 · the ticket as it was");
+    assert_eq!(
+        (sources[0].status.as_deref(), sources[0].note.as_deref()),
+        (None, None),
+        "nothing recorded either, so the table's cells are empty rather than invented"
+    );
+
+    let layer = migrated.get_review_layer(1, 2).unwrap();
+    assert!(
+        layer.facts.is_empty(),
+        "a step recorded before the facts existed has none, and draws no card"
+    );
 }

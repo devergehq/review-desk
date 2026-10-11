@@ -31,7 +31,8 @@
             "detail": null
           }
         ],
-        "seconds": 60
+        "seconds": 60,
+        "facts": []
       },
       {
         "number": 2,
@@ -57,7 +58,8 @@
             "detail": "waiting on you"
           }
         ],
-        "seconds": 1560
+        "seconds": 1560,
+        "facts": []
       },
       {
         "number": 3,
@@ -75,7 +77,8 @@
             "detail": null
           }
         ],
-        "seconds": 240
+        "seconds": 240,
+        "facts": []
       },
       {
         "number": 4,
@@ -93,7 +96,8 @@
             "detail": null
           }
         ],
-        "seconds": 180
+        "seconds": 180,
+        "facts": []
       },
       {
         "number": 5,
@@ -111,7 +115,8 @@
             "detail": null
           }
         ],
-        "seconds": 780
+        "seconds": 780,
+        "facts": []
       },
       {
         "number": 6,
@@ -120,7 +125,8 @@
         "detail": "drafted, held until you confirm",
         "updated_at": "2026-10-08T11:21:00Z",
         "runs": [],
-        "seconds": null
+        "seconds": null,
+        "facts": []
       },
       {
         "number": 7,
@@ -129,7 +135,8 @@
         "detail": "after posting",
         "updated_at": null,
         "runs": [],
-        "seconds": null
+        "seconds": null,
+        "facts": []
       }
     ],
     "brief": {
@@ -380,7 +387,8 @@
             "detail": null
           }
         ],
-        "seconds": 120
+        "seconds": 120,
+        "facts": []
       },
       {
         "number": 2,
@@ -406,7 +414,8 @@
             "detail": "waiting on you"
           }
         ],
-        "seconds": 480
+        "seconds": 480,
+        "facts": []
       },
       {
         "number": 3,
@@ -424,7 +433,8 @@
             "detail": null
           }
         ],
-        "seconds": 300
+        "seconds": 300,
+        "facts": []
       },
       {
         "number": 4,
@@ -442,7 +452,8 @@
             "detail": null
           }
         ],
-        "seconds": 300
+        "seconds": 300,
+        "facts": []
       },
       {
         "number": 5,
@@ -460,7 +471,8 @@
             "detail": null
           }
         ],
-        "seconds": 600
+        "seconds": 600,
+        "facts": []
       },
       {
         "number": 6,
@@ -486,7 +498,8 @@
             "detail": "waiting on you"
           }
         ],
-        "seconds": 240
+        "seconds": 240,
+        "facts": []
       },
       {
         "number": 7,
@@ -495,7 +508,8 @@
         "detail": "after posting",
         "updated_at": null,
         "runs": [],
-        "seconds": null
+        "seconds": null,
+        "facts": []
       }
     ],
     "brief": {
@@ -709,7 +723,8 @@
             "detail": null
           }
         ],
-        "seconds": 60
+        "seconds": 60,
+        "facts": []
       },
       {
         "number": 2,
@@ -735,7 +750,8 @@
             "detail": "waiting on you"
           }
         ],
-        "seconds": 120
+        "seconds": 120,
+        "facts": []
       },
       {
         "number": 3,
@@ -753,7 +769,8 @@
             "detail": null
           }
         ],
-        "seconds": 0
+        "seconds": 0,
+        "facts": []
       },
       {
         "number": 4,
@@ -771,7 +788,8 @@
             "detail": null
           }
         ],
-        "seconds": 120
+        "seconds": 120,
+        "facts": []
       },
       {
         "number": 5,
@@ -789,7 +807,8 @@
             "detail": null
           }
         ],
-        "seconds": 900
+        "seconds": 900,
+        "facts": []
       },
       {
         "number": 6,
@@ -815,7 +834,8 @@
             "detail": "waiting on you"
           }
         ],
-        "seconds": 120
+        "seconds": 120,
+        "facts": []
       },
       {
         "number": 7,
@@ -824,7 +844,8 @@
         "detail": "after posting",
         "updated_at": null,
         "runs": [],
-        "seconds": null
+        "seconds": null,
+        "facts": []
       }
     ],
     "brief": {
@@ -937,7 +958,8 @@
             "detail": null
           }
         ],
-        "seconds": 60
+        "seconds": 60,
+        "facts": []
       },
       {
         "number": 2,
@@ -963,7 +985,8 @@
             "detail": "waiting on you"
           }
         ],
-        "seconds": 1140
+        "seconds": 1140,
+        "facts": []
       },
       {
         "number": 3,
@@ -981,7 +1004,8 @@
             "detail": null
           }
         ],
-        "seconds": 600
+        "seconds": 600,
+        "facts": []
       },
       {
         "number": 4,
@@ -999,7 +1023,8 @@
             "detail": null
           }
         ],
-        "seconds": 600
+        "seconds": 600,
+        "facts": []
       },
       {
         "number": 5,
@@ -1017,7 +1042,8 @@
             "detail": null
           }
         ],
-        "seconds": 3600
+        "seconds": 3600,
+        "facts": []
       },
       {
         "number": 6,
@@ -1035,7 +1061,8 @@
             "detail": null
           }
         ],
-        "seconds": 6000
+        "seconds": 6000,
+        "facts": []
       },
       {
         "number": 7,
@@ -1061,7 +1088,8 @@
             "detail": "1 rejected, 1 fixed"
           }
         ],
-        "seconds": 156000
+        "seconds": 156000,
+        "facts": []
       }
     ],
     "brief": {
@@ -1244,7 +1272,8 @@
             "detail": null
           }
         ],
-        "seconds": 60
+        "seconds": 60,
+        "facts": []
       },
       {
         "number": 2,
@@ -1270,7 +1299,8 @@
             "detail": "waiting on you"
           }
         ],
-        "seconds": 60
+        "seconds": 60,
+        "facts": []
       },
       {
         "number": 3,
@@ -1288,7 +1318,8 @@
             "detail": null
           }
         ],
-        "seconds": 60
+        "seconds": 60,
+        "facts": []
       },
       {
         "number": 4,
@@ -1306,7 +1337,8 @@
             "detail": null
           }
         ],
-        "seconds": 60
+        "seconds": 60,
+        "facts": []
       },
       {
         "number": 5,
@@ -1332,7 +1364,8 @@
             "detail": "running"
           }
         ],
-        "seconds": 60
+        "seconds": 60,
+        "facts": []
       },
       {
         "number": 6,
@@ -1341,7 +1374,8 @@
         "detail": "not yet",
         "updated_at": null,
         "runs": [],
-        "seconds": null
+        "seconds": null,
+        "facts": []
       },
       {
         "number": 7,
@@ -1350,7 +1384,8 @@
         "detail": "after posting",
         "updated_at": null,
         "runs": [],
-        "seconds": null
+        "seconds": null,
+        "facts": []
       }
     ],
     "brief": {
@@ -1431,7 +1466,8 @@
             "detail": null
           }
         ],
-        "seconds": 60
+        "seconds": 60,
+        "facts": []
       },
       {
         "number": 2,
@@ -1457,7 +1493,8 @@
             "detail": "waiting on you"
           }
         ],
-        "seconds": 60
+        "seconds": 60,
+        "facts": []
       },
       {
         "number": 3,
@@ -1483,7 +1520,8 @@
             "detail": "running"
           }
         ],
-        "seconds": 60
+        "seconds": 60,
+        "facts": []
       },
       {
         "number": 4,
@@ -1492,7 +1530,8 @@
         "detail": "not yet",
         "updated_at": null,
         "runs": [],
-        "seconds": null
+        "seconds": null,
+        "facts": []
       },
       {
         "number": 5,
@@ -1501,7 +1540,8 @@
         "detail": "not yet",
         "updated_at": null,
         "runs": [],
-        "seconds": null
+        "seconds": null,
+        "facts": []
       },
       {
         "number": 6,
@@ -1510,7 +1550,8 @@
         "detail": "not yet",
         "updated_at": null,
         "runs": [],
-        "seconds": null
+        "seconds": null,
+        "facts": []
       },
       {
         "number": 7,
@@ -1519,7 +1560,8 @@
         "detail": "after posting",
         "updated_at": null,
         "runs": [],
-        "seconds": null
+        "seconds": null,
+        "facts": []
       }
     ],
     "brief": {
@@ -1600,7 +1642,21 @@
             "detail": null
           }
         ],
-        "seconds": 1200
+        "seconds": 1200,
+        "facts": [
+          {
+            "label": "Tests",
+            "value": "214 passed"
+          },
+          {
+            "label": "Code style",
+            "value": "passed"
+          },
+          {
+            "label": "Description",
+            "value": "passes, 2 warnings"
+          }
+        ]
       },
       {
         "number": 2,
@@ -1626,7 +1682,21 @@
             "detail": "waiting on you"
           }
         ],
-        "seconds": 3600
+        "seconds": 3600,
+        "facts": [
+          {
+            "label": "Problems",
+            "value": "3"
+          },
+          {
+            "label": "Your sign-off",
+            "value": "required"
+          },
+          {
+            "label": "Size",
+            "value": "486 lines, 12 files"
+          }
+        ]
       },
       {
         "number": 3,
@@ -1644,7 +1714,29 @@
             "detail": null
           }
         ],
-        "seconds": 3600
+        "seconds": 3600,
+        "facts": [
+          {
+            "label": "On the ticket",
+            "value": "3"
+          },
+          {
+            "label": "From the blind pass",
+            "value": "6"
+          },
+          {
+            "label": "On both",
+            "value": "1"
+          },
+          {
+            "label": "Built",
+            "value": "C"
+          },
+          {
+            "label": "Blind pass picked",
+            "value": "C, without the second queue"
+          }
+        ]
       },
       {
         "number": 4,
@@ -1662,7 +1754,8 @@
             "detail": null
           }
         ],
-        "seconds": 0
+        "seconds": 0,
+        "facts": []
       },
       {
         "number": 5,
@@ -1680,7 +1773,25 @@
             "detail": null
           }
         ],
-        "seconds": 0
+        "seconds": 0,
+        "facts": [
+          {
+            "label": "To post",
+            "value": "6: 1 blocker, 4 should, 1 nit"
+          },
+          {
+            "label": "Held for a ticket",
+            "value": "5"
+          },
+          {
+            "label": "Set aside",
+            "value": "3"
+          },
+          {
+            "label": "Blockers",
+            "value": "1: the retry writes the wrong bucket"
+          }
+        ]
       },
       {
         "number": 6,
@@ -1698,7 +1809,17 @@
             "detail": "waiting on you"
           }
         ],
-        "seconds": null
+        "seconds": null,
+        "facts": [
+          {
+            "label": "In the body",
+            "value": "6 findings"
+          },
+          {
+            "label": "Length",
+            "value": "437 of 420 words"
+          }
+        ]
       },
       {
         "number": 7,
@@ -1707,7 +1828,8 @@
         "detail": "after posting",
         "updated_at": "2026-10-09T23:00:00Z",
         "runs": [],
-        "seconds": null
+        "seconds": null,
+        "facts": []
       }
     ],
     "brief": {
@@ -1937,7 +2059,7 @@
         [
           {
             "title": "The tenant is taken from the request-scoped singleton",
-            "note": "TenantContext::current() — the web middleware writes here too",
+            "note": "`TenantContext::current()` — the web middleware writes here too",
             "problem": 1
           }
         ],
@@ -2025,14 +2147,14 @@
           "now_fixed": "The schedule carries its own context, and nothing else writes to it.",
           "detail_title": "The request-scoped singleton",
           "detail_before": [
-            "TenantContext::current() is written by the web middleware on every request and read by the report builder.",
+            "`TenantContext::current()` is written by the web middleware on every request and read by the report builder.",
             "The queue worker keeps the container between jobs, so the slot survives the job that set it.",
             "One incident on INC-411: a nightly export for one tenant was written with another tenant's rows after a retry landed on a warm worker.",
             "A second on INC-418: the bucket name and the row filter came from the slot at different moments, so a file landed in the wrong bucket with the right rows.",
             "Both were patched by clearing the slot. The mechanism is unchanged."
           ],
           "detail_after": [
-            "ExportContext is constructed by the schedule and passed as an argument through the worker.",
+            "`ExportContext` is constructed by the schedule and passed as an argument through the worker.",
             "The web middleware still writes the singleton; nothing in the export path reads it."
           ]
         },
@@ -3309,19 +3431,33 @@
         "position": 1,
         "kind": "ticket",
         "label": "ABC-402 · Scheduled exports carry their own context",
-        "link": "https://example.invalid/browse/ABC-402"
+        "link": "https://example.invalid/browse/ABC-402",
+        "status": "In Review",
+        "note": "The problem, four options, and three open questions"
       },
       {
         "position": 2,
         "kind": "description",
         "label": "The pull request description, revision 3",
-        "link": null
+        "link": null,
+        "status": null,
+        "note": "Seven sections; two doubts the author raised"
       },
       {
         "position": 3,
         "kind": "comment",
         "label": "Agreed with you on the ticket on 6 October, before work started",
-        "link": null
+        "link": null,
+        "status": null,
+        "note": null
+      },
+      {
+        "position": 4,
+        "kind": "ticket",
+        "label": "ABC-388 · Retire the request-scoped tenant slot",
+        "link": "https://example.invalid/browse/ABC-388",
+        "status": "Backlog",
+        "note": "Names the helper this change deletes"
       }
     ],
     "criteria": [],

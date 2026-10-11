@@ -87,16 +87,22 @@ fn sources_are_read_back_in_the_order_they_were_written() {
                     kind: SourceKind::Ticket,
                     label: "ABC-231 · Retry webhook deliveries for 24 hours".to_string(),
                     link: Some("https://linear.app/acme/issue/ABC-231".to_string()),
+                    status: None,
+                    note: None,
                 },
                 NewReviewSource {
                     kind: SourceKind::Description,
                     label: "The pull request description".to_string(),
                     link: None,
+                    status: None,
+                    note: None,
                 },
                 NewReviewSource {
                     kind: SourceKind::Comment,
                     label: "2 earlier comments on the pull request".to_string(),
                     link: None,
+                    status: None,
+                    note: None,
                 },
             ],
         )
@@ -125,11 +131,15 @@ fn writing_sources_again_replaces_the_whole_list() {
                     kind: SourceKind::Ticket,
                     label: "ABC-231".to_string(),
                     link: None,
+                    status: None,
+                    note: None,
                 },
                 NewReviewSource {
                     kind: SourceKind::Comment,
                     label: "one comment".to_string(),
                     link: None,
+                    status: None,
+                    note: None,
                 },
             ],
         )
@@ -142,6 +152,8 @@ fn writing_sources_again_replaces_the_whole_list() {
                 kind: SourceKind::Description,
                 label: "The pull request description".to_string(),
                 link: None,
+                status: None,
+                note: None,
             }],
         )
         .unwrap();
@@ -161,6 +173,8 @@ fn an_empty_list_clears_the_sources() {
                 kind: SourceKind::Ticket,
                 label: "ABC-231".to_string(),
                 link: None,
+                status: None,
+                note: None,
             }],
         )
         .unwrap();
@@ -185,6 +199,8 @@ fn a_source_with_no_label_is_refused() {
                 kind: SourceKind::Ticket,
                 label: "   ".to_string(),
                 link: None,
+                status: None,
+                note: None,
             }],
         )
         .expect_err("a source with nothing to call it");
@@ -203,6 +219,8 @@ fn a_blank_link_is_no_link_rather_than_an_empty_one() {
                 kind: SourceKind::Ticket,
                 label: "ABC-231".to_string(),
                 link: Some("  ".to_string()),
+                status: None,
+                note: None,
             }],
         )
         .unwrap();
@@ -221,6 +239,8 @@ fn sources_for_a_review_that_is_not_there_are_refused() {
                 kind: SourceKind::Ticket,
                 label: "ABC-231".to_string(),
                 link: None,
+                status: None,
+                note: None,
             }],
         )
         .expect_err("no such review");
@@ -825,6 +845,8 @@ fn one_read_answers_all_four() {
                 kind: SourceKind::Ticket,
                 label: "ABC-231".to_string(),
                 link: None,
+                status: None,
+                note: None,
             }],
         )
         .unwrap();
@@ -1105,5 +1127,81 @@ fn a_carried_finding_brings_no_criteria_with_it() {
     assert!(
         provenance.is_empty(),
         "a carry moves a finding, not the review's understanding: {provenance:?}"
+    );
+}
+
+/// What a source says about the ticket it came from — DEV-917.
+///
+/// "Already decided" is three levels now and its third is a table, which needs two columns
+/// the record did not hold: the state the session read off the ticket, and the one line
+/// saying what the source tells us. Both are optional, and a row with neither is the row
+/// every source recorded before this change draws.
+#[test]
+fn a_source_carries_the_state_and_the_line_the_session_read() {
+    let (_dir, store, review) = seeded();
+
+    let written = store
+        .put_review_sources(
+            review,
+            vec![
+                NewReviewSource {
+                    kind: SourceKind::Ticket,
+                    label: "ABC-231 · Retry webhook deliveries for 24 hours".to_string(),
+                    link: None,
+                    status: Some("Backlog".to_string()),
+                    note: Some("Names the helper this change deletes".to_string()),
+                },
+                NewReviewSource {
+                    kind: SourceKind::Comment,
+                    label: "2 earlier comments on the pull request".to_string(),
+                    link: None,
+                    status: None,
+                    note: None,
+                },
+            ],
+        )
+        .expect("the sources");
+
+    assert_eq!(written[0].status.as_deref(), Some("Backlog"));
+    assert_eq!(
+        written[0].note.as_deref(),
+        Some("Names the helper this change deletes")
+    );
+    assert_eq!(
+        (written[1].status.as_deref(), written[1].note.as_deref()),
+        (None, None),
+        "a source that reported neither shows its reference alone"
+    );
+    assert_eq!(
+        store.list_review_sources(review).unwrap(),
+        written,
+        "and both are read back as they were written"
+    );
+}
+
+/// A state or a note of spaces is nothing, and is recorded as nothing.
+///
+/// The same rule the label follows, for the same reason: a field nobody filled in wearing
+/// the clothes of one somebody did would draw an empty cell that reads as a fetched blank.
+#[test]
+fn a_blank_state_or_note_on_a_source_is_recorded_as_absent() {
+    let (_dir, store, review) = seeded();
+
+    let written = store
+        .put_review_sources(
+            review,
+            vec![NewReviewSource {
+                kind: SourceKind::Ticket,
+                label: "ABC-231 · the ticket".to_string(),
+                link: None,
+                status: Some("   ".to_string()),
+                note: Some(String::new()),
+            }],
+        )
+        .expect("the sources");
+
+    assert_eq!(
+        (written[0].status.clone(), written[0].note.clone()),
+        (None, None)
     );
 }

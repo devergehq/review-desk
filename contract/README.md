@@ -171,6 +171,7 @@ Everything else on the four screens is below.
 | "head 3f9c2ab" | `review.head_sha` |
 | "214 changed lines" | `review.changed_lines` |
 | the seven layer chips | `layers[].number`, `.name`, `.state`, `.detail` |
+| the card of facts beside a step | `layers[].facts[]` — `label`, `value` |
 | the chip's dark / dashed / plain styling | `layers[].state` — `waiting_on_you` and `running` are current, `pending` is not started |
 | "17 min" under a finished step | `layers[].seconds` |
 | "ran twice · 10 min, then 6 min" | `layers[].runs[]` — `state`, `started_at`, `finished_at`, `seconds` |
@@ -234,6 +235,7 @@ ticket: what is served is what the session said it read.
 | On board A2 | Field |
 |---|---|
 | "Read from" under the title | `sources[]` |
+| the sources table under "Already decided" | `sources[].kind`, `.label`, `.status`, `.note`, `.link` |
 | "Ticket ABC-231, Retry webhook deliveries for 24 hours" | `sources[].kind: ticket`, `.label`, `.link` |
 | "The pull request description" | `sources[].kind: description` |
 | "2 earlier comments on the pull request" | `sources[].kind: comment` |

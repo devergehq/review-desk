@@ -1124,6 +1124,44 @@ components:
             Whole seconds, never formatted text — how to say "17 min" is the screen's
             decision and the store holds no opinion about it.
 
+        # -- what the step came to, as pairs (DEV-917) -------------------------------
+        facts:
+          type: array
+          items: { $ref: '#/components/schemas/LayerFact' }
+          description: |
+            What this step came to, as short pairs, in the order the session wrote them —
+            **what `detail` is a one-line summary of**. The trail draws `detail` on one
+            line and opens these on a card anchored to the step.
+
+            Empty for a step that recorded none, and a step with none draws no card and
+            no control for one. Not required here, for the reason `runs` is not: a
+            response written before DEV-917 is missing it rather than wrong.
+
+    LayerFact:
+      type: object
+      additionalProperties: false
+      required: [label, value]
+      description: |
+        One fact a step recorded — a label and a value, both short.
+
+        **This is what the step's note was trying to be.** Before DEV-917 a step printed
+        its whole `detail` in a column about 150 pixels wide, eleven lines deep on a real
+        review; a pair is the shape that fits a card's two columns and a sentence is not.
+
+        Neither half is derived and neither is checked. Review Desk counts nothing here to
+        agree or disagree with.
+      properties:
+        label:
+          type: string
+          minLength: 1
+          description: The left column — "Problems", "Held for a ticket", "Blockers".
+        value:
+          type: string
+          minLength: 1
+          description: >-
+            The right column — "3", "6: 4 should, 1 question, 1 nit", "none; the second
+            reader agrees".
+
     ReviewLayerRun:
       type: object
       additionalProperties: false
@@ -3364,6 +3402,30 @@ components:
           type: [string, 'null']
           minLength: 1
           description: Where to follow it to. Opaque — Review Desk never fetches it.
+
+        # -- the two columns the sources table added (DEV-917) -----------------------
+        status:
+          type: [string, 'null']
+          minLength: 1
+          description: |
+            The ticket's state **as the session read it** — "Backlog", "Dev Released".
+
+            Free text rather than an enum, and deliberately: every tracker names its own
+            columns, so a fixed set here would either refuse a real board or quietly
+            rename it. Review Desk read no ticket; this is what the session said it saw.
+
+            Null for a source whose state nobody reported, which is every source recorded
+            before DEV-917, and the table's cell is then empty.
+        note:
+          type: [string, 'null']
+          minLength: 1
+          description: |
+            What this source tells us, in one line — the sources table's "What it tells
+            us" column.
+
+            Null for a source that recorded none, and the row then shows its reference
+            alone. No length is enforced; a note that runs to a paragraph is a writing
+            fault and belongs to the linter in Locus.
 
     CriterionStatus:
       type: string

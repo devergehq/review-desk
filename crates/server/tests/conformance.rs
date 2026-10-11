@@ -430,6 +430,8 @@ fn a_review_that_recorded_where_its_understanding_came_from_validates_whole() {
                     kind: *kind,
                     label: format!("read from the {kind}"),
                     link: Some("https://example.invalid/x".to_string()),
+                    status: None,
+                    note: None,
                 })
                 .collect(),
         )

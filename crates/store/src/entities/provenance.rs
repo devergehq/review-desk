@@ -98,6 +98,14 @@ pub struct ReviewSource {
     pub label: String,
     /// Where to follow it to. Opaque: Review Desk never fetches it.
     pub link: Option<String>,
+    /// The ticket's state as the session read it — "Backlog", "Dev Released". Free text
+    /// rather than an enum: every tracker names its own columns, and a fixed set here
+    /// would either refuse a real board or quietly rename it. `None` for a source whose
+    /// state nobody reported, which is every source recorded before DEV-917.
+    pub status: Option<String>,
+    /// What this source tells us, in one line — the table's "What it tells us" column.
+    /// `None` for a source that recorded none, and the row then shows its reference alone.
+    pub note: Option<String>,
 }
 
 /// A source to record. Unknown fields are refused, for the reason
@@ -110,6 +118,13 @@ pub struct NewReviewSource {
     pub label: String,
     #[serde(default)]
     pub link: Option<String>,
+    /// The ticket's state as the session read it. Optional, so a document written before
+    /// DEV-917 still records every source it names.
+    #[serde(default)]
+    pub status: Option<String>,
+    /// What this source tells us, in one line. Optional, for the same reason.
+    #[serde(default)]
+    pub note: Option<String>,
 }
 
 /// One thing the ticket asks for, and whether the change does it.
@@ -292,6 +307,8 @@ impl Store {
                         kind: source.kind,
                         label,
                         link: optional(source.link),
+                        status: optional(source.status),
+                        note: optional(source.note),
                     },
                 ))
             })
@@ -306,9 +323,17 @@ impl Store {
         )?;
         for (position, source) in &sources {
             self.conn.execute(
-                "INSERT INTO review_sources (review_id, position, kind, label, link)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![review_id, position, source.kind, source.label, source.link],
+                "INSERT INTO review_sources (review_id, position, kind, label, link, status, note)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    review_id,
+                    position,
+                    source.kind,
+                    source.label,
+                    source.link,
+                    source.status,
+                    source.note
+                ],
             )?;
         }
 
@@ -320,7 +345,7 @@ impl Store {
     /// What the review read the problem from, in the order it was written.
     pub fn list_review_sources(&self, review_id: i64) -> Result<Vec<ReviewSource>> {
         let mut statement = self.conn.prepare(
-            "SELECT review_id, position, kind, label, link FROM review_sources
+            "SELECT review_id, position, kind, label, link, status, note FROM review_sources
              WHERE review_id = ?1 ORDER BY position ASC",
         )?;
         let rows = statement.query_map(params![review_id], |row| {
@@ -330,6 +355,8 @@ impl Store {
                 kind: row.get("kind")?,
                 label: row.get("label")?,
                 link: row.get("link")?,
+                status: row.get("status")?,
+                note: row.get("note")?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)

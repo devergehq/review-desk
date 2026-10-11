@@ -206,6 +206,24 @@ review-desk layer set --review "$REVIEW" --layer 1 --state done --detail passed
 review-desk layer set --review "$REVIEW" --layer 4 --state skipped --detail "no diagram needed"
 ```
 
+`--detail` is **one line, and the dashboard draws it on one line** — ellipsised rather
+than wrapped, so a sentence written there is a sentence the reader cannot finish. What the
+step came to in detail goes in `--fact`, as the pairs the card beside the step draws:
+
+```sh
+review-desk layer set --review "$REVIEW" --layer 5 --state done \
+  --detail "14 findings, 1 blocker" \
+  --fact "To post=6: 1 blocker, 4 should, 1 nit" \
+  --fact "Held for a ticket=5" \
+  --fact "Set aside=3"
+```
+
+A fact is `label=value`, split on the first `=` alone, so a value may contain others.
+**Giving none leaves the facts as they were**, because this is also the command a session
+calls to report progress and would otherwise clear them by saying nothing about them;
+giving any replaces the whole list, and `--clear-facts` empties it. A step with no facts
+draws no card and no control for one.
+
 The states are `pending`, `running`, `done`, `waiting_on_you`, `failed` and `skipped`.
 This is stored rather than worked out from the rest of the record, for two reasons:
 layer 1's lint result has nothing to derive it from, and a derived state cannot tell a

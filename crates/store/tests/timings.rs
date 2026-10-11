@@ -520,6 +520,8 @@ fn review_writes_move_the_last_activity_time() {
                             kind: SourceKind::Ticket,
                             label: "ABC-231".to_string(),
                             link: None,
+                            status: None,
+                            note: None,
                         }],
                     )
                     .map(|_| ())
