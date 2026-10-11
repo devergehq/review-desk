@@ -19,11 +19,11 @@ use review_desk_store::{
     finding_heading, AcceptanceCriterion, BlindPassState, Brief, BriefBlindPass, BriefDisagreement,
     BriefFlowBox, BriefFlowRow, BriefOpenChoice, BriefOption, BriefOptionVerdict, BriefPart,
     BriefPartFile, BriefProblem, BriefSupportTable, DescriptionLintResult, Disposition, Draft,
-    DraftLint, DraftSection, FileChange, Finding, FindingHunk, FindingInRound, LayerFact,
-    NitTicket, Outcome, PostedReview, ProblemStatement, RepoSummary, Review, ReviewAtStep,
-    ReviewLayer, ReviewLayerName, ReviewLayerRun, ReviewProvenance, ReviewSource, ReviewTimings,
-    RoundCommit, RoundStatusCounts, RoundSummary, Rule, RuleCounts, RuleScope, RuleStage,
-    RulesSummary, Severity, Timestamp,
+    DraftLint, DraftSection, DraftThread, FileChange, Finding, FindingHunk, FindingInRound,
+    LayerFact, NitTicket, Outcome, PostedReview, ProblemStatement, RepoSummary, Review,
+    ReviewAtStep, ReviewLayer, ReviewLayerName, ReviewLayerRun, ReviewProvenance, ReviewSource,
+    ReviewTimings, RoundCommit, RoundStatusCounts, RoundSummary, Rule, RuleCounts, RuleScope,
+    RuleStage, RulesSummary, Severity, Timestamp,
 };
 use serde_json::{json, Value};
 
@@ -767,6 +767,26 @@ fn heading_of(section: &DraftSection) -> Value {
         (Some(severity), Some(seq), Some(title)) => json!(finding_heading(severity, seq, title)),
         _ => Value::Null,
     }
+}
+
+/// The contract's `DraftThread`: one inline thread the draft hands over.
+///
+/// **What the page draws and what the session posts, from one place.** The draft page lists
+/// these with the line each sits on, so the developer reads the comment on the code before
+/// signing off; the session puts them in the `comments` array of its one `pulls/<n>/reviews`
+/// call. `side` is always `RIGHT` — a removed line carries no number in this record, so a
+/// flagged line is always a line still in the file, and the numbering is the new file's.
+pub fn draft_thread(thread: &DraftThread) -> Value {
+    json!({
+        "finding_seq": thread.finding_seq,
+        "finding_key": finding_key(thread.finding_seq),
+        "severity": thread.severity.as_str(),
+        "title": thread.title,
+        "path": thread.path,
+        "line": thread.line,
+        "side": thread.side,
+        "body": thread.body,
+    })
 }
 
 /// The contract's `DraftEdit`: one edit the developer made, as an outcome by them.

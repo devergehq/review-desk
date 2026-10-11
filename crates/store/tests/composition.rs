@@ -14,8 +14,8 @@ use std::path::{Path, PathBuf};
 use common::{new_review, temp_store};
 use review_desk_store::{
     finding_heading, Actor, DecidedBy, Decision, Disposition, DraftLint, DraftSectionKind,
-    DraftStatus, FindingCarry, FindingDecision, NewDraft, NewDraftSection, NewFinding, OutcomeKind,
-    ReviewEvent, RoundStatus, Severity, Store, WorkFilter, WorkKind,
+    DraftStatus, FindingCarry, FindingDecision, FindingHunk, HunkLine, NewDraft, NewDraftSection,
+    NewFinding, OutcomeKind, ReviewEvent, RoundStatus, Severity, Store, WorkFilter, WorkKind,
 };
 use serde_json::Value;
 
@@ -144,92 +144,66 @@ fn the_body_is_what_the_blocks_compose_to() {
 }
 
 #[test]
-fn the_assembled_draft_of_a_review_with_no_decisions_is_what_the_agent_wrote() {
+fn the_contracts_example_is_exactly_what_the_store_composes_from_its_blocks() {
     // **The acceptance criterion of DEV-877, as DEV-929 leaves it.**
     //
     // `contract/examples/getDraft.response.json` is the one record this repository has of
-    // what an agent writes: a summary sentence, three findings with the heading format the
-    // designs use, a mermaid fence and a folded proof inside one of them, and the
-    // not-checked line. The test decomposes it the way a session would — prose for
-    // everything the composition does not model, a finding block per heading — writes
-    // that, and asserts the stored body is the same bytes it started as **with the index
-    // composed in where the findings begin, and nothing else changed**. The fence, the
-    // fold and every paragraph survive character for character; what is added is the one
-    // thing DEV-929 adds.
-    let agent = example_draft_body();
-    let blocks = decompose(&agent);
-
-    assert_eq!(
-        blocks.len(),
-        4,
-        "a summary sentence and three findings: {blocks:#?}"
-    );
-    assert_eq!(
-        blocks
-            .iter()
-            .filter(|block| block.kind == DraftSectionKind::Finding)
-            .count(),
-        3
-    );
+    // what an agent writes: a summary sentence, three findings, a mermaid fence and a
+    // folded proof inside the first of them, and the not-checked line. The claim was that
+    // the blocks compose back to the body the agent wrote, character for character.
+    //
+    // **What changed is where "character for character" is checked.** The body is now
+    // composed in the house style's shape, so it is not the agent's document with a
+    // heading put back — it carries an index nobody wrote, and F1, which the diff can
+    // anchor, has left the body for a thread. What is unchanged, and what this asserts, is
+    // that **every character an agent wrote arrives somewhere**: the prose blocks and the
+    // sections in the body, F1's paragraph — with its fence and its fold — in the thread.
+    //
+    // It is asserted against the example rather than against a string in this file, so the
+    // contract's own document is what the store is held to. When the shape changes, the
+    // example is regenerated and this is what says the two agree.
+    let example = example_draft();
+    let blocks = blocks_of(&example);
+    assert_eq!(blocks.len(), 5, "two prose blocks and three findings");
 
     let (_dir, store) = temp_store();
     let review = store
         .create_review(new_review("acme/portal", 412, "3f9c2ab", 1))
         .expect("review");
-    for severity in [Severity::Blocker, Severity::Should, Severity::Should] {
-        store
-            .add_finding(
-                review.id,
-                NewFinding {
-                    lens: "correctness".to_string(),
-                    severity,
-                    claim: "as the example has it".to_string(),
-                    ..Default::default()
-                },
-            )
-            .expect("finding");
+    for finding in example_findings() {
+        store.add_finding(review.id, finding).expect("finding");
     }
 
     store
         .put_draft(
             review.id,
             NewDraft {
-                // No body, and that is the one thing DEV-929 changed about this write. The
-                // store composes the blocks and refuses a body that differs from the
-                // result — and a body an agent wrote now differs from it by the index, so
-                // the body goes in the assertion below rather than into the write.
                 body: String::new(),
                 status: DraftStatus::Ready,
                 lint: None,
                 sections: Some(blocks),
             },
         )
-        .expect("the example's own body, written in parts");
-
-    let first_finding = agent
-        .find("### Blocker")
-        .expect("the example's first finding heading");
-    let expected = format!(
-        "{}{}\n\n{}",
-        &agent[..first_finding],
-        "### Open — needs a decision\n\
-         \n\
-         | | Where | Finding | Status |\n\
-         | -- | -- | -- | -- |\n\
-         | 🔴 Blocker · F1 | [the pull request](https://github.com/acme/portal/pull/412) | \
-         A retried delivery is sent without an idempotency key | Open · in the body |\n\
-         | 🟠 Should · F2 | [the pull request](https://github.com/acme/portal/pull/412) | \
-         No way to replay a delivery after the window closes | Open · in the body |\n\
-         | 🟠 Should · F3 | [the pull request](https://github.com/acme/portal/pull/412) | \
-         The failure test passes with the retry code reverted | Open · in the body |",
-        &agent[first_finding..]
-    );
+        .expect("the example's own blocks");
 
     assert_eq!(
         store.get_draft(review.id).expect("the draft").body,
-        expected,
-        "the composition has to reproduce what the agent wrote, character for character, \
-         with the index between the prose and the findings"
+        example["draft"]["body"].as_str().expect("the body"),
+        "the body the contract's example carries is what these blocks compose to"
+    );
+
+    let threads = store.draft_threads(review.id).expect("the threads");
+    let wanted = example["threads"].as_array().expect("the threads");
+    assert_eq!(threads.len(), wanted.len(), "one thread, for F1");
+    assert_eq!(
+        threads[0].body,
+        wanted[0]["body"].as_str().expect("the thread's body"),
+        "and the thread is what the example carries, fence and fold included"
+    );
+    assert!(
+        threads[0].body.contains("> ```mermaid"),
+        "the fence survives the blockquote: {}",
+        threads[0].body
     );
 }
 
@@ -1775,75 +1749,97 @@ fn a_nit_ticket_asked_for_on_its_own_is_work_an_agent_can_see() {
 
 // -- the example this all rests on ---------------------------------------------------
 
-/// The draft body from `contract/examples/getDraft.response.json`.
-fn example_draft_body() -> String {
+/// `contract/examples/getDraft.response.json`, whole.
+fn example_draft() -> Value {
+    example("getDraft.response.json")
+}
+
+/// One of the contract's example documents.
+fn example(name: &str) -> Value {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
-        .map(|root| {
-            root.join("contract")
-                .join("examples")
-                .join("getDraft.response.json")
-        })
+        .map(|root| root.join("contract").join("examples").join(name))
         .expect("the repository root");
-    let document: Value =
-        serde_json::from_str(&read(&path)).expect("the example is a JSON document");
 
-    document["draft"]["body"]
-        .as_str()
-        .expect("the example's draft body")
-        .to_string()
+    serde_json::from_str(&read(&path)).expect("the example is a JSON document")
 }
 
-fn read(path: &PathBuf) -> String {
-    std::fs::read_to_string(path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
-}
-
-/// Split a body an agent wrote into the blocks it is composed of.
+/// The blocks a document's `sections` are, as a caller would write them.
 ///
-/// **What a review session does when it writes a draft**, done here so the claim is tested
-/// against a body nobody wrote for this test. A line beginning `### ` followed by a blank
-/// line starts a finding block and the heading is read back; everything else is prose. The
-/// heading format is the store's — `finding_heading` — so reading it back is not a second
-/// format living in a test.
-fn decompose(body: &str) -> Vec<NewDraftSection> {
-    let mut blocks: Vec<Vec<&str>> = Vec::new();
-
-    for line in body.lines() {
-        if line.starts_with("### ") || blocks.is_empty() {
-            blocks.push(Vec::new());
-        }
-        blocks.last_mut().expect("a block").push(line);
-    }
-
-    blocks
+/// The served shape carries what the store derives — the heading, the severity, the
+/// writer's own words, whether it posts — and a caller writes none of that.
+fn blocks_of(document: &Value) -> Vec<NewDraftSection> {
+    document["sections"]
+        .as_array()
+        .expect("the blocks")
         .iter()
-        .map(|lines| {
-            let whole = lines.join("\n").trim_matches('\n').to_string();
-            match heading_of(lines[0]) {
-                Some((severity, seq, title)) => {
-                    let text = whole
-                        .split_once("\n\n")
-                        .map(|(_, rest)| rest.to_string())
-                        .unwrap_or_default();
-                    assert_eq!(
-                        lines[0],
-                        finding_heading(severity, seq, &title),
-                        "the heading has to read back the way the store writes it"
-                    );
-                    NewDraftSection::finding(seq, title, text.trim_matches('\n'))
+        .map(|section| NewDraftSection {
+            kind: match section["kind"].as_str().expect("a kind") {
+                "finding" => DraftSectionKind::Finding,
+                other => {
+                    assert_eq!(other, "prose", "a kind the contract declares");
+                    DraftSectionKind::Prose
                 }
-                None => NewDraftSection::prose(whole),
-            }
+            },
+            finding_seq: section["finding_seq"].as_i64(),
+            title: section["title"].as_str().map(str::to_string),
+            text: section["text"].as_str().expect("the text").to_string(),
         })
         .collect()
 }
 
-/// `### Blocker · F1 · …` read back into a severity, a number and a title.
-fn heading_of(line: &str) -> Option<(Severity, i64, String)> {
-    let rest = line.strip_prefix("### ")?;
-    let mut parts = rest.splitn(3, " · ");
-    let severity: Severity = parts.next()?.to_lowercase().parse().ok()?;
-    let seq: i64 = parts.next()?.strip_prefix('F')?.parse().ok()?;
-    Some((severity, seq, parts.next()?.to_string()))
+/// The three findings the example's draft raises, as `getReview.response.json` holds them.
+///
+/// **Read from the example rather than invented here**, because what decides the shape is
+/// whether the diff can anchor each one: F1 carries a hunk the diff drew and a flagged
+/// line, so it posts as a thread, and F2 and F3 keep their sections.
+fn example_findings() -> Vec<NewFinding> {
+    example("getReview.response.json")["findings"]
+        .as_array()
+        .expect("the findings")
+        .iter()
+        .filter(|finding| finding["disposition"] == "in_draft")
+        .map(|finding| NewFinding {
+            lens: finding["lens"].as_str().expect("a lens").to_string(),
+            severity: finding["severity"]
+                .as_str()
+                .expect("a severity")
+                .parse()
+                .expect("a severity the store knows"),
+            file: finding["file"].as_str().map(str::to_string),
+            line: finding["line"].as_i64(),
+            claim: finding["claim"].as_str().expect("a claim").to_string(),
+            title: finding["title"].as_str().map(str::to_string),
+            hunk: hunk_of(&finding["hunk"]),
+            flagged_line: finding["flagged_line"].as_i64(),
+            ..Default::default()
+        })
+        .collect()
+}
+
+/// A served hunk as a written one: the line numbers the server adds are derived, so a
+/// caller does not send them and the store refuses them.
+fn hunk_of(hunk: &Value) -> Option<FindingHunk> {
+    let lines = hunk["lines"].as_array()?;
+
+    Some(FindingHunk {
+        file: hunk["file"].as_str().expect("the hunk's file").to_string(),
+        start_line: hunk["start_line"].as_i64().expect("the start line"),
+        lines: lines
+            .iter()
+            .map(|line| HunkLine {
+                marker: line["marker"]
+                    .as_str()
+                    .expect("a marker")
+                    .parse()
+                    .expect("a marker the store knows"),
+                text: line["text"].as_str().expect("the text").to_string(),
+            })
+            .collect(),
+    })
+}
+
+fn read(path: &PathBuf) -> String {
+    std::fs::read_to_string(path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
 }

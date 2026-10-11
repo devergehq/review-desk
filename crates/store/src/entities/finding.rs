@@ -6,7 +6,7 @@
 
 use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior};
 
-use crate::entities::finding_evidence;
+use crate::entities::{composition, finding_evidence};
 use crate::error::{Result, StoreError};
 use crate::model::{Disposition, Finding, NewFinding};
 use crate::{is_foreign_key_violation, Store};
@@ -210,6 +210,19 @@ impl Store {
     }
 
     /// Change a finding's disposition, with the reason it changed.
+    ///
+    /// **The body is recomposed with it, and refused once the draft is signed off.** Moving
+    /// a finding between the draft, the held-back list and the suppressed one changes what
+    /// the review posts — the finding's block stops composing, and since DEV-929 its index
+    /// row and its thread go with it. Until then this wrote the column and left
+    /// `drafts.body` as it was, so the stored body raised a finding the record said was not
+    /// in the draft; the threads are composed from the record at read time, so the two
+    /// would now disagree with each other as well.
+    ///
+    /// The refusal is the same one a decision earns — `decision.rs` has the argument: an
+    /// approved draft is what the review session posts, and it does not move underneath it.
+    /// A review with no draft is the ordinary case of a session holding a finding back
+    /// before it has written one, and nothing is recomposed there.
     pub fn set_finding_disposition(
         &self,
         review_id: i64,
@@ -217,16 +230,36 @@ impl Store {
         disposition: Disposition,
         reason: Option<String>,
     ) -> Result<Finding> {
+        let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+
         // Checked first, so an unknown finding is NotFound rather than a no-op update.
         self.get_finding(review_id, seq)?;
 
-        self.conn.execute(
+        let draft = self.find_draft(review_id)?;
+        if let Some(draft) = &draft {
+            if !draft.status.is_writable() {
+                return Err(StoreError::DraftStatus {
+                    review_id,
+                    found: draft.status,
+                    wanted: "only a finding of a review whose draft is drafting, ready or \
+                             sent back can be moved; an approved draft is what the session \
+                             posts",
+                });
+            }
+        }
+
+        tx.execute(
             "UPDATE findings SET disposition = ?3, disposition_reason = ?4
              WHERE review_id = ?1 AND seq = ?2",
             params![review_id, seq, disposition, reason],
         )?;
 
+        if draft.is_some() {
+            composition::recompose(&tx, review_id, composition::Lint::Clear, self.now())?;
+        }
+
         self.mark_review_active(review_id)?;
+        tx.commit()?;
         self.get_finding(review_id, seq)
     }
 

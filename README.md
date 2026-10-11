@@ -359,6 +359,32 @@ that described the old text.
 }
 ```
 
+**What is stored is the shape GitHub receives.** `draft put --sections` composes the body
+in the house style's shape: the session's prose blocks are carried through character for
+character — the verdict line, the `**Method**` line, `### Problem fit` with its diagram,
+the folded provenance — and between them sits an index of every posted finding, one row
+each, most serious first:
+
+```markdown
+### Open — needs a decision
+
+| | Where | Finding | Status |
+| -- | -- | -- | -- |
+| 🔴 Blocker · F9 | [`ColumnPolicy.php:52`](…/blob/d41c8e2/app/Reporting/ColumnPolicy.php#L52) | The column policy is skipped when the definition names no columns | Open · on the code |
+| 🟠 Should · F14 | [the pull request](…/pull/514) | The description does not say what happens to a skipped export | Open · in the body |
+```
+
+A finding **with a line inside the diff** is a row and an inline thread, and is not a
+section of the body; a finding with nowhere to anchor is a row and a section. Which it is
+comes from the hunk the finding already carries — `git diff -U3` draws a hunk with `added`
+and `removed` markers in it, `git show` draws one where every entry is `unchanged`, and a
+finding with no file or no line carries none. A row links to the line at the head commit
+reviewed, which is the line its thread sits on; a review body resolves no anchor of its
+own, and the thread it would otherwise link to does not exist until the moment of posting.
+
+Because the body is composed, `--file` alongside `--sections` is refused: a body written
+whole cannot carry an index nobody wrote. Send the blocks.
+
 `draft show` prints the draft, its status and, once it is approved, the event to post it
 as. **This is how a review session learns it may post.**
 
@@ -371,6 +397,38 @@ review-desk draft show --review "$REVIEW"
 # The queue-with-backoff approach fits the ticket…
 ```
 
+`draft handover` prints what to post: the approved body, and one thread per finding with
+a line inside the diff. **Refused until the developer has signed the draft off** — the
+store holds that line, and the command cannot reach `approved` any more than `draft put`
+can.
+
+```sh
+review-desk draft handover --review "$REVIEW" --json
+# {"review":{"id":41,"repo":"acme/portal","pr":514,"head_sha":"d41c8e2"},
+#  "draft":{"status":"approved","event":"request_changes","approved_at":1760000000},
+#  "body":"…the composed body…",
+#  "threads":[{"finding_seq":9,"severity":"blocker","title":"…",
+#              "path":"app/Reporting/ColumnPolicy.php","line":52,"side":"RIGHT",
+#              "body":"> [!CAUTION]\n> **Blocker · F9** — … · `Open`\n>\n> **in diff** · …"}]}
+```
+
+**The threads go in the same call as the body**, because a thread added afterwards creates
+a second review:
+
+```sh
+review-desk draft handover --review "$REVIEW" --json \
+  | jq '{commit_id: .review.head_sha, event: (.draft.event | ascii_upcase),
+         body: .body, comments: [.threads[] | {path, line, side, body}]}' \
+  | gh api "repos/$REPO/pulls/$PR/reviews" --input -
+```
+
+`side` is always `RIGHT` and `line` is always the new file's numbering: a removed line
+carries no number in this record, so a flagged line is always a line still in the file.
+Where a finding is about a line the change deleted, the line to flag is the one that
+replaced it, and the comment says the code at fault is gone. `threads[].finding_seq` is
+what `review-desk finding link` needs once GitHub has answered — match each comment to its
+finding by `path` and `line`.
+
 `draft posted` records that the session has posted it, and which GitHub review it
 became. **Refused unless the draft is approved.** This is the only transition that
 involves GitHub, and the session makes it: Review Desk never posts.
@@ -381,7 +439,10 @@ review-desk draft posted --review "$REVIEW" --github-review gh-review-3312
 
 A draft goes `drafting → ready → approved → posted`, with `ready ⇄ sent_back`. The
 command line can reach `drafting`, `ready` and `posted`. It cannot reach `approved` or
-`sent_back`: those are the developer's, in the dashboard.
+`sent_back`: those are the developer's, in the dashboard. **And moving a finding between
+the draft, the held-back list and the suppressed one is refused once the draft is
+approved**, for the same reason a decision is: an approved draft is what the session
+posts, and it does not move underneath it.
 
 ### Asking what is waiting
 
@@ -741,6 +802,7 @@ sessions call has no command for either.
 | Write the draft | the review session | `draft put` |
 | Sign off the draft, choosing the event | the developer | the dashboard only |
 | Send the draft back with a note | the developer | the dashboard only |
+| Read what to post, once it is signed off | the review session | `draft handover` |
 | Post it and report the GitHub review | the review session | `draft posted` |
 
 This is enforced by the store, not promised by the commands. `put_draft` accepts only
@@ -1065,7 +1127,7 @@ every write the five screens make.
 | Queue | `GET /inbox` | `POST /reviews` |
 | Reviews | `GET /reviews?repo=` | — |
 | One review | `GET /reviews/{id}` | `POST …/brief/confirm`, `PATCH …/findings/{seq}` |
-| Draft preview | `GET /reviews/{id}/draft` | `PUT …/draft`, `POST …/draft/approve`, `POST …/draft/send-back`, `POST …/held-back/ticket` |
+| Draft preview | `GET /reviews/{id}/draft` — the body as it will post, the blocks it is composed of, and the inline threads with the line each sits on | `PUT …/draft`, `POST …/draft/approve`, `POST …/draft/send-back`, `POST …/held-back/ticket` |
 | Rules | `GET /rules?repo=`, `GET /repos` | `POST /rules/{id}/promote`, `/dismiss`, `/retire`, `/defer` |
 
 **The two nothing calls** are `GET /timings`, which records how long every finished review

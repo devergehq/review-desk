@@ -1763,6 +1763,20 @@ fn review_detail(store: &Store, review_id: i64) -> Value {
     Value::Object(document)
 }
 
+/// The contract's `DraftThread`, as the server serialises one.
+fn draft_thread_document(thread: &review_desk_store::DraftThread) -> Value {
+    json!({
+        "finding_seq": thread.finding_seq,
+        "finding_key": format!("F{}", thread.finding_seq),
+        "severity": thread.severity,
+        "title": thread.title,
+        "path": thread.path,
+        "line": thread.line,
+        "side": thread.side,
+        "body": thread.body,
+    })
+}
+
 fn draft_detail(store: &Store, review_id: i64) -> Value {
     let draft = store.get_draft(review_id).expect("the draft");
     let review = store.get_review(review_id).expect("the review");
@@ -1778,6 +1792,14 @@ fn draft_detail(store: &Store, review_id: i64) -> Value {
             .expect("the blocks")
             .iter()
             .map(draft_section_document)
+            .collect::<Vec<_>>(),
+        // The inline threads the draft hands over, which the body does not carry: an
+        // anchored finding is a row in the index and a comment on the code. DEV-929.
+        "threads": store
+            .draft_threads(review_id)
+            .expect("the threads")
+            .iter()
+            .map(draft_thread_document)
             .collect::<Vec<_>>(),
         // The developer's edits are outcomes with actor `developer`, which is where
         // PR #1 already puts them.
@@ -2214,27 +2236,47 @@ fn every_response_example_can_be_produced_from_the_store() {
     // `rewriting_a_draft_clears_a_lint_that_described_the_old_body`.
     // The developer's decision, and the draft recomposed from it. **Made before the
     // draft is approved**, which is the only state a decision can be made in.
+    //
+    // **The blocks the example carries, and the cut it shows.** The example's own document
+    // is this draft with F2 cut — F1 stays, and since DEV-929 F1 is anchored, so the
+    // document has a thread as well as an index. A draft of F1's block alone, which is
+    // what this wrote before, could produce neither once F1 was the finding being cut.
     store
         .put_draft(
             review,
-            NewDraft::composed(vec![review_desk_store::NewDraftSection::finding(
-                1,
-                "A retried delivery is sent without an idempotency key",
-                "A customer whose endpoint answers slowly receives the event twice.",
-            )]),
+            NewDraft::composed(vec![
+                review_desk_store::NewDraftSection::prose(
+                    "The queue-with-backoff approach fits the ticket.",
+                ),
+                review_desk_store::NewDraftSection::finding(
+                    1,
+                    "A retried delivery is sent without an idempotency key",
+                    "A customer whose endpoint answers slowly receives the event twice.",
+                ),
+                review_desk_store::NewDraftSection::finding(
+                    2,
+                    "No way to replay a delivery after the window closes",
+                    "After 24 hours a failed delivery is marked dead.",
+                ),
+                review_desk_store::NewDraftSection::finding(
+                    3,
+                    "The failure test passes with the retry code reverted",
+                    "So it does not pin the behaviour.",
+                ),
+            ]),
         )
         .expect("a draft to decide about");
     let made = store
         .decide_finding(
             review,
-            1,
+            2,
             &Decision {
                 note: Some("Already covered by the rule.".to_string()),
                 ..Decision::of(FindingDecision::Cut)
             },
             Actor::Developer,
         )
-        .expect("the developer cuts F1");
+        .expect("the developer cuts F2");
     fields += check(
         "decideFinding",
         &json!({

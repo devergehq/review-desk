@@ -551,3 +551,54 @@ fn a_block_about_a_finding_the_draft_cannot_raise_is_refused() {
     let message = document["message"].as_str().expect("a message");
     assert!(message.contains("held_back"), "{message}");
 }
+
+/// **The page is handed the body and the threads, and a cut changes both.**
+///
+/// DEV-929: a finding GitHub can anchor is a row in the body's index and a comment on the
+/// code, so a screen that drew only the body would not be showing what posts. The seed's F1
+/// is anchored and F2 is not, which is the pair this needs.
+#[test]
+fn the_draft_read_carries_the_threads_and_a_cut_changes_them_with_the_body() {
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+
+    let read = harness.api("GET", &format!("/reviews/{}/draft", seeded.review_id), None);
+    assert_eq!(read.status, 200, "{}", read.text());
+    let before = read.json();
+    let threads = before["threads"].as_array().expect("the threads").clone();
+
+    assert_eq!(threads.len(), 1, "F1 is the one with a line in the diff");
+    assert_eq!(threads[0]["finding_key"], "F1");
+    assert_eq!(threads[0]["path"], "jobs/DeliverWebhook.php");
+    assert_eq!(threads[0]["line"], 57);
+    assert_eq!(threads[0]["side"], "RIGHT");
+    assert!(threads[0]["body"]
+        .as_str()
+        .expect("the comment")
+        .starts_with("> [!CAUTION]\n> **Blocker · F1** —"));
+
+    let body = before["draft"]["body"].as_str().expect("a body");
+    assert!(
+        body.contains("| 🔴 Blocker · F1 |"),
+        "a row, not a section: {body}"
+    );
+    assert!(!body.contains("### Blocker · F1 ·"), "{body}");
+
+    let cut = decide(&harness, seeded.review_id, 1, r#"{"decision":"cut"}"#);
+    assert_eq!(cut.status, 200, "{}", cut.text());
+    let after = cut.json()["draft"].clone();
+
+    assert!(
+        after["threads"].as_array().expect("the threads").is_empty(),
+        "the thread goes with the row: {}",
+        after["threads"]
+    );
+    assert!(
+        !after["draft"]["body"]
+            .as_str()
+            .expect("a body")
+            .contains("F1"),
+        "{}",
+        after["draft"]["body"]
+    );
+}

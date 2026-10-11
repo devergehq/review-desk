@@ -554,3 +554,100 @@ fn a_draft_cannot_be_marked_posted_until_the_developer_has_approved_it() {
         "gh-review-3312"
     );
 }
+
+/// **The hand-over opens only after the sign-off, and it is the only route to a post.**
+///
+/// DEV-929 gives a session one read that answers "what do I post": the approved body and
+/// the threads composed from the same blocks. It is here rather than beside the other draft
+/// tests because what it is really about is the sign-off boundary — a hand-over a session
+/// could read before the developer acted would be a review it could post before the
+/// developer saw it.
+#[test]
+fn the_hand_over_is_refused_until_the_developer_has_signed_the_draft_off() {
+    let desk = Desk::new();
+    let review = open_review(&desk, "acme/portal", "412", "3f9c2ab");
+    let id: i64 = review.parse().expect("the review id");
+
+    desk.command()
+        .args(["finding", "add", "--review", &review, "--file", "-"])
+        .write_stdin(
+            r#"{"lens":"error handling","severity":"should",
+                "claim":"the response is returned without checking its status",
+                "title":"The response is returned unchecked",
+                "file":"jobs/DeliverWebhook.php","line":16,"flagged_line":16,
+                "hunk":{"file":"jobs/DeliverWebhook.php","start_line":15,
+                        "lines":[{"marker":"unchanged","text":"    {"},
+                                 {"marker":"added","text":"        return $response;"}]}}"#,
+        )
+        .assert()
+        .success();
+
+    let sections = desk.write_file(
+        "sections.json",
+        r#"[{"kind":"prose","text":"**1 Should — 1 open.** The approach fits."},
+            {"kind":"finding","finding_seq":1,
+             "text":"**in diff** · `Open`\n\n**What** · it returns a 500 as a success."}]"#,
+    );
+    desk.command()
+        .args([
+            "draft",
+            "put",
+            "--review",
+            &review,
+            "--sections",
+            sections.to_str().expect("a path"),
+        ])
+        .assert()
+        .success();
+
+    let refused = desk.refused_json(&["draft", "handover", "--review", &review]);
+    assert_eq!(refused["error"]["code"], "draft_status");
+    assert!(
+        refused["error"]["message"]
+            .as_str()
+            .expect("a message")
+            .contains("approved"),
+        "the refusal says what it is waiting for: {}",
+        refused["error"]["message"]
+    );
+
+    // The developer signs off, in the dashboard's place.
+    desk.store()
+        .approve_draft(id, ReviewEvent::RequestChanges, Actor::Developer)
+        .expect("the developer approves");
+
+    let handed = desk.json(&["draft", "handover", "--review", &review]);
+    assert_eq!(handed["review"]["repo"], "acme/portal");
+    assert_eq!(handed["review"]["pr"], 412);
+    assert_eq!(handed["review"]["head_sha"], "3f9c2ab");
+    assert_eq!(handed["draft"]["status"], "approved");
+    assert_eq!(handed["draft"]["event"], "request_changes");
+
+    // The body is the approved body, which is `draft show`'s body and nothing else: two
+    // answers to what gets posted would be one too many.
+    assert_eq!(
+        handed["body"],
+        desk.json(&["draft", "show", "--review", &review])["draft"]["body"]
+    );
+
+    let threads = handed["threads"].as_array().expect("the threads");
+    assert_eq!(threads.len(), 1, "the one finding with a line in the diff");
+    assert_eq!(threads[0]["finding_seq"], 1);
+    assert_eq!(threads[0]["path"], "jobs/DeliverWebhook.php");
+    assert_eq!(threads[0]["line"], 16);
+    assert_eq!(
+        threads[0]["side"], "RIGHT",
+        "a flagged line is always a line still in the file"
+    );
+    assert!(threads[0]["body"]
+        .as_str()
+        .expect("the comment")
+        .starts_with(
+            "> [!WARNING]\n> **Should · F1** — The response is returned unchecked · `Open`"
+        ));
+
+    // And the finding is a row in the body rather than a section of it.
+    let body = handed["body"].as_str().expect("the body");
+    assert!(body.contains("| 🟠 Should · F1 |"), "{body}");
+    assert!(!body.contains("### Should · F1 ·"), "{body}");
+}

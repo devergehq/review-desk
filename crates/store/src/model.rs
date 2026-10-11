@@ -1901,6 +1901,23 @@ pub struct DraftThread {
     pub body: String,
 }
 
+/// Everything the review session needs to post the draft the developer signed off.
+///
+/// **One read, because posting is one call.** The house style puts each finding on the line
+/// it concerns and the body is an index of them, and GitHub makes both in a single
+/// `pulls/<n>/reviews` call — a thread added afterwards creates a second review, measured on
+/// DEV-865's acceptance run. So the body and the threads are handed over together or the
+/// session has to guess which it may post.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftHandover {
+    /// The review, for the repository, the pull request and the head commit to post at.
+    pub review: Review,
+    /// The draft, for the body to post and the event the developer chose.
+    pub draft: Draft,
+    /// The threads, most serious first. Empty when no finding can be anchored.
+    pub threads: Vec<DraftThread>,
+}
+
 /// A block to write, in the order given.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

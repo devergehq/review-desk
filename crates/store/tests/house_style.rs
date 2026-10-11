@@ -16,8 +16,8 @@ mod common;
 
 use common::{new_review, temp_store};
 use review_desk_store::{
-    Actor, Decision, DraftStatus, FindingAnchor, FindingDecision, FindingHunk, HunkLine,
-    HunkLineMarker, NewDraft, NewDraftSection, NewFinding, Severity, Store,
+    Actor, Decision, Disposition, DraftStatus, FindingAnchor, FindingDecision, FindingHunk,
+    HunkLine, HunkLineMarker, NewDraft, NewDraftSection, NewFinding, Severity, Store,
 };
 
 /// A hunk as `git diff -U3` drew it: three lines of context, one of them replaced.
@@ -877,4 +877,62 @@ fn a_title_too_long_for_a_cell_is_clamped_at_a_word_and_the_whole_one_stays_in_t
         body.contains(&format!("### Should · F1 · {long}")),
         "and the whole title is still the section's heading:\n{body}"
     );
+}
+
+#[test]
+fn moving_a_finding_out_of_the_draft_takes_its_row_and_its_thread_with_it() {
+    let (_dir, store) = temp_store();
+    let review = house_shape(&store);
+
+    // **The other way a finding stops posting.** `decide_finding` is the developer's cut;
+    // this is the code review page's three lists — the draft, held back, suppressed — and
+    // it used to write the column and leave `drafts.body` as it was. Since the threads are
+    // composed from the record at read time, a stale body would now disagree with them.
+    store
+        .set_finding_disposition(
+            review,
+            1,
+            Disposition::HeldBack,
+            Some("for the nit ticket".to_string()),
+        )
+        .expect("the blocker is held back");
+
+    let body = store.get_draft(review).expect("draft").body;
+    let threads = store.draft_threads(review).expect("threads");
+
+    assert_eq!(index_rows(&body).len(), 5, "five rows left:\n{body}");
+    assert!(
+        !body.contains("F1"),
+        "and F1 is nowhere in the body:\n{body}"
+    );
+    assert!(!threads.iter().any(|thread| thread.finding_seq == 1));
+}
+
+#[test]
+fn moving_a_finding_once_the_draft_is_signed_off_is_refused() {
+    let (_dir, store) = temp_store();
+    let review = house_shape(&store);
+    store
+        .approve_draft(
+            review,
+            review_desk_store::ReviewEvent::RequestChanges,
+            Actor::Developer,
+        )
+        .expect("the developer signs off");
+
+    let refused = store.set_finding_disposition(review, 1, Disposition::HeldBack, None);
+    let message = refused
+        .expect_err("an approved draft does not move")
+        .to_string();
+    assert!(
+        message.contains("approved"),
+        "the refusal says why: {message}"
+    );
+
+    // And the body is untouched, which is the point: it is what the session posts.
+    assert!(store
+        .get_draft(review)
+        .expect("draft")
+        .body
+        .contains("| 🔴 Blocker · F1 |"));
 }

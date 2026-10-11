@@ -2648,6 +2648,81 @@ components:
             `accepted`, `withdrawn` or `ticketed` is not posted as an open finding**, and
             what the round found about it belongs in a block of prose.
 
+    DraftThread:
+      type: object
+      additionalProperties: false
+      required: [finding_seq, finding_key, severity, title, path, line, side, body]
+      description: |
+        One inline thread the draft hands over: a finding with a line inside the diff,
+        composed from its block and ready to post on that line.
+
+        **A finding is either a thread or a section of the body, never both.** It is a
+        thread when the record can anchor it — the finding names a file, it names the line
+        its comment attaches to, it carries a hunk, and that hunk is one `git diff -U3`
+        drew and draws that line. A hunk whose every entry is `unchanged` came from
+        `git show` and is a line the change does not touch, so such a finding keeps its
+        section in the body. Either way it has one row in the body's index, and **that row
+        links to the line, which is the line the thread sits on**.
+
+        **Review Desk posts nothing.** The session puts these in the `comments` array of
+        its one `POST /repos/{owner}/{repo}/pulls/{number}/reviews` call, with the body
+        beside them, which is what keeps the review count at one. They are handed over only
+        on a draft this API reports `approved`.
+      properties:
+        finding_seq:
+          type: integer
+          format: int64
+          minimum: 1
+          description: |
+            The finding, by the number that is its identity across rounds. What
+            `review-desk finding link` needs once GitHub has answered with a comment id.
+        finding_key: { type: string, pattern: '^F[0-9]+$' }
+        severity:
+          allOf:
+            - $ref: '#/components/schemas/Severity'
+          description: |
+            The finding's live severity, which picked the alert the comment sits in:
+            `blocker` takes `[!CAUTION]`, `should` takes `[!WARNING]`, `question` takes
+            `[!NOTE]`, and `nit` takes no alert at all — the lighter shape, because four
+            labels on a one-line nit is why nits read as heavy as blockers.
+        title:
+          type: string
+          minLength: 1
+          description: The heading's title, as the index row carries it too.
+        path:
+          type: string
+          minLength: 1
+          description: |
+            The file the comment is anchored on. **The hunk's file, not the finding's**: the
+            line is numbered from the hunk's own `start_line`, and a finding may point at
+            one file and show the code of another.
+        line:
+          type: integer
+          format: int64
+          minimum: 1
+          description: |
+            The line the comment sits on, **in the new file's numbering** — the right-hand
+            side of the diff.
+        side:
+          type: string
+          const: RIGHT
+          description: |
+            Which side of the diff, and it is always `RIGHT`. A removed line carries no
+            number in this record, so a flagged line is always a line still in the file;
+            where a finding is about a line the change deleted, the line to flag is the one
+            that replaced it, and the comment says the code at fault is gone. Nothing here
+            can ask GitHub for `LEFT` or for the old file's numbering.
+        body:
+          type: string
+          minLength: 1
+          description: |
+            The comment as it will post. The block's text, carried through unaltered inside
+            the alert, under a title line composed from the record:
+            `**Blocker · F1** — <title> · `Open``. The `in diff` / `pre-existing` tag stays
+            where the session wrote it, on the block's first line, because it is prose no
+            part of this record carries. A session that signs its comments appends its own
+            `agent:` marker; Review Desk composes none.
+
     DraftEdit:
       type: object
       additionalProperties: false
@@ -2690,6 +2765,17 @@ components:
           description: |
             The review body as GitHub-flavoured markdown, posted verbatim. May be empty
             while the status is `drafting`.
+
+            **Composed from the blocks, in the house style's shape.** The session's prose
+            blocks are carried through character for character — the verdict line, the
+            `**Method**` line, `### Problem fit` with its diagram, the folded provenance —
+            and between them sits an index of every posted finding: the glyph and the
+            severity, the place in the code, the title, and where it stands. A finding with
+            a line inside the diff is a row and a `DraftThread`, not a section; a finding
+            with nowhere to anchor is a row and a section. Each row links to the line the
+            finding is about at the head commit reviewed, because a review body resolves no
+            anchor of its own and the thread it would otherwise link to does not exist until
+            the moment of posting.
         status: { $ref: '#/components/schemas/DraftStatus' }
         event:
           oneOf:
@@ -2712,7 +2798,7 @@ components:
     DraftDetail:
       type: object
       additionalProperties: false
-      required: [draft, review, lint, sections, edits, held_back, nit_ticket]
+      required: [draft, review, lint, sections, threads, edits, held_back, nit_ticket]
       description: Everything the Draft preview screen shows.
       properties:
         draft: { $ref: '#/components/schemas/Draft' }
@@ -2737,6 +2823,19 @@ components:
           description: |
             The blocks the body is composed of, in order — including the ones that do not
             post. Empty on a draft with no body at all.
+        threads:
+          type: array
+          items: { $ref: '#/components/schemas/DraftThread' }
+          description: |
+            The inline threads this draft hands over, most serious first then by number —
+            one per finding with a line inside the diff. Empty when no finding can be
+            anchored, which is a review whose findings are all corrections, all outside the
+            change, or all without a hunk.
+
+            **The body does not carry these.** An anchored finding is a row in the body's
+            index and a comment on the code, so the screen that exists so nothing is posted
+            unread has to draw both. They change together: cutting a finding takes its row
+            and its thread.
         edits:
           type: array
           items: { $ref: '#/components/schemas/DraftEdit' }

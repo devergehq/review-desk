@@ -40,10 +40,10 @@ use std::collections::BTreeMap;
 
 use rusqlite::{params, Connection};
 
-use crate::error::Result;
+use crate::error::{Result, StoreError};
 use crate::model::{
-    DraftSection, DraftSectionKind, DraftThread, FindingAnchor, FindingHunk, HunkLine,
-    HunkLineMarker, RoundStatus, Severity,
+    DraftHandover, DraftSection, DraftSectionKind, DraftStatus, DraftThread, FindingAnchor,
+    FindingHunk, HunkLine, HunkLineMarker, RoundStatus, Severity,
 };
 use crate::Store;
 
@@ -99,6 +99,40 @@ pub(crate) struct Posting {
 }
 
 impl Store {
+    /// What the review session posts: the approved body, and the threads on the code.
+    ///
+    /// **Refused until the developer has signed the draft off, and the store is where that
+    /// is enforced rather than promised.** Nothing on the command line can approve a draft
+    /// — `put_draft` accepts only `drafting` and `ready` — so a hand-over that refuses any
+    /// other status is the one route from Review Desk to a pull request, and it opens only
+    /// after the developer has acted.
+    ///
+    /// **A posted draft hands over too**, which is not a weakening: posting is the step
+    /// after this one, and a session that posted and then failed to report it needs to read
+    /// the same payload again to check GitHub for its own review. The statuses this refuses
+    /// are the three before the sign-off.
+    pub fn draft_handover(&self, review_id: i64) -> Result<DraftHandover> {
+        let draft = self.get_draft(review_id)?;
+        if !matches!(draft.status, DraftStatus::Approved | DraftStatus::Posted) {
+            return Err(StoreError::DraftStatus {
+                review_id,
+                found: draft.status,
+                wanted: "only an approved draft is handed over. The developer signs off in \
+                         the dashboard, and nothing else can: a body and its threads are \
+                         posted under their name",
+            });
+        }
+
+        let review = self.get_review(review_id)?;
+        let threads = self.draft_threads(review_id)?;
+
+        Ok(DraftHandover {
+            review,
+            draft,
+            threads,
+        })
+    }
+
     /// The inline threads this review's draft hands over, in severity order.
     ///
     /// **Derived, never stored, and that is the opposite choice from the body.** The body is

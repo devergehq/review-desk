@@ -699,11 +699,23 @@ impl Api {
             .map(wire::draft_section)
             .collect();
 
+        // **The threads, beside the body they are not in.** A finding GitHub can anchor is
+        // a row in the body's index and a comment on the code, so the page cannot show what
+        // posts from the body alone — DEV-929. They are composed from the same blocks, so
+        // cutting a finding takes its row and its thread together.
+        let threads: Vec<Value> = self
+            .records
+            .draft_threads(review_id)?
+            .iter()
+            .map(wire::draft_thread)
+            .collect();
+
         Ok(json!({
             "draft": wire::draft(draft),
             "review": wire::review(&review),
             "lint": wire::draft_lint(&draft.lint),
             "sections": sections,
+            "threads": threads,
             "edits": edits,
             "held_back": held_back,
             "nit_ticket": wire::nit_ticket(&ticket),
