@@ -746,6 +746,28 @@ fn a_ticket_address_with_no_id_is_refused_because_nothing_would_draw_it() {
         Some("https://linear.app/acme/issue/ABC-999")
     );
 
+    // **And the id already held is found however the caller spells the repository.**
+    // `open_review_with` looks the review up to decide whether the id is there, and
+    // `find_review_by_head` compares under SQLite's binary collation — so a lookup keyed
+    // differently from the insert misses, and a miss here is a refusal rather than a slow
+    // path. One repository spelled two ways is one repository.
+    let same = store
+        .open_review_with(
+            " DEVERGEHQ/Review-Desk ",
+            12,
+            "DEADBEEF",
+            &ReviewFacts {
+                ticket_url: Some("https://linear.app/acme/issue/ABC-777".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("the address, against an id held under the canonical spelling");
+    assert_eq!(same.review.id, review.id, "and it is the same review");
+    assert_eq!(
+        same.review.ticket_url.as_deref(),
+        Some("https://linear.app/acme/issue/ABC-777")
+    );
+
     // `create_review` is the one writer that does not go through the same helper, and it
     // holds the same rule.
     match store.create_review(NewReview {

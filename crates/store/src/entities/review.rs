@@ -164,9 +164,20 @@ impl Store {
         // address with no id in *this* call is fine when the record already holds one.
         // `find_review_by_head` is the same lookup `open_review` does first, and writes
         // nothing.
+        //
+        // **Normalised before the lookup, through the same helpers `open_review` uses.**
+        // `find_review_by_head` compares under SQLite's binary collation and takes its
+        // arguments as given, so a lookup keyed differently from the insert misses — and a
+        // miss here is not a slow path, it is a refusal. Measured: without this,
+        // `--repo DevergeHQ/Review-Desk --head C0FFEE1 --ticket-url …` was refused for
+        // having no ticket id while the review it names held one, and the same call spelled
+        // in lower case succeeded. One repository spelled two ways is one repository, which
+        // this file's own tests say in as many words.
+        let (looked_up_repo, looked_up_head) =
+            (normalise::repo(repo), normalise::head_sha(head_sha));
         check_ticket(
             facts,
-            self.find_review_by_head(repo, pr, head_sha)?
+            self.find_review_by_head(&looked_up_repo, pr, &looked_up_head)?
                 .and_then(|review| review.ticket_id),
         )?;
 
