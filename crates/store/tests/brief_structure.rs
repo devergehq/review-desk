@@ -1596,12 +1596,7 @@ fn the_contracts_real_length_brief_is_at_real_length() {
             words <= 12,
             "{where_}: a one line is at most 12 words, not {words}: {one_line}"
         );
-        for banned in ["::", "/", "`"] {
-            assert!(
-                !one_line.contains(banned),
-                "{where_}: a one line is plain English, and this holds {banned:?}: {one_line}"
-            );
-        }
+        reads_as_plain_english(one_line, &format!("{where_}: a one line"));
 
         let summary = part["summary"].as_str().expect("a summary");
         let words = summary.split_whitespace().count();
@@ -1609,41 +1604,7 @@ fn the_contracts_real_length_brief_is_at_real_length() {
             words <= 30,
             "{where_}: a summary is at most 30 words, not {words}: {summary}"
         );
-
-        // **And it is plain, which is the half this block was missing.** The same linter
-        // applies `parts.plain` to a summary -- no class name, no path, no `::` -- and
-        // this test checked it on `one_line` only. So a commit that fixed one defect by
-        // writing `ExportContext` into five summaries took the example from 24/24 to
-        // 23/24 and CI said nothing. Its remedy is the right one and worth repeating: a
-        // part lists its files, so the summary does not need to name them.
-        for banned in ["::", "/", "`"] {
-            assert!(
-                !summary.contains(banned),
-                "{where_}: a summary is plain English, and this holds {banned:?}: {summary}"
-            );
-        }
-        // **On the raw string, as the `one_line` block above does.** An earlier version
-        // trimmed the punctuation off each word first -- which strips the very backticks
-        // it then looked for, so the one rule that reliably catches a code token was
-        // dead. The `allowed_columns` summary this commit removed would have passed it.
-        //
-        // **A lowercase letter followed by an uppercase one**, which is what a class name
-        // looks like. Not "any capital after the first": that flags CSV, JSON, SQL and CI,
-        // which are plain English and which the example has no way to say otherwise. It
-        // does not catch a single-capital name like `Redaction` written bare -- nothing
-        // here can tell that from a capitalised word -- and the backtick rule above is
-        // what catches it when a session marks it as code, which a session does.
-        for word in summary.split_whitespace() {
-            let camel = word
-                .chars()
-                .zip(word.chars().skip(1))
-                .any(|(one, two)| one.is_ascii_lowercase() && two.is_ascii_uppercase());
-            assert!(
-                !camel,
-                "{where_}: a summary names no class, and this looks like one -- \
-                 {word:?}: {summary}"
-            );
-        }
+        reads_as_plain_english(summary, &format!("{where_}: a summary"));
 
         // **And it is not the one line again.** Two of these were the same string, which
         // makes an opened row repeat what the closed row already said -- so the example
@@ -1653,6 +1614,108 @@ fn the_contracts_real_length_brief_is_at_real_length() {
             summary.trim().trim_end_matches('.'),
             one_line.trim().trim_end_matches('.'),
             "{where_}: the summary says more than the one line, or the fold is empty"
+        );
+    }
+}
+
+/// The humped words `brief_lint.py` permits: plain English that happens to carry a hump.
+///
+/// Its own list, as of 11 October 2026. Without it a summary saying "GitHub" fails a rule
+/// about class names, which on a project whose subject is reviewing pull requests is the
+/// first thing anybody would write.
+const HUMPED_ENGLISH: &[&str] = &[
+    "github",
+    "gitlab",
+    "bitbucket",
+    "oauth",
+    "openapi",
+    "openid",
+    "javascript",
+    "typescript",
+    "postgresql",
+    "mysql",
+    "sqlite",
+    "graphql",
+    "nodejs",
+    "ios",
+    "ipados",
+    "macos",
+    "iphone",
+    "ipad",
+    "youtube",
+    "paypal",
+    "wordpress",
+    "mongodb",
+    "dynamodb",
+    "redis",
+    "kubernetes",
+    "webhook",
+    "webhooks",
+    "linkedin",
+    "powershell",
+    "mermaid",
+    "jsonapi",
+    "deverge",
+];
+
+/// The extensions that make a word a path even with no separator in it. `brief_lint.py`'s.
+const EXTENSIONS: &[&str] = &[
+    "php", "ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "rs", "go", "rb", "java", "kt", "swift",
+    "cs", "c", "h", "cpp", "hpp", "sql", "json", "yaml", "yml", "toml", "vue", "svelte", "css",
+    "scss", "html", "md", "sh", "bash", "zsh", "tf", "ini", "env", "lock",
+];
+
+/// Refuse a line that reads as code where it is meant to read as plain English.
+///
+/// **A subset of `brief_lint.py`'s `code_names()`, and deliberately not a re-invention of
+/// it.** That linter is the authority, it lives in the review-craft skill, and it does not
+/// run in this repository's CI — so this exists to catch the drift early, in the one
+/// document the linter is pointed at. Three earlier versions of this check were each wrong
+/// in a different direction, which is the argument for copying the rule rather than
+/// paraphrasing it:
+///
+/// | Version | What it did | Why it was wrong |
+/// |---|---|---|
+/// | first | checked only `one_line`'s length and plainness | let five class names into the summaries |
+/// | second | trimmed punctuation, then looked for a backtick | strips the thing it looks for |
+/// | third | any capital after the first | calls `CSV` and `JSON` class names |
+///
+/// What is copied: `::` anywhere; a path, which is two separators or a known extension and
+/// **not** one bare slash, because "and/or" is a word; a call, `name()`; and a hump, a
+/// lowercase letter followed by an uppercase one, unless the word is humped English.
+///
+/// A backtick is **not** refused, which an earlier version did: the linter permits
+/// `allowed_columns` in a summary and a guard stricter than its authority is one somebody
+/// deletes the first time it blocks a sentence that was fine.
+fn reads_as_plain_english(line: &str, at: &str) {
+    assert!(!line.contains("::"), "{at} carries `::`: {line}");
+
+    for word in line.split_whitespace() {
+        let bare = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '_');
+
+        assert!(
+            !word.contains("()"),
+            "{at} calls something -- {word:?}: {line}"
+        );
+
+        assert!(
+            word.matches('/').count() < 2,
+            "{at} carries a path -- {word:?}: {line}"
+        );
+        if let Some((_, extension)) = bare.rsplit_once('.') {
+            assert!(
+                !EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str()),
+                "{at} names a file -- {word:?}: {line}"
+            );
+        }
+
+        let humped = bare
+            .chars()
+            .zip(bare.chars().skip(1))
+            .any(|(one, two)| one.is_ascii_lowercase() && two.is_ascii_uppercase());
+        assert!(
+            !humped || HUMPED_ENGLISH.contains(&bare.to_ascii_lowercase().as_str()),
+            "{at} names a class -- {word:?}: {line}"
         );
     }
 }

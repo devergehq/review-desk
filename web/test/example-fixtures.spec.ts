@@ -179,12 +179,21 @@ describe('the invented example and the fixtures', () => {
    * Once it went wrong, and the writing rule it broke was checked against the copy that
    * had not drifted.
    */
-  it('describes the same parts in both contract examples', () => {
-    const brief = example<{ parts: unknown[] }>('confirmBrief.response.real-length.json')
+  it('holds the same brief in both contract examples', () => {
+    const brief = example<ReviewDetail['brief']>('confirmBrief.response.real-length.json')
     const review = example<ReviewDetail>('getReview.response.code-review.json')
 
-    /* The served review derives a part's line totals; the brief document carries them too. */
-    expect(review.brief?.parts).toEqual(brief.parts)
+    /*
+     * **The whole brief, not only its parts.** Every field has the same failure mode: the
+     * headline, a problem's label, a flow row and the supporting table are all asserted
+     * by the Rust real-length test, which reads the *first* document — so a drift in the
+     * second is rendered by every page and seen by nothing. Asserted whole rather than
+     * field by field, because the point is that there is no difference at all.
+     */
+    expect(review.brief).toEqual(brief)
+    /* And not two absences agreeing with each other. */
+    expect(review.brief?.parts?.length, 'the example describes the change in parts')
+      .toBeGreaterThan(1)
   })
 
   /**
