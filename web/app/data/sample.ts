@@ -292,6 +292,8 @@ function inbox(): Inbox {
       review_id: detail.review.id,
       pull_request: prOf(detail),
       ticket_id: detail.review.ticket_id ?? null,
+      /* The address beside the id, so the queue's row can link the ticket. */
+      ticket_url: detail.review.ticket_url ?? null,
       brief_ready_at: detail.brief!.updated_at,
       /* The session held at layer 2 only if nothing after it has run. */
       blocks_later_layers: detail.layers

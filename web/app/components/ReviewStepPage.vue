@@ -5,7 +5,8 @@ import type { ReviewLayerName, ReviewDetail } from '~/types/desk'
  * The shell every step page of a review sits in.
  *
  * ```
- *  ACME/PORTAL · #514 · GIVE A SCHEDULED EXPORT ITS OWN CONTEXT
+ *  ACME/PORTAL · #514 · ABC-402 · GIVE A SCHEDULED EXPORT ITS OWN CONTEXT
+ *  └ to GitHub ┘   └ to the tracker ┘
  *  ┌── the step trail, seven steps in two groups ──────────────┐
  *  └───────────────────────────────────────────────────────────┘
  *  The one headline sentence, in Newsreader at 40px
@@ -24,8 +25,25 @@ import type { ReviewLayerName, ReviewDetail } from '~/types/desk'
  * review at `/reviews/{id}` is a redirect to Understand. That is what lets the trail link
  * all five steps that have a page unconditionally — a step can no longer lead somewhere
  * that carries no way back, because there is nowhere left like that.
+ *
+ * ## The two links, and why they are here rather than on one page
+ *
+ * **The pull request and the ticket are the two places a reader leaves a review for**, and
+ * until DEV-936 the top line named both and linked neither: the repository and the number
+ * were plain text, the ticket was nowhere near the top, and the only way out to GitHub was
+ * a row in a table at the foot of the Understand page. Patrick, 12 October 2026: "at a
+ * minimum, the link at the very top or somewhere prominent that's always going to be shown
+ * on every page… And then if there is a ticket, like MOB-999, a link to Linear." This is
+ * the one line every page of a review already has, which is the whole reason it is the
+ * place to put them.
+ *
+ * They arrive by opposite routes, and `app/utils/links.ts` holds that difference: the pull
+ * request's address is **built** from `repo` and `pr`, and the ticket's is **stored**,
+ * because nothing can turn an opaque `ABC-402` into an address. A review with an id and no
+ * address draws the id as text — which is every review opened before the field existed,
+ * and is not a broken link.
  */
-defineProps<{
+const props = defineProps<{
   detail: ReviewDetail
   /** Which step this is. The trail marks it and the document title says it. */
   step: ReviewLayerName
@@ -34,13 +52,52 @@ defineProps<{
   /** The line under the heading, when the page has one. */
   sub?: string | null
 }>()
+
+/** Where this review's pull request is. Built from the record, never read from it. */
+const pullRequest = computed(() => prUrl(props.detail.review.repo, props.detail.review.pr))
+
+/**
+ * Where this review's ticket is, or `null` for a review that has no address to draw.
+ *
+ * Null for two different reviews, and the header treats them the same because there is
+ * nothing to tell a reader apart: one was never given an address, and one holds a value
+ * that is not `https` and so is refused at render as well as at the write.
+ */
+const ticket = computed(() => ticketUrl(props.detail.review.ticket_url))
 </script>
 
 <template>
   <div class="page">
     <header class="top">
+      <!--
+        **Which review you are in, and the two ways out of it.** The repository and the
+        number are the link to the pull request; the ticket's id is the link to the
+        tracker, and is drawn as text when the record holds no address for it. Both say
+        where they go and that they open elsewhere, because "opens in a new tab" is not
+        something a reader can see coming.
+      -->
       <p class="rd-rubric where">
-        {{ detail.review.repo }} · #{{ detail.review.pr }}
+        <a
+          class="out"
+          :href="pullRequest"
+          target="_blank"
+          rel="noopener noreferrer"
+        >{{ detail.review.repo }} · #{{ detail.review.pr }}<span class="rd-visually-hidden">, on GitHub, opens in a new tab</span></a>
+
+        <template v-if="detail.review.ticket_id">
+          ·
+          <a
+            v-if="ticket"
+            class="out"
+            :href="ticket"
+            target="_blank"
+            rel="noopener noreferrer"
+          >{{ detail.review.ticket_id }}<span class="rd-visually-hidden">, on the tracker, opens in a new tab</span></a>
+          <template v-else>
+            {{ detail.review.ticket_id }}
+          </template>
+        </template>
+
         <template v-if="detail.review.title">
           · {{ detail.review.title }}
         </template>
@@ -103,6 +160,20 @@ defineProps<{
 .where {
   margin: 0;
   overflow-wrap: break-word;
+}
+
+/*
+ * **Underlined, not accent-coloured alone.** This line is 13px, uppercase and letterspaced,
+ * and at that size a colour change is the one cue a reader can miss — so the link carries
+ * the one cue that survives being small, being grey-on-grey and being printed. `anywhere`
+ * rather than `break-word` on the repository: a long `owner/name` is one unbroken token and
+ * at 390 pixels it is wider than the screen, where `break-word` would let it overflow
+ * rather than break it.
+ */
+.out {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
 }
 
 .headline {

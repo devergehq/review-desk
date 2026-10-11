@@ -495,21 +495,6 @@ const someTimesMissing = computed(
 )
 
 /**
- * Where a pull request is on GitHub.
- *
- * **Written as a function because `//` cannot go in a component's interpolated attribute.**
- * `vue-tsc` emits a component's props as one line, so the `//` in `https://` starts a
- * JavaScript line comment and everything after it in the template is commented out: every
- * later `item` and `data` became `TS2304: Cannot find name`, seventeen of them. Measured
- * rather than guessed — the same attribute with one slash reports 0 errors and with two
- * reports 17. It works inline on a *native* element, which is why the screen this replaces
- * could write the same URL in an `<a :href>`. The URL built here is identical.
- */
-function prUrl(repo: string, pr: number): string {
-  return `https://github.com/${repo}/pull/${pr}`
-}
-
-/**
  * The line under the headline: what is on the desk that is not waiting on the developer.
  *
  * The board reads "2 with the agent · 2 waiting on the author · 2 of your own". Only the

@@ -130,6 +130,110 @@ describe('the shell every step page sits in', () => {
     expect(page.text()).toContain('Give a scheduled export its own context')
   })
 
+  /* ---------------- The two links out of a review (DEV-936) ---------------- */
+
+  /** The header's links, which are the only `.out` anchors on the page. */
+  const wayOut = (page: VueWrapper) => page.findAll('.where a.out')
+
+  it('links the repository and the number to the pull request', async () => {
+    const page = await understand(STRUCTURED)
+    const [pull] = wayOut(page)
+
+    expect(pull, 'the header carries a link out').toBeDefined()
+    expect(pull!.text()).toContain('acme/portal')
+    expect(pull!.text()).toContain('#514')
+    /*
+     * **Built from `repo` and `pr`**, which is the assertion the acceptance criterion is
+     * about: there is no stored field this could have come from, and nothing a session
+     * wrote reaches it.
+     */
+    expect(pull!.attributes('href')).toBe('https://github.com/acme/portal/pull/514')
+  })
+
+  it('opens both links in a new tab, and says so where only a reader would not see it', async () => {
+    const page = await understand(OLD_WAY)
+    const links = wayOut(page)
+    expect(links.length, 'the pull request and the ticket').toBe(2)
+
+    for (const link of links) {
+      expect(link.attributes('target')).toBe('_blank')
+      /*
+       * `noopener` and `noreferrer` both, and `noopener` is the one that matters: a page
+       * opened without it can reach back through `window.opener`.
+       */
+      expect(link.attributes('rel')).toBe('noopener noreferrer')
+      expect(link.find('.rd-visually-hidden').text()).toContain('opens in a new tab')
+    }
+
+    /* And each says where it goes, which "opens in a new tab" alone does not. */
+    expect(links[0]!.text()).toContain('on GitHub')
+    expect(links[1]!.text()).toContain('on the tracker')
+  })
+
+  it('draws the ticket’s id as a link when the record holds its address', async () => {
+    const page = await understand(OLD_WAY)
+    const ticket = wayOut(page)[1]
+
+    expect(ticket, 'review 17 holds an address').toBeDefined()
+    expect(ticket!.text()).toContain('ABC-231')
+    expect(ticket!.attributes('href')).toBe('https://linear.app/acme/issue/ABC-231')
+
+    /*
+     * **The id is the link's text and the address is not drawn at all.** A link whose text
+     * is a URL is a link a reader has to parse, and the id is the thing they came for.
+     */
+    expect(page.find('.where').text()).not.toContain('linear.app')
+  })
+
+  it('draws the ticket’s id as text when the record holds no address', async () => {
+    /* Review 41's fixture carries `ABC-402` and no address, as the contract example does. */
+    const page = await understand(STRUCTURED)
+
+    expect(page.find('.where').text()).toContain('ABC-402')
+    expect(wayOut(page).length, 'the pull request alone is a link').toBe(1)
+    expect(
+      wayOut(page)[0]!.text(),
+      'and the ticket is not inside it',
+    ).not.toContain('ABC-402')
+  })
+
+  it('says nothing about a ticket for a review that has none', async () => {
+    const detail = fixture(STRUCTURED)
+    detail.review = { ...detail.review, ticket_id: null, ticket_url: null }
+    await withReview(detail)
+
+    const page = await understand(STRUCTURED)
+    const where = page.find('.where').text()
+    expect(where).toContain('acme/portal')
+    expect(where).not.toContain('ABC-402')
+    /* No stranded separator where the ticket would have been. */
+    expect(where).not.toMatch(/·\s*·/)
+  })
+
+  it('refuses an address that is not https, at render as well as at the write', async () => {
+    /*
+     * **The store refuses this on the way in, and this is the second refusal.** A column is
+     * not a promise about every row in it: a database can be written to by hand, and the one
+     * thing this value is for is reaching an `href`, where a `javascript:` address runs.
+     */
+    for (const stored of [
+      'javascript:alert(1)',
+      'http://linear.app/acme/issue/ABC-402',
+      'linear.app/acme/issue/ABC-402',
+    ]) {
+      const detail = fixture(STRUCTURED)
+      detail.review = { ...detail.review, ticket_url: stored }
+      await withReview(detail)
+
+      const page = await understand(STRUCTURED)
+      const hrefs = page.findAll('a').map(one => one.attributes('href') ?? '')
+      expect(hrefs, `${stored} never reaches an href`).not.toContain(stored)
+      /* The id is still drawn, as text — the same thing a review with no address gets. */
+      expect(page.find('.where').text()).toContain('ABC-402')
+      expect(wayOut(page).length).toBe(1)
+    }
+  })
+
   it('draws seven steps, in the two groups a review actually has', async () => {
     const page = await understand(STRUCTURED)
     const steps = page.findAll('.steps li').map(one => one.text())
