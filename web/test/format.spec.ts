@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { InboxPostedItem } from '../app/types/desk'
+import type { InboxPostedItem, ReviewListItem } from '../app/types/desk'
 
 import {
   activityLabel,
@@ -18,6 +18,7 @@ import {
   sessionLabel,
   severityTally,
   sinceLabel,
+  stepLabel,
   stepDurationLabel,
 } from '../app/utils/format'
 
@@ -323,6 +324,47 @@ describe('what came back on a posted review', () => {
     expect(said).toContain('3 replies')
     expect(said).not.toContain('0 threads resolved')
     expect(said).not.toContain('thread')
+  })
+
+  /*
+   * **The step and what it says, through the same helper the trail uses.** Writing the
+   * detail out raw here skipped `layerDetail`, which rewrites the one phrase the store and
+   * the screen disagree about: the store writes layer 6's detail as "approved by the
+   * developer" and DEV-870 reserves "approve" for the GitHub review event.
+   */
+  it('says a signed-off step in the screen’s words, not the store’s', () => {
+    const row = {
+      review: { id: 1 },
+      rounds_on_pr: 1,
+      step_number: 6,
+      step_name: 'draft',
+      step_state: 'done',
+      step_detail: 'approved by the developer',
+      steps_total: 7,
+      last_activity_at: null,
+    } as unknown as ReviewListItem
+    expect(stepLabel(row)).toBe('Draft · signed off by the developer')
+  })
+
+  it('falls back to the state when a step recorded no note, and says so in words', () => {
+    const row = (over: Record<string, unknown>) => ({
+      review: { id: 1 },
+      rounds_on_pr: 1,
+      step_number: 5,
+      step_name: 'code_review',
+      step_state: 'running',
+      step_detail: null,
+      steps_total: 7,
+      last_activity_at: null,
+      ...over,
+    } as unknown as ReviewListItem)
+
+    expect(stepLabel(row({}))).toBe('Code review · running')
+    /* A detail that is present and empty is a step with nothing written, not a blank cell. */
+    expect(stepLabel(row({ step_detail: '' }))).toBe('Code review · running')
+    /* And a review nothing has reported on is not step 1 pending. */
+    expect(stepLabel(row({ step_number: null, step_name: null, step_state: null })))
+      .toBe('Not started')
   })
 
   it('does not claim a pull request is open when nothing has looked', () => {

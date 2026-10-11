@@ -316,14 +316,7 @@ impl Api {
         // which is why it is absent from `totals_items` below — and why the screen has to
         // count it separately rather than read the headline.
         //
-        // `rounds_on_pr` is `review.round` without a second read: the store returns only
-        // the newest round of a pull request, so the round this review is on *is* the
-        // highest the pull request has reached. Stated here rather than left for the
-        // screen to assume, which is what the contract's field is for.
-        let posted_awaiting_author: Vec<Value> = posted
-            .iter()
-            .map(|item| wire::inbox_posted(item, item.review.round))
-            .collect();
+        let posted_awaiting_author: Vec<Value> = posted.iter().map(wire::inbox_posted).collect();
 
         let since = now() - WINDOW_DAYS * wire::DAY;
         let filed = self.records.filed_nit_tickets(since)?;
@@ -335,6 +328,7 @@ impl Api {
         // `own_prs_without_reviewer` is empty, and that is the contract's own position:
         // it is GitHub state, nothing lists the developer's own pull requests, and no
         // issue covers it. Empty reads as absent, which is true.
+        let own_prs: Vec<Value> = Vec::new();
         // **The five waiting groups, and deliberately not the other two.** `in_progress`
         // is with the agent and `posted_awaiting_author` is with the author; neither asks
         // the developer for anything, and the screen's headline is a count of what does.
@@ -344,6 +338,13 @@ impl Api {
         let totals_items = briefs_to_confirm.len()
             + drafts_to_approve.len()
             + author_replies.len()
+            // Always zero today, and written as a term rather than left out. It was left
+            // out, and the sum was right only because the group two lines below is a
+            // hardcoded empty array — which also made the matching term in
+            // `conformance.rs`'s assertion vacuous. The day something supplies the
+            // developer's own pull requests, this sum is already right and that test
+            // already checks it.
+            + own_prs.len()
             + proposed_rules.len();
         let repos: std::collections::BTreeSet<&str> = briefs
             .iter()
@@ -359,7 +360,7 @@ impl Api {
                 "briefs_to_confirm": briefs_to_confirm,
                 "drafts_to_approve": drafts_to_approve,
                 "author_replies": author_replies,
-                "own_prs_without_reviewer": Value::Array(Vec::new()),
+                "own_prs_without_reviewer": own_prs,
                 "proposed_rules": proposed_rules,
                 "in_progress": in_progress,
                 "posted_awaiting_author": posted_awaiting_author,

@@ -289,14 +289,6 @@ export function editVerb(kind: OutcomeKind | string): string {
 }
 
 /**
- * One thing an author or the harvester did, as the Inbox words it.
- *
- * Moved out of the template it used to be a nested ternary in. That expression handled
- * `rejected` and `code_changed_after` and fell through to the wire string with its
- * underscores swapped for spaces — which is how `thread_resolved` would have read as
- * "thread resolved" on the one group built from exactly that kind.
- */
-/**
  * A GitHub review event, as the developer chose it: "Request changes", not
  * `request_changes`.
  *
@@ -408,27 +400,56 @@ export function prStateLabel(state: PrState | null | undefined): string {
  * A review nothing has reported on is "Not started" and not a step number: the record
  * holds seven pending steps, which is a thing it knows rather than a thing it has not
  * measured.
+ *
+ * **A posted review usually reports step 6**, because nothing in the harvest path writes
+ * step 7 — the posting writes it `pending` and the harvester writes no step. A session
+ * that records it is reported as `harvest` like any other step; there is no special case
+ * here, and there must not be one that derives a step from a harvest time.
+ */
+/**
+ * Where a review has got to, as the step **and what the step says** — never the step alone.
+ *
+ * A bare step name is the step a review is *waiting at* when the state is `waiting_on_you`
+ * and the step it has *left* when the state is `done`. A posted review's furthest started
+ * step is the draft, so a cell reading "Draft" tells a reader it still needs signing off
+ * while the queue says it is with the author. "Draft · signed off by the developer" says
+ * the same record and misleads nobody.
+ *
+ * **The outcome comes from `layerOutcome`, which the trail already uses.** Writing the
+ * detail out raw here looked like the same thing and was not: `layerDetail` rewrites the
+ * one phrase the store and the screen disagree about — the store writes layer 6's detail
+ * as "approved by the developer", and DEV-870 reserves "approve" for the GitHub review
+ * event, so the screen says "signed off". A second path to the same cell skipped that and
+ * would have drawn a word this app spent an issue deciding not to use. It also handles a
+ * detail that is present and empty, which `??` does not.
+ *
+ * A review nothing has reported on is "Not started" and not a step number: the record
+ * holds seven pending steps, which is a thing it knows rather than a thing it has not
+ * measured.
+ *
+ * **A posted review usually reports step 6**, because nothing in the harvest path writes
+ * step 7 — the posting writes it `pending` and the harvester writes no step. A session
+ * that records it is reported as `harvest` like any other step; there is no special case
+ * here, and there must not be one that derives a step from a harvest time.
  */
 export function stepLabel(row: ReviewListItem): string {
-  if (row.step_number == null || row.step_name == null) return 'Not started'
-  const name = layerLabel(row.step_name)
-  const said = row.step_detail ?? stateLabel(row.step_state)
-  return said == null ? name : `${name} · ${said}`
-}
-
-/** A step's state, in words, for a step that recorded no note of its own. */
-function stateLabel(state: ReviewLayerState | undefined): string | null {
-  switch (state) {
-    case 'pending': return 'not started'
-    case 'running': return 'running'
-    case 'waiting_on_you': return 'waiting on you'
-    case 'done': return 'done'
-    case 'failed': return 'failed'
-    case 'skipped': return 'skipped'
-    default: return null
+  if (row.step_number == null || row.step_name == null || row.step_state == null) {
+    return 'Not started'
   }
+  return `${layerLabel(row.step_name)} · ${layerOutcome({
+    state: row.step_state,
+    detail: row.step_detail,
+  })}`
 }
 
+/**
+ * One thing an author or the harvester did, as the Inbox words it.
+ *
+ * Moved out of the template it used to be a nested ternary in. That expression handled
+ * `rejected` and `code_changed_after` and fell through to the wire string with its
+ * underscores swapped for spaces — which is how `thread_resolved` would have read as
+ * "thread resolved" on the one group built from exactly that kind.
+ */
 export function replyLabel(event: InboxReplyEvent): string {
   const key = event.finding_key
   switch (event.kind) {

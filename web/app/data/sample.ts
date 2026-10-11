@@ -165,10 +165,15 @@ function prOf(detail: ReviewDetail): InboxPr {
  * The severities of the findings that are **in the draft**, which is what the inbox's
  * "Draft ready" row counts.
  *
+ * Not `severityTally`, which `utils/format` exports as the inverse — counts in, a
+ * sentence out — and which this file already imports a sibling of. One name for two
+ * functions with opposite signatures, one import statement apart, is a redeclaration
+ * waiting for the first person who reaches for the other one.
+ *
  * Separate from `retally` below, which counts the whole review for the One review
  * screen's own figures. Two questions, two counts, one place each.
  */
-function severityTally(findings: Finding[]): SeverityCounts {
+function draftSeverities(findings: Finding[]): SeverityCounts {
   const counts: SeverityCounts = { blocker: 0, should: 0, nit: 0, question: 0 }
   for (const finding of findings) {
     if (finding.disposition === 'in_draft') counts[finding.severity] += 1
@@ -250,6 +255,22 @@ function inScope(rule: Rule, repo: string | null): boolean {
   return rule.scope.kind === 'global' || rule.scope.repo === repo
 }
 
+/**
+ * The highest round each pull request has reached, keyed `owner/repo#number`.
+ *
+ * Read by both the posted group and the reviews list, and built once for each rather than
+ * twice: the two had the same four lines, the same key format and the same fold, which is
+ * two places for one rule about what supersedes what.
+ */
+function newestRoundByPr(): Map<string, number> {
+  const rounds = new Map<string, number>()
+  for (const detail of source.reviews) {
+    const key = `${detail.review.repo}#${detail.review.pr}`
+    rounds.set(key, Math.max(rounds.get(key) ?? 0, detail.review.round))
+  }
+  return rounds
+}
+
 /** The whole Inbox, recomputed from the desk — the shape `GET /inbox` serves. */
 function inbox(): Inbox {
   /*
@@ -299,7 +320,7 @@ function inbox(): Inbox {
        * DEV-930's note; the contract now says which findings the figure counts, because
        * saying nothing is how three implementations came to answer it three ways.
        */
-      severities: severityTally(owner!.findings),
+      severities: draftSeverities(owner!.findings),
       held_back: owner!.finding_dispositions.held_back,
       is_delta: owner!.review.round > 1,
       /*
@@ -375,11 +396,7 @@ function inbox(): Inbox {
    * is copied rather than re-invented: null when a figure would be zero and nothing could
    * have found one.
    */
-  const newestRound = new Map<string, number>()
-  for (const detail of source.reviews) {
-    const key = `${detail.review.repo}#${detail.review.pr}`
-    newestRound.set(key, Math.max(newestRound.get(key) ?? 0, detail.review.round))
-  }
+  const newestRound = newestRoundByPr()
 
   const posted_awaiting_author = source.reviews
     .filter((detail) => {
@@ -474,11 +491,7 @@ function inbox(): Inbox {
  * rule would report a harvest that has not begun.
  */
 function reviewList(repo: string | null): ReviewList {
-  const rounds = new Map<string, number>()
-  for (const detail of source.reviews) {
-    const key = `${detail.review.repo}#${detail.review.pr}`
-    rounds.set(key, Math.max(rounds.get(key) ?? 0, detail.review.round))
-  }
+  const rounds = newestRoundByPr()
 
   const reviews = source.reviews
     .filter(detail => repo == null || detail.review.repo === repo)

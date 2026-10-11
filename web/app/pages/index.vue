@@ -112,7 +112,12 @@ interface Waiting {
   posted: InboxPostedItem | null
 }
 
-/** Every review that is waiting on the developer, merged into one row each. */
+/**
+ * Every review that is waiting on the developer, merged into one row each.
+ *
+ * Called through `waiting` below rather than directly, because every reader of it wants
+ * the same answer about the same inbox.
+ */
 function needingYou(data: Inbox): Waiting[] {
   const byReview = new Map<number, Waiting>()
 
@@ -166,6 +171,17 @@ function needingYou(data: Inbox): Waiting[] {
 
   return [...byReview.values()]
 }
+
+/**
+ * The merge, done once per answer.
+ *
+ * Four things read it — the rows, the posted group's subtraction, the note beside that
+ * group's heading, and the repository chips — and it was a plain function call at each,
+ * so it rebuilt its `Map` and walked three arrays five times per render, including on
+ * every press of a repository chip. A `computed` over the one thing it depends on is both
+ * smaller than the calls it replaces and the shape the rest of this file already uses.
+ */
+const waiting = computed(() => (inbox.data.value ? needingYou(inbox.data.value) : []))
 
 /**
  * Where a row goes: **Understand, whatever the row is waiting for.**
@@ -262,7 +278,7 @@ function about(row: Waiting): string {
 function repoTabs(data: Inbox) {
   const tally = new Map<string, number>()
   const bump = (name: string) => tally.set(name, (tally.get(name) ?? 0) + 1)
-  for (const row of needingYou(data)) bump(row.repo)
+  for (const row of waiting.value) bump(row.repo)
   for (const item of data.in_progress) bump(item.pull_request.repo)
   for (const item of data.own_prs_without_reviewer) bump(item.pull_request.repo)
   /*
@@ -282,22 +298,52 @@ function repoTabs(data: Inbox) {
 }
 
 /**
- * The posted reviews this page draws under "Waiting on the author".
+ * Every review this page draws above the posted group — needs-you **and** with-the-agent.
  *
- * **The group, minus the reviews already drawn under "Needs you".** One row per review is
- * DEV-876's rule, and a review whose author has answered is waiting on the developer, not
- * on the author — so it belongs to the earlier group, with the figures about the author's
- * response on it. How many were left out is said beside the heading, because a count that
- * silently disagrees with the record is worse than no count.
+ * One row per review is DEV-876's rule and it holds across groups, not only within them,
+ * so a posted review has to be subtracted from this whole set rather than from the
+ * needs-you merge alone. Both halves are reachable:
+ *
+ * - its author has answered, which puts it in `author_replies` — and makes it the
+ *   developer's turn rather than the author's
+ * - a session is running a layer on it, which puts it in `in_progress`. The server's
+ *   query has no draft-status guard — any layer `running` qualifies — so a posted review
+ *   whose harvest step is running is in both arrays at once, and review 12 of the sample
+ *   records is exactly that shape.
  */
-function waitingOnAuthor(data: Inbox): InboxPostedItem[] {
-  const needing = new Set(needingYou(data).map(row => row.review_id))
-  return data.posted_awaiting_author.filter(item => !needing.has(item.review_id))
+function drawnAbove(data: Inbox): Set<number> {
+  const drawn = new Set(waiting.value.map(row => row.review_id))
+  for (const item of data.in_progress) drawn.add(item.review_id)
+  return drawn
 }
 
-/** How many posted reviews the group left to "Needs you", for the note beside it. */
+/**
+ * The posted reviews this page draws under "Waiting on the author".
+ *
+ * **The group, minus whatever is already drawn above it.** A review that is waiting on the
+ * developer, or that a session is working on, is not waiting on its author — it belongs to
+ * the earlier group, with the figures about the author's response on it. How many were left
+ * out is said beside the heading, because a count that silently disagrees with the record
+ * is worse than no count.
+ */
+function waitingOnAuthor(data: Inbox): InboxPostedItem[] {
+  const drawn = drawnAbove(data)
+  return data.posted_awaiting_author.filter(item => !drawn.has(item.review_id))
+}
+
+/**
+ * How many posted reviews the group left to the groups above it, for the note beside it.
+ *
+ * **Counted over the repository being shown**, which is the whole point of the note: the
+ * rows are filtered by the picker, so a count taken over the whole record would point at
+ * a row that is not on the page — "1 more is posted and is under Needs you" over a review
+ * on a repository the reader has filtered out.
+ */
 function alsoPosted(data: Inbox): number {
-  return data.posted_awaiting_author.length - waitingOnAuthor(data).length
+  const drawn = drawnAbove(data)
+  return data.posted_awaiting_author.filter(
+    item => showing(item.pull_request.repo) && drawn.has(item.review_id),
+  ).length
 }
 
 const showing = (name: string) => repo.value === ALL_REPOSITORIES || repo.value === name
@@ -342,7 +388,7 @@ const rows = computed(() => {
   if (!data) return { needsYou: [], withAgent: [], ownPrs: [], withAuthor: [], alsoPosted: 0 }
 
   const needsYou = oldestFirst(
-    needingYou(data).filter(row => showing(row.repo)).map(queueRow),
+    waiting.value.filter(row => showing(row.repo)).map(queueRow),
     row => row.at,
   )
   // Sorted like every other group, now that it has a time to sort by: the caption over

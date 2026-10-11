@@ -48,37 +48,25 @@ const repo = ref(ALL_REPOSITORIES)
 const reviews = desk.reviews(repo)
 
 /**
- * The repositories with a review, each with the number of rows it has.
+ * The repositories to pick from, read the way the Rules screen reads them.
  *
- * Counted from the rows the page is showing rather than from `GET /repos`, for the reason
- * the queue gives: `/repos` counts open reviews, which is a different and smaller number
- * here, and a filter whose count does not match what it filters to is worse than no count.
+ * **A second read, and the same exception that screen already takes.** The contract's rule
+ * is one GET per screen, and a picker that filters *server-side* cannot be built from the
+ * filtered answer: once a repository is chosen the response holds only that one, and tabs
+ * built from it would leave the reader no way back. `GET /repos` is the unfiltered list,
+ * and Rules has read it beside `GET /rules?repo=` since that screen was built.
  *
- * **Counted from the unfiltered read.** The read follows the picker, so once a repository
- * is chosen the response holds only that one — and tabs built from it would leave the
- * reader no way back. The whole list is remembered the first time it arrives.
+ * **And no count beside each name.** Rules puts `active_rules` there because that is what
+ * its page filters to. The nearest thing here is `open_reviews`, which counts reviews with
+ * no posted GitHub review — a smaller number than this page shows, and the queue's own
+ * comment says it: a filter whose count does not match what it filters to is worse than no
+ * count.
  */
-const everyRepo = ref<Map<string, number> | null>(null)
-
-watch(
-  () => reviews.data.value,
-  (answer) => {
-    if (!answer || answer.repo != null || everyRepo.value) return
-    const tally = new Map<string, number>()
-    for (const row of answer.reviews) {
-      tally.set(row.review.repo, (tally.get(row.review.repo) ?? 0) + 1)
-    }
-    everyRepo.value = tally
-  },
-  { immediate: true },
-)
+const repos = desk.repos()
 
 const repoTabs = computed(() => [
   { value: ALL_REPOSITORIES, label: 'All repositories' },
-  ...[...(everyRepo.value ?? new Map())
-    .entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([name, rows]) => ({ value: name, label: name, count: rows })),
+  ...(repos.data.value ?? []).map(item => ({ value: item.repo, label: item.repo })),
 ])
 
 /**
@@ -127,7 +115,7 @@ function isEmpty(answer: { reviews: ReviewListItem[] }): boolean {
       <template #default="{ data }">
         <div class="top">
           <h1 class="rd-display">
-            {{ data.reviews.length === 1 ? '1 review' : `${data.reviews.length} reviews` }}
+            {{ count(data.reviews.length, 'review') }}
           </h1>
           <p class="rd-meta aside-line">
             Every review the record holds, whatever became of it. How long one took is on
@@ -140,6 +128,7 @@ function isEmpty(answer: { reviews: ReviewListItem[] }): boolean {
             v-model="repo"
             label="Which repository to show"
             :options="repoTabs"
+            :disabled="repos.pending.value && !repos.loaded.value"
           />
           <!--
             **The sort, said out loud**, the way the queue says "Oldest first". Newest

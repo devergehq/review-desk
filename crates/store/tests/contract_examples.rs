@@ -1926,24 +1926,21 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
         })
         .collect::<Vec<_>>();
 
-    // Posted, and with the author. The three counts come back whatever the record holds;
-    // nulling them where nothing could have measured one is the *server's* decision, as
-    // `entities::inbox`'s header says, so this document carries the figures and the two
-    // facts that qualify them.
+    // Posted, and with the author. **The figures plain, and the nulling left to the
+    // server**, which is what `entities::inbox`'s header says the division is.
+    //
+    // A copy of the server's rule stood here and was deleted: it asserted nothing. `check`
+    // walks the example's leaf paths and asserts one direction — a value in the example
+    // must not be null from the store — and `at` searches every element of an array for a
+    // non-null, so the one harvested item in `getInbox.response.json` satisfies it on its
+    // own. A rule that can only turn a value *to* null could make this test harder to pass
+    // and never easier. What makes it mean anything is the `answered_review` seed below,
+    // which gives the store a review those figures are real measurements of.
     let posted = store
         .posted_reviews_awaiting_author(None)
         .expect("posted reviews awaiting their author")
         .iter()
         .map(|item| {
-            let harvested = item.review.harvested_at.is_some();
-            let readable = harvested && item.findings_linked > 0;
-            let counted = |count: i64, could_look: bool| {
-                if count > 0 || could_look {
-                    json!(count)
-                } else {
-                    Value::Null
-                }
-            };
             json!({
                 "review_id": item.review.id,
                 "pull_request": pull_request(&item.review),
@@ -1956,15 +1953,25 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
                 "harvested_at": item.review.harvested_at,
                 "findings": item.findings,
                 "findings_linked": item.findings_linked,
-                "replies": counted(item.response.replies, readable),
-                "threads_resolved": counted(item.response.threads_resolved, readable),
-                "code_changed_after": counted(item.response.code_changed_after, harvested),
+                "replies": item.response.replies,
+                "threads_resolved": item.response.threads_resolved,
+                "code_changed_after": item.response.code_changed_after,
             })
         })
         .collect::<Vec<_>>();
 
     let tickets = store.filed_nit_tickets(None, None).expect("filed tickets");
-    let items = briefs.len() + drafts.len() + replies.len() + proposals.len() + in_progress.len();
+    // **The five waiting groups, and not the other two.** This file held the third answer
+    // to that sum — it added the reviews in progress and left out the developer's own pull
+    // requests — and survived the reconciliation in DEV-930 because `check` walks the
+    // example's leaf *paths* and never its values. The server's own count and
+    // `conformance.rs`'s assertion are the other two; all three say the same thing now.
+    //
+    // `own_prs` is the empty list below: nothing lists the developer's own pull requests.
+    // Written as a term rather than left out, so that the day something supplies it, this
+    // sum is already right.
+    let own_prs: Vec<Value> = Vec::new();
+    let items = briefs.len() + drafts.len() + replies.len() + own_prs.len() + proposals.len();
     let repos = store
         .list_repos()
         .expect("the repositories")
@@ -1979,7 +1986,7 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
         "drafts_to_approve": drafts,
         "author_replies": replies,
         // No source: nothing lists the developer's own pull requests.
-        "own_prs_without_reviewer": [],
+        "own_prs_without_reviewer": own_prs,
         "proposed_rules": proposals,
         "in_progress": in_progress,
         "posted_awaiting_author": posted,

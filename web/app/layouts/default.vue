@@ -28,26 +28,24 @@
  */
 const route = useRoute()
 
-const links = computed(() => [
-  {
-    label: 'Queue',
-    to: '/',
-    current: (path: string) => path === '/',
-    section: (path: string) => path === '/',
-  },
-  {
-    label: 'Reviews',
-    to: '/reviews',
-    current: (path: string) => path === '/reviews',
-    section: (path: string) => path.startsWith('/reviews'),
-  },
-  {
-    label: 'Rules',
-    to: '/rules',
-    current: (path: string) => path === '/rules',
-    section: (path: string) => path.startsWith('/rules'),
-  },
-])
+const LINKS = [
+  { label: 'Queue', to: '/' },
+  { label: 'Reviews', to: '/reviews' },
+  { label: 'Rules', to: '/rules' },
+]
+
+/** Whether this is the page being read. The narrower claim, and `aria-current`'s. */
+const isCurrent = (to: string, path: string) => path === to
+
+/**
+ * Whether this is the part of the app being read, which is what the underline marks.
+ *
+ * **The Queue is the exception and it is stated here rather than left to look like an
+ * inconsistency**: every path starts with `/`, so the prefix rule would underline Queue on
+ * every screen. It owns one path and no children.
+ */
+const isSection = (to: string, path: string) =>
+  (to === '/' ? path === '/' : path.startsWith(to))
 </script>
 
 <template>
@@ -65,12 +63,12 @@ const links = computed(() => [
         aria-label="Review Desk"
       >
         <NuxtLink
-          v-for="link in links"
+          v-for="link in LINKS"
           :key="link.label"
           :to="link.to"
           class="link"
-          :class="{ 'link--current': link.section(route.path) }"
-          :aria-current="link.current(route.path) ? 'page' : undefined"
+          :class="{ 'link--current': isSection(link.to, route.path) }"
+          :aria-current="isCurrent(link.to, route.path) ? 'page' : undefined"
         >
           {{ link.label }}
         </NuxtLink>

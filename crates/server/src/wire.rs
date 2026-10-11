@@ -120,7 +120,7 @@ pub fn review(review: &Review) -> Value {
 /// has no `harvested_at` condition, so the same screen was about to draw those replies
 /// under "Needs you" while this group said nobody had measured whether the author had
 /// replied.
-pub fn inbox_posted(posted: &PostedReview, rounds_on_pr: i64) -> Value {
+pub fn inbox_posted(posted: &PostedReview) -> Value {
     let review = &posted.review;
     let harvested = review.harvested_at.is_some();
 
@@ -141,7 +141,13 @@ pub fn inbox_posted(posted: &PostedReview, rounds_on_pr: i64) -> Value {
         "review_id": review.id,
         "pull_request": inbox_pr(review),
         "round": review.round,
-        "rounds_on_pr": rounds_on_pr,
+        // **The same number as `round`, and read here rather than passed in.** The store
+        // returns only the newest round of a pull request, so the round this review is on
+        // *is* the highest that pull request has reached. Served because the contract's
+        // field exists so no screen has to know that; taken as a parameter it would have
+        // been a value only one caller could get right, with the reason it is equal
+        // living at that caller rather than here.
+        "rounds_on_pr": review.round,
         "posted_at": rfc3339_or_null(posted.posted_at),
         "posted_as": posted.posted_as.map(|event| event.as_str()),
         "pr_state": review.pr_state.map(|state| state.as_str()),
@@ -167,8 +173,12 @@ pub fn review_list_item(at: &ReviewAtStep) -> Value {
         "last_activity_at": rfc3339_or_null(at.review.last_activity_at),
     });
 
-    if let Some(step) = &at.step {
-        let object = item.as_object_mut().expect("a JSON object");
+    // `if let`, not `as_object_mut().expect(...)`: `finding_in_round` below grows a
+    // document the same way and without a panic path, and two idioms for one operation in
+    // one file is how the one that can panic ends up copied. The match always holds — the
+    // `json!` above is an object literal — which is exactly why nothing should panic if it
+    // somehow did not.
+    if let (Some(step), Value::Object(object)) = (&at.step, &mut item) {
         object.insert("step_number".to_string(), json!(step.number));
         object.insert("step_name".to_string(), json!(step.name.as_str()));
         object.insert("step_state".to_string(), json!(step.state.as_str()));
