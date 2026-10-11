@@ -1616,18 +1616,32 @@ fn the_contracts_real_length_brief_is_at_real_length() {
         // writing `ExportContext` into five summaries took the example from 24/24 to
         // 23/24 and CI said nothing. Its remedy is the right one and worth repeating: a
         // part lists its files, so the summary does not need to name them.
-        for word in summary.split_whitespace() {
-            let bare = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '_');
+        for banned in ["::", "/", "`"] {
             assert!(
-                !bare.contains("::") && !bare.contains('/') && !bare.contains('`'),
-                "{where_}: a summary is plain English, and this holds {bare:?}: {summary}"
+                !summary.contains(banned),
+                "{where_}: a summary is plain English, and this holds {banned:?}: {summary}"
             );
-            let camel = bare.chars().skip(1).any(|c| c.is_ascii_uppercase())
-                && bare.chars().next().is_some_and(|c| c.is_ascii_alphabetic());
+        }
+        // **On the raw string, as the `one_line` block above does.** An earlier version
+        // trimmed the punctuation off each word first -- which strips the very backticks
+        // it then looked for, so the one rule that reliably catches a code token was
+        // dead. The `allowed_columns` summary this commit removed would have passed it.
+        //
+        // **A lowercase letter followed by an uppercase one**, which is what a class name
+        // looks like. Not "any capital after the first": that flags CSV, JSON, SQL and CI,
+        // which are plain English and which the example has no way to say otherwise. It
+        // does not catch a single-capital name like `Redaction` written bare -- nothing
+        // here can tell that from a capitalised word -- and the backtick rule above is
+        // what catches it when a session marks it as code, which a session does.
+        for word in summary.split_whitespace() {
+            let camel = word
+                .chars()
+                .zip(word.chars().skip(1))
+                .any(|(one, two)| one.is_ascii_lowercase() && two.is_ascii_uppercase());
             assert!(
                 !camel,
                 "{where_}: a summary names no class, and this looks like one -- \
-                 {bare:?}: {summary}"
+                 {word:?}: {summary}"
             );
         }
 

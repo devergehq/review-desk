@@ -1538,9 +1538,14 @@ describe('Solution', () => {
      */
     expect(opened.find('.summary').text())
       .toContain('The slot that lived on the request is gone')
-    /* And it says more than the row's own line, which is what the fold is for. */
-    expect(opened.find('.summary').text())
-      .not.toBe(row(page, 'The export context').find('.one-line').text())
+    /*
+     * And it says more than the row's own line, which is what the fold is for —
+     * **normalised the way the store test normalises it**, so the one line with a full
+     * stop added does not satisfy this while showing the reader the same sentence twice.
+     */
+    const plain = (text: string) => text.trim().replace(/\.+$/, '')
+    expect(plain(opened.find('.summary').text()))
+      .not.toBe(plain(row(page, 'The export context').find('.one-line').text()))
   })
 
   it('lists one line per finding in the part, linking each to that finding', async () => {

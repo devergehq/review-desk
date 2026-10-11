@@ -166,6 +166,28 @@ describe('the invented example and the fixtures', () => {
   })
 
   /**
+   * **The two contract examples describe the same parts.**
+   *
+   * `confirmBrief.response.real-length.json` is the brief the end-to-end seed feeds the
+   * binary and the document review-craft's `brief_lint.py` is run against;
+   * `getReview.response.code-review.json` is the whole review the pages render, and the
+   * fixture above is pinned to it. Nothing pinned the first two to each other — so a part
+   * summary edited in the second only would be rendered by every page, seeded into every
+   * end-to-end run, and never seen by the linter.
+   *
+   * **That is not hypothetical: this change edited those copies separately four times.**
+   * Once it went wrong, and the writing rule it broke was checked against the copy that
+   * had not drifted.
+   */
+  it('describes the same parts in both contract examples', () => {
+    const brief = example<{ parts: unknown[] }>('confirmBrief.response.real-length.json')
+    const review = example<ReviewDetail>('getReview.response.code-review.json')
+
+    /* The served review derives a part's line totals; the brief document carries them too. */
+    expect(review.brief?.parts).toEqual(brief.parts)
+  })
+
+  /**
    * **The review's two tallies are counted from its own findings.**
    *
    * The server derives both — `wire::severity_counts` and `disposition_counts` count every
