@@ -225,12 +225,39 @@ export function activityLabel(
  * estimate of a measurement somebody else was making.
  */
 
-/** A step's outcome on the trail: what the store recorded, else its state. */
-export function layerOutcome(layer: {
-  state: ReviewLayerState
-  detail?: string | null
-}): string {
-  return layerDetail(layer.detail) || LAYER_OUTCOMES[layer.state]
+/**
+ * A step's outcome on the trail: what the store recorded, else its state.
+ *
+ * **Step 7 leads with when a harvest last read the review**, and that is DEV-933. The
+ * record holds the step's words — "nothing back yet", "2 replies back" — and the moment
+ * it was written, and the two answer different questions: what came back, and whether
+ * anything is still looking. The developer who asked what the harvest step was for was
+ * asking the second one.
+ *
+ * **Worded here, at the moment of drawing, and never stored.** A detail is a frozen
+ * string: "read 3 min ago" written into one is a lie fifteen minutes later, and the
+ * harvest runs every fifteen minutes. The record keeps an instant — the layer row's
+ * `updated_at` — and this says it in words each time the page draws, which is what
+ * `sinceLabel` does everywhere else.
+ *
+ * **Only while the step is `running`.** `running` on step 7 means the pull request is
+ * open and still being watched, so "when was it last looked at" is live. Once it is
+ * `done` the pull request has merged or closed and nothing will read it again; "read 2
+ * months ago" beside "merged, 3 replies back" would be a fossil, and the line says how it
+ * ended instead.
+ */
+export function layerOutcome(
+  layer: {
+    name?: ReviewLayerName
+    state: ReviewLayerState
+    detail?: string | null
+    updated_at?: Instant | null
+  },
+  now: Date = new Date(),
+): string {
+  const said = layerDetail(layer.detail) || LAYER_OUTCOMES[layer.state]
+  const watching = layer.name === 'harvest' && layer.state === 'running' && layer.updated_at
+  return watching ? `read ${sinceLabel(layer.updated_at, now)} · ${said}` : said
 }
 
 /** Which of the three ways a layer pill is drawn. */

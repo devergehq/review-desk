@@ -702,7 +702,16 @@ Three things are worth saying about it:
   would put two steps of the trail in progress at once.
 
 The time it read is the layer row's `updated_at`, not a date written into a fact: every
-other time this record holds is an instant the screen words.
+other time this record holds is an instant the screen words — and **the screen words this
+one**. While step 7 is `running` the trail draws "read 3 min ago · nothing back yet", the
+read time first, because the question a developer asks of this step is whether anything is
+still looking. Once it is `done` the pull request has settled and nothing will read it
+again, so the line is what the harvest found and no read time.
+
+DEV-933's own table asked for "read 3 min ago" *in the detail*. It is not stored, and that
+is the one place this slice departs from the issue: a detail is a frozen string, so a
+relative time written into one is wrong fifteen minutes later — and the harvest runs every
+fifteen minutes.
 
 
 ## Sign-off

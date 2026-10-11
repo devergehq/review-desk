@@ -1219,7 +1219,14 @@ test.describe('the three step pages of one review', () => {
         await page.reload()
         await expect(page.locator('h1')).toBeVisible()
         await page.waitForLoadState('networkidle')
-        await expect(step.locator('.outcome')).toHaveText(/3 replies back/)
+        /*
+           The read time first, worded from the layer row's `updated_at` at the moment
+           of drawing — "just now", because `layer set` has only this second written it.
+           What came back follows. Neither the word "running" nor a stored relative time
+           appears anywhere: DEV-933's own words on both.
+        */
+        await expect(step.locator('.outcome')).toHaveText(/read just now · 3 replies back/)
+        await expect(step.locator('.outcome')).not.toHaveText(/running/)
 
         expect(await positions(), `nothing moved at ${label}`).toEqual(before)
         expect(
