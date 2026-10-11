@@ -235,7 +235,18 @@ function cell(text: string): string {
    * the whole cell leaves the loop above with an empty list, and a row reading `…` says less
    * about the finding than a sentence cut mid-word does.
    */
-  if (kept.length === 0) return `${[...flat].slice(0, CELL_PROSE - 2).join('').trimEnd()} …`
+  if (kept.length === 0) {
+    const start = [...flat].slice(0, CELL_PROSE - 2).join('')
+    /*
+     * **And not ending inside a code span.** A cell with an odd number of backticks has an
+     * open span in it, and a table row is split on the pipes *outside* code spans — so one
+     * unclosed backtick can swallow the two cells after it.
+     */
+    const whole = start.split('`').length % 2 === 0
+      ? start.slice(0, start.lastIndexOf('`'))
+      : start
+    return `${whole.trimEnd()} …`
+  }
 
   return `${kept.join(' ')} …`
 }

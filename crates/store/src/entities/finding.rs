@@ -265,10 +265,15 @@ impl Store {
             params![review_id, seq, disposition, reason],
         )?;
 
-        // **Recomposed only while the draft can be written to.** The move that reaches here
-        // on an approved draft is one that changes nothing about the body, and recomposing
-        // would rewrite the characters the developer signed off for no reason at all.
-        if draft.is_some_and(|draft| draft.status.is_writable()) {
+        // **Recomposed when the move changes what posts, and not otherwise.** Two reasons,
+        // and the second is the one that is easy to miss. On an approved draft the move that
+        // reaches here changes nothing about the body, and recomposing would rewrite the
+        // characters the developer signed off for no reason at all. On a draft still being
+        // written, a recompose *clears the lint* — which is right when the body changed and
+        // wrong when it did not: a held-back finding moved to suppressed composes the same
+        // body, and clearing the result would make the record say nobody had checked words
+        // that had just been checked.
+        if changes_what_posts && draft.is_some_and(|draft| draft.status.is_writable()) {
             composition::recompose(&tx, review_id, composition::Lint::Clear, self.now())?;
         }
 

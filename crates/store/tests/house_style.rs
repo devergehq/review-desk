@@ -1055,3 +1055,86 @@ fn a_title_too_long_to_clamp_at_a_word_keeps_the_start_of_it() {
         "and it is the start of the claim rather than nothing: {cell}"
     );
 }
+
+#[test]
+fn a_move_that_changes_nothing_leaves_the_lint_that_measured_the_body() {
+    let (_dir, store) = temp_store();
+    let review = house_shape(&store);
+
+    store
+        .add_finding(
+            review,
+            NewFinding {
+                lens: "naming".to_string(),
+                severity: Severity::Nit,
+                claim: "the accessor repeats the type in its name".to_string(),
+                disposition: Disposition::HeldBack,
+                disposition_reason: Some("a nit; it goes in the ticket".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("a held-back nit");
+
+    // The same blocks again, with what the review-craft lint said about the body they
+    // compose. A draft at `ready` is the state the developer reads it in.
+    store
+        .put_draft(
+            review,
+            NewDraft {
+                body: String::new(),
+                status: DraftStatus::Ready,
+                lint: Some(review_desk_store::DraftLint {
+                    passes: Some(true),
+                    visible_words: Some(125),
+                    word_budget: Some(150),
+                    findings_in_body: Some(6),
+                    findings_expected: Some(6),
+                    raised_before_on_pr: Some(0),
+                    errors: None,
+                    checked_at: None,
+                }),
+                sections: Some(house_blocks()),
+            },
+        )
+        .expect("the draft, linted");
+
+    let before = store.get_draft(review).expect("draft");
+    assert_eq!(before.lint.passes, Some(true));
+
+    // **The lint goes with the body it measured, so a move that composes the same body
+    // leaves it alone.** Held back to suppressed is such a move: neither disposition posts,
+    // so no block's words change — and clearing the result would have the record say nobody
+    // had checked words that had just been checked.
+    store
+        .set_finding_disposition(
+            review,
+            7,
+            Disposition::Suppressed,
+            Some("the file is replaced next week".to_string()),
+        )
+        .expect("a move that changes nothing about the body");
+
+    let after = store.get_draft(review).expect("draft");
+    assert_eq!(after.body, before.body);
+    assert_eq!(
+        after.lint.passes,
+        Some(true),
+        "the lint still describes this body"
+    );
+
+    // And a move that does change the body clears it, which is the rule it is an exception
+    // to rather than a hole in.
+    store
+        .set_finding_disposition(
+            review,
+            1,
+            Disposition::HeldBack,
+            Some("for the ticket".to_string()),
+        )
+        .expect("the blocker is held back");
+    assert_eq!(
+        store.get_draft(review).expect("draft").lint.passes,
+        None,
+        "a body that changed is a body nobody has checked"
+    );
+}

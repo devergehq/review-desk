@@ -499,6 +499,13 @@ fn cell(text: &str) -> String {
     // boundary, which is all there is to cut on.
     if kept.is_empty() {
         let start: String = flat.chars().take(CELL_PROSE - 2).collect();
+        // **And not ending inside a code span.** A cell with an odd number of backticks has
+        // an open span in it, and a table row is split on the pipes *outside* code spans —
+        // so one unclosed backtick can swallow the two cells after it.
+        let start = match start.matches('`').count() % 2 {
+            1 => start[..start.rfind('`').unwrap_or(0)].to_string(),
+            _ => start,
+        };
         return format!("{} …", start.trim_end());
     }
 
