@@ -379,6 +379,7 @@ pub fn seed(store: &Store) -> Seeded {
             &review_desk_store::ReviewFacts {
                 title: Some("Retry failed webhook deliveries".to_string()),
                 ticket_id: Some("ABC-231".to_string()),
+                ticket_url: None,
                 changed_lines: Some(214),
                 not_checked: Some(
                     "The admin screens, which this change does not touch.".to_string(),

@@ -523,6 +523,12 @@ pub struct Review {
     pub title: Option<String>,
     /// The Linear ticket, opaque.
     pub ticket_id: Option<String>,
+    /// Where that ticket is, as the session was told.
+    ///
+    /// **Given, never derived.** `ticket_id` is opaque and the tracker is the session's
+    /// knowledge, so this is an address somebody passed or it is `None`. Always `https`:
+    /// see [`crate::Store::set_review_facts`], which refuses anything else.
+    pub ticket_url: Option<String>,
     /// Additions plus deletions, as the caller supplied them.
     pub changed_lines: Option<i64>,
     /// What the review did not look at, in the reviewer's own words.
@@ -577,6 +583,8 @@ pub struct NewReview {
     pub title: Option<String>,
     #[serde(default)]
     pub ticket_id: Option<String>,
+    #[serde(default)]
+    pub ticket_url: Option<String>,
     #[serde(default)]
     pub changed_lines: Option<i64>,
     #[serde(default)]
@@ -1322,6 +1330,9 @@ pub struct ReviewFacts {
     pub title: Option<String>,
     #[serde(default)]
     pub ticket_id: Option<String>,
+    /// Where that ticket is. `https` only; anything else is refused.
+    #[serde(default)]
+    pub ticket_url: Option<String>,
     #[serde(default)]
     pub changed_lines: Option<i64>,
     #[serde(default)]
@@ -1334,6 +1345,7 @@ impl ReviewFacts {
     pub fn is_empty(&self) -> bool {
         self.title.is_none()
             && self.ticket_id.is_none()
+            && self.ticket_url.is_none()
             && self.changed_lines.is_none()
             && self.not_checked.is_none()
     }

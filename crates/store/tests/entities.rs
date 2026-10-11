@@ -28,6 +28,7 @@ fn a_review_is_created_and_read_back() {
             round: 2,
             title: Some("Record what a review decided".to_string()),
             ticket_id: Some("DEV-850".to_string()),
+            ticket_url: Some("https://linear.app/deverge/issue/DEV-850".to_string()),
             changed_lines: Some(214),
             session_id: Some("allele-session-1".to_string()),
             ledger_id: Some("ledger-9".to_string()),
@@ -599,6 +600,7 @@ fn a_review_carries_the_pull_requests_own_facts() {
             &ReviewFacts {
                 title: Some("Retry failed webhook deliveries".to_string()),
                 ticket_id: Some("ABC-231".to_string()),
+                ticket_url: Some("https://linear.app/acme/issue/ABC-231".to_string()),
                 changed_lines: Some(214),
                 not_checked: None,
             },
@@ -610,6 +612,11 @@ fn a_review_carries_the_pull_requests_own_facts() {
         Some("Retry failed webhook deliveries")
     );
     assert_eq!(with_facts.ticket_id.as_deref(), Some("ABC-231"));
+    assert_eq!(
+        with_facts.ticket_url.as_deref(),
+        Some("https://linear.app/acme/issue/ABC-231"),
+        "the id and its address are two fields, and the second is what a link needs"
+    );
     assert_eq!(with_facts.changed_lines, Some(214));
     assert_eq!(with_facts.not_checked, None);
 
@@ -634,6 +641,107 @@ fn a_review_carries_the_pull_requests_own_facts() {
         later.not_checked.as_deref(),
         Some("the worker's behaviour across a deploy")
     );
+    assert_eq!(
+        later.ticket_url.as_deref(),
+        Some("https://linear.app/acme/issue/ABC-231"),
+        "including the ticket's address"
+    );
+}
+
+/// **A ticket's address that is not `https` never reaches the column.**
+///
+/// The one thing a stored address is for is being drawn as a link, so this is the whole of
+/// the risk: a `javascript:` value in an `href` runs. Refused at the write, which is the
+/// only place it can be refused once — `review open --ticket-url` and `POST /reviews` are
+/// two ways to the same column and both come through here.
+///
+/// `http` is refused with the rest, deliberately. Review Desk never fetches a tracker, so
+/// there is no reading for which the insecure form is the only one available.
+#[test]
+fn a_tickets_address_is_refused_unless_it_is_https() {
+    let (_dir, store) = temp_store();
+    let review = seed_review(&store);
+
+    for refused in [
+        "javascript:alert(1)",
+        "http://linear.app/acme/issue/ABC-231",
+        "data:text/html,<script>alert(1)</script>",
+        "linear.app/acme/issue/ABC-231",
+        "HTTPS://linear.app/acme/issue/ABC-231",
+    ] {
+        match store.set_review_facts(
+            review.id,
+            &ReviewFacts {
+                ticket_url: Some(refused.to_string()),
+                ..Default::default()
+            },
+        ) {
+            Err(StoreError::InvalidValue { field, value, .. }) => {
+                assert_eq!(field, "ticket_url");
+                assert_eq!(value, refused, "the refusal names what was passed");
+            }
+            other => panic!("expected {refused:?} to be refused, got {other:?}"),
+        }
+    }
+
+    assert_eq!(
+        store.get_review(review.id).unwrap().ticket_url,
+        None,
+        "and nothing was written on the way to being refused"
+    );
+}
+
+/// An address with nothing in it is an argument nobody filled in, not a mistake.
+///
+/// The field is optional, and `--ticket-url ""` from a shell whose variable was empty is
+/// the ordinary way that happens. It reads as "no address", which is what it is — and it
+/// does not clear an address already held, because a fact left out is left as it was.
+#[test]
+fn a_blank_ticket_address_is_no_address_rather_than_an_error() {
+    let (_dir, store) = temp_store();
+    let review = seed_review(&store);
+
+    let blank = store
+        .set_review_facts(
+            review.id,
+            &ReviewFacts {
+                ticket_url: Some("   ".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("a blank address is accepted as none");
+    assert_eq!(blank.ticket_url, None);
+
+    let set = store
+        .set_review_facts(
+            review.id,
+            &ReviewFacts {
+                // Trimmed on the way in, so a copied-and-pasted address with a trailing
+                // newline is the same address.
+                ticket_url: Some(" https://linear.app/acme/issue/ABC-231\n".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("set the address");
+    assert_eq!(
+        set.ticket_url.as_deref(),
+        Some("https://linear.app/acme/issue/ABC-231")
+    );
+
+    let after = store
+        .set_review_facts(
+            review.id,
+            &ReviewFacts {
+                ticket_url: Some(String::new()),
+                ..Default::default()
+            },
+        )
+        .expect("a blank address changes nothing");
+    assert_eq!(
+        after.ticket_url.as_deref(),
+        Some("https://linear.app/acme/issue/ABC-231"),
+        "a blank address is a fact left out, and a fact left out is left as it was"
+    );
 }
 
 #[test]
@@ -643,6 +751,7 @@ fn opening_a_review_records_what_the_caller_knows_about_it() {
     let facts = ReviewFacts {
         title: Some("Retry failed webhook deliveries".to_string()),
         ticket_id: Some("ABC-231".to_string()),
+        ticket_url: Some("https://linear.app/acme/issue/ABC-231".to_string()),
         changed_lines: Some(214),
         not_checked: None,
     };

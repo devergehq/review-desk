@@ -471,6 +471,7 @@ impl Api {
         let stated = ReviewFacts {
             title: request.title,
             ticket_id: request.ticket_id,
+            ticket_url: request.ticket_url,
             changed_lines: request.changed_lines,
             not_checked: None,
         };
@@ -499,6 +500,10 @@ impl Api {
                 .and_then(|read| read.title.clone())
                 .filter(|_| opened.review.title.is_none()),
             ticket_id: None,
+            // Nothing resolves a ticket's address. Review Desk fetches nothing from a
+            // tracker, and GitHub does not know which ticket a pull request is for — so
+            // this is given by the caller or it stays empty, which is migration 16's rule.
+            ticket_url: None,
             changed_lines: resolved
                 .as_ref()
                 .and_then(|read| read.changed_lines)
@@ -1318,6 +1323,10 @@ struct StartReviewRequest {
     title: Option<String>,
     #[serde(default)]
     ticket_id: Option<String>,
+    /// Where that ticket is. `https` or the store refuses the call; nothing here fetches
+    /// it and nothing here derives it from `ticket_id`.
+    #[serde(default)]
+    ticket_url: Option<String>,
     #[serde(default)]
     changed_lines: Option<i64>,
 }

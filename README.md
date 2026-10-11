@@ -85,6 +85,22 @@ review-desk review open --repo devergehq/review-desk --pr 851 --head c0ffee1 \
   --not-checked "the dashboard against the real API; a database at version 1"
 ```
 
+**`--ticket-url` is where that ticket is, beside the id `--ticket` records.** Review Desk
+cannot work one out from the other: a ticket's id is opaque, and the tracker and its
+workspace are the calling session's knowledge, not the record's. Given it, the dashboard's
+header draws the id as a link; without it, as text.
+
+```sh
+review-desk review open --repo devergehq/review-desk --pr 851 --head c0ffee1 \
+  --ticket DEV-860 --ticket-url https://linear.app/deverge/issue/DEV-860
+```
+
+It must start `https://`, and anything else is refused rather than stored — before the
+review is opened, so a refused call spends no round. The one thing a stored address is for
+is being drawn as a link, and that is the whole of the reason: `http` is refused with the
+rest, because Review Desk never fetches a tracker and so never needs the insecure form.
+Nothing is ever read from the address.
+
 `review find` lists a pull request's rounds, newest first, for an agent that has lost
 an id:
 

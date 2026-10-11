@@ -21,6 +21,13 @@ pub enum ReviewCommand {
     /// without spending a round, so it is also how a finished session records what it
     /// did not check.
     ///
+    /// **`--ticket-url` is the ticket's address, beside the id `--ticket` records.**
+    /// Review Desk cannot work one out from the other — the tracker and its workspace are
+    /// the session's knowledge, not the record's — so the dashboard draws the id as a link
+    /// when this is given and as text when it is not. It must start `https://`, and a
+    /// value that does not is refused rather than stored: the one thing a stored address
+    /// is for is being drawn as a link. Nothing is ever fetched from it.
+    ///
     /// **Opening a later round hands back the previous round's findings**, ready to be
     /// carried with `finding carry`. A second-round review that cannot see round 1's
     /// findings cannot say "two fixed, two still open, one new", which is the whole of a
@@ -42,6 +49,9 @@ pub enum ReviewCommand {
         /// The Linear ticket the change is for.
         #[arg(long = "ticket", value_name = "ID")]
         ticket: Option<String>,
+        /// Where that ticket is. Must start `https://`; nothing is fetched from it.
+        #[arg(long = "ticket-url", value_name = "URL")]
+        ticket_url: Option<String>,
         /// Additions plus deletions in the change.
         #[arg(long = "changed-lines", value_name = "N")]
         changed_lines: Option<i64>,
@@ -119,6 +129,7 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
             head,
             title,
             ticket,
+            ticket_url,
             changed_lines,
             not_checked,
         } => {
@@ -130,6 +141,7 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
                 &ReviewFacts {
                     title: title.clone(),
                     ticket_id: ticket.clone(),
+                    ticket_url: ticket_url.clone(),
                     changed_lines: *changed_lines,
                     not_checked: not_checked.clone(),
                 },
@@ -303,6 +315,10 @@ fn show_lines(full: &FullReview) -> String {
     }
     for (label, value) in [
         ("ticket", review.ticket_id.clone()),
+        // The address beside the id, on its own line. Printed because this is the only
+        // view a person reads, and an address the record holds and nothing shows is one
+        // nobody can tell from an address nobody passed.
+        ("ticket url", review.ticket_url.clone()),
         ("changed lines", review.changed_lines.map(|n| n.to_string())),
         ("not checked", review.not_checked.clone()),
     ] {

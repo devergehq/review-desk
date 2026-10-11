@@ -211,6 +211,7 @@ fn seed(store: &Store) -> Seeded {
             &ReviewFacts {
                 title: Some("Retry failed webhook deliveries".to_string()),
                 ticket_id: Some("ABC-231".to_string()),
+                ticket_url: None,
                 changed_lines: Some(214),
                 not_checked: Some(
                     "The queue worker's behaviour under a deploy restart was not run.".to_string(),
@@ -810,6 +811,7 @@ fn seed(store: &Store) -> Seeded {
             round: 1,
             title: Some("Hold the queue connection open".to_string()),
             ticket_id: Some("ABC-219".to_string()),
+            ticket_url: None,
             changed_lines: Some(86),
             session_id: Some("ses_41b7c208".to_string()),
             ledger_id: Some("ledger-2026-10-06-401".to_string()),
@@ -881,6 +883,7 @@ fn seed(store: &Store) -> Seeded {
             round: 1,
             title: Some("Split the export job".to_string()),
             ticket_id: Some("ABC-204".to_string()),
+            ticket_url: None,
             changed_lines: Some(512),
             session_id: Some("ses_2a7e9014".to_string()),
             ledger_id: Some("ledger-2026-10-08-398".to_string()),

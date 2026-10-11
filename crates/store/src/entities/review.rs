@@ -9,7 +9,8 @@ use crate::model::{
 };
 use crate::{is_unique_violation, normalise, Store};
 
-pub(super) const COLUMNS: &str = "id, repo, pr, head_sha, round, title, ticket_id, changed_lines, \
+pub(super) const COLUMNS: &str = "id, repo, pr, head_sha, round, title, ticket_id, \
+                       ticket_url, changed_lines, \
                        not_checked, session_id, ledger_id, github_review_id, pr_state, \
                        pr_state_at, harvested_at, nit_ticket_status, nit_ticket_id, \
                        nit_ticket_requested_at, nit_ticket_filed_at, last_activity_at, \
@@ -30,9 +31,10 @@ impl Store {
                 // the first one a session makes. Set here rather than by a second statement so
                 // that a review never exists with its activity unset.
                 "INSERT INTO reviews
-                     (repo, pr, head_sha, round, title, ticket_id, changed_lines,
-                      session_id, ledger_id, github_review_id, last_activity_at, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
+                     (repo, pr, head_sha, round, title, ticket_id, ticket_url,
+                      changed_lines, session_id, ledger_id, github_review_id,
+                      last_activity_at, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)",
                 params![
                     new.repo,
                     new.pr,
@@ -40,6 +42,7 @@ impl Store {
                     new.round,
                     new.title,
                     new.ticket_id,
+                    new.ticket_url,
                     new.changed_lines,
                     new.session_id,
                     new.ledger_id,
@@ -150,6 +153,13 @@ impl Store {
         head_sha: &str,
         facts: &ReviewFacts,
     ) -> Result<OpenedReview> {
+        // **The facts are checked before a round is spent.** `open_review` creates the
+        // review, so a `ticket_url` refused on the second step would leave behind a review
+        // the refused call appears not to have made — and on a head commit nobody had
+        // reviewed yet it would have spent a round number doing it. Refusing here costs one
+        // string comparison and keeps `review open --ticket-url` all-or-nothing.
+        ticket_url(facts.ticket_url.as_deref())?;
+
         let opened = self.open_review(repo, pr, head_sha)?;
         if facts.is_empty() {
             return Ok(opened);
@@ -159,12 +169,21 @@ impl Store {
         Ok(OpenedReview { review, ..opened })
     }
 
-    /// Record what is known about the pull request: its title, its ticket, how many
-    /// lines it changed and what the review did not look at.
+    /// Record what is known about the pull request: its title, its ticket and that
+    /// ticket's address, how many lines it changed and what the review did not look at.
     ///
     /// A fact left `None` is left as it was, so one call can set the title without
     /// clearing what was not checked.
+    ///
+    /// **A `ticket_url` that is not `https` is refused here**, before anything is
+    /// written, with [`StoreError::InvalidValue`]. This is the one gate every caller
+    /// passes through — the command line, the local API and the dashboard behind it — and
+    /// the only place the refusal can be made once. The reason is in migration 16: the one
+    /// thing a stored address is for is being drawn as a link, so a `javascript:` or
+    /// `data:` value is the whole of the risk and it never reaches the column.
     pub fn set_review_facts(&self, id: i64, facts: &ReviewFacts) -> Result<Review> {
+        let ticket_url = ticket_url(facts.ticket_url.as_deref())?;
+
         // Checked first, so a bad id is NotFound rather than a silent update of
         // nothing.
         self.get_review(id)?;
@@ -173,13 +192,15 @@ impl Store {
             "UPDATE reviews SET
                  title         = COALESCE(?2, title),
                  ticket_id     = COALESCE(?3, ticket_id),
-                 changed_lines = COALESCE(?4, changed_lines),
-                 not_checked   = COALESCE(?5, not_checked)
+                 ticket_url    = COALESCE(?4, ticket_url),
+                 changed_lines = COALESCE(?5, changed_lines),
+                 not_checked   = COALESCE(?6, not_checked)
              WHERE id = ?1",
             params![
                 id,
                 facts.title,
                 facts.ticket_id,
+                ticket_url,
                 facts.changed_lines,
                 facts.not_checked
             ],
@@ -485,11 +506,47 @@ fn validate(new: NewReview) -> Result<NewReview> {
         });
     }
 
+    let url = ticket_url(new.ticket_url.as_deref())?;
+
     Ok(NewReview {
         repo: repo.to_string(),
         head_sha: normalise::head_sha(&new.head_sha),
+        ticket_url: url,
         ..new
     })
+}
+
+/// A ticket's address on its way into the record: trimmed, and `https` or refused.
+///
+/// **Both writers call this, which is the point.** `create_review` and `set_review_facts`
+/// are two ways to the same column, and a check on one of them is a check on neither —
+/// `review open --ticket-url` reaches the second and `POST /reviews` can reach either.
+///
+/// A value that is nothing but whitespace is `None` rather than an error: that is an
+/// argument nobody filled in, and the field is optional. A value that is *something* and
+/// not `https` is a mistake worth naming, because the caller plainly meant to pass an
+/// address and the one they passed cannot be drawn as a link.
+///
+/// **`https://` and nothing else**, lowercase scheme as every tracker emits it. `http` is
+/// refused with the rest: a ticket read over plain HTTP is a ticket read by anyone on the
+/// path, and Review Desk's own rule is that it never fetches a tracker, so there is no
+/// case where the insecure form is the only one available.
+fn ticket_url(given: Option<&str>) -> Result<Option<String>> {
+    let Some(given) = given else {
+        return Ok(None);
+    };
+    let trimmed = given.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    if !trimmed.starts_with("https://") {
+        return Err(StoreError::InvalidValue {
+            field: "ticket_url",
+            value: trimmed.to_string(),
+            expected: "the ticket's address, starting https://".to_string(),
+        });
+    }
+    Ok(Some(trimmed.to_string()))
 }
 
 /// Build a review from a row selecting [`COLUMNS`].
@@ -502,6 +559,7 @@ pub(super) fn row_to_review(row: &Row<'_>) -> rusqlite::Result<Review> {
         round: row.get("round")?,
         title: row.get("title")?,
         ticket_id: row.get("ticket_id")?,
+        ticket_url: row.get("ticket_url")?,
         changed_lines: row.get("changed_lines")?,
         not_checked: row.get("not_checked")?,
         session_id: row.get("session_id")?,
