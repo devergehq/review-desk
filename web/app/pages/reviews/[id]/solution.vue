@@ -742,14 +742,24 @@ function severityWord(severity: string, n: number): string {
 /*
  * The marks keep their own lane and wrap as whole circles if a part fixes several.
  *
- * **`0 1 auto` and a half-width cap, not `flex: none`.** Fixed at max-content the lane could
- * not wrap at all, and nothing caps how many problems a part may fix: nine marks came to
- * 282px of a 340px card and left the title six pixels, which is defect 5 again wearing a
- * different hat. Capped, the lane wraps into rows of its own and the title always has half
- * the head.
+ * **It does not shrink, and it is capped at half the head.** The two have to be said
+ * separately, because each alone is wrong.
+ *
+ * `flex: none` alone fixes the lane at max-content, so its own `flex-wrap` can never fire
+ * and nothing caps how many problems a part may fix: nine marks measure 282px of a 340px
+ * card and leave the title six pixels, which is defect 5 again wearing a different hat.
+ *
+ * Letting it shrink instead is worse in the common case. A shrinkable lane gives up width
+ * to a title whose own basis is far larger, collapses to its min-content — one circle — and
+ * stacks two marks vertically where they had sat side by side. That was on the Solution
+ * picture for one commit.
+ *
+ * So: no shrink, and a `max-width` that clamps before any shrinking would be needed. Two
+ * marks are 58px and stay on one line; nine are capped at half the head and wrap into rows
+ * of their own, and the title always has the other half.
  */
 .part-marks {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
