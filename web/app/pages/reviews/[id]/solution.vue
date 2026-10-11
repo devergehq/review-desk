@@ -122,19 +122,27 @@ function whyNoParts(layers: ReviewLayer[]): string {
 /**
  * The line under the heading: the size of the change, when there is one to measure.
  *
- * **The files the pull request actually changed, which is not every file the parts name.**
- * This counted `allFiles`, so a part claiming a file outside the diff added one to the
- * page's single measurement of the change — three of twenty-seven on the invented example.
- * The line said 27 while the table under it labelled three of those rows "unchanged", which
- * is the page disagreeing with itself about the one number it states.
+ * **It counts every file the parts name, including the ones outside the diff**, and that
+ * overstates the change by three on the invented example. It is left that way on purpose,
+ * and the reasoning is worth writing down because the obvious fix is wrong.
  *
- * It was wrong before this change too, and quieter: `in_diff: false` existed but no group
- * was named after it. Found reviewing DEV-919's own diff.
+ * Counting only `in_diff` files makes this line say 24 — and the seven rows below it still
+ * say 3, 4, 5, 4, 5, 5 and 1, which sum to 27. Only one of those rows is marked
+ * "unchanged"; parts 4 and 5 each claim a file outside the diff behind a size cell that
+ * says nothing about it. So the honest-looking number makes the page disagree with itself,
+ * and a reader adding the column up is out by two with nothing to tell them why.
+ *
+ * Both halves — this line and the rows — count claimed files, so they agree. Making them
+ * both count changed files means marking a partly-outside part on its row, which is a
+ * change to the row that board A10 does not draw and DEV-919 did not ask for. Filed as the
+ * smaller thing it is; the fold inside each row already lists which file is which.
+ *
+ * This predates DEV-919. Found reviewing its diff, fixed, and the fix reverted when
+ * reviewing *that* — which is the whole of the argument above.
  */
 function sub(brief: Brief): string | null {
   if (!parts(brief).length) return null
-  const changed = allFiles(brief).filter(file => file.in_diff).length
-  return `${count(changed, 'file')}, ${linesAdded(brief)} lines added `
+  return `${count(allFiles(brief).length, 'file')}, ${linesAdded(brief)} lines added `
     + `and ${linesRemoved(brief)} removed, in ${count(parts(brief).length, 'part')}.`
 }
 
@@ -432,9 +440,9 @@ function inNoPart(data: ReviewDetail, brief: Brief): Finding[] {
                             thing on the line that says so, and dropping it was a regression: the cards
                             this replaces drew it, and DEV-892 is why.
                           --><span
-                            v-if="roundStatusLabel(finding)"
+                            v-if="carriedAfterTitle(finding)"
                             class="carried"
-                          >{{ roundStatusLabel(finding) }}</span></span>
+                          >{{ carriedAfterTitle(finding) }}</span></span>
                           <span class="stands">{{ standsAt(finding) }} →</span>
                         </NuxtLink>
                       </li>
@@ -551,9 +559,9 @@ function inNoPart(data: ReviewDetail, brief: Brief): Finding[] {
                   thing on the line that says so, and dropping it was a regression: the cards
                   this replaces drew it, and DEV-892 is why.
                 --><span
-                  v-if="roundStatusLabel(finding)"
+                  v-if="carriedAfterTitle(finding)"
                   class="carried"
-                >{{ roundStatusLabel(finding) }}</span></span>
+                >{{ carriedAfterTitle(finding) }}</span></span>
                 <span class="stands">{{ standsAt(finding) }} →</span>
               </NuxtLink>
             </li>
@@ -947,9 +955,12 @@ function inNoPart(data: ReviewDetail, brief: Brief): Finding[] {
  * A carried finding's round status, beside its title. Muted, and never wrapping inside
  * itself — it is a phrase, not a sentence — and in the body ink rather than a colour,
  * because like everything else in this section it reports rather than grades.
+ *
+ * **No `margin-left`.** The space that separates it from the title is the first character
+ * of the string — see `carriedAfterTitle` — because a margin moves the box and leaves the
+ * text nodes touching, which is what a screen reader and a copy both read.
  */
 .carried {
-  margin-left: 8px;
   color: var(--rd-ink-muted);
   white-space: nowrap;
 }

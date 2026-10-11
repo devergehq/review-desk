@@ -1386,13 +1386,13 @@ describe('Solution', () => {
     const page = await solution(STRUCTURED)
     expect(page.find('h1').text()).toContain('C is the right shape.')
     /*
-     * And the size of the change, counted off the parts rather than asserted — **the
-     * files the pull request changed**, which is 24 of the 27 the parts name between
-     * them. The other three are claimed by parts and outside the diff, and the table
-     * below labels their rows "unchanged".
+     * And the size of the change, counted off the parts rather than asserted. **Every
+     * file the parts name**, which is 27 — three of them outside the diff. `sub`'s
+     * docstring argues why this counts claimed files rather than changed ones: the rows
+     * below count claimed files too, and a line that counted changed ones would not sum
+     * to the column under it.
      */
-    expect(page.text()).toContain('24 files')
-    expect(page.text(), 'not every file a part names').not.toContain('27 files')
+    expect(page.text()).toContain('27 files')
     expect(page.text()).toContain('959 lines added and 423 removed')
     expect(page.text()).toContain('in 7 parts')
   })
@@ -1732,6 +1732,14 @@ describe('Solution', () => {
     const line = page.find('#part-2').findAll('.finding')
       .find(one => one.text().includes(carried.key))!
     expect(line.find('.carried').text(), 'the line says what became of it').toBe('Fixed')
+
+    /*
+     * **And a space separates it from the title.** Found reviewing this change: the two
+     * text nodes touched, so the link read "…names no columnsFixed" to a screen reader
+     * and to anyone copying it, with only a margin between them on screen.
+     */
+    expect(line.find('.what').text()).toContain(' Fixed')
+    expect(line.find('.what').text()).not.toContain('columnsFixed')
   })
 
   it('says the same of a finding in no part', async () => {
@@ -1747,6 +1755,7 @@ describe('Solution', () => {
     const line = page.findAll('.findings--loose .finding')
       .find(one => one.text().includes(loose.key))!
     expect(line.find('.carried').text()).toBe('Fixed')
+    expect(line.find('.what').text()).toContain(' Fixed')
   })
 
   /* --------------------------- Findings in no part ---------------------------- */

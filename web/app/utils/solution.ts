@@ -15,7 +15,7 @@
 
 import type { Brief, BriefPart, BriefPartFile, Disposition, Finding } from '~/types/desk'
 
-import { partOf } from './findings'
+import { partOf, roundStatusLabel } from './findings'
 import { count } from './format'
 
 /* --------------------------------- The three groups -------------------------------- */
@@ -275,6 +275,24 @@ export function labelOfProblem(brief: Brief, number: number): string | null {
  */
 export function findingLink(reviewId: number, finding: Finding): string {
   return `/reviews/${reviewId}/code-review#${finding.key}`
+}
+
+/**
+ * A carried finding's round status, with the space that separates it from the title.
+ *
+ * **The space is in the string, not in the stylesheet.** `margin-left` moves the box and
+ * leaves the text nodes touching, so the line's accessible name came out as "…names no
+ * columnsFixed" and copying it gave the same — found reviewing this change. The pieces of
+ * a finding line are drawn edge to edge, as `TickedText` explains, because a newline
+ * between two tags in a Vue template is condensed away; so the separator has to be part of
+ * what is interpolated.
+ *
+ * Null for a finding raised in this round: "Raised this round" beside every line of a
+ * first-round review is a column of the same words, which is `roundStatusLabel`'s own rule.
+ */
+export function carriedAfterTitle(finding: Finding): string | null {
+  const label = roundStatusLabel(finding)
+  return label == null ? null : ` ${label}`
 }
 
 /** The hash a finding line writes, read back: the `seq` it names, or null. */

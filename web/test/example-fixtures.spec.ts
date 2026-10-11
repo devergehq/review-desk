@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -179,7 +179,20 @@ describe('the invented example and the fixtures', () => {
    * one the step pages are drawn from, because the next one to go stale will be another.
    */
   it('counts every review fixture\u2019s tallies off its own findings', () => {
-    for (const detail of reviews as unknown as ReviewDetail[]) {
+    /*
+     * **The contract's own `getReview` examples as well as the fixtures**, which is the
+     * layer the first version of this guard was short of. The whole-document comparison
+     * above covers only review 41, so the other documented responses — hand-written, and
+     * not regenerated from anything — had no check at all. Found reviewing the commit that
+     * added this.
+     */
+    const documented = readdirSync(examples)
+      .filter(name => /^getReview\.response.*\.json$/.test(name))
+      .map(name => example<ReviewDetail>(name))
+    expect(documented.length, 'the contract documents several review responses')
+      .toBeGreaterThan(1)
+
+    for (const detail of [...(reviews as unknown as ReviewDetail[]), ...documented]) {
       const where = `review ${detail.review.id}`
       const severities = detail.finding_severities
       const dispositions = detail.finding_dispositions
