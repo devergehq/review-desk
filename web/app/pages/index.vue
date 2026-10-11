@@ -102,6 +102,14 @@ interface Waiting {
   draft: InboxDraftItem | null
   reply: InboxReplyItem | null
   /**
+   * The in-progress item for this review, when a session is also working on it.
+   *
+   * **Joined in for the reason `posted` below is**: the row is drawn here and not under
+   * "With the agent", so what that group would have said about the session has to be said
+   * on this row or not at all.
+   */
+  agent: InboxInProgressItem | null
+  /**
    * The posted-review item for this review, when there is one.
    *
    * **Joined in so that the author's figures are drawn on the row they describe.** A
@@ -138,6 +146,7 @@ function needingYou(data: Inbox): Waiting[] {
       brief: null,
       draft: null,
       reply: null,
+      agent: null,
       posted: null,
     }
     byReview.set(id, made)
@@ -160,13 +169,17 @@ function needingYou(data: Inbox): Waiting[] {
     row.reply = item
   }
   /*
-   * **Joined, never slotted.** A posted review only gets a needs-you row if one of the
-   * three groups above put it there; this adds figures to a row that exists and never
-   * makes one, because nothing in the posted group is waiting on the developer.
+   * **Joined, never slotted.** Neither of these makes a row: a posted review and a review
+   * with a session running are only here if one of the three groups above put them here.
+   * What they add is what the group they are *not* drawn in would have said.
    */
   for (const item of data.posted_awaiting_author) {
     const row = byReview.get(item.review_id)
     if (row) row.posted = item
+  }
+  for (const item of data.in_progress) {
+    const row = byReview.get(item.review_id)
+    if (row) row.agent = item
   }
 
   return [...byReview.values()]
@@ -253,6 +266,21 @@ function alsoWaiting(row: Waiting): string[] {
   if (row.brief && row.draft) also.push('a draft is ready behind it')
   if (row.brief && row.reply) also.push('the author has replied too')
   else if (row.draft && row.reply) also.push('the author has replied too')
+  /*
+   * **And the session, which is why this row is not under "With the agent".** That group
+   * draws the step, a bar and how long the step has been running; this review is drawn
+   * here instead, so without this line those facts are not on the page at all — the row
+   * would be the quieter for having been deduplicated, which is the opposite of the
+   * point.
+   */
+  if (row.agent) {
+    const running = layerLabel(row.agent.layer_name).toLowerCase()
+    const forHow = row.agent.in_state_since ? ` for ${forLabel(row.agent.in_state_since)}` : ''
+    also.push(
+      `a session is on step ${row.agent.layer_number} of ${row.agent.layers_total}, `
+      + `${running}${forHow}`,
+    )
+  }
   return also
 }
 
@@ -337,6 +365,14 @@ const withAgent = computed(() => {
   )
 })
 
+/** How many reviews a session is working on are drawn above, for the note beside them. */
+const alsoWithAgent = computed(() => {
+  const needing = new Set(waiting.value.map(row => row.review_id))
+  return (inbox.data.value?.in_progress ?? []).filter(
+    item => showing(item.pull_request.repo) && needing.has(item.review_id),
+  ).length
+})
+
 /**
  * The posted reviews this page draws under "Waiting on the author", before the picker.
  *
@@ -407,7 +443,16 @@ function queueRow(row: Waiting) {
 
 const rows = computed(() => {
   const data = inbox.data.value
-  if (!data) return { needsYou: [], withAgent: [], ownPrs: [], withAuthor: [], alsoPosted: 0 }
+  if (!data) {
+    return {
+      needsYou: [],
+      withAgent: [],
+      ownPrs: [],
+      withAuthor: [],
+      alsoPosted: 0,
+      alsoWithAgent: 0,
+    }
+  }
 
   const needsYou = oldestFirst(
     waiting.value.filter(row => showing(row.repo)).map(queueRow),
@@ -436,6 +481,7 @@ const rows = computed(() => {
     ownPrs,
     withAuthor: shown,
     alsoPosted: alsoPosted.value,
+    alsoWithAgent: alsoWithAgent.value,
   }
 })
 
@@ -507,20 +553,32 @@ function sessionAction(item: InboxInProgressItem): string {
  * take this number for the number of reviews out with authors. Empty when none was left
  * out, so the usual case carries no footnote.
  */
-const postedNote = computed(() => {
-  const held = rows.value.alsoPosted
+/**
+ * What a group that held a row back says beside its count.
+ *
+ * **Every group that subtracts says so.** One row per review means a row drawn in one
+ * group is missing from another, and a count that is quietly short is worse than no
+ * count. The wording gives no reason, deliberately: the subtraction covers two unlike
+ * cases — the developer has something to do, or a session is working on it — and the one
+ * reason that fitted both turned out to be true of neither.
+ */
+function heldBackNote(held: number, what: string): string {
   if (held === 0) return 'nothing for you to do'
-  /*
-   * **"Drawn above", not "under Needs you".** The subtraction removes reviews waiting on
-   * the developer *and* reviews a session is working on, and the second is not something
-   * the author has done — a posted review whose harvest step is running is held back with
-   * nothing having come back on it at all. Naming the group would have sent the reader to
-   * one the row is not in, for a reason untrue of it.
-   */
   return held === 1
-    ? '1 more is posted and is drawn above, where something else is waiting on it'
-    : `${held} more are posted and are drawn above, where something else is waiting on them`
-})
+    ? `1 more is ${what} and is already drawn above`
+    : `${held} more are ${what} and are already drawn above`
+}
+
+const postedNote = computed(() => heldBackNote(rows.value.alsoPosted, 'posted'))
+
+/**
+ * The same, for the reviews a session is working on that are drawn under "Needs you".
+ *
+ * Its count was silently short until this said so, which is the thing the posted group's
+ * own note exists to prevent — and the standard this file holds everything else to.
+ */
+const agentNote = computed(() =>
+  heldBackNote(rows.value.alsoWithAgent, 'with the agent'))
 
 /** The first line of a posted row: what was posted, as what, and which round. */
 function postedTitle(item: InboxPostedItem): string {
@@ -673,7 +731,7 @@ function handledLine(data: Inbox): string {
           v-if="rows.withAgent.length"
           heading="With the agent"
           :count="rows.withAgent.length"
-          note="nothing for you to do"
+          :note="agentNote"
         >
           <QueueRow
             v-for="item in rows.withAgent"

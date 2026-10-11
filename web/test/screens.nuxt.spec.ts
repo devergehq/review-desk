@@ -235,7 +235,7 @@ describe('the queue', () => {
      * "drawn above" rather than a named group: the subtraction also removes reviews a
      * session is working on, which is not something the author has done.
      */
-    expect(page.text()).toContain('1 more is posted and is drawn above')
+    expect(page.text()).toContain('1 more is posted and is already drawn above')
   })
 
   /*
@@ -249,6 +249,22 @@ describe('the queue', () => {
     expect(row.text()).toContain('2 replies')
     expect(row.text()).toContain('1 thread resolved')
     expect(row.text()).toContain('1 finding with code changed since')
+  })
+
+  /*
+   * **The same rule, one group earlier.** Review 12 is posted, its author has replied, and
+   * its harvest step is running — so `GET /inbox` serves it in `author_replies` *and* in
+   * `in_progress`. One row, under "Needs you", with what the other group would have said
+   * about the session on it; and "With the agent" says it held one back rather than
+   * quietly counting one fewer.
+   */
+  it('draws a review that needs you and has a session running once, saying both', async () => {
+    const page = await shown(Inbox)
+    const rows = page.findAll('.row').filter(row => row.text().includes('#398'))
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.text()).toContain('The author replied')
+    expect(rows[0]!.text()).toContain('a session is on step 7 of 7')
+    expect(page.text()).toContain('1 more is with the agent and is already drawn above')
   })
 
   it('shows which layer each running session is on, as a bar and in words', async () => {

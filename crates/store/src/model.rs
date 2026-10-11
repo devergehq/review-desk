@@ -1496,10 +1496,10 @@ pub struct AuthorResponse {
     pub threads_resolved: i64,
     /// Findings whose code the harvester found changed after the commit the review read.
     ///
-    /// **Counted whole, unlike the other two**: the harvester attributes this to nobody,
-    /// because it is an observation about the code rather than an act by a person.
+    /// **Not counted by actor, unlike the other two**: the harvester attributes this to
+    /// nobody, because it is an observation about the code rather than an act by a person.
     ///
-    /// **Distinct findings, counted once each.** The harvester keys this outcome on the
+    /// **And distinct findings, counted once each.** The harvester keys this outcome on the
     /// commit it saw the change in — `code_changed:<sha>` — so a finding whose file is
     /// touched by three successive pushes gets three rows. Counting the rows would have
     /// drawn "6 findings with code changed since" on a review holding two, a figure that

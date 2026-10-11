@@ -145,9 +145,14 @@ impl Store {
     /// is not the pull request's author to [`Actor::Developer`] — which is who usually
     /// resolves a review thread, since on most repositories the author cannot — so
     /// counting `replied` rows alone credits the author with the developer's own
-    /// replies. `code_changed_after` is the exception and is counted whole: the
-    /// harvester attributes it to nobody, because it is an observation about the code
+    /// replies. `code_changed_after` is the exception and is not counted by actor at all:
+    /// the harvester attributes it to nobody, because it is an observation about the code
     /// rather than an act by a person.
+    ///
+    /// **It is counted `DISTINCT` by finding instead.** The harvester keys that outcome on
+    /// the commit it saw the change in — `code_changed:<sha>` — so a finding whose file is
+    /// touched by three successive pushes holds three rows, and counting the rows gives a
+    /// figure about findings that can exceed the findings it is about.
     ///
     /// **`findings` and `findings_linked` are here so that a nought can be told from an
     /// absence.** The harvester reads a thread through a finding's

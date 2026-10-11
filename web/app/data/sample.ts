@@ -363,9 +363,19 @@ function inbox(): Inbox {
       scope: rule.scope,
     }))
 
+  /*
+   * **Any review with a running layer, which is what the server asks.**
+   * `Store::reviews_in_progress` has no draft-status condition — a layer `running` is the
+   * whole of it — and this carried `draft_status === 'drafting'`, so the one shape the
+   * queue's cross-group deduplication exists for was unreachable here: a posted review
+   * whose harvest step is running, in `author_replies` and `in_progress` at once. The
+   * behaviour shipped untested because the records could not express the state.
+   *
+   * Review 12 is now that shape, and the queue draws it once.
+   */
   const in_progress = source.reviews
     .map(detail => ({ detail, running: detail.layers.find(item => item.state === 'running') }))
-    .filter(pair => pair.running != null && pair.detail.draft_status === 'drafting')
+    .filter(pair => pair.running != null)
     .map(({ detail, running }) => ({
       review_id: detail.review.id,
       pull_request: prOf(detail),

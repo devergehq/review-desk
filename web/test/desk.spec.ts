@@ -93,11 +93,20 @@ describe('the inbox', () => {
     expect(inbox.proposed_rules).toHaveLength(1)
   })
 
-  it('shows two sessions running, one of them with unknown liveness', async () => {
+  it('shows every session running, one of them with unknown liveness', async () => {
     const inbox = await settled(desk().inbox())
-    expect(inbox.in_progress).toHaveLength(2)
-    expect(inbox.in_progress.map(item => item.session_alive)).toEqual([true, null])
-    expect(inbox.in_progress[0]).toMatchObject({ layer_number: 5, layers_total: 7 })
+    /*
+     * **Three, and the third is a posted review whose harvest step is running.** This
+     * asserted two until DEV-930: sample mode carried a `draft_status === 'drafting'`
+     * filter that `Store::reviews_in_progress` has not got, so the one state the queue's
+     * cross-group deduplication exists for — a review in `author_replies` and
+     * `in_progress` at once — could not be expressed here at all. The queue draws review
+     * 12 once; this is the array it has to do that from.
+     */
+    expect(inbox.in_progress.map(item => item.review_id)).toEqual([12, 18, 19])
+    expect(inbox.in_progress.map(item => item.session_alive)).toEqual([null, true, null])
+    const paginating = inbox.in_progress.find(item => item.review_id === 18)!
+    expect(paginating).toMatchObject({ layer_number: 5, layers_total: 7 })
   })
 
   it('says a draft already written is not holding its session at layer 2', async () => {

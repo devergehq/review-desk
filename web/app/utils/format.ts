@@ -377,8 +377,16 @@ export function authorResponseLabel(item: InboxPostedItem): string {
    */
   const measured
     = item.replies != null || item.threads_resolved != null || item.code_changed_after != null
+  /*
+   * **Not where the row has already said it.** When both thread-derived figures are
+   * absent the first sentence is "Not harvested yet", and adding "recorded without a
+   * harvest" after a figure between them states the same absence twice in one line —
+   * reachable through `outcome add --kind code_changed_after` on a review nothing has
+   * harvested.
+   */
+  const saidAlready = item.replies == null && item.threads_resolved == null
   if (item.harvested_at != null) said.push(`as at ${sinceLabel(item.harvested_at)}`)
-  else if (measured) said.push('recorded without a harvest')
+  else if (measured && !saidAlready) said.push('recorded without a harvest')
 
   return said.join(' · ')
 }

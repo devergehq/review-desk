@@ -107,7 +107,9 @@ const someTimesMissing = computed(
  * repository holding a review *or* a repository-scoped rule, so one with only a rule is
  * reachable from the picker. Treating that as empty said "This database holds no reviews"
  * about a database holding several, and took the picker away with it: the control lives in
- * the default slot, so the reader had no way back to "All repositories" but the URL.
+ * the default slot, so the only way back to "All repositories" was to reload the page. The
+ * filter is component state and never reaches the URL, so there was not even an address to
+ * edit.
  */
 function isEmpty(answer: { repo: string | null, reviews: ReviewListItem[] }): boolean {
   return answer.repo == null && answer.reviews.length === 0

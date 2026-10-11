@@ -344,12 +344,12 @@ fn the_inbox_validates() {
         ),
         "totals.items is the five waiting groups' combined length: {inbox}"
     );
-    // **And the two groups that are not in it are not empty**, or the sum above would hold
-    // whether they counted or not. Nothing in either asks the developer for anything, and
-    // the screen's headline counts what does.
+    // **`in_progress` is not empty**, or the sum above would hold whether it counted or
+    // not. Nothing in it asks the developer for anything, and the screen's headline counts
+    // what does.
     //
-    // The seeded record has a session running but nothing posted, so the posted group is
-    // empty until something posts — and its term in the sum was vacuous until this did.
+    // The posted group *is* empty here — the seeded record has nothing posted — so its
+    // term in that sum was vacuous. Posting one below is what makes it carry weight.
     assert!(
         group("in_progress") > 0,
         "the seeded record has a session running: {inbox}"
@@ -386,7 +386,9 @@ fn the_inbox_validates() {
                 + group("own_prs_without_reviewer")
                 + group("proposed_rules")
         ),
-        "and posting a review does not change what is waiting on the developer: {after}"
+        "the sum still names the five waiting groups once a review has been posted. \
+         Posting changes what is in them — an approved draft leaves `drafts_to_approve` — \
+         and what it must not change is which groups are counted: {after}"
     );
 }
 
