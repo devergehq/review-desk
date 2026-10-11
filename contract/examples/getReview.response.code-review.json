@@ -625,7 +625,7 @@
       {
         "title": "The export context",
         "summary": "Replaces the request-scoped slot. Constructed by whatever starts an export.",
-        "one_line": "Every export is handed the tenant it is for, by whatever starts it.",
+        "one_line": "Every export is handed the tenant it is for.",
         "fixes": [
           1
         ],
@@ -692,7 +692,7 @@
       {
         "title": "Allowed columns on the report definition",
         "summary": "A new column says which fields each report may export.",
-        "one_line": null,
+        "one_line": "A new column says which fields each report may export.",
         "fixes": [
           2
         ],
@@ -734,7 +734,7 @@
       {
         "title": "One filter chain for both paths",
         "summary": "Row filter, column policy, redaction and the audit entry, in one place.",
-        "one_line": "Row filter, column policy, redaction and the audit entry, in one order.",
+        "one_line": "Row filter, column policy, redaction and audit, in one order.",
         "fixes": [
           3
         ],
@@ -770,7 +770,7 @@
       {
         "title": "The web path, with the branch taken out",
         "summary": "Mostly deletions. The builder stops asking where it is running.",
-        "one_line": null,
+        "one_line": "Mostly deletions. The builder stops asking where it is running.",
         "fixes": [
           2
         ],
@@ -812,7 +812,7 @@
       {
         "title": "Tests and generated types",
         "summary": "Three feature tests rewritten for the new entry point, and two generated files.",
-        "one_line": null,
+        "one_line": "Three feature tests rewritten, and two generated files.",
         "fixes": [],
         "files": [
           {
@@ -852,7 +852,7 @@
       {
         "title": "The long-running queue it relies on",
         "summary": "The pipeline holds a page of rows in memory while it redacts them. That is safe on this queue and not on the default one. Nothing here changed.",
-        "one_line": "Nothing here changed. The pipeline's memory assumption only holds on this queue.",
+        "one_line": "Nothing here changed. The new pipeline only fits this queue.",
         "fixes": [],
         "files": [
           {

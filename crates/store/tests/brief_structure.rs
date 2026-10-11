@@ -1539,7 +1539,10 @@ fn the_contracts_real_length_brief_is_at_real_length() {
         .iter()
         .filter(|part| {
             let files = part["files"].as_array().expect("files");
-            !files.is_empty() && files.iter().all(|file| file["in_diff"] == serde_json::json!(false))
+            !files.is_empty()
+                && files
+                    .iter()
+                    .all(|file| file["in_diff"] == serde_json::json!(false))
         })
         .count();
     assert_eq!(
@@ -1556,27 +1559,43 @@ fn the_contracts_real_length_brief_is_at_real_length() {
         "a part that fixes no problem, which is the Supporting group"
     );
 
-    let (written, unwritten): (Vec<_>, Vec<_>) = parts
-        .iter()
-        .partition(|part| part.get("one_line").is_some_and(|line| !line.is_null()));
-    assert!(
-        !written.is_empty() && !unwritten.is_empty(),
-        "a one line on some parts and not others: {} written, {} not",
-        written.len(),
-        unwritten.len()
-    );
-
-    // **Every summary is inside the writing rule's 30 words**, which is review-craft's
-    // `brief_lint.py` as of 11 October 2026. A part's summary is the one slot that rule
-    // reaches, because seven of them are read down one column at once. The over-long case
-    // the Solution page still has to survive -- a brief written before the cap -- is
-    // exercised in the page's own tests, not written into the example the linter checks.
+    // **Every part carries a one line, and every one of them is inside the writing rules.**
+    //
+    // Two limits, both review-craft's `brief_lint.py` as of 11 October 2026, and both
+    // checked here because this example is the document that linter is run against: a
+    // part's `one_line` is at most 12 words of plain English, and its `summary` at most 30.
+    // Seven of each are read at once -- the one lines down a column and the summaries one
+    // open row at a time -- which is why these two slots are capped where the brief's
+    // deeper fields are not.
+    //
+    // **The cases the page has to survive and this example is not are in the page's own
+    // tests**: a part with no `one_line` at all, and a summary at the 52 words the review
+    // this was measured against actually ran to. Both are briefs written before these
+    // caps, so writing them in here would mean the linter and the example could not both
+    // be right.
     for part in &parts {
+        let where_ = part["title"].as_str().expect("a title");
+
+        let one_line = part["one_line"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{where_} carries a one line"));
+        let words = one_line.split_whitespace().count();
+        assert!(
+            words <= 12,
+            "{where_}: a one line is at most 12 words, not {words}: {one_line}"
+        );
+        for banned in ["::", "/", "`"] {
+            assert!(
+                !one_line.contains(banned),
+                "{where_}: a one line is plain English, and this holds {banned:?}: {one_line}"
+            );
+        }
+
         let summary = part["summary"].as_str().expect("a summary");
         let words = summary.split_whitespace().count();
         assert!(
             words <= 30,
-            "a part's summary is at most 30 words, not {words}: {summary}"
+            "{where_}: a summary is at most 30 words, not {words}: {summary}"
         );
     }
 }

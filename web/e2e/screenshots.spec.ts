@@ -104,8 +104,8 @@ test.describe('a seeded database', () => {
  * `confirmBrief.response.real-length.json` is what the seed feeds the binary, so these are
  * pictures of the real pages reading a real record at the length the approved boards were
  * drawn at: three numbered problems, flows of five and six rows with a split in each, eight
- * options from two sources, six parts over twenty-six files, and thirteen findings joined
- * to those parts by file.
+ * options from two sources, seven parts over twenty-seven files, and fifteen findings —
+ * thirteen joined to those parts by file and two belonging to no part at all.
  *
  * **Nothing here comes from the reference boards.** They hold a real review of a client's
  * private repository, and nothing from them is committed to this repository — which is why
@@ -247,6 +247,43 @@ test.describe('the code review page and the draft', () => {
     await page.locator('.row').first().getByRole('button').first().click()
     await expect(page.getByText('one block of markdown')).toBeVisible()
     await shot(page, 'dev-878-4-one-block-draft')
+  })
+})
+
+/*
+ * **"What was built" as a table of rows, which is DEV-919.**
+ *
+ * Three pictures, because the thing that changed is what a reader does with the section
+ * rather than how one row looks: the table closed, so the seven rows read down a column
+ * under their three group headings; one row open, which is where the summary, the findings
+ * and the files fold live; and the same at a phone's width, where six columns become a
+ * stack.
+ *
+ * The cards these replace carried the part's whole summary — 33 to 52 words each on the
+ * review this was measured against — and reprinted the files on one side and the findings
+ * on the other. A picture of the table closed is the measurement.
+ */
+test.describe('the solution as a table', () => {
+  test('the rows, one open, at both widths', async ({ page }) => {
+    for (const [width, suffix] of [[1440, ''], [390, '-390']] as const) {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
+
+      await page.goto(`${seeded}reviews/${structuredReviewId}/solution`)
+      await expect(page.locator('h1')).toBeVisible()
+      await expect(page.locator('.part')).toHaveCount(7)
+      await shot(page, `dev-919-1-table${suffix}`)
+
+      /*
+       * One row open, with its files fold open too: the one picture that shows everything
+       * a row holds — the full summary, a line per finding, and the paths behind the fold.
+       */
+      await page.getByRole('button', { name: /Allowed columns on the report definition/ }).click()
+      await expect(page.locator('#part-2')).toBeVisible()
+      await page.locator('#part-2').locator('summary').click()
+      await expect(page.locator('#part-2').locator('details[open]')).toHaveCount(1)
+      await shot(page, `dev-919-2-row-open${suffix}`)
+    }
+    await page.setViewportSize({ width: 1440, height: 900 })
   })
 })
 

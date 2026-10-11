@@ -1405,7 +1405,7 @@ describe('Solution', () => {
     const context = row(page, 'The export context')
     /* The one line the session wrote, not the summary. */
     expect(context.find('.one-line').text())
-      .toBe('Every export is handed the tenant it is for, by whatever starts it.')
+      .toBe('Every export is handed the tenant it is for.')
     expect(context.find('.cell--size').text()).toContain('3 files')
     expect(context.find('.cell--size').text()).toContain('+134 −70')
     /* Two findings on this part, one of them held back: two counts, in plain words. */
@@ -1637,17 +1637,23 @@ describe('Solution', () => {
   /* ------------------------------ The one line -------------------------------- */
 
   /**
-   * **A part with no `one_line` draws one line, not four.**
+   * **A part with no `one_line` draws one line, not four**, beside parts that have one.
    *
    * DEV-919's fourth criterion, with the summary at the length the review this was measured
-   * against actually ran to. **It is a fixture here rather than in the contract's example**
-   * because review-craft's `brief_lint.py` caps a part's summary at 30 words as of 11
-   * October 2026 and that example has to keep passing it — so the case is a brief written
-   * *before* the cap, which is exactly the record the page still has to survive.
+   * against actually ran to.
+   *
+   * **Both halves of this are a fixture rather than the contract's example**, and for one
+   * reason: that example is the document review-craft's `brief_lint.py` is run against, and
+   * as of 11 October 2026 that linter caps a part's summary at 30 words and fails a brief
+   * with any part missing a `one_line`. So the example carries a short one line on every
+   * part, and the record this test describes — one part with none, and a summary at 52
+   * words — is a brief written *before* both rules. Which is the point: those briefs exist,
+   * nothing will rewrite them, and the page has to draw them as one line all the same.
    *
    * The clipping itself is CSS and is measured in a real browser at 1440 and at 390 by
    * `e2e/review-desk.spec.ts`. What is checked here is the branch: the summary stands in
-   * for the one line, it is marked as a cut, and the whole of it is still reachable.
+   * for the one line, it is marked as a cut, and the whole of it is still reachable — and
+   * that a page holding both kinds of part draws each the way it should.
    */
   const FIFTY_TWO_WORDS
     = 'Replaces the request-scoped slot with a context object constructed by whatever '
@@ -1674,6 +1680,16 @@ describe('Solution', () => {
     const written = row(page, 'The scheduled export\'s own entry point').find('.one-line')
     expect(written.classes()).not.toContain('one-line--cut')
     expect(written.attributes('title')).toBeUndefined()
+
+    /*
+     * **One page, both kinds of part**, which is the arrangement the record will actually
+     * be in while briefs written before the rule are still on the desk. Six written, one
+     * not — and the page does not treat the odd one out as an error.
+     */
+    const cut = rows(page)
+      .filter(one => one.find('.one-line').classes().includes('one-line--cut'))
+    expect(cut, 'exactly the one part with no one line is drawn as a cut').toHaveLength(1)
+    expect(rows(page)).toHaveLength(7)
   })
 
   /* --------------------------- Findings in no part ---------------------------- */

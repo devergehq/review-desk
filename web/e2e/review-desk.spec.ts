@@ -786,9 +786,16 @@ test.describe('the three step pages of one review', () => {
     /* Not the file list, which is one click further in. */
     await expect(part.locator('details')).toHaveCount(1)
     await expect(part.locator('details[open]')).toHaveCount(0)
-    await expect(part).not.toContainText('app/Reporting/ColumnPolicy.php')
+    /*
+     * **Not visible, rather than not present.** A closed `<details>` keeps its content in
+     * the document — which is what makes it findable and is why the fold is the right
+     * element — so "behind a fold" is a claim about what is drawn, and that is what is
+     * measured.
+     */
+    const path = part.getByText('app/Reporting/ColumnPolicy.php')
+    await expect(path).not.toBeVisible()
     await part.locator('summary').click()
-    await expect(part).toContainText('app/Reporting/ColumnPolicy.php')
+    await expect(path).toBeVisible()
 
     /*
      * **A finding line reaches that finding on the code review page**, which is the whole
@@ -799,7 +806,9 @@ test.describe('the three step pages of one review', () => {
       `${seeded}reviews/${structuredReviewId}/code-review#F9`,
     )
     await expect(page.locator('#finding-9')).toBeVisible()
-    await expect(page.locator('li.row--open').locator('.key')).toHaveText('F9')
+    /* `.title .key` — the row's own reference. The decision buttons carry `.key` too, for
+     * their keyboard shortcuts. */
+    await expect(page.locator('li.row--open').locator('.title .key')).toHaveText('F9')
 
     await page.goBack()
     await expect(page.locator('.part').first()).toBeVisible()
@@ -1112,19 +1121,20 @@ test.describe('the three step pages of one review', () => {
         const measured = await lines.nth(at).evaluate((element) => {
           const style = getComputedStyle(element)
           const one = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize)
-          return {
-            height: element.getBoundingClientRect().height,
-            one,
-            /* What is drawn is never wider than the cell: the ellipsis, not the page. */
-            fits: element.scrollWidth <= element.clientWidth + 1,
-          }
+          return { height: element.getBoundingClientRect().height, one }
         })
+        /*
+         * **One line, whatever the text is.** Not "and it fits": a line longer than its
+         * column *should* be clipped, and three of the seven are at this width — that the
+         * clipping happens rather than the wrapping is the whole property. What it must
+         * never do is become two lines, or widen the page to avoid it, and the page's own
+         * width is measured by the no-horizontal-scroll test below.
+         */
         expect(
           measured.height,
           `part ${at + 1}'s one line is ${measured.height}px against one line of `
           + `${measured.one}px`,
         ).toBeLessThanOrEqual(measured.one * 1.4)
-        expect(measured.fits, `part ${at + 1}'s one line is clipped, not spilling`).toBe(true)
       }
 
       /*
