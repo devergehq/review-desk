@@ -942,102 +942,107 @@ test.describe('the three step pages of one review', () => {
     await expect(page.locator('.trail').getByRole('link', { name: /7 Harvest/ })).toHaveCount(0)
   })
 
-  /**
-   * **A step's detail is one line, whatever its length, and the page's headline does not
-   * move.**
-   *
-   * DEV-917's first two acceptance criteria, measured where they can be: both are layout,
-   * and the unit tests run in jsdom, which computes none. So this reads the rendered height
-   * of step 2's line — the 34-word note the invented example carries — at a laptop's width
-   * and at a phone's, and then rewrites that step with a three-word detail through the
-   * command line and checks the headline is in exactly the same place.
-   *
-   * The record is put back at the end, because every other test in this file reads the same
-   * database.
+  /*
+   * **Step 2's note, written and put back.** Outside the test and restored in a hook for
+   * the reason the harvest step's writer below gives: a `finally` does not run when
+   * Playwright abandons a test at its timeout, and this test measures two viewports. One
+   * timeout would leave step 2 reading "Three short words" on the database every later
+   * test and the screenshots project share.
    */
-  test('a long step detail is one line at both widths, and moves the headline nowhere', async ({ page }) => {
+  const setStepTwoDetail = (detail: string) =>
+    cli(seededDatabase, [
+      'layer',
+      'set',
+      '--review',
+      String(structuredReviewId),
+      '--layer',
+      '2',
+      '--state',
+      'done',
+      '--detail',
+      detail,
+    ])
+
+  test.describe('a long step detail', () => {
+    test.afterEach(() => {
+      setStepTwoDetail(STRUCTURED_LONG_NOTE)
+    })
+
+    /**
+     * **A step's detail is one line, whatever its length, and the page's headline does not
+     * move.**
+     *
+     * DEV-917's first two acceptance criteria, measured where they can be: both are layout,
+     * and the unit tests run in jsdom, which computes none. So this reads the rendered height
+     * of step 2's line — the 34-word note the invented example carries — at a laptop's width
+     * and at a phone's, and then rewrites that step with a three-word detail through the
+     * command line and checks the headline is in exactly the same place.
+     */
+    test('is one line at both widths, and moves the headline nowhere', async ({ page }) => {
     /** The step's line and the page's headline, as the browser lays them out. */
-    const measure = async () => {
-      await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
-      await expect(page.locator('h1')).toBeVisible()
-      await page.waitForLoadState('networkidle')
-      const step = page.locator('.steps li').nth(1)
-      await expect(step).toContainText('2 Understand')
-      return {
-        line: await step.locator('.outcome').evaluate((element) => {
-          const style = getComputedStyle(element)
-          return {
-            height: element.getBoundingClientRect().height,
-            lineHeight: Number.parseFloat(style.lineHeight)
-              || Number.parseFloat(style.fontSize) * 1.2,
-            scrollWidth: element.scrollWidth,
-            clientWidth: element.clientWidth,
-            whiteSpace: style.whiteSpace,
-            textOverflow: style.textOverflow,
-          }
-        }),
-        headline: await page.locator('h1').evaluate(
-          element => Math.round(element.getBoundingClientRect().top + window.scrollY),
-        ),
+      const measure = async () => {
+        await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
+        await expect(page.locator('h1')).toBeVisible()
+        await page.waitForLoadState('networkidle')
+        const step = page.locator('.steps li').nth(1)
+        await expect(step).toContainText('2 Understand')
+        return {
+          line: await step.locator('.outcome').evaluate((element) => {
+            const style = getComputedStyle(element)
+            return {
+              height: element.getBoundingClientRect().height,
+              lineHeight: Number.parseFloat(style.lineHeight)
+                || Number.parseFloat(style.fontSize) * 1.2,
+              scrollWidth: element.scrollWidth,
+              clientWidth: element.clientWidth,
+              whiteSpace: style.whiteSpace,
+              textOverflow: style.textOverflow,
+            }
+          }),
+          headline: await page.locator('h1').evaluate(
+            element => Math.round(element.getBoundingClientRect().top + window.scrollY),
+          ),
+        }
       }
-    }
 
-    /* The 34-word detail, at a laptop's width and at a phone's. */
-    for (const width of [1440, 390]) {
-      await page.setViewportSize({ width, height: 900 })
-      const { line } = await measure()
+      /* The 34-word detail, at a laptop's width and at a phone's. */
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: 900 })
+        const { line } = await measure()
 
-      /*
+        /*
        * **One line of text, overflowing rather than wrapping.** The element is 44px tall
        * because it is also the control that opens the card, so what is measured is the
        * text: `nowrap`, an ellipsis, and more text than there is room for — without that
        * last part this test would pass against a short detail and prove nothing.
        */
-      expect(line.whiteSpace, `at ${width}px the line is ${line.whiteSpace}`).toBe('nowrap')
-      expect(line.textOverflow).toBe('ellipsis')
-      expect(
-        line.scrollWidth,
-        `at ${width}px the detail is ${line.scrollWidth}px of text in ${line.clientWidth}px`,
-      ).toBeGreaterThan(line.clientWidth)
-      expect(
-        line.height,
-        `at ${width}px the line is drawn ${line.height}px tall at a ${line.lineHeight}px line`,
-      ).toBeLessThan(line.lineHeight * 2 + CONTROL_MIN)
-    }
+        expect(line.whiteSpace, `at ${width}px the line is ${line.whiteSpace}`).toBe('nowrap')
+        expect(line.textOverflow).toBe('ellipsis')
+        expect(
+          line.scrollWidth,
+          `at ${width}px the detail is ${line.scrollWidth}px of text in ${line.clientWidth}px`,
+        ).toBeGreaterThan(line.clientWidth)
+        expect(
+          line.height,
+          `at ${width}px the line is drawn ${line.height}px tall at a ${line.lineHeight}px line`,
+        ).toBeLessThan(line.lineHeight * 2 + CONTROL_MIN)
+      }
 
-    /*
+      /*
      * **And the headline sits where it would with a three-word detail.** Written through
      * the command line, which is the only way a step's detail is ever written, and put back
      * afterwards because every other test here reads the same database.
      */
-    await page.setViewportSize({ width: 1440, height: 900 })
-    const withThirtyFour = (await measure()).headline
+      await page.setViewportSize({ width: 1440, height: 900 })
+      const withThirtyFour = (await measure()).headline
 
-    const setDetail = (detail: string) =>
-      cli(seededDatabase, [
-        'layer',
-        'set',
-        '--review',
-        String(structuredReviewId),
-        '--layer',
-        '2',
-        '--state',
-        'done',
-        '--detail',
-        detail,
-      ])
-
-    setDetail('Three short words')
-    try {
+      setStepTwoDetail('Three short words')
       const withThree = (await measure()).headline
       expect(
         withThree,
         `the headline is at ${withThirtyFour}px with 34 words and ${withThree}px with three`,
       ).toBe(withThirtyFour)
-    }
-    finally {
-      setDetail(STRUCTURED_LONG_NOTE)
-    }
+    })
   })
 
   /**
