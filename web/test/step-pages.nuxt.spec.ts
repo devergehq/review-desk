@@ -1370,6 +1370,18 @@ describe('Solution', () => {
     await resetDesk()
   })
 
+  /** The rows of the table, in the order they are drawn — which is by group, not by number. */
+  function rows(page: VueWrapper) {
+    return page.findAll('.part')
+  }
+
+  /** The row whose title contains this. */
+  function row(page: VueWrapper, title: string) {
+    const found = rows(page).find(one => one.find('.part-title').text().includes(title))
+    if (!found) throw new Error(`no row titled ${title}`)
+    return found
+  }
+
   it('opens with the verdict on the approach', async () => {
     const page = await solution(STRUCTURED)
     expect(page.find('h1').text()).toContain('C is the right shape.')
@@ -1379,199 +1391,369 @@ describe('Solution', () => {
     expect(page.text()).toContain('in 7 parts')
   })
 
-  it('draws a card per part, with its files and its lines', async () => {
+  /**
+   * **A part is a row, not a card**, which is the whole of DEV-919.
+   *
+   * The card carried the part's entire summary — 33 to 52 words on the review this was
+   * measured against — and reprinted its files and its findings. The row carries one line,
+   * the problems it fixes, its size, and where the review looked.
+   */
+  it('draws a row per part, with its one line, its size and its counts', async () => {
     const page = await solution(STRUCTURED)
-    const parts = page.findAll('.part')
-    expect(parts).toHaveLength(7)
-    expect(parts[0]!.text()).toContain('The export context')
-    expect(parts[0]!.text()).toContain('Replaces the request-scoped slot')
-    expect(parts[0]!.text()).toContain('3 files')
-    expect(parts[0]!.text()).toContain('+134')
-    expect(parts[0]!.text()).toContain('−70')
+    expect(rows(page)).toHaveLength(7)
+
+    const context = row(page, 'The export context')
+    /* The one line the session wrote, not the summary. */
+    expect(context.find('.one-line').text())
+      .toBe('Every export is handed the tenant it is for, by whatever starts it.')
+    expect(context.find('.cell--size').text()).toContain('3 files')
+    expect(context.find('.cell--size').text()).toContain('+134 −70')
+    /* Two findings on this part, one of them held back: two counts, in plain words. */
+    expect(context.find('.cell--found').text()).toContain('1 to post')
+    expect(context.find('.cell--found').text()).toContain('1 held for a ticket')
+
+    /* And nothing that was on the card: no summary, no file list, no finding reprinted. */
+    expect(context.text()).not.toContain('Replaces the request-scoped slot')
+    expect(context.text()).not.toContain('app/Reporting/ExportContext.php')
   })
 
-  it('marks which problems a part fixes, in green', async () => {
+  it('says "Nothing" on a row the review found nothing in', async () => {
     const page = await solution(STRUCTURED)
-    const parts = page.findAll('.part')
-    const marks = parts[1]!.findAll('.mark--fixed').map(one => one.text())
-    /* The second part fixes problems 1 and 2. */
-    expect(marks).toHaveLength(2)
-    expect(marks[0]).toContain('1')
-    expect(marks[1]).toContain('2')
-    /* The words say what the mark means here, which is not "what fixes it". */
-    expect(parts[1]!.find('.mark--fixed').text()).toContain('this part fixes problem 1')
-    /* A part that fixes none carries no mark rather than a nought. */
-    const tests = parts.find(one => one.text().includes('Tests and generated types'))!
-    expect(tests.findAll('.mark--fixed')).toHaveLength(0)
+    expect(row(page, 'Tests and generated types').find('.cell--found').text()).toContain('Nothing')
   })
 
-  it('says on the card what the review found in that part', async () => {
+  it('says "unchanged" rather than two noughts for a part outside the change', async () => {
     const page = await solution(STRUCTURED)
-    const parts = page.findAll('.part')
-    const policy = parts.find(one => one.text().includes('Allowed columns'))!
-    expect(policy.text()).toContain('1 Blocker')
-    /* A part the review found nothing in says so, rather than drawing an empty space. */
-    const tests = parts.find(one => one.text().includes('Tests and generated types'))!
-    expect(tests.text()).toContain('Nothing found here')
-  })
-
-  it('counts a finding that is not going to the author apart from the rest', async () => {
-    const page = await solution(STRUCTURED)
-    /* F2 is held back and F8 suppressed; neither is something the author will read. */
-    const parts = page.findAll('.part')
-    const context = parts.find(one => one.text().includes('The export context'))!
-    expect(context.text()).toContain('1 not posting')
+    const size = row(page, 'The long-running queue it relies on').find('.cell--size')
+    expect(size.text()).toContain('1 file')
+    expect(size.text()).toContain('unchanged')
+    expect(size.text()).not.toContain('+0')
   })
 
   /**
-   * **A part's tally counts what will post, not what carries the disposition.**
+   * **The three groups, from the issue's own rule**, and a heading only where there is a
+   * row under it.
    *
-   * DEV-892's comment of 11 October: this filtered `disposition === 'in_draft'` into a list
-   * it called `posted`, under a docstring about what the author will read. A finding
-   * carried into this round as `fixed` keeps whatever disposition it was carried with, so
-   * it sits at `in_draft` and is not composed into the draft — which is the mistake PR #32
-   * fixed on the code review page's headline and left standing here.
+   * The order the rule is applied in is what is being checked as much as the grouping: a
+   * part the pull request did not touch belongs under "Not changed" whatever it claims to
+   * fix, because it is not something that was built.
    */
-  it('leaves a finding this round closed out of the part’s severities', async () => {
+  it('puts each row under the group the rule gives it', async () => {
+    const page = await solution(STRUCTURED)
+    const headings = page.findAll('.part-group').map(one => one.text())
+    expect(headings).toEqual([
+      'Fixes a problem',
+      'Supporting',
+      'Not changed, but the change relies on it',
+    ])
+
+    /* Read in drawn order: five that fix something, then the tests, then the queue. */
+    const titles = rows(page).map(one => one.find('.part-title').text())
+    expect(titles[4]).toBe('The web path, with the branch taken out')
+    expect(titles[5]).toBe('Tests and generated types')
+    expect(titles[6]).toBe('The long-running queue it relies on')
+  })
+
+  it('draws no heading for a group with no part in it', async () => {
     const detail = fixture(STRUCTURED)
-    const part = detail.brief!.parts[0]!
-    const paths = new Set(part.files.map(file => file.path))
-    const on = detail.findings.filter(
-      finding => finding.file != null && paths.has(finding.file),
-    )
-    const posting = on.filter(
-      finding => finding.disposition === 'in_draft'
-        && (finding.round_status == null || finding.round_status === 'new'
-          || finding.round_status === 'still_open'),
-    )
-    expect(posting.length, 'the part has something to post before we close one').toBeGreaterThan(0)
-
-    /* What the card says before anything is closed, read off the card itself. */
-    const was = await solution(STRUCTURED)
-    const firstCard = was.findAll('.part')[0]!
-    const severitiesBefore = firstCard.findAll('.part-tally .pill').map(pill => pill.text())
-    const wasNotPosting = Number(/(\d+) not posting/.exec(firstCard.text())?.[1] ?? 0)
-    expect(severitiesBefore.length, 'the card announces a severity to lose').toBeGreaterThan(0)
-
-    /*
-     * One of them carried from an earlier round and fixed there. Its disposition is
-     * untouched — that is the whole point: the record still says `in_draft`.
-     */
-    const closed = posting[0]!
-    detail.findings = detail.findings.map(finding =>
-      finding.seq === closed.seq
-        ? { ...finding, round_status: 'fixed' as const, continues_review_id: 40 }
-        : finding)
+    /* Every part fixing a problem and in the change: one group, not three. */
+    detail.brief!.parts = detail.brief!.parts
+      .filter(part => part.fixes.length > 0 && part.files.some(file => file.in_diff))
+    expect(detail.brief!.parts.length, 'some parts fix a problem').toBeGreaterThan(0)
     await withReview(detail)
 
     const page = await solution(STRUCTURED)
-    const card = page.findAll('.part')[0]!
+    expect(page.findAll('.part-group').map(one => one.text())).toEqual(['Fixes a problem'])
+    expect(page.text()).not.toContain('Not changed, but the change relies on it')
+    expect(page.text()).not.toContain('Supporting')
+  })
 
-    /*
-     * One more finding is not posting than before, and the severity pills are the
-     * difference: the card counts what the author receives, and the disposition on the
-     * record did not move.
-     */
-    expect(card.text()).toContain(`${wasNotPosting + 1} not posting`)
-    expect(
-      card.findAll('.part-tally .pill').map(pill => pill.text()),
-      'the closed finding is out of the severities the card announces',
-    ).not.toEqual(severitiesBefore)
+  it('names the problems a part fixes, as the tags the flows already use', async () => {
+    const page = await solution(STRUCTURED)
+    const tags = row(page, 'The scheduled export\'s own entry point').findAll('.tag')
+    /* The second part fixes problems 1 and 2, and the tag carries each one's name. */
+    expect(tags).toHaveLength(2)
+    expect(tags[0]!.text()).toContain('The shared slot')
+    expect(tags[1]!.text()).toContain('The builder\'s branch')
 
-    /* And the row in the fold says why, rather than leaving the arithmetic unexplained. */
-    await open(page, part.title)
-    const row = page.find('#part-0').findAll('.finding')
-      .find(one => one.text().includes(closed.key))!
-    expect(row.classes()).toContain('finding--aside')
-    expect(row.text()).toContain('Fixed')
+    /* A part that fixes none says so in a word rather than leaving the cell empty. */
+    expect(row(page, 'Tests and generated types').findAll('.tag')).toHaveLength(0)
+    expect(row(page, 'Tests and generated types').find('.cell--fixes').text()).toContain('None')
   })
 
   /**
-   * **One layout for every part card's head**, which is the first half of DEV-892's defect
-   * 5: a title that did not fit beside its marks went under them, so some cards read across
-   * and others read down.
+   * **A row says where the review looked; it does not grade the part.**
    *
-   * The arrangement is what is asserted here — a lane of marks, then the title, in that
-   * order, in every card that has marks, and the title alone in one that has none. Whether
-   * it *stays* beside them is layout, and `e2e/review-desk.spec.ts` measures that in a real
-   * browser along with the heights of a row.
+   * Patrick's rule, and the one thing on this table that would be easiest to put back by
+   * accident: a severity tag in a cell, or a count painted by how bad it is. Asserted on
+   * the rendered row rather than by reading the source, because the way it comes back is
+   * somebody adding a component that carries its own colour.
    */
-  it('arranges every part card’s head the same way', async () => {
+  it('carries no severity mark and no colour that differs by severity on a row', async () => {
     const page = await solution(STRUCTURED)
-    const cards = page.findAll('.part')
-    expect(cards.length).toBeGreaterThan(1)
-
-    const parts = fixture(STRUCTURED).brief!.parts
-    let withMarks = 0
-    let withNone = 0
-
-    for (const [at, card] of cards.entries()) {
-      const head = card.find('.part-head')
-      const title = head.find('.part-title')
-      expect(title.exists(), `part ${at + 1} has its title in the head`).toBe(true)
-      expect(title.text()).toBe(parts[at]!.title)
-
-      const marks = head.find('.part-marks')
-      if (parts[at]!.fixes.length === 0) {
-        /* No mark rather than a nought, and no empty lane either. */
-        expect(marks.exists(), `part ${at + 1} fixes nothing and draws no lane`).toBe(false)
-        withNone += 1
-        continue
-      }
-      withMarks += 1
-      expect(marks.findAll('.mark')).toHaveLength(parts[at]!.fixes.length)
-      /* The lane comes first, every time: the title is never above or inside it. */
-      expect(head.element.children[0]).toBe(marks.element)
-      expect(head.element.children[1]).toBe(title.element)
+    for (const one of rows(page)) {
+      const where = one.find('.part-title').text()
+      expect(one.findAll('.severity-tag'), `${where} draws no severity tag`).toHaveLength(0)
+      expect(one.find('.cell--found').html(), `${where}'s counts carry no severity class`)
+        .not.toMatch(/blocker|should|nit|question/)
     }
-
-    /* Both cases are in the example, so this is a test of two shapes rather than one. */
-    expect(withMarks, 'a part that fixes something').toBeGreaterThan(0)
-    expect(withNone, 'a part that fixes nothing').toBeGreaterThan(0)
+    /* The whole section draws no severity tag at all, inside an opened row or on one. */
+    await open(page, 'Allowed columns on the report definition')
+    expect(page.findAll('.severity-tag')).toHaveLength(0)
   })
 
-  it('opens a part to its files, with what the change did to each', async () => {
+  it('counts the same findings on a row that the fold inside it lists', async () => {
+    const page = await solution(STRUCTURED)
+    const policy = row(page, 'Allowed columns on the report definition')
+    /* F6 and F9 are both in `ColumnPolicy.php`, which this part names. */
+    expect(policy.find('.cell--found').text()).toContain('2 to post')
+
+    await open(page, 'Allowed columns on the report definition')
+    const opened = page.find('#part-2')
+    expect(opened.findAll('.finding')).toHaveLength(2)
+    expect(opened.text()).toContain('F6')
+    expect(opened.text()).toContain('F9')
+  })
+
+  /* ------------------------------- A row, opened ------------------------------- */
+
+  it('opens a row in place, to the part’s full summary', async () => {
     const page = await solution(STRUCTURED)
     expect(page.find('#part-0').exists()).toBe(false)
 
     await open(page, 'The export context')
 
-    const detail = page.find('#part-0')
-    expect(detail.exists()).toBe(true)
-    expect(detail.text()).toContain('app/Reporting/ExportContext.php')
-    expect(detail.text()).toContain('+112')
-    expect(detail.text()).toContain('−61')
-    expect(detail.findAll('.file')).toHaveLength(3)
+    const opened = page.find('#part-0')
+    expect(opened.exists()).toBe(true)
+    /*
+     * The summary is here and nowhere else: the row above carries the one line, and the
+     * whole point of the change is that the summary is not read down a column.
+     */
+    expect(opened.find('.summary').text())
+      .toContain('Replaces the request-scoped slot')
   })
 
-  it('says of a file outside the diff that the pull request did not change it', async () => {
+  it('lists one line per finding in the part, linking each to that finding', async () => {
+    const page = await solution(STRUCTURED)
+    await open(page, 'Allowed columns on the report definition')
+
+    const lines = page.find('#part-2').findAll('.finding')
+    const blocker = lines.find(one => one.text().includes('F9'))!
+    /* Severity, the reference, the title, and where it stands — and nothing else. */
+    expect(blocker.find('.severity').text()).toBe('blocker')
+    expect(blocker.find('.what').text())
+      .toBe('The column policy is skipped entirely when the definition names no columns')
+    expect(blocker.find('.stands').text()).toContain('To post')
+    /* No claim, no evidence, no code: the code review page owns those. */
+    expect(blocker.text()).not.toContain('ColumnPolicy::for')
+
+    /* **The whole line reaches that finding**, not the page it is on. */
+    expect(blocker.attributes('href')).toBe(`/reviews/${STRUCTURED}/code-review#F9`)
+  })
+
+  it('says where a held-back finding stands on its own line', async () => {
+    const page = await solution(STRUCTURED)
+    await open(page, 'The export context')
+    const held = page.find('#part-0').findAll('.finding')
+      .find(one => one.text().includes('F2'))!
+    expect(held.find('.stands').text()).toContain('Held for a ticket')
+  })
+
+  it('says in words when the review found nothing in the part', async () => {
+    const page = await solution(STRUCTURED)
+    await open(page, 'Tests and generated types')
+    expect(page.find('#part-5').text()).toContain('The code review found nothing in this part')
+  })
+
+  /**
+   * **The files are reference, so they are behind a fold and the fold is closed.** Up to
+   * seven paths per part was half of what the old card printed on every one of them.
+   */
+  it('puts the files behind a fold that is closed, and reachable', async () => {
+    const page = await solution(STRUCTURED)
+    await open(page, 'The export context')
+
+    const fold = page.find('#part-0').find('details')
+    expect(fold.exists()).toBe(true)
+    expect((fold.element as HTMLDetailsElement).open, 'closed by default').toBe(false)
+    /* A `<summary>` is focusable and opens on Enter and Space without any script. */
+    expect(fold.find('summary').text()).toBe('3 files in this part')
+    expect(fold.text()).toContain('app/Reporting/ExportContext.php')
+    expect(fold.text()).toContain('+112 −0')
+    expect(fold.text()).toContain('+8 −61')
+  })
+
+  it('says of a file outside the change that it is not in it', async () => {
     const page = await solution(STRUCTURED)
     await open(page, 'One filter chain for both paths')
 
-    const detail = page.find('#part-3')
-    const outside = detail.findAll('.file').find(one =>
-      one.text().includes('app/Audit/RecordsAnExport.php'))!
+    const outside = page.find('#part-3').findAll('.file')
+      .find(one => one.text().includes('app/Audit/RecordsAnExport.php'))!
     /*
      * `in_diff: false` is how a part claims a file the pull request never touched, and such
      * a file has no lines either way — so the fact replaces the figures rather than being
      * drawn as a pair of noughts.
      */
-    expect(outside.text()).toContain('not changed by this pull request')
+    expect(outside.text()).toContain('not in the change')
     expect(outside.text()).not.toContain('+0')
   })
 
-  it('lists the findings on a part, joined to it by file', async () => {
+  it('opens one row at a time', async () => {
     const page = await solution(STRUCTURED)
-    await open(page, 'Allowed columns on the report definition')
+    await open(page, 'The export context')
+    expect(page.find('#part-0').exists()).toBe(true)
 
-    const detail = page.find('#part-2')
-    expect(detail.text()).toContain('What the code review found here')
-    /* F6 and F9 are both in `ColumnPolicy.php`, which this part names. */
-    expect(detail.text()).toContain('F6')
-    expect(detail.text()).toContain('F9')
-    expect(detail.text()).toContain('Blocker')
-    /* And nothing from another part's files. */
-    expect(detail.text()).not.toContain('F1')
+    await open(page, 'Allowed columns on the report definition')
+    expect(page.find('#part-2').exists()).toBe(true)
+    expect(page.find('#part-0').exists(), 'the first row folded itself').toBe(false)
+  })
+
+  it('folds a row again when its own control is pressed', async () => {
+    const page = await solution(STRUCTURED)
+    await open(page, 'The export context')
+    await open(page, 'The export context')
+    expect(page.find('#part-0').exists()).toBe(false)
+  })
+
+  /**
+   * **The row is a button, which is what makes it work from the keyboard.**
+   *
+   * The real keypress is in `e2e/review-desk.spec.ts`, where Enter on a focused button
+   * actually fires a click. What is checked here is the mechanism that makes it possible —
+   * a native button, and the two attributes that tell a screen reader what it controls.
+   */
+  it('draws each row as a button that says what it controls', async () => {
+    const page = await solution(STRUCTURED)
+    for (const [at, one] of rows(page).entries()) {
+      expect(one.element.tagName, `row ${at + 1} is a button`).toBe('BUTTON')
+      expect(one.attributes('aria-expanded')).toBe('false')
+      expect(one.attributes('aria-controls')).toBe(`part-${at}`)
+    }
+
+    await open(page, 'The export context')
+    expect(row(page, 'The export context').attributes('aria-expanded')).toBe('true')
+  })
+
+  /* ------------------------------ The one line -------------------------------- */
+
+  /**
+   * **A part with no `one_line` draws one line, not four.**
+   *
+   * DEV-919's fourth criterion, with the summary at the length the review this was measured
+   * against actually ran to. **It is a fixture here rather than in the contract's example**
+   * because review-craft's `brief_lint.py` caps a part's summary at 30 words as of 11
+   * October 2026 and that example has to keep passing it — so the case is a brief written
+   * *before* the cap, which is exactly the record the page still has to survive.
+   *
+   * The clipping itself is CSS and is measured in a real browser at 1440 and at 390 by
+   * `e2e/review-desk.spec.ts`. What is checked here is the branch: the summary stands in
+   * for the one line, it is marked as a cut, and the whole of it is still reachable.
+   */
+  const FIFTY_TWO_WORDS
+    = 'Replaces the request-scoped slot with a context object constructed by whatever '
+      + 'starts an export, so the scheduled path and the web path each carry the tenant '
+      + 'they are acting for explicitly rather than reading it out of a shared surface '
+      + 'that only one of the two of them ever writes to today.'
+
+  it('draws the summary as the row’s one line where the session wrote none', async () => {
+    expect(FIFTY_TWO_WORDS.split(/\s+/).length, 'the summary is at real length').toBe(52)
+
+    const detail = fixture(STRUCTURED)
+    detail.brief!.parts = detail.brief!.parts.map((part, at) =>
+      at === 0 ? { ...part, one_line: null, summary: FIFTY_TWO_WORDS } : part)
+    await withReview(detail)
+
+    const page = await solution(STRUCTURED)
+    const line = row(page, 'The export context').find('.one-line')
+    expect(line.text()).toBe(FIFTY_TWO_WORDS)
+    /* Marked as a cut, and the whole of it one hover away. */
+    expect(line.classes()).toContain('one-line--cut')
+    expect(line.attributes('title')).toBe(FIFTY_TWO_WORDS)
+
+    /* A part whose one line *was* written is not marked, and carries no title attribute. */
+    const written = row(page, 'The scheduled export\'s own entry point').find('.one-line')
+    expect(written.classes()).not.toContain('one-line--cut')
+    expect(written.attributes('title')).toBeUndefined()
+  })
+
+  /* --------------------------- Findings in no part ---------------------------- */
+
+  it('lists the findings no part accounts for, with the count as the heading', async () => {
+    const page = await solution(STRUCTURED)
+    /* F14 names no file; F15 names one no part claims. Two different ways in. */
+    expect(page.text()).toContain('2 findings are not about any one part')
+
+    const loose = page.findAll('.findings--loose .finding')
+    expect(loose).toHaveLength(2)
+    expect(loose.map(one => one.find('.key').text())).toEqual(['F14', 'F15'])
+    /* And each one reaches that finding, the same way a row's own lines do. */
+    expect(loose[1]!.attributes('href')).toBe(`/reviews/${STRUCTURED}/code-review#F15`)
+  })
+
+  it('agrees with itself about one finding in no part', async () => {
+    const detail = fixture(STRUCTURED)
+    const claimed = new Set(
+      detail.brief!.parts.flatMap(part => part.files.map(file => file.path)),
+    )
+    /* One left over: everything else accounted for. */
+    const loose = detail.findings.filter(
+      finding => finding.file == null || !claimed.has(finding.file),
+    )
+    detail.findings = detail.findings.filter(
+      finding => finding === loose[0] || (finding.file != null && claimed.has(finding.file)),
+    )
+    await withReview(detail)
+
+    const page = await solution(STRUCTURED)
+    expect(page.text()).toContain('1 finding is not about any one part')
+  })
+
+  it('draws no such list when every finding is on a part', async () => {
+    const detail = fixture(STRUCTURED)
+    const claimed = new Set(
+      detail.brief!.parts.flatMap(part => part.files.map(file => file.path)),
+    )
+    detail.findings = detail.findings.filter(
+      finding => finding.file != null && claimed.has(finding.file),
+    )
+    await withReview(detail)
+
+    const page = await solution(STRUCTURED)
+    expect(page.text()).not.toContain('not about any one part')
+  })
+
+  /**
+   * **Every finding of the review is on this page exactly once.**
+   *
+   * DEV-919's second criterion, counted against the record rather than against a number
+   * written down here. It is the criterion the page was most likely to fail quietly: the
+   * card version matched a finding to *every* part whose files named its path, so a file
+   * claimed by two parts put its findings under both and the counts summed to more findings
+   * than the review has.
+   */
+  it('shows every finding of the review exactly once, counted off the record', async () => {
+    const page = await solution(STRUCTURED)
+    const detail = fixture(STRUCTURED)
+
+    /* Every row's fold, opened in turn, plus the list under the table. */
+    const seen: string[] = page.findAll('.findings--loose .finding')
+      .map(one => one.find('.key').text())
+
+    for (const part of detail.brief!.parts) {
+      await open(page, part.title)
+      const opened = page.findAll('.opened')
+      expect(opened, 'one row open at a time').toHaveLength(1)
+      seen.push(...opened[0]!.findAll('.finding .key').map(one => one.text()))
+    }
+
+    const onTheRecord = detail.findings.map(finding => finding.key).sort()
+    expect([...seen].sort(), 'each finding once, and all of them').toEqual(onTheRecord)
+
+    /* And the row counts sum to the same total, which is what makes the cells checkable. */
+    const counted = page.findAll('.cell--found .found')
+      .reduce((total, one) => total + Number(/^\d+/.exec(one.text())?.[0] ?? 0), 0)
+    expect(counted + seen.filter(key => ['F14', 'F15'].includes(key)).length)
+      .toBe(detail.findings.length)
   })
 
   it('picks a finding up on a part the brief wrote before it existed', async () => {
@@ -1580,8 +1762,8 @@ describe('Solution', () => {
       ...detail.findings,
       {
         review_id: STRUCTURED,
-        seq: 14,
-        key: 'F14',
+        seq: 16,
+        key: 'F16',
         lens: 'boundary',
         severity: 'should',
         file: 'app/Reporting/ExportContext.php',
@@ -1594,86 +1776,13 @@ describe('Solution', () => {
     await withReview(detail)
 
     const page = await solution(STRUCTURED)
-    await open(page, 'The export context')
     /*
      * The join is a join, not a stored list — so a finding written after the brief appears
-     * on its part without the brief being rewritten.
+     * on its part, and in its row's count, without the brief being rewritten.
      */
-    expect(page.find('#part-0').text()).toContain('F14')
-  })
-
-  it('shows a finding no part accounts for, rather than losing it', async () => {
-    const detail = fixture(STRUCTURED)
-    detail.findings = [
-      ...detail.findings,
-      {
-        review_id: STRUCTURED,
-        seq: 16,
-        key: 'F16',
-        lens: 'boundary',
-        severity: 'nit',
-        file: 'app/Reporting/Formatters/CsvWriter.php',
-        line: 12,
-        claim: 'In a file none of the parts names.',
-        disposition: 'in_draft',
-        created_at: '2026-10-10T08:05:00Z',
-      },
-    ]
-    await withReview(detail)
-
-    const page = await solution(STRUCTURED)
-    expect(page.text()).toContain('3 findings in no part of this description')
-    expect(page.text()).toContain('F16')
-
-    /*
-     * And with the whole set accounted for, the section is not there at all.
-     *
-     * **Built by taking the two away rather than by resetting**, because the example's own
-     * F14 is in no part for good: it names no file, being about the pull request's
-     * description. `resetDesk()` would put it back and this would assert the opposite of
-     * what it means to.
-     */
-    const accounted = fixture(STRUCTURED)
-    const claimed = new Set(
-      accounted.brief!.parts.flatMap(part => part.files.map(file => file.path)),
-    )
-    accounted.findings = accounted.findings.filter(
-      finding => finding.file != null && claimed.has(finding.file),
-    )
-    await withReview(accounted)
-    const whole = await solution(STRUCTURED)
-    expect(whole.text()).not.toContain('in no part of this description')
-  })
-
-  /**
-   * **The list of findings in no part speaks the same vocabulary as a part's own.**
-   *
-   * Found reviewing DEV-892's own diff: the per-part rows and the card's count moved to
-   * `willPost`, and this list was left dimming by the disposition. A finding carried from an
-   * earlier round as `fixed` and still at `in_draft` was then drawn here full-strength — as
-   * something the author will read — three inches under a card counting it as not posting.
-   */
-  it('dims a finding in no part by the same rule a part’s own rows use', async () => {
-    const detail = fixture(STRUCTURED)
-    const loose = detail.findings.find(
-      finding => finding.file == null && finding.disposition === 'in_draft',
-    )!
-    expect(loose, 'the example has a finding in no part that would post').toBeTruthy()
-
-    detail.findings = detail.findings.map(finding =>
-      finding.seq === loose.seq
-        ? { ...finding, round_status: 'fixed' as const, continues_review_id: 40 }
-        : finding)
-    await withReview(detail)
-
-    const page = await solution(STRUCTURED)
-    const row = page.findAll('.findings--loose .finding')
-      .find(one => one.text().includes(loose.key))!
-    expect(row, 'the finding is still listed').toBeTruthy()
-
-    /* The disposition did not move; what the author receives did. */
-    expect(row.classes()).toContain('finding--aside')
-    expect(row.text()).toContain('Fixed')
+    expect(row(page, 'The export context').find('.cell--found').text()).toContain('2 to post')
+    await open(page, 'The export context')
+    expect(page.find('#part-0').text()).toContain('F16')
   })
 
   it('draws the open-choices table, which Understand leaves to it', async () => {

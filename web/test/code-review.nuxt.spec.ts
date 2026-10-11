@@ -1062,3 +1062,94 @@ describe('every field is interpolated', () => {
     expect(page.text()).toContain('**not bold**')
   })
 })
+
+/*
+ * **Arriving at one finding, named in the hash.** DEV-919's third criterion, from the other
+ * end: "Each finding line reaches that finding on the code review page, not just the page."
+ *
+ * The Solution page writes `…/code-review#F9`. What has to happen here is that the right
+ * list is chosen, the part filter is cleared and the row is opened — in that order, because
+ * the page closes whatever is open whenever the list or the part changes.
+ */
+describe('arriving at a finding named in the hash', () => {
+  beforeEach(async () => {
+    await resetDesk()
+  })
+
+  const at = (id: number, hash: string) =>
+    shown(CodeReview, `/reviews/${id}/code-review${hash}`)
+
+  it('opens the finding the hash names', async () => {
+    const page = await at(REAL, '#F9')
+    expect(page.find('#finding-9').exists(), 'F9 is open').toBe(true)
+    /* Open, not merely present: one row at a time, and it is this one. */
+    expect(page.findAll('li.row--open')).toHaveLength(1)
+    expect(page.find('li.row--open').find('.key').text()).toBe('F9')
+  })
+
+  /**
+   * **The list has to be chosen, or the row is not drawn at all.** F2 is held back, and the
+   * page opens on "To post" — so a link that only set `open` would land on a page where
+   * nothing had happened, which is the failure this criterion exists to prevent.
+   */
+  it('chooses the list the finding is in, when it is not the one the page opens on', async () => {
+    const page = await at(REAL, '#F2')
+    expect(page.find('#finding-2').exists(), 'F2 is open in the list it belongs to').toBe(true)
+    expect(page.find('li.row--open').find('.key').text()).toBe('F2')
+  })
+
+  it('reaches a finding that was set aside', async () => {
+    const page = await at(REAL, '#F8')
+    expect(page.find('#finding-8').exists()).toBe(true)
+  })
+
+  it('opens nothing when there is no hash, as before', async () => {
+    const page = await codeReview(REAL)
+    expect(page.findAll('li.row--open')).toHaveLength(0)
+  })
+
+  /**
+   * A hash naming a finding this review does not have is a stale link — a number from
+   * another review, or a finding withdrawn. The page behind it is correct and complete, so
+   * it draws as it would have drawn: an error over it would be the page blaming the reader
+   * for the link they followed.
+   */
+  it('draws the page as usual for a hash naming no finding of this review', async () => {
+    const page = await at(REAL, '#F999')
+    expect(page.findAll('li.row--open')).toHaveLength(0)
+    expect(page.findAll('li.row').length, 'and the page is drawn').toBeGreaterThan(0)
+  })
+
+  it('ignores a hash that does not name a finding at all', async () => {
+    const page = await at(REAL, '#parts-strip')
+    expect(page.findAll('li.row--open')).toHaveLength(0)
+  })
+
+  /**
+   * **The reader's own clicks own what is open once they are here.** The arrival is an
+   * arrival, not a mode: a row folded after following a link stays folded, and a later
+   * re-read of the review must not drag the page back to the finding in the hash.
+   */
+  it('lets the row be folded again, and does not reopen it', async () => {
+    const page = await at(REAL, '#F9')
+    expect(page.find('#finding-9').exists()).toBe(true)
+
+    await openFinding(page, 'F9')
+    expect(page.find('#finding-9').exists(), 'folded by its own control').toBe(false)
+
+    /* Another read of the same review — the arrival does not happen twice. */
+    await withReview(fixture(REAL))
+    await settle(page)
+    expect(page.find('#finding-9').exists()).toBe(false)
+  })
+
+  /** Each row carries its key as the anchor, which is what the hash lands on. */
+  it('gives every row the anchor a link names it by', async () => {
+    const page = await codeReview(REAL)
+    const rows = page.findAll('li.row')
+    expect(rows.length).toBeGreaterThan(0)
+    for (const row of rows) {
+      expect(row.attributes('id')).toBe(row.find('.key').text())
+    }
+  })
+})

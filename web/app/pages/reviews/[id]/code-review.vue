@@ -118,6 +118,70 @@ watch([list, part], () => {
   reasoning.value = false
 })
 
+/**
+ * Arriving at one finding, named in the hash — `…/code-review#F9`.
+ *
+ * **The Solution page's finding lines reach a finding, not the page it is on.** DEV-919's
+ * criterion, and the reason it has to be a criterion: a row of that table says "2 to post"
+ * about a part, and a link that dropped the reader at the top of fifteen rows across three
+ * lists would hand back the work the line had just done for them.
+ *
+ * Three things have to happen in order, and the order is the whole of it.
+ *
+ * 1. **The list has to change first.** A held-back finding is not in the list this page
+ *    opens on, so opening the row without choosing its list opens a row that is not drawn.
+ * 2. **The part filter has to be cleared**, for the same reason: a filter left on another
+ *    part hides the row that was asked for.
+ * 3. **`open` is set after a tick.** The watcher above closes whatever is open whenever the
+ *    list or the part changes — so setting all three in one go has the watcher undo the
+ *    third, and the link silently does nothing. That is the failure this comment exists to
+ *    stop someone reintroducing by tidying the three lines into one.
+ *
+ * Keyed on the findings arriving rather than on mount, because the hash is readable before
+ * the read finishes and a `seq` cannot be checked against a review that is not there yet.
+ * `once` is deliberate: this is an arrival, not a mode. Once the reader is here, their own
+ * clicks own what is open, and a later re-read must not drag the page back.
+ */
+const arrived = ref(false)
+
+watch(
+  () => detail.data.value,
+  async (data) => {
+    if (arrived.value || !data) return
+    const seq = seqInHash(route.hash)
+    if (seq == null) {
+      /* No finding named: nothing to arrive at, and nothing to keep watching for. */
+      arrived.value = true
+      return
+    }
+    const finding = data.findings.find(one => one.seq === seq)
+    /*
+     * A hash naming a finding this review does not have is left alone rather than reported.
+     * It is a stale link — a finding withdrawn, or another review's number — and the page
+     * behind it is correct and complete; an error over it would be the page blaming the
+     * reader for the link they followed.
+     */
+    arrived.value = true
+    if (!finding) return
+
+    list.value = listOf(finding)
+    part.value = 0
+    await nextTick()
+    open.value = finding.seq
+    reasoning.value = false
+
+    /*
+     * And scrolled to, because the browser's own hash scrolling has already happened: the
+     * row did not exist when the page loaded, since the list it is in was chosen three
+     * lines ago. `block: 'center'` rather than `'start'` so the row and the detail it just
+     * opened are both on screen.
+     */
+    await nextTick()
+    document.getElementById(finding.key)?.scrollIntoView({ block: 'center' })
+  },
+  { immediate: true },
+)
+
 /* --------------------------------- The findings ---------------------------------- */
 
 const parts = computed(() => detail.data.value?.brief?.parts ?? [])
@@ -430,8 +494,16 @@ function coverage(data: ReviewDetail): string | null {
               v-else
               class="rows"
             >
+              <!--
+                **`id` is the finding's key**, which is what a link from the Solution page
+                names in its hash and what a person quotes. The detail below carries
+                `finding-{seq}` for `aria-controls`; this is the anchor, and the two are
+                deliberately different names for different jobs — one is where to land, the
+                other is what a row controls.
+              -->
               <li
                 v-for="finding in rows"
+                :id="finding.key"
                 :key="finding.seq"
                 class="row"
                 :class="{ 'row--open': open === finding.seq }"
