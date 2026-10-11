@@ -6,7 +6,8 @@ mod common;
 use common::{new_review, temp_store};
 use review_desk_store::{
     Actor, Disposition, DraftStatus, FindingRef, NewDraft, NewFinding, NewOutcome, NewRule,
-    OutcomeKind, Review, ReviewEvent, ReviewLayerState, RuleScope, RuleStage, Severity, Store,
+    OutcomeKind, PrState, Review, ReviewEvent, ReviewLayerName, ReviewLayerState, RuleScope,
+    RuleStage, Severity, Store,
 };
 
 /// A review on a repository, at round 1.
@@ -347,4 +348,287 @@ fn the_repository_list_counts_open_reviews_and_that_repositorys_rules() {
     let docs = &repos[1];
     assert_eq!(docs.open_reviews, 0);
     assert_eq!(docs.active_rules, 1);
+}
+
+/* --------------------------- posted, and still open --------------------------- */
+
+/// A review posted as this event, with a draft behind it. Returns its id.
+fn post(store: &Store, review: i64, event: ReviewEvent, github_review: &str) {
+    store
+        .put_draft(review, NewDraft::ready("a body worth posting"))
+        .expect("put draft");
+    store
+        .approve_draft(review, event, Actor::Developer)
+        .expect("approve");
+    store
+        .post_draft(review, github_review)
+        .expect("report posted");
+}
+
+#[test]
+fn a_posted_review_whose_pull_request_is_open_is_waiting_on_the_author() {
+    let (_dir, store) = temp_store();
+    let open = seed(&store, "acme/portal", 398, "aaaaaaa");
+    let never_looked = seed(&store, "acme/portal", 399, "eeeeeee");
+    let merged = seed(&store, "acme/portal", 400, "fffffff");
+    let closed = seed(&store, "acme/billing-api", 88, "bbbbbbb");
+    let not_posted = seed(&store, "acme/portal", 412, "3f9c2ab");
+
+    post(&store, open.id, ReviewEvent::RequestChanges, "PRR_open");
+    post(
+        &store,
+        never_looked.id,
+        ReviewEvent::Comment,
+        "PRR_unlooked",
+    );
+    post(&store, merged.id, ReviewEvent::Approve, "PRR_merged");
+    post(&store, closed.id, ReviewEvent::Comment, "PRR_closed");
+    store
+        .put_draft(not_posted.id, NewDraft::ready("ready, not posted"))
+        .unwrap();
+
+    store
+        .set_review_pr_state(open.id, PrState::Open, None)
+        .unwrap();
+    store
+        .set_review_pr_state(merged.id, PrState::Merged, Some(9_000))
+        .unwrap();
+    store
+        .set_review_pr_state(closed.id, PrState::Closed, Some(9_000))
+        .unwrap();
+    store.mark_review_harvested(open.id, 8_000).unwrap();
+
+    let waiting = store.posted_reviews_awaiting_author(None).unwrap();
+    let found: Vec<i64> = waiting.iter().map(|item| item.review.id).collect();
+
+    assert!(
+        found.contains(&open.id),
+        "a posted review, pull request open"
+    );
+    assert!(
+        found.contains(&never_looked.id),
+        "and one nobody has harvested: its state is unknown, which is why it is here"
+    );
+    assert!(
+        !found.contains(&merged.id),
+        "a merged pull request has no author left to wait for"
+    );
+    assert!(!found.contains(&closed.id), "nor has a closed one");
+    assert!(
+        !found.contains(&not_posted.id),
+        "and a draft that was never posted is not waiting on anybody"
+    );
+    assert_eq!(found.len(), 2);
+
+    assert_eq!(
+        ids_of(
+            &store
+                .posted_reviews_awaiting_author(Some("ACME/Portal"))
+                .unwrap()
+        ),
+        found,
+        "one repository can be asked about, by any spelling of its name"
+    );
+    assert!(
+        store
+            .posted_reviews_awaiting_author(Some("acme/billing-api"))
+            .unwrap()
+            .is_empty(),
+        "and the only posted review there is closed"
+    );
+}
+
+/// The review ids of a posted-review list, in the order it came back.
+fn ids_of(items: &[review_desk_store::PostedReview]) -> Vec<i64> {
+    items.iter().map(|item| item.review.id).collect()
+}
+
+#[test]
+fn a_posted_review_carries_when_it_was_posted_and_as_what() {
+    let (_dir, store) = temp_store();
+    let review = seed(&store, "acme/portal", 398, "aaaaaaa");
+    post(&store, review.id, ReviewEvent::RequestChanges, "PRR_kwDOA1");
+
+    let waiting = store.posted_reviews_awaiting_author(None).unwrap();
+    let item = waiting.first().expect("the review is in the group");
+
+    assert_eq!(item.posted_as, Some(ReviewEvent::RequestChanges));
+    assert!(
+        item.posted_at.is_some(),
+        "the draft's own posted_at is what put it here, so it is always there"
+    );
+    assert_eq!(
+        item.review.github_review_id.as_deref(),
+        Some("PRR_kwDOA1"),
+        "and the review it became on GitHub, for a link out"
+    );
+    assert!(
+        item.review.harvested_at.is_none(),
+        "nothing has harvested it, which is what makes the counts below unmeasured"
+    );
+    assert_eq!(item.response, review_desk_store::AuthorResponse::default());
+}
+
+#[test]
+fn a_posted_review_carries_what_the_harvester_recorded() {
+    let (_dir, store) = temp_store();
+    let review = seed(&store, "acme/portal", 398, "aaaaaaa");
+
+    let seq = store
+        .add_finding(
+            review.id,
+            NewFinding {
+                lens: "boundary".to_string(),
+                severity: Severity::Should,
+                claim: "the retry writes the wrong bucket".to_string(),
+                disposition: Disposition::InDraft,
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .seq;
+    post(&store, review.id, ReviewEvent::RequestChanges, "PRR_kwDOA1");
+
+    let recorded = |kind: OutcomeKind, at: i64| {
+        store
+            .add_outcome(
+                FindingRef {
+                    review_id: review.id,
+                    seq,
+                },
+                NewOutcome {
+                    kind,
+                    actor: Actor::Harvester,
+                    detail: None,
+                    occurred_at: Some(at),
+                },
+            )
+            .unwrap();
+    };
+    recorded(OutcomeKind::Replied, 1_000);
+    recorded(OutcomeKind::Replied, 1_100);
+    recorded(OutcomeKind::ThreadResolved, 1_200);
+    recorded(OutcomeKind::CodeChangedAfter, 1_300);
+    // A kind that is not the author answering, so the counts cannot be a count of
+    // outcomes.
+    recorded(OutcomeKind::Kept, 1_400);
+    store.mark_review_harvested(review.id, 2_000).unwrap();
+
+    let waiting = store.posted_reviews_awaiting_author(None).unwrap();
+    let item = waiting.first().expect("the review is in the group");
+
+    assert_eq!(item.response.replies, 2);
+    assert_eq!(item.response.threads_resolved, 1);
+    assert_eq!(item.response.code_changed_after, 1);
+    assert_eq!(
+        item.review.harvested_at,
+        Some(2_000),
+        "and something has looked, which is what makes those three figures"
+    );
+}
+
+#[test]
+fn posted_reviews_come_back_newest_posting_first() {
+    let (_dir, store) = temp_store();
+    let first = seed(&store, "acme/portal", 398, "aaaaaaa");
+    let second = seed(&store, "acme/portal", 399, "eeeeeee");
+
+    post(&store, first.id, ReviewEvent::Comment, "PRR_first");
+    post(&store, second.id, ReviewEvent::Comment, "PRR_second");
+
+    assert_eq!(
+        ids_of(&store.posted_reviews_awaiting_author(None).unwrap()),
+        [second.id, first.id],
+        "the newest posting leads"
+    );
+}
+
+/* ------------------------------ every review ------------------------------ */
+
+#[test]
+fn every_review_is_listed_newest_first_with_the_step_it_reached() {
+    let (_dir, store) = temp_store();
+    let first = seed(&store, "acme/portal", 398, "aaaaaaa");
+    let second = seed(&store, "acme/billing-api", 88, "bbbbbbb");
+    let untouched = seed(&store, "acme/portal", 412, "3f9c2ab");
+
+    // Step 6 is waiting and step 7 is pending, which is every review a session has
+    // drafted: the furthest step that has *started* is 6, and a rule that read the last
+    // step written would say 7.
+    store
+        .set_review_layer(first.id, 1, ReviewLayerState::Done, Some("passed"))
+        .unwrap();
+    store
+        .set_review_layer(first.id, 6, ReviewLayerState::WaitingOnYou, Some("yours"))
+        .unwrap();
+    store
+        .set_review_layer(
+            first.id,
+            7,
+            ReviewLayerState::Pending,
+            Some("after posting"),
+        )
+        .unwrap();
+    store
+        .set_review_layer(second.id, 3, ReviewLayerState::Skipped, None)
+        .unwrap();
+
+    let listed = store.reviews_at_step(None).unwrap();
+    assert_eq!(
+        listed.iter().map(|at| at.review.id).collect::<Vec<_>>(),
+        [untouched.id, second.id, first.id],
+        "newest first, by the order they were opened"
+    );
+
+    let step_of = |id: i64| {
+        listed
+            .iter()
+            .find(|at| at.review.id == id)
+            .expect("the review is listed")
+            .step
+            .clone()
+    };
+
+    let step = step_of(first.id).expect("a step");
+    assert_eq!(step.number, 6, "the furthest step that is not pending");
+    assert_eq!(step.name, ReviewLayerName::Draft);
+    assert_eq!(step.state, ReviewLayerState::WaitingOnYou);
+    assert_eq!(step.detail.as_deref(), Some("yours"));
+
+    let step = step_of(second.id).expect("a step");
+    assert_eq!(
+        (step.number, step.state, step.detail),
+        (3, ReviewLayerState::Skipped, None),
+        "a step deliberately not run is a step the review got to"
+    );
+
+    assert!(
+        step_of(untouched.id).is_none(),
+        "a review nothing has reported on is at no step, which is not step 1 pending"
+    );
+}
+
+#[test]
+fn the_reviews_list_can_be_asked_about_one_repository() {
+    let (_dir, store) = temp_store();
+    let portal = seed(&store, "acme/portal", 398, "aaaaaaa");
+    seed(&store, "acme/billing-api", 88, "bbbbbbb");
+
+    assert_eq!(
+        store
+            .reviews_at_step(Some("ACME/Portal"))
+            .unwrap()
+            .iter()
+            .map(|at| at.review.id)
+            .collect::<Vec<_>>(),
+        [portal.id],
+        "by any spelling of its name, as every other filter here accepts"
+    );
+    assert!(
+        store
+            .reviews_at_step(Some("acme/nothing"))
+            .unwrap()
+            .is_empty(),
+        "and a repository with no reviews is empty rather than everything"
+    );
 }

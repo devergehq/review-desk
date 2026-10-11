@@ -1469,6 +1469,85 @@ pub struct ReviewAtLayer {
     pub layer: ReviewLayer,
 }
 
+/// What the record holds of the author's response to a posted review.
+///
+/// **All three are written by the harvester and by nothing else.** They are counts of
+/// outcomes by kind, so each one is a count of facts GitHub stated — not a judgement
+/// about whether the author has engaged.
+///
+/// Zero is a measurement here, and it is only a measurement when something has looked:
+/// `Review::harvested_at` is what says whether anything has, and a caller serving these
+/// to a screen has to read it. See [`PostedReview`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct AuthorResponse {
+    /// Replies the harvester read in a linked finding's thread.
+    pub replies: i64,
+    /// Linked findings whose thread the harvester found resolved.
+    pub threads_resolved: i64,
+    /// Findings whose code the harvester found changed after the commit the review read.
+    ///
+    /// **Not "commits since".** DEV-930 asks for that phrase and the record has no such
+    /// figure: the harvester checks the files a finding points at, one finding at a time,
+    /// and `round_commits` counts commits *before* a round rather than after its posting.
+    /// This is the fact the harvester actually writes.
+    pub code_changed_after: i64,
+}
+
+/// A posted review whose pull request has not been merged or closed, and what has come
+/// back on it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PostedReview {
+    pub review: Review,
+    /// When the review session reported it posted. The draft's own `posted_at`, which is
+    /// what put this review in the group.
+    pub posted_at: Option<Timestamp>,
+    /// The GitHub review event it was posted as, chosen by the developer at approval.
+    pub posted_as: Option<ReviewEvent>,
+    /// The counts, always. **Whether they mean anything is `review.harvested_at`**: a
+    /// review nothing has harvested has three zeroes here and no measurement behind
+    /// them, and a caller that draws them as figures would be saying the author did
+    /// nothing when nobody has looked.
+    pub response: AuthorResponse,
+}
+
+/// One of a review's seven steps, as a list needs it: where the review has got to.
+///
+/// **The four fields a row draws, and not the step's passes or its facts.** A
+/// [`ReviewLayer`] carries both, and reading them costs two statements per step — which
+/// for a list of every review on the record is a statement per review per step. Handing
+/// back a `ReviewLayer` with its `runs` left empty would be worse than costly: an empty
+/// `runs` means a step nothing has written, so a list would be claiming that of every
+/// step it reported.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReviewStep {
+    /// Which of the seven, from 1.
+    pub number: i64,
+    /// Fixed by the number, and derived from it rather than stored.
+    pub name: ReviewLayerName,
+    pub state: ReviewLayerState,
+    /// The short phrase written against the state — "passed", "3 options", "waiting on
+    /// you". `None` for a step that recorded none.
+    pub detail: Option<String>,
+}
+
+/// A review and the step it has reached.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReviewAtStep {
+    pub review: Review,
+    /// The furthest step that is **not** `pending` — the highest-numbered one anything
+    /// has moved off not-started.
+    ///
+    /// `None` when every step is pending, which is a review nothing has reported on at
+    /// all. That is a different answer from step 1 pending, and the two are told apart
+    /// here rather than by a screen reading a number: "nothing has started" and "the
+    /// lint is pending" are different sentences.
+    ///
+    /// **Not "the furthest step anything has written".** [`Store::post_draft`] writes
+    /// step 7 as `pending` the moment a review is posted, so that rule would report
+    /// step 7 — the harvest — for a review whose harvest has not begun.
+    pub step: Option<ReviewStep>,
+}
+
 /// What running the review-craft lint over a draft body reported.
 ///
 /// Every field is optional, and `None` means the lint has not run rather than that it

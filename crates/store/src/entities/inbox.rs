@@ -15,8 +15,9 @@ use rusqlite::{params, Row};
 
 use crate::error::Result;
 use crate::model::{
-    Actor, DraftStatus, NitTicket, NitTicketStatus, RepoSummary, Review, ReviewAtLayer,
-    ReviewLayerState, RuleStage, Timestamp,
+    Actor, AuthorResponse, DraftStatus, NitTicket, NitTicketStatus, OutcomeKind, PostedReview,
+    PrState, RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewLayerName, ReviewLayerState,
+    ReviewStep, RuleStage, Timestamp,
 };
 use crate::{normalise, Store};
 
@@ -106,6 +107,142 @@ impl Store {
             row_to_review,
         )?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Every posted review whose pull request has not been merged or closed, newest
+    /// posting first, with what has come back on it.
+    ///
+    /// The Inbox's "Waiting on the author", and the group the dashboard had none of: a
+    /// review the developer signed off and the session posted left every group here, so
+    /// the queue could only say the whole thing was not measured and the review was
+    /// reachable by typing its id. DEV-930.
+    ///
+    /// **Posted is `drafts.posted_at`**, which is what [`Store::finished_review_timings`]
+    /// keys on, rather than the review's `github_review_id`. `post_draft` writes both in
+    /// one transaction so they cannot disagree, and the draft's is the one that also says
+    /// *when*.
+    ///
+    /// **Open means open or unlooked-at**, the rule [`Store::reviews_to_harvest`] uses
+    /// and for the same reason: a review nobody has harvested has no recorded state, so
+    /// the honest answer is that nothing is known and it belongs in the group that says
+    /// so. A pull request merged or closed at its last harvest is finished with — there
+    /// is no author left to wait for — and is not here.
+    ///
+    /// **The three counts come back whatever the record holds, and whether they mean
+    /// anything is [`Review::harvested_at`].** Zero replies on a review nothing has
+    /// harvested is not a measurement of silence; it is the absence of one, and the
+    /// caller drawing this has to say which. The split is the one this module's header
+    /// states: the store owns which reviews are in the group, and what each one *shows*
+    /// is the caller's.
+    pub fn posted_reviews_awaiting_author(&self, repo: Option<&str>) -> Result<Vec<PostedReview>> {
+        let repo = repo.map(normalise::repo);
+        let mut statement = self.conn.prepare(&format!(
+            "SELECT {REVIEW_COLUMNS},
+                 d.posted_at AS posted_at,
+                 d.event     AS posted_as,
+                 (SELECT COUNT(*) FROM outcomes o
+                  WHERE o.review_id = v.id AND o.kind = ?1) AS replies,
+                 (SELECT COUNT(*) FROM outcomes o
+                  WHERE o.review_id = v.id AND o.kind = ?2) AS threads_resolved,
+                 (SELECT COUNT(*) FROM outcomes o
+                  WHERE o.review_id = v.id AND o.kind = ?3) AS code_changed_after
+             FROM reviews v
+             JOIN drafts d ON d.review_id = v.id
+             WHERE d.posted_at IS NOT NULL
+               AND (v.pr_state IS NULL OR v.pr_state = ?4)
+               AND (?5 IS NULL OR v.repo = ?5)
+             ORDER BY d.posted_at DESC, v.id DESC"
+        ))?;
+        let rows = statement.query_map(
+            params![
+                OutcomeKind::Replied,
+                OutcomeKind::ThreadResolved,
+                OutcomeKind::CodeChangedAfter,
+                PrState::Open,
+                repo
+            ],
+            |row| {
+                Ok(PostedReview {
+                    review: row_to_review(row)?,
+                    posted_at: row.get("posted_at")?,
+                    posted_as: row.get("posted_as")?,
+                    response: AuthorResponse {
+                        replies: row.get("replies")?,
+                        threads_resolved: row.get("threads_resolved")?,
+                        code_changed_after: row.get("code_changed_after")?,
+                    },
+                })
+            },
+        )?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Every review on the record, newest first, with the step it has reached.
+    ///
+    /// The Reviews list: the one place every review is named, whatever became of it, so
+    /// that a review which has left the queue is still somewhere a reader can find it.
+    ///
+    /// **Newest first is by id**, which is the order every other query in this module
+    /// serves and the order reviews were opened in. Deliberately not by
+    /// `last_activity_at`: that is null for every review from before DEV-890, so a sort
+    /// on it would put them in whatever order SQLite felt like. It is a column the list
+    /// draws, not the column it is ordered by.
+    ///
+    /// **The step is the highest-numbered one that is not `pending`** — see
+    /// [`ReviewAtStep::step`] for why that is not the same as the last step written, and
+    /// why a review with none gets `None` rather than step 1.
+    ///
+    /// One statement. The step comes off a `LEFT JOIN` to the layer the subquery picks,
+    /// rather than seven reads per review: this is a list of the whole record, and a
+    /// read per step per review is what turns it into a page that gets slower the longer
+    /// the developer uses Review Desk.
+    pub fn reviews_at_step(&self, repo: Option<&str>) -> Result<Vec<ReviewAtStep>> {
+        let repo = repo.map(normalise::repo);
+        let mut statement = self.conn.prepare(&format!(
+            "SELECT {REVIEW_COLUMNS},
+                 l.number AS step_number,
+                 l.state  AS step_state,
+                 l.detail AS step_detail
+             FROM reviews v
+             LEFT JOIN review_layers l
+                 ON l.review_id = v.id
+                AND l.number = (
+                    SELECT MAX(number) FROM review_layers
+                    WHERE review_id = v.id AND state <> ?1
+                )
+             WHERE (?2 IS NULL OR v.repo = ?2)
+             ORDER BY v.id DESC"
+        ))?;
+        let rows = statement
+            .query_map(params![ReviewLayerState::Pending, repo], |row| {
+                Ok((
+                    row_to_review(row)?,
+                    row.get::<_, Option<i64>>("step_number")?,
+                    row.get::<_, Option<ReviewLayerState>>("step_state")?,
+                    row.get::<_, Option<String>>("step_detail")?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+
+        rows.into_iter()
+            .map(|(review, number, state, detail)| {
+                // Both or neither. The join either matched the layer the subquery named,
+                // in which case the row is `NOT NULL` in both columns because the table
+                // is, or it matched nothing at all. A number without a state would be a
+                // row this build does not understand, and `for_number` is the only part
+                // that can fail.
+                let step = match (number, state) {
+                    (Some(number), Some(state)) => Some(ReviewStep {
+                        number,
+                        name: ReviewLayerName::for_number(number)?,
+                        state,
+                        detail,
+                    }),
+                    _ => None,
+                };
+                Ok(ReviewAtStep { review, step })
+            })
+            .collect()
     }
 
     /// Every review a session is still working on, with the layer it is on.
