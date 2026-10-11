@@ -1470,6 +1470,37 @@ describe('Solution', () => {
     expect(whole.text()).not.toContain('in no part of this description')
   })
 
+  /**
+   * **The list of findings in no part speaks the same vocabulary as a part's own.**
+   *
+   * Found reviewing DEV-892's own diff: the per-part rows and the card's count moved to
+   * `willPost`, and this list was left dimming by the disposition. A finding carried from an
+   * earlier round as `fixed` and still at `in_draft` was then drawn here full-strength — as
+   * something the author will read — three inches under a card counting it as not posting.
+   */
+  it('dims a finding in no part by the same rule a part’s own rows use', async () => {
+    const detail = fixture(STRUCTURED)
+    const loose = detail.findings.find(
+      finding => finding.file == null && finding.disposition === 'in_draft',
+    )!
+    expect(loose, 'the example has a finding in no part that would post').toBeTruthy()
+
+    detail.findings = detail.findings.map(finding =>
+      finding.seq === loose.seq
+        ? { ...finding, round_status: 'fixed' as const, continues_review_id: 40 }
+        : finding)
+    await withReview(detail)
+
+    const page = await solution(STRUCTURED)
+    const row = page.findAll('.findings--loose .finding')
+      .find(one => one.text().includes(loose.key))!
+    expect(row, 'the finding is still listed').toBeTruthy()
+
+    /* The disposition did not move; what the author receives did. */
+    expect(row.classes()).toContain('finding--aside')
+    expect(row.text()).toContain('Fixed')
+  })
+
   it('draws the open-choices table, which Understand leaves to it', async () => {
     const page = await solution(STRUCTURED)
     expect(page.text()).toContain('Where the ticket left a choice')

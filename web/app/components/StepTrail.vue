@@ -367,10 +367,20 @@ a.face:hover .name {
   overflow-wrap: break-word;
 }
 
-/* Opened: the same span, unclamped, so the note grows where it already was. */
+/*
+ * Opened: the same span, unclamped, so the note grows where it already was.
+ *
+ * **Both clamps are turned off, not just the display they share.** `-webkit-line-clamp`
+ * needs `-webkit-box` and so is defeated by `display: block` alone — but the standard
+ * `line-clamp` above clamps a block container on its own, and no engine implements it yet.
+ * The day one does, a `display: block` that left `line-clamp: 2` standing would make "Read
+ * the rest" reveal nothing while still reading "Fold".
+ */
 .outcome--whole {
   display: block;
   overflow: visible;
+  -webkit-line-clamp: none;
+  line-clamp: none;
 }
 
 /*

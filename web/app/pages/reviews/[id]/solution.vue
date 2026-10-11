@@ -470,7 +470,7 @@ function severityWord(severity: string, n: number): string {
               v-for="finding in findingsInNoPart(data, data.brief)"
               :key="finding.seq"
               class="finding"
-              :class="{ 'finding--aside': finding.disposition !== 'in_draft' }"
+              :class="{ 'finding--aside': !willPost(finding) }"
             >
               <span class="rd-mono key">{{ finding.key }}</span>
               <SeverityTag :severity="finding.severity" />
@@ -487,6 +487,23 @@ function severityWord(severity: string, n: number): string {
                   class="rd-meta where"
                 >in no file</span>
               </span>
+              <!--
+                **The same two marks as a row inside a part**, and for the same reason. This
+                list dimmed by the disposition while the one above it dimmed by `willPost`,
+                so a finding carried in as `fixed` and still at `in_draft` was drawn here
+                full-strength — as something the author will read — three inches under a
+                card counting it as not posting. One page, one vocabulary.
+              -->
+              <DispositionTag
+                v-if="finding.disposition !== 'in_draft'"
+                :disposition="finding.disposition"
+              />
+              <DeskPill
+                v-if="roundStatusLabel(finding)"
+                :tone="isStillOpen(finding.round_status) ? 'info' : 'quiet'"
+              >
+                {{ roundStatusLabel(finding) }}
+              </DeskPill>
             </li>
           </ul>
         </section>
@@ -722,12 +739,21 @@ function severityWord(severity: string, n: number): string {
   min-width: 0;
 }
 
-/* The marks keep their own line and wrap as whole circles if a part fixes several. */
+/*
+ * The marks keep their own lane and wrap as whole circles if a part fixes several.
+ *
+ * **`0 1 auto` and a half-width cap, not `flex: none`.** Fixed at max-content the lane could
+ * not wrap at all, and nothing caps how many problems a part may fix: nine marks came to
+ * 282px of a 340px card and left the title six pixels, which is defect 5 again wearing a
+ * different hat. Capped, the lane wraps into rows of its own and the title always has half
+ * the head.
+ */
 .part-marks {
-  flex: none;
+  flex: 0 1 auto;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  max-width: 50%;
 }
 
 .part-title {
