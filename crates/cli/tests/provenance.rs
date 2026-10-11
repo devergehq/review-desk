@@ -537,11 +537,11 @@ fn a_fact_without_an_equals_sign_is_refused_naming_the_shape_it_wanted() {
         "--fact",
         "three problems",
     ]);
-    assert_eq!(refused["error"]["code"], "invalid_value");
+    assert_eq!(refused["error"]["code"], "bad_input");
     let message = refused["error"]["message"].as_str().expect("a message");
     assert!(
-        message.contains("label=value"),
-        "the refusal names the shape it wanted: {message}"
+        message.contains("--fact") && message.contains("label=value"),
+        "the refusal names the flag and the shape it wanted: {message}"
     );
 }
 

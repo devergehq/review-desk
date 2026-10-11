@@ -4,7 +4,7 @@ use clap::Subcommand;
 use review_desk_store::{NewLayerFact, ReviewLayerName, ReviewLayerState, Store};
 use serde_json::json;
 
-use crate::error::Result;
+use crate::error::{CliError, Result};
 use crate::report::Report;
 
 #[derive(Debug, Subcommand)]
@@ -59,13 +59,13 @@ pub enum LayerCommand {
 /// fact and so is `Flag=--no-verify=false`. A label may not, which is the half that is
 /// two or three words.
 fn fact(given: &str) -> Result<NewLayerFact> {
-    let (label, value) = given.split_once('=').ok_or_else(|| {
-        crate::error::CliError::Store(review_desk_store::StoreError::InvalidValue {
-            field: "fact",
-            value: given.to_string(),
-            expected: "label=value".to_string(),
-        })
-    })?;
+    // **A bad-input refusal rather than the store's `InvalidValue`.** The store never saw
+    // this string: it is a flag this command could not read, which is what `BadInput` is
+    // for — and `InvalidValue` words itself as "expected one of", which is right for a
+    // closed set of values and wrong for a shape.
+    let (label, value) = given
+        .split_once('=')
+        .ok_or_else(|| CliError::bad_input("--fact", format!("{given:?} is not label=value")))?;
     Ok(NewLayerFact {
         label: label.to_string(),
         value: value.to_string(),

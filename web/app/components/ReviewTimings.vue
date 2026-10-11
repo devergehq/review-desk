@@ -77,7 +77,8 @@ const whyNoAgentTotal = computed(() =>
 
 <style scoped>
 /*
- * `totals` rather than `took`, which is what the trail above calls one step's own figure.
+ * `totals` rather than `took`: one step's own figure is on that step's card since DEV-917,
+ * and this is the review's.
  * Two different facts, and a test that could not tell them apart would be asserting about
  * whichever one the selector found first.
  *

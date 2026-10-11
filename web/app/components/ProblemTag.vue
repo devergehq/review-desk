@@ -113,6 +113,13 @@ const words = computed(() => props.label ?? `Problem ${props.number}`)
  * document for a screen reader, which is the same bargain the trail's one line strikes.
  */
 .words {
+  /*
+   * `min-width: 0` is the half that is easy to leave out. A flex child's minimum width is
+   * its content by default, so without this the ellipsis never fires and a label of twelve
+   * words widens the box it is in — which at 390px is the horizontal scroll this change is
+   * against, caused by the fix for it.
+   */
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }

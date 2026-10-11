@@ -101,14 +101,15 @@ function onPointerDown(event: Event) {
   emit('close')
 }
 
+/*
+ * **Every mounted card listens, and only the open one acts.** A trail has seven of these
+ * and one can be open, so six of the seven return on the first line. There is no
+ * `stopPropagation` here and it would buy nothing if there were: the listener is on the
+ * window, which is where propagation ends, and stopping it there does not keep the other
+ * six from being called.
+ */
 function onKey(event: KeyboardEvent) {
   if (!props.open || event.key !== 'Escape') return
-  /*
-   * Stopped here, so one Escape closes one card. Nothing else on these pages closes on
-   * Escape today; if something does later, a reader pressing it once should not find two
-   * things gone.
-   */
-  event.stopPropagation()
   emit('escape')
   emit('close')
 }
