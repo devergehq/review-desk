@@ -1557,7 +1557,28 @@ components:
         summary:
           type: string
           minLength: 1
-          description: The one line under the title.
+          description: |
+            What this part did, in the session's own words. **Not one line**: on the review
+            board A10 was measured against these ran 33 to 52 words each. Shown inside the
+            part's opened row, where there is room for it.
+        one_line:
+          type: [string, 'null']
+          minLength: 1
+          description: |
+            The sentence the part's row carries under its title.
+
+            **Null is the normal state, and the page has a different rendering for it.**
+            Nothing writes one yet — that is a Locus change, filed as DEV-920 — and a part
+            with none shows its `summary` cut to a single line with an ellipsis. Defaulting
+            this from the summary would put a derived value in a field a client could not
+            afterwards tell from a written one, which is `Finding.title`'s reasoning for
+            the same decision.
+
+            **No maximum length.** A one-line summary that runs to three lines is a writing
+            fault and belongs to the review linter, which is this document's rule for every
+            other recorded string. The empty string is refused, because a part sent with
+            `one_line: ""` would draw a blank row under its title where a part sent with
+            none draws its summary.
         fixes:
           type: array
           items: { type: integer, format: int64, minimum: 1 }

@@ -213,8 +213,17 @@ pub enum BlindPassState {
 #[serde(deny_unknown_fields)]
 pub struct BriefPart {
     pub title: String,
-    /// The one line under the title.
+    /// What this part did, in the session's own words. Shown inside the opened row.
     pub summary: String,
+    /// The sentence the part's row carries under its title.
+    ///
+    /// **`summary` is not one line.** On the review board A10 was measured against the eight
+    /// summaries ran 33 to 52 words, and the table reads them down one column. `None` is the
+    /// normal state — nothing writes one yet, which is DEV-920 — and the page then cuts the
+    /// summary to a line rather than defaulting this from it: a derived value here would be
+    /// one nothing could afterwards tell from a written one.
+    #[serde(default)]
+    pub one_line: Option<String>,
     /// The numbered problems this part fixes. Empty for a part that fixes none — tests and
     /// generated types are a part of the change and fix nothing.
     #[serde(default)]
@@ -555,7 +564,7 @@ impl Store {
     /// The change in parts, in the order they were written.
     pub(crate) fn brief_parts(&self, review_id: i64) -> Result<Vec<BriefPart>> {
         let mut statement = self.conn.prepare(
-            "SELECT position, title, summary FROM brief_parts
+            "SELECT position, title, summary, one_line FROM brief_parts
              WHERE review_id = ?1 ORDER BY position ASC",
         )?;
         let rows = statement.query_map(params![review_id], |row| {
@@ -564,6 +573,7 @@ impl Store {
                 BriefPart {
                     title: row.get("title")?,
                     summary: row.get("summary")?,
+                    one_line: row.get("one_line")?,
                     fixes: Vec::new(),
                     files: Vec::new(),
                 },
@@ -955,6 +965,14 @@ fn validate_parts(parts: &[BriefPart], numbers: &[i64]) -> Result<()> {
         let at = format!("part {}", index + 1);
         required("parts.title", &part.title, &at)?;
         required("parts.summary", &part.summary, &at)?;
+        /*
+         * A part sent with `one_line: ""` is not a part with no one line. Leaving the field
+         * out says the session wrote none and the page cuts the summary instead; sending a
+         * blank says it wrote one and it is empty, which would draw an empty row under the
+         * title. Migration 15 cannot put a CHECK on a table that already exists, so this is
+         * where it is refused — the same bargain `problems.label` struck.
+         */
+        optional("parts.one_line", part.one_line.as_deref(), &at)?;
 
         let mut fixes: Vec<i64> = Vec::with_capacity(part.fixes.len());
         for problem in &part.fixes {
@@ -1229,9 +1247,9 @@ impl Store {
         for (index, part) in new.parts.iter().enumerate() {
             let position = index as i64 + 1;
             self.conn.execute(
-                "INSERT INTO brief_parts (review_id, position, title, summary)
-                 VALUES (?1, ?2, ?3, ?4)",
-                params![review_id, position, part.title, part.summary],
+                "INSERT INTO brief_parts (review_id, position, title, summary, one_line)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![review_id, position, part.title, part.summary, part.one_line],
             )?;
             for (file_index, file) in part.files.iter().enumerate() {
                 self.conn.execute(

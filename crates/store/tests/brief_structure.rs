@@ -156,6 +156,7 @@ fn whole_brief() -> NewBrief {
             BriefPart {
                 title: "The delivery row".to_string(),
                 summary: "One row per attempt.".to_string(),
+                one_line: Some("One row per attempt, with what became of it.".to_string()),
                 fixes: vec![2],
                 files: vec![BriefPartFile {
                     path: "app/Models/WebhookDelivery.php".to_string(),
@@ -167,6 +168,7 @@ fn whole_brief() -> NewBrief {
             BriefPart {
                 title: "The queue worker".to_string(),
                 summary: "Sends a delivery and retries it.".to_string(),
+                one_line: None,
                 fixes: vec![1, 2],
                 files: vec![
                     BriefPartFile {
@@ -403,6 +405,7 @@ fn a_solution_part_fixing_a_problem_that_is_not_there_is_refused_by_field_and_nu
             parts: vec![BriefPart {
                 title: "a part".to_string(),
                 summary: "one line".to_string(),
+                one_line: None,
                 fixes: vec![4],
                 files: Vec::new(),
             }],
@@ -583,6 +586,7 @@ fn a_file_outside_the_diff_with_lines_against_it_is_refused() {
             parts: vec![BriefPart {
                 title: "a part".to_string(),
                 summary: "one line".to_string(),
+                one_line: None,
                 fixes: Vec::new(),
                 files: vec![BriefPartFile {
                     path: "app/Support/Backoff.php".to_string(),
@@ -607,6 +611,7 @@ fn one_file_cannot_belong_to_two_parts() {
     let part = |title: &str| BriefPart {
         title: title.to_string(),
         summary: "one line".to_string(),
+        one_line: None,
         fixes: Vec::new(),
         files: vec![BriefPartFile {
             path: "jobs/DeliverWebhook.php".to_string(),
@@ -892,6 +897,123 @@ fn a_blank_label_on_a_problem_is_refused_rather_than_stored() {
         },
     ));
     assert_eq!(refused, "problems.label");
+    assert!(expected.contains("leave the field out"), "{expected}");
+}
+
+/// A part's one line: kept as written, absent when it was not written, never empty.
+///
+/// **The three states are what the Solution page branches on.** Its table draws the one line
+/// under the title when there is one and cuts the summary to a line when there is not —
+/// and on the review board A10 was measured against those summaries ran 33 to 52 words, so
+/// the branch is the difference between a row and four wrapped lines. A blank one stored as
+/// a one line would draw an empty row under the title, which looks exactly like a page that
+/// failed to join.
+#[test]
+fn a_solution_part_keeps_the_one_line_it_was_written_with() {
+    let (_dir, store) = temp_store();
+    let review = seed(&store);
+
+    let part = |title: &str, one_line: Option<&str>| BriefPart {
+        title: title.to_string(),
+        summary: "What this part did, at the length a session writes it.".to_string(),
+        one_line: one_line.map(str::to_string),
+        fixes: Vec::new(),
+        files: vec![BriefPartFile {
+            path: format!("app/{title}.php"),
+            lines_added: 3,
+            lines_removed: 1,
+            in_diff: true,
+        }],
+    };
+
+    let stored = store
+        .put_brief(
+            review.id,
+            NewBrief {
+                problems: Vec::new(),
+                flow_before: Vec::new(),
+                flow_after: Vec::new(),
+                flow_before_caption: None,
+                flow_after_caption: None,
+                options: Vec::new(),
+                blind_pass: None,
+                parts: vec![
+                    part(
+                        "Written",
+                        Some("The queue keeps the attempt under its own name."),
+                    ),
+                    part("Unwritten", None),
+                ],
+                open_choices: Vec::new(),
+                disagreements: Vec::new(),
+                ..whole_brief()
+            },
+        )
+        .expect("a one line is optional, one part each way");
+
+    assert_eq!(
+        stored.parts[0].one_line.as_deref(),
+        Some("The queue keeps the attempt under its own name."),
+        "the one line is kept as written, not shortened from the summary"
+    );
+    assert_eq!(
+        stored.parts[1].one_line, None,
+        "a part written with no one line reads back with none, not with its summary"
+    );
+
+    // And no length is enforced, which is migration 10's ruling about every field of the
+    // brief: a one line that runs to three lines is a writing fault and belongs to the
+    // linter in Locus.
+    let long = "a line nobody should write ".repeat(12);
+    let stored = store
+        .put_brief(
+            review.id,
+            NewBrief {
+                problems: Vec::new(),
+                flow_before: Vec::new(),
+                flow_after: Vec::new(),
+                flow_before_caption: None,
+                flow_after_caption: None,
+                options: Vec::new(),
+                blind_pass: None,
+                parts: vec![part("Long", Some(&long))],
+                open_choices: Vec::new(),
+                disagreements: Vec::new(),
+                ..whole_brief()
+            },
+        )
+        .expect("no length is enforced on a one line");
+    assert_eq!(stored.parts[0].one_line.as_deref(), Some(long.as_str()));
+}
+
+#[test]
+fn a_blank_one_line_on_a_part_is_refused_rather_than_stored() {
+    let (_dir, store) = temp_store();
+    let review = seed(&store);
+
+    let (refused, _, expected) = refusal(store.put_brief(
+        review.id,
+        NewBrief {
+            problems: Vec::new(),
+            flow_before: Vec::new(),
+            flow_after: Vec::new(),
+            flow_before_caption: None,
+            flow_after_caption: None,
+            options: Vec::new(),
+            blind_pass: None,
+            parts: vec![BriefPart {
+                title: "a part".to_string(),
+                summary: "what it did".to_string(),
+                one_line: Some("  ".to_string()),
+                fixes: Vec::new(),
+                files: Vec::new(),
+            }],
+            open_choices: Vec::new(),
+            disagreements: Vec::new(),
+            ..whole_brief()
+        },
+    ));
+    assert_eq!(refused, "parts.one_line");
     assert!(expected.contains("leave the field out"), "{expected}");
 }
 
@@ -1186,6 +1308,7 @@ fn brief_marked_through_the_change_half() -> NewBrief {
         parts: vec![BriefPart {
             title: marked("a part"),
             summary: marked("one line"),
+            one_line: Some(marked("the one line")),
             fixes: vec![1],
             files: vec![BriefPartFile {
                 path: format!("app/{MARKER}.php"),
