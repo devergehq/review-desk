@@ -2891,6 +2891,12 @@ components:
             each anchored finding twice, once as a section and once as a comment. The way
             out is the developer's: take the sign-off back by sending the draft back with a
             note, and the session writes it again.
+
+            **On a `posted` draft it can read true without anything being wrong.** The body
+            that was posted is the stored one, and the record is allowed to move on after
+            the post — the harvest reads outcomes back and a finding's round status changes
+            with them. What the flag answers is "could this be handed over as it stands",
+            and after the post there is nothing left to hand over.
         edits:
           type: array
           items: { $ref: '#/components/schemas/DraftEdit' }
