@@ -107,10 +107,25 @@ fn the_body_is_what_the_blocks_compose_to() {
     let (_dir, store) = temp_store();
     let review = seeded(&store);
 
+    // **The index sits where the findings begin, and the sections follow it.** None of
+    // these three findings names a file, so none of them can be anchored: every one keeps
+    // its section, every row says `in the body`, and every row links to the pull request,
+    // which is the only place such a finding is about. DEV-929.
     let body = store.get_draft(review).expect("the draft").body;
     assert_eq!(
         body,
         "The queue-with-backoff approach fits the ticket.\n\
+         \n\
+         ### Open — needs a decision\n\
+         \n\
+         | | Where | Finding | Status |\n\
+         | -- | -- | -- | -- |\n\
+         | 🔴 Blocker · F1 | [the pull request](https://github.com/acme/portal/pull/412) | \
+         A retried delivery is sent without an idempotency key | Open · in the body |\n\
+         | 🟠 Should · F2 | [the pull request](https://github.com/acme/portal/pull/412) | \
+         The backoff schedule has no ceiling | Open · in the body |\n\
+         | ⚪ Nit · F3 | [the pull request](https://github.com/acme/portal/pull/412) | \
+         Backoff schedule is repeated in two files | Open · in the body |\n\
          \n\
          ### Blocker · F1 · A retried delivery is sent without an idempotency key\n\
          \n\
@@ -130,16 +145,19 @@ fn the_body_is_what_the_blocks_compose_to() {
 
 #[test]
 fn the_assembled_draft_of_a_review_with_no_decisions_is_what_the_agent_wrote() {
-    // **The acceptance criterion of DEV-877, held against a real agent's body.**
+    // **The acceptance criterion of DEV-877, as DEV-929 leaves it.**
     //
     // `contract/examples/getDraft.response.json` is the one record this repository has of
     // what an agent writes: a summary sentence, three findings with the heading format the
     // designs use, a mermaid fence and a folded proof inside one of them, and the
     // not-checked line. The test decomposes it the way a session would — prose for
     // everything the composition does not model, a finding block per heading — writes
-    // that, and asserts the stored body is the same bytes it started as.
-    let body = example_draft_body();
-    let blocks = decompose(&body);
+    // that, and asserts the stored body is the same bytes it started as **with the index
+    // composed in where the findings begin, and nothing else changed**. The fence, the
+    // fold and every paragraph survive character for character; what is added is the one
+    // thing DEV-929 adds.
+    let agent = example_draft_body();
+    let blocks = decompose(&agent);
 
     assert_eq!(
         blocks.len(),
@@ -176,10 +194,11 @@ fn the_assembled_draft_of_a_review_with_no_decisions_is_what_the_agent_wrote() {
         .put_draft(
             review.id,
             NewDraft {
-                // The body as well as the blocks, which is the stronger call: the store
-                // composes the blocks and refuses a body that differs from the result, so
-                // this assertion is also made at the moment of writing.
-                body: body.clone(),
+                // No body, and that is the one thing DEV-929 changed about this write. The
+                // store composes the blocks and refuses a body that differs from the
+                // result — and a body an agent wrote now differs from it by the index, so
+                // the body goes in the assertion below rather than into the write.
+                body: String::new(),
                 status: DraftStatus::Ready,
                 lint: None,
                 sections: Some(blocks),
@@ -187,10 +206,30 @@ fn the_assembled_draft_of_a_review_with_no_decisions_is_what_the_agent_wrote() {
         )
         .expect("the example's own body, written in parts");
 
+    let first_finding = agent
+        .find("### Blocker")
+        .expect("the example's first finding heading");
+    let expected = format!(
+        "{}{}\n\n{}",
+        &agent[..first_finding],
+        "### Open — needs a decision\n\
+         \n\
+         | | Where | Finding | Status |\n\
+         | -- | -- | -- | -- |\n\
+         | 🔴 Blocker · F1 | [the pull request](https://github.com/acme/portal/pull/412) | \
+         A retried delivery is sent without an idempotency key | Open · in the body |\n\
+         | 🟠 Should · F2 | [the pull request](https://github.com/acme/portal/pull/412) | \
+         No way to replay a delivery after the window closes | Open · in the body |\n\
+         | 🟠 Should · F3 | [the pull request](https://github.com/acme/portal/pull/412) | \
+         The failure test passes with the retry code reverted | Open · in the body |",
+        &agent[first_finding..]
+    );
+
     assert_eq!(
         store.get_draft(review.id).expect("the draft").body,
-        body,
-        "the composition has to reproduce what the agent wrote, character for character"
+        expected,
+        "the composition has to reproduce what the agent wrote, character for character, \
+         with the index between the prose and the findings"
     );
 }
 

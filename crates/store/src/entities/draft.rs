@@ -159,9 +159,14 @@ impl Store {
         //
         // **A body given alongside the blocks is checked, not stored.** The one difference
         // forgiven is trailing newlines, which markdown does not distinguish; anything
-        // else means the caller and the record would disagree about what gets posted, and
-        // this is the check that keeps "the assembled draft of a review with no decisions
-        // is what the agent wrote" true of every write rather than of the happy path.
+        // else means the caller and the record would disagree about what gets posted.
+        //
+        // **Since DEV-929 that check refuses a body an agent wrote whole**, and the
+        // refusal says so: the composition adds an index no caller writes and lifts every
+        // anchored finding out of the body into a thread, so the blocks are the only
+        // honest thing to send. What the check still guarantees is the thing it was added
+        // for — one answer to what gets posted — and `house_style.rs` is where the shape
+        // of that answer lives.
         match &new.sections {
             Some(sections) => {
                 composition::write(&tx, review_id, sections)?;
@@ -172,9 +177,13 @@ impl Store {
                     return Err(StoreError::InvalidValue {
                         field: "body",
                         value: "a body the blocks do not compose to".to_string(),
-                        expected: "the body these blocks compose to, or no body at all. \
-                                   The composition is what gets posted, and two answers to \
-                                   what that is would be one too many"
+                        expected: "the blocks alone, and no body. The composition is what \
+                                   gets posted — and since DEV-929 it is composed in the \
+                                   house style's shape, with an index of the findings and \
+                                   each anchored finding lifted out into a thread, so a \
+                                   body written whole differs from it by more than its \
+                                   words. Two answers to what gets posted would be one too \
+                                   many"
                             .to_string(),
                     });
                 }

@@ -114,7 +114,7 @@ fn cutting_a_finding_answers_with_the_finding_the_outcome_and_the_draft() {
 }
 
 #[test]
-fn regrading_a_finding_changes_the_heading_the_body_carries() {
+fn regrading_a_finding_changes_the_row_and_the_threads_alert() {
     let harness = common::start_with_no_github();
     let seeded = common::seed(&harness.store);
 
@@ -130,13 +130,29 @@ fn regrading_a_finding_changes_the_heading_the_body_carries() {
     assert_eq!(made["finding"]["severity"], "should");
     assert_eq!(made["outcome"]["kind"], "regraded");
     assert_eq!(made["outcome"]["detail"], "Blocker to Should");
+    // **F1 is anchored, so the regrade reaches its row and its thread.** The seed's first
+    // finding has a hunk the diff drew and a flagged line, so since DEV-929 the body
+    // indexes it and the comment goes on the code — there is no heading in the body to
+    // change, and what a regrade must change instead is the glyph and the word in the row
+    // and the alert the thread sits in.
     assert!(
         made["draft"]["draft"]["body"]
             .as_str()
             .expect("a body")
-            .contains("### Should · F1 ·"),
+            .contains("| 🟠 Should · F1 |"),
         "{}",
         made["draft"]["draft"]["body"]
+    );
+    let threads = harness
+        .store
+        .draft_threads(seeded.review_id)
+        .expect("the threads");
+    assert!(
+        threads[0]
+            .body
+            .starts_with("> [!WARNING]\n> **Should · F1** —"),
+        "{}",
+        threads[0].body
     );
     assert_eq!(
         harness
@@ -172,10 +188,22 @@ fn rewriting_a_finding_posts_the_developers_words_and_keeps_the_agents() {
     );
     assert_eq!(block["rewritten"], true);
     assert_eq!(made["outcome"]["kind"], "rewritten");
+
+    // F1 is anchored, so the developer's words are what the thread carries and the title
+    // they wrote is what the index row reads. DEV-929.
     assert!(made["draft"]["draft"]["body"]
         .as_str()
         .expect("a body")
-        .contains("### Blocker · F1 · A retry carries no idempotency key"));
+        .contains("| A retry carries no idempotency key |"));
+    let threads = harness
+        .store
+        .draft_threads(seeded.review_id)
+        .expect("the threads");
+    assert_eq!(
+        threads[0].body,
+        "> [!CAUTION]\n> **Blocker · F1** — A retry carries no idempotency key · `Open`\n>\n\
+         > The customer receives the event twice."
+    );
 }
 
 #[test]
@@ -402,7 +430,7 @@ fn ticketing_what_is_left_of_a_review_with_nothing_open_is_refused() {
 }
 
 #[test]
-fn a_draft_saved_in_parts_composes_the_body_the_caller_states() {
+fn a_draft_saved_in_parts_is_composed_rather_than_taking_the_body_stated() {
     let harness = common::start_with_no_github();
     let seeded = common::seed(&harness.store);
 
@@ -418,11 +446,40 @@ fn a_draft_saved_in_parts_composes_the_body_the_caller_states() {
         ),
     );
 
-    assert_eq!(answer.status, 200, "{}", answer.text());
-    assert_eq!(
-        answer.json()["draft"]["body"],
-        "The approach fits.\n\n### Blocker · F1 · A retry carries no key\n\nTwice delivered.\n"
+    // **A body written whole is refused, and since DEV-929 it is refused for a second
+    // reason.** The body is composed from the blocks — and composed in the house style's
+    // shape, with an index no caller writes — so a caller that states one is stating
+    // something the record will not post. The blocks alone are what to send.
+    assert_eq!(answer.status, 400, "{}", answer.text());
+    let refusal = answer.json();
+    assert_eq!(refusal["field"], "body");
+    assert!(
+        refusal["expected"]
+            .as_str()
+            .expect("what it expected")
+            .contains("the blocks alone"),
+        "the refusal says what to send instead: {}",
+        refusal["expected"]
     );
+
+    // And the blocks on their own are accepted, composing the shape.
+    let saved = harness.api(
+        "PUT",
+        &format!("/reviews/{}/draft", seeded.review_id),
+        Some(
+            r#"{"sections":[
+                  {"kind":"prose","text":"The approach fits."},
+                  {"kind":"finding","finding_seq":1,"title":"A retry carries no key","text":"Twice delivered."}
+                ]}"#,
+        ),
+    );
+    assert_eq!(saved.status, 200, "{}", saved.text());
+    let body = saved.json()["draft"]["body"]
+        .as_str()
+        .expect("a body")
+        .to_string();
+    assert!(body.starts_with("The approach fits.\n\n### Open — needs a decision\n"));
+    assert!(body.contains("| 🔴 Blocker · F1 | [`DeliverWebhook.php:57`]"));
 }
 
 #[test]

@@ -50,16 +50,16 @@ pub use crate::error::{Result, StoreError};
 pub use crate::migrations::newest_version;
 pub use crate::model::{
     now, Actor, AuthorResponse, Brief, BriefOption, Carryable, DecidedBy, Decision, DecisionMade,
-    Disposition, Draft, DraftLint, DraftSection, DraftSectionKind, DraftStatus, Finding,
-    FindingAnchor, FindingCarry, FindingDecision, FindingHunk, FindingInRound, FindingRef,
-    FullReview, HunkLine, HunkLineMarker, LayerFact, NewBrief, NewDraft, NewDraftSection,
-    NewFinding, NewLayerFact, NewOutcome, NewReview, NewRoundCommit, NewRule, NitTicket,
-    NitTicketStatus, OpenedReview, Outcome, OutcomeKind, PostedReview, PrState, RepoSummary,
-    Review, ReviewAtLayer, ReviewAtStep, ReviewEvent, ReviewFacts, ReviewLayer, ReviewLayerName,
-    ReviewLayerRun, ReviewLayerState, ReviewLinks, ReviewStep, ReviewTimings, RoundCommit,
-    RoundStatus, RoundStatusCounts, RoundSummary, Rule, RuleCounts, RuleException, RuleScope,
-    RuleStage, RulesSummary, Severity, SignOff, Timestamp, Verification, WorkFilter, WorkItem,
-    WorkKind, ACTIVE_RULES_CAP,
+    Disposition, Draft, DraftLint, DraftSection, DraftSectionKind, DraftStatus, DraftThread,
+    Finding, FindingAnchor, FindingCarry, FindingDecision, FindingHunk, FindingInRound,
+    FindingRef, FullReview, HunkLine, HunkLineMarker, LayerFact, NewBrief, NewDraft,
+    NewDraftSection, NewFinding, NewLayerFact, NewOutcome, NewReview, NewRoundCommit, NewRule,
+    NitTicket, NitTicketStatus, OpenedReview, Outcome, OutcomeKind, PostedReview, PrState,
+    RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewEvent, ReviewFacts, ReviewLayer,
+    ReviewLayerName, ReviewLayerRun, ReviewLayerState, ReviewLinks, ReviewStep, ReviewTimings,
+    RoundCommit, RoundStatus, RoundStatusCounts, RoundSummary, Rule, RuleCounts, RuleException,
+    RuleScope, RuleStage, RulesSummary, Severity, SignOff, Timestamp, Verification, WorkFilter,
+    WorkItem, WorkKind, ACTIVE_RULES_CAP,
 };
 pub use crate::path::{default_db_path, resolve_db_path, DB_ENV_VAR};
 

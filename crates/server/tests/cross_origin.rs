@@ -164,8 +164,10 @@ fn a_foreign_origin_cannot_decide_about_a_finding() {
     assert_eq!(finding.disposition, review_desk_store::Disposition::InDraft);
     let draft = harness.store.get_draft(seeded.review_id).unwrap();
     assert_eq!(draft.status, DraftStatus::Ready);
+    // F1 is anchored, so since DEV-929 it is a row in the index and a thread on the code
+    // rather than a section — and a cut would take the row with it.
     assert!(
-        draft.body.contains("### Blocker · F1"),
+        draft.body.contains("| 🔴 Blocker · F1 |"),
         "a page on https://evil.example recomposed the body"
     );
 }

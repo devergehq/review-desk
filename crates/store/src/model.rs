@@ -1871,6 +1871,36 @@ impl DraftSection {
     }
 }
 
+/// One inline thread the draft hands over, for the session to post on the code.
+///
+/// **Composed from the finding's block, and derived rather than stored.** The body is the
+/// block's text inside the alert the severity picks; the place is the hunk's file and the
+/// flagged line. Review Desk hands these over and posts nothing: the session puts them in
+/// the `comments` array of the one `pulls/<n>/reviews` call, which is what keeps the review
+/// count at one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftThread {
+    /// The finding this thread is, by its number — the id the index row and the record
+    /// share, and what `review-desk finding link` needs once GitHub has answered.
+    pub finding_seq: i64,
+    /// The finding's live severity, which picked the alert.
+    pub severity: Severity,
+    /// The heading's title, as the index row carries it too.
+    pub title: String,
+    /// The file the comment is anchored on.
+    ///
+    /// **The hunk's file, not the finding's.** `line` is a line of the hunk, numbered from
+    /// the hunk's own `start_line`, and a finding may point at one file and show the code of
+    /// another.
+    pub path: String,
+    /// The line the comment sits on, in the new file's numbering.
+    pub line: i64,
+    /// Which side of the diff, and it is always `RIGHT` — see [`FindingAnchor::SIDE`].
+    pub side: String,
+    /// The comment as it will post, GitHub-flavoured markdown.
+    pub body: String,
+}
+
 /// A block to write, in the order given.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

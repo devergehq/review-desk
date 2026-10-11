@@ -377,9 +377,16 @@ fn the_command_line_may_write_the_draft_in_parts_without_deciding_anything() {
     ]);
 
     assert_eq!(written["draft"]["status"], "ready");
+    // The blocks as written, with the index DEV-929 composes between the prose and the
+    // findings. This finding names no file, so it cannot be anchored: it keeps its section
+    // and its row links to the pull request.
     assert_eq!(
         written["draft"]["body"],
-        "The approach fits the ticket.\n\n### Should · F1 · a finding\n\na paragraph.\n"
+        "The approach fits the ticket.\n\n### Open — needs a decision\n\n\
+         | | Where | Finding | Status |\n| -- | -- | -- | -- |\n\
+         | 🟠 Should · F1 | [the pull request](https://github.com/acme/portal/pull/412) | \
+         a finding | Open · in the body |\n\n\
+         ### Should · F1 · a finding\n\na paragraph.\n"
     );
     assert_eq!(written["sections"].as_array().expect("the blocks").len(), 2);
 
