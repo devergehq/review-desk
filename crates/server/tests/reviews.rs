@@ -513,6 +513,29 @@ fn a_ticket_address_that_is_not_https_is_refused_by_the_api() {
             .is_empty(),
         "a refused address opens no review and spends no round"
     );
+
+    // **And an address with no id is refused here too**, naming the field that is missing.
+    // The contract says so under `TicketUrl`: a client draws the ticket's id as the link's
+    // text, so an address beside a null id reaches no screen.
+    let answer = harness.api(
+        "POST",
+        "/reviews",
+        Some(
+            r#"{"pr_url":"https://github.com/acme/portal/pull/412","head_sha":"3f9c2ab",
+                "ticket_url":"https://linear.app/acme/issue/ABC-231"}"#,
+        ),
+    );
+    assert_eq!(answer.status, 400, "{}", answer.text());
+    assert_eq!(answer.error_code(), "invalid_value");
+    assert_eq!(answer.json()["field"], "ticket_id");
+    assert!(
+        harness
+            .store
+            .list_reviews("acme/portal", 412)
+            .expect("the rounds of #412")
+            .is_empty(),
+        "and it opens no review either"
+    );
 }
 
 #[test]

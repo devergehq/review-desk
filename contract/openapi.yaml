@@ -941,8 +941,13 @@ components:
         whole of the risk. A request carrying anything else is refused with
         `invalid_value`, naming `ticket_url`. `http` is refused with the rest: nothing here
         reads the address, so there is no case where the insecure form is the only one
-        available. A client draws the ticket's **id** as the link's text and never the
-        address.
+        available.
+
+        **A client draws the ticket's `ticket_id` as the link's text, never the address** —
+        a link whose text is a URL is a link a reader has to parse. Which is why an address
+        with **no id** is refused too, with `invalid_value` naming `ticket_id`: nothing
+        would ever draw it, and a value that reaches no screen is a silent no-op. The id
+        may arrive in the same request or already be on the record.
 
     Severity:
       type: string
@@ -1242,6 +1247,10 @@ components:
             Where that ticket is. **Not resolved when omitted**, unlike the head commit,
             the title and the changed-line count: nothing fetches a tracker and GitHub does
             not know which ticket a pull request is for. Pass it or the review has none.
+
+            Sent with no `ticket_id`, and none already on the record, it is refused with
+            `invalid_value` naming `ticket_id` — see `TicketUrl`. A refused request opens
+            no review and spends no round.
         changed_lines:
           type: [integer, 'null']
           minimum: 0
