@@ -7,6 +7,7 @@ import {
   useReviewDesk,
   type DeskResource,
 } from '../app/composables/useReviewDesk'
+import { composeBody, composeThreads } from '../app/utils/houseStyle'
 
 /*
  * The data layer, which is where every write on the five screens ends up.
@@ -585,7 +586,7 @@ describe('deciding on a finding', () => {
     expect(block.posted).toBe(false)
   })
 
-  it('regrades a finding, and the heading its block composes changes with it', async () => {
+  it('regrades a finding, and its row and its thread change with it', async () => {
     const api = desk()
     expect((await api.decideFinding(REAL, 1, {
       decision: 'regrade',
@@ -596,7 +597,18 @@ describe('deciding on a finding', () => {
     const draft = await settled(api.draft(REAL))
     expect(draft.sections.find(section => section.finding_seq === 1)!.heading)
       .toMatch(/^### Blocker · F1 · /)
-    expect(draft.draft.body).toContain('### Blocker · F1 ·')
+
+    /*
+     * **F1 is anchored, so what a regrade changes is the row and the alert.** Since
+     * DEV-929 a finding GitHub can anchor is a row in the body's index and a comment on
+     * the code; there is no heading in the body to change, and the block's composed
+     * heading above is what the code review page draws.
+     */
+    expect(draft.draft.body).toContain('| 🔴 Blocker · F1 |')
+    expect(draft.draft.body).not.toContain('### Blocker · F1 ·')
+    const thread = draft.threads.find(one => one.finding_seq === 1)!
+    expect(thread.severity).toBe('blocker')
+    expect(thread.body).toMatch(/^> \[!CAUTION\]\n> \*\*Blocker · F1\*\* — /)
   })
 
   it('refuses a regrade with no severity, and a severity on anything else', async () => {
@@ -769,17 +781,32 @@ describe('deciding on a finding', () => {
     expect((await settled(api.draft(REAL))).lint).toBeNull()
   })
 
-  it('composes the body from the blocks that post, joined by one blank line', async () => {
+  it('composes the body in the house style’s shape, and the threads with it', async () => {
     const api = desk()
     const draft = await settled(api.draft(REAL))
-    const posted = draft.sections.filter(section => section.posted)
-    const composed = posted
-      .map(section =>
-        section.kind === 'prose'
-          ? section.text
-          : `${section.heading}\n\n${section.text}`)
-      .join('\n\n')
-    expect(draft.draft.body).toBe(`${composed}\n`)
+    const review = await settled(api.review(REAL))
+
+    expect(draft.draft.body)
+      .toBe(composeBody(review.review, draft.sections, review.findings))
+    expect(draft.threads).toEqual(composeThreads(draft.sections, review.findings))
+
+    /*
+     * And the three things that shape is, said once here so a reader of this file does not
+     * have to run the composition in their head: an index of every posted finding, no
+     * section for a finding that is a thread, and a section for one that cannot be.
+     */
+    const rows = draft.draft.body
+      .split('\n')
+      .filter(line => line.startsWith('| ') && !line.startsWith('| -- |') && !line.includes('| Where |'))
+    const posting = review.findings.filter(
+      finding => finding.disposition === 'in_draft'
+        && (finding.round_status ?? 'new') !== 'ticketed',
+    )
+    expect(rows.length).toBe(posting.length)
+    for (const thread of draft.threads) {
+      expect(draft.draft.body).not.toContain(`· F${thread.finding_seq} ·`)
+    }
+    expect(draft.draft.body).toContain('### Should · F14 · ')
   })
 })
 

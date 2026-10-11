@@ -82,6 +82,28 @@ function workList(): Array<{
   return document.work
 }
 
+/**
+ * How many findings the structured review's draft posts, read off the record.
+ *
+ * A finding posts when it is in the draft and its round status is still open, which is the
+ * store's `Finding::is_posted` — and it is the number of rows the index carries.
+ */
+function postedFindings(): number {
+  const document = cliJson(seededDatabase, [
+    'review',
+    'show',
+    '--review',
+    String(structuredReviewId),
+  ]) as unknown as {
+    findings: Array<{ disposition: string, round_status: string | null }>
+  }
+
+  return document.findings.filter(
+    finding => finding.disposition === 'in_draft'
+      && ['new', 'still_open'].includes(finding.round_status ?? 'new'),
+  ).length
+}
+
 /** The review as the command line reads it, which is how a session reads it. */
 function reviewRecord() {
   return cliJson(seededDatabase, ['review', 'show', '--review', String(reviewId)]) as unknown as {
@@ -1967,6 +1989,138 @@ async function draftPage(page: Page, width = 1440) {
   await expect(page.locator('h1')).toBeVisible()
   await page.waitForLoadState('networkidle')
 }
+
+/*
+ * **What GitHub receives, in a real browser, at both widths.**
+ *
+ * DEV-929. The review posted to tc-portal#9585 was 309 lines with no index, no severity
+ * glyph and two inline threads, because the posted body *was* the blocks joined. The seeded
+ * structured review is the contract's real-length example — twelve posted findings, nine of
+ * them with a line inside the diff — so this is the volume the complaint was about rather
+ * than a two-finding draft that proves nothing about an index.
+ *
+ * The page never scrolling sideways is asserted for every step, at both widths, in "no page
+ * of a review scrolls sideways"; this is what the two halves of the preview say.
+ */
+test.describe('the body is an index and the findings live on the code', () => {
+  for (const [label, width, height] of [
+    ['a laptop', 1440, 900],
+    ['a phone', 390, 844],
+  ] as const) {
+    test(`the index and the threads both read at ${label}`, async ({ page }) => {
+      await page.setViewportSize({ width, height })
+      await page.goto(`${seeded}reviews/${structuredReviewId}/draft`)
+      await expect(page.locator('h1')).toBeVisible()
+
+      /*
+       * The body: the session's prose, then the index. The glyph and the word together, the
+       * place in the code as a link, and where the finding stands — and the blocker is a
+       * row rather than a section, because the diff can anchor it.
+       */
+      const body = page.locator('.preview')
+      await expect(body.getByText('Open — needs a decision')).toBeVisible()
+      await expect(body.getByRole('table')).toBeVisible()
+      /*
+       * **Counted against the record rather than against a number written here.** The tests
+       * in this file share one database and some of them decide on a finding, so what the
+       * index holds is "one row per posted finding" and not "twelve rows" — and the first of
+       * those is the acceptance criterion anyway.
+       */
+      await expect(body.locator('tbody tr')).toHaveCount(postedFindings())
+      await expect(body.getByRole('link', { name: 'ColumnPolicy.php:52' })).toBeVisible()
+      await expect(body.getByText('🔴 Blocker · F9')).toBeVisible()
+      await expect(
+        body.getByRole('heading', { name: /Blocker · F9 · The column policy/ }),
+      ).toHaveCount(0)
+
+      /* And the diagram the session drew under `### Problem fit`, which is a prose block. */
+      await expect(body.locator('figure svg')).toBeVisible()
+
+      /*
+       * The threads: one per anchored finding, each with the line it sits on, and the
+       * comment as the author will read it.
+       */
+      /*
+       * **Counted against the index beside it**, which is the stronger claim and the one
+       * that does not go stale: every row saying `on the code` has a thread, and nothing
+       * else does. The tests in this file share a database and some of them cut a finding,
+       * so a number written here would be a number about whichever ran first.
+       */
+      const anchored = await body.locator('tbody tr', { hasText: 'on the code' }).count()
+      expect(anchored, 'the example has findings the diff can anchor').toBeGreaterThan(7)
+
+      const threads = page.locator('.threads')
+      await expect(threads.getByText(`On the code · ${anchored} threads`)).toBeVisible()
+      await expect(threads.locator('.thread')).toHaveCount(anchored)
+      await expect(
+        threads.getByText('app/Reporting/ColumnPolicy.php:52', { exact: true }),
+      ).toBeVisible()
+      await expect(threads.getByText('Blocker · F9', { exact: false }).first()).toBeVisible()
+
+      /* It describes rather than grades: no severity tag anywhere in the card. */
+      await expect(threads.locator('.tag')).toHaveCount(0)
+
+      /*
+       * **The table scrolls inside its own card, and the page does not.** GitHub gives a
+       * table `width: max-content; max-width: 100%; overflow: auto`, so a four-column index
+       * at 390 pixels is scrolled rather than reflowed — and the preview is drawn the same
+       * way, which is what keeps it a preview.
+       */
+      const fits = await page.locator('.preview table').evaluate(element => ({
+        own: element.scrollWidth > element.clientWidth,
+        page: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      }))
+      expect(fits.page, `the page itself does not scroll at ${width}px`).toBe(true)
+      if (width === 390) {
+        expect(fits.own, 'at 390px the index is scrolled inside its card').toBe(true)
+      }
+    })
+  }
+
+  /*
+   * **A cut takes the row and the thread together**, which is the acceptance criterion the
+   * page exists to show: the developer decides on the code review page, and what posts
+   * changes here.
+   */
+  test('cutting a finding takes its row and its thread', async ({ page }) => {
+    await page.goto(`${seeded}reviews/${structuredReviewId}/draft`)
+    /* Counted once the card has drawn: a count taken mid-load is zero and proves nothing. */
+    await expect(page.locator('.threads .thread').first()).toBeVisible()
+    const rowsBefore = await page.locator('.preview tbody tr').count()
+    const threadsBefore = await page.locator('.threads .thread').count()
+    expect(threadsBefore).toBeGreaterThan(0)
+
+    await page.goto(`${seeded}reviews/${structuredReviewId}/code-review`)
+    await page.locator('.row').filter({ hasText: 'F9' }).first()
+      .getByRole('button').first().click()
+    await page.getByRole('group', { name: /How to decide on F9/ })
+      .getByRole('button', { name: 'Cut' })
+      .click()
+    await expect(page.getByText('will not be posted')).toBeVisible()
+
+    await page.goto(`${seeded}reviews/${structuredReviewId}/draft`)
+    await expect(page.locator('.threads').locator('.thread')).toHaveCount(threadsBefore - 1)
+    await expect(page.locator('.preview').locator('tbody tr')).toHaveCount(rowsBefore - 1)
+    await expect(page.locator('.preview').getByText('🔴 Blocker · F9')).toHaveCount(0)
+
+    /*
+     * Put it back, because every test in this file reads the same database — and the way
+     * back is the page, not the command line: nothing there can decide about a finding.
+     */
+    await page.goto(`${seeded}reviews/${structuredReviewId}/code-review`)
+    await page.getByRole('radio', { name: /Set aside/ }).click()
+    await page.locator('.row').filter({ hasText: 'F9' }).first()
+      .getByRole('button').first().click()
+    await page.getByRole('group', { name: /How to decide on F9/ })
+      .getByRole('button', { name: /Keep|Post it/ })
+      .click()
+    await expect(page.getByText('stays in the review')).toBeVisible()
+
+    await page.goto(`${seeded}reviews/${structuredReviewId}/draft`)
+    await expect(page.locator('.threads').locator('.thread')).toHaveCount(threadsBefore)
+    await expect(page.locator('.preview').locator('tbody tr')).toHaveCount(rowsBefore)
+  })
+})
 
 test.describe('the findings held back, as rows', () => {
   /**

@@ -27,6 +27,15 @@ const REAL_LENGTH_BRIEF = resolve('../contract/examples/confirmBrief.response.re
 const CODE_REVIEW_EXAMPLE = resolve('../contract/examples/getReview.response.code-review.json')
 
 /**
+ * The same review's draft, as the blocks the house style's shape is composed of.
+ *
+ * The draft page is seeded from this, and so are its screenshots: twelve posted findings,
+ * nine of them with a line inside the diff, a mermaid fence in the `### Problem fit` block,
+ * and the folded provenance at the end.
+ */
+const REAL_LENGTH_DRAFT = resolve('../contract/examples/getDraft.response.real-length.json')
+
+/**
  * A diagram field holding something that is not a diagram.
  *
  * **This is not invented.** It is what a review session wrote into a brief on 10 October
@@ -314,57 +323,39 @@ function structuredFindings(): Array<Record<string, unknown>> {
 /**
  * The draft the review session wrote, as the blocks it is composed of.
  *
- * **Blocks, not one body**, and that is what makes the code review page's decisions real:
- * `decideFinding` changes a finding's block, and a draft written as one block of markdown
- * has none — which the page says, in words, once. The seeded review in `seed()` keeps its
- * one-block draft so that refusal is seeded too.
+ * **Read from the contract's own example, not built here.** `getDraft.response.real-length.json`
+ * is the draft that goes with `getReview.response.code-review.json` — the same review, the
+ * same twelve posted findings — and since DEV-929 its blocks are the house style's shape:
+ * the verdict line with its `**Method**` line, `### Problem fit` with the before-and-after
+ * diagram, a block per finding, and the folded provenance. Building a second set of blocks
+ * here would be a second opinion about the same review, and the screenshots would stop being
+ * of the thing the contract publishes.
  *
  * The body is not given. `draft put --sections` composes it, so a body stated here would be
  * a second copy of what the store already builds, and the store refuses the two when they
- * differ.
+ * differ — which, since the composition adds an index, they now always would.
  */
-function structuredSections(
-  findings: Array<Record<string, unknown>>,
-): Array<Record<string, unknown>> {
-  const ORDER: Record<string, number> = { blocker: 0, should: 1, question: 2, nit: 3 }
-  const posted = findings
-    .map((finding, at) => ({ finding, seq: at + 1 }))
-    .filter(({ finding }) => finding.disposition === 'in_draft')
-    .sort((one, two) =>
-      ORDER[one.finding.severity as string] - ORDER[two.finding.severity as string]
-      || one.seq - two.seq)
+function structuredSections(): Array<Record<string, unknown>> {
+  const example = JSON.parse(readFileSync(REAL_LENGTH_DRAFT, 'utf8')) as {
+    sections: Array<{
+      kind: string
+      finding_seq: number | null
+      title: string | null
+      text: string
+    }>
+  }
 
-  return [
-    {
-      kind: 'prose',
-      text: 'The change does what the ticket asks and the shape is right: the scheduled '
-        + 'path builds its own context and the branch is out of `ReportBuilder`. One '
-        + 'blocker, and it is the composition of two reasonable-looking decisions rather '
-        + 'than either of them.',
-    },
-    ...posted.map(({ finding, seq }) => ({
-      kind: 'finding',
-      finding_seq: seq,
-      /*
-       * **No title: the finding owns it.** The store composes the heading from the
-       * finding's own `title`, falling back to its claim, so stating one here would be a
-       * second copy of the same words — and two copies of a title are two titles that can
-       * disagree.
-       */
-      /*
-       * The consequence, which is what the review says about a finding in its body. The
-       * reasoning stays on the finding, folded behind its word count on the page — the
-       * posted review is read by the author, and 221 words of evidence is not a review
-       * comment.
-       */
-      text: finding.why_it_matters ?? finding.inline_comment ?? finding.claim,
-    })),
-    {
-      kind: 'prose',
-      text: '**Not checked.** The reporting front end, which reads the same definitions '
-        + 'but was not changed.',
-    },
-  ]
+  return example.sections.map(section => ({
+    kind: section.kind,
+    ...(section.finding_seq == null ? {} : { finding_seq: section.finding_seq }),
+    /*
+     * **The title goes with it**, because the example's blocks carry one and a block written
+     * with none takes the finding's instead. For most of these the two are the same words;
+     * sending what the example holds is what keeps the seeded body equal to the example's.
+     */
+    ...(section.title == null ? {} : { title: section.title }),
+    text: section.text,
+  }))
 }
 
 /**
@@ -419,7 +410,7 @@ function seedStructured(directory: string, database: string): number {
    * different things, and the draft screen says which.
    */
   const sections = join(directory, 'structured-sections.json')
-  writeFileSync(sections, JSON.stringify(structuredSections(findings)))
+  writeFileSync(sections, JSON.stringify(structuredSections()))
   const put = (lint?: string) =>
     cli(database, [
       'draft',

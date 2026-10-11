@@ -300,98 +300,112 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
               </p>
 
               <div class="body">
-                <DeskCard
-                  as="section"
-                  pad="tight"
-                  class="preview"
-                >
-                  <div class="tabs">
-                    <div class="rd-label tabs-label">
-                      Preview
-                    </div>
-                    <div
-                      role="tablist"
-                      aria-label="How to view the draft"
-                      class="tablist"
-                    >
-                      <button
-                        v-for="tab in views"
-                        :key="tab.key"
-                        type="button"
-                        role="tab"
-                        class="rd-btn rd-btn--quiet"
-                        :aria-selected="view === tab.key"
-                        @click="view = tab.key"
+                <!--
+                  **The main column is the two halves of what posts.** The body above, and
+                  the threads below it — a finding with a line inside the diff is a row in
+                  the body's index and a comment on the code, so the preview is only half
+                  the review until both are drawn. The aside is untouched: it is where the
+                  sign-off lives.
+                -->
+                <div class="main">
+                  <DeskCard
+                    as="section"
+                    pad="tight"
+                    class="preview"
+                  >
+                    <div class="tabs">
+                      <div class="rd-label tabs-label">
+                        Preview
+                      </div>
+                      <div
+                        role="tablist"
+                        aria-label="How to view the draft"
+                        class="tablist"
                       >
-                        {{ tab.label }}
-                      </button>
+                        <button
+                          v-for="tab in views"
+                          :key="tab.key"
+                          type="button"
+                          role="tab"
+                          class="rd-btn rd-btn--quiet"
+                          :aria-selected="view === tab.key"
+                          @click="view = tab.key"
+                        >
+                          {{ tab.label }}
+                        </button>
+                      </div>
                     </div>
-                  </div>
 
-                  <div class="pane">
-                    <MarkdownView
-                      v-if="view === 'rendered' && data.draft.body.length > 0"
-                      :source="data.draft.body"
-                    />
+                    <div class="pane">
+                      <MarkdownView
+                        v-if="view === 'rendered' && data.draft.body.length > 0"
+                        :source="data.draft.body"
+                      />
 
-                    <!--
+                      <!--
                 A draft the session has opened and not written into. The body may be empty
                 while the status is `drafting`, which the contract says in as many words, so
                 the screen says what that is rather than drawing an empty page.
               -->
-                    <p
-                      v-else-if="view === 'rendered'"
-                      class="rd-empty"
-                    >
-                      This draft has no body yet. Layer 6 is where a session writes the review, and
-                      it has written nothing — there is nothing here to sign off.
-                    </p>
+                      <p
+                        v-else-if="view === 'rendered'"
+                        class="rd-empty"
+                      >
+                        This draft has no body yet. Layer 6 is where a session writes the review, and
+                        it has written nothing — there is nothing here to sign off.
+                      </p>
 
-                    <pre
-                      v-else-if="view === 'markdown'"
-                      class="source"
-                    >{{ data.draft.body }}</pre>
+                      <pre
+                        v-else-if="view === 'markdown'"
+                        class="source"
+                      >{{ data.draft.body }}</pre>
 
-                    <div
-                      v-else
-                      class="editor"
-                    >
-                      <label
-                        class="rd-visually-hidden"
-                        for="draft-body"
-                      >The draft body in markdown</label>
-                      <textarea
-                        id="draft-body"
-                        v-model="editing"
-                        class="rd-field"
-                        rows="22"
-                        spellcheck="false"
-                      />
-                      <div class="editor-actions">
-                        <button
-                          type="button"
-                          class="rd-btn rd-btn--primary"
-                          :disabled="!dirty || working"
-                          @click="save"
-                        >
-                          {{ working ? 'Saving…' : 'Save the draft' }}
-                        </button>
-                        <button
-                          type="button"
-                          class="rd-btn"
-                          :disabled="!dirty || working"
-                          @click="editing = loadedBody"
-                        >
-                          Discard changes
-                        </button>
-                        <p class="rd-meta editor-help">
-                          An edit is recorded against the finding it changes. Three of the same kind
-                          become a proposed rule.
-                        </p>
+                      <div
+                        v-else
+                        class="editor"
+                      >
+                        <label
+                          class="rd-visually-hidden"
+                          for="draft-body"
+                        >The draft body in markdown</label>
+                        <textarea
+                          id="draft-body"
+                          v-model="editing"
+                          class="rd-field"
+                          rows="22"
+                          spellcheck="false"
+                        />
+                        <div class="editor-actions">
+                          <button
+                            type="button"
+                            class="rd-btn rd-btn--primary"
+                            :disabled="!dirty || working"
+                            @click="save"
+                          >
+                            {{ working ? 'Saving…' : 'Save the draft' }}
+                          </button>
+                          <button
+                            type="button"
+                            class="rd-btn"
+                            :disabled="!dirty || working"
+                            @click="editing = loadedBody"
+                          >
+                            Discard changes
+                          </button>
+                          <p class="rd-meta editor-help">
+                            An edit is recorded against the finding it changes. Three of the same kind
+                            become a proposed rule. <strong>Saving replaces the blocks with
+                              these characters</strong>, so the index stops being composed, the
+                            threads below go with it, and a decision about a finding is refused
+                            afterwards — cut, regrade and rewrite are on the code review page.
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </DeskCard>
+                  </DeskCard>
+
+                  <DraftThreads :threads="data.threads" />
+                </div>
 
                 <aside class="aside">
                   <DeskCard class="panel">
@@ -726,8 +740,19 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
   align-items: flex-start;
 }
 
-.preview {
+/*
+ * The main column, which is what the preview alone used to be. The flex numbers moved out
+ * here unchanged: the column takes the room, and the aside keeps its own 320px basis.
+ */
+.main {
   flex: 999 1 560px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.preview {
   min-width: 0;
   padding: 0;
 }

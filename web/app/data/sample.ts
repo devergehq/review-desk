@@ -36,6 +36,13 @@ import drafts from './drafts.json'
 import reviews from './reviews.json'
 import rules from './rules.json'
 import { visibleWords } from '~/utils/draft'
+import {
+  composeBody,
+  composeThreads,
+  findingHeading,
+  isPosted,
+  SEVERITY_LABELS,
+} from '~/utils/houseStyle'
 import { count } from '~/utils/format'
 import type {
   Brief,
@@ -60,7 +67,6 @@ import type {
   Rule,
   RuleStage,
   RulesPage,
-  Severity,
   SeverityCounts,
   TicketedAndApproved,
 } from '~/types/desk'
@@ -884,26 +890,6 @@ const NEEDS_A_BLOCK: FindingDecision[] = ['cut', 'regrade', 'rewrite']
 /** The round statuses that mean the finding is still open. */
 const STILL_OPEN: RoundStatus[] = ['new', 'still_open']
 
-const SEVERITY_LABELS: Record<Severity, string> = {
-  blocker: 'Blocker',
-  should: 'Should',
-  nit: 'Nit',
-  question: 'Question',
-}
-
-/** One finding's heading, as the posted body carries it. */
-function findingHeading(severity: Severity, seq: number, title: string): string {
-  return `### ${SEVERITY_LABELS[severity]} · F${seq} · ${title}`
-}
-
-/** Whether a finding's block posts: the store's `Finding::is_posted`, restated. */
-function isPosted(finding: Finding): boolean {
-  return (
-    finding.disposition === 'in_draft'
-    && STILL_OPEN.includes((finding.round_status ?? 'new') as RoundStatus)
-  )
-}
-
 /**
  * Recompose the body from the blocks, and clear the lint.
  *
@@ -932,18 +918,14 @@ function recompose(drafted: DraftDetail, owner: ReviewDetail): void {
       : findingHeading(section.severity, section.finding_seq!, section.title)
   }
 
-  const posted = drafted.sections
-    .filter(section => section.posted)
-    .map((section) => {
-      if (section.kind === 'prose') return section.text
-      if (section.heading == null) return null
-      return section.text.length === 0
-        ? section.heading
-        : `${section.heading}\n\n${section.text}`
-    })
-    .filter((block): block is string => block != null)
-
-  drafted.draft.body = posted.length === 0 ? '' : `${posted.join('\n\n')}\n`
+  /*
+   * **The body and the threads together, because a decision changes both.** An anchored
+   * finding is a row in the body's index and a comment on the code, so cutting one has to
+   * take its row and its thread in the same step — `houseStyle.ts` is the shape, and the
+   * binary's `house_style.rs` is what it mirrors.
+   */
+  drafted.draft.body = composeBody(owner.review, drafted.sections, owner.findings)
+  drafted.threads = composeThreads(drafted.sections, owner.findings)
   drafted.draft.updated_at = nowIso()
   /* Not relint(): a decision leaves the lint **not checked**, never passing. */
   drafted.lint = null
