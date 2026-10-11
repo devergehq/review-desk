@@ -407,7 +407,7 @@ review-desk draft handover --review "$REVIEW" --json
 # {"review":{"id":41,"repo":"acme/portal","pr":514,"head_sha":"d41c8e2"},
 #  "draft":{"status":"approved","event":"request_changes","approved_at":1760000000},
 #  "body":"…the composed body…",
-#  "threads":[{"finding_seq":9,"severity":"blocker","title":"…",
+#  "threads":[{"finding_seq":9,"finding_key":"F9","severity":"blocker","title":"…",
 #              "path":"app/Reporting/ColumnPolicy.php","line":52,"side":"RIGHT",
 #              "body":"> [!CAUTION]\n> **Blocker · F9** — … · `Open`\n>\n> **in diff** · …"}]}
 ```
@@ -425,7 +425,9 @@ review-desk draft handover --review "$REVIEW" --json \
 `side` is always `RIGHT` and `line` is always the new file's numbering: a removed line
 carries no number in this record, so a flagged line is always a line still in the file.
 Where a finding is about a line the change deleted, the line to flag is the one that
-replaced it, and the comment says the code at fault is gone. **Match each comment GitHub gives back by the marker, not by the line.** Every composed
+replaced it, and the comment says the code at fault is gone.
+
+**Match each comment GitHub gives back by the marker, not by the line.** Every composed
 comment ends with `<!-- review-desk:F9 -->`, which GitHub does not draw and does return in
 the comment's `body`. The path and the line are not a key — a Should and a Nit on one line
 is ordinary — so pairing on them attaches the wrong comment to the wrong finding with
@@ -444,9 +446,12 @@ A draft goes `drafting → ready → approved → posted`, with `ready ⇄ sent_
 `approved → sent_back`. **That last one is the way out of a sign-off**, and it is the
 developer's: it takes the sign-off back with it — the event, the time and whose assent it
 was are cleared — and it exists because a draft the hand-over refuses had nowhere else to
-go. A posted review is not sent back; what follows it is the next round. The
-command line can reach `drafting`, `ready` and `posted`. It cannot reach `approved` or
-`sent_back`: those are the developer's, in the dashboard. **And a change that would alter what the
+go. A posted review is not sent back; what follows it is the next round.
+
+The command line can reach `drafting`, `ready` and `posted`. It cannot reach `approved` or
+`sent_back`: those are the developer's, in the dashboard.
+
+**A change that would alter what the
 review posts is refused once the draft is approved** — moving a finding between the draft,
 the held-back list and the suppressed one, or giving it a round status that stops it being
 posted — for the same reason a decision is: an approved draft is what the session posts,
