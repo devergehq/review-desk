@@ -14,6 +14,13 @@
 //! | The pull request is open and something has | `running`, and the counts as facts |
 //! | The pull request merged or closed | `done`, how it ended, and the same counts |
 //!
+//! **Every one of those records `Pull request` as a fact**, `open` until it is `merged` or
+//! `closed`. The trail draws a card beside a step only when the step recorded facts, and
+//! that card is where the page says when the harvest last read the review — which the
+//! step's own line, 154 pixels wide and full of its four words, has no room for. So the
+//! row that needs the card most, nothing-came-back, is the row that would not have had
+//! one.
+//!
 //! **The counts are read from the outcomes the record holds, not from what the run just
 //! wrote.** Running a harvest twice records nothing twice — that is the whole of
 //! `add_harvested_outcome` — so a step whose facts were the run's own writes would say
@@ -473,14 +480,6 @@ mod tests {
             vec!["Pull request", "Replies", "Threads resolved"],
             "and a count of nothing is left out rather than written as a nought"
         );
-
-        assert_eq!(
-            facts_for(None, &found)
-                .first()
-                .map(|fact| (fact.label.clone(), fact.value.clone())),
-            Some(("Pull request".to_string(), "open".to_string())),
-            "and an open one says so, which is why the step is still running"
-        );
     }
 
     #[test]
@@ -491,6 +490,14 @@ mod tests {
         assert_eq!(settled_as(Some(PrState::Open)), None);
         assert_eq!(settled_as(Some(PrState::Merged)), Some("merged"));
         assert_eq!(settled_as(Some(PrState::Closed)), Some("closed"));
+
+        // And an open one says so on the card, which is why the step is still running.
+        assert_eq!(
+            facts_for(None, &Found::default())
+                .first()
+                .map(|fact| (fact.label.clone(), fact.value.clone())),
+            Some(("Pull request".to_string(), "open".to_string()))
+        );
     }
 
     #[test]

@@ -1283,6 +1283,25 @@ test.describe('the three step pages of one review', () => {
         await expect(card).toContainText('3 findings')
         /* And the read time, where a finished step shows how long it took. */
         await expect(card.locator('.card-took')).toHaveText('read just now')
+        await page.keyboard.press('Escape')
+
+        /*
+           **A step 7 with no facts still says when it was read, and reachably.** A
+           harvest records a fact every time, so this is the hand-written case — and
+           `layer set` with no `--fact` is how a session would write it. Without a card
+           the answer would live only in a `title`, which a keyboard cannot reach and a
+           phone does not draw.
+        */
+        setStepSeven('running', 'nothing back yet', ['--clear-facts'])
+        await page.reload()
+        await expect(page.locator('h1')).toBeVisible()
+        await page.waitForLoadState('networkidle')
+        await expect(step.locator('.outcome')).toHaveText(/^nothing back yet/)
+        await step.locator('.outcome').click()
+        await expect(page.locator('.floating .card-took')).toHaveText('read just now')
+        await expect(page.locator('.floating .facts')).toHaveCount(0)
+        expect(await positions(), `and that card moved nothing at ${label}`).toEqual(before)
+        await page.keyboard.press('Escape')
         expect(await positions(), `the card moved nothing either at ${label}`).toEqual(before)
       }
     })

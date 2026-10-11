@@ -33,10 +33,18 @@ import type { LayerFact, ReviewLayer, ReviewLayerName } from '~/types/desk'
  * page moves when it opens — which is the acceptance criterion, measured in
  * `e2e/review-desk.spec.ts` by comparing positions either side of the click.
  *
- * **A step with no facts draws no card and no control for one.** Its `detail` line is a
- * plain span. That is most steps of most reviews and every step of every review recorded
- * before the facts existed, so a trail of seven buttons promising nothing was never an
- * option.
+ * **A step with nothing behind it draws no card and no control for one.** Its `detail`
+ * line is a plain span. That is most steps of most reviews and every step of every review
+ * recorded before the facts existed, so a trail of seven buttons promising nothing was
+ * never an option.
+ *
+ * **Nothing behind it means no facts *and* no read time.** DEV-933 gave step 7 a second
+ * thing to say — when a harvest last read the review — and the card is where it is said,
+ * because the line is 154 pixels wide and its own words fill it. A harvest records a fact
+ * every time, so in practice a harvested step has both; a step 7 written by hand through
+ * `layer set` has only the read time, and a card with a head and no pairs is how it is
+ * reachable. Without that the answer would exist only in a `title`, which a keyboard
+ * cannot reach and a phone does not draw.
  *
  * **The step's name is still a link, and the card is a second control.** Five of the seven
  * steps have a page; a card and a link are two things, and a button inside a link is
@@ -127,9 +135,29 @@ interface Step {
   duration: string | null
   /** When a harvest last read the review. `null` for every step but a running step 7. */
   read: string | null
+  /**
+   * The line's `title`: what it says, and the read time it has no room for.
+   *
+   * One field rather than the same ternary in both branches of the line — the line is a
+   * button when the step has a card and a span when it does not, and a title written
+   * twice is a title that can come to disagree with itself.
+   */
+  title: string
+  /** Whether this step has a card: facts to show, or a read time to say. */
+  opens: boolean
   to: string | null
   current: boolean
   tone: 'done' | 'current' | 'pending' | 'failed'
+}
+
+/**
+ * The line's `title`: the step's own words, and the read time the line has no room for.
+ *
+ * A hover costs no layout, so what will not fit on the line is here as well as on the
+ * card — measured in `harvestReadLabel`, which is why it is not on the line itself.
+ */
+function titleOf(said: string, read: string | null): string {
+  return read ? `${said} — ${read}` : said
 }
 
 /**
@@ -155,6 +183,8 @@ const steps = computed<Step[]>(() =>
       facts: layer.facts ?? [],
       duration: stepDurationLabel(layer),
       read: harvestReadLabel(layer),
+      title: titleOf(layerOutcome(layer), harvestReadLabel(layer)),
+      opens: (layer.facts ?? []).length > 0 || harvestReadLabel(layer) != null,
       to: PAGES[layer.name] == null
         ? null
         : `/reviews/${props.reviewId}/${PAGES[layer.name]}`,
@@ -281,25 +311,25 @@ const groups = computed(() => [
             wrote. Outside the face above, because that face is a link on five of the seven.
           -->
           <button
-            v-if="step.facts.length"
+            v-if="step.opens"
             :ref="keep(step.number)"
             type="button"
             class="outcome outcome--opens"
             :class="{ 'outcome--open': open === step.number }"
-            :title="step.read ? `${step.detail} — ${step.read}` : step.detail"
+            :title="step.title"
             :aria-expanded="open === step.number"
             :aria-controls="`step-facts-${step.number}`"
             @click="toggle(step.number)"
           >
             {{ step.detail }}
             <span class="rd-visually-hidden">
-              — {{ count(step.facts.length, 'fact') }} about step
-              {{ step.number }} {{ step.label }}</span>
+              — {{ step.facts.length ? count(step.facts.length, 'fact') : step.read }}
+              about step {{ step.number }} {{ step.label }}</span>
           </button>
           <span
             v-else
             class="outcome"
-            :title="step.read ? `${step.detail} — ${step.read}` : step.detail"
+            :title="step.title"
           >{{ step.detail }}</span>
 
           <FloatingCard
@@ -340,7 +370,10 @@ const groups = computed(() => [
               are, and it is what lets a screen reader read "Problems, 3" rather than four
               cells of a table nobody laid out.
             -->
-            <dl class="facts">
+            <dl
+              v-if="step.facts.length"
+              class="facts"
+            >
               <template
                 v-for="(fact, index) in step.facts"
                 :key="index"
