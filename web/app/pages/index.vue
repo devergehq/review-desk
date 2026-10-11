@@ -287,7 +287,7 @@ function repoTabs(data: Inbox) {
    * above names: "a filter whose count does not match what it filters to is worse than no
    * count."
    */
-  for (const item of waitingOnAuthor(data)) bump(item.pull_request.repo)
+  for (const item of withAuthor.value) bump(item.pull_request.repo)
 
   return [
     { value: ALL_REPOSITORIES, label: 'All repositories' },
@@ -311,25 +311,29 @@ function repoTabs(data: Inbox) {
  *   whose harvest step is running is in both arrays at once, and review 12 of the sample
  *   records is exactly that shape.
  */
-function drawnAbove(data: Inbox): Set<number> {
+const drawnAbove = computed(() => {
   const drawn = new Set(waiting.value.map(row => row.review_id))
-  for (const item of data.in_progress) drawn.add(item.review_id)
+  for (const item of inbox.data.value?.in_progress ?? []) drawn.add(item.review_id)
   return drawn
-}
+})
 
 /**
- * The posted reviews this page draws under "Waiting on the author".
+ * The posted reviews this page draws under "Waiting on the author", before the picker.
  *
  * **The group, minus whatever is already drawn above it.** A review that is waiting on the
  * developer, or that a session is working on, is not waiting on its author — it belongs to
  * the earlier group, with the figures about the author's response on it. How many were left
  * out is said beside the heading, because a count that silently disagrees with the record
  * is worse than no count.
+ *
+ * A computed over one source rather than a function taking the inbox, because half of it
+ * — `waiting` — is already one: a function reading the slot's `data` for one half and the
+ * resource for the other would be two answers to the same question, equal only because the
+ * slot happens to be handed the resource's own value.
  */
-function waitingOnAuthor(data: Inbox): InboxPostedItem[] {
-  const drawn = drawnAbove(data)
-  return data.posted_awaiting_author.filter(item => !drawn.has(item.review_id))
-}
+const withAuthor = computed(() =>
+  (inbox.data.value?.posted_awaiting_author ?? [])
+    .filter(item => !drawnAbove.value.has(item.review_id)))
 
 /**
  * How many posted reviews the group left to the groups above it, for the note beside it.
@@ -339,12 +343,10 @@ function waitingOnAuthor(data: Inbox): InboxPostedItem[] {
  * a row that is not on the page — "1 more is posted and is under Needs you" over a review
  * on a repository the reader has filtered out.
  */
-function alsoPosted(data: Inbox): number {
-  const drawn = drawnAbove(data)
-  return data.posted_awaiting_author.filter(
-    item => showing(item.pull_request.repo) && drawn.has(item.review_id),
-  ).length
-}
+const alsoPosted = computed(() =>
+  (inbox.data.value?.posted_awaiting_author ?? []).filter(
+    item => showing(item.pull_request.repo) && drawnAbove.value.has(item.review_id),
+  ).length)
 
 const showing = (name: string) => repo.value === ALL_REPOSITORIES || repo.value === name
 
@@ -404,11 +406,11 @@ const rows = computed(() => {
   )
   // Oldest posting first, like every other group, so the caption over the page stays
   // true: the API serves these newest first, which is the opposite.
-  const withAuthor = oldestFirst(
-    waitingOnAuthor(data).filter(item => showing(item.pull_request.repo)),
+  const shown = oldestFirst(
+    withAuthor.value.filter(item => showing(item.pull_request.repo)),
     item => item.posted_at ?? null,
   )
-  return { needsYou, withAgent, ownPrs, withAuthor, alsoPosted: alsoPosted(data) }
+  return { needsYou, withAgent, ownPrs, withAuthor: shown, alsoPosted: alsoPosted.value }
 })
 
 /** Whether any row on the page has no recorded time, which the caption then says. */
