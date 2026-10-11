@@ -49,6 +49,44 @@
  *
  * Any one of the three would cover today's bug. All three are here because the first two
  * are promises mermaid makes and the third is the only one this repository can keep.
+ *
+ * ## A drawing opens larger, and that is here rather than on a page
+ *
+ * DEV-928: "a diagram in the rendered preview cannot be enlarged". A flow of eight boxes
+ * drawn inside a 560-pixel preview pane is a flow nobody can read, and the answer is not a
+ * bigger pane — it is the one every image viewer has. Clicking the drawing, or pressing
+ * Enter or Space on it, opens it over the page at the size of the window, where it can be
+ * zoomed and dragged; Escape or a click outside closes it and puts focus back where it was.
+ *
+ * **It is in this component, so every page that draws a diagram has it.** There are two
+ * today — the draft preview's ```` ```mermaid ```` fences, through `MarkdownView`, and an
+ * old brief's `diagram` field on the Understand page — and a page-level answer would have
+ * been written twice and then diverged.
+ *
+ * **Only a drawing opens.** A sketch and a diagram that could not be drawn show their source
+ * as text; there is nothing to enlarge, and a control over a block of text promising a larger
+ * view of it would be a lie the page tells.
+ *
+ * ### The drawing is moved, not copied
+ *
+ * The enlarged view holds **the same `<svg>` element**, moved into the overlay and moved
+ * back when it closes. Three reasons, and the first is the one that decided it:
+ *
+ * 1. **A copy would need a second `v-html`.** `test/controls.nuxt.spec.ts` and
+ *    `test/step-pages.nuxt.spec.ts` both count the ones in the dashboard and name the reason
+ *    for each; "the same string again, over there" is not a new reason, it is a second
+ *    surface for the same trust.
+ * 2. **mermaid scopes its own stylesheet by the figure's id.** It writes a `<style>` block
+ *    of `#{figureId} .node { … }` into the SVG, so a clone with its ids stripped — the
+ *    obvious way to keep the document's ids unique — renders unstyled, and a clone that
+ *    keeps them duplicates every id in the document.
+ * 3. One copy cannot disagree with the other about what the record says.
+ *
+ * What that costs is two things this component has to do by hand, both small and both
+ * load-bearing. The figure **holds the height** its drawing had, so the page behind the
+ * backdrop does not jump and the reader comes back to the scroll position they left. And the
+ * drawing is moved back **before** the overlay is torn down, including on unmount — Vue
+ * removes a teleport's children with it, and the drawing is one of them.
  */
 const props = withDefaults(
   defineProps<{
@@ -148,7 +186,191 @@ onMounted(async () => {
   }
 })
 
-onBeforeUnmount(sweep)
+/* ------------------------------ The drawing, opened larger ----------------------------- */
+
+/**
+ * Whether the enlarged view is open.
+ *
+ * Held here rather than by the caller, which is the opposite of `OpenRow` and `FloatingCard`
+ * and right for this one: "one at a time" is a rule about a list of rows, and a figure is not
+ * in a list. A page with two diagrams has two independent drawings, and a reader who opened
+ * one has said nothing about the other.
+ */
+const large = ref(false)
+
+/** The scale and the offset the enlarged view is drawn at. */
+const scale = ref(1)
+const pan = ref<Pan>(NO_PAN)
+
+/** The inline figure's drawing, which is also the control that opens the larger view. */
+const inline = ref<HTMLElement | null>(null)
+/** The area the drawing is read in: what the wheel zooms and the arrow keys pan. */
+const stage = ref<HTMLElement | null>(null)
+/** The box inside the stage that carries the zoom and the offset. The drawing goes in it. */
+const moved = ref<HTMLElement | null>(null)
+
+/** The height the figure holds while its drawing is elsewhere, so the page does not jump. */
+const held = ref<string | null>(null)
+
+/** What `document.body.style.overflow` was, so closing restores it rather than guessing. */
+let bodyOverflow: string | null = null
+
+/** The one `<svg>` mermaid drew, wherever it is at the moment. */
+function drawing(): SVGElement | null {
+  const found = inline.value?.querySelector('svg') ?? moved.value?.querySelector('svg')
+  return (found ?? null) as SVGElement | null
+}
+
+/**
+ * Put the drawing where it belongs for the state we are in.
+ *
+ * Called after the overlay has rendered, and again before it is taken away. It is the only
+ * place either element's children are touched: `svg` is written once, in `onMounted`, and
+ * never again, so Vue has no reason to patch the inline element's contents after this.
+ */
+function place(into: HTMLElement | null) {
+  const svgEl = drawing()
+  if (svgEl && into && svgEl.parentElement !== into) into.appendChild(svgEl)
+}
+
+async function openLarge() {
+  if (!svg.value || large.value) return
+  held.value = inline.value ? `${inline.value.getBoundingClientRect().height}px` : null
+  large.value = true
+  bodyOverflow = document.body.style.overflow
+  document.body.style.overflow = 'hidden'
+  await nextTick()
+  place(moved.value)
+  /*
+   * Focus goes to the stage rather than to the close button: the stage is what the arrow
+   * keys pan and the wheel zooms, so a reader who opened this with the keyboard can use it
+   * without a Tab first. `role="dialog"` and the label say what they have landed in.
+   */
+  stage.value?.focus()
+}
+
+function closeLarge(restoreFocus = true) {
+  if (!large.value) return
+  /* Back into the figure first: Vue removes a teleport's children with it. */
+  place(inline.value)
+  large.value = false
+  held.value = null
+  scale.value = 1
+  pan.value = NO_PAN
+  if (bodyOverflow != null) document.body.style.overflow = bodyOverflow
+  bodyOverflow = null
+  /*
+   * Focus returns to the drawing, which is the control that opened the view. Escape with
+   * focus moved nowhere leaves a keyboard reader at the top of the document, which on the
+   * draft page is the whole preview away from where they were — `FloatingCard` argues the
+   * same point about the step trail.
+   */
+  if (restoreFocus) inline.value?.focus()
+}
+
+function zoom(factor: number) {
+  scale.value = scaleBy(scale.value, factor)
+  pan.value = clampedPan(pan.value)
+}
+
+/** Back to the size it opened at, in the middle. The way out of being lost. */
+function fit() {
+  scale.value = 1
+  pan.value = NO_PAN
+}
+
+/** A pan held inside what the drawing and the stage allow at this scale. */
+function clampedPan(to: Pan): Pan {
+  const svgEl = drawing()
+  const area = stage.value
+  if (!svgEl || !area) return to
+  /*
+   * **The drawing's own size at scale 1**, not its rendered box: `getBoundingClientRect`
+   * reports the box *after* the transform, so feeding it back in would compound the scale
+   * and the limit would grow every time the view was zoomed.
+   */
+  const box = svgEl.getBoundingClientRect()
+  const drawn = { width: box.width / scale.value, height: box.height / scale.value }
+  const size = area.getBoundingClientRect()
+  return clampPan(to, drawn, { width: size.width, height: size.height }, scale.value)
+}
+
+function onWheel(event: WheelEvent) {
+  event.preventDefault()
+  zoom(wheelFactor(event.deltaY))
+}
+
+function onStageKey(event: KeyboardEvent) {
+  const by = panByKey(event.key)
+  if (by) {
+    event.preventDefault()
+    pan.value = clampedPan({ x: pan.value.x + by.x, y: pan.value.y + by.y })
+    return
+  }
+  /*
+   * `+` and `-` zoom, which is what every image viewer does and what a reader will try
+   * before they look for a button. `=` is the unshifted key `+` lives on.
+   */
+  if (event.key === '+' || event.key === '=') {
+    event.preventDefault()
+    zoom(SCALE_STEP)
+  }
+  if (event.key === '-') {
+    event.preventDefault()
+    zoom(1 / SCALE_STEP)
+  }
+}
+
+/** Dragging, by pointer. The id is kept so a second finger does not fight the first. */
+const dragging = ref(false)
+let dragFrom: { x: number, y: number, pan: Pan } | null = null
+let dragId: number | null = null
+
+function onPointerDown(event: PointerEvent) {
+  if (dragId != null) return
+  dragId = event.pointerId
+  dragging.value = true
+  dragFrom = { x: event.clientX, y: event.clientY, pan: pan.value }
+  ;(event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId)
+}
+
+function onPointerMove(event: PointerEvent) {
+  if (!dragFrom || event.pointerId !== dragId) return
+  pan.value = clampedPan({
+    x: dragFrom.pan.x + (event.clientX - dragFrom.x),
+    y: dragFrom.pan.y + (event.clientY - dragFrom.y),
+  })
+}
+
+function onPointerUp(event: PointerEvent) {
+  if (event.pointerId !== dragId) return
+  dragId = null
+  dragging.value = false
+  dragFrom = null
+}
+
+/**
+ * Escape closes it, from wherever focus is.
+ *
+ * On the window rather than on the stage, because focus may have moved to one of the
+ * overlay's own controls — and a reader who pressed the zoom button three times should not
+ * have to find their way back to the stage before Escape works.
+ */
+function onKey(event: KeyboardEvent) {
+  if (large.value && event.key === 'Escape') closeLarge()
+}
+
+onMounted(() => window.addEventListener('keydown', onKey))
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKey)
+  /*
+   * Without `restoreFocus`: the element focus would return to is going away in the same
+   * tick, and asking for it logs a warning in the browser's console for nothing.
+   */
+  closeLarge(false)
+  sweep()
+})
 </script>
 
 <template>
@@ -157,11 +379,22 @@ onBeforeUnmount(sweep)
       mermaid's own output, from the diagram source in the record. mermaid runs with
       `securityLevel: 'strict'`, which is what makes inserting its SVG safe.
     -->
+    <!--
+      **A `<button>`, because it is one.** The drawing opens larger when it is activated, and
+      Enter and Space come free with the element rather than being two keydown branches that
+      have to be remembered. It is still the figure's canvas: a wide diagram scrolls inside
+      it at this size, as it always did.
+    -->
     <!-- eslint-disable vue/no-v-html -->
-    <div
+    <button
       v-if="svg"
+      ref="inline"
+      type="button"
       class="canvas"
-      :aria-label="label"
+      :style="held ? { minHeight: held } : undefined"
+      :aria-label="`${label ?? 'This diagram'} — open it larger`"
+      :aria-expanded="large"
+      @click="openLarge"
       v-html="svg"
     />
     <!-- eslint-enable vue/no-v-html -->
@@ -186,6 +419,113 @@ onBeforeUnmount(sweep)
     >
       This diagram could not be drawn. Its source is above.
     </figcaption>
+    <!--
+      The one caption a drawing has: how to open it. `aria-hidden`, because the button above
+      already says it in its own accessible name, and a screen reader reading the control and
+      then the same sentence again is the "one sentence, twice" the step pages were fixed for.
+    -->
+    <figcaption
+      v-if="svg"
+      class="rd-meta hint"
+      aria-hidden="true"
+    >
+      Opens larger
+    </figcaption>
+
+    <!--
+      **The enlarged view, over the page.** Teleported to the body so no ancestor's overflow
+      or stacking context can clip it — which is the thing `position: fixed` cannot promise
+      inside a page it does not own.
+    -->
+    <Teleport
+      v-if="large"
+      to="body"
+    >
+      <div
+        class="over"
+        @pointerdown.self="closeLarge()"
+      >
+        <!--
+          `role="dialog"` and `aria-modal`, which is what this is: the page behind it does
+          not scroll and Escape is how it is left. `FloatingCard` deliberately is *not* one —
+          it is a card of facts beside the thing it is about — and the difference is that
+          this covers the page.
+        -->
+        <div
+          class="sheet"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="`${label ?? 'This diagram'}, larger`"
+        >
+          <div class="bar">
+            <p class="rd-meta reading">
+              {{ scaleLabel(scale) }} · drag to move it, or use the arrow keys
+            </p>
+            <div class="controls">
+              <button
+                type="button"
+                class="rd-btn rd-btn--quiet"
+                aria-label="Zoom out"
+                :disabled="scale <= SCALE_MIN"
+                @click="zoom(1 / SCALE_STEP)"
+              >
+                −
+              </button>
+              <button
+                type="button"
+                class="rd-btn rd-btn--quiet"
+                aria-label="Zoom in"
+                :disabled="scale >= SCALE_MAX"
+                @click="zoom(SCALE_STEP)"
+              >
+                +
+              </button>
+              <button
+                type="button"
+                class="rd-btn rd-btn--quiet"
+                :disabled="scale === 1 && pan.x === 0 && pan.y === 0"
+                @click="fit"
+              >
+                Fit
+              </button>
+              <button
+                type="button"
+                class="rd-btn"
+                @click="closeLarge()"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+
+          <!--
+            The stage the drawing is moved into. `tabindex="0"` because it is what the arrow
+            keys pan and the wheel zooms, and focus lands here on opening so a keyboard
+            reader can use it without a Tab first.
+          -->
+          <div
+            ref="stage"
+            class="stage"
+            :class="{ 'stage--dragging': dragging }"
+            tabindex="0"
+            @wheel.prevent="onWheel"
+            @keydown="onStageKey"
+            @pointerdown="onPointerDown"
+            @pointermove="onPointerMove"
+            @pointerup="onPointerUp"
+            @pointercancel="onPointerUp"
+          >
+            <div
+              ref="moved"
+              class="moved"
+              :style="{
+                transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
+              }"
+            />
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </figure>
 </template>
 
@@ -194,15 +534,50 @@ onBeforeUnmount(sweep)
   margin: 0;
 }
 
-/* A wide diagram scrolls inside its own frame; the page never scrolls sideways. */
+/*
+ * A wide diagram scrolls inside its own frame; the page never scrolls sideways.
+ *
+ * **It is a `<button>` now, so every one of a button's own looks has to be taken back off
+ * it.** A control that painted the drawing on a grey slab with a border and centred type
+ * would be the page announcing a widget where there was a picture. What is left is the one
+ * thing it should have: a pointer, and a focus ring a keyboard reader can see.
+ */
 .canvas {
-  overflow-x: auto;
+  display: block;
+  width: 100%;
   max-width: 100%;
+  overflow-x: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: zoom-in;
+}
+
+.canvas:focus-visible {
+  outline: 3px solid var(--rd-focus-ring);
+  outline-offset: 3px;
 }
 
 .canvas :deep(svg) {
   max-width: 100%;
   height: auto;
+}
+
+/*
+ * The caption under a drawing. Quiet, and the accent only on hover, because it is a note
+ * about what the picture can do rather than a control of its own — the control is the
+ * picture.
+ */
+.hint {
+  margin-top: 2px;
+}
+
+.canvas:hover + .hint,
+.canvas:focus-visible + .hint {
+  color: var(--rd-accent-dark);
 }
 
 .fallback,
@@ -234,3 +609,115 @@ onBeforeUnmount(sweep)
   line-height: 1.55;
 }
 </style>
+
+/* ------------------------------ The drawing, opened larger ----------------------------- */
+
+/*
+ * **Over everything, and the one layer above the page that is not a floating card.**
+ * `FloatingCard` says the page stacks nothing above 2 and takes 5 for a card anchored to its
+ * control; this covers the page, so it sits above that as well. Teleported to the body, so
+ * nothing it is nested in can clip it or cap its layer.
+ */
+.over {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  padding: 24px;
+  background: color-mix(in srgb, var(--rd-ink) 55%, transparent);
+}
+
+/* The window's size, less the gutter that shows the page is still behind it. */
+.sheet {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  border-radius: var(--rd-radius-card);
+  background: var(--rd-surface);
+  box-shadow: var(--rd-lift-raised);
+  overflow: hidden;
+}
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--rd-line);
+}
+
+.reading {
+  margin: 0;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+/*
+ * **The stage is the viewport the drawing is read through**, and `overflow: hidden` is what
+ * makes the transform a pan rather than a scrollbar. `touch-action: none` so a drag on a
+ * phone moves the diagram instead of scrolling the page behind the backdrop.
+ */
+.stage {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--rd-ground);
+  cursor: grab;
+  touch-action: none;
+}
+
+.stage:focus-visible {
+  outline: 3px solid var(--rd-focus-ring);
+  outline-offset: -3px;
+}
+
+.stage--dragging {
+  cursor: grabbing;
+}
+
+/*
+ * The box the zoom and the offset are on, which the drawing is moved into.
+ *
+ * **No transition.** A pan follows a pointer, so an eased transform lags behind the finger
+ * by whatever the duration is — and a reader dragging a diagram is doing it to line
+ * something up.
+ */
+.moved {
+  transform-origin: center center;
+  will-change: transform;
+}
+
+/*
+ * The drawing, inside the stage. It is allowed to be larger than the stage — that is the
+ * whole point — so the `max-width: 100%` the inline figure gives it is taken back, and the
+ * stage's own `overflow: hidden` is what keeps it off the page.
+ */
+.moved :deep(svg) {
+  display: block;
+  max-width: none;
+  max-height: none;
+}
+
+/* At a phone's width the gutter goes: 24px of backdrop on each side of a 390px screen is a
+ * third of the room the diagram was opened to get. */
+@media (max-width: 560px) {
+  .over {
+    padding: 0;
+  }
+
+  .sheet {
+    border-radius: 0;
+  }
+}

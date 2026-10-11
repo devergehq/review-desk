@@ -287,3 +287,88 @@ describe('what the diagram is configured with', () => {
     expect(component).toContain('suppressErrorRendering: true')
   })
 })
+
+/* --------------------------- What can and cannot be enlarged -------------------------- */
+
+/*
+ * **Only a drawing opens larger**, which is the half of DEV-928's second change that jsdom
+ * can measure. The other half — the overlay itself, its zoom, its drag, Escape and the focus
+ * that comes back — needs a renderer: `svg` is only ever set by a successful
+ * `mermaid.render`, and jsdom has no `getBBox`, so a valid diagram always takes the
+ * draw-failure path here. `e2e/review-desk.spec.ts` measures it in Chromium, and the
+ * arithmetic behind it is `test/zoom.spec.ts`.
+ *
+ * So this file holds the states where there is *nothing* to enlarge. They are the ones a
+ * screenshot would not show, because what they are about is a control that should not be
+ * there: a sketch and a failed diagram show their source as text, and a button over a block
+ * of text promising a larger view of it would be a lie the page tells.
+ */
+describe('what a source that is not a drawing offers', () => {
+  it('offers no larger view of a sketch', async () => {
+    const page = await mountSuspended(MermaidFigure, { props: { source: SKETCH } })
+    await settled(page)
+    expect(page.find('button.canvas').exists()).toBe(false)
+    expect(page.html()).not.toContain('Opens larger')
+  })
+
+  it('offers no larger view of a diagram that could not be drawn', async () => {
+    const page = await mountSuspended(MermaidFigure, {
+      props: { source: BROKEN, declared: true },
+    })
+    await settled(page)
+    expect(page.find('figcaption').text()).toContain('could not be drawn')
+    expect(page.find('button.canvas').exists()).toBe(false)
+  })
+
+  /*
+   * And nothing is left over the page by a figure that never had a drawing — the overlay is
+   * teleported to the body, so a leak here would be a sheet nobody could close sitting on
+   * every screen afterwards, which is DEV-880's own failure in a new costume.
+   */
+  it('leaves nothing over the page', async () => {
+    const page = await mountSuspended(MermaidFigure, { props: { source: SKETCH } })
+    await settled(page)
+    expect(document.querySelectorAll('.over')).toHaveLength(0)
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(0)
+  })
+})
+
+describe('the drawing is moved into the larger view, never copied', () => {
+  /*
+   * **The rule, read off the file.** A second `v-html` is the obvious way to build this
+   * overlay and it is the wrong one: `test/controls.nuxt.spec.ts` counts every `v-html` in
+   * the dashboard and names the reason for each, and "the same string again, over there" is
+   * not a new reason. Read off the source because the branch that would break it cannot be
+   * reached in jsdom.
+   */
+  const source = readFileSync(
+    resolve(__dirname, '../app/components/MermaidFigure.vue'),
+    'utf8',
+  )
+
+  it('hands the browser markup in exactly one place', () => {
+    const uses = source.split('\n').filter(line => line.includes('v-html='))
+    expect(uses).toHaveLength(1)
+    expect(uses[0]).toContain('v-html="svg"')
+  })
+
+  /*
+   * mermaid scopes its own stylesheet by the figure's id — `#{figureId} .node { … }` — so a
+   * clone with its ids stripped renders unstyled and one that keeps them duplicates every id
+   * in the document. The drawing is appended, which moves it.
+   */
+  it('moves the one element rather than cloning it', () => {
+    expect(source).toContain('into.appendChild(svgEl)')
+    expect(source).not.toContain('cloneNode')
+  })
+
+  /*
+   * Vue removes a teleport's children with it, and the drawing is one of them — so the move
+   * back has to happen before the overlay goes, on close and on unmount alike.
+   */
+  it('puts the drawing back before the overlay is taken away', () => {
+    const closing = source.slice(source.indexOf('function closeLarge'))
+    expect(closing.indexOf('place(inline.value)')).toBeLessThan(closing.indexOf('large.value = false'))
+    expect(source).toContain('closeLarge(false)')
+  })
+})
