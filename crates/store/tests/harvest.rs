@@ -513,9 +513,10 @@ fn a_closed_pull_request_finishes_step_seven_too() {
 
     // **And it still records a fact, which is what keeps its card.** A settled step 7
     // has no read time — that is written only while one is `running` — so this pair is
-    // the whole of what the trail opens a card for here, and the card is the one place
-    // the page says how long the harvest ran. Made conditional on a count, this case
-    // would lose both and no other test would notice.
+    // the whole of what the trail opens a card for here, and the card is the only way
+    // into anything the step has to say: its name, and whatever the record holds about
+    // how long it took. Made conditional on a count, this case would draw no card at
+    // all and no other test would notice.
     assert_eq!(
         written
             .facts

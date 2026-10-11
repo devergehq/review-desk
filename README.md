@@ -226,8 +226,9 @@ calls to report progress and would otherwise clear them by saying nothing about 
 giving any replaces the whole list, and `--clear-facts` empties it. A step with no facts
 draws no card and no control for one — except step 7 while it is `running`, which draws a
 card for when it was last written. That is the harvest's read time in practice, and this
-command is the other way in: `layer set --layer 7 --state running` with no `--fact` is a
-step whose card says only when you wrote it.
+command is the other way in: `layer set --layer 7 --state running --clear-facts` is a step
+whose card says only when you wrote it. Without `--clear-facts` whatever the last harvest
+recorded stays, by the rule above, and the card shows those counts beside the new time.
 
 The states are `pending`, `running`, `done`, `waiting_on_you`, `failed` and `skipped`.
 This is stored rather than worked out from the rest of the record, for two reasons:
