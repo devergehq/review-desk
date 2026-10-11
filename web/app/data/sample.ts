@@ -8,7 +8,7 @@
  *
  * ## Why it survived the switch to the API
  *
- * Two reasons, and neither is nostalgia. The component tests mount four screens and assert
+ * Two reasons, and neither is nostalgia. The component tests mount five screens and assert
  * what they render; against a real server they would be a server test wearing a component
  * test's clothes, and they would need one running to say anything at all. And a developer
  * changing a screen can see it with records on it without starting a binary and seeding a

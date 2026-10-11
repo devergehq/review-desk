@@ -5,7 +5,7 @@ import { DeskRequestError, asDeskError } from '../app/data/fault'
 import type { ErrorCode } from '../app/types/desk'
 
 /*
- * `app/data/api.ts`: the sixteen operations as HTTP.
+ * `app/data/api.ts`: the nineteen operations as HTTP.
  *
  * **Every error code in the contract is reached here**, which is one of DEV-862's
  * acceptance criteria and could not be met any other way: the server produces one code per
@@ -62,6 +62,13 @@ describe('where it sends things', () => {
   })
 
   it.each([
+    ['listReviews (all)', () => api.listReviews(null), 'GET', '/api/v1/reviews'],
+    [
+      'listReviews (one repository)',
+      () => api.listReviews('acme/portal'),
+      'GET',
+      '/api/v1/reviews?repo=acme%2Fportal',
+    ],
     ['getReview', () => api.getReview(17), 'GET', '/api/v1/reviews/17'],
     ['getDraft', () => api.getDraft(17), 'GET', '/api/v1/reviews/17/draft'],
     ['listRepos', () => api.listRepos(), 'GET', '/api/v1/repos'],

@@ -123,6 +123,16 @@ export interface Addresses {
    * holds three rows and the counts in this suite say three.
    */
   heldBackReviewId: number
+  /**
+   * A fifth review, **posted and with no draft**: its GitHub review id was recorded by
+   * `review link`, which is the one way the command line can post a review at all.
+   *
+   * It is in no waiting group — no brief to confirm, no draft to approve, no outcome — so
+   * it changes none of the counts the other specs assert, and it is the whole of what
+   * "Waiting on the author" has to draw from. Before DEV-930 it was in no group on any
+   * screen, which is the complaint the issue quotes.
+   */
+  postedReviewId: number
 }
 
 /** The addresses, as the setup wrote them. */
@@ -536,6 +546,72 @@ function seedStructured(directory: string, database: string): number {
   return reviewId
 }
 
+/**
+ * A review that is **posted and has no draft**, recorded the way an agent records one.
+ *
+ * `review link --github-review` writes the review's GitHub id with no draft transition —
+ * and `/repos` has always counted that as the review no longer being open, so before
+ * DEV-930 such a review was in no group on any screen and reachable only by typing its id.
+ * That is the complaint the issue was opened about, and this is the record it is about.
+ *
+ * **It is the only posted review the command line can make.** Approving a draft is the
+ * developer's act and happens in the dashboard; `draft posted` refuses a draft that is not
+ * approved. So the acceptance path posts the *other* review through the browser and then
+ * the command line, and this one covers the path that needs neither.
+ *
+ * Nothing has harvested it, which is every review until `review-desk harvest` runs: its
+ * pull-request state is unknown and its three figures are unmeasured, which is the half of
+ * the group's rule that says a nought is not an absence.
+ */
+function seedPosted(directory: string, database: string): number {
+  const opened = cli(database, [
+    'review',
+    'open',
+    '--repo',
+    'acme/portal',
+    '--pr',
+    '405',
+    '--head',
+    'a9f3b21',
+    '--title',
+    'Record the delivery attempt count',
+    '--ticket',
+    'ABC-244',
+    '--changed-lines',
+    '132',
+  ])
+  const reviewId = Number(opened.match(/\d+/)?.[0])
+  if (!Number.isInteger(reviewId)) {
+    throw new Error(`review open printed no id: ${opened}`)
+  }
+
+  const finding = join(directory, 'posted-finding.json')
+  writeFileSync(
+    finding,
+    JSON.stringify({
+      lens: 'correctness',
+      severity: 'should',
+      claim: 'The attempt count is written outside the transaction',
+      file: 'jobs/DeliverWebhook.php',
+      line: 73,
+      disposition: 'in_draft',
+    }),
+  )
+  cli(database, ['finding', 'add', '--review', String(reviewId), '--file', finding])
+
+  /* Posted, with the GitHub review it became. No draft, and that is the point. */
+  cli(database, [
+    'review',
+    'link',
+    '--review',
+    String(reviewId),
+    '--github-review',
+    'PRR_kwDOseeded',
+  ])
+
+  return reviewId
+}
+
 export function seed(
   directory: string,
 ): {
@@ -544,6 +620,7 @@ export function seed(
   waivedReviewId: number
   structuredReviewId: number
   heldBackReviewId: number
+  postedReviewId: number
 } {
   const database = join(directory, 'seeded.db')
 
@@ -782,6 +859,7 @@ Ran the job twice against a local endpoint that 500s once, and counted the deliv
     waivedReviewId,
     structuredReviewId: seedStructured(directory, database),
     heldBackReviewId: seedHeldBack(directory, database),
+    postedReviewId: seedPosted(directory, database),
   }
 }
 

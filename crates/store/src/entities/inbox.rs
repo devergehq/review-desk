@@ -7,9 +7,10 @@
 //! the caller reading every review and filtering it, which is the join the dashboard
 //! is not supposed to do.
 //!
-//! **These return reviews, not Inbox items.** The five groups on that screen carry
-//! different fields and are rendered differently, and deciding what each one shows is
-//! the server's job. What the store owns is which reviews belong in each group.
+//! **These return reviews, not Inbox items.** The groups on that screen carry different
+//! fields and are rendered differently, and deciding what each one shows is the server's
+//! job — including, since DEV-930, whether a figure is a measurement or the absence of
+//! one. What the store owns is which reviews belong in each group.
 
 use rusqlite::{params, Row};
 

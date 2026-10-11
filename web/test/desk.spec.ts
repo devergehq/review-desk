@@ -9,7 +9,7 @@ import {
 } from '../app/composables/useReviewDesk'
 
 /*
- * The data layer, which is where every write on the four screens ends up.
+ * The data layer, which is where every write on the five screens ends up.
  *
  * It runs here over sample records — DEV-862 keeps them for exactly this, so that the
  * behaviour of a screen can be checked without a binary and a seeded database. Sample mode
@@ -1023,7 +1023,7 @@ describe('starting a review', () => {
 describe('a database with nothing in it', () => {
   /*
    * A fresh database, which is what the first run of `review-desk serve` serves. Every
-   * screen has to read as "nothing here yet" rather than as broken, and the four reads have
+   * screen has to read as "nothing here yet" rather than as broken, and the six reads have
    * to answer rather than fail — an empty desk is an answer.
    */
   beforeEach(async () => {

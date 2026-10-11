@@ -307,8 +307,11 @@ const showing = (name: string) => repo.value === ALL_REPOSITORIES || repo.value 
 /**
  * Oldest first, with the rows whose time has no source after the ones that have it.
  *
- * The board says "Oldest first" and three of the four groups carry no time at all, so the
+ * The board says "Oldest first" and said it over groups that carried no time at all, so the
  * caption says what this really did rather than implying a sort the data cannot support.
+ * Every group has a time to sort by now — the posted rows by when they were posted, which
+ * is the last of the four to get one — and a row whose own time is still absent sorts last
+ * and says so where the figure goes.
  */
 function oldestFirst<T>(rows: T[], at: (row: T) => string | null): T[] {
   return [...rows].sort((a, b) => {

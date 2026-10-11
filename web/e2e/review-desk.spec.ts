@@ -44,6 +44,7 @@ const {
   waivedReviewId,
   structuredReviewId,
   heldBackReviewId,
+  postedReviewId,
 } = addresses
 
 /**
@@ -128,6 +129,11 @@ test.describe('the whole path, on a seeded database', () => {
      * behind it. The screen this replaced drew the title twice.
      */
     await expect(page.getByText('Retry failed webhook deliveries')).toHaveCount(1)
+    /*
+     * **Three rows for two reviews that need you**, which is not a contradiction: the
+     * third is the posted review under "Waiting on the author", and nothing there is
+     * waiting on the developer. The headline counts what is.
+     */
     await expect(page.locator('.row')).toHaveCount(3)
     await expect(page.getByText('Problem brief ready')).toBeVisible()
     await expect(page.getByText('nothing posts until you confirm')).toBeVisible()
@@ -153,11 +159,40 @@ test.describe('the whole path, on a seeded database', () => {
     await expect(page.getByRole('heading', { name: 'With the agent' })).toHaveCount(0)
     await expect(page.getByRole('heading', { name: 'Your pull requests' })).toHaveCount(0)
 
-    /* The one group the board draws that the API cannot fill says so, in those words. */
+    /*
+     * **The group the board drew and the API could not fill, filled.** It said "not
+     * measured yet" with its reason until DEV-930, and the words are gone because the
+     * absence is: `GET /inbox` serves a group for a posted review whose pull request has
+     * not been seen merged or closed.
+     */
     await expect(page.getByRole('heading', { name: 'Waiting on the author' })).toBeVisible()
+    await expect(page.getByText('Not measured yet')).toHaveCount(0)
     await expect(
       page.getByText('serves no group for a posted review awaiting a reply'),
-    ).toBeVisible()
+    ).toHaveCount(0)
+
+    const posted = page.locator('.row').filter({ hasText: 'Record the delivery attempt' })
+    await expect(posted).toHaveCount(1)
+    /*
+     * **Posted, and nothing holds when.** Its GitHub id was recorded by `review link`,
+     * which needs no draft — so there is no `posted_at`, and the row says so where the age
+     * goes rather than inventing one.
+     */
+    await expect(posted).toContainText('Posted')
+    /*
+     * And nothing has harvested it, so the three figures are absent rather than nought,
+     * and the pull request's state is not claimed. Both halves of the rule the brief
+     * states: a figure with no source is shown as unknown, never as a number.
+     */
+    await expect(posted).toContainText('Not harvested yet')
+    await expect(posted).toContainText('pull request state not established')
+    await expect(posted).toHaveAttribute('href', `/reviews/${postedReviewId}/understand`)
+
+    /* And it is one click from the queue, which is the whole of what was asked for. */
+    await posted.click()
+    await expect(page).toHaveURL(new RegExp(`/reviews/${postedReviewId}/understand$`))
+    await expect(page.getByText('Record the delivery attempt count')).toBeVisible()
+    await page.goBack()
 
     /*
      * And no marker, because these are real records. The marker is the one thing on screen
@@ -2056,15 +2091,156 @@ test.describe('a drawing opens larger', () => {
     expect(await page.evaluate(() => document.body.style.overflow)).not.toBe('hidden')
     await expect(page.locator('h1')).toBeVisible()
   })
+
+/*
+ * The Reviews list, and the two clicks DEV-930 asks for.
+ *
+ * Its own group because it is the one screen that is not about a review needing something:
+ * the queue is what is waiting and `GET /timings` is what has finished, so a review that
+ * was posted and has not been replied to was in neither. "The actual review itself has
+ * disappeared… I can't even get to the review page if I wanted to go back" — Patrick, on
+ * tc-portal #9585, which is the sentence this page deletes.
+ */
+test.describe('the list of every review', () => {
+  test('is in the header, lists every review, and reaches a posted one in two clicks', async ({
+    page,
+  }) => {
+    await page.goto(seeded)
+
+    /*
+     * **Click one.** The header item pointed at whichever review happened to be waiting
+     * until DEV-930, so it could not take a reader to a *particular* review — and greyed
+     * itself out on a database with none.
+     */
+    await page.getByRole('navigation', { name: 'Review Desk' })
+      .getByRole('link', { name: 'Reviews' })
+      .click()
+    await expect(page).toHaveURL(/\/reviews$/)
+    await expect(page.getByRole('heading', { name: /\d+ reviews?$/ })).toBeVisible()
+
+    /* Every review the seed made, posted ones included. */
+    for (const title of [
+      'Retry failed webhook deliveries',
+      'Give a scheduled export its own context',
+      'Say "not measured" rather than null in the delivery log',
+      'Record the delivery attempt count',
+    ]) {
+      await expect(page.getByText(title, { exact: false }).first()).toBeVisible()
+    }
+
+    /*
+     * **The step, and its state.** Never the name alone: a posted review's furthest
+     * started step is the draft, and a cell reading "Draft" would say it still needs
+     * signing off while the queue says it is with the author.
+     */
+    const posted = page.locator('.row').filter({ hasText: 'Record the delivery attempt' })
+    /*
+     * **"Not started", and "posted" beside it, which is not a contradiction.** The seven
+     * steps are the review process; this review's GitHub id was recorded by `review link`
+     * and no step of it was ever reported. Without the second word the step column would
+     * read as a review nothing had happened to, beside a queue calling it posted.
+     */
+    await expect(posted).toContainText('Not started')
+    await expect(posted).toContainText('posted')
+    await expect(posted).not.toContainText('step 0 of 7')
+
+    const webhooks = page.locator('.row').filter({ hasText: 'Retry failed webhook' })
+    await expect(webhooks).toContainText('Draft')
+    await expect(webhooks).toContainText('step 6 of 7')
+    /* A round is one of a total, never a bare count of rework against the author. */
+    await expect(webhooks).toContainText('round 1')
+
+    /* And it describes rather than grades: no bar, no findings count, no severities. */
+    await expect(page.locator('[role="img"]')).toHaveCount(0)
+    await expect(page.getByText('blocker', { exact: false })).toHaveCount(0)
+
+    /* **Click two**, and the review is open at Understand, where a review starts. */
+    await posted.click()
+    await expect(page).toHaveURL(new RegExp(`/reviews/${postedReviewId}/understand$`))
+    await expect(page.getByText('Record the delivery attempt count')).toBeVisible()
+  })
+
+  test('filters by repository, and says the order out loud', async ({ page }) => {
+    await page.goto(`${seeded}reviews`)
+    await expect(page.getByText('Newest first', { exact: false })).toBeVisible()
+
+    const billing = page
+      .getByRole('radio')
+      .filter({ hasText: 'acme/billing-api' })
+    /* Every seeded review is on acme/portal, so there is no second repository to pick. */
+    await expect(billing).toHaveCount(0)
+    const all = page.getByRole('radio').filter({ hasText: 'All repositories' })
+    await expect(all).toHaveCount(1)
+
+    const portal = page.getByRole('radio').filter({ hasText: 'acme/portal' })
+    await expect(portal).toHaveCount(1)
+    await portal.click()
+    await expect(page.locator('.row').first()).toBeVisible()
+    await expect(page.getByText('acme/portal', { exact: false }).first()).toBeVisible()
+  })
+
+  /*
+   * **Measured, at a laptop's width and at a phone's**, which DEV-930's last criterion
+   * asks for by name. Nothing scrolls sideways at either, on either page — the failure a
+   * screenshot cannot show and a click count cannot see.
+   */
+  for (const [what, width, height] of [
+    ['a laptop', 1440, 900],
+    ['a phone', 390, 844],
+  ] as Array<[string, number, number]>) {
+    test(`the queue and the reviews fit ${what} at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height })
+
+      for (const [name, path] of [['the queue', ''], ['the reviews', 'reviews']]) {
+        await page.goto(`${seeded}${path}`)
+        await expect(page.locator('.row').first()).toBeVisible()
+
+        const sideways = await page.evaluate(() => ({
+          scrollWidth: document.documentElement.scrollWidth,
+          clientWidth: document.documentElement.clientWidth,
+        }))
+        expect(
+          sideways.scrollWidth,
+          `${name} at ${width}px is ${sideways.scrollWidth}px wide in ${sideways.clientWidth}px`,
+        ).toBeLessThanOrEqual(sideways.clientWidth + 1)
+
+        /*
+         * And every row is a target a finger can hit. 44px is this project's own floor for
+         * anything you press, stated in `web/app/assets/css/tokens.css`.
+         */
+        const rows = await page.locator('.row').all()
+        for (const row of rows) {
+          const box = await row.boundingBox()
+          expect(box, `${name} at ${width}px: a row has no box`).not.toBeNull()
+          expect(
+            box!.height,
+            `${name} at ${width}px: a row is ${box!.height}px tall`,
+          ).toBeGreaterThanOrEqual(44)
+        }
+      }
+    })
+  }
 })
 
 test.describe('a database with nothing in it', () => {
-  test('all four pages read as new rather than as broken', async ({ page }) => {
+  test('all five pages read as new rather than as broken', async ({ page }) => {
     await page.goto(empty)
     await expect(page.getByRole('heading', { name: 'Nothing here yet' })).toBeVisible()
     await expect(page.getByText('This database holds no reviews')).toBeVisible()
     /* The one thing that fills it, with the field to do it from. */
     await expect(page.locator('input#start-empty')).toBeVisible()
+
+    /*
+     * **And the header's Reviews item is a link here**, which it was not before DEV-930:
+     * it pointed at whichever review was waiting and greyed itself out when none was. A
+     * list is somewhere worth being on an empty database, because it says so.
+     */
+    await page.getByRole('navigation', { name: 'Review Desk' })
+      .getByRole('link', { name: 'Reviews' })
+      .click()
+    await expect(page).toHaveURL(`${empty}reviews`)
+    await expect(page.getByRole('heading', { name: 'No reviews yet' })).toBeVisible()
+    await expect(page.getByText('This database holds no reviews')).toBeVisible()
 
     await page.goto(`${empty}rules`)
     await expect(page.getByRole('heading', { name: 'No rules yet' })).toBeVisible()

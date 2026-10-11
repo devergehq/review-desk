@@ -81,7 +81,19 @@ const repoTabs = computed(() => [
     .map(([name, rows]) => ({ value: name, label: name, count: rows })),
 ])
 
-/** The second line under a review's title: where it is, and which round of how many. */
+/**
+ * The second line under a review's title: where it is, which round of how many, and
+ * whether it was posted.
+ *
+ * **Posted is said here because the step column cannot say it.** The seven steps are the
+ * review process, and a review whose GitHub id was recorded by `review link` had that
+ * process run outside Review Desk — so no step was ever reported and the step column
+ * reads "Not started", truthfully, beside a review the queue is calling posted. Said on
+ * this line the two stop contradicting each other, and it costs no new field: a review
+ * has carried `github_review_id` since the first slice.
+ *
+ * It is a state, not a mark: this page says where a review is and never how it went.
+ */
 function about(row: ReviewListItem): string {
   const parts = [row.review.repo]
   parts.push(
@@ -89,6 +101,7 @@ function about(row: ReviewListItem): string {
       ? `round ${row.review.round} of ${row.rounds_on_pr}`
       : `round ${row.review.round}`,
   )
+  if (row.review.github_review_id) parts.push('posted')
   if (row.review.ticket_id) parts.push(row.review.ticket_id)
   return parts.join(' · ')
 }

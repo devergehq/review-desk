@@ -119,7 +119,7 @@ describe('the built dashboard', () => {
    * render, which is a test that fails for a reason nobody can act on.
    *
    * What the criterion is about is the rendered page, so it is asserted on a rendered
-   * page: `web/e2e/review-desk.spec.ts` opens all four screens on a binary serving a real
+   * page: `web/e2e/review-desk.spec.ts` opens all five screens on a binary serving a real
    * database and fails if the marker is anywhere on them.
    */
 

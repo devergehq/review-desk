@@ -117,7 +117,7 @@ repository" apart from its number), and these fixed sentences —
 - "written before the diff was read"
 - "Every rule names the failure it prevents. A preference with no consequence does not qualify."
 
-Everything else on the four screens is below.
+Everything else on the five screens is below.
 
 ### Inbox — `GET /inbox`, example `examples/getInbox.response.json`
 

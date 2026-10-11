@@ -21,7 +21,7 @@
  * A read over HTTP has three states a fixture never had: it is in flight, it failed, or it
  * answered. So a read hands back a [`DeskResource`] rather than a value, and a screen
  * renders it through `<DeskState>` — which is what put loading, "nothing here yet", and
- * "the server is not answering, retry" on all four screens from one place rather than four.
+ * "the server is not answering, retry" on all five screens from one place rather than five.
  *
  * ## A write refreshes what is on screen, and the screen does not ask it to
  *
@@ -113,7 +113,7 @@ const DECIDED: Record<FindingDecision, string> = {
  * The backend, resolved once for the whole page.
  *
  * A promise rather than a value, because sample mode is reached by a dynamic import and so
- * cannot be had synchronously. Shared, so four screens do not each load it.
+ * cannot be had synchronously. Shared, so five screens do not each load it.
  */
 let backend: Promise<DeskBackend> | null = null
 

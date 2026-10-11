@@ -182,7 +182,7 @@ describe('the queue', () => {
     expect(page.text()).toContain('2 of your own')
   })
 
-  it('draws the board’s four groups, and hides a group with nothing in it', async () => {
+  it('draws the board’s five groups, and hides a group with nothing in it', async () => {
     const page = await shown(Inbox)
     const text = page.text()
     expect(text).toContain('Needs you')

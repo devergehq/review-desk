@@ -460,7 +460,7 @@ export function sentence(text: string): string {
  *
  * The contract requires `invalid_value` to name what it would have accepted, and a refusal
  * that showed the complaint without the remedy would waste that. Written once, because
- * four screens refuse things and a message assembled differently on each would make the
+ * five screens refuse things and a message assembled differently on each would make the
  * same refusal read four ways.
  */
 export function refusal(error: DeskError): string {
@@ -512,7 +512,7 @@ export function staleLabel(rule: Rule, now: Date = new Date()): string {
 /**
  * What a write's answer becomes on screen.
  *
- * **One rule, one place, because it had already drifted.** Four screens turned a
+ * **One rule, one place, because it had already drifted.** Five screens turn a
  * `WriteResult` into a notice and three of them agreed; the One review screen wrote its own
  * shape — `{ text, ok }` — and never called [`refusalTone`], so a server that was not
  * answering was shown there in the same tone as a mistyped reason. A notice is the only

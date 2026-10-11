@@ -9,9 +9,11 @@ installed.
 
 This repository is at the fourth slice: the store, the commands an agent session calls
 to record a review, the harvester that reads a posted review's outcomes back from GitHub,
-the dashboard's four screens, the local HTTP server that serves the JSON API and the
-dashboard from one binary, and **the dashboard reading and writing that API**. All sixteen
-of the contract's operations are answered and all sixteen are called.
+the dashboard's five screens, the local HTTP server that serves the JSON API and the
+dashboard from one binary, and **the dashboard reading and writing that API**. All
+twenty-one of the contract's operations are answered and nineteen are called — the two the
+dashboard does not call are `GET /timings`, which no screen draws yet, and
+`GET /reviews/{id}/brief/problem-statement`, which a blind pass reads.
 
 **It has been run end to end.** `web/e2e` records a review through the command line, serves
 it from the binary, and drives a browser through confirming the brief and signing off the
@@ -725,7 +727,7 @@ Tests always use a temporary file and never touch the default path.
 | `crates/harvest` | `review-desk-harvest`: reads a posted review's outcomes back from GitHub. GitHub sits behind a trait, so its tests replay responses captured from a real pull request. |
 | `crates/server` | `review-desk-server`: the local HTTP server. The contract's JSON API and the embedded dashboard, on `127.0.0.1`. |
 | `crates/cli` | `review-desk`: the binary. One module per command group under `src/commands`. |
-| `web` | The dashboard: a Nuxt app, four screens, built to static files. |
+| `web` | The dashboard: a Nuxt app, five screens, built to static files. |
 | `contract` | The OpenAPI file both sides are built to, its examples, and the checks over them. |
 | `tools` | The dependency checks: release age and known advisories. Standard-library Python, no dependencies of their own. |
 | `dependency-allowlist.toml` | What the two checks knowingly let through, with a reason, who decided and a date to look again. |
@@ -739,8 +741,8 @@ functions. That is what keeps one way into the record.
 
 ## The dashboard
 
-Four screens — the inbox, one review, the draft preview and the rules — in `web/`. They read
-and write the JSON API that `review-desk serve` serves.
+Five screens — the queue, the reviews, one review, the draft preview and the rules — in
+`web/`. They read and write the JSON API that `review-desk serve` serves.
 
 ```sh
 cd web
@@ -829,7 +831,7 @@ and the choice is remembered until you ask for the real records again with `?api
 ### The data layer
 
 **Every screen reads and writes through one composable**, `web/app/composables/useReviewDesk.ts`,
-whose four reads mirror the four the API offers — one GET per screen, so no screen joins
+whose six reads mirror the six the API offers — one GET per screen, so no screen joins
 anything. Behind it are `app/data/api.ts`, which is the only file that makes an HTTP
 request, and `app/data/sample.ts`, which is the only file that names a fixture. A test
 enforces that rather than trusting it:
@@ -882,8 +884,13 @@ the agent's draft appearing to sign off, editing and signing it off, and
 the brief's `confirmed_by` and the draft's `approved_by` are both `developer`, which is the
 sign-off boundary this project rests on.
 
-Sixteen assertions, about four seconds of browser once the build is warm.
+Forty-four tests, about half a minute of browser once the build is warm.
 `.github/workflows/e2e.yml` runs it on every pull request.
+
+Two of them are measurements rather than assertions about words: the queue and the Reviews
+list are opened at 1440 and at 390 pixels wide, and nothing may scroll sideways or draw a
+row shorter than this project's own 44-pixel floor for a thing you press. A screenshot
+cannot show a sideways scroll and a click count cannot see one.
 
 ```sh
 cd web && pnpm run e2e:screenshots   # rewrites docs/screenshots/
@@ -988,14 +995,28 @@ developer installing anything.
 
 ### Which operations are answered
 
-**All sixteen.** One GET per screen, and every write the four screens make.
+**All twenty-one**, and the dashboard calls nineteen of them. One GET per screen, and
+every write the five screens make.
 
 | Screen | Reads | Writes |
 | -- | -- | -- |
-| Inbox | `GET /inbox` | `POST /reviews` |
+| Queue | `GET /inbox` | `POST /reviews` |
+| Reviews | `GET /reviews?repo=` | — |
 | One review | `GET /reviews/{id}` | `POST …/brief/confirm`, `PATCH …/findings/{seq}` |
 | Draft preview | `GET /reviews/{id}/draft` | `PUT …/draft`, `POST …/draft/approve`, `POST …/draft/send-back`, `POST …/held-back/ticket` |
 | Rules | `GET /rules?repo=`, `GET /repos` | `POST /rules/{id}/promote`, `/dismiss`, `/retire`, `/defer` |
+
+**The two nothing calls** are `GET /timings`, which records how long every finished review
+took and which no screen draws yet — DEV-890 made the figures available and left the
+statistics page to somebody's later decision — and
+`GET /reviews/{id}/brief/problem-statement`, which is the problem half on its own, for a
+blind pass that must not see the rest of the brief. Both are answered and both are in the
+conformance test; neither is in `web/app/data/api.ts`.
+
+**`GET /reviews` is the one screen that is a list rather than a thing to do**, and it is
+there because every other read is about a review that needs something. The queue is what
+is waiting and `/timings` is what has finished, so a review that was posted and has not
+been replied to appeared in neither — reachable only by typing its id, which is DEV-930.
 
 **Two of them are sign-offs, and only the developer can make one.** Confirming a brief
 and approving a draft happen here and nowhere else: `review-desk brief confirm` does not

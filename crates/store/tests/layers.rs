@@ -58,7 +58,7 @@ fn writing_a_layer_again_replaces_what_it_said() {
 
 #[test]
 fn every_review_has_seven_layers_and_an_unwritten_one_is_pending() {
-    // The four screens show seven, so a reader always gets seven. An absent row
+    // The five screens show seven, so a reader always gets seven. An absent row
     // meaning "not started" is knowledge no caller should need.
     let (_dir, store) = temp_store();
     let review = store
