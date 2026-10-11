@@ -336,6 +336,12 @@ export function authorResponseLabel(item: InboxPostedItem): string {
    */
   const said: string[] = []
 
+  /*
+   * **Both thread-derived figures absent means nothing could read a thread**, and the
+   * row says which absence it is. They are nulled together because they come off the
+   * same read: the harvester reaches a thread through a finding's comment id and gets
+   * both from it, or neither.
+   */
   if (item.replies == null && item.threads_resolved == null) {
     said.push(
       item.harvested_at == null
@@ -346,11 +352,16 @@ export function authorResponseLabel(item: InboxPostedItem): string {
             count(item.findings, 'finding')})`,
     )
   }
-  else {
-    said.push(
-      count(item.replies ?? 0, 'reply', 'replies'),
-      `${count(item.threads_resolved ?? 0, 'thread')} resolved`,
-    )
+
+  /*
+   * **Each figure drawn only where there is one**, and never through a `?? 0`. A null
+   * coalesced to nought is the exact thing this function exists to prevent, and it is
+   * reachable on its own: an outcome recorded by hand gives a review a reply count with
+   * no harvest behind it, leaving the resolution count beside it still unmeasured.
+   */
+  if (item.replies != null) said.push(count(item.replies, 'reply', 'replies'))
+  if (item.threads_resolved != null) {
+    said.push(`${count(item.threads_resolved, 'thread')} resolved`)
   }
 
   /*

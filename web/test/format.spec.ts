@@ -307,6 +307,24 @@ describe('what came back on a posted review', () => {
     expect(said).not.toContain('Not harvested yet')
   })
 
+  /*
+   * **The mixed state, which `?? 0` printed a nought over.** An outcome recorded by hand
+   * gives a review a reply count with no harvest behind it — and the resolution beside it
+   * is still unmeasured, so it is left out rather than drawn as none.
+   */
+  it('draws no figure for the half of a pair that is still unmeasured', () => {
+    const said = authorResponseLabel(posted({
+      harvested_at: null,
+      findings_linked: 0,
+      replies: 3,
+      threads_resolved: null,
+      code_changed_after: null,
+    }))
+    expect(said).toContain('3 replies')
+    expect(said).not.toContain('0 threads resolved')
+    expect(said).not.toContain('thread')
+  })
+
   it('does not claim a pull request is open when nothing has looked', () => {
     expect(prStateLabel(null)).toBe('pull request state not established')
     expect(prStateLabel('open')).toBe('pull request open at the last harvest')
