@@ -168,6 +168,13 @@ function needingYou(data: Inbox): Waiting[] {
    * defect with a name: a review whose brief had been confirmed and whose draft was
    * waiting had a row, a ticket on the record, and no way to reach it, while the Reviews
    * list showed the link for that same review.
+   *
+   * **The two quieter groups below are a gap, and it is theirs rather than this merge's.**
+   * A row under "With the agent" or "Waiting on the author" is drawn from
+   * `in_progress` or `posted_awaiting_author` directly, and `GET /inbox` serves no ticket
+   * on either — so those rows carry a link to the pull request and none to the ticket. The
+   * contract's `Inbox` description says so and says why; nothing here can work around it,
+   * because the ticket is not in the answer.
    */
   const ticket = (row: Waiting, item: { ticket_id?: string | null, ticket_url?: string | null }) => {
     row.ticket = item.ticket_id ?? null

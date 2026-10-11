@@ -207,6 +207,7 @@ impl Store {
         // nothing.
         let held = self.get_review(id)?;
         let ticket_url = check_ticket(facts, held.ticket_id)?;
+        let ticket_id = ticket_id(facts);
 
         self.conn.execute(
             "UPDATE reviews SET
@@ -219,7 +220,7 @@ impl Store {
             params![
                 id,
                 facts.title,
-                facts.ticket_id,
+                ticket_id,
                 ticket_url,
                 facts.changed_lines,
                 facts.not_checked
@@ -527,7 +528,13 @@ fn validate(new: NewReview) -> Result<NewReview> {
     }
 
     let url = ticket_url(new.ticket_url.as_deref())?;
-    if url.is_some() && new.ticket_id.is_none() {
+    let id = new
+        .ticket_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|held| !held.is_empty())
+        .map(str::to_string);
+    if url.is_some() && id.is_none() {
         // The same pairing rule `check_ticket` holds, for the one writer that does not go
         // through it: a review created with an address and no id holds a value nothing
         // draws.
@@ -541,6 +548,7 @@ fn validate(new: NewReview) -> Result<NewReview> {
     Ok(NewReview {
         repo: repo.to_string(),
         head_sha: normalise::head_sha(&new.head_sha),
+        ticket_id: id,
         ticket_url: url,
         ..new
     })
@@ -574,15 +582,45 @@ fn validate(new: NewReview) -> Result<NewReview> {
 fn check_ticket(facts: &ReviewFacts, held: Option<String>) -> Result<Option<String>> {
     let url = ticket_url(facts.ticket_url.as_deref())?;
 
-    if url.is_some() && facts.ticket_id.is_none() && held.is_none() {
+    // **The id is read the way the address is: blank is absent.** Checked as
+    // `facts.ticket_id.is_none()` it was not, and `--ticket "" --ticket-url https://…`
+    // from a shell whose variable was unset passed this check and stored an address beside
+    // an id of `""` — which both renderers treat as no id, so the address reached no
+    // screen. Exactly the silent no-op this function exists to refuse, let through by
+    // reading one of its two fields more loosely than the other.
+    if url.is_some() && ticket_id(facts).is_none() && held.is_none() {
         return Err(StoreError::InvalidValue {
             field: "ticket_id",
             value: String::new(),
-            expected: "the ticket's id, which is what its address is drawn as".to_string(),
+            // **The last clause says no id was passed**, because the message this variant
+            // formats begins `ticket_id holds ""` — which, for a call that passed no
+            // `--ticket` at all, reads as a complaint about a value the caller never gave
+            // and sends them looking for it.
+            expected: concat!(
+                "the ticket's id, which is what its address is drawn as; ",
+                "this call passed none and the review holds none",
+            )
+            .to_string(),
         });
     }
 
     Ok(url)
+}
+
+/// A review's ticket id on its way into the record: trimmed, and blank is absent.
+///
+/// Blank rather than refused, for the reason a blank address is: `--ticket "$TICKET"` from
+/// a shell whose variable was unset is an argument nobody filled in, and the field is
+/// optional. Absent means "leave what is there", which is this struct's own rule — and it
+/// is what stops `--ticket ""` replacing a recorded `ABC-231` with the empty string, which
+/// is what `COALESCE(?3, ticket_id)` did when `Some("")` reached it.
+fn ticket_id(facts: &ReviewFacts) -> Option<String> {
+    facts
+        .ticket_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|held| !held.is_empty())
+        .map(str::to_string)
 }
 
 fn ticket_url(given: Option<&str>) -> Result<Option<String>> {

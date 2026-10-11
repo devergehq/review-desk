@@ -1342,13 +1342,32 @@ pub struct ReviewFacts {
 impl ReviewFacts {
     /// Whether this would change anything. A call that sets no fact is a mistake worth
     /// naming rather than reporting success for.
+    ///
+    /// **A ticket field that is nothing but whitespace is not a fact.** `--ticket-url ""`
+    /// from a shell whose variable was unset is the ordinary way that happens, and the
+    /// store normalises it to "no address" rather than refusing it — so counting it here
+    /// made `open_review_with` skip its early return, write nothing through the COALESCE,
+    /// and still mark the review active. `last_activity_at` is what the queue reads for
+    /// "last written to 4 min ago", so a flag that wrote nothing made a dormant review
+    /// read as freshly touched.
+    ///
+    /// **`title` and `not_checked` are deliberately not treated the same way here.** They
+    /// carry the same blank-overwrite behaviour — `--title ""` does replace a recorded
+    /// title with the empty string — and that is a fault, but it is not this change's and
+    /// changing it would change two flags DEV-936 does not touch. Reported rather than
+    /// fixed in passing.
     pub fn is_empty(&self) -> bool {
         self.title.is_none()
-            && self.ticket_id.is_none()
-            && self.ticket_url.is_none()
+            && nothing_in(&self.ticket_id)
+            && nothing_in(&self.ticket_url)
             && self.changed_lines.is_none()
             && self.not_checked.is_none()
     }
+}
+
+/// Whether a field holds nothing: absent, or present with only whitespace in it.
+fn nothing_in(value: &Option<String>) -> bool {
+    value.as_deref().is_none_or(|held| held.trim().is_empty())
 }
 
 /// One alternative the review considered, written before the diff was read.

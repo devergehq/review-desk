@@ -783,6 +783,105 @@ fn a_ticket_address_with_no_id_is_refused_because_nothing_would_draw_it() {
     }
 }
 
+/// **A blank ticket id is absent, not an id — and the pairing check reads it that way.**
+///
+/// Two faults in one shape, both found reviewing the commit that added the check:
+///
+/// 1. `--ticket "" --ticket-url https://…` from a shell whose variable was unset passed
+///    the check and stored the address beside an id of `""`. Both renderers treat `""` as
+///    no id, so the address reached no screen — the silent no-op the check exists to
+///    refuse, let through by reading one of its two fields more loosely than the other.
+/// 2. `--ticket ""` on a review that already held `ABC-231` replaced it with `""`, because
+///    `COALESCE(?3, ticket_id)` is only told "leave it" by a `NULL`. That orphaned an
+///    address that had been drawn a moment before.
+#[test]
+fn a_blank_ticket_id_is_absent_rather_than_an_id() {
+    let (_dir, store) = temp_store();
+    let review = seed_review(&store);
+
+    // A blank id with an address is the pair refused, not accepted.
+    match store.set_review_facts(
+        review.id,
+        &ReviewFacts {
+            ticket_id: Some("  ".to_string()),
+            ticket_url: Some("https://linear.app/acme/issue/ABC-231".to_string()),
+            ..Default::default()
+        },
+    ) {
+        Err(StoreError::InvalidValue { field, .. }) => assert_eq!(field, "ticket_id"),
+        other => panic!("expected a blank id with an address to be refused, got {other:?}"),
+    }
+
+    let set = store
+        .set_review_facts(
+            review.id,
+            &ReviewFacts {
+                // Trimmed on the way in, so a copied id with a trailing newline is the
+                // same id.
+                ticket_id: Some(" ABC-231\n".to_string()),
+                ticket_url: Some("https://linear.app/acme/issue/ABC-231".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("the id and its address");
+    assert_eq!(set.ticket_id.as_deref(), Some("ABC-231"));
+
+    // And a blank id does not replace one already held.
+    let after = store
+        .set_review_facts(
+            review.id,
+            &ReviewFacts {
+                ticket_id: Some(String::new()),
+                ..Default::default()
+            },
+        )
+        .expect("a blank id changes nothing");
+    assert_eq!(
+        after.ticket_id.as_deref(),
+        Some("ABC-231"),
+        "a blank id is a fact left out, and a fact left out is left as it was"
+    );
+    assert_eq!(
+        after.ticket_url.as_deref(),
+        Some("https://linear.app/acme/issue/ABC-231"),
+        "so the address it belongs to is not orphaned"
+    );
+}
+
+/// **A call whose only fact is blank writes nothing — and says nothing happened.**
+///
+/// `last_activity_at` is what the queue reads for "last written to 4 min ago" and for
+/// whether a session looks alive, so a flag that wrote nothing must not move it.
+/// `ReviewFacts::is_empty` counted a blank `ticket_url` as a fact, so `--ticket-url ""`
+/// from an unset variable skipped the early return, wrote nothing through the COALESCE,
+/// and marked the review active anyway.
+#[test]
+fn a_call_whose_only_fact_is_blank_does_not_mark_the_review_active() {
+    let (_dir, store) = temp_store();
+    let review = seed_review(&store);
+    let before = store.get_review(review.id).unwrap().last_activity_at;
+
+    for blank in [
+        ReviewFacts {
+            ticket_url: Some("   ".to_string()),
+            ..Default::default()
+        },
+        ReviewFacts {
+            ticket_id: Some(String::new()),
+            ..Default::default()
+        },
+    ] {
+        assert!(blank.is_empty(), "a blank ticket field is not a fact");
+        let opened = store
+            .open_review_with("devergehq/review-desk", 12, "deadbeef", &blank)
+            .expect("reopen with nothing to write");
+        assert_eq!(
+            opened.review.last_activity_at, before,
+            "nothing was written, so nothing says the review was touched"
+        );
+    }
+}
+
 /// An address with nothing in it is an argument nobody filled in, not a mistake.
 ///
 /// The field is optional, and `--ticket-url ""` from a shell whose variable was empty is
