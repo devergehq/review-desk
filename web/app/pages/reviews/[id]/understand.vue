@@ -148,18 +148,24 @@ function chosen(brief: Brief) {
 }
 
 /**
- * What is on the Solution page that used to be offered here, as one sentence.
+ * What is still open, as the two figures the sentence used to be.
  *
- * Counted rather than asserted, so the line cannot promise a table that is empty.
+ * **Counted rather than asserted, so neither figure can promise a table that is empty**,
+ * and dropped entirely when both are nought. The table itself is the Solution page's:
+ * DEV-885's comment is that `open_choices` and `disagreements` are drawn once, there, and
+ * this is the link to it.
+ *
+ * It was one sentence — "6 choices the ticket left open, and 2 places the description and
+ * the code disagree. They are on the Solution page, drawn once" — which is a figure a
+ * reader has to read a clause to find. Two figures are two things to look at.
  */
-function whatSolutionHolds(brief: Brief): string | null {
+function stillOpen(brief: Brief): Array<{ count: number, says: string }> {
   const choices = (brief.open_choices ?? []).length
   const clashes = (brief.disagreements ?? []).length
-  const parts = [
-    choices > 0 ? count(choices, 'choice the ticket left open', `choices the ticket left open`) : null,
-    clashes > 0 ? `${count(clashes, 'place')} the description and the code disagree` : null,
-  ].filter(Boolean)
-  return parts.length === 0 ? null : parts.join(', and ')
+  return [
+    { count: choices, says: choices === 1 ? 'choice the ticket left open' : 'choices the ticket left open' },
+    { count: clashes, says: `${clashes === 1 ? 'place' : 'places'} the description and the code disagree` },
+  ].filter(figure => figure.count > 0)
 }
 
 /* ------------------------------- The foot of the page --------------------------- */
@@ -571,70 +577,145 @@ function sources(data: ReviewDetail) {
           </p>
         </section>
 
-        <!-- ------------------------------ Already decided ----------------------------- -->
+        <!--
+          ------------------------------ Already decided -----------------------------
+          **Three levels, in order: what was decided, what is still open, then where it
+          all came from.** DEV-917's defect 4. This was a heading, a small paragraph and
+          seven source lines that all looked alike, one of them carrying a 40-character
+          commit id twice — "lacking structure and it's difficult to read". The levels are
+          what makes it readable: a reader who only wants the decision reads one line and
+          stops.
+        -->
         <section class="block">
           <h2 class="rd-display-lead">
             Already decided
           </h2>
           <div class="decided">
-            <p
+            <!-- 1 · the decision -->
+            <div
               v-if="chosen(data.brief)"
-              class="decided-line"
+              class="decision"
             >
-              Option {{ chosen(data.brief)!.key }} of
-              {{ (data.brief.options ?? []).length }} —
-              {{ chosen(data.brief)!.title }}
-            </p>
+              <DeskPill tone="go">
+                Option {{ chosen(data.brief)!.key }} of
+                {{ (data.brief.options ?? []).length }}
+              </DeskPill>
+              <span class="decision-title">
+                <TickedText :text="chosen(data.brief)!.title" />
+              </span>
+              <NuxtLink
+                class="decision-link"
+                :to="`/reviews/${data.review.id}/alternatives`"
+              >See all {{ (data.brief.options ?? []).length }} options</NuxtLink>
+            </div>
             <p
               v-else
               class="rd-meta decided-line"
             >
               The brief names no option as the one that was built.
             </p>
+
             <!--
-              The sources, with their labels. A link is an extra way to read one, never the
-              only way: DEV-885 forbids a page whose only route to something is GitHub.
+              2 · what is still open. **Two figures rather than the sentence this was**,
+              and the table itself is Solution's: DEV-885's comment is that `open_choices`
+              and `disagreements` are drawn once, there.
             -->
-            <ul
-              v-if="sources(data).length"
-              class="sources"
+            <div
+              v-if="stillOpen(data.brief).length"
+              class="open-counts"
             >
-              <li
+              <span
+                v-for="figure in stillOpen(data.brief)"
+                :key="figure.says"
+                class="open-count"
+              ><b>{{ figure.count }}</b> {{ figure.says }}</span>
+              <NuxtLink
+                class="decision-link"
+                :to="`/reviews/${data.review.id}/solution`"
+              >On the Solution page</NuxtLink>
+            </div>
+
+            <!--
+              3 · the sources, as a table. Seven loose lines that all looked alike become
+              five columns, and a link is an extra way to read one rather than the only
+              way: DEV-885 forbids a page whose only route to something is GitHub.
+            -->
+            <DeskTable
+              v-if="sources(data).length"
+              :columns="['Kind', 'Reference', 'State', 'What it tells us', '']"
+              template="110px minmax(0, 1.1fr) 130px minmax(0, 1.6fr) 60px"
+              label="What this review read the problem from"
+            >
+              <tr
                 v-for="source in sources(data)"
                 :key="source.position"
-                class="source"
+                role="row"
+                class="row"
               >
-                <span class="rd-rubric">{{ source.kind }}</span>
-                <span>{{ source.label }}</span>
-                <a
-                  v-if="source.link"
-                  :href="source.link"
-                  target="_blank"
-                  rel="noreferrer noopener"
-                >open<span class="rd-visually-hidden">
-                  {{ source.label }}, in a new tab</span></a>
-              </li>
-            </ul>
-            <!--
-              The one line that replaces board A5's open-choices fold, per DEV-885's
-              comment: one list, drawn once, and the table is Solution's.
-            -->
-            <p
-              v-if="whatSolutionHolds(data.brief)"
-              class="rd-note"
-            >
-              {{ sentence(whatSolutionHolds(data.brief)!) }} They are on <NuxtLink
-                :to="`/reviews/${data.review.id}/solution`"
-              >the Solution page</NuxtLink>, drawn once.
-            </p>
+                <td
+                  role="cell"
+                  class="td td--muted"
+                  data-label="Kind"
+                >
+                  {{ source.kind }}
+                </td>
+                <td
+                  role="cell"
+                  class="td td--strong"
+                  data-label="Reference"
+                >
+                  <TickedText :text="source.label" />
+                </td>
+                <td
+                  role="cell"
+                  class="td"
+                  data-label="State"
+                >
+                  <!--
+                    The ticket's state as the session read it. A source that reported none
+                    draws an empty cell rather than a word Review Desk made up — it read
+                    no ticket.
+                  -->
+                  <DeskPill
+                    v-if="source.status"
+                    tone="quiet"
+                  >
+                    {{ source.status }}
+                  </DeskPill>
+                </td>
+                <td
+                  role="cell"
+                  class="td"
+                  data-label="What it tells us"
+                >
+                  <TickedText
+                    v-if="source.note"
+                    :text="source.note"
+                  />
+                </td>
+                <td
+                  role="cell"
+                  class="td"
+                  data-label=""
+                >
+                  <a
+                    v-if="source.link"
+                    :href="source.link"
+                    target="_blank"
+                    rel="noreferrer noopener"
+                  >open<span class="rd-visually-hidden">
+                    {{ source.label }}, in a new tab</span></a>
+                </td>
+              </tr>
+            </DeskTable>
 
             <!--
               **Where the decision came from, behind a fold.** DEV-892's defect 3: this
               printed open, and on a real review it was a 59-word paragraph about the
               ticket, the base commit and the dispatcher's ledger sitting under a heading
-              that promises one settled thing. The decision is the line above, its sources
-              are the links above, and the paragraph is what a reader opens when the first
-              two do not answer them.
+              that promises one settled thing. The decision is the first level, its sources
+              are the table, and the paragraph is what a reader opens when neither answers
+              them.
             -->
             <template v-if="data.brief.provenance">
               <button
@@ -877,20 +958,39 @@ function sources(data: ReviewDetail) {
   max-width: var(--rd-measure);
 }
 
-.sources {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.source {
+/*
+ * The decision: the pill, the title beside it, the link to the rest. It wraps, and each
+ * part moves whole — the pill is a pill, and this app's rule is that one never breaks
+ * across lines.
+ */
+.decision {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 12px;
+  align-items: center;
+  gap: 8px 14px;
+  min-width: 0;
+}
+
+.decision-title {
+  font-size: 17px;
+  min-width: 0;
+}
+
+.decision-link {
+  white-space: nowrap;
+}
+
+/* The two figures, side by side where there is room and stacked where there is not. */
+.open-counts {
+  display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
+  gap: 8px 28px;
+  min-width: 0;
+}
+
+.open-count b {
+  font-variant-numeric: tabular-nums;
 }
 
 /* -------------------------- As the session recorded it ----------------------------- */

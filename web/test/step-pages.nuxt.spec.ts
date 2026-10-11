@@ -746,43 +746,74 @@ describe('Understand', () => {
     expect(page.text()).toContain('Every report is built by one class.')
   })
 
-  it('says what is already decided, with the sources it rests on', async () => {
+  /**
+   * **Three levels, in order: the decision, what is still open, then the sources.**
+   *
+   * DEV-917's defect 4. This was a heading, a small paragraph and seven source lines that
+   * all looked alike, one of them carrying a 40-character commit id twice — "lacking
+   * structure and it's difficult to read".
+   */
+  it('puts the decision first, as a pill and a title with a way to the rest', async () => {
     const page = await understand(STRUCTURED)
     expect(page.text()).toContain('Already decided')
-    expect(page.text()).toContain(
-      'Option C of 8 — An export context passed explicitly, and one filter chain for both',
+
+    const decision = page.find('.decision')
+    expect(decision.text()).toContain('Option C of 8')
+    expect(decision.text()).toContain(
+      'An export context passed explicitly, and one filter chain for both',
     )
-    expect(page.text()).toContain('ABC-402 · Scheduled exports carry their own context')
+    expect(
+      decision.findAll('a').map(one => one.attributes('href')),
+      'and a way to the options it was chosen from',
+    ).toContain(`/reviews/${STRUCTURED}/alternatives`)
   })
 
-  /**
-   * **The decision in one line, its sources as links, and the rest behind a fold.**
-   *
-   * DEV-892's defect 3. "Already decided" printed `provenance` open, and on a real review
-   * that was a 59-word paragraph about the ticket, the base commit and the dispatcher's
-   * ledger, sitting under a heading that promises one settled thing.
-   */
-  it('folds where the decision came from, rather than printing it', async () => {
+  it('draws what is still open as figures, not as a clause', async () => {
     const page = await understand(STRUCTURED)
-    const provenance = fixture(STRUCTURED).brief!.provenance!
+    const counts = page.find('.open-counts')
+    expect(counts.exists()).toBe(true)
+    const figures = counts.findAll('.open-count').map(one => one.text())
+    expect(figures).toEqual([
+      '3 choices the ticket left open',
+      '2 places the description and the code disagree',
+    ])
+    /* Each figure is the number, drawn as the thing to look at. */
+    expect(counts.find('.open-count b').text()).toBe('3')
+  })
 
-    const decided = page.find('.decided')
-    expect(decided.text(), 'the paragraph is not printed open').not.toContain(provenance)
-    expect(page.find('#came-from').exists()).toBe(false)
+  it('draws no figure for a count of nought', async () => {
+    const detail = fixture(STRUCTURED)
+    detail.brief = { ...detail.brief!, disagreements: [] }
+    await withReview(detail)
 
-    /* The decision itself is a line, and its sources are links beside it. */
-    expect(decided.text()).toContain('Option C of 8')
-    expect(decided.findAll('.source a').length).toBeGreaterThan(0)
+    const page = await understand(STRUCTURED)
+    const figures = page.findAll('.open-count').map(one => one.text())
+    expect(figures).toEqual(['3 choices the ticket left open'])
+  })
 
-    const control = decided.findAll('button')
-      .find(one => one.text().includes('Where this came from'))!
-    expect(control.attributes('aria-expanded')).toBe('false')
-    expect(control.attributes('aria-controls')).toBe('came-from')
+  it('draws the sources as a table of kind, reference, state and what it tells us', async () => {
+    const page = await understand(STRUCTURED)
+    const table = page.findAll('table')
+      .find(one => one.text().includes('ABC-402'))
+    expect(table, 'the sources are a table').toBeDefined()
 
-    await control.trigger('click')
-    await settle(page)
+    expect(table!.findAll('thead th, thead .th').map(one => one.text()).slice(0, 4))
+      .toEqual(['Kind', 'Reference', 'State', 'What it tells us'])
 
-    expect(page.find('#came-from').text()).toContain(provenance)
+    const rows = table!.findAll('tbody tr')
+    expect(rows).toHaveLength(4)
+    expect(rows[0]!.text()).toContain('ticket')
+    expect(rows[0]!.text()).toContain('ABC-402 · Scheduled exports carry their own context')
+    expect(rows[0]!.text()).toContain('In Review')
+    expect(rows[0]!.text()).toContain('The problem, four options, and three open questions')
+    /* A link is an extra way to read one, never the only way. */
+    expect(rows[0]!.find('a').attributes('href')).toContain('ABC-402')
+
+    /* And a source that reported no state and no note shows its reference alone. */
+    const bare = rows[2]!
+    expect(bare.text()).toContain('Agreed with you on the ticket on 6 October')
+    expect(bare.findAll('td').at(2)!.text()).toBe('')
+    expect(bare.findAll('td').at(3)!.text()).toBe('')
   })
 
   it('leaves the open-choices table to Solution, and links to it', async () => {
