@@ -756,7 +756,8 @@ test.describe('the three step pages of one review', () => {
     await expect(
       page.getByRole('heading', { name: /C is the right shape/, level: 1 }),
     ).toBeVisible()
-    await expect(page.getByText('27 files')).toBeVisible()
+    /* The files the pull request changed — 24 of the 27 the parts name between them. */
+    await expect(page.getByText('24 files')).toBeVisible()
     await expect(page.getByText('959 lines added and 423 removed')).toBeVisible()
     await expect(page.locator('.part')).toHaveCount(7)
 

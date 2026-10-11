@@ -1550,13 +1550,24 @@ fn the_contracts_real_length_brief_is_at_real_length() {
         "a part none of whose files is in the change, which is its own group"
     );
 
-    let fixes_nothing = parts
+    // **And it has a file in the change**, which is the half that makes it Supporting.
+    // Without that condition this passed on the "not changed" part above -- which also
+    // fixes nothing, and which `groupOf` tests first -- so the example could lose its only
+    // genuinely supporting part and the guard would not notice. Found reviewing DEV-919.
+    let supporting = parts
         .iter()
-        .filter(|part| part["fixes"].as_array().expect("fixes").is_empty())
+        .filter(|part| {
+            part["fixes"].as_array().expect("fixes").is_empty()
+                && part["files"]
+                    .as_array()
+                    .expect("files")
+                    .iter()
+                    .any(|file| file["in_diff"] == serde_json::json!(true))
+        })
         .count();
     assert!(
-        fixes_nothing >= 1,
-        "a part that fixes no problem, which is the Supporting group"
+        supporting >= 1,
+        "a part that fixes no problem and has a file in the change, which is Supporting"
     );
 
     // **Every part carries a one line, and every one of them is inside the writing rules.**

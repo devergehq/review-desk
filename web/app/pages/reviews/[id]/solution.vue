@@ -119,10 +119,22 @@ function whyNoParts(layers: ReviewLayer[]): string {
   return WHY[absenceOf(layers, 'solution_map')]
 }
 
-/** The line under the heading: the size of the change, when there is one to measure. */
+/**
+ * The line under the heading: the size of the change, when there is one to measure.
+ *
+ * **The files the pull request actually changed, which is not every file the parts name.**
+ * This counted `allFiles`, so a part claiming a file outside the diff added one to the
+ * page's single measurement of the change — three of twenty-seven on the invented example.
+ * The line said 27 while the table under it labelled three of those rows "unchanged", which
+ * is the page disagreeing with itself about the one number it states.
+ *
+ * It was wrong before this change too, and quieter: `in_diff: false` existed but no group
+ * was named after it. Found reviewing DEV-919's own diff.
+ */
 function sub(brief: Brief): string | null {
   if (!parts(brief).length) return null
-  return `${count(allFiles(brief).length, 'file')}, ${linesAdded(brief)} lines added `
+  const changed = allFiles(brief).filter(file => file.in_diff).length
+  return `${count(changed, 'file')}, ${linesAdded(brief)} lines added `
     + `and ${linesRemoved(brief)} removed, in ${count(parts(brief).length, 'part')}.`
 }
 
@@ -413,7 +425,16 @@ function inNoPart(data: ReviewDetail, brief: Brief): Finding[] {
                         >
                           <span class="severity">{{ finding.severity }}</span>
                           <span class="rd-mono key">{{ finding.key }}</span>
-                          <span class="what"><TickedText :text="finding.title ?? finding.claim" /></span>
+                          <span class="what"><TickedText :text="finding.title ?? finding.claim" /><!--
+                            **What became of a carried finding this round.** The counts above group by
+                            disposition, and a finding carried in as fixed keeps the disposition it was
+                            carried with — so it sits in "to post" and will not be posted. This is the
+                            thing on the line that says so, and dropping it was a regression: the cards
+                            this replaces drew it, and DEV-892 is why.
+                          --><span
+                            v-if="roundStatusLabel(finding)"
+                            class="carried"
+                          >{{ roundStatusLabel(finding) }}</span></span>
                           <span class="stands">{{ standsAt(finding) }} →</span>
                         </NuxtLink>
                       </li>
@@ -523,7 +544,16 @@ function inNoPart(data: ReviewDetail, brief: Brief): Finding[] {
               >
                 <span class="severity">{{ finding.severity }}</span>
                 <span class="rd-mono key">{{ finding.key }}</span>
-                <span class="what"><TickedText :text="finding.title ?? finding.claim" /></span>
+                <span class="what"><TickedText :text="finding.title ?? finding.claim" /><!--
+                  **What became of a carried finding this round.** The counts above group by
+                  disposition, and a finding carried in as fixed keeps the disposition it was
+                  carried with — so it sits in "to post" and will not be posted. This is the
+                  thing on the line that says so, and dropping it was a regression: the cards
+                  this replaces drew it, and DEV-892 is why.
+                --><span
+                  v-if="roundStatusLabel(finding)"
+                  class="carried"
+                >{{ roundStatusLabel(finding) }}</span></span>
                 <span class="stands">{{ standsAt(finding) }} →</span>
               </NuxtLink>
             </li>
@@ -913,6 +943,17 @@ function inNoPart(data: ReviewDetail, brief: Brief): Finding[] {
   overflow-wrap: break-word;
 }
 
+/*
+ * A carried finding's round status, beside its title. Muted, and never wrapping inside
+ * itself — it is a phrase, not a sentence — and in the body ink rather than a colour,
+ * because like everything else in this section it reports rather than grades.
+ */
+.carried {
+  margin-left: 8px;
+  color: var(--rd-ink-muted);
+  white-space: nowrap;
+}
+
 .stands {
   color: var(--rd-accent);
   white-space: nowrap;
@@ -979,9 +1020,15 @@ function inNoPart(data: ReviewDetail, brief: Brief): Finding[] {
 /*
  * At a phone's width the six columns become a stack, which is the code review page's own
  * answer to the same problem: a board has one width and an app has two. The cells keep the
- * order they are read in, and `OpenRow`'s control stays on the first line beside the number
- * — it is the thing to press, and sending it to the bottom of a five-line block puts it
- * further from the row it belongs to than from the next one.
+ * order they are read in, and `OpenRow`'s control — auto-placed after them — lands on a
+ * line of its own at the foot of the block.
+ *
+ * **Which is where it should be here, and this comment used to claim the opposite.** An
+ * earlier version said the control stayed on the first line beside the number; it never
+ * did, and `docs/screenshots/dev-919-1-table-390.png` showed it at the foot the whole
+ * time. Left at the foot deliberately: stacked, the row reads number, title, one line,
+ * tags, size, counts — and "Open" belongs after what it is opening, not above it. The rule
+ * above each row is what separates one from the next.
  */
 @media (max-width: 860px) {
   .caption-row {

@@ -3454,13 +3454,13 @@
     "finding_severities": {
       "blocker": 1,
       "should": 6,
-      "nit": 4,
+      "nit": 5,
       "question": 3
     },
     "finding_dispositions": {
       "in_draft": 12,
       "held_back": 1,
-      "suppressed": 1
+      "suppressed": 2
     },
     "not_checked": "The reporting front end, which reads the same definitions but was not changed.",
     "nit_ticket": {

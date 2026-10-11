@@ -165,6 +165,42 @@ describe('the invented example and the fixtures', () => {
     expect(longest, 'a step note runs to at least 40 words').toBeGreaterThanOrEqual(40)
   })
 
+  /**
+   * **The review's two tallies are counted from its own findings.**
+   *
+   * The server derives both — `wire::severity_counts` and `disposition_counts` count every
+   * finding of the review — so an example whose tallies disagree with its `findings` array
+   * is one the server it documents could not have produced.
+   *
+   * **Found by review, after this file passed.** DEV-919 added a fifteenth finding to the
+   * example and left `nit: 4` and `suppressed: 1` behind it. The fixture and the example
+   * were stale in the same way, so the whole-document comparison above compared two copies
+   * of the same wrong number and said nothing. Every review here is checked, not only the
+   * one the step pages are drawn from, because the next one to go stale will be another.
+   */
+  it('counts every review fixture\u2019s tallies off its own findings', () => {
+    for (const detail of reviews as unknown as ReviewDetail[]) {
+      const where = `review ${detail.review.id}`
+      const severities = detail.finding_severities
+      const dispositions = detail.finding_dispositions
+
+      if (severities != null) {
+        const counted = { blocker: 0, should: 0, nit: 0, question: 0 }
+        for (const finding of detail.findings) counted[finding.severity] += 1
+        expect(severities, `${where}'s severity tally`).toEqual(counted)
+      }
+      if (dispositions != null) {
+        const counted = { in_draft: 0, held_back: 0, suppressed: 0 }
+        for (const finding of detail.findings) counted[finding.disposition] += 1
+        expect(dispositions, `${where}'s disposition tally`).toEqual(counted)
+        expect(
+          Object.values(counted).reduce((total, n) => total + n, 0),
+          `${where} accounts for each of its findings once`,
+        ).toBe(detail.findings.length)
+      }
+    }
+  })
+
   /*
    * **A hunk's flagged line is one the hunk draws**, which the store refuses a write for and
    * which a hand-written example gets wrong. It did: two of these were off by two and by

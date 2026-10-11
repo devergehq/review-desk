@@ -1385,8 +1385,14 @@ describe('Solution', () => {
   it('opens with the verdict on the approach', async () => {
     const page = await solution(STRUCTURED)
     expect(page.find('h1').text()).toContain('C is the right shape.')
-    /* And the size of the change, counted off the parts rather than asserted. */
-    expect(page.text()).toContain('27 files')
+    /*
+     * And the size of the change, counted off the parts rather than asserted — **the
+     * files the pull request changed**, which is 24 of the 27 the parts name between
+     * them. The other three are claimed by parts and outside the diff, and the table
+     * below labels their rows "unchanged".
+     */
+    expect(page.text()).toContain('24 files')
+    expect(page.text(), 'not every file a part names').not.toContain('27 files')
     expect(page.text()).toContain('959 lines added and 423 removed')
     expect(page.text()).toContain('in 7 parts')
   })
@@ -1690,6 +1696,57 @@ describe('Solution', () => {
       .filter(one => one.find('.one-line').classes().includes('one-line--cut'))
     expect(cut, 'exactly the one part with no one line is drawn as a cut').toHaveLength(1)
     expect(rows(page)).toHaveLength(7)
+  })
+
+  /**
+   * **A finding this round closed says so on its line.**
+   *
+   * The row's counts group by disposition, which is what makes them sum to the part's
+   * findings — and a finding carried into this round as `fixed` keeps the disposition it
+   * was carried with, so it sits in "to post" and will not be posted. The round status
+   * beside its title is the only thing on the page that explains the difference.
+   *
+   * **This is a guard against a regression, not a new rule.** The cards this table
+   * replaces drew the round status, DEV-892 having put it there after the same overclaim;
+   * an earlier draft of the table dropped it, and reviewing this change found it gone.
+   */
+  it('says on a finding\u2019s line what became of it this round', async () => {
+    const detail = fixture(STRUCTURED)
+    const carried = detail.findings.find(
+      finding => finding.file === 'app/Reporting/ColumnPolicy.php',
+    )!
+    expect(carried, 'the example has a finding on a part to carry').toBeTruthy()
+
+    detail.findings = detail.findings.map(finding =>
+      finding.seq === carried.seq
+        ? { ...finding, round_status: 'fixed' as const, continues_review_id: 40 }
+        : finding)
+    await withReview(detail)
+
+    const page = await solution(STRUCTURED)
+    /* Its disposition did not move, so the row still counts it where the record puts it. */
+    expect(row(page, 'Allowed columns on the report definition').find('.cell--found').text())
+      .toContain('2 to post')
+
+    await open(page, 'Allowed columns on the report definition')
+    const line = page.find('#part-2').findAll('.finding')
+      .find(one => one.text().includes(carried.key))!
+    expect(line.find('.carried').text(), 'the line says what became of it').toBe('Fixed')
+  })
+
+  it('says the same of a finding in no part', async () => {
+    const detail = fixture(STRUCTURED)
+    const loose = detail.findings.find(finding => finding.file == null)!
+    detail.findings = detail.findings.map(finding =>
+      finding.seq === loose.seq
+        ? { ...finding, round_status: 'fixed' as const, continues_review_id: 40 }
+        : finding)
+    await withReview(detail)
+
+    const page = await solution(STRUCTURED)
+    const line = page.findAll('.findings--loose .finding')
+      .find(one => one.text().includes(loose.key))!
+    expect(line.find('.carried').text()).toBe('Fixed')
   })
 
   /* --------------------------- Findings in no part ---------------------------- */

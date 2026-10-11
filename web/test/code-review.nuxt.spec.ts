@@ -122,13 +122,13 @@ describe('the code review page', () => {
   })
 
   /*
-   * **It counts the list that posts, not every finding.** The review holds four nits; two
+   * **It counts the list that posts, not every finding.** The review holds five nits; three
    * of them are held back or set aside, so the headline says two. A review with six nits it
    * has decided not to mention has not found six small points to tell the author about.
    */
   it('counts only what is going to be posted', async () => {
     const detail = fixture(REAL)
-    expect(detail.finding_severities.nit).toBe(4)
+    expect(detail.finding_severities.nit).toBe(5)
     const page = await codeReview(REAL)
     expect(page.find('h1').text()).toContain('2 small points')
   })

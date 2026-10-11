@@ -170,12 +170,24 @@ export function sizeOf(part: BriefPart): PartSize {
  * To post, held for a ticket, set aside — which are the three dispositions, and the three
  * lists the code review page owns. Two things about that are deliberate.
  *
- * **It is keyed on the disposition, not on `willPost`.** The row's claim is *where the
- * review looked*, not what the author is going to receive: that second claim belongs to the
- * code review page's headline, which is the page that makes it. Keying this on `willPost`
- * would also break the one property the cell has to have — the three counts sum to the
- * findings in the part, so every finding on the page is accounted for exactly once, which
- * is what makes the count checkable against the record.
+ * **It is keyed on the disposition, not on `willPost`**, and the limit of that is stated
+ * here rather than left for a reader to find. These are the three lists the code review
+ * page owns, under the names its own segmented control gives them — so "2 to post" means
+ * "two in the To post list", a statement about where the review put them, not a prediction
+ * about what the author receives. That second claim belongs to the code review page's
+ * headline, which counts `willPost` and is the page that makes it.
+ *
+ * Keying this on `willPost` would also break the one property the cell has to have: the
+ * three counts sum to the findings in the part, so every finding on the page is accounted
+ * for exactly once, which is what makes the count checkable against the record. `willPost`
+ * splits `in_draft` in two and there is no fourth bucket for the half that falls out.
+ *
+ * **Where the two differ, the line inside the row says so.** A finding carried into this
+ * round as `fixed` keeps whatever disposition it was carried with, so it sits in "to post"
+ * and `DraftSection.posted` will not compose it. Its round status is drawn beside its
+ * title — which the cards this replaces did, DEV-892 having put it there, and which an
+ * earlier draft of this page dropped. The count alone would overstate by one and nothing
+ * on the page would explain it.
  *
  * **Nothing here grades the part.** No severity, no colour, no ordering by seriousness:
  * "the pages give understanding, not verdicts". A cell that put the blocker first and
