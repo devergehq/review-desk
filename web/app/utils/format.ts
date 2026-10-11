@@ -327,31 +327,50 @@ export function eventLabel(event: ReviewEvent): string {
  * now, and the author may have answered since.
  */
 export function authorResponseLabel(item: InboxPostedItem): string {
+  /*
+   * **Each figure speaks for itself, and an absent one never silences a measured one.**
+   * The three are nulled on their own sources, so a review can be harvested with nothing
+   * for a reply to attach to and still have a real count of the code that changed —
+   * dropping that because the other two are unknown would lose a measurement to an
+   * absence, which is the same fault as the nought this whole rule exists to prevent.
+   */
+  const said: string[] = []
+
   if (item.replies == null && item.threads_resolved == null) {
-    if (item.harvested_at == null) {
-      return 'Not harvested yet — nothing has read this review back from GitHub'
-    }
-    return item.findings == 0
-      ? 'No findings were posted, so there is nothing for the author to reply to'
-      : `No finding is linked to a comment on GitHub, so no reply could be read (${
-        count(item.findings, 'finding')})`
+    said.push(
+      item.harvested_at == null
+        ? 'Not harvested yet — nothing has read this review back from GitHub'
+        : item.findings === 0
+          ? 'No findings were posted, so there is nothing for the author to reply to'
+          : `No finding is linked to a comment on GitHub, so no reply could be read (${
+            count(item.findings, 'finding')})`,
+    )
+  }
+  else {
+    said.push(
+      count(item.replies ?? 0, 'reply', 'replies'),
+      `${count(item.threads_resolved ?? 0, 'thread')} resolved`,
+    )
   }
 
-  const said = [
-    count(item.replies ?? 0, 'reply', 'replies'),
-    `${count(item.threads_resolved ?? 0, 'thread')} resolved`,
-  ]
   /*
-   * **"files changed since", not "commits since".** The issue asks for the second and the
-   * record holds neither: the harvester writes one of these per finding whose file
-   * changed, so one commit touching three findings' files writes three.
+   * **"findings whose code changed", not "commits since".** DEV-930 asks for the second
+   * and the record holds neither: the harvester writes one of these per finding whose
+   * file changed, so one commit touching three findings' files writes three.
    */
   if (item.code_changed_after != null) {
     said.push(`${count(item.code_changed_after, 'finding')} with code changed since`)
   }
-  const at
-    = item.harvested_at == null ? 'not from a harvest' : `as at ${sinceLabel(item.harvested_at)}`
-  return `${said.join(' · ')} · ${at}`
+
+  /*
+   * The measurement's own time, and only where there is a measurement to date. "as at 2
+   * hr ago" over a figure taken then is what stops a nought reading as a statement about
+   * now; over "not harvested yet" it would be dating an absence.
+   */
+  if (item.harvested_at != null) said.push(`as at ${sinceLabel(item.harvested_at)}`)
+  else if (item.replies != null) said.push('recorded without a harvest')
+
+  return said.join(' · ')
 }
 
 /**
