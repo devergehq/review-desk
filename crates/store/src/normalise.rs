@@ -51,6 +51,29 @@ pub(crate) fn optional_commit(sha: Option<&str>) -> Option<String> {
     sha.map(head_sha).filter(|sha| !sha.is_empty())
 }
 
+/// A free-text fact a caller may or may not have filled in: trimmed, and blank is absent.
+///
+/// **Absent, not empty**, which is [`optional_commit`]'s rule for the same reason and is
+/// what the record means by optional: a field left out is left as it was, so a `--ticket
+/// "$TICKET"` from a shell whose variable was unset has to read as "say nothing about the
+/// ticket" rather than as "the ticket is the empty string". `COALESCE(?n, column)` is only
+/// told to leave a column alone by a `NULL`, so an empty string reaching it *replaces* what
+/// was there — which is how `--ticket ""` came to wipe a recorded `ABC-231`.
+///
+/// **Here rather than in each caller, because two copies of this rule is the bug it
+/// prevents.** A review's ticket id and its address are checked against each other, and
+/// for one commit the address was normalised and the id was not: the pair `--ticket ""
+/// --ticket-url https://…` then passed a check written to refuse exactly it. One rule,
+/// read by everything that writes one of these columns and by
+/// [`crate::ReviewFacts::is_empty`], which has to agree with them about what counts as a
+/// fact.
+pub(crate) fn optional_fact(given: Option<&str>) -> Option<String> {
+    given
+        .map(str::trim)
+        .filter(|held| !held.is_empty())
+        .map(str::to_string)
+}
+
 /// Whether this is a git object name and not a word.
 ///
 /// **Checked, and not merely trimmed, because these columns are typed rather than

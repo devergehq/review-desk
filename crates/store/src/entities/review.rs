@@ -207,7 +207,7 @@ impl Store {
         // nothing.
         let held = self.get_review(id)?;
         let ticket_url = check_ticket(facts, held.ticket_id)?;
-        let ticket_id = ticket_id(facts);
+        let ticket_id = normalise::optional_fact(facts.ticket_id.as_deref());
 
         self.conn.execute(
             "UPDATE reviews SET
@@ -528,12 +528,7 @@ fn validate(new: NewReview) -> Result<NewReview> {
     }
 
     let url = ticket_url(new.ticket_url.as_deref())?;
-    let id = new
-        .ticket_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|held| !held.is_empty())
-        .map(str::to_string);
+    let id = normalise::optional_fact(new.ticket_id.as_deref());
     if url.is_some() && id.is_none() {
         // The same pairing rule `check_ticket` holds, for the one writer that does not go
         // through it: a review created with an address and no id holds a value nothing
@@ -560,10 +555,11 @@ fn validate(new: NewReview) -> Result<NewReview> {
 /// are two ways to the same column, and a check on one of them is a check on neither —
 /// `review open --ticket-url` reaches the second and `POST /reviews` can reach either.
 ///
-/// A value that is nothing but whitespace is `None` rather than an error: that is an
-/// argument nobody filled in, and the field is optional. A value that is *something* and
-/// not `https` is a mistake worth naming, because the caller plainly meant to pass an
-/// address and the one they passed cannot be drawn as a link.
+/// A value that is nothing but whitespace is `None` rather than an error — that is an
+/// argument nobody filled in, and the field is optional — which is
+/// [`normalise::optional_fact`]'s rule and is read from there rather than repeated. A value
+/// that is *something* and not `https` is a mistake worth naming, because the caller plainly
+/// meant to pass an address and the one they passed cannot be drawn as a link.
 ///
 /// **`https://` and nothing else**, lowercase scheme as every tracker emits it. `http` is
 /// refused with the rest: a ticket read over plain HTTP is a ticket read by anyone on the
@@ -588,7 +584,10 @@ fn check_ticket(facts: &ReviewFacts, held: Option<String>) -> Result<Option<Stri
     // an id of `""` — which both renderers treat as no id, so the address reached no
     // screen. Exactly the silent no-op this function exists to refuse, let through by
     // reading one of its two fields more loosely than the other.
-    if url.is_some() && ticket_id(facts).is_none() && held.is_none() {
+    if url.is_some()
+        && normalise::optional_fact(facts.ticket_id.as_deref()).is_none()
+        && held.is_none()
+    {
         return Err(StoreError::InvalidValue {
             field: "ticket_id",
             value: String::new(),
@@ -607,38 +606,18 @@ fn check_ticket(facts: &ReviewFacts, held: Option<String>) -> Result<Option<Stri
     Ok(url)
 }
 
-/// A review's ticket id on its way into the record: trimmed, and blank is absent.
-///
-/// Blank rather than refused, for the reason a blank address is: `--ticket "$TICKET"` from
-/// a shell whose variable was unset is an argument nobody filled in, and the field is
-/// optional. Absent means "leave what is there", which is this struct's own rule — and it
-/// is what stops `--ticket ""` replacing a recorded `ABC-231` with the empty string, which
-/// is what `COALESCE(?3, ticket_id)` did when `Some("")` reached it.
-fn ticket_id(facts: &ReviewFacts) -> Option<String> {
-    facts
-        .ticket_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|held| !held.is_empty())
-        .map(str::to_string)
-}
-
 fn ticket_url(given: Option<&str>) -> Result<Option<String>> {
-    let Some(given) = given else {
+    let Some(given) = normalise::optional_fact(given) else {
         return Ok(None);
     };
-    let trimmed = given.trim();
-    if trimmed.is_empty() {
-        return Ok(None);
-    }
-    if !trimmed.starts_with("https://") {
+    if !given.starts_with("https://") {
         return Err(StoreError::InvalidValue {
             field: "ticket_url",
-            value: trimmed.to_string(),
+            value: given,
             expected: "the ticket's address, starting https://".to_string(),
         });
     }
-    Ok(Some(trimmed.to_string()))
+    Ok(Some(given))
 }
 
 /// Build a review from a row selecting [`COLUMNS`].

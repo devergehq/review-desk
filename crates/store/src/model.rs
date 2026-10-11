@@ -1343,7 +1343,9 @@ impl ReviewFacts {
     /// Whether this would change anything. A call that sets no fact is a mistake worth
     /// naming rather than reporting success for.
     ///
-    /// **A ticket field that is nothing but whitespace is not a fact.** `--ticket-url ""`
+    /// **A ticket field that is nothing but whitespace is not a fact**, read through the
+    /// one rule the writers read — [`crate::normalise::optional_fact`] — because this has
+    /// to agree with them about what counts as one. `--ticket-url ""`
     /// from a shell whose variable was unset is the ordinary way that happens, and the
     /// store normalises it to "no address" rather than refusing it — so counting it here
     /// made `open_review_with` skip its early return, write nothing through the COALESCE,
@@ -1358,16 +1360,11 @@ impl ReviewFacts {
     /// fixed in passing.
     pub fn is_empty(&self) -> bool {
         self.title.is_none()
-            && nothing_in(&self.ticket_id)
-            && nothing_in(&self.ticket_url)
+            && crate::normalise::optional_fact(self.ticket_id.as_deref()).is_none()
+            && crate::normalise::optional_fact(self.ticket_url.as_deref()).is_none()
             && self.changed_lines.is_none()
             && self.not_checked.is_none()
     }
-}
-
-/// Whether a field holds nothing: absent, or present with only whitespace in it.
-fn nothing_in(value: &Option<String>) -> bool {
-    value.as_deref().is_none_or(|held| held.trim().is_empty())
 }
 
 /// One alternative the review considered, written before the diff was read.
