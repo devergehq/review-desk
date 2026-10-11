@@ -135,6 +135,39 @@ impl Severity {
             Severity::Question => "Question",
         }
     }
+
+    /// The glyph the house style puts before that word in what posts.
+    ///
+    /// **The one place these four live, and they belong to the posted review rather than
+    /// to a screen.** They are `house-style.md`'s own vocabulary table — 🔴 Blocker,
+    /// 🟠 Should, ⚪ Nit, 🔵 Question — and the same file's "Casing and formatting" rule is
+    /// that the *word* carries the severity. So a glyph is never on its own: the index row
+    /// the posted body carries asks for both, and the pages grade a finding with
+    /// `SeverityTag` and not with this.
+    pub fn glyph(self) -> &'static str {
+        match self {
+            Severity::Blocker => "🔴",
+            Severity::Should => "🟠",
+            Severity::Nit => "⚪",
+            Severity::Question => "🔵",
+        }
+    }
+
+    /// Most serious first: blocker, should, question, nit.
+    ///
+    /// **Question sits above nit**, which is the order the dashboard already sorts by —
+    /// `web/app/utils/findings.ts`'s `SEVERITY_ORDER` — and not the order this enum is
+    /// declared in. A question is something the reviewer could not answer and the author
+    /// can; a nit is something neither of them has to do anything about. The index of the
+    /// posted body is in this order, so a reader meets the review's worst news first.
+    pub fn rank(self) -> u8 {
+        match self {
+            Severity::Blocker => 0,
+            Severity::Should => 1,
+            Severity::Question => 2,
+            Severity::Nit => 3,
+        }
+    }
 }
 
 string_enum! {
@@ -880,6 +913,48 @@ impl FindingHunk {
             .iter()
             .any(|(number, _)| *number == Some(line))
     }
+
+    /// Whether this hunk is one the pull request's diff draws.
+    ///
+    /// **This is where the record answers "is the line inside the diff", and it is a
+    /// reading of what is already stored rather than a field of its own.** The worker's
+    /// brief has three branches and no fourth: a line `git diff -U3` draws is stored with
+    /// its `added`, `removed` and `unchanged` markers; a line the change does not touch is
+    /// read from `git show` and stored with **every** entry `unchanged`; and a finding with
+    /// no file or no line stores no hunk at all. `git diff` never prints a hunk with no
+    /// `+` and no `-` line in it, so a hunk carrying one of those markers came from the
+    /// diff and a hunk carrying none did not.
+    ///
+    /// That is also the safe direction to be wrong in. GitHub refuses a review whose
+    /// comment is anchored outside the diff, and it refuses the whole call — so a hunk
+    /// this reads as not drawn posts its finding as a section in the body, which always
+    /// renders, while the other mistake would lose the review.
+    pub fn drawn_by_the_diff(&self) -> bool {
+        self.lines
+            .iter()
+            .any(|line| line.marker != HunkLineMarker::Unchanged)
+    }
+}
+
+/// Where GitHub can hang this finding's inline comment.
+///
+/// The path is the **hunk's** file rather than the finding's: `flagged_line` is a line of
+/// the hunk, numbered from the hunk's own `start_line`, and a finding is allowed to point
+/// at one file and show the code of another.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FindingAnchor {
+    pub path: String,
+    pub line: i64,
+}
+
+impl FindingAnchor {
+    /// Which side of the diff the comment sits on, and it is always this one.
+    ///
+    /// A removed line carries no number in this record — [`FindingHunk::numbered_lines`] —
+    /// so a flagged line is always a line still in the file, which is GitHub's right-hand
+    /// side. The worker's brief says the same thing from the other end: where a finding is
+    /// about a line the change deleted, the line to flag is the one that replaced it.
+    pub const SIDE: &'static str = "RIGHT";
 }
 
 /// One thing the review found.
@@ -995,6 +1070,33 @@ impl Finding {
     /// [`crate::DraftSection::posted`] is this function read through a block.
     pub fn is_posted(&self) -> bool {
         self.disposition == Disposition::InDraft && self.round_status.is_open()
+    }
+
+    /// Where this finding's inline thread goes, or `None` when there is nowhere to hang
+    /// one.
+    ///
+    /// **Four facts, all of them already on the record, and no new grading of anything.**
+    /// The finding names a file; it names the line its comment attaches to; it carries a
+    /// hunk; and that hunk is one the diff drew — [`FindingHunk::drawn_by_the_diff`] — and
+    /// draws the flagged line. A finding that answers all four posts as a thread on the
+    /// code; a finding that misses any of them keeps its section in the body, which is
+    /// what the house style asks for a finding with nothing in the diff to anchor to.
+    ///
+    /// The file is required even though the hunk carries one of its own, because "a
+    /// finding with no file" is the case the issue names: a correction to the pull
+    /// request's description has no code to sit on, whatever else is stored beside it.
+    pub fn anchor(&self) -> Option<FindingAnchor> {
+        self.file.as_ref()?;
+        let line = self.flagged_line?;
+        let hunk = self.hunk.as_ref()?;
+        if !hunk.drawn_by_the_diff() || !hunk.draws_line(line) {
+            return None;
+        }
+
+        Some(FindingAnchor {
+            path: hunk.file.clone(),
+            line,
+        })
     }
 }
 
