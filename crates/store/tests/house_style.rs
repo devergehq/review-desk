@@ -650,8 +650,21 @@ fn each_thread_is_in_the_alert_its_severity_picks_and_a_nit_has_no_rail() {
         nit.body,
         "⚪ **Nit · F5** — The removed branch leaves a comment describing it · `Open`\n\
          `ReportBuilder.php:28` · `Open`\nThe branch this comment describes was removed four \
-         lines above.\n**Fix:** delete the comment with it."
+         lines above.\n**Fix:** delete the comment with it.\n\n<!-- review-desk:F5 -->"
     );
+
+    // **Every comment ends with the line the session matches it back by**, outside the rail
+    // on the ones that have a rail — it is how the comment is joined, not what is claimed.
+    for thread in &threads {
+        assert!(
+            thread
+                .body
+                .ends_with(&format!("\n\n<!-- review-desk:F{} -->", thread.finding_seq)),
+            "F{} does not end with its marker: {}",
+            thread.finding_seq,
+            thread.body
+        );
+    }
 
     // The block's own text is carried through, blockquoted and otherwise untouched.
     let block = store
@@ -1137,4 +1150,67 @@ fn a_move_that_changes_nothing_leaves_the_lint_that_measured_the_body() {
         None,
         "a body that changed is a body nobody has checked"
     );
+}
+
+#[test]
+fn two_findings_on_one_line_are_told_apart_by_the_marker_and_not_by_the_line() {
+    let (_dir, store) = temp_store();
+    let review = store
+        .create_review(new_review("acme/portal", 604, "0b1c2d3", 1))
+        .expect("review");
+
+    // **A Should and a Nit on the same line is ordinary.** GitHub answers the review call
+    // with the review rather than with the comments it made, so a session reads them back
+    // and has to match each one to its finding — and `(path, line)` does not tell these two
+    // apart. Measured by the DEV-929 worker half, which is where this test comes from.
+    for severity in [Severity::Should, Severity::Nit] {
+        store
+            .add_finding(
+                review.id,
+                NewFinding {
+                    lens: "error handling".to_string(),
+                    severity,
+                    claim: format!("what the {severity} says about line 16"),
+                    title: Some(format!("The {severity} on line 16")),
+                    file: Some("jobs/DeliverWebhook.php".to_string()),
+                    line: Some(16),
+                    hunk: Some(diff_hunk("jobs/DeliverWebhook.php", 13)),
+                    flagged_line: Some(16),
+                    ..Default::default()
+                },
+            )
+            .expect("a finding on line 16");
+    }
+
+    store
+        .put_draft(
+            review.id,
+            NewDraft {
+                body: String::new(),
+                status: DraftStatus::Ready,
+                lint: None,
+                sections: Some(vec![
+                    NewDraftSection::finding(1, "The should on line 16", "**in diff** · `Open`"),
+                    NewDraftSection::finding(2, "The nit on line 16", "A name, nothing more."),
+                ]),
+            },
+        )
+        .expect("the draft");
+
+    let threads = store.draft_threads(review.id).expect("threads");
+    assert_eq!(threads.len(), 2);
+    assert_eq!(
+        (threads[0].path.as_str(), threads[0].line),
+        (threads[1].path.as_str(), threads[1].line),
+        "both sit on the same line, which is the case this is about"
+    );
+
+    assert_eq!(threads[0].finding_key, "F1");
+    assert_eq!(threads[1].finding_key, "F2");
+    assert!(threads[0].body.ends_with("<!-- review-desk:F1 -->"));
+    assert!(threads[1].body.ends_with("<!-- review-desk:F2 -->"));
+
+    // And the marker is what a session reading the comments back joins on: the two bodies
+    // differ by it even where everything else about where they sit is the same.
+    assert_ne!(threads[0].body, threads[1].body);
 }
