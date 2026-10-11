@@ -16,7 +16,7 @@ import type { Brief, ReviewDetail } from '~/types/desk'
  * | three things were wrong | what was wrong and what fixes each | three lines |
  * | the supporting table | the idea behind the change | one small table |
  * | how it works today | the context a newcomer needs | a paragraph |
- * | already decided | what is settled, and by whom | one line |
+ * | already decided | what is settled, and by whom | one line, and a fold |
  * | as the session recorded it | the raw record | a fold |
  *
  * **Nothing below the picture has to be read to understand the picture.** That is the
@@ -63,6 +63,15 @@ function toggleProblem(number: number) {
 
 /** Whether the recorded text at the foot of the page is open. */
 const recordedOpen = ref(false)
+
+/**
+ * Whether the provenance behind "Already decided" is open.
+ *
+ * **Its own state, not the foot's.** They are two different pieces of recorded text with
+ * two different questions behind them — where the decision came from, and what the session
+ * wrote about the problem — and one flag would open both from either control.
+ */
+const cameFromOpen = ref(false)
 
 /* ------------------------- What the brief actually has ------------------------- */
 
@@ -153,35 +162,22 @@ function whatSolutionHolds(brief: Brief): string | null {
   return parts.length === 0 ? null : parts.join(', and ')
 }
 
-/* ------------------------- The measurement at the foot ------------------------- */
+/* ------------------------------- The foot of the page --------------------------- */
 
-/**
- * How long the recorded text behind the fold is.
+/*
+ * **There is no word count here any more, and that is DEV-892's defect 4.**
  *
- * **Measured on the brief in hand, and only on the record's side.** The board carries a
- * pair of figures — 85 words and a picture above, against 310 words and a 50-line text
- * sketch as the session recorded it — because on the real review it was drawn from the
- * record was four times the page. That is a fact about that review, not about this one:
- * on the contract's invented example the page is the longer of the two, and the pair then
- * reads as a boast that has gone the wrong way.
+ * The foot used to carry a grey strip reading "105 words as the session recorded it", and
+ * a `wordsRecorded` and a `sketchLines` to compute it. It came off the board, where the
+ * figure is half of a pair — 85 words and a picture against 310 words and a 50-line text
+ * sketch — and the pair is an argument that this page is shorter than the record it is
+ * drawn from. That argument belongs to the design review it was made in. On a screen it is
+ * a figure about nothing: a reader cannot act on it, the comparison it was half of is not
+ * drawn, and on the invented example it ran the wrong way round.
  *
- * So the page states what is behind the fold and makes no comparison. The comparison was
- * an argument about the design; the figure is a fact about the record, and only the second
- * belongs on a screen that has to be right about every review.
+ * What is left is the fold itself, which is the thing the strip was attached to and the
+ * only route on this page to the problem as the session wrote it.
  */
-function words(text: string | null | undefined): number {
-  if (!text) return 0
-  return text.trim().split(/\s+/).filter(Boolean).length
-}
-
-function wordsRecorded(brief: Brief): number {
-  return words(brief.problem) + words(brief.provenance)
-}
-
-/** The lines of the superseded text sketch, when the brief has one. */
-function sketchLines(brief: Brief): number | null {
-  return brief.diagram == null ? null : brief.diagram.split('\n').length
-}
 
 /** The sources the review recorded, which is what "already decided" rests on. */
 function sources(data: ReviewDetail) {
@@ -568,12 +564,6 @@ function sources(data: ReviewDetail) {
             >
               The brief names no option as the one that was built.
             </p>
-            <p
-              v-if="data.brief.provenance"
-              class="rd-note"
-            >
-              {{ data.brief.provenance }}
-            </p>
             <!--
               The sources, with their labels. A link is an extra way to read one, never the
               only way: DEV-885 forbids a page whose only route to something is GitHub.
@@ -610,60 +600,70 @@ function sources(data: ReviewDetail) {
                 :to="`/reviews/${data.review.id}/solution`"
               >the Solution page</NuxtLink>, drawn once.
             </p>
+
+            <!--
+              **Where the decision came from, behind a fold.** DEV-892's defect 3: this
+              printed open, and on a real review it was a 59-word paragraph about the
+              ticket, the base commit and the dispatcher's ledger sitting under a heading
+              that promises one settled thing. The decision is the line above, its sources
+              are the links above, and the paragraph is what a reader opens when the first
+              two do not answer them.
+            -->
+            <template v-if="data.brief.provenance">
+              <button
+                type="button"
+                class="rd-btn came-from"
+                :aria-expanded="cameFromOpen"
+                aria-controls="came-from"
+                @click="cameFromOpen = !cameFromOpen"
+              >
+                {{ cameFromOpen ? 'Fold' : 'Where this came from, as recorded' }}
+              </button>
+              <p
+                v-if="cameFromOpen"
+                id="came-from"
+                class="rd-recorded recorded"
+              >
+                {{ data.brief.provenance }}
+              </p>
+            </template>
           </div>
         </section>
 
-        <!-- -------------------------- As the session recorded it ----------------------- -->
+        <!--
+          -------------------------- As the session recorded it -----------------------
+          **The fold, and no figure over it.** The grey strip that used to head this card
+          counted the words behind it; DEV-892's defect 4 takes it off. What it was attached
+          to stays, because it is the only route on this page to the problem in the words
+          the session wrote it in — everything above is the page's reading of that record.
+
+          Where the decision came from is not here any more either: it is behind its own
+          control under "Already decided", which is the section it is about. One piece of
+          recorded text, one place.
+        -->
         <DeskCard
           as="section"
           tone="well"
           pad="section"
           class="measured"
         >
-          <div class="figures">
-            <div class="figure">
-              <span class="rd-display-figure faint">
-                {{ count(wordsRecorded(data.brief), 'word') }}
-              </span>
-              <span class="rd-meta">
-                <template v-if="sketchLines(data.brief) != null">
-                  and a {{ sketchLines(data.brief) }}-line text sketch, as the session
-                  recorded it
-                </template>
-                <template v-else>as the session recorded it</template>
-              </span>
-            </div>
-            <button
-              type="button"
-              class="rd-btn read-it"
-              :aria-expanded="recordedOpen"
-              aria-controls="as-recorded"
-              @click="recordedOpen = !recordedOpen"
-            >
-              {{ recordedOpen ? 'Fold' : 'Read it as recorded' }}
-            </button>
-          </div>
+          <button
+            type="button"
+            class="rd-btn read-it"
+            :aria-expanded="recordedOpen"
+            aria-controls="as-recorded"
+            @click="recordedOpen = !recordedOpen"
+          >
+            {{ recordedOpen ? 'Fold' : 'Read the problem as the session recorded it' }}
+          </button>
 
-          <div
+          <p
             v-if="recordedOpen"
             id="as-recorded"
-            class="as-recorded"
+            class="rd-recorded recorded"
           >
-            <p class="rd-rubric">
-              The problem, as recorded
-            </p>
-            <p class="rd-recorded recorded">
-              {{ data.brief.problem }}
-            </p>
-            <template v-if="data.brief.provenance">
-              <p class="rd-rubric">
-                Where this came from, as recorded
-              </p>
-              <p class="rd-recorded recorded">
-                {{ data.brief.provenance }}
-              </p>
-            </template>
-          </div>
+            {{ data.brief.problem }}
+          </p>
         </DeskCard>
       </ReviewStepPage>
     </template>
@@ -858,35 +858,14 @@ function sources(data: ReviewDetail) {
 .measured {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 14px;
 }
 
-.figures {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px 40px;
-  align-items: flex-end;
-}
-
-.figure {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.faint {
-  color: var(--rd-ink-faint);
-}
-
-.read-it {
-  margin-left: auto;
-}
-
-.as-recorded {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
+/* Both controls sit at the start of their column; neither is pushed to an edge. */
+.read-it,
+.came-from {
+  align-self: flex-start;
 }
 
 .recorded {
@@ -930,8 +909,5 @@ function sources(data: ReviewDetail) {
     color: var(--rd-ink-muted);
   }
 
-  .read-it {
-    margin-left: 0;
-  }
 }
 </style>

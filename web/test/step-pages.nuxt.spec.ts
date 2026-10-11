@@ -613,8 +613,37 @@ describe('Understand', () => {
     expect(page.text()).toContain(
       'Option C of 8 — An export context passed explicitly, and one filter chain for both',
     )
-    expect(page.text()).toContain('from the ticket, the pull request description and the code')
     expect(page.text()).toContain('ABC-402 · Scheduled exports carry their own context')
+  })
+
+  /**
+   * **The decision in one line, its sources as links, and the rest behind a fold.**
+   *
+   * DEV-892's defect 3. "Already decided" printed `provenance` open, and on a real review
+   * that was a 59-word paragraph about the ticket, the base commit and the dispatcher's
+   * ledger, sitting under a heading that promises one settled thing.
+   */
+  it('folds where the decision came from, rather than printing it', async () => {
+    const page = await understand(STRUCTURED)
+    const provenance = fixture(STRUCTURED).brief!.provenance!
+
+    const decided = page.find('.decided')
+    expect(decided.text(), 'the paragraph is not printed open').not.toContain(provenance)
+    expect(page.find('#came-from').exists()).toBe(false)
+
+    /* The decision itself is a line, and its sources are links beside it. */
+    expect(decided.text()).toContain('Option C of 8')
+    expect(decided.findAll('.source a').length).toBeGreaterThan(0)
+
+    const control = decided.findAll('button')
+      .find(one => one.text().includes('Where this came from'))!
+    expect(control.attributes('aria-expanded')).toBe('false')
+    expect(control.attributes('aria-controls')).toBe('came-from')
+
+    await control.trigger('click')
+    await settle(page)
+
+    expect(page.find('#came-from').text()).toContain(provenance)
   })
 
   it('leaves the open-choices table to Solution, and links to it', async () => {
@@ -633,38 +662,53 @@ describe('Understand', () => {
     expect(page.text()).not.toContain('Where the ticket left a choice')
   })
 
-  it('says how long the recorded text behind the fold is', async () => {
+  /**
+   * **No figure at the foot, which is DEV-892's defect 4.**
+   *
+   * The card carried "105 words as the session recorded it", counted off the brief in hand.
+   * It came off the board, where the figure is half of a pair that argues this page is
+   * shorter than the record it is drawn from — an argument about the design, not a fact a
+   * reader of one review can act on, and on this example it ran the wrong way round.
+   */
+  it('draws no word count over the recorded text', async () => {
     const page = await understand(STRUCTURED)
-    /*
-     * Measured off the brief in hand, never the board's own figures — and only on the
-     * record's side. The board's pair of figures was an argument about the design, and on
-     * this example the page is the longer of the two.
-     */
-    expect(page.find('.measured').text()).toMatch(/\d+ words/)
-    expect(page.find('.measured').text()).toContain('as the session recorded it')
-    expect(page.find('.measured').text()).not.toContain('above')
-  })
+    const foot = page.find('.measured').text()
 
-  it('counts the superseded text sketch, when the brief carries one', async () => {
-    const detail = fixture(STRUCTURED)
-    detail.brief!.diagram = 'flowchart LR\n  A --> B\n  B --> C'
-    await withReview(detail)
-
-    const page = await understand(STRUCTURED)
-    expect(page.find('.measured').text()).toContain('3-line text sketch')
+    expect(foot).not.toMatch(/\d+ words/)
+    expect(foot).not.toContain('text sketch')
   })
 
   it('keeps the recorded problem a click away, and interpolated', async () => {
     const page = await understand(STRUCTURED)
     expect(page.find('#as-recorded').exists()).toBe(false)
 
-    await open(page, 'Read it as recorded')
+    await open(page, 'Read the problem as the session recorded it')
 
     const recorded = page.find('#as-recorded')
     expect(recorded.exists()).toBe(true)
     expect(recorded.text()).toContain('Scheduled exports run with whatever tenant')
     /* `pre-wrap` at a readable measure, which is what keeps a record a record. */
-    expect(recorded.find('.rd-recorded').exists()).toBe(true)
+    expect(recorded.classes()).toContain('rd-recorded')
+  })
+
+  /*
+   * And the record is not drawn twice. The problem is at the foot and where the decision
+   * came from is under "Already decided"; before DEV-892 the foot held both, and folding
+   * the provenance in its own section without taking it out of the foot would have put the
+   * same paragraph on the page in two places.
+   */
+  it('draws each piece of recorded text in exactly one place', async () => {
+    const page = await understand(STRUCTURED)
+    await open(page, 'Read the problem as the session recorded it')
+    await open(page, 'Where this came from, as recorded')
+
+    const brief = fixture(STRUCTURED).brief!
+    const text = page.text()
+    expect(text.split(brief.problem).length - 1, 'the problem, once').toBe(1)
+    expect(
+      text.split(brief.provenance!).length - 1,
+      'where it came from, once',
+    ).toBe(1)
   })
 
   describe('a brief caught between the session\u2019s two writes', () => {
