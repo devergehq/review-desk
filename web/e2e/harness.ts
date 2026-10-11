@@ -411,9 +411,24 @@ function seedStructured(directory: string, database: string): number {
   }))
   put(lint)
 
+  /*
+   * **Step 2's note is the long one, and deliberately.** It is the same note
+   * `getReview.response.code-review.json` carries — **invented, like everything else in
+   * this example**, and written to 45 words because that is the length DEV-892 measured a
+   * real one at: 27 words under Understand when the step had finished, 52 while the brief
+   * was half written. A trail drawn against seven short notes cannot show whether a long
+   * one is clamped to two lines and openable, so the one example these screenshots and the
+   * unit tests share carries one.
+   */
+  const longNote
+    = 'The brief was rewritten twice: the first pass mixed how the system works today '
+      + 'into the problem, so the problem half could not be handed over, and the second '
+      + 'split them and numbered three problems before the options pass was asked for '
+      + 'anything at all.'
+
   const layers: Array<[number, string, string]> = [
     [1, 'done', 'passes, 2 warnings'],
-    [2, 'done', 'brief settled'],
+    [2, 'done', longNote],
     [3, 'done', '8 options, C built'],
     [4, 'done', 'right shape'],
     [5, 'done', `${findings.length} findings, 1 blocker`],

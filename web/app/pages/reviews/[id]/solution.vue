@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { Brief, BriefPart, Finding, ReviewDetail } from '~/types/desk'
+import type { Brief, BriefPart, Finding, ReviewDetail, ReviewLayer } from '~/types/desk'
+import type { Absence } from '~/utils/steps'
 
 /**
  * Step 4 — **Solution**. Board A7, which Patrick liked in principle on 10 October 2026 and
@@ -40,15 +41,38 @@ useHead({
 /**
  * The page's one heading.
  *
- * The verdict on the approach when the brief has one; otherwise a sentence about what is
- * and is not written. A brief whose change half has not been written has no verdict either,
- * because both arrive in the same write.
+ * The verdict on the approach when the brief has one; otherwise what step 4's own state
+ * says. A brief whose change half has not been written has no verdict either, because both
+ * arrive in the same write.
+ *
+ * **The absence is read off the step, not off the emptiness of the list.** DEV-892's defect
+ * 6: this said "The change has not been described in parts yet" whatever the trail above it
+ * said about step 4, and the notice underneath said the same sentence again — one claim,
+ * drawn twice, and wrong whenever a session was writing the parts at that moment.
  */
-function headline(brief: Brief): string {
+function headline(brief: Brief, layers: ReviewLayer[]): string {
   if (brief.approach_verdict) return brief.approach_verdict
-  return parts(brief).length
-    ? 'What was built'
-    : 'The change has not been described in parts yet.'
+  return parts(brief).length ? 'What was built' : sentence(nothingYet(layers, 'solution_map'))
+}
+
+/**
+ * What follows from step 4's state, as the one sentence under the heading.
+ *
+ * Never the heading again. "One sentence, once" is the issue's own wording, and the pair it
+ * was written about was a headline and a notice carrying the same words three inches apart.
+ *
+ * Keyed off `absenceOf`, so the two cannot disagree about which absence this is.
+ */
+const WHY: Record<Absence, string> = {
+  being_worked_on: 'A session is writing them now.',
+  not_written_yet:
+    'A session writes the problem first and what was built second, so this arrives after '
+    + 'the Understand page is already readable. Nothing is wrong.',
+  none_recorded: 'The step finished without describing the change in parts.',
+}
+
+function whyNoParts(layers: ReviewLayer[]): string {
+  return WHY[absenceOf(layers, 'solution_map')]
 }
 
 /** The line under the heading: the size of the change, when there is one to measure. */
@@ -119,21 +143,34 @@ function findingsInNoPart(data: ReviewDetail, brief: Brief): Finding[] {
 /**
  * What a part's findings say in one line on its card.
  *
- * The severities of the ones that are going in the draft, plus a count of the ones that are
- * not — held back or suppressed. A set-aside finding is still a finding, and a card that
- * counted it with the rest would overstate what the author will read.
+ * The severities of the ones the author is going to read, plus a count of the ones they are
+ * not. A finding somebody held back is still a finding, and a card that counted it with the
+ * rest would overstate what the review says.
+ *
+ * **`willPost`, not the disposition.** This counted `disposition === 'in_draft'` and called
+ * the result `posted`, under a docstring about what the author will read — which is the
+ * mistake PR #32 fixed on the code review page's headline and DEV-892's comment of 11
+ * October found still standing here. A finding carried into this round as `fixed` keeps
+ * whatever disposition it was carried with, so it can sit at `in_draft` and still not be
+ * composed into the draft: `DraftSection.posted` requires the disposition **and** an open
+ * round status. A card announcing "2 Shoulds" about a finding that was fixed last round is
+ * wrong about the only thing it says out loud.
+ *
+ * The three lists on the code review page stay keyed on the disposition, because that is
+ * what the developer decided. This is a claim about what the author receives, which is a
+ * different question with a different answer.
  */
 function tallyOn(data: ReviewDetail, part: BriefPart) {
   const found = findingsOn(data, part)
-  const posted = found.filter(finding => finding.disposition === 'in_draft')
-  const aside = found.length - posted.length
+  const posting = found.filter(willPost)
+  const aside = found.length - posting.length
   const order = ['blocker', 'should', 'question', 'nit'] as const
   return {
     any: found.length > 0,
     severities: order
       .map(severity => ({
         severity,
-        n: posted.filter(finding => finding.severity === severity).length,
+        n: posting.filter(finding => finding.severity === severity).length,
       }))
       .filter(entry => entry.n > 0),
     aside,
@@ -159,6 +196,13 @@ function severityWord(severity: string, n: number): string {
     what="this review"
   >
     <template #default="{ data }">
+      <!--
+        **No brief at all, which is not one of the four absences below.** This is a statement
+        about the record — step 2 has not written one — and it stays a statement about the
+        record rather than being routed through step 4's state: a review with no brief cannot
+        have a step 4 under way, and a heading that said "being worked on now" here would be
+        reporting on a step that has nothing to work from.
+      -->
       <ReviewStepPage
         v-if="!data.brief"
         :detail="data"
@@ -181,7 +225,7 @@ function severityWord(severity: string, n: number): string {
         v-else
         :detail="data"
         step="solution_map"
-        :headline="headline(data.brief)"
+        :headline="headline(data.brief, data.layers)"
         :sub="sub(data.brief)"
       >
         <!-- ------------------------------ What was built ------------------------------ -->
@@ -208,18 +252,25 @@ function severityWord(severity: string, n: number): string {
               >
                 <span class="part-head">
                   <!--
-                    The green numbers this part fixes. `fixes` is empty for a part that
-                    fixes none — tests and generated types are part of a change and fix
-                    nothing — and then there is no mark rather than a nought.
+                    The green numbers this part fixes, in a lane of their own so the title
+                    is always beside them. `fixes` is empty for a part that fixes none —
+                    tests and generated types are part of a change and fix nothing — and
+                    then the lane is not drawn at all rather than a nought being drawn in
+                    it.
                   -->
-                  <ProblemMark
-                    v-for="number in part.fixes"
-                    :key="number"
-                    :number="number"
-                    tone="fixed"
-                    size="box"
-                    :says="`this part fixes problem ${number}`"
-                  />
+                  <span
+                    v-if="part.fixes.length"
+                    class="part-marks"
+                  >
+                    <ProblemMark
+                      v-for="number in part.fixes"
+                      :key="number"
+                      :number="number"
+                      tone="fixed"
+                      size="box"
+                      :says="`this part fixes problem ${number}`"
+                    />
+                  </span>
                   <span class="part-title">{{ part.title }}</span>
                 </span>
 
@@ -238,10 +289,15 @@ function severityWord(severity: string, n: number): string {
                       :key="entry.severity"
                       :tone="entry.severity === 'blocker' ? 'ink' : 'quiet'"
                     >{{ severityWord(entry.severity, entry.n) }}</DeskPill>
+                    <!--
+                      **"Not posting", not "set aside".** The count is everything the author
+                      will not read, which since DEV-892 includes a finding still at
+                      `in_draft` that this round closed — and nobody set that one aside.
+                    -->
                     <span
                       v-if="tallyOn(data, part).aside > 0"
                       class="rd-meta aside"
-                    >{{ tallyOn(data, part).aside }} set aside</span>
+                    >{{ tallyOn(data, part).aside }} not posting</span>
                   </template>
                   <!--
                     A part the review found nothing in. Said in words, because an empty
@@ -322,7 +378,7 @@ function severityWord(severity: string, n: number): string {
                     v-for="finding in findingsOn(data, part)"
                     :key="finding.seq"
                     class="finding"
-                    :class="{ 'finding--aside': finding.disposition !== 'in_draft' }"
+                    :class="{ 'finding--aside': !willPost(finding) }"
                   >
                     <span class="rd-mono key">{{ finding.key }}</span>
                     <SeverityTag :severity="finding.severity" />
@@ -336,6 +392,18 @@ function severityWord(severity: string, n: number): string {
                       v-if="finding.disposition !== 'in_draft'"
                       :disposition="finding.disposition"
                     />
+                    <!--
+                      A carried finding's round status, drawn the way the code review page
+                      draws it. It is what explains the card's count above: a finding at
+                      `in_draft` that this round closed is counted as not posting, and this
+                      is the only thing on the row that says why.
+                    -->
+                    <DeskPill
+                      v-if="roundStatusLabel(finding)"
+                      :tone="isStillOpen(finding.round_status) ? 'info' : 'quiet'"
+                    >
+                      {{ roundStatusLabel(finding) }}
+                    </DeskPill>
                   </li>
                 </ul>
                 <p
@@ -361,14 +429,22 @@ function severityWord(severity: string, n: number): string {
           The change in parts, when a session has not written it. Said here rather than by
           replacing the page, because the two lists below are recorded separately and may
           well be there when this is not.
+
+          **The state is named once on this page.** It leads this notice only when the
+          heading is the approach verdict and therefore did not say it; where the heading is
+          the state, this carries the sentence that follows from it and nothing else. That
+          pair — the same words as a heading and as a notice — is what DEV-892's defect 6
+          named on this page.
         -->
         <DeskNotice
           v-else
           tone="plain"
         >
-          <strong>The change has not been described in parts yet.</strong>
-          A session writes the problem first and what was built second, so this arrives
-          after the Understand page is already readable. Nothing is wrong.
+          <strong v-if="data.brief.approach_verdict">
+            {{ sentence(nothingYet(data.layers, 'solution_map')) }}
+          </strong>
+          Step 4 is where a session says what was built, as the parts the change divides
+          into. {{ whyNoParts(data.layers) }}
         </DeskNotice>
 
         <!--
@@ -394,7 +470,7 @@ function severityWord(severity: string, n: number): string {
               v-for="finding in findingsInNoPart(data, data.brief)"
               :key="finding.seq"
               class="finding"
-              :class="{ 'finding--aside': finding.disposition !== 'in_draft' }"
+              :class="{ 'finding--aside': !willPost(finding) }"
             >
               <span class="rd-mono key">{{ finding.key }}</span>
               <SeverityTag :severity="finding.severity" />
@@ -411,6 +487,23 @@ function severityWord(severity: string, n: number): string {
                   class="rd-meta where"
                 >in no file</span>
               </span>
+              <!--
+                **The same two marks as a row inside a part**, and for the same reason. This
+                list dimmed by the disposition while the one above it dimmed by `willPost`,
+                so a finding carried in as `fixed` and still at `in_draft` was drawn here
+                full-strength — as something the author will read — three inches under a
+                card counting it as not posting. One page, one vocabulary.
+              -->
+              <DispositionTag
+                v-if="finding.disposition !== 'in_draft'"
+                :disposition="finding.disposition"
+              />
+              <DeskPill
+                v-if="roundStatusLabel(finding)"
+                :tone="isStillOpen(finding.round_status) ? 'info' : 'quiet'"
+              >
+                {{ roundStatusLabel(finding) }}
+              </DeskPill>
             </li>
           </ul>
         </section>
@@ -574,11 +667,17 @@ function severityWord(severity: string, n: number): string {
  * tablet, one at a phone — and the `min(…, 100%)` is what keeps the track from being wider
  * than the page at 390px, which is the difference between wrapping and scrolling.
  */
+/*
+ * **No `align-items: start`, which is the second half of defect 5.** Each card took its own
+ * height, so a row of three stood at three heights and left holes in the grid — and the
+ * figures, the tally and the control sat at a different place in every card, so there was
+ * no line to read across. Stretched, every card in a row is the height of the tallest, and
+ * `margin-top: auto` on the figures puts the bottom three lines of all of them level.
+ */
 .parts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
   gap: 16px;
-  align-items: start;
   min-width: 0;
 }
 
@@ -622,15 +721,53 @@ function severityWord(severity: string, n: number): string {
   outline-offset: 2px;
 }
 
+/*
+ * **One layout for every card's head, which is the first half of defect 5.** This wrapped:
+ * a title that did not fit beside its marks went under them, so on one grid some cards read
+ * "2 · Give the export its own context" across and others read the number on one line and
+ * the title on the next. The marks are a lane that does not wrap, the title takes the rest
+ * and wraps inside itself, and there is one arrangement whatever either of them is.
+ *
+ * `baseline`, not `center`: a mark is a 26px circle and the title is a line of text that may
+ * run to three, and what should line up is the numeral and the title's first line.
+ */
 .part-head {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 10px;
-  align-items: center;
+  align-items: baseline;
   min-width: 0;
 }
 
+/*
+ * The marks keep their own lane and wrap as whole circles if a part fixes several.
+ *
+ * **It does not shrink, and it is capped at half the head.** The two have to be said
+ * separately, because each alone is wrong.
+ *
+ * `flex: none` alone fixes the lane at max-content, so its own `flex-wrap` can never fire
+ * and nothing caps how many problems a part may fix: nine marks measure 282px of a 340px
+ * card and leave the title six pixels, which is defect 5 again wearing a different hat.
+ *
+ * Letting it shrink instead is worse in the common case. A shrinkable lane gives up width
+ * to a title whose own basis is far larger, collapses to its min-content — one circle — and
+ * stacks two marks vertically where they had sat side by side. That was on the Solution
+ * picture for one commit.
+ *
+ * So: no shrink, and a `max-width` that clamps before any shrinking would be needed. Two
+ * marks are 58px and stay on one line; nine are capped at half the head and wrap into rows
+ * of their own, and the title always has the other half.
+ */
+.part-marks {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 50%;
+}
+
 .part-title {
+  flex: 1 1 auto;
   font-weight: 600;
   font-size: 16px;
   min-width: 0;
@@ -641,11 +778,16 @@ function severityWord(severity: string, n: number): string {
   overflow-wrap: break-word;
 }
 
+/*
+ * `margin-top: auto`: the figures, the tally and the control are the bottom block of the
+ * card, so they line up across a row however long the title and the summary above them run.
+ */
 .part-figures {
   display: flex;
   flex-wrap: wrap;
   gap: 14px;
   align-items: baseline;
+  margin-top: auto;
   font-family: var(--rd-font-mono);
   font-size: 13px;
   color: var(--rd-ink-muted);

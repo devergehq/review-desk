@@ -262,6 +262,7 @@
     "problems": [
       {
         "number": 1,
+        "label": "The inline delivery",
         "was_wrong": "A delivery that fails is never tried again.",
         "now_fixed": "A worker retries it with backoff for 24 hours.",
         "detail_title": "The delivery sent inside the request",
@@ -278,6 +279,7 @@
       },
       {
         "number": 2,
+        "label": "No record of an attempt",
         "was_wrong": "Nothing records that a delivery was attempted.",
         "now_fixed": "Every attempt is a row the customer can see.",
         "detail_title": "No record of an attempt",

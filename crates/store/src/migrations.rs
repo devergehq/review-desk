@@ -1227,6 +1227,34 @@ FROM review_layers;
 ALTER TABLE reviews ADD COLUMN last_activity_at INTEGER;
 "#,
     },
+    Migration {
+        version: 13,
+        name: "problem-label",
+        sql: r#"
+-- A numbered problem's short name: the two or three words a column heading can be.
+--
+-- **The heading was the whole sentence, and it wrapped ten lines deep.** The Alternatives
+-- page heads one matrix column per numbered problem, and the only words it had for one were
+-- `was_wrong` -- a line of prose, which is right in the "Was wrong" column of the Understand
+-- page and is not a heading. The board this is measured against heads those columns with the
+-- red mark and a label of two or three words, and nothing on the record held one.
+--
+-- **Nullable, and that is the honest default.** Every problem already on the record has
+-- none, and the page then heads the column with the number alone and puts the sentence one
+-- click away. Defaulting to `was_wrong` would write a ten-line "label" onto the record and
+-- leave nothing able to tell a label from a sentence afterwards.
+--
+-- **No length is enforced**, which is migration 10's reasoning for the whole brief and is no
+-- different here: a label that runs long is a writing fault and belongs to the linter in
+-- Locus (DEV-893), not to a CHECK that refuses the problem. What is refused is a label that
+-- is not one -- the empty string, a field nobody filled in wearing the clothes of one
+-- somebody did -- and it is refused by `put_brief` beside the refusals of a blank
+-- `detail_title` and a blank `now_fixed`, because SQLite cannot add a CHECK to a table that
+-- already exists. Stated here so the absence of a constraint reads as a decision rather than
+-- an omission.
+ALTER TABLE brief_problems ADD COLUMN label TEXT;
+"#,
+    },
 ];
 
 /// The version a freshly created database lands on.

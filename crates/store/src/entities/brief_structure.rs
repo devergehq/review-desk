@@ -121,6 +121,14 @@ pub type BriefFlowRow = Vec<BriefFlowBox>;
 pub struct BriefProblem {
     /// The number the flows, the option verdicts and the solution parts refer to. From 1.
     pub number: i64,
+    /// Two or three words naming it, for a heading. Absent on every problem written before
+    /// DEV-892, and then the heading is the number alone.
+    ///
+    /// **Not a shortening of `was_wrong`.** A page with no label heads the column with the
+    /// number and puts the sentence one click away; it never prints the sentence as a
+    /// heading. The two are different kinds of thing, and a default would make them
+    /// indistinguishable on the record.
+    pub label: Option<String>,
     /// One line: what was wrong.
     pub was_wrong: String,
     /// One line: what it is now. Absent until the change has been described.
@@ -405,12 +413,13 @@ impl Store {
     /// The review's numbered problems, with their detail, in number order.
     pub(crate) fn brief_problems(&self, review_id: i64) -> Result<Vec<BriefProblem>> {
         let mut statement = self.conn.prepare(
-            "SELECT number, was_wrong, now_fixed, detail_title FROM brief_problems
+            "SELECT number, label, was_wrong, now_fixed, detail_title FROM brief_problems
              WHERE review_id = ?1 ORDER BY number ASC",
         )?;
         let rows = statement.query_map(params![review_id], |row| {
             Ok(BriefProblem {
                 number: row.get("number")?,
+                label: row.get("label")?,
                 was_wrong: row.get("was_wrong")?,
                 now_fixed: row.get("now_fixed")?,
                 detail_title: row.get("detail_title")?,
@@ -780,6 +789,7 @@ fn validate_problems(problems: &[BriefProblem]) -> Result<Vec<i64>> {
         numbers.push(problem.number);
 
         let at = format!("problem {}", problem.number);
+        optional("problems.label", problem.label.as_deref(), &at)?;
         required("problems.was_wrong", &problem.was_wrong, &at)?;
         optional("problems.now_fixed", problem.now_fixed.as_deref(), &at)?;
         optional(
@@ -1108,11 +1118,12 @@ impl Store {
         for problem in &new.problems {
             self.conn.execute(
                 "INSERT INTO brief_problems
-                     (review_id, number, was_wrong, now_fixed, detail_title)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                     (review_id, number, label, was_wrong, now_fixed, detail_title)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![
                     review_id,
                     problem.number,
+                    problem.label,
                     problem.was_wrong,
                     problem.now_fixed,
                     problem.detail_title,

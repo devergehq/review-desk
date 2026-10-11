@@ -128,6 +128,43 @@ describe('the invented example and the fixtures', () => {
     ).toBe(true)
   })
 
+  /**
+   * And it is at the length the **three step pages** were measured against, which is a
+   * different measurement from the one above and was the whole of DEV-892's second
+   * acceptance criterion.
+   *
+   * Two defects on the real review were invisible against the invented example because the
+   * example was shorter than any record: a step note printed whole in a column 150px wide,
+   * and a matrix column headed with a problem's entire sentence. Both are fixed; neither
+   * can be *shown* fixed by an example whose notes are three words and whose problems have
+   * no labels, and the next person to rewrite this example would quietly take the evidence
+   * away with them. So the lengths are asserted here, where the example lives.
+   */
+  it('is at the length the three step pages were designed against', () => {
+    const detail = example<ReviewDetail>('getReview.response.code-review.json')
+
+    /* Every numbered problem has the two or three words a column heading can be. */
+    const problems = detail.brief?.problems ?? []
+    expect(problems.length, 'the brief numbers its problems').toBeGreaterThan(0)
+    for (const problem of problems) {
+      expect(problem.label, `problem ${problem.number} has a short label`).toBeTruthy()
+      expect(
+        problem.label,
+        `problem ${problem.number}'s label is not its sentence`,
+      ).not.toBe(problem.was_wrong)
+    }
+
+    /*
+     * And one step's note runs long. Forty words is the criterion's own floor and well
+     * past what two lines of a trail column hold, so the clamp and its control are drawn
+     * by the example rather than only by a test that builds its own record.
+     */
+    const longest = Math.max(
+      ...detail.layers.map(layer => (layer.detail ?? '').trim().split(/\s+/).filter(Boolean).length),
+    )
+    expect(longest, 'a step note runs to at least 40 words').toBeGreaterThanOrEqual(40)
+  })
+
   /*
    * **A hunk's flagged line is one the hunk draws**, which the store refuses a write for and
    * which a hand-written example gets wrong. It did: two of these were off by two and by

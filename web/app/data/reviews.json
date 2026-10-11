@@ -1606,7 +1606,7 @@
         "number": 2,
         "name": "understand",
         "state": "done",
-        "detail": "brief settled",
+        "detail": "The brief was rewritten twice: the first pass mixed how the system works today into the problem, so the problem half could not be handed over, and the second split them and numbered three problems before the options pass was asked for anything at all.",
         "updated_at": "2026-10-09T22:00:00Z",
         "runs": [
           {
@@ -2020,6 +2020,7 @@
       "problems": [
         {
           "number": 1,
+          "label": "The shared slot",
           "was_wrong": "A scheduled export read its tenant from a slot the web middleware also writes.",
           "now_fixed": "The schedule carries its own context, and nothing else writes to it.",
           "detail_title": "The request-scoped singleton",
@@ -2037,6 +2038,7 @@
         },
         {
           "number": 2,
+          "label": "The builder's branch",
           "was_wrong": "The report builder had to know whether it was running for the web or for a schedule.",
           "now_fixed": "It asks its context, which answers the same way for both.",
           "detail_title": "The builder asking where it is",
@@ -2052,6 +2054,7 @@
         },
         {
           "number": 3,
+          "label": "Filters skipped",
           "was_wrong": "A scheduled export skipped the row filter and the column policy a web export gets.",
           "now_fixed": "Both go through one filter chain, which also writes the audit entry.",
           "detail_title": "The scheduled path skipping the filters",

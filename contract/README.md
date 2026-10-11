@@ -281,6 +281,7 @@ Every field is **plain text**. The pages interpolate and never use `v-html`.
 | 4 | Understand | the numbered marks on the boxes | `brief.problems[].number`, referenced by `flow_before[][].problem` and `flow_after[][].problem` |
 | 5 | Understand | "Was wrong" and "Now", one line each | `brief.problems[].was_wrong`, `.now_fixed` |
 | 5 | Understand | the named detail behind a click, split | `brief.problems[].detail_title`, `.detail_before[]`, `.detail_after[]` |
+| 5 | Alternatives | what heads a problem's matrix column | `brief.problems[].label`, else the number alone |
 | 6 | Understand | the one small supporting table | `brief.support_table.title`, `.columns[]`, `.rows[][]` |
 | 7 | Understand | how the system works today, in plain words | `brief.how_it_works_today` |
 | 8 | Alternatives | the matrix: a verdict per option per problem | `brief.options[].verdicts[].problem`, `.verdict`, `.why` |
@@ -303,6 +304,11 @@ Five things about that table are decisions rather than consequences.
 2. **`problems[].number` is the brief's one internal identity**, and the only number a
    caller assigns. A flow box, an option verdict or a solution part naming a number no
    problem carries is refused on the way in, with the field and the number in the message.
+   **`problems[].label` is the only other thing a page may head a column with**, and it is
+   optional: DEV-892 added it because the Alternatives matrix was heading each column with
+   the whole `was_wrong` sentence, which wrapped ten lines deep on a real review. With no
+   label the heading is the number alone and the sentence is one click away — never the
+   sentence as a heading.
 3. **`in_diff: false` is how a part claims a file the pull request did not change.** Two
    findings on the review this came from sat in files outside the diff, and a part that
    could not name them would leave those findings belonging to no part. Such a file has no
@@ -321,7 +327,8 @@ Five things about that table are decisions rather than consequences.
 
 **Which is why there is a read for the problem half.**
 `GET /reviews/{reviewId}/brief/problem-statement` serves rows 2, 4 and 7 and the
-`was_wrong` line of row 5, and nothing else — so a session can hand a problem to an
+`was_wrong` line of row 5, and nothing else — not `label` either, which names a problem for
+a column heading and is no use to a pass that reads sentences — so a session can hand a problem to an
 independent pass without handing it the answer. The absences are each argued in `openapi.yaml`; the shortest version
 is that the headline states the answer, the after flow and `now_fixed` *are* the change, row
 5's detail travels as a pair, and the superseded `diagram` held both flows at once with no
@@ -1103,6 +1110,23 @@ attempt is a new review id — in which case nothing here changes — or one rev
 several attempts, in which case the table needs an attempt column and the derivation needs
 to group by it. Nothing in this slice deletes or rewrites a row, so a set-aside attempt's
 record is already left alone.
+
+### Added by DEV-892, for the two or three words a column heading can be
+
+Migration 13 on this branch — the next free one, for the reason `migrations.rs` gives.
+
+- [x] **S41 — `brief_problems.label`.** Nullable, no length enforced, the empty string
+      refused by `put_brief` beside the blank `detail_title` it sits next to. Needed by:
+      `brief.problems[].label`, which is what heads a problem's column on the Alternatives
+      page. Null on every problem already recorded, and the page then heads the column with
+      the number alone — **never with `was_wrong`**, which is a line of prose and on a real
+      review wrapped ten lines deep as a heading.
+
+**Not added to the problem statement.** `GET …/brief/problem-statement` still serves
+`number` and `was_wrong` and nothing else. A label names a problem for a column heading and
+a pass that has not seen the answer reads sentences, so there is nothing for it to do there;
+`crates/server/src/wire.rs` says so at the projection rather than leaving it to be
+rediscovered.
 
 ### Not a store change, but do not miss it
 

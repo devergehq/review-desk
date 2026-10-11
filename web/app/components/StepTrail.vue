@@ -28,6 +28,22 @@ import type { ReviewLayer, ReviewLayerName } from '~/types/desk'
  * `stepDurationLabel` owns the three answers; a step still going shows none, because the
  * figure would grow while you read it.
  *
+ * ## How long the note is
+ *
+ * **Two lines at most, and the rest opens in place.** `layer.detail` is the store's own
+ * words and the store holds no length: on the review DEV-892 was measured against a
+ * session wrote 27 words under Understand when the step had finished and 52 while the
+ * brief was half written, and a step column is about 150px wide — so the note printed whole
+ * pushed the page's headline half a screen down. The note is clamped and a control under it
+ * opens the whole thing where it already is. `stepNoteRunsLong` decides whether that
+ * control is drawn; the clamp itself is CSS, because the measurement is the browser's.
+ *
+ * **The control is a sibling of the face, not a child of it.** Five of the seven steps draw
+ * their face as a link, and a button inside a link is neither valid markup nor clickable.
+ * It toggles the clamp on the outcome it names through `aria-controls`, so what opens is
+ * the note already on screen rather than a second copy of it underneath. The duration is a
+ * sibling of the note, so it keeps its own line under either state of it.
+ *
  * ## Which steps are links
  *
  * **Five of the seven, and the trail is the only way to four of them.**
@@ -98,6 +114,8 @@ interface Step {
   name: ReviewLayerName
   label: string
   outcome: string
+  /** Whether the outcome is long enough that two lines will not hold it. */
+  long: boolean
   /** How long it took, or that nothing recorded it. `null` for a step still going. */
   duration: string | null
   to: string | null
@@ -120,6 +138,7 @@ const steps = computed<Step[]>(() =>
       name: layer.name,
       label: layerLabel(layer.name),
       outcome: layerOutcome(layer),
+      long: stepNoteRunsLong(layerOutcome(layer)),
       duration: stepDurationLabel(layer),
       to: PAGES[layer.name] == null
         ? null
@@ -128,6 +147,18 @@ const steps = computed<Step[]>(() =>
       tone: layerTone(layer.state),
     })),
 )
+
+/**
+ * Which step's note is open, by number, or `null`.
+ *
+ * One at a time, which is the rule every fold on these pages follows. A trail with three
+ * notes open is the thing the clamp is for.
+ */
+const openNote = ref<number | null>(null)
+
+function toggleNote(number: number) {
+  openNote.value = openNote.value === number ? null : number
+}
 
 /**
  * The two groups, and the boundary between them.
@@ -180,12 +211,33 @@ const groups = computed(() => [
             :aria-current="step.current ? 'page' : undefined"
           >
             <span class="name">{{ step.number }} {{ step.label }}</span>
-            <span class="outcome">{{ step.outcome }}</span>
+            <span
+              :id="`step-note-${step.number}`"
+              class="outcome"
+              :class="{ 'outcome--whole': openNote === step.number }"
+            >{{ step.outcome }}</span>
             <span
               v-if="step.duration"
               class="took"
             >{{ step.duration }}</span>
           </component>
+          <!--
+            The control that opens the note, outside the face because the face is a link.
+            Drawn only for a note two lines will not hold: seven of these under seven short
+            outcomes would be a row of controls that reveal nothing.
+          -->
+          <button
+            v-if="step.long"
+            type="button"
+            class="rest"
+            :aria-expanded="openNote === step.number"
+            :aria-controls="`step-note-${step.number}`"
+            @click="toggleNote(step.number)"
+          >
+            {{ openNote === step.number ? 'Fold' : 'Read the rest' }}
+            <span class="rd-visually-hidden">
+              of what step {{ step.number }} {{ step.label }} recorded</span>
+          </button>
         </li>
       </ol>
     </div>
@@ -223,6 +275,8 @@ const groups = computed(() => [
 }
 
 .step {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
 }
 
@@ -293,10 +347,69 @@ a.face:hover .name {
   text-decoration: underline;
 }
 
+/*
+ * **Two lines, and the clamp is on this span alone.** The duration below it is a sibling,
+ * so it keeps its own line and its whole figure however long the note runs — which is the
+ * one thing defect 1's fix must not break.
+ *
+ * `-webkit-line-clamp` is the property every browser this is drawn in understands, and
+ * `line-clamp` is the standard one that now exists; both are set, and the `-webkit-box`
+ * display is what either of them needs to count lines at all.
+ */
 .outcome {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
   font-size: 13px;
   color: var(--rd-ink-muted);
   overflow-wrap: break-word;
+}
+
+/*
+ * Opened: the same span, unclamped, so the note grows where it already was.
+ *
+ * **Both clamps are turned off, not just the display they share.** `-webkit-line-clamp`
+ * needs `-webkit-box` and so is defeated by `display: block` alone — but the standard
+ * `line-clamp` above clamps a block container on its own, and no engine implements it yet.
+ * The day one does, a `display: block` that left `line-clamp: 2` standing would make "Read
+ * the rest" reveal nothing while still reading "Fold".
+ */
+.outcome--whole {
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: none;
+  line-clamp: none;
+}
+
+/*
+ * The control, under the face rather than in it. 12px and the accent, which is this app's
+ * colour for a thing to press, and `nowrap` because a two-word label broken across lines
+ * in a 150px column is the pill defect wearing a different hat.
+ */
+.rest {
+  align-self: flex-start;
+  min-height: var(--rd-control-min);
+  padding: 2px 8px 2px 0;
+  border: 0;
+  background: none;
+  color: var(--rd-accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.rest:hover {
+  color: var(--rd-accent-dark);
+  text-decoration: underline;
+}
+
+.rest:focus-visible {
+  outline: 3px solid var(--rd-focus-ring);
+  outline-offset: 2px;
 }
 
 /*

@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import type { BlindPassState, Brief, BriefOption, BriefProblem } from '~/types/desk'
+import type {
+  BlindPassState,
+  Brief,
+  BriefOption,
+  BriefProblem,
+  ReviewLayer,
+} from '~/types/desk'
+import type { Absence } from '~/utils/steps'
 
 /**
  * Step 3 — **Alternatives**. Board A6, with a real blind pass overlaid, which Patrick
@@ -153,7 +160,14 @@ function blindState(brief: Brief): { heading: string, says: string, tone: 'plain
   switch (state(brief)) {
     case 'not_run':
       return {
-        heading: 'No blind pass was run',
+        /*
+         * **The fourth of DEV-892's four wordings, read from where they are all declared.**
+         * "No blind pass was run" and "none was recorded" are the two easiest sentences on
+         * these pages to collapse into one, and they are opposite statements about how much
+         * the option list has been tested. `NOTHING_HERE` is where all four live and
+         * `test/steps.spec.ts` is what keeps them apart.
+         */
+        heading: NOTHING_HERE.blind_pass_not_run,
         says:
           'Nothing has looked at this problem without also seeing the answer, so the '
           + 'options below are the ones the ticket already contained. Review Desk runs no '
@@ -196,6 +210,42 @@ function matrixTemplate(brief: Brief): string {
   return `2.4fr 150px${middle} 110px`
 }
 
+/**
+ * The second half of the empty page's sentence: what the step's state means for a reader.
+ *
+ * One sentence, and never the headline again. The headline is the state in three words;
+ * this says what follows from it — whether to come back, or that there is nothing coming.
+ *
+ * Keyed off `absenceOf` rather than off the state, so the pair cannot disagree: one place
+ * decides which absence this is, and this only words the consequence.
+ */
+const WHY: Record<Absence, string> = {
+  being_worked_on: 'A session is writing them now.',
+  not_written_yet: 'Nothing has written any.',
+  none_recorded: 'The step finished without recording any.',
+}
+
+function whyNothingYet(layers: ReviewLayer[]): string {
+  return WHY[absenceOf(layers, 'alternatives')]
+}
+
+/**
+ * What heads a problem's column, in the narrow layout's own words.
+ *
+ * **The number and its label, or the number alone — never the sentence.** DEV-892's defect
+ * 2: this matrix headed each problem column with the whole `was_wrong` line, which on a
+ * real review wrapped ten lines deep over a column of three verdicts. `problems[].label` is
+ * the two or three words a heading can be; it is optional, and a brief that recorded none
+ * leaves the number doing the work with the sentence one click away in the fold below.
+ *
+ * Used for `columns` and for each cell's `data-label`, which is what the narrow layout
+ * prints above a verdict — so the sentence is gone from there too, where it was the same
+ * defect in a card instead of a column.
+ */
+function problemHeading(problem: BriefProblem): string {
+  return problem.label ? `${problem.number} \u00b7 ${problem.label}` : String(problem.number)
+}
+
 /** The matrix's label, which names how many options and how many problems it holds. */
 function matrixLabel(brief: Brief): string {
   return `${count(options(brief).length, 'option')} against `
@@ -209,12 +259,19 @@ function matrixLabel(brief: Brief): string {
     what="this review"
   >
     <template #default="{ data }">
+      <!--
+        **No options, and the page says which nothing this is — from step 3's own state.**
+        DEV-892's defect 6: this read "No alternatives are recorded… Nothing has written any"
+        while the trail two inches above it drew step 3 as running. A page that contradicts
+        the record it is drawn from is worse than a page with nothing on it.
+      -->
       <ReviewStepPage
         v-if="!data.brief || !options(data.brief).length"
         :detail="data"
         step="alternatives"
-        headline="No alternatives are recorded for this change."
-        sub="Step 3 is where a session writes down the ways it considered solving the problem, before it reads the diff. Nothing has written any."
+        :headline="sentence(nothingYet(data.layers, 'alternatives'))"
+        :sub="`Step 3 is where a session writes down the ways it considered solving the `
+          + `problem, before it reads the diff. ${whyNothingYet(data.layers)}`"
       />
 
       <ReviewStepPage
@@ -230,7 +287,7 @@ function matrixLabel(brief: Brief): string {
             :columns="[
               'Option',
               'Seen by',
-              ...problems(data.brief).map(problem => `${problem.number} · ${problem.was_wrong}`),
+              ...problems(data.brief).map(problem => problemHeading(problem)),
               '',
             ]"
             :template="matrixTemplate(data.brief)"
@@ -256,11 +313,19 @@ function matrixLabel(brief: Brief): string {
               >
                 Seen by
               </th>
+              <!--
+                The number, and the label when the brief wrote one. **Never `was_wrong`**:
+                that is a line of prose, and as a heading over a column of three verdicts it
+                wrapped ten lines deep on the review this was measured against. A column
+                with no label is headed by its number, and every sentence is in the fold
+                under the matrix.
+              -->
               <th
                 v-for="problem in problems(data.brief)"
                 :key="problem.number"
                 scope="col"
-                class="th th--sentence"
+                role="columnheader"
+                class="th th--marked"
               >
                 <ProblemMark
                   :number="problem.number"
@@ -268,7 +333,7 @@ function matrixLabel(brief: Brief): string {
                   size="inline"
                   says="the problem this column is about"
                 />
-                <span>{{ problem.was_wrong }}</span>
+                <span v-if="problem.label">{{ problem.label }}</span>
               </th>
               <th
                 scope="col"
@@ -346,7 +411,7 @@ function matrixLabel(brief: Brief): string {
                       v-for="problem in problems(data.brief)"
                       :key="problem.number"
                       class="cell"
-                      :data-label="`${problem.number} · ${problem.was_wrong}`"
+                      :data-label="problemHeading(problem)"
                     >
                       <VerdictCell :verdict="verdictOn(option, problem.number)" />
                     </span>
@@ -386,6 +451,39 @@ function matrixLabel(brief: Brief): string {
               the Understand page
             </NuxtLink>. Open an option for the reasoning recorded for it.
           </p>
+
+          <!--
+            **Every number said in full, one click away.** The headings carry two or three
+            words each, so this is where the sentence lives — and it is on this page rather
+            than only behind the link above, because a reader working down a column should
+            not have to leave the matrix to find out what column 2 is. A brief that recorded
+            no label needs it most: the heading is then the bare number.
+          -->
+          <details
+            v-if="problems(data.brief).length"
+            class="numbers"
+          >
+            <summary>What each number is, in full</summary>
+            <ul class="said">
+              <li
+                v-for="problem in problems(data.brief)"
+                :key="problem.number"
+                class="says"
+              >
+                <ProblemMark
+                  :number="problem.number"
+                  tone="wrong"
+                  size="inline"
+                  says="the problem"
+                />
+                <span
+                  v-if="problem.label"
+                  class="says-label"
+                >{{ problem.label }}</span>
+                <span class="says-line">{{ problem.was_wrong }}</span>
+              </li>
+            </ul>
+          </details>
         </section>
 
         <!-- ------------------------- Built against the blind pick --------------------- -->
@@ -553,19 +651,18 @@ function matrixLabel(brief: Brief): string {
               <p class="rd-note">
                 {{ blindState(data.brief).says }}
               </p>
-              <p
-                v-if="data.brief.blind_pass"
-                class="rd-note"
-              >
-                <strong>It looked up:</strong> {{ data.brief.blind_pass.looked_up }}
-              </p>
             </DeskCard>
           </div>
 
           <!--
-            What the pass was given, verbatim, behind a fold. It is long — a page of prose —
-            and it is the only way to judge whether a blind pass was really blind, so it is
-            on the page rather than linked to.
+            What the pass was given and what it looked up, verbatim, behind the same control.
+            The first is long — a page of prose — and it is the only way to judge whether a
+            blind pass was really blind, so it is on the page rather than linked to.
+
+            **The second used to print open**, as a line beginning "It looked up:", and on a
+            real review that line was a 91-word paragraph in a card beside another card. It
+            is the same kind of thing as the first — the session's own account of its own
+            pass — so it is behind the same kind of control.
           -->
           <details
             v-if="data.brief.blind_pass"
@@ -574,6 +671,16 @@ function matrixLabel(brief: Brief): string {
             <summary>What the blind pass was given, word for word</summary>
             <p class="rd-recorded given-text">
               {{ data.brief.blind_pass.given }}
+            </p>
+          </details>
+
+          <details
+            v-if="data.brief.blind_pass"
+            class="given"
+          >
+            <summary>What it looked up, in its own words</summary>
+            <p class="rd-recorded given-text">
+              {{ data.brief.blind_pass.looked_up }}
             </p>
           </details>
         </section>
@@ -765,8 +872,46 @@ function matrixLabel(brief: Brief): string {
   color: var(--rd-ink-faint);
 }
 
+/* ------------------------------ What each number is -------------------------------- */
+
+/*
+ * The same control as the fold at the foot of the page, and deliberately: this page has one
+ * way of saying "there is more of this, here". `.numbers` and `.given` share every rule
+ * below.
+ */
+.said {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  max-width: var(--rd-measure);
+  min-width: 0;
+}
+
+.says {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.says-label {
+  font-weight: 600;
+}
+
+.says-line {
+  flex: 1 1 240px;
+  min-width: 0;
+  color: var(--rd-ink-dim);
+  overflow-wrap: break-word;
+}
+
 /* ------------------------------- What it was given --------------------------------- */
 
+.numbers summary,
 .given summary {
   display: flex;
   align-items: center;
@@ -776,6 +921,7 @@ function matrixLabel(brief: Brief): string {
   cursor: pointer;
 }
 
+.numbers summary:focus-visible,
 .given summary:focus-visible {
   outline: 3px solid var(--rd-focus-ring);
   outline-offset: 2px;

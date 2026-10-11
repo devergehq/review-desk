@@ -143,6 +143,7 @@ pub fn brief_flow(flow: &[BriefFlowRow]) -> Value {
 pub fn brief_problem(problem: &BriefProblem) -> Value {
     json!({
         "number": problem.number,
+        "label": problem.label,
         "was_wrong": problem.was_wrong,
         "now_fixed": problem.now_fixed,
         "detail_title": problem.detail_title,
@@ -239,6 +240,14 @@ pub fn problem_statement(statement: &ProblemStatement) -> Value {
         "how_it_works_today": statement.how_it_works_today,
         "flow_before_caption": statement.flow_before_caption,
         "flow_before": brief_flow(&statement.flow_before),
+        /*
+         * **Two fields, and `label` is deliberately not the third.** The problem statement
+         * is what a session may hand to a pass that has not seen the answer, and every
+         * absence from it is argued in `openapi.yaml`. A label names a problem for a column
+         * heading; a blind pass reads sentences, not headings, so adding it would widen
+         * what travels without anything asking for it. DEV-892 added the field for the
+         * Alternatives page and left this projection where it was.
+         */
         "problems": statement
             .problems
             .iter()

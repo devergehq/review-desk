@@ -182,6 +182,72 @@ describe('the shell every step page sits in', () => {
     expect(trail).not.toMatch(/\b0 sec\b/)
   })
 
+  /**
+   * **A step's note is two lines at most, and the rest opens in place.** DEV-892's defect
+   * 1: on the review this was measured against a session wrote 27 words under Understand
+   * when the step had finished and 52 while the brief was half written, and the trail
+   * printed each whole in a column about 150px wide — which pushed the page's headline
+   * half a screen down.
+   *
+   * The clamp is CSS and jsdom computes no layout, so what is asserted here is everything
+   * either side of it: the class that carries the clamp, the control that opens the note,
+   * the note still being whole in the document when it is opened, and the duration keeping
+   * its own line underneath. The clamp itself is measured in a real browser, in
+   * `e2e/review-desk.spec.ts`.
+   */
+  it('clamps a long step note and opens the rest in place', async () => {
+    const page = await understand(STRUCTURED)
+
+    /* Step 2's note is the 45-word one the example carries. */
+    const steps = page.findAll('.steps li')
+    const understandStep = steps[1]!
+    expect(understandStep.text()).toContain('2 Understand')
+
+    const note = understandStep.find('.outcome')
+    expect(note.exists()).toBe(true)
+    expect(note.text()).toContain('the options pass was asked for anything at all')
+    /* Clamped: the class the two-line rule hangs off is the one that is absent when open. */
+    expect(note.classes()).not.toContain('outcome--whole')
+
+    const control = understandStep.find('button')
+    expect(control.exists(), 'a long note has a control that opens it').toBe(true)
+    expect(control.text()).toContain('Read the rest')
+    expect(control.attributes('aria-expanded')).toBe('false')
+    /* It names what it opens, so the note is reachable by keyboard and nothing else. */
+    expect(control.attributes('aria-controls')).toBe(note.attributes('id'))
+
+    await control.trigger('click')
+    await settle(page)
+
+    const opened = page.findAll('.steps li')[1]!
+    expect(opened.find('.outcome').classes()).toContain('outcome--whole')
+    expect(opened.find('button').attributes('aria-expanded')).toBe('true')
+    expect(opened.find('button').text()).toContain('Fold')
+
+    /*
+     * **And the duration is still its own line.** The clamp is on the note alone; a rule
+     * that hid or ate the figure under it would break what DEV-890 put there.
+     */
+    expect(opened.find('.took').exists()).toBe(true)
+    expect(opened.find('.took').text()).toMatch(/\d+ (sec|min|hr|day)/)
+  })
+
+  it('draws no control on a step whose note fits two lines', async () => {
+    const page = await understand(STRUCTURED)
+    const steps = page.findAll('.steps li')
+
+    /* Step 1's outcome is "passes, 2 warnings": nothing to open. */
+    expect(steps[0]!.text()).toContain('1 Lint')
+    expect(steps[0]!.find('button').exists()).toBe(false)
+
+    /*
+     * Six of the seven, which is the measurement worth making: a control under every step
+     * would be a row of buttons that reveal nothing, and the clamp would be invisible.
+     */
+    const controls = page.findAll('.trail button')
+    expect(controls).toHaveLength(1)
+  })
+
   it('shows the total with the agent and the total waiting on the developer', async () => {
     const page = await understand(STRUCTURED)
     const totals = page.find('.totals')
@@ -547,8 +613,37 @@ describe('Understand', () => {
     expect(page.text()).toContain(
       'Option C of 8 — An export context passed explicitly, and one filter chain for both',
     )
-    expect(page.text()).toContain('from the ticket, the pull request description and the code')
     expect(page.text()).toContain('ABC-402 · Scheduled exports carry their own context')
+  })
+
+  /**
+   * **The decision in one line, its sources as links, and the rest behind a fold.**
+   *
+   * DEV-892's defect 3. "Already decided" printed `provenance` open, and on a real review
+   * that was a 59-word paragraph about the ticket, the base commit and the dispatcher's
+   * ledger, sitting under a heading that promises one settled thing.
+   */
+  it('folds where the decision came from, rather than printing it', async () => {
+    const page = await understand(STRUCTURED)
+    const provenance = fixture(STRUCTURED).brief!.provenance!
+
+    const decided = page.find('.decided')
+    expect(decided.text(), 'the paragraph is not printed open').not.toContain(provenance)
+    expect(page.find('#came-from').exists()).toBe(false)
+
+    /* The decision itself is a line, and its sources are links beside it. */
+    expect(decided.text()).toContain('Option C of 8')
+    expect(decided.findAll('.source a').length).toBeGreaterThan(0)
+
+    const control = decided.findAll('button')
+      .find(one => one.text().includes('Where this came from'))!
+    expect(control.attributes('aria-expanded')).toBe('false')
+    expect(control.attributes('aria-controls')).toBe('came-from')
+
+    await control.trigger('click')
+    await settle(page)
+
+    expect(page.find('#came-from').text()).toContain(provenance)
   })
 
   it('leaves the open-choices table to Solution, and links to it', async () => {
@@ -567,38 +662,53 @@ describe('Understand', () => {
     expect(page.text()).not.toContain('Where the ticket left a choice')
   })
 
-  it('says how long the recorded text behind the fold is', async () => {
+  /**
+   * **No figure at the foot, which is DEV-892's defect 4.**
+   *
+   * The card carried "105 words as the session recorded it", counted off the brief in hand.
+   * It came off the board, where the figure is half of a pair that argues this page is
+   * shorter than the record it is drawn from — an argument about the design, not a fact a
+   * reader of one review can act on, and on this example it ran the wrong way round.
+   */
+  it('draws no word count over the recorded text', async () => {
     const page = await understand(STRUCTURED)
-    /*
-     * Measured off the brief in hand, never the board's own figures — and only on the
-     * record's side. The board's pair of figures was an argument about the design, and on
-     * this example the page is the longer of the two.
-     */
-    expect(page.find('.measured').text()).toMatch(/\d+ words/)
-    expect(page.find('.measured').text()).toContain('as the session recorded it')
-    expect(page.find('.measured').text()).not.toContain('above')
-  })
+    const foot = page.find('.measured').text()
 
-  it('counts the superseded text sketch, when the brief carries one', async () => {
-    const detail = fixture(STRUCTURED)
-    detail.brief!.diagram = 'flowchart LR\n  A --> B\n  B --> C'
-    await withReview(detail)
-
-    const page = await understand(STRUCTURED)
-    expect(page.find('.measured').text()).toContain('3-line text sketch')
+    expect(foot).not.toMatch(/\d+ words/)
+    expect(foot).not.toContain('text sketch')
   })
 
   it('keeps the recorded problem a click away, and interpolated', async () => {
     const page = await understand(STRUCTURED)
     expect(page.find('#as-recorded').exists()).toBe(false)
 
-    await open(page, 'Read it as recorded')
+    await open(page, 'Read the problem as recorded')
 
     const recorded = page.find('#as-recorded')
     expect(recorded.exists()).toBe(true)
     expect(recorded.text()).toContain('Scheduled exports run with whatever tenant')
     /* `pre-wrap` at a readable measure, which is what keeps a record a record. */
-    expect(recorded.find('.rd-recorded').exists()).toBe(true)
+    expect(recorded.classes()).toContain('rd-recorded')
+  })
+
+  /*
+   * And the record is not drawn twice. The problem is at the foot and where the decision
+   * came from is under "Already decided"; before DEV-892 the foot held both, and folding
+   * the provenance in its own section without taking it out of the foot would have put the
+   * same paragraph on the page in two places.
+   */
+  it('draws each piece of recorded text in exactly one place', async () => {
+    const page = await understand(STRUCTURED)
+    await open(page, 'Read the problem as recorded')
+    await open(page, 'Where this came from, as recorded')
+
+    const brief = fixture(STRUCTURED).brief!
+    const text = page.text()
+    expect(text.split(brief.problem).length - 1, 'the problem, once').toBe(1)
+    expect(
+      text.split(brief.provenance!).length - 1,
+      'where it came from, once',
+    ).toBe(1)
   })
 
   describe('a brief caught between the session\u2019s two writes', () => {
@@ -714,9 +824,87 @@ describe('Alternatives', () => {
     expect(page.findAll('.option')).toHaveLength(8)
     /* Option, Seen by, three problems, and the column the opener sits in. */
     expect(page.findAll('thead th')).toHaveLength(6)
-    expect(page.find('thead').text()).toContain(
-      'A scheduled export read its tenant from a slot the web middleware also writes.',
-    )
+  })
+
+  /**
+   * **A problem column is headed by its number and its label, never by its sentence.**
+   *
+   * DEV-892's defect 2. This heading used to be `was_wrong` — a line of prose over a
+   * column of three verdicts, which on the real review wrapped ten lines deep. The test
+   * above asserted the sentence was there, which is how the defect survived an invented
+   * example: it was a measurement of the wrong thing.
+   */
+  it('heads a problem column with its number and its label', async () => {
+    const page = await alternatives(STRUCTURED)
+    const head = page.find('thead').text()
+
+    expect(head).toContain('The shared slot')
+    expect(head).toContain('The builder\'s branch')
+    expect(head).toContain('Filters skipped')
+
+    for (const problem of fixture(STRUCTURED).brief!.problems) {
+      expect(head, `problem ${problem.number}'s sentence is not a heading`)
+        .not.toContain(problem.was_wrong)
+    }
+  })
+
+  it('heads a problem column with the number alone when the brief wrote no label', async () => {
+    const detail = fixture(STRUCTURED)
+    detail.brief!.problems = detail.brief!.problems.map(problem => ({
+      ...problem,
+      label: null,
+    }))
+    await withReview(detail)
+
+    const page = await alternatives(STRUCTURED)
+    const head = page.find('thead')
+
+    /* Still three problem columns, each with its mark and nothing else. */
+    expect(head.findAll('.th--marked')).toHaveLength(3)
+    for (const problem of detail.brief!.problems) {
+      expect(head.text(), 'the sentence is never promoted to a heading')
+        .not.toContain(problem.was_wrong)
+    }
+    /* And the number is still there, which is all a reader has to go on. */
+    expect(head.findAll('.th--marked')[0]!.text()).toContain('1')
+  })
+
+  /**
+   * And the sentence is one click away **on this page**.
+   *
+   * A reader working down column 2 should not have to leave the matrix to find out what
+   * column 2 is, and a brief with no labels needs this most — the headings are then bare
+   * numbers.
+   */
+  it('says what every number is, in full, one click away', async () => {
+    const page = await alternatives(STRUCTURED)
+
+    const fold = page.find('details.numbers')
+    expect(fold.exists()).toBe(true)
+    expect(fold.find('summary').text()).toContain('What each number is')
+
+    const said = fold.findAll('.says')
+    expect(said).toHaveLength(3)
+    for (const problem of fixture(STRUCTURED).brief!.problems) {
+      expect(fold.text(), `problem ${problem.number} is said in full`)
+        .toContain(problem.was_wrong)
+    }
+  })
+
+  /*
+   * The narrow layout names each verdict's column above it, and that label is the heading
+   * too — so the sentence is gone from there as well. It was the same defect in a card
+   * rather than in a column, and a page tested only at one width would have kept it.
+   */
+  it('names a verdict’s column by number and label at a phone’s width', async () => {
+    const page = await alternatives(STRUCTURED)
+    const labels = page.findAll('.option .cell[data-label]')
+      .map(cell => cell.attributes('data-label'))
+
+    expect(labels).toContain('1 · The shared slot')
+    for (const problem of fixture(STRUCTURED).brief!.problems) {
+      expect(labels.join(' | ')).not.toContain(problem.was_wrong)
+    }
   })
 
   it('tells the three real verdicts apart, by word as well as by colour', async () => {
@@ -853,9 +1041,19 @@ describe('Alternatives', () => {
     /* Eight options: four on the ticket, seven from the pass, three on both. */
     expect(page.text()).toContain('4 options')
     expect(page.text()).toContain('7 options')
-    expect(page.text()).toContain('It looked up: nothing')
+    /*
+     * **What it looked up is behind the same control as what it was given.** DEV-892: this
+     * printed open, as a line beginning "It looked up:", and on a real review that line was
+     * a 91-word paragraph in a card beside another card.
+     */
+    const folds = page.findAll('details.given')
+    expect(folds).toHaveLength(2)
+    expect(page.text()).not.toContain('It looked up:')
+    expect(folds[1]!.find('summary').text()).toContain('What it looked up')
+    expect(folds[1]!.find('.given-text').text()).toContain('nothing')
+
     /* And what it was given, verbatim, on the page rather than linked to. */
-    expect(page.find('.given-text').text()).toContain(
+    expect(folds[0]!.find('.given-text').text()).toContain(
       'A multi-tenant PHP web application serves reports.',
     )
   })
@@ -968,13 +1166,30 @@ describe('Alternatives', () => {
     })
   })
 
-  it('says step 3 has not run when no options are recorded', async () => {
+  /**
+   * **No options, and the page says which nothing it is — from step 3's own state.**
+   *
+   * DEV-892's defect 6. This said "No alternatives are recorded for this change… Nothing has
+   * written any" whatever the trail said, and on the review it was found on the trail said
+   * the blind pass was running. A page contradicting the record it is drawn from is worse
+   * than a page with nothing on it.
+   */
+  it.each([
+    ['running', 'Being worked on now.', 'A session is writing them now.'],
+    ['pending', 'Not written yet.', 'Nothing has written any.'],
+    ['done', 'None was recorded.', 'The step finished without recording any.'],
+  ] as const)('says step 3 is %s in its own words', async (state, headline, why) => {
     const detail = fixture(STRUCTURED)
     detail.brief!.options = []
+    detail.layers = detail.layers.map(layer =>
+      layer.name === 'alternatives' ? { ...layer, state } : layer)
     await withReview(detail)
 
     const page = await alternatives(STRUCTURED)
-    expect(page.text()).toContain('No alternatives are recorded for this change.')
+    expect(page.find('h1').text()).toBe(headline)
+    expect(page.text()).toContain(why)
+    /* Never the sentence the defect was: it asserted an absence the record contradicted. */
+    expect(page.text()).not.toContain('No alternatives are recorded')
   })
 })
 
@@ -1030,12 +1245,119 @@ describe('Solution', () => {
     expect(tests.text()).toContain('Nothing found here')
   })
 
-  it('counts a set-aside finding apart from the ones going in the draft', async () => {
+  it('counts a finding that is not going to the author apart from the rest', async () => {
     const page = await solution(STRUCTURED)
     /* F2 is held back and F8 suppressed; neither is something the author will read. */
     const parts = page.findAll('.part')
     const context = parts.find(one => one.text().includes('The export context'))!
-    expect(context.text()).toContain('1 set aside')
+    expect(context.text()).toContain('1 not posting')
+  })
+
+  /**
+   * **A part's tally counts what will post, not what carries the disposition.**
+   *
+   * DEV-892's comment of 11 October: this filtered `disposition === 'in_draft'` into a list
+   * it called `posted`, under a docstring about what the author will read. A finding
+   * carried into this round as `fixed` keeps whatever disposition it was carried with, so
+   * it sits at `in_draft` and is not composed into the draft — which is the mistake PR #32
+   * fixed on the code review page's headline and left standing here.
+   */
+  it('leaves a finding this round closed out of the part’s severities', async () => {
+    const detail = fixture(STRUCTURED)
+    const part = detail.brief!.parts[0]!
+    const paths = new Set(part.files.map(file => file.path))
+    const on = detail.findings.filter(
+      finding => finding.file != null && paths.has(finding.file),
+    )
+    const posting = on.filter(
+      finding => finding.disposition === 'in_draft'
+        && (finding.round_status == null || finding.round_status === 'new'
+          || finding.round_status === 'still_open'),
+    )
+    expect(posting.length, 'the part has something to post before we close one').toBeGreaterThan(0)
+
+    /* What the card says before anything is closed, read off the card itself. */
+    const was = await solution(STRUCTURED)
+    const firstCard = was.findAll('.part')[0]!
+    const severitiesBefore = firstCard.findAll('.part-tally .pill').map(pill => pill.text())
+    const wasNotPosting = Number(/(\d+) not posting/.exec(firstCard.text())?.[1] ?? 0)
+    expect(severitiesBefore.length, 'the card announces a severity to lose').toBeGreaterThan(0)
+
+    /*
+     * One of them carried from an earlier round and fixed there. Its disposition is
+     * untouched — that is the whole point: the record still says `in_draft`.
+     */
+    const closed = posting[0]!
+    detail.findings = detail.findings.map(finding =>
+      finding.seq === closed.seq
+        ? { ...finding, round_status: 'fixed' as const, continues_review_id: 40 }
+        : finding)
+    await withReview(detail)
+
+    const page = await solution(STRUCTURED)
+    const card = page.findAll('.part')[0]!
+
+    /*
+     * One more finding is not posting than before, and the severity pills are the
+     * difference: the card counts what the author receives, and the disposition on the
+     * record did not move.
+     */
+    expect(card.text()).toContain(`${wasNotPosting + 1} not posting`)
+    expect(
+      card.findAll('.part-tally .pill').map(pill => pill.text()),
+      'the closed finding is out of the severities the card announces',
+    ).not.toEqual(severitiesBefore)
+
+    /* And the row in the fold says why, rather than leaving the arithmetic unexplained. */
+    await open(page, part.title)
+    const row = page.find('#part-0').findAll('.finding')
+      .find(one => one.text().includes(closed.key))!
+    expect(row.classes()).toContain('finding--aside')
+    expect(row.text()).toContain('Fixed')
+  })
+
+  /**
+   * **One layout for every part card's head**, which is the first half of DEV-892's defect
+   * 5: a title that did not fit beside its marks went under them, so some cards read across
+   * and others read down.
+   *
+   * The arrangement is what is asserted here — a lane of marks, then the title, in that
+   * order, in every card that has marks, and the title alone in one that has none. Whether
+   * it *stays* beside them is layout, and `e2e/review-desk.spec.ts` measures that in a real
+   * browser along with the heights of a row.
+   */
+  it('arranges every part card’s head the same way', async () => {
+    const page = await solution(STRUCTURED)
+    const cards = page.findAll('.part')
+    expect(cards.length).toBeGreaterThan(1)
+
+    const parts = fixture(STRUCTURED).brief!.parts
+    let withMarks = 0
+    let withNone = 0
+
+    for (const [at, card] of cards.entries()) {
+      const head = card.find('.part-head')
+      const title = head.find('.part-title')
+      expect(title.exists(), `part ${at + 1} has its title in the head`).toBe(true)
+      expect(title.text()).toBe(parts[at]!.title)
+
+      const marks = head.find('.part-marks')
+      if (parts[at]!.fixes.length === 0) {
+        /* No mark rather than a nought, and no empty lane either. */
+        expect(marks.exists(), `part ${at + 1} fixes nothing and draws no lane`).toBe(false)
+        withNone += 1
+        continue
+      }
+      withMarks += 1
+      expect(marks.findAll('.mark')).toHaveLength(parts[at]!.fixes.length)
+      /* The lane comes first, every time: the title is never above or inside it. */
+      expect(head.element.children[0]).toBe(marks.element)
+      expect(head.element.children[1]).toBe(title.element)
+    }
+
+    /* Both cases are in the example, so this is a test of two shapes rather than one. */
+    expect(withMarks, 'a part that fixes something').toBeGreaterThan(0)
+    expect(withNone, 'a part that fixes nothing').toBeGreaterThan(0)
   })
 
   it('opens a part to its files, with what the change did to each', async () => {
@@ -1148,6 +1470,37 @@ describe('Solution', () => {
     expect(whole.text()).not.toContain('in no part of this description')
   })
 
+  /**
+   * **The list of findings in no part speaks the same vocabulary as a part's own.**
+   *
+   * Found reviewing DEV-892's own diff: the per-part rows and the card's count moved to
+   * `willPost`, and this list was left dimming by the disposition. A finding carried from an
+   * earlier round as `fixed` and still at `in_draft` was then drawn here full-strength — as
+   * something the author will read — three inches under a card counting it as not posting.
+   */
+  it('dims a finding in no part by the same rule a part’s own rows use', async () => {
+    const detail = fixture(STRUCTURED)
+    const loose = detail.findings.find(
+      finding => finding.file == null && finding.disposition === 'in_draft',
+    )!
+    expect(loose, 'the example has a finding in no part that would post').toBeTruthy()
+
+    detail.findings = detail.findings.map(finding =>
+      finding.seq === loose.seq
+        ? { ...finding, round_status: 'fixed' as const, continues_review_id: 40 }
+        : finding)
+    await withReview(detail)
+
+    const page = await solution(STRUCTURED)
+    const row = page.findAll('.findings--loose .finding')
+      .find(one => one.text().includes(loose.key))!
+    expect(row, 'the finding is still listed').toBeTruthy()
+
+    /* The disposition did not move; what the author receives did. */
+    expect(row.classes()).toContain('finding--aside')
+    expect(row.text()).toContain('Fixed')
+  })
+
   it('draws the open-choices table, which Understand leaves to it', async () => {
     const page = await solution(STRUCTURED)
     expect(page.text()).toContain('Where the ticket left a choice')
@@ -1182,13 +1535,49 @@ describe('Solution', () => {
     expect(table.text()).toContain('the backfill leaves older definitions naming none')
   })
 
-  it('says step 4 has not run when the change is in no parts', async () => {
+  /**
+   * **No parts, said once, and from step 4's own state.** The other half of defect 6: the
+   * headline and the notice under it carried the same sentence three inches apart, and both
+   * of them asserted an absence whatever the trail said about step 4.
+   *
+   * The example's brief carries an `approach_verdict`, so the heading here is the verdict
+   * and the state leads the notice — which is the one arrangement in which it is said in
+   * the notice at all.
+   */
+  it.each([
+    ['running', 'Being worked on now.', 'A session is writing them now.'],
+    ['pending', 'Not written yet.', 'A session writes the problem first'],
+    ['done', 'None was recorded.', 'The step finished without describing the change'],
+  ] as const)('says step 4 is %s in its own words, once', async (state, said, why) => {
     const detail = fixture(STRUCTURED)
     detail.brief!.parts = []
+    detail.layers = detail.layers.map(layer =>
+      layer.name === 'solution_map' ? { ...layer, state } : layer)
     await withReview(detail)
 
     const page = await solution(STRUCTURED)
-    expect(page.text()).toContain('The change has not been described in parts yet.')
+    /* The heading is the verdict; the notice says the state, and says it once. */
+    expect(page.find('h1').text()).toBe(detail.brief!.approach_verdict)
+    expect(page.text().split(said).length - 1, `${said} is on the page once`).toBe(1)
+    expect(page.text()).toContain(why)
+    expect(page.text()).not.toContain('The change has not been described in parts yet.')
+  })
+
+  it('says the state as its heading when there is no verdict to head the page', async () => {
+    const detail = fixture(STRUCTURED)
+    detail.brief!.parts = []
+    detail.brief!.approach_verdict = null
+    detail.layers = detail.layers.map(layer =>
+      layer.name === 'solution_map' ? { ...layer, state: 'running' as const } : layer)
+    await withReview(detail)
+
+    const page = await solution(STRUCTURED)
+    expect(page.find('h1').text()).toBe('Being worked on now.')
+    /*
+     * And not again in the notice underneath. "One sentence, once" is the issue's own
+     * wording about exactly this pair.
+     */
+    expect(page.text().split('Being worked on now.').length - 1).toBe(1)
   })
 
   it('still draws the choices and the clashes when there are no parts', async () => {

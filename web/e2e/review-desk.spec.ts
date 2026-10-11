@@ -816,6 +816,147 @@ test.describe('the three step pages of one review', () => {
   })
 
   /**
+   * **A long step note is two lines on the trail, and the rest opens in place.**
+   *
+   * DEV-892's defect 1, measured where it can be: a clamp is layout, and the unit tests
+   * run in jsdom, which computes none. So this reads the rendered height of step 2's
+   * note — the 45-word one the invented example carries — against its own line height,
+   * presses the control, and reads it again.
+   *
+   * **The duration under it is measured too.** The clamp is on the note alone and a rule
+   * that ate the figure beneath it would break what DEV-890 put there, which is the one
+   * way this fix could be worse than the defect.
+   */
+  test('a long step note is clamped to two lines and opens whole', async ({ page }) => {
+    await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
+    await expect(page.locator('h1')).toBeVisible()
+
+    const step = page.locator('.steps li').nth(1)
+    await expect(step).toContainText('2 Understand')
+
+    const note = step.locator('.outcome')
+    const clamped = await note.evaluate((element) => {
+      const style = getComputedStyle(element)
+      return {
+        height: element.getBoundingClientRect().height,
+        lineHeight: Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.2,
+        scrollHeight: element.scrollHeight,
+      }
+    })
+    /*
+     * Two lines and a pixel of rounding. `scrollHeight` is what the note *would* be, and
+     * it has to be more than what is drawn — otherwise this test would pass against a
+     * short note and prove nothing about the clamp.
+     */
+    expect(
+      clamped.height,
+      `the note is drawn ${clamped.height}px tall at a ${clamped.lineHeight}px line`,
+    ).toBeLessThanOrEqual(clamped.lineHeight * 2 + 1)
+    expect(
+      clamped.scrollHeight,
+      'the note is longer than the two lines drawn, so the clamp is doing something',
+    ).toBeGreaterThan(clamped.height + 1)
+
+    /*
+     * **The duration keeps its own line under the clamped note**, whole and not clipped.
+     * The seeded record writes each step's state once through the command line, so it has a
+     * finish and no start and the figure reads "time not recorded" — which is DEV-890's own
+     * answer for that and is exactly as long as a figure would be. What is asserted is that
+     * the line is there, is not empty, and is drawn below the note rather than inside it.
+     */
+    const took = step.locator('.took')
+    await expect(took).toBeVisible()
+    await expect(took).not.toHaveText('')
+    const stacked = await step.evaluate((element) => {
+      const note = element.querySelector('.outcome')!.getBoundingClientRect()
+      const figure = element.querySelector('.took')!.getBoundingClientRect()
+      return { below: figure.top >= note.bottom - 1, height: Math.round(figure.height) }
+    })
+    expect(stacked.below, 'the figure is under the note, not inside it').toBe(true)
+    expect(stacked.height, 'the figure has a line of its own').toBeGreaterThan(0)
+
+    /* Opened by keyboard, which is the acceptance criterion's own word. */
+    const control = step.getByRole('button', { name: /Read the rest/ })
+    await control.focus()
+    await page.keyboard.press('Enter')
+    await expect(step.getByRole('button', { name: /Fold/ })).toBeVisible()
+
+    const opened = await note.evaluate(element => element.getBoundingClientRect().height)
+    expect(opened, 'the whole note is drawn once it is opened').toBeGreaterThan(clamped.height)
+    await expect(note).toContainText('the options pass was asked for anything at all')
+    /* And the figure is still there, still on its own line, under a note four times taller. */
+    await expect(took).toBeVisible()
+    expect(
+      await step.evaluate((element) => {
+        const note = element.querySelector('.outcome')!.getBoundingClientRect()
+        const figure = element.querySelector('.took')!.getBoundingClientRect()
+        return figure.top >= note.bottom - 1 && figure.height > 0
+      }),
+      'the figure survives the note being opened',
+    ).toBe(true)
+  })
+
+  /**
+   * **Every part card's head reads the same way, and a row of them lines up.**
+   *
+   * DEV-892's defect 5, measured where it can be. A title that did not fit beside its
+   * marks went under them, so on one grid some cards read "2 · the title" across and others
+   * put the number on one line and the title on the next; and every card took its own
+   * height, so a row of three stood at three heights with holes between them.
+   *
+   * Both are layout, so both are read off the rendered boxes: the title's left edge is past
+   * the marks' right edge in every card that has marks, and every card sharing a row shares
+   * a height.
+   */
+  test('a part card’s title is beside its marks, and a row of cards lines up', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(`${seeded}reviews/${structuredReviewId}/solution`)
+    await expect(page.locator('h1')).toBeVisible()
+    await expect(page.locator('.part').first()).toBeVisible()
+
+    const cards = await page.locator('.part').evaluateAll(elements =>
+      elements.map((element) => {
+        const box = element.getBoundingClientRect()
+        const marks = element.querySelector('.part-marks')?.getBoundingClientRect() ?? null
+        const title = element.querySelector('.part-title')!.getBoundingClientRect()
+        return {
+          top: Math.round(box.top),
+          height: Math.round(box.height),
+          beside: marks == null ? null : title.left >= marks.right,
+          /* The title's first line sits against the marks rather than below them. */
+          level: marks == null ? null : title.top < marks.bottom,
+        }
+      }),
+    )
+
+    expect(cards.length, 'the example describes the change in several parts')
+      .toBeGreaterThan(3)
+    expect(
+      cards.filter(card => card.beside !== null).length,
+      'some of them fix a numbered problem',
+    ).toBeGreaterThan(0)
+
+    for (const [at, card] of cards.entries()) {
+      if (card.beside === null) continue
+      expect(card.beside, `part ${at + 1}'s title is beside its marks`).toBe(true)
+      expect(card.level, `part ${at + 1}'s title is not under its marks`).toBe(true)
+    }
+
+    /* Grouped by the row they are drawn on; a row of cards is one height. */
+    const rows = new Map<number, number[]>()
+    for (const card of cards) {
+      rows.set(card.top, [...(rows.get(card.top) ?? []), card.height])
+    }
+    expect([...rows.values()].some(row => row.length > 1), 'the grid draws a row of cards')
+      .toBe(true)
+    for (const [top, heights] of rows) {
+      expect(new Set(heights).size, `the cards on the row at ${top}px are one height`).toBe(1)
+    }
+  })
+
+  /**
    * **Nothing scrolls sideways**, at the width of a laptop and at the width of a phone.
    *
    * The first acceptance criterion, and the one a board cannot be checked against: a board
