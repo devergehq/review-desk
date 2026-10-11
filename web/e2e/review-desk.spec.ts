@@ -857,10 +857,23 @@ test.describe('the three step pages of one review', () => {
       'the note is longer than the two lines drawn, so the clamp is doing something',
     ).toBeGreaterThan(clamped.height + 1)
 
-    /* The duration keeps its own line under the clamped note. */
+    /*
+     * **The duration keeps its own line under the clamped note**, whole and not clipped.
+     * The seeded record writes each step's state once through the command line, so it has a
+     * finish and no start and the figure reads "time not recorded" — which is DEV-890's own
+     * answer for that and is exactly as long as a figure would be. What is asserted is that
+     * the line is there, is not empty, and is drawn below the note rather than inside it.
+     */
     const took = step.locator('.took')
     await expect(took).toBeVisible()
-    await expect(took).toHaveText(/\d+ (sec|min|hr|day)/)
+    await expect(took).not.toHaveText('')
+    const stacked = await step.evaluate((element) => {
+      const note = element.querySelector('.outcome')!.getBoundingClientRect()
+      const figure = element.querySelector('.took')!.getBoundingClientRect()
+      return { below: figure.top >= note.bottom - 1, height: Math.round(figure.height) }
+    })
+    expect(stacked.below, 'the figure is under the note, not inside it').toBe(true)
+    expect(stacked.height, 'the figure has a line of its own').toBeGreaterThan(0)
 
     /* Opened by keyboard, which is the acceptance criterion's own word. */
     const control = step.getByRole('button', { name: /Read the rest/ })
@@ -871,7 +884,16 @@ test.describe('the three step pages of one review', () => {
     const opened = await note.evaluate(element => element.getBoundingClientRect().height)
     expect(opened, 'the whole note is drawn once it is opened').toBeGreaterThan(clamped.height)
     await expect(note).toContainText('the options pass was asked for anything at all')
+    /* And the figure is still there, still on its own line, under a note four times taller. */
     await expect(took).toBeVisible()
+    expect(
+      await step.evaluate((element) => {
+        const note = element.querySelector('.outcome')!.getBoundingClientRect()
+        const figure = element.querySelector('.took')!.getBoundingClientRect()
+        return figure.top >= note.bottom - 1 && figure.height > 0
+      }),
+      'the figure survives the note being opened',
+    ).toBe(true)
   })
 
   /**

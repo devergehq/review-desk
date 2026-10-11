@@ -111,6 +111,15 @@ test.describe('a seeded database', () => {
  * private repository, and nothing from them is committed to this repository — which is why
  * the example was invented at the same lengths in the first place.
  */
+/**
+ * A fold in the page's own body, which is to say not the step trail's.
+ *
+ * DEV-892 gave a long step note a control that opens it, and the trail is above everything
+ * — so "the first closed fold on the page" became the trail's. These pictures are of the
+ * pages, and the trail has one of its own.
+ */
+const BODY_FOLD = 'button[aria-expanded="false"]:not(.rest)'
+
 test.describe('the three step pages', () => {
   test('Understand, Alternatives and Solution', async ({ page }) => {
     const steps = ['understand', 'alternatives', 'solution'] as const
@@ -122,8 +131,12 @@ test.describe('the three step pages', () => {
        * One fold open on each, because a fold is half of what these pages are for —
        * Patrick wants to "go down the rabbit holes when I need to", and a picture of three
        * pages with everything closed shows only the half that is always visible.
+       *
+       * **Not the trail's**, which since DEV-892 is the first fold on the page in document
+       * order. It has a picture of its own below; what these three are about is the fold in
+       * the page's own body.
        */
-      await page.locator('button[aria-expanded="false"]').first().click()
+      await page.locator(BODY_FOLD).first().click()
       await shot(page, `dev-885-${at + 1}-${step}`)
     }
 
@@ -137,7 +150,7 @@ test.describe('the three step pages', () => {
     for (const [at, step] of steps.entries()) {
       await page.goto(`${seeded}reviews/${structuredReviewId}/${step}`)
       await expect(page.locator('h1')).toBeVisible()
-      await page.locator('button[aria-expanded="false"]').first().click()
+      await page.locator(BODY_FOLD).first().click()
       await shot(page, `dev-885-${at + 1}-${step}-390`)
     }
     await page.setViewportSize({ width: 1440, height: 900 })
@@ -150,6 +163,40 @@ test.describe('the three step pages', () => {
     await page.goto(`${seeded}reviews/${reviewId}/understand`)
     await expect(page.getByText('Written before the structured brief.')).toBeVisible()
     await shot(page, 'dev-885-4-understand-old-brief')
+  })
+})
+
+/*
+ * **What DEV-892 fixed, where the fix is the picture.**
+ *
+ * Three of the seven defects are things a reader sees and a test can only approximate: a
+ * step note clamped to two lines with its control under it, a matrix headed by numbers and
+ * two-word labels instead of by sentences, and a grid of part cards whose heads all read
+ * the same way and whose rows line up. The retaken `dev-885` pictures above show all three
+ * in place; these two show what opens.
+ */
+test.describe('what DEV-892 fixed', () => {
+  test('a step note opened, and every number said in full', async ({ page }) => {
+    await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
+    await expect(page.locator('h1')).toBeVisible()
+
+    /*
+     * Step 2's note is 45 words on the seeded record. Closed it is two lines of the step it
+     * belongs to; opened it is all of it, in place, with the step's duration still on its
+     * own line underneath.
+     */
+    await page.locator('.steps li').nth(1).getByRole('button', { name: /Read the rest/ })
+      .click()
+    await shot(page, 'dev-892-1-step-note-open')
+
+    await page.goto(`${seeded}reviews/${structuredReviewId}/alternatives`)
+    await expect(page.locator('h1')).toBeVisible()
+    /*
+     * The matrix headed by its labels, with the fold under it open: three numbers, their
+     * labels and the sentences that used to be the headings.
+     */
+    await page.locator('details.numbers summary').click()
+    await shot(page, 'dev-892-2-numbers-in-full')
   })
 })
 

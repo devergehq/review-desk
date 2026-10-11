@@ -53,6 +53,30 @@ then Playwright at `{width: 1440, height: 1000}`, `deviceScaleFactor: 2`, `fullP
 `/reviews/16?sample`. For the "before", `app/components/MermaidFigure.vue` at its state
 before this pull request and nothing else changed.
 
+## DEV-892 — six defects a real review showed, and a seventh
+
+| File | What it is |
+| -- | -- |
+| `dev-892-1-step-note-open.png` | The Understand page with step 2's note opened. Closed it is two lines of the step it belongs to — look at the trail in any of the three pictures above — and opened it is all 45 words, in place, with the step's duration still on its own line underneath. The control is under the step, outside the link, because the step's face is a link on five of the seven. |
+| `dev-892-2-numbers-in-full.png` | The Alternatives matrix headed by its labels — "1 · the shared slot", not a sentence wrapped ten lines deep — with the fold under it open: every number, its label and the line that used to be the heading. |
+
+**The retaken `dev-885` pictures above carry the rest of it.** The matrix headings and the
+part cards are what those three are pictures of, and a defect in how a page reads is fixed
+in the picture of the page rather than in a picture of its own. What changed in them:
+
+- The trail on all three clamps step 2's note to two lines and offers "Read the rest". The
+  seeded record carries a 45-word note on that step for exactly this reason — see
+  `example-fixtures.spec.ts`, which asserts the length so the next rewrite of the example
+  cannot quietly take the evidence away.
+- The Alternatives matrix is headed by numbers and two- or three-word labels, at both
+  widths: the phone picture shows the same heading above each verdict, where the sentence
+  used to be.
+- The Solution part cards have one head apiece — marks, then title, never title under
+  marks — and a row of them is one height, with the figures, the tally and the control
+  level across it.
+- The Understand page's foot has no word count over its fold, and "Already decided" is a
+  line, its sources, and a control for the rest.
+
 ## DEV-890 — how long each step took
 
 | File | What it is |
