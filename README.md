@@ -240,8 +240,11 @@ them and a trail that disagreed with the record would be worse than one that lag
 Confirming a brief finishes layer 2; writing a brief that needs no confirmation finishes it
 too, carrying the reason. Approving a draft finishes layer 6, and sending one back puts it
 back to `running` with the developer's note. Marking a draft posted leaves layer 7
-`pending` — posting makes a harvest possible, it is not the harvest. A session writes
-everything else.
+`pending` — posting makes a harvest possible, it is not the harvest.
+
+**Layer 7 is then the harvest's**, which is [below](#what-a-harvest-leaves-on-step-7): a
+harvest records what it read there, and until DEV-933 nothing did, so a posted review said
+it was waiting for a harvest however many had run. A session writes everything else.
 
 `finding add` adds one finding and prints its sequence number within the review — the id
 a person quotes. `lens`, `severity` and `claim` are required; the disposition defaults to
@@ -668,6 +671,39 @@ harvests of one reply may not.
 A missing `gh` and a logged-out `gh` are both exit 2, with a message and a `code` saying
 which it was — they are Review Desk unable to run, not a request refused.
 
+### What a harvest leaves on step 7
+
+**A harvest records what it found on step 7 of the review's trail.** Only `draft posted`
+wrote that step until DEV-933, and it writes `pending` with "posted, waiting for the
+harvest" — so a review read back every quarter of an hour went on saying it was waiting.
+
+| What the record holds after a harvest | Step 7 |
+| -- | -- |
+| The pull request is open and nothing has come back | `running`, "nothing back yet" |
+| The pull request is open and something has | `running`, the strongest fact as the detail |
+| The pull request merged or closed | `done`, prefixed `merged, ` or `closed, ` |
+
+The counts go beside it as the step's facts — `Replies`, `Threads resolved`,
+`Code changed since`, and `Pull request` once it has settled — with a count of nothing left
+out rather than written as a nought. The detail keeps to four words and the facts to five,
+as every other step does.
+
+Three things are worth saying about it:
+
+* **The counts are read from the record, not from what the run just wrote.** Running a
+  harvest twice records nothing twice, so a step built from the run's own writes would say
+  "2 replies" once and "nothing back yet" for ever after. Read from the record, the step
+  agrees with the outcomes the review page lists beside it.
+* **A second harvest that found nothing new moves only the time it read.** The state has
+  not changed, so nothing is appended to the layer's own record — which is what keeps one
+  pass one pass rather than ninety-six of no length a day.
+* **A review nothing has posted has no step 7 to move.** A sweep covers every review whose
+  pull request is open, including one whose draft is still being written; `running` on that
+  would put two steps of the trail in progress at once.
+
+The time it read is the layer row's `updated_at`, not a date written into a fact: every
+other time this record holds is an instant the screen words.
+
 
 ## Sign-off
 
@@ -694,7 +730,10 @@ agent or the harvester signed something off.
 **A sign-off writes its layer row in the same transaction.** Confirming finishes layer 2,
 approving finishes layer 6, sending back puts layer 6 in progress carrying the note, and
 marking a draft posted leaves layer 7 `pending` — waiting for a harvest nobody has run —
-rather than claiming the outcomes have been read back from GitHub. Two writes that can
+rather than claiming the outcomes have been read back from GitHub. **A harvest that has
+already read the review keeps layer 7**: reporting the same GitHub review twice is a
+supported call, and layer 7 is the one layer whose true state can be past what posting
+writes. Two writes that can
 disagree are two writes that eventually will, and that is not hypothetical: DEV-862 shipped
 a screen reading "2 Understand · waiting on you" under a brief the developer had just
 confirmed.
