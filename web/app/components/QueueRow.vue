@@ -191,12 +191,17 @@ withDefaults(
  * not on `.row` so that it runs under the links as well; before DEV-936 there was nothing
  * beside the row for it to stop short of.
  *
- * **`queue-line` rather than `line`**, which is what it was called for one commit.
- * `ReasonPrompt` and `SignOffCard` both have a `.line` of their own, and scoped CSS does
- * not care — but the tests that measure this wrapper are not scoped: one passes `.line` to
- * a page-wide overflow check and another maps every `.line` on the page to its `.row`. The
- * first queue row to share a screen with one of those components would have had the
- * overflow assertion silently measuring something else.
+ * **`queue-line` rather than `line`**, which is what it was called for one commit — and the
+ * reason generalises past this component: **a class name shared between components is a
+ * silent measurement bug the moment a test selects it unscoped.** Scoped CSS makes sharing
+ * a name safe for *styling*, which is what makes the trap easy to walk into; a test has no
+ * scope. `ReasonPrompt` and `SignOffCard` each have a `.line`, and so does every line of a
+ * code hunk — while the two tests that measure this wrapper hand `.line` to a page-wide
+ * overflow check and map every `.line` on the page to its `.row`. So the first queue row to
+ * share a screen with a code hunk would have had the overflow assertion measuring code
+ * lines, and **passing**, which is the whole danger. Nothing else here catches that: not
+ * the type checker, not the linter, not the end-to-end suite, because the suite would have
+ * been green about the wrong element.
  *
  * **`flex-start`, not `center`.** The row's cells and the links both carry the same 12 or
  * 16 pixels of padding so that the two columns begin at the same height; centred, a short
