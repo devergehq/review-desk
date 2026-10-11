@@ -167,27 +167,28 @@ test.describe('the three step pages', () => {
 })
 
 /*
- * **What DEV-892 fixed, where the fix is the picture.**
+ * **What the last two rounds fixed, where the fix is the picture.**
  *
- * Three of the seven defects are things a reader sees and a test can only approximate: a
- * step note clamped to two lines with its control under it, a matrix headed by numbers and
- * two-word labels instead of by sentences, and a grid of part cards whose heads all read
- * the same way and whose rows line up. The retaken `dev-885` pictures above show all three
- * in place; these two show what opens.
+ * Some of these defects are things a reader sees and a test can only approximate: a step's
+ * one line with its facts on a card over the page, a matrix headed by numbers and two-word
+ * labels instead of by sentences, and a grid of part cards whose heads all read the same way
+ * and whose rows line up. The retaken `dev-885` pictures above show them in place; these
+ * show what opens.
  */
-test.describe('what DEV-892 fixed', () => {
-  test('a step note opened, and every number said in full', async ({ page }) => {
+test.describe('what DEV-892 and DEV-917 fixed', () => {
+  test('a step’s card opened, and every number said in full', async ({ page }) => {
     await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
     await expect(page.locator('h1')).toBeVisible()
 
     /*
-     * Step 2's note is 45 words on the seeded record. Closed it is two lines of the step it
-     * belongs to; opened it is all of it, in place, with the step's duration still on its
-     * own line underneath.
+     * Step 2's detail is 34 words on the seeded record, drawn on one ellipsised line.
+     * Pressing that line opens the card of facts over the page — which is the picture:
+     * nothing below it has moved, and the step's duration is on the card rather than on
+     * the trail.
      */
-    await page.locator('.steps li').nth(1).getByRole('button', { name: /Read the rest/ })
-      .click()
-    await shot(page, 'dev-892-1-step-note-open')
+    await page.locator('.steps li').nth(1).locator('.outcome').click()
+    await expect(page.locator('.floating')).toBeVisible()
+    await shot(page, 'dev-917-1-step-card-open')
 
     await page.goto(`${seeded}reviews/${structuredReviewId}/alternatives`)
     await expect(page.locator('h1')).toBeVisible()

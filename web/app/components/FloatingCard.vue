@@ -182,4 +182,30 @@ onBeforeUnmount(() => {
 .floating--right {
   right: 0;
 }
+
+/*
+ * **Below 680px the card sits over its own anchor, and the arithmetic is why.**
+ *
+ * The trail is two columns under 860px, so a step in the right-hand column starts at about
+ * half the page. A 330px card hanging left from there needs half the viewport plus 330 —
+ * which is more than the viewport itself at anything under about 660px, and a page 529px
+ * wide inside a 390px screen is the horizontal scroll this whole change is against. Hanging
+ * it the other way is worse: the card would run off the left edge instead, where nothing
+ * can scroll to reach it.
+ *
+ * So at that width it takes the anchor's own width. It is narrower than the board draws it
+ * — the board was drawn at 1440 — and a narrow card that is wholly on screen beats a wide
+ * one that is half off it. Callers whose contents need it say so in their own stylesheet:
+ * the trail stacks each fact's label over its value here.
+ */
+@media (max-width: 680px) {
+  .floating,
+  .floating--left,
+  .floating--right {
+    left: 0;
+    right: auto;
+    width: 100%;
+    max-width: 100%;
+  }
+}
 </style>

@@ -564,6 +564,24 @@ a.face:hover .name {
 }
 
 /*
+ * **One column of facts where the card is as narrow as its step.** `FloatingCard` takes the
+ * anchor's width under 680px, because a 330px card hanging off the trail's right-hand
+ * column is wider than the page there; two columns of pairs inside 190px would be a label
+ * and a value both broken across three lines each.
+ */
+@media (max-width: 680px) {
+  .facts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0 0;
+  }
+
+  .fact-label {
+    margin-top: 6px;
+    font-size: 13px;
+  }
+}
+
+/*
  * Seven columns at a phone's width is 55px a step, which fits no word. The two groups
  * stack, and each becomes two columns.
  */
