@@ -31,7 +31,7 @@ function example<T>(name: string): T {
   return JSON.parse(readFileSync(resolve(examples, name), 'utf8')) as T
 }
 
-/** The real-length review: #514, fourteen findings, six parts. */
+/** The real-length review: #514, fifteen findings, seven parts. */
 const REAL_LENGTH = 41
 
 describe('the invented example and the fixtures', () => {

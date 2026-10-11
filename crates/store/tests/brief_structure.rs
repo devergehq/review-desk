@@ -1520,7 +1520,7 @@ fn the_contracts_real_length_brief_is_at_real_length() {
         sources.len()
     );
 
-    assert_eq!(rows("parts").len(), 6, "six solution parts");
+    assert_eq!(rows("parts").len(), 7, "seven solution parts");
 
     // And one thing the issue did not ask for but the real review needed: a part claiming
     // a file the pull request never changed.
@@ -1530,6 +1530,55 @@ fn the_contracts_real_length_brief_is_at_real_length() {
         .filter(|file| file["in_diff"] == serde_json::json!(false))
         .count();
     assert!(outside >= 1, "at least one file outside the diff");
+
+    // The three shapes DEV-919's table has to draw, each of which is a *group* or a
+    // *branch* on the Solution page rather than a nicety — so an example missing one of
+    // them is an example the page can be built wrong against and still pass.
+    let parts = rows("parts");
+    let no_file_in_the_change = parts
+        .iter()
+        .filter(|part| {
+            let files = part["files"].as_array().expect("files");
+            !files.is_empty() && files.iter().all(|file| file["in_diff"] == serde_json::json!(false))
+        })
+        .count();
+    assert_eq!(
+        no_file_in_the_change, 1,
+        "a part none of whose files is in the change, which is its own group"
+    );
+
+    let fixes_nothing = parts
+        .iter()
+        .filter(|part| part["fixes"].as_array().expect("fixes").is_empty())
+        .count();
+    assert!(
+        fixes_nothing >= 1,
+        "a part that fixes no problem, which is the Supporting group"
+    );
+
+    let (written, unwritten): (Vec<_>, Vec<_>) = parts
+        .iter()
+        .partition(|part| part.get("one_line").is_some_and(|line| !line.is_null()));
+    assert!(
+        !written.is_empty() && !unwritten.is_empty(),
+        "a one line on some parts and not others: {} written, {} not",
+        written.len(),
+        unwritten.len()
+    );
+
+    // **Every summary is inside the writing rule's 30 words**, which is review-craft's
+    // `brief_lint.py` as of 11 October 2026. A part's summary is the one slot that rule
+    // reaches, because seven of them are read down one column at once. The over-long case
+    // the Solution page still has to survive -- a brief written before the cap -- is
+    // exercised in the page's own tests, not written into the example the linter checks.
+    for part in &parts {
+        let summary = part["summary"].as_str().expect("a summary");
+        let words = summary.split_whitespace().count();
+        assert!(
+            words <= 30,
+            "a part's summary is at most 30 words, not {words}: {summary}"
+        );
+    }
 }
 
 /// The real-length example is a brief the store can hold, not only one the schema allows.
@@ -1613,7 +1662,7 @@ fn the_contracts_real_length_brief_can_be_written_and_read_back() {
     assert_eq!(stored.flow_before.len(), 5);
     assert_eq!(stored.flow_after.len(), 6);
     assert_eq!(stored.options.len(), 8);
-    assert_eq!(stored.parts.len(), 6);
+    assert_eq!(stored.parts.len(), 7);
     assert_eq!(
         stored
             .options

@@ -403,6 +403,7 @@
     {
       "title": "The export context",
       "summary": "Replaces the request-scoped slot. Constructed by whatever starts an export.",
+      "one_line": "Every export is handed the tenant it is for, by whatever starts it.",
       "fixes": [
         1
       ],
@@ -432,6 +433,7 @@
     {
       "title": "The scheduled export's own entry point",
       "summary": "The schedule builds a context and hands it to the worker.",
+      "one_line": "The schedule builds the context and hands it to the worker.",
       "fixes": [
         1,
         2
@@ -468,6 +470,7 @@
     {
       "title": "Allowed columns on the report definition",
       "summary": "A new column says which fields each report may export.",
+      "one_line": null,
       "fixes": [
         2
       ],
@@ -509,6 +512,7 @@
     {
       "title": "One filter chain for both paths",
       "summary": "Row filter, column policy, redaction and the audit entry, in one place.",
+      "one_line": "Row filter, column policy, redaction and the audit entry, in one order.",
       "fixes": [
         3
       ],
@@ -544,6 +548,7 @@
     {
       "title": "The web path, with the branch taken out",
       "summary": "Mostly deletions. The builder stops asking where it is running.",
+      "one_line": null,
       "fixes": [
         2
       ],
@@ -585,6 +590,7 @@
     {
       "title": "Tests and generated types",
       "summary": "Three feature tests rewritten for the new entry point, and two generated files.",
+      "one_line": null,
       "fixes": [],
       "files": [
         {
@@ -620,6 +626,22 @@
       ],
       "lines_added": 350,
       "lines_removed": 154
+    },
+    {
+      "title": "The long-running queue it relies on",
+      "summary": "The pipeline holds a page of rows in memory while it redacts them. That is safe on this queue and not on the default one. Nothing here changed.",
+      "one_line": "Nothing here changed. The pipeline's memory assumption only holds on this queue.",
+      "fixes": [],
+      "files": [
+        {
+          "path": "config/queue.php",
+          "lines_added": 0,
+          "lines_removed": 0,
+          "in_diff": false
+        }
+      ],
+      "lines_added": 0,
+      "lines_removed": 0
     }
   ],
   "open_choices": [

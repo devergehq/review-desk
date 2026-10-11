@@ -27,13 +27,13 @@ import type { DraftDetail, ReviewDetail } from '../app/types/desk'
  * the honest division: this file checks that the rule is *stated*, the browser checks that
  * it *holds*.
  *
- * Review 41 is the invented example at real length — fourteen findings across all three
+ * Review 41 is the invented example at real length — fifteen findings across all three
  * lists, ten with code, one with none — and is the same document
  * `contract/examples/getReview.response.code-review.json` holds, which
  * `test/example-fixtures.spec.ts` keeps true.
  */
 
-/** #514, the real-length review: fourteen findings, six parts, a draft of blocks. */
+/** #514, the real-length review: fifteen findings, seven parts, a draft of blocks. */
 const REAL = 41
 /** #412, whose draft was written as one block of markdown rather than in parts. */
 const ONE_BLOCK = 17
@@ -135,7 +135,7 @@ describe('the code review page', () => {
 
   it('says how many were reproduced by running something', async () => {
     const page = await codeReview(REAL)
-    expect(page.text()).toContain('7 of 14 findings were reproduced by running something')
+    expect(page.text()).toContain('7 of 15 findings were reproduced by running something')
     expect(page.text()).toContain('The rest were read, not run.')
   })
 
@@ -253,7 +253,7 @@ describe('the code review page', () => {
 
   it('tallies the three lists at the foot, and leads on to the draft', async () => {
     const page = await codeReview(REAL)
-    expect(page.find('.tally').text()).toBe('12 to post, 1 for a ticket, 1 set aside')
+    expect(page.find('.tally').text()).toBe('12 to post, 1 for a ticket, 2 set aside')
     const on = page.findAll('a').find(one => one.text().includes('the draft'))!
     expect(on.attributes('href')).toBe(`/reviews/${REAL}/draft`)
   })

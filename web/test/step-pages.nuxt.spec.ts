@@ -20,7 +20,7 @@ import type { ReviewDetail } from '../app/types/desk'
  *
  * **Review 41 is the contract's invented example at real length**, the same brief
  * `contract/examples/confirmBrief.response.real-length.json` holds, carried into the
- * fixtures with thirteen findings on the file paths its parts name. It is the review the
+ * fixtures with fifteen findings on the file paths its parts name. It is the review the
  * screenshots are taken of, so a test here and a picture in the pull request are about the
  * same page.
  *
@@ -148,7 +148,7 @@ describe('the shell every step page sits in', () => {
     /* The store's own words, not a restatement of the state. */
     expect(trail).toContain('passes, 2 warnings')
     expect(trail).toContain('8 options, C built')
-    expect(trail).toContain('14 findings, 1 blocker')
+    expect(trail).toContain('15 findings, 1 blocker')
     expect(trail).toContain('waiting on you')
   })
 
@@ -1374,15 +1374,15 @@ describe('Solution', () => {
     const page = await solution(STRUCTURED)
     expect(page.find('h1').text()).toContain('C is the right shape.')
     /* And the size of the change, counted off the parts rather than asserted. */
-    expect(page.text()).toContain('26 files')
+    expect(page.text()).toContain('27 files')
     expect(page.text()).toContain('959 lines added and 423 removed')
-    expect(page.text()).toContain('in 6 parts')
+    expect(page.text()).toContain('in 7 parts')
   })
 
   it('draws a card per part, with its files and its lines', async () => {
     const page = await solution(STRUCTURED)
     const parts = page.findAll('.part')
-    expect(parts).toHaveLength(6)
+    expect(parts).toHaveLength(7)
     expect(parts[0]!.text()).toContain('The export context')
     expect(parts[0]!.text()).toContain('Replaces the request-scoped slot')
     expect(parts[0]!.text()).toContain('3 files')
@@ -1608,8 +1608,8 @@ describe('Solution', () => {
       ...detail.findings,
       {
         review_id: STRUCTURED,
-        seq: 15,
-        key: 'F15',
+        seq: 16,
+        key: 'F16',
         lens: 'boundary',
         severity: 'nit',
         file: 'app/Reporting/Formatters/CsvWriter.php',
@@ -1622,8 +1622,8 @@ describe('Solution', () => {
     await withReview(detail)
 
     const page = await solution(STRUCTURED)
-    expect(page.text()).toContain('2 findings in no part of this description')
-    expect(page.text()).toContain('F15')
+    expect(page.text()).toContain('3 findings in no part of this description')
+    expect(page.text()).toContain('F16')
 
     /*
      * And with the whole set accounted for, the section is not there at all.
@@ -1634,7 +1634,12 @@ describe('Solution', () => {
      * what it means to.
      */
     const accounted = fixture(STRUCTURED)
-    accounted.findings = accounted.findings.filter(finding => finding.file != null)
+    const claimed = new Set(
+      accounted.brief!.parts.flatMap(part => part.files.map(file => file.path)),
+    )
+    accounted.findings = accounted.findings.filter(
+      finding => finding.file != null && claimed.has(finding.file),
+    )
     await withReview(accounted)
     const whole = await solution(STRUCTURED)
     expect(whole.text()).not.toContain('in no part of this description')
