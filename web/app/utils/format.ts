@@ -192,39 +192,16 @@ export function activityLabel(
   return `Last activity ${sinceLabel(lastActivityAt, now)}`
 }
 
-/**
- * The longest note that is certain to fit two lines of a step on the trail.
+/*
+ * **There is no `stepNoteRunsLong` here any more, and no character threshold behind it.**
  *
- * **The trail draws a step in about 84px of text at its narrowest.** The shell is 1240px
- * wide with 40px of padding each side; the two groups split 1136px four parts to three, so
- * the first group's four columns are about 153px each with 12px gaps, less 8px of face
- * padding on each side. That is the figure at 1240px — but the trail stays two groups side
- * by side down to 860px, and just above that breakpoint the same arithmetic gives about
- * 84px, which at 13px is roughly thirteen characters a line.
- *
- * So two lines is about twenty-six characters, and this is where the measurement stops
- * being exact: nothing here knows the width it is being drawn at, and a note is not a
- * monospace string. **The threshold errs low on purpose.** A control that opens a note
- * already fully visible does nothing a reader will mind; a note clipped at two lines with
- * no control is DEV-892's defect 1, which is what this exists to prevent.
- *
- * 28 rather than 26, which is the slack and the whole of it. Every outcome the store writes
- * short — "passes, 2 warnings", "14 findings, 1 blocker", "waiting on you", "signed off by
- * the developer" — is under it, and the invented example's 45-word note is 251 characters,
- * nine times over.
+ * It answered one question — is this note too long for the two lines the trail clamped it
+ * to — and the trail does not clamp anything now. DEV-917 draws a step's `detail` on one
+ * line, ellipsised by the browser, and puts what the note was trying to say on a card of
+ * facts: so the length that mattered is the column's, the browser is the only thing that
+ * knows it, and a constant here guessing at it from the shell's width was always an
+ * estimate of a measurement somebody else was making.
  */
-const FITS_TWO_TRAIL_LINES = 28
-
-/**
- * Whether a step's note is long enough to need opening.
- *
- * The trail clamps every note to two lines, which is defect 1's fix and is also what makes
- * a long one unreadable unless something opens it. This is what decides whether that
- * something is drawn.
- */
-export function stepNoteRunsLong(outcome: string): boolean {
-  return outcome.trim().length > FITS_TWO_TRAIL_LINES
-}
 
 /** A step's outcome on the trail: what the store recorded, else its state. */
 export function layerOutcome(layer: {

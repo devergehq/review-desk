@@ -108,6 +108,8 @@ export type DispositionCounts = Schema['DispositionCounts']
 export type Review = Schema['Review']
 export type ReviewLayer = Schema['ReviewLayer']
 export type ReviewLayerRun = Schema['ReviewLayerRun']
+/** One fact a step recorded: what the card beside it draws, a label and a value. */
+export type LayerFact = Schema['LayerFact']
 export type ReviewTimings = Schema['ReviewTimings']
 export type BriefOption = Schema['BriefOption']
 export type Brief = Schema['Brief']

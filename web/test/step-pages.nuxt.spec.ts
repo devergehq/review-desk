@@ -61,7 +61,12 @@ async function shown(
   component: Parameters<typeof mountSuspended>[0],
   route: string,
 ) {
-  const page = await mountSuspended(component, { route })
+  /*
+   * **Attached to the document, which the focus assertions need.** `element.focus()` on a
+   * detached tree does nothing and leaves `document.activeElement` at the body, so a test
+   * of "Escape returns the focus" would fail against a component that does it correctly.
+   */
+  const page = await mountSuspended(component, { route, attachTo: document.body })
   await settle(page)
   return page
 }
@@ -77,6 +82,23 @@ async function open(page: VueWrapper, within: string) {
   await found.trigger('click')
   await settle(page)
   return found
+}
+
+/**
+ * Open the card on one step of the trail, and hand back the control that opened it.
+ *
+ * By number, because that is how the trail is read: "step 2" is the thing on screen.
+ */
+async function openCard(page: VueWrapper, number: number) {
+  const step = page.findAll('.steps li')[number - 1]
+  if (!step) throw new Error(`the trail has no step ${number}`)
+  const control = step.find('.outcome')
+  if (control.element.tagName !== 'BUTTON') {
+    throw new Error(`step ${number} recorded no facts, so it has no card`)
+  }
+  await control.trigger('click')
+  await settle(page)
+  return control
 }
 
 /** The review the fixtures hold, as an object a test can change one field of. */
@@ -141,16 +163,21 @@ describe('the shell every step page sits in', () => {
     expect(page.find('.trail').text()).toContain('not yet')
   })
 
-  it('shows how long each finished step took, beside its outcome', async () => {
+  it('shows how long a finished step took, on the step’s own card', async () => {
     const page = await understand(STRUCTURED)
-    const took = page.findAll('.trail .took').map(one => one.text())
+
     /*
-     * One figure per step that has finished, and none for a step still going: a duration
-     * that grew while you read it would not be an answer to how long the step took.
+     * **The figure moved off the trail in DEV-917.** It was a third line under the name,
+     * and a third line is what the one-line rule is against: the trail is a map now, and
+     * how long a step took is one of the facts behind it.
      */
-    expect(took.length).toBeGreaterThan(0)
-    expect(took.every(label => /\d/.test(label) || label === 'time not recorded')).toBe(true)
-    expect(page.find('.trail').text()).toMatch(/\d+ (sec|min|hr|day)/)
+    expect(page.find('.trail').text()).not.toMatch(/\d+ (sec|min|hr) (?!ago)/)
+
+    await openCard(page, 2)
+    const card = page.find('.floating')
+    expect(card.exists(), 'the card opened').toBe(true)
+    expect(card.text()).toContain('Understand')
+    expect(card.text(), 'and says how long the step took').toMatch(/\d+ (sec|min|hr|day)/)
   })
 
   it('says a finished step’s duration is not recorded rather than drawing a nought', async () => {
@@ -177,75 +204,125 @@ describe('the shell every step page sits in', () => {
     await withReview(detail)
 
     const page = await understand(STRUCTURED)
-    const trail = page.find('.trail').text()
-    expect(trail).toContain('time not recorded')
-    expect(trail).not.toMatch(/\b0 sec\b/)
+    await openCard(page, 2)
+    const card = page.find('.floating').text()
+    expect(card).toContain('time not recorded')
+    expect(card).not.toMatch(/\b0 sec\b/)
   })
 
   /**
-   * **A step's note is two lines at most, and the rest opens in place.** DEV-892's defect
-   * 1: on the review this was measured against a session wrote 27 words under Understand
-   * when the step had finished and 52 while the brief was half written, and the trail
-   * printed each whole in a column about 150px wide — which pushed the page's headline
-   * half a screen down.
+   * **A step draws one line and the rest floats.** DEV-917: a session wrote 34 words into a
+   * step's `detail` on the review this was read against, and the column is about 150px
+   * wide. DEV-892 clamped that to two lines and offered "Read the rest", which opened it in
+   * place and moved everything below it; this draws one ellipsised line and opens the facts
+   * on a card that overlays the page.
    *
-   * The clamp is CSS and jsdom computes no layout, so what is asserted here is everything
-   * either side of it: the class that carries the clamp, the control that opens the note,
-   * the note still being whole in the document when it is opened, and the duration keeping
-   * its own line underneath. The clamp itself is measured in a real browser, in
+   * The ellipsis and the overlaying are CSS and jsdom computes no layout, so what is
+   * asserted here is everything either side of them: that the whole string is still in the
+   * document, that the line is the control, that the card carries the facts, and that the
+   * keyboard can open and close it. The two measurements — one line at both widths, and
+   * nothing moving when the card opens — are made in a real browser, in
    * `e2e/review-desk.spec.ts`.
    */
-  it('clamps a long step note and opens the rest in place', async () => {
+  it('draws a long step detail on one line and opens its facts on a card', async () => {
     const page = await understand(STRUCTURED)
 
-    /* Step 2's note is the 45-word one the example carries. */
-    const steps = page.findAll('.steps li')
-    const understandStep = steps[1]!
+    const understandStep = page.findAll('.steps li')[1]!
     expect(understandStep.text()).toContain('2 Understand')
 
-    const note = understandStep.find('.outcome')
-    expect(note.exists()).toBe(true)
-    expect(note.text()).toContain('the options pass was asked for anything at all')
-    /* Clamped: the class the two-line rule hangs off is the one that is absent when open. */
-    expect(note.classes()).not.toContain('outcome--whole')
+    const line = understandStep.find('.outcome')
+    expect(line.exists()).toBe(true)
+    expect(
+      line.text(),
+      'the whole string is in the document; only the drawing is cut',
+    ).toContain('the options pass was asked for anything at all')
+    expect(line.element.tagName, 'the line is the control').toBe('BUTTON')
+    expect(line.attributes('aria-expanded')).toBe('false')
+    expect(page.find('.floating').exists()).toBe(false)
 
-    const control = understandStep.find('button')
-    expect(control.exists(), 'a long note has a control that opens it').toBe(true)
-    expect(control.text()).toContain('Read the rest')
-    expect(control.attributes('aria-expanded')).toBe('false')
-    /* It names what it opens, so the note is reachable by keyboard and nothing else. */
-    expect(control.attributes('aria-controls')).toBe(note.attributes('id'))
+    await line.trigger('click')
+    await settle(page)
+
+    const card = page.find('.floating')
+    expect(card.exists()).toBe(true)
+    expect(card.attributes('role')).toBe('group')
+    expect(card.attributes('aria-label')).toContain('step 2 Understand')
+    /* The facts the example's step 2 recorded, as label and value. */
+    expect(card.text()).toContain('Problems')
+    expect(card.text()).toContain('486 lines, 12 files')
+    expect(
+      page.findAll('.steps li')[1]!.find('.outcome').attributes('aria-expanded'),
+    ).toBe('true')
+  })
+
+  it('opens one card at a time', async () => {
+    const page = await understand(STRUCTURED)
+
+    await openCard(page, 2)
+    expect(page.findAll('.floating')).toHaveLength(1)
+    await openCard(page, 3)
+    const cards = page.findAll('.floating')
+    expect(cards).toHaveLength(1)
+    expect(cards[0]!.text()).toContain('Alternatives')
+  })
+
+  it('closes the card on a second press, and on Escape', async () => {
+    const page = await understand(STRUCTURED)
+
+    const control = await openCard(page, 2)
+    expect(page.find('.floating').exists()).toBe(true)
 
     await control.trigger('click')
     await settle(page)
-
-    const opened = page.findAll('.steps li')[1]!
-    expect(opened.find('.outcome').classes()).toContain('outcome--whole')
-    expect(opened.find('button').attributes('aria-expanded')).toBe('true')
-    expect(opened.find('button').text()).toContain('Fold')
+    expect(page.find('.floating').exists(), 'a second press closes it').toBe(false)
 
     /*
-     * **And the duration is still its own line.** The clamp is on the note alone; a rule
-     * that hid or ate the figure under it would break what DEV-890 put there.
+     * **By keyboard alone, and the focus comes back.** A reader who pressed Escape and
+     * found the focus at the top of the document would be the trail's whole length away
+     * from the step they were reading.
      */
-    expect(opened.find('.took').exists()).toBe(true)
-    expect(opened.find('.took').text()).toMatch(/\d+ (sec|min|hr|day)/)
+    const again = page.findAll('.steps li')[1]!.find('.outcome')
+    ;(again.element as HTMLButtonElement).focus()
+    await again.trigger('keydown', { key: 'Enter' })
+    await again.trigger('click')
+    await settle(page)
+    expect(page.find('.floating').exists()).toBe(true)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await settle(page)
+    expect(page.find('.floating').exists(), 'Escape closes it').toBe(false)
+    expect(
+      document.activeElement,
+      'and the focus is back on the step that opened it',
+    ).toBe(page.findAll('.steps li')[1]!.find('.outcome').element)
   })
 
-  it('draws no control on a step whose note fits two lines', async () => {
+  it('closes the card when something outside it is pressed', async () => {
+    const page = await understand(STRUCTURED)
+    await openCard(page, 2)
+    expect(page.find('.floating').exists()).toBe(true)
+
+    document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    await settle(page)
+    expect(page.find('.floating').exists()).toBe(false)
+  })
+
+  it('draws no card and no control on a step that recorded no facts', async () => {
     const page = await understand(STRUCTURED)
     const steps = page.findAll('.steps li')
 
-    /* Step 1's outcome is "passes, 2 warnings": nothing to open. */
-    expect(steps[0]!.text()).toContain('1 Lint')
-    expect(steps[0]!.find('button').exists()).toBe(false)
+    /* Step 4 recorded none, and step 7 has not run. */
+    for (const index of [3, 6]) {
+      const step = steps[index]!
+      expect(step.find('.outcome').element.tagName, step.text()).toBe('SPAN')
+      expect(step.find('button').exists()).toBe(false)
+    }
 
     /*
-     * Six of the seven, which is the measurement worth making: a control under every step
-     * would be a row of buttons that reveal nothing, and the clamp would be invisible.
+     * Five of the seven, which is the measurement worth making: a control under every step
+     * would be a row of buttons, two of which open nothing.
      */
-    const controls = page.findAll('.trail button')
-    expect(controls).toHaveLength(1)
+    expect(page.findAll('.trail button')).toHaveLength(5)
   })
 
   it('shows the total with the agent and the total waiting on the developer', async () => {
@@ -333,7 +410,12 @@ describe('the shell every step page sits in', () => {
     const waiting = page.findAll('.trail .face--current')
     expect(waiting).toHaveLength(1)
     expect(waiting[0]!.text()).toContain('6 Draft')
-    expect(waiting[0]!.text()).toContain('waiting on you')
+    /*
+     * What the step came to is the line under the face rather than inside it, because the
+     * face is a link and the line is the card's control.
+     */
+    const step = page.findAll('.steps li').find(one => one.text().includes('6 Draft'))!
+    expect(step.text()).toContain('waiting on you')
     expect(page.find('.trail .face--here').text()).toContain('2 Understand')
   })
 
@@ -552,8 +634,8 @@ describe('Understand', () => {
     const detail = page.find('#problem-1')
     expect(detail.exists()).toBe(true)
     expect(detail.text()).toContain('The request-scoped singleton')
-    expect(detail.text()).toContain('TenantContext::current() is written by the web')
-    expect(detail.text()).toContain('ExportContext is constructed by the schedule')
+    expect(detail.text()).toContain('is written by the web middleware on every request')
+    expect(detail.text()).toContain('is constructed by the schedule')
     /* Nothing on this page is a link to GitHub, let alone the only way to read this. */
     expect(page.findAll('a').map(one => one.attributes('href') ?? ''))
       .not.toContain('https://github.com')
