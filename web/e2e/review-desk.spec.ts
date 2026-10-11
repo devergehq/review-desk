@@ -130,11 +130,11 @@ test.describe('the whole path, on a seeded database', () => {
      */
     await expect(page.getByText('Retry failed webhook deliveries')).toHaveCount(1)
     /*
-     * **Three rows for two reviews that need you**, which is not a contradiction: the
-     * third is the posted review under "Waiting on the author", and nothing there is
+     * **Four rows for three reviews that need you**, which is not a contradiction: the
+     * fourth is the posted review under "Waiting on the author", and nothing there is
      * waiting on the developer. The headline counts what is.
      */
-    await expect(page.locator('.row')).toHaveCount(3)
+    await expect(page.locator('.row')).toHaveCount(4)
     await expect(page.getByText('Problem brief ready')).toBeVisible()
     await expect(page.getByText('nothing posts until you confirm')).toBeVisible()
     await expect(page.getByText('a draft is ready behind it')).toBeVisible()
@@ -268,12 +268,12 @@ test.describe('the whole path, on a seeded database', () => {
      */
     await page.goto(seeded)
     /*
-     * **Still three rows, and the same three.** What moved is this one's next action: from
+     * **Still four rows, and the same four.** What moved is this one's next action: from
      * the brief to the draft, because layer 2 is settled and layer 6 is not. That is what
      * "one row showing its next action" buys — a review waiting for two things does not
      * become two rows, and does not stop being a row when one of them is answered.
      */
-    await expect(page.locator('.row')).toHaveCount(3)
+    await expect(page.locator('.row')).toHaveCount(4)
     const webhooks = page.locator('.row').filter({ hasText: 'Retry failed webhook deliveries' })
     await expect(webhooks).toHaveCount(1)
     await expect(webhooks.getByText('Draft ready')).toBeVisible()
@@ -2091,6 +2091,7 @@ test.describe('a drawing opens larger', () => {
     expect(await page.evaluate(() => document.body.style.overflow)).not.toBe('hidden')
     await expect(page.locator('h1')).toBeVisible()
   })
+})
 
 /*
  * The Reviews list, and the two clicks DEV-930 asks for.
