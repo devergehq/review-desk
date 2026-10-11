@@ -909,7 +909,7 @@ fn moving_a_finding_out_of_the_draft_takes_its_row_and_its_thread_with_it() {
 }
 
 #[test]
-fn moving_a_finding_once_the_draft_is_signed_off_is_refused() {
+fn moving_a_posted_finding_once_the_draft_is_signed_off_is_refused() {
     let (_dir, store) = temp_store();
     let review = house_shape(&store);
     store
@@ -925,7 +925,7 @@ fn moving_a_finding_once_the_draft_is_signed_off_is_refused() {
         .expect_err("an approved draft does not move")
         .to_string();
     assert!(
-        message.contains("approved"),
+        message.contains("what the review posts"),
         "the refusal says why: {message}"
     );
 
@@ -935,4 +935,123 @@ fn moving_a_finding_once_the_draft_is_signed_off_is_refused() {
         .expect("draft")
         .body
         .contains("| 🔴 Blocker · F1 |"));
+}
+
+#[test]
+fn moving_a_finding_that_posts_nowhere_is_allowed_after_the_sign_off() {
+    let (_dir, store) = temp_store();
+    let review = house_shape(&store);
+
+    // A seventh finding the draft never raised: held back for the ticket, with no block.
+    store
+        .add_finding(
+            review,
+            NewFinding {
+                lens: "naming".to_string(),
+                severity: Severity::Nit,
+                claim: "the accessor repeats the type in its name".to_string(),
+                disposition: Disposition::HeldBack,
+                disposition_reason: Some("a nit; it goes in the ticket".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("a held-back nit");
+    store
+        .approve_draft(
+            review,
+            review_desk_store::ReviewEvent::RequestChanges,
+            Actor::Developer,
+        )
+        .expect("the developer signs off");
+
+    let before = store.get_draft(review).expect("draft").body;
+
+    // **Held back to suppressed changes no character of the body**, so it is not refused:
+    // the developer is entitled to tidy the list they are not posting, and what the refusal
+    // protects is the text the session is about to post.
+    store
+        .set_finding_disposition(
+            review,
+            7,
+            Disposition::Suppressed,
+            Some("the file is replaced next week".to_string()),
+        )
+        .expect("a move that changes nothing about the body");
+
+    assert_eq!(
+        store.get_draft(review).expect("draft").body,
+        before,
+        "and the approved body is untouched, down to the character"
+    );
+    assert_eq!(
+        store.get_finding(review, 7).expect("F7").disposition,
+        Disposition::Suppressed
+    );
+
+    // Back into the draft is the move that *would* change it, and that one is refused even
+    // though the finding is not in the body now.
+    let refused = store.set_finding_disposition(review, 7, Disposition::InDraft, None);
+    assert!(refused
+        .expect_err("raising a finding on an approved draft")
+        .to_string()
+        .contains("what the review posts"));
+}
+
+#[test]
+fn a_title_too_long_to_clamp_at_a_word_keeps_the_start_of_it() {
+    let (_dir, store) = temp_store();
+    let review = store
+        .create_review(new_review("acme/portal", 603, "0b1c2d3", 1))
+        .expect("review");
+
+    // One word of 180 characters: a finding nobody titled, whose claim is a pasted
+    // identifier. Clamping at a word boundary keeps nothing, and a row reading `…` says
+    // less about the finding than a sentence cut mid-word does.
+    let long = "a".repeat(180);
+    store
+        .add_finding(
+            review.id,
+            NewFinding {
+                lens: "naming".to_string(),
+                severity: Severity::Nit,
+                claim: long.clone(),
+                ..Default::default()
+            },
+        )
+        .expect("a finding nobody titled");
+    store
+        .put_draft(
+            review.id,
+            NewDraft {
+                body: String::new(),
+                status: DraftStatus::Ready,
+                lint: None,
+                sections: Some(vec![NewDraftSection {
+                    kind: review_desk_store::DraftSectionKind::Finding,
+                    finding_seq: Some(1),
+                    title: None,
+                    text: "`ReportBuilder.php:28` · `Open`\nIt is a long name.".to_string(),
+                }]),
+            },
+        )
+        .expect("the draft");
+
+    let body = store.get_draft(review.id).expect("draft").body;
+    let row = index_rows(&body)
+        .into_iter()
+        .next()
+        .expect("the one row")
+        .to_string();
+    let cell = row.split(" | ").nth(2).expect("the finding cell");
+
+    assert!(cell.ends_with(" …"), "clamped: {cell}");
+    assert!(
+        cell.chars().count() <= 140,
+        "{} characters",
+        cell.chars().count()
+    );
+    assert!(
+        cell.starts_with("aaaa"),
+        "and it is the start of the claim rather than nothing: {cell}"
+    );
 }

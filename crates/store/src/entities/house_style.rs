@@ -347,11 +347,16 @@ fn index(
         .filter_map(|block| {
             let seq = block.finding_seq?;
             let severity = block.severity?;
+            // **The title is asked for here as well**, because a row is a claim that the
+            // finding posts somewhere and a block with no title posts nowhere: `section`
+            // and `threads` both drop one. A row with an empty Finding cell would point at
+            // a section that is not in the body.
+            let title = block.title.as_deref()?;
             let posting = postings.get(&seq)?;
             Some((
                 severity.rank(),
                 seq,
-                row(place, severity, seq, block.title.as_deref(), posting),
+                row(place, severity, seq, title, posting),
             ))
         })
         .collect();
@@ -375,13 +380,7 @@ fn index(
 /// its "Casing and formatting" rule asks for: the word carries the severity and the glyph
 /// is beside it. The number is folded into the same cell rather than given a column of its
 /// own — a fifth column is the one that leaves the page.
-fn row(
-    place: &Place,
-    severity: Severity,
-    seq: i64,
-    title: Option<&str>,
-    posting: &Posting,
-) -> String {
+fn row(place: &Place, severity: Severity, seq: i64, title: &str, posting: &Posting) -> String {
     let severity_cell = format!("{} {} · F{seq}", severity.glyph(), severity.label());
     let where_cell = match &posting.anchor {
         Some(anchor) => code_link(place, &anchor.path, Some(anchor.line)),
@@ -395,7 +394,7 @@ fn row(
             ),
         },
     };
-    let finding_cell = cell(title.unwrap_or_default());
+    let finding_cell = cell(title);
     let status_cell = format!(
         "{} · {}",
         standing(posting.status),
@@ -492,6 +491,15 @@ fn cell(text: &str) -> String {
         == 1
     {
         kept.pop();
+    }
+
+    // **A clamp that kept nothing keeps the start of the text instead.** One word longer
+    // than the whole cell leaves the loop above with an empty list, and a row reading `…`
+    // says less about the finding than a sentence cut mid-word does. Cut on a character
+    // boundary, which is all there is to cut on.
+    if kept.is_empty() {
+        let start: String = flat.chars().take(CELL_PROSE - 2).collect();
+        return format!("{} …", start.trim_end());
     }
 
     format!("{} …", kept.join(" "))

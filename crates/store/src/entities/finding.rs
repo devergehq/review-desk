@@ -211,18 +211,23 @@ impl Store {
 
     /// Change a finding's disposition, with the reason it changed.
     ///
-    /// **The body is recomposed with it, and refused once the draft is signed off.** Moving
-    /// a finding between the draft, the held-back list and the suppressed one changes what
-    /// the review posts — the finding's block stops composing, and since DEV-929 its index
-    /// row and its thread go with it. Until then this wrote the column and left
-    /// `drafts.body` as it was, so the stored body raised a finding the record said was not
-    /// in the draft; the threads are composed from the record at read time, so the two
-    /// would now disagree with each other as well.
+    /// **The body is recomposed with it.** Moving a finding between the draft, the held-back
+    /// list and the suppressed one changes what the review posts — the finding's block stops
+    /// composing, and since DEV-929 its index row and its thread go with it. Until then this
+    /// wrote the column and left `drafts.body` as it was, so the stored body raised a finding
+    /// the record said was not in the draft; the threads are composed from the record at read
+    /// time, so the two would now disagree with each other as well.
     ///
-    /// The refusal is the same one a decision earns — `decision.rs` has the argument: an
-    /// approved draft is what the review session posts, and it does not move underneath it.
-    /// A review with no draft is the ordinary case of a session holding a finding back
-    /// before it has written one, and nothing is recomposed there.
+    /// **A move that changes what posts is refused once the draft is signed off, and a move
+    /// that cannot is not.** The refusal is the one a decision earns, and `decision.rs` has
+    /// the argument: an approved draft is what the review session posts, and it does not move
+    /// underneath it. But a held-back nit moved to suppressed after the sign-off changes
+    /// nothing about the body — neither disposition posts — and refusing it would stop the
+    /// developer tidying the list they are not posting. So what is checked is the *effect*:
+    /// the finding posts now, or it would after the move.
+    ///
+    /// A review with no draft is the ordinary case of a session holding a finding back before
+    /// it has written one, and nothing is recomposed there.
     pub fn set_finding_disposition(
         &self,
         review_id: i64,
@@ -233,17 +238,23 @@ impl Store {
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
 
         // Checked first, so an unknown finding is NotFound rather than a no-op update.
-        self.get_finding(review_id, seq)?;
+        let finding = self.get_finding(review_id, seq)?;
+
+        // What posts is the disposition **and** the round status, which is `is_posted`. The
+        // move changes the first of those, so the question is whether either side of it is a
+        // finding the body carries.
+        let changes_what_posts = finding.is_posted()
+            || (disposition == Disposition::InDraft && finding.round_status.is_open());
 
         let draft = self.find_draft(review_id)?;
         if let Some(draft) = &draft {
-            if !draft.status.is_writable() {
+            if changes_what_posts && !draft.status.is_writable() {
                 return Err(StoreError::DraftStatus {
                     review_id,
                     found: draft.status,
-                    wanted: "only a finding of a review whose draft is drafting, ready or \
-                             sent back can be moved; an approved draft is what the session \
-                             posts",
+                    wanted: "a draft that is drafting, ready or sent back. This move would \
+                             change what the review posts, and an approved draft is what the \
+                             session posts under the developer's name",
                 });
             }
         }
@@ -254,7 +265,10 @@ impl Store {
             params![review_id, seq, disposition, reason],
         )?;
 
-        if draft.is_some() {
+        // **Recomposed only while the draft can be written to.** The move that reaches here
+        // on an approved draft is one that changes nothing about the body, and recomposing
+        // would rewrite the characters the developer signed off for no reason at all.
+        if draft.is_some_and(|draft| draft.status.is_writable()) {
             composition::recompose(&tx, review_id, composition::Lint::Clear, self.now())?;
         }
 

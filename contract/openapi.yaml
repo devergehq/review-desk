@@ -301,6 +301,16 @@ paths:
       description: |
         A finding is never deleted. Holding it back or suppressing it records a reason,
         which is what lets a later rule proposal cite it.
+
+        **The draft is recomposed with it**, because what the review posts changes: the
+        finding's block stops composing, and its index row and its inline thread go with it.
+
+        **A move that changes what posts is refused once the draft is approved** — `409`,
+        as a decision is, because an approved draft is what the review session posts under
+        the developer's name and it does not move underneath them. A move that cannot change
+        it is not refused: a held-back finding moved to suppressed after the sign-off alters
+        no character of the body, and the developer is entitled to tidy the list they are
+        not posting.
       requestBody:
         required: true
         content:
@@ -316,6 +326,12 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            The move would change what the review posts and the draft is already approved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '500':
           $ref: '#/components/responses/StoreUnavailable'
 
@@ -2716,12 +2732,15 @@ components:
           type: string
           minLength: 1
           description: |
-            The comment as it will post. The block's text, carried through unaltered inside
-            the alert, under a title line composed from the record:
-            `**Blocker · F1** — <title> · `Open``. The `in diff` / `pre-existing` tag stays
-            where the session wrote it, on the block's first line, because it is prose no
-            part of this record carries. A session that signs its comments appends its own
-            `agent:` marker; Review Desk composes none.
+            The comment as it will post: the block's text, carried through unaltered inside
+            the alert, under a title line composed from the record. The title line is the
+            severity and the finding's number in bold, an em dash, the title, and where the
+            finding stands as a code span — `Open` or `Still open`.
+
+            The `in diff` / `pre-existing` tag stays where the session wrote it, on the
+            block's first line, because it is prose no part of this record carries. A session
+            that signs its comments appends its own `agent:` marker; Review Desk composes
+            none.
 
     DraftEdit:
       type: object

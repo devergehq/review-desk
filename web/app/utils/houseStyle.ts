@@ -153,6 +153,12 @@ function composeIndex(
     .flatMap((section) => {
       const finding = findings.find(one => one.seq === section.finding_seq)
       if (finding == null || section.severity == null || section.finding_seq == null) return []
+      /*
+       * **The title is asked for here as well**, because a row is a claim that the finding
+       * posts somewhere and a block with no title posts nowhere: the section and the thread
+       * both drop one.
+       */
+      if (section.title == null) return []
       return [{
         rank: SEVERITY_ORDER[section.severity],
         seq: section.finding_seq,
@@ -170,7 +176,7 @@ function composeRow(
   place: Place,
   severity: Severity,
   seq: number,
-  title: string | null | undefined,
+  title: string,
   finding: Finding,
 ): string {
   const anchor = anchorOf(finding)
@@ -185,7 +191,7 @@ function composeRow(
       : `[the pull request](https://github.com/${place.repo}/pull/${place.pr})`
 
   return `| ${SEVERITY_GLYPHS[severity]} ${SEVERITY_LABELS[severity]} · F${seq} `
-    + `| ${where} | ${cell(title ?? '')} `
+    + `| ${where} | ${cell(title)} `
     + `| ${standing(finding)} · ${anchor != null ? 'on the code' : 'in the body'} |`
 }
 
@@ -223,6 +229,13 @@ function cell(text: string): string {
     kept.push(word)
   }
   while (kept.join(' ').split('`').length % 2 === 0) kept.pop()
+
+  /*
+   * **A clamp that kept nothing keeps the start of the text instead.** One word longer than
+   * the whole cell leaves the loop above with an empty list, and a row reading `…` says less
+   * about the finding than a sentence cut mid-word does.
+   */
+  if (kept.length === 0) return `${[...flat].slice(0, CELL_PROSE - 2).join('').trimEnd()} …`
 
   return `${kept.join(' ')} …`
 }

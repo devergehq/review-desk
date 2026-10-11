@@ -216,6 +216,35 @@ describe('the composed body', () => {
     expect(withFence).toContain(fence)
   })
 
+  it('keeps the start of a title too long to clamp at a word', () => {
+    /*
+     * One word of 180 characters — a claim that is a pasted identifier. Clamping at a word
+     * boundary keeps nothing, and a row reading `…` says less than a sentence cut mid-word.
+     */
+    const long = 'a'.repeat(180)
+    const one = finding(1, 'nit', {})
+    const body = composeBody(PLACE, [block(1, 'nit', long, 'It is a long name.')], [one])
+    const cell = body.split('\n').find(line => line.startsWith('| ⚪'))!.split(' | ')[2]!
+
+    expect(cell.endsWith(' …')).toBe(true)
+    expect(cell.length).toBeLessThanOrEqual(140)
+    expect(cell.startsWith('aaaa')).toBe(true)
+  })
+
+  it('leaves a block with no title out of the index, as it leaves it out of the body', () => {
+    /*
+     * A row is a claim that the finding posts somewhere, and a block with no title posts
+     * nowhere — the section and the thread both drop one. A row with an empty Finding cell
+     * would point at a section that is not there.
+     */
+    const one = finding(1, 'should', {})
+    const untitled = { ...block(1, 'should', '', 'Something.'), title: null }
+    const body = composeBody(PLACE, [untitled], [one])
+
+    expect(body).not.toContain(INDEX_HEADING)
+    expect(body).toBe('')
+  })
+
   it('composes nothing new for a draft with no finding in it', () => {
     expect(composeBody(PLACE, [prose(1, 'One thing to say.')], findings))
       .toBe('One thing to say.\n')
