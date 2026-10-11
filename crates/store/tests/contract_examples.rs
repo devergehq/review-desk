@@ -587,16 +587,22 @@ fn seed(store: &Store) -> Seeded {
                     kind: SourceKind::Ticket,
                     label: "ABC-231 · Retry webhook deliveries for 24 hours".to_string(),
                     link: Some("https://linear.app/acme/issue/ABC-231".to_string()),
+                    status: None,
+                    note: None,
                 },
                 NewReviewSource {
                     kind: SourceKind::Description,
                     label: "The pull request description".to_string(),
                     link: None,
+                    status: None,
+                    note: None,
                 },
                 NewReviewSource {
                     kind: SourceKind::Comment,
                     label: "2 earlier comments on the pull request".to_string(),
                     link: Some("https://github.com/acme/portal/pull/412".to_string()),
+                    status: None,
+                    note: None,
                 },
             ],
         )

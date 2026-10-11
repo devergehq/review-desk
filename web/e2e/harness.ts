@@ -47,6 +47,24 @@ GET /login  (SHARED staff page)
     |
     FortifyServiceProvider reads url.intended`
 
+/*
+ * **Step 2's note is the long one, and deliberately.** It is the same note
+ * `getReview.response.code-review.json` carries — **invented, like everything else in
+ * this example**, and written to 45 words because that is the length DEV-892 measured a
+ * real one at: 27 words under Understand when the step had finished, 52 while the brief
+ * was half written. A trail drawn against seven short notes cannot show whether a long
+ * one is drawn on one line and ellipsised, so the one example these screenshots and the
+ * unit tests share carries one.
+ *
+ * Exported because `review-desk.spec.ts` rewrites this step with a short detail to measure
+ * what moves, and has to put it back exactly.
+ */
+export const STRUCTURED_LONG_NOTE
+  = 'The brief was rewritten twice: the first pass mixed how the system works today '
+    + 'into the problem, so the problem half could not be handed over, and the second '
+    + 'split them and numbered three problems before the options pass was asked for '
+    + 'anything at all.'
+
 /** The binary, as `cargo build` leaves it. */
 export const BINARY = resolve(
   process.env.REVIEW_DESK_BIN ?? '../target/debug/review-desk',
@@ -411,20 +429,32 @@ function seedStructured(directory: string, database: string): number {
   }))
   put(lint)
 
+  const longNote = STRUCTURED_LONG_NOTE
+
   /*
-   * **Step 2's note is the long one, and deliberately.** It is the same note
-   * `getReview.response.code-review.json` carries — **invented, like everything else in
-   * this example**, and written to 45 words because that is the length DEV-892 measured a
-   * real one at: 27 words under Understand when the step had finished, 52 while the brief
-   * was half written. A trail drawn against seven short notes cannot show whether a long
-   * one is clamped to two lines and openable, so the one example these screenshots and the
-   * unit tests share carries one.
+   * **The facts behind each step's one line**, which is what the card beside it draws.
+   * Invented, like everything else in this example. Steps 4 and 7 are given none on
+   * purpose: a step that recorded no facts draws no card and no control, and a seed where
+   * every step had one could not show that.
    */
-  const longNote
-    = 'The brief was rewritten twice: the first pass mixed how the system works today '
-      + 'into the problem, so the problem half could not be handed over, and the second '
-      + 'split them and numbered three problems before the options pass was asked for '
-      + 'anything at all.'
+  const facts: Record<number, string[]> = {
+    1: ['Tests=214 passed', 'Code style=passed', 'Description=passes, 2 warnings'],
+    2: ['Problems=3', 'Your sign-off=required', 'Size=486 lines, 12 files'],
+    3: [
+      'On the ticket=3',
+      'From the blind pass=6',
+      'On both=1',
+      'Built=C',
+      'Blind pass picked=C, without the second queue',
+    ],
+    5: [
+      'To post=6: 1 blocker, 4 should, 1 nit',
+      'Held for a ticket=5',
+      'Set aside=3',
+      'Blockers=1: the retry writes the wrong bucket',
+    ],
+    6: ['In the body=6 findings', 'Length=437 of 420 words'],
+  }
 
   const layers: Array<[number, string, string]> = [
     [1, 'done', 'passes, 2 warnings'],
@@ -447,8 +477,46 @@ function seedStructured(directory: string, database: string): number {
       state,
       '--detail',
       detail,
+      ...(facts[number] ?? []).flatMap(fact => ['--fact', fact]),
     ])
   }
+
+  /*
+   * **What the review read the problem from**, which is the third level of "Already
+   * decided": kind, reference, the state the session read off the ticket, and one line
+   * saying what it tells us. The last row carries a commit id, which is the thing the
+   * seven-character rule is for, and the third carries neither a state nor a note — the
+   * row that draws its reference alone.
+   */
+  const sources = join(directory, 'structured-sources.json')
+  writeFileSync(sources, JSON.stringify({
+    sources: [
+      {
+        kind: 'ticket',
+        label: 'ABC-402 · Scheduled exports carry their own context',
+        link: 'https://example.invalid/browse/ABC-402',
+        status: 'In Review',
+        note: 'The problem, four options, and three open questions',
+      },
+      {
+        kind: 'description',
+        label: 'The pull request description, revision 3',
+        note: 'Seven sections; two doubts the author raised',
+      },
+      {
+        kind: 'comment',
+        label: 'Agreed with you on the ticket on 6 October, before work started',
+      },
+      {
+        kind: 'ticket',
+        label: 'ABC-388 · Retire the request-scoped tenant slot',
+        link: 'https://example.invalid/browse/ABC-388',
+        status: 'Backlog',
+        note: 'Names the helper this change deletes, at 3f2b1c4d5e6f708192a3b4c5d6e7f80912345678',
+      },
+    ],
+  }))
+  cli(database, ['provenance', 'sources', '--review', String(reviewId), '--file', sources])
 
   return reviewId
 }

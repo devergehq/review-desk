@@ -427,7 +427,7 @@ function matrixLabel(brief: Brief): string {
                         For
                       </p>
                       <p class="rd-recorded argument">
-                        {{ option.argument_for }}
+                        <TickedText :text="option.argument_for" />
                       </p>
                     </div>
                     <div class="reasoning-side">
@@ -435,7 +435,7 @@ function matrixLabel(brief: Brief): string {
                         Against
                       </p>
                       <p class="rd-recorded argument">
-                        {{ option.argument_against }}
+                        <TickedText :text="option.argument_against" />
                       </p>
                     </div>
                   </div>
@@ -480,7 +480,7 @@ function matrixLabel(brief: Brief): string {
                   v-if="problem.label"
                   class="says-label"
                 >{{ problem.label }}</span>
-                <span class="says-line">{{ problem.was_wrong }}</span>
+                <span class="says-line"><TickedText :text="problem.was_wrong" /></span>
               </li>
             </ul>
           </details>
@@ -503,7 +503,7 @@ function matrixLabel(brief: Brief): string {
                 {{ built(data.brief)!.key }} · {{ built(data.brief)!.title }}
               </p>
               <p class="rd-note card-why">
-                {{ built(data.brief)!.argument_for }}
+                <TickedText :text="built(data.brief)!.argument_for" />
               </p>
             </DeskCard>
             <DeskCard
@@ -534,7 +534,7 @@ function matrixLabel(brief: Brief): string {
                 {{ blindPick(data.brief)!.key }} · {{ blindPick(data.brief)!.title }}
               </p>
               <p class="rd-note card-why">
-                {{ data.brief.blind_pass?.pick_why }}
+                <TickedText :text="data.brief.blind_pass?.pick_why" />
               </p>
               <DeskPill
                 v-if="blindPick(data.brief)!.chosen"
@@ -592,7 +592,7 @@ function matrixLabel(brief: Brief): string {
                 class="ask"
                 aria-hidden="true"
               >?</span>
-              <span>{{ question }}</span>
+              <span><TickedText :text="question" /></span>
             </li>
           </ul>
         </section>
@@ -670,7 +670,7 @@ function matrixLabel(brief: Brief): string {
           >
             <summary>What the blind pass was given, word for word</summary>
             <p class="rd-recorded given-text">
-              {{ data.brief.blind_pass.given }}
+              <TickedText :text="data.brief.blind_pass.given" />
             </p>
           </details>
 
@@ -680,7 +680,7 @@ function matrixLabel(brief: Brief): string {
           >
             <summary>What it looked up, in its own words</summary>
             <p class="rd-recorded given-text">
-              {{ data.brief.blind_pass.looked_up }}
+              <TickedText :text="data.brief.blind_pass.looked_up" />
             </p>
           </details>
         </section>

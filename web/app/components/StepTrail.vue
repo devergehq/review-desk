@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import type { ReviewLayer, ReviewLayerName } from '~/types/desk'
+import type { LayerFact, ReviewLayer, ReviewLayerName } from '~/types/desk'
 
 /**
  * The seven steps of a review, in the two groups they actually fall into.
  *
  * ```
  *  THE PULL REQUEST · SETTLED ONCE            ROUND 1 · REPEATS EACH ROUND
- *  ━━━━━━━━  ━━━━━━━━━━  ━━━━━━━━━━━  ━━━━━━  ──────────  ──────  ──────
- *  1 Lint    2 Understand 3 Alternat…  4 Solu… 5 Code rev… 6 Draft 7 Harvest
- *  passed    Brief settl… 4 options…   Right…  9 findings… Waiti…  Not yet
+ *  ━━━━━━━━  ━━━━━━━━━━━  ━━━━━━━━━━  ━━━━━  ──────────  ──────  ───────
+ *  1 Lint    2 Understand 3 Alternat… 4 Sol… 5 Code rev… 6 Draft 7 Harvest
+ *  passes…   3 problems   9 options,… Right… 17 finding… Waitin… Not yet
  * ```
  *
  * **The split is the point, and it is a fact about the review rather than a decoration.**
@@ -16,33 +16,41 @@ import type { ReviewLayer, ReviewLayerName } from '~/types/desk'
  * trail that drew seven equal steps would say a second round repeats the brief, which it
  * does not.
  *
- * Each step shows **its outcome in a few words**, from `layer.detail` — the store's own
- * words — falling back to its state. `layerOutcome` owns that.
+ * ## The trail is a map, and the rest is a card
+ *
+ * **Two lines a step, and each of them is one line.** The step's number and name, then its
+ * `detail`, ellipsised if it does not fit and never wrapped — whatever its length. That is
+ * DEV-917, and it replaces DEV-892's two-line clamp and the "Read the rest" control under
+ * it. The measurement behind both: on the review this was read against, a session wrote 34
+ * words into a step's `detail` and the column is about 150 pixels wide, so the note printed
+ * whole ran eleven lines deep and pushed the page's headline half a screen down. The clamp
+ * stopped that and bought a new problem — opening the note in place moved everything below
+ * it, every time a reader asked.
+ *
+ * **So the rest floats.** A step that recorded facts draws its `detail` line as a button,
+ * and activating it opens a [`FloatingCard`] anchored to the step: the step's name, how
+ * long it took, and the facts as two columns. The card is out of flow, so nothing on the
+ * page moves when it opens — which is the acceptance criterion, measured in
+ * `e2e/review-desk.spec.ts` by comparing positions either side of the click.
+ *
+ * **A step with no facts draws no card and no control for one.** Its `detail` line is a
+ * plain span. That is most steps of most reviews and every step of every review recorded
+ * before the facts existed, so a trail of seven buttons promising nothing was never an
+ * option.
+ *
+ * **The step's name is still a link, and the card is a second control.** Five of the seven
+ * steps have a page; a card and a link are two things, and a button inside a link is
+ * neither valid markup nor clickable — which is also why DEV-892's control was a sibling of
+ * the face. The link is the name, the button is the line under it.
  *
  * ## How long it took
  *
- * Under the outcome, for a step that has finished: "17 min", summed over every pass the
- * step made, so a draft written twice reports both. A step the record holds no duration
- * for says "time not recorded" rather than drawing a nought — which is every finished step
- * of a review from before DEV-890, and the distinction the whole change rests on.
- * `stepDurationLabel` owns the three answers; a step still going shows none, because the
- * figure would grow while you read it.
- *
- * ## How long the note is
- *
- * **Two lines at most, and the rest opens in place.** `layer.detail` is the store's own
- * words and the store holds no length: on the review DEV-892 was measured against a
- * session wrote 27 words under Understand when the step had finished and 52 while the
- * brief was half written, and a step column is about 150px wide — so the note printed whole
- * pushed the page's headline half a screen down. The note is clamped and a control under it
- * opens the whole thing where it already is. `stepNoteRunsLong` decides whether that
- * control is drawn; the clamp itself is CSS, because the measurement is the browser's.
- *
- * **The control is a sibling of the face, not a child of it.** Five of the seven steps draw
- * their face as a link, and a button inside a link is neither valid markup nor clickable.
- * It toggles the clamp on the outcome it names through `aria-controls`, so what opens is
- * the note already on screen rather than a second copy of it underneath. The duration is a
- * sibling of the note, so it keeps its own line under either state of it.
+ * **On the card, not on the trail.** It was a third line under the name until DEV-917, and
+ * a third line is what the one-line rule is against. `stepDurationLabel` owns the three
+ * answers and they are unchanged: a figure for a step that has finished, "time not
+ * recorded" for one the record holds no duration for — every finished step of a review from
+ * before DEV-890 — and nothing at all for a step still going, because the figure would grow
+ * while you read it. The review's totals stay under the trail, in `ReviewTimings`.
  *
  * ## Which steps are links
  *
@@ -65,11 +73,7 @@ import type { ReviewLayer, ReviewLayerName } from '~/types/desk'
  * and the draft screen then drew a blocking not-found panel carrying no trail and no way
  * back — the same dead end steps 1 and 7 are labels to avoid. The draft screen is inside
  * this shell now, so it carries the trail even when there is nothing to read, and the
- * reason for the guard is gone with the dead end. A review whose session has not written a
- * draft says so on step 6's own page, which is a better answer than a step that cannot be
- * pressed.
- *
- * The board draws only three links, and drew them against a queue that landed elsewhere.
+ * reason for the guard is gone with the dead end.
  */
 /*
  * **Resolved to the component, not named as a string.** `QueueRow` carries the measurement:
@@ -86,12 +90,6 @@ const props = defineProps<{
   active: ReviewLayerName
   /** Which round the second group is. */
   round: number
-  /*
-   * **There is no `draftStatus` prop any more.** It existed to decide whether step 6 was a
-   * link, and nothing decides that now: the draft screen is inside this shell, so it is
-   * never the dead end the guard was for. A prop every caller passes and nothing reads is
-   * a claim about what this component needs that is not true.
-   */
 }>()
 
 /**
@@ -109,13 +107,22 @@ const PAGES: Partial<Record<ReviewLayerName, string>> = {
   draft: 'draft',
 }
 
+/**
+ * The two groups, and the boundary between them.
+ *
+ * Four and three, which is where the pull request stops being settled once and the round
+ * starts repeating. Named here rather than inline so the split has one statement.
+ */
+const SETTLED_THROUGH = 4
+
 interface Step {
   number: number
   name: ReviewLayerName
   label: string
-  outcome: string
-  /** Whether the outcome is long enough that two lines will not hold it. */
-  long: boolean
+  /** The one line under the name: the store's own words, else the state, worded. */
+  detail: string
+  /** What the step came to, as pairs. Empty for a step that recorded none. */
+  facts: LayerFact[]
   /** How long it took, or that nothing recorded it. `null` for a step still going. */
   duration: string | null
   to: string | null
@@ -137,8 +144,13 @@ const steps = computed<Step[]>(() =>
       number: layer.number,
       name: layer.name,
       label: layerLabel(layer.name),
-      outcome: layerOutcome(layer),
-      long: stepNoteRunsLong(layerOutcome(layer)),
+      detail: layerOutcome(layer),
+      /*
+       * `?? []` because the contract added `facts` after this response shape existed: a
+       * review served by a build from before DEV-917 is missing the field rather than
+       * wrong, and the sample fixtures are briefs recorded before it.
+       */
+      facts: layer.facts ?? [],
       duration: stepDurationLabel(layer),
       to: PAGES[layer.name] == null
         ? null
@@ -149,32 +161,74 @@ const steps = computed<Step[]>(() =>
 )
 
 /**
- * Which step's note is open, by number, or `null`.
+ * Which step's card a click has pinned, and which one a mouse is over.
  *
- * One at a time, which is the rule every fold on these pages follows. A trail with three
- * notes open is the thing the clamp is for.
+ * **Two states, because they are two acts.** A click pins a card open and it stays open
+ * until something closes it; hovering opens one for as long as the pointer is there. One
+ * flag for both would make a card opened by a click vanish when the pointer left it, which
+ * is exactly the behaviour that makes hover-only menus unusable.
+ *
+ * One at a time either way, which is the rule every fold on these pages follows.
  */
-const openNote = ref<number | null>(null)
+const pinned = ref<number | null>(null)
+const hovered = ref<number | null>(null)
 
-function toggleNote(number: number) {
-  openNote.value = openNote.value === number ? null : number
+/** Which card is open: what a click pinned, else what the pointer is over. */
+const open = computed(() => pinned.value ?? hovered.value)
+
+/**
+ * The buttons, by step number, so Escape can put the focus back where it came from.
+ *
+ * A keyboard reader who pressed Escape and found the focus at the top of the document
+ * would be the trail's whole length away from the step they were reading.
+ */
+const controls = ref<Record<number, HTMLButtonElement | null>>({})
+
+function keep(number: number) {
+  return (element: unknown) => {
+    controls.value[number] = (element as HTMLButtonElement | null) ?? null
+  }
+}
+
+function toggle(number: number) {
+  pinned.value = pinned.value === number ? null : number
+  /*
+   * Clicking clears the hover, so a card closed by a second click does not spring back
+   * open under the pointer that closed it.
+   */
+  hovered.value = null
+}
+
+function close() {
+  pinned.value = null
+  hovered.value = null
 }
 
 /**
- * The two groups, and the boundary between them.
+ * The pointer arriving on a step, and leaving it.
  *
- * Four and three, which is where the pull request stops being settled once and the round
- * starts repeating. Named here rather than inline so the split has one statement.
+ * Only a step that has facts opens: a step with none has no card, and setting the state to
+ * it would close whatever a click had pinned for nothing.
  */
-const SETTLED_THROUGH = 4
+function over(step: Step) {
+  if (step.facts.length) hovered.value = step.number
+}
+
+function out(number: number) {
+  if (hovered.value === number) hovered.value = null
+}
+
+function restore(number: number) {
+  controls.value[number]?.focus()
+}
 
 const groups = computed(() => [
   {
-    heading: 'The pull request \u00b7 settled once',
+    heading: 'The pull request · settled once',
     steps: steps.value.filter(step => step.number <= SETTLED_THROUGH),
   },
   {
-    heading: `Round ${props.round} \u00b7 repeats each round`,
+    heading: `Round ${props.round} · repeats each round`,
     steps: steps.value.filter(step => step.number > SETTLED_THROUGH),
   },
 ])
@@ -202,6 +256,8 @@ const groups = computed(() => [
           v-for="step in group.steps"
           :key="step.number"
           class="step"
+          @mouseenter="over(step)"
+          @mouseleave="out(step.number)"
         >
           <component
             :is="step.to ? NuxtLink : 'span'"
@@ -211,33 +267,78 @@ const groups = computed(() => [
             :aria-current="step.current ? 'page' : undefined"
           >
             <span class="name">{{ step.number }} {{ step.label }}</span>
-            <span
-              :id="`step-note-${step.number}`"
-              class="outcome"
-              :class="{ 'outcome--whole': openNote === step.number }"
-            >{{ step.outcome }}</span>
-            <span
-              v-if="step.duration"
-              class="took"
-            >{{ step.duration }}</span>
           </component>
+
           <!--
-            The control that opens the note, outside the face because the face is a link.
-            Drawn only for a note two lines will not hold: seven of these under seven short
-            outcomes would be a row of controls that reveal nothing.
+            The one line under the name, and the control that opens the card.
+
+            **A button when the step recorded facts, a plain span when it did not.** Both
+            draw the same one ellipsised line, so the trail keeps its height either way —
+            which is what makes the page's headline sit where it sits whatever a session
+            wrote. Outside the face above, because that face is a link on five of the seven.
           -->
           <button
-            v-if="step.long"
+            v-if="step.facts.length"
+            :ref="keep(step.number)"
             type="button"
-            class="rest"
-            :aria-expanded="openNote === step.number"
-            :aria-controls="`step-note-${step.number}`"
-            @click="toggleNote(step.number)"
+            class="outcome outcome--opens"
+            :class="{ 'outcome--open': open === step.number }"
+            :title="step.detail"
+            :aria-expanded="open === step.number"
+            :aria-controls="`step-facts-${step.number}`"
+            @click="toggle(step.number)"
           >
-            {{ openNote === step.number ? 'Fold' : 'Read the rest' }}
+            {{ step.detail }}
             <span class="rd-visually-hidden">
-              of what step {{ step.number }} {{ step.label }} recorded</span>
+              — {{ count(step.facts.length, 'fact') }} about step
+              {{ step.number }} {{ step.label }}</span>
           </button>
+          <span
+            v-else
+            class="outcome"
+            :title="step.detail"
+          >{{ step.detail }}</span>
+
+          <FloatingCard
+            :id="`step-facts-${step.number}`"
+            :open="open === step.number"
+            :side="step.number > SETTLED_THROUGH ? 'right' : 'left'"
+            :label="`What step ${step.number} ${step.label} came to`"
+            @close="close()"
+            @escape="restore(step.number)"
+          >
+            <div class="card-head">
+              <span class="card-name">{{ step.label }}</span>
+              <!--
+                The duration, where it was a third line on the trail until DEV-917.
+                Absent for a step still going: `stepDurationLabel` answers null for one,
+                and a figure that grew while it was read would not be an answer to how
+                long the step took.
+              -->
+              <span
+                v-if="step.duration"
+                class="card-took"
+              >{{ step.duration }}</span>
+            </div>
+            <!--
+              Label then value, as a description list: that is what two columns of pairs
+              are, and it is what lets a screen reader read "Problems, 3" rather than four
+              cells of a table nobody laid out.
+            -->
+            <dl class="facts">
+              <template
+                v-for="(fact, index) in step.facts"
+                :key="index"
+              >
+                <dt class="fact-label">
+                  {{ fact.label }}
+                </dt>
+                <dd class="fact-value">
+                  {{ fact.value }}
+                </dd>
+              </template>
+            </dl>
+          </FloatingCard>
         </li>
       </ol>
     </div>
@@ -274,7 +375,14 @@ const groups = computed(() => [
   min-width: 0;
 }
 
+/*
+ * **`position: relative`, which is what the card hangs from.** `FloatingCard` is
+ * `position: absolute` and says nothing about its anchor on purpose; this is the anchor.
+ * Without it the card would position itself against the page and arrive nowhere near the
+ * step it is about.
+ */
 .step {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -287,13 +395,12 @@ const groups = computed(() => [
 .face {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  min-height: 52px;
-  padding: 8px;
+  padding: 8px 8px 1px;
   border-top: 3px solid var(--rd-line-strong);
   border-radius: 0 0 var(--rd-radius-sm) var(--rd-radius-sm);
   color: var(--rd-ink);
   text-decoration: none;
+  min-width: 0;
 }
 
 .face--done {
@@ -320,11 +427,18 @@ const groups = computed(() => [
 
 .face--here {
   border-top-color: var(--rd-ink);
+}
+
+/*
+ * The step you are on is washed whole — the face and the line under it — so the two
+ * elements read as one step rather than as a label with a button stuck to it.
+ */
+.step:has(.face--here) {
   background: var(--rd-ground);
+  border-radius: 0 0 var(--rd-radius-sm) var(--rd-radius-sm);
 }
 
 a.face:hover {
-  background: var(--rd-ground);
   color: var(--rd-ink);
 }
 
@@ -333,9 +447,17 @@ a.face:focus-visible {
   outline-offset: 2px;
 }
 
+/*
+ * **One line, and never two.** The name is the shorter half of the pair and is clipped by
+ * the same rule as the detail: "5 Code review" fits the column at every width the trail is
+ * drawn at, and a label the contract adds later should push the page's headline nowhere.
+ */
 .name {
   font-weight: 500;
   font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .face--here .name {
@@ -348,90 +470,120 @@ a.face:hover .name {
 }
 
 /*
- * **Two lines, and the clamp is on this span alone.** The duration below it is a sibling,
- * so it keeps its own line and its whole figure however long the note runs — which is the
- * one thing defect 1's fix must not break.
+ * **The one line DEV-917 is about: ellipsised, never wrapped, whatever the length.**
  *
- * `-webkit-line-clamp` is the property every browser this is drawn in understands, and
- * `line-clamp` is the standard one that now exists; both are set, and the `-webkit-box`
- * display is what either of them needs to count lines at all.
+ * `text-overflow` needs all three of these declarations and the column needs the fourth:
+ * `nowrap` so there is an overflow to clip, `hidden` so it is clipped, `ellipsis` so the
+ * clip is marked, and `min-width: 0` so the flex item is allowed to be narrower than its
+ * text — without which the step widens to fit 34 words and the grid scrolls sideways.
+ *
+ * The whole string is in the document either way, so a screen reader reads all of it and
+ * only the drawing is cut. `title` is what a mouse reader gets.
  */
 .outcome {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  overflow: hidden;
+  /*
+   * **44px of hit area for one 13px line, which is this app's floor for anything you
+   * press.** The line is the control that opens the card, so it is a target as well as a
+   * label, and `test/contrast.spec.ts` holds every component with a pointer cursor to
+   * `--rd-control-min`. Flex and centred rather than padded, so the figure stays on one
+   * line and the height is the same on the steps whose line is a plain span — a row of
+   * steps whose text sat at two different heights would read as two kinds of step.
+   */
+  display: flex;
+  align-items: center;
+  min-height: var(--rd-control-min);
+  min-width: 0;
+  padding: 0 8px 4px;
   font-size: 13px;
   color: var(--rd-ink-muted);
-  overflow-wrap: break-word;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
 }
 
-/*
- * Opened: the same span, unclamped, so the note grows where it already was.
- *
- * **Both clamps are turned off, not just the display they share.** `-webkit-line-clamp`
- * needs `-webkit-box` and so is defeated by `display: block` alone — but the standard
- * `line-clamp` above clamps a block container on its own, and no engine implements it yet.
- * The day one does, a `display: block` that left `line-clamp: 2` standing would make "Read
- * the rest" reveal nothing while still reading "Fold".
- */
-.outcome--whole {
-  display: block;
-  overflow: visible;
-  -webkit-line-clamp: none;
-  line-clamp: none;
-}
-
-/*
- * The control, under the face rather than in it. 12px and the accent, which is this app's
- * colour for a thing to press, and `nowrap` because a two-word label broken across lines
- * in a 150px column is the pill defect wearing a different hat.
- */
-.rest {
-  align-self: flex-start;
-  min-height: var(--rd-control-min);
-  padding: 2px 8px 2px 0;
+/* The same line, when it is the control that opens the card. */
+.outcome--opens {
   border: 0;
   background: none;
-  color: var(--rd-accent);
   font: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
+  font-size: 13px;
   cursor: pointer;
 }
 
-.rest:hover {
-  color: var(--rd-accent-dark);
+.outcome--opens:hover,
+.outcome--open {
+  color: var(--rd-ink);
   text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
 }
 
-.rest:focus-visible {
+.outcome--opens:focus-visible {
   outline: 3px solid var(--rd-focus-ring);
   outline-offset: 2px;
 }
 
-/*
- * The duration, under the outcome. It is the second thing you want off a
- * step — what it did, then how long it took — and at 12px seven of them across the trail
- * read as a column of figures rather than as more words.
- *
- * The same ink as the outcome, and smaller: `ink-faint` is for display sizes only — it is
- * 3.19:1 on white and clears nothing under 24px — and `ink-dim` is *darker* than the
- * outcome above it, which would put the louder colour on the quieter fact. Size does the
- * separating, and `test/contrast.spec.ts` holds this ink to 4.5:1 on all three
- * backgrounds.
- */
-.took {
-  font-size: 12px;
+/* ---------------------------------- on the card ---------------------------------- */
+
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.card-name {
+  font-weight: 600;
+}
+
+.card-took {
   color: var(--rd-ink-muted);
   font-variant-numeric: tabular-nums;
 }
 
 /*
+ * Label then value. `auto 1fr` so the labels take what they need and the values take the
+ * rest — a fact whose value is "6: 4 should, 1 question, 1 nit" wraps in its own column
+ * rather than widening the card.
+ */
+.facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 14px;
+  margin: 0;
+}
+
+.fact-label {
+  color: var(--rd-ink-muted);
+}
+
+.fact-value {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * **One column of facts where the card is as narrow as its step.** `FloatingCard` takes the
+ * anchor's width under 680px, because a 330px card hanging off the trail's right-hand
+ * column is wider than the page there; two columns of pairs inside 190px would be a label
+ * and a value both broken across three lines each.
+ */
+@media (max-width: 680px) {
+  .facts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0 0;
+  }
+
+  .fact-label {
+    margin-top: 6px;
+    font-size: 13px;
+  }
+}
+
+/*
  * Seven columns at a phone's width is 55px a step, which fits no word. The two groups
- * stack, and each becomes two columns and then one.
+ * stack, and each becomes two columns.
  */
 @media (max-width: 860px) {
   .trail {
@@ -448,7 +600,7 @@ a.face:hover .name {
  * Two columns at a phone's width, not one. Seven steps in a single column is 360px of
  * trail before the headline, which puts the thing the page is about below the fold on the
  * device with the least of it — and two columns at 390px still fits "5 Code review" over
- * "13 findings, 1 blocker".
+ * one line of what it came to.
  */
 @media (max-width: 430px) {
   .steps {

@@ -274,7 +274,7 @@ function severityWord(severity: string, n: number): string {
                   <span class="part-title">{{ part.title }}</span>
                 </span>
 
-                <span class="rd-note part-summary">{{ part.summary }}</span>
+                <span class="rd-note part-summary"><TickedText :text="part.summary" /></span>
 
                 <span class="part-figures">
                   <span>{{ count(files(part).length, 'file') }}</span>
@@ -383,7 +383,7 @@ function severityWord(severity: string, n: number): string {
                     <span class="rd-mono key">{{ finding.key }}</span>
                     <SeverityTag :severity="finding.severity" />
                     <span class="claim">
-                      {{ finding.claim }}
+                      <TickedText :text="finding.claim" />
                       <span class="rd-mono where">
                         {{ finding.file }}<template v-if="finding.line">:{{ finding.line }}</template>
                       </span>
@@ -475,7 +475,7 @@ function severityWord(severity: string, n: number): string {
               <span class="rd-mono key">{{ finding.key }}</span>
               <SeverityTag :severity="finding.severity" />
               <span class="claim">
-                {{ finding.claim }}
+                <TickedText :text="finding.claim" />
                 <span
                   v-if="finding.file"
                   class="rd-mono where"
@@ -537,21 +537,21 @@ function severityWord(severity: string, n: number): string {
                 class="td"
                 data-label="The ticket left open"
               >
-                {{ choice.left_open }}
+                <TickedText :text="choice.left_open" />
               </td>
               <td
                 role="cell"
                 class="td td--strong"
                 data-label="Chosen"
               >
-                {{ choice.chosen }}
+                <TickedText :text="choice.chosen" />
               </td>
               <td
                 role="cell"
                 class="td td--muted"
                 data-label="Why"
               >
-                {{ choice.why }}
+                <TickedText :text="choice.why" />
               </td>
               <td
                 role="cell"
@@ -625,14 +625,14 @@ function severityWord(severity: string, n: number): string {
                 class="td"
                 data-label="The description says"
               >
-                {{ clash.description_says }}
+                <TickedText :text="clash.description_says" />
               </td>
               <td
                 role="cell"
                 class="td"
                 data-label="The code does"
               >
-                {{ clash.code_does }}
+                <TickedText :text="clash.code_does" />
               </td>
             </tr>
           </DeskTable>

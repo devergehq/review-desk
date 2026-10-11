@@ -61,7 +61,12 @@ async function shown(
   component: Parameters<typeof mountSuspended>[0],
   route: string,
 ) {
-  const page = await mountSuspended(component, { route })
+  /*
+   * **Attached to the document, which the focus assertions need.** `element.focus()` on a
+   * detached tree does nothing and leaves `document.activeElement` at the body, so a test
+   * of "Escape returns the focus" would fail against a component that does it correctly.
+   */
+  const page = await mountSuspended(component, { route, attachTo: document.body })
   await settle(page)
   return page
 }
@@ -77,6 +82,23 @@ async function open(page: VueWrapper, within: string) {
   await found.trigger('click')
   await settle(page)
   return found
+}
+
+/**
+ * Open the card on one step of the trail, and hand back the control that opened it.
+ *
+ * By number, because that is how the trail is read: "step 2" is the thing on screen.
+ */
+async function openCard(page: VueWrapper, number: number) {
+  const step = page.findAll('.steps li')[number - 1]
+  if (!step) throw new Error(`the trail has no step ${number}`)
+  const control = step.find('.outcome')
+  if (control.element.tagName !== 'BUTTON') {
+    throw new Error(`step ${number} recorded no facts, so it has no card`)
+  }
+  await control.trigger('click')
+  await settle(page)
+  return control
 }
 
 /** The review the fixtures hold, as an object a test can change one field of. */
@@ -141,16 +163,21 @@ describe('the shell every step page sits in', () => {
     expect(page.find('.trail').text()).toContain('not yet')
   })
 
-  it('shows how long each finished step took, beside its outcome', async () => {
+  it('shows how long a finished step took, on the step’s own card', async () => {
     const page = await understand(STRUCTURED)
-    const took = page.findAll('.trail .took').map(one => one.text())
+
     /*
-     * One figure per step that has finished, and none for a step still going: a duration
-     * that grew while you read it would not be an answer to how long the step took.
+     * **The figure moved off the trail in DEV-917.** It was a third line under the name,
+     * and a third line is what the one-line rule is against: the trail is a map now, and
+     * how long a step took is one of the facts behind it.
      */
-    expect(took.length).toBeGreaterThan(0)
-    expect(took.every(label => /\d/.test(label) || label === 'time not recorded')).toBe(true)
-    expect(page.find('.trail').text()).toMatch(/\d+ (sec|min|hr|day)/)
+    expect(page.find('.trail').text()).not.toMatch(/\d+ (sec|min|hr) (?!ago)/)
+
+    await openCard(page, 2)
+    const card = page.find('.floating')
+    expect(card.exists(), 'the card opened').toBe(true)
+    expect(card.text()).toContain('Understand')
+    expect(card.text(), 'and says how long the step took').toMatch(/\d+ (sec|min|hr|day)/)
   })
 
   it('says a finished step’s duration is not recorded rather than drawing a nought', async () => {
@@ -177,75 +204,125 @@ describe('the shell every step page sits in', () => {
     await withReview(detail)
 
     const page = await understand(STRUCTURED)
-    const trail = page.find('.trail').text()
-    expect(trail).toContain('time not recorded')
-    expect(trail).not.toMatch(/\b0 sec\b/)
+    await openCard(page, 2)
+    const card = page.find('.floating').text()
+    expect(card).toContain('time not recorded')
+    expect(card).not.toMatch(/\b0 sec\b/)
   })
 
   /**
-   * **A step's note is two lines at most, and the rest opens in place.** DEV-892's defect
-   * 1: on the review this was measured against a session wrote 27 words under Understand
-   * when the step had finished and 52 while the brief was half written, and the trail
-   * printed each whole in a column about 150px wide — which pushed the page's headline
-   * half a screen down.
+   * **A step draws one line and the rest floats.** DEV-917: a session wrote 34 words into a
+   * step's `detail` on the review this was read against, and the column is about 150px
+   * wide. DEV-892 clamped that to two lines and offered "Read the rest", which opened it in
+   * place and moved everything below it; this draws one ellipsised line and opens the facts
+   * on a card that overlays the page.
    *
-   * The clamp is CSS and jsdom computes no layout, so what is asserted here is everything
-   * either side of it: the class that carries the clamp, the control that opens the note,
-   * the note still being whole in the document when it is opened, and the duration keeping
-   * its own line underneath. The clamp itself is measured in a real browser, in
+   * The ellipsis and the overlaying are CSS and jsdom computes no layout, so what is
+   * asserted here is everything either side of them: that the whole string is still in the
+   * document, that the line is the control, that the card carries the facts, and that the
+   * keyboard can open and close it. The two measurements — one line at both widths, and
+   * nothing moving when the card opens — are made in a real browser, in
    * `e2e/review-desk.spec.ts`.
    */
-  it('clamps a long step note and opens the rest in place', async () => {
+  it('draws a long step detail on one line and opens its facts on a card', async () => {
     const page = await understand(STRUCTURED)
 
-    /* Step 2's note is the 45-word one the example carries. */
-    const steps = page.findAll('.steps li')
-    const understandStep = steps[1]!
+    const understandStep = page.findAll('.steps li')[1]!
     expect(understandStep.text()).toContain('2 Understand')
 
-    const note = understandStep.find('.outcome')
-    expect(note.exists()).toBe(true)
-    expect(note.text()).toContain('the options pass was asked for anything at all')
-    /* Clamped: the class the two-line rule hangs off is the one that is absent when open. */
-    expect(note.classes()).not.toContain('outcome--whole')
+    const line = understandStep.find('.outcome')
+    expect(line.exists()).toBe(true)
+    expect(
+      line.text(),
+      'the whole string is in the document; only the drawing is cut',
+    ).toContain('the options pass was asked for anything at all')
+    expect(line.element.tagName, 'the line is the control').toBe('BUTTON')
+    expect(line.attributes('aria-expanded')).toBe('false')
+    expect(page.find('.floating').exists()).toBe(false)
 
-    const control = understandStep.find('button')
-    expect(control.exists(), 'a long note has a control that opens it').toBe(true)
-    expect(control.text()).toContain('Read the rest')
-    expect(control.attributes('aria-expanded')).toBe('false')
-    /* It names what it opens, so the note is reachable by keyboard and nothing else. */
-    expect(control.attributes('aria-controls')).toBe(note.attributes('id'))
+    await line.trigger('click')
+    await settle(page)
+
+    const card = page.find('.floating')
+    expect(card.exists()).toBe(true)
+    expect(card.attributes('role')).toBe('group')
+    expect(card.attributes('aria-label')).toContain('step 2 Understand')
+    /* The facts the example's step 2 recorded, as label and value. */
+    expect(card.text()).toContain('Problems')
+    expect(card.text()).toContain('486 lines, 12 files')
+    expect(
+      page.findAll('.steps li')[1]!.find('.outcome').attributes('aria-expanded'),
+    ).toBe('true')
+  })
+
+  it('opens one card at a time', async () => {
+    const page = await understand(STRUCTURED)
+
+    await openCard(page, 2)
+    expect(page.findAll('.floating')).toHaveLength(1)
+    await openCard(page, 3)
+    const cards = page.findAll('.floating')
+    expect(cards).toHaveLength(1)
+    expect(cards[0]!.text()).toContain('Alternatives')
+  })
+
+  it('closes the card on a second press, and on Escape', async () => {
+    const page = await understand(STRUCTURED)
+
+    const control = await openCard(page, 2)
+    expect(page.find('.floating').exists()).toBe(true)
 
     await control.trigger('click')
     await settle(page)
-
-    const opened = page.findAll('.steps li')[1]!
-    expect(opened.find('.outcome').classes()).toContain('outcome--whole')
-    expect(opened.find('button').attributes('aria-expanded')).toBe('true')
-    expect(opened.find('button').text()).toContain('Fold')
+    expect(page.find('.floating').exists(), 'a second press closes it').toBe(false)
 
     /*
-     * **And the duration is still its own line.** The clamp is on the note alone; a rule
-     * that hid or ate the figure under it would break what DEV-890 put there.
+     * **By keyboard alone, and the focus comes back.** A reader who pressed Escape and
+     * found the focus at the top of the document would be the trail's whole length away
+     * from the step they were reading.
      */
-    expect(opened.find('.took').exists()).toBe(true)
-    expect(opened.find('.took').text()).toMatch(/\d+ (sec|min|hr|day)/)
+    const again = page.findAll('.steps li')[1]!.find('.outcome')
+    ;(again.element as HTMLButtonElement).focus()
+    await again.trigger('keydown', { key: 'Enter' })
+    await again.trigger('click')
+    await settle(page)
+    expect(page.find('.floating').exists()).toBe(true)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await settle(page)
+    expect(page.find('.floating').exists(), 'Escape closes it').toBe(false)
+    expect(
+      document.activeElement,
+      'and the focus is back on the step that opened it',
+    ).toBe(page.findAll('.steps li')[1]!.find('.outcome').element)
   })
 
-  it('draws no control on a step whose note fits two lines', async () => {
+  it('closes the card when something outside it is pressed', async () => {
+    const page = await understand(STRUCTURED)
+    await openCard(page, 2)
+    expect(page.find('.floating').exists()).toBe(true)
+
+    document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    await settle(page)
+    expect(page.find('.floating').exists()).toBe(false)
+  })
+
+  it('draws no card and no control on a step that recorded no facts', async () => {
     const page = await understand(STRUCTURED)
     const steps = page.findAll('.steps li')
 
-    /* Step 1's outcome is "passes, 2 warnings": nothing to open. */
-    expect(steps[0]!.text()).toContain('1 Lint')
-    expect(steps[0]!.find('button').exists()).toBe(false)
+    /* Step 4 recorded none, and step 7 has not run. */
+    for (const index of [3, 6]) {
+      const step = steps[index]!
+      expect(step.find('.outcome').element.tagName, step.text()).toBe('SPAN')
+      expect(step.find('button').exists()).toBe(false)
+    }
 
     /*
-     * Six of the seven, which is the measurement worth making: a control under every step
-     * would be a row of buttons that reveal nothing, and the clamp would be invisible.
+     * Five of the seven, which is the measurement worth making: a control under every step
+     * would be a row of buttons, two of which open nothing.
      */
-    const controls = page.findAll('.trail button')
-    expect(controls).toHaveLength(1)
+    expect(page.findAll('.trail button')).toHaveLength(5)
   })
 
   it('shows the total with the agent and the total waiting on the developer', async () => {
@@ -333,7 +410,12 @@ describe('the shell every step page sits in', () => {
     const waiting = page.findAll('.trail .face--current')
     expect(waiting).toHaveLength(1)
     expect(waiting[0]!.text()).toContain('6 Draft')
-    expect(waiting[0]!.text()).toContain('waiting on you')
+    /*
+     * What the step came to is the line under the face rather than inside it, because the
+     * face is a link and the line is the card's control.
+     */
+    const step = page.findAll('.steps li').find(one => one.text().includes('6 Draft'))!
+    expect(step.text()).toContain('waiting on you')
     expect(page.find('.trail .face--here').text()).toContain('2 Understand')
   })
 
@@ -479,25 +561,82 @@ describe('Understand', () => {
     expect(split!.attributes('style')).toContain('--columns: 2')
   })
 
-  it('marks a problem red on the before flow and green on the after', async () => {
+  it('names a problem on the flow, red before and green after', async () => {
     const page = await understand(STRUCTURED)
     const [before, after] = page.findAll('.flow')
-    const wrong = before!.findAll('.mark--wrong')
-    const fixed = after!.findAll('.mark--fixed')
+    const wrong = before!.findAll('.tag--wrong')
+    const fixed = after!.findAll('.tag--fixed')
     expect(wrong.length).toBeGreaterThan(0)
     expect(fixed.length).toBeGreaterThan(0)
+
+    /*
+     * **The name, which is DEV-917's defect 2.** The marks read 1, 1, 2, 3, 1 down the
+     * flow on the review this was read against: every number right, and a bare number
+     * down a flow reads as a step count.
+     */
+    expect(wrong[0]!.text()).toContain('The shared slot')
+
     /*
      * The same number is on both sides, which is the whole mechanism of the picture. Read
-     * off the visible numeral: a mark's full text is the numeral *and* the words behind it,
-     * which is the point of the words but makes `.text()` the wrong thing to compare.
+     * off the circle: a tag's full text is the numeral, the name, and the words behind
+     * it, which is the point of the words but makes `.text()` the wrong thing to compare.
      */
-    const numerals = (marks: typeof wrong) =>
-      marks.map(one => one.find('[aria-hidden="true"]').text())
+    const numerals = (tags: typeof wrong) =>
+      tags.map(one => one.find('.circle').text())
     expect(numerals(wrong)).toContain('1')
     expect(numerals(fixed)).toContain('1')
     /* And neither flow carries the other's colour. */
-    expect(before!.findAll('.mark--fixed')).toHaveLength(0)
-    expect(after!.findAll('.mark--wrong')).toHaveLength(0)
+    expect(before!.findAll('.tag--fixed')).toHaveLength(0)
+    expect(after!.findAll('.tag--wrong')).toHaveLength(0)
+  })
+
+  it('carries the same name on every box one problem touches', async () => {
+    /*
+     * **One problem on four boxes, which is the shape the defect was found in.** Problem 1
+     * touched four boxes of the flow and the column read 1, 1, 2, 3, 1; four tags carrying
+     * one name is what makes that repetition legible instead of confusing.
+     */
+    const detail = fixture(STRUCTURED)
+    detail.brief = {
+      ...detail.brief!,
+      flow_before: [
+        [{ title: 'One', note: null, problem: 1 }],
+        [{ title: 'Two', note: null, problem: 1 }],
+        [
+          { title: 'Three', note: null, problem: 1 },
+          { title: 'Four', note: null, problem: 1 },
+        ],
+      ],
+    }
+    await withReview(detail)
+
+    const page = await understand(STRUCTURED)
+    const tags = page.findAll('.flow--wrong .tag')
+    expect(tags).toHaveLength(4)
+    for (const tag of tags) {
+      expect(tag.text()).toContain('The shared slot')
+      expect(tag.find('.circle').text()).toBe('1')
+    }
+
+    /* And the row above the flows lists it once, however many boxes it is on. */
+    const key = page.find('.key')
+    expect(key.findAll('.tag')).toHaveLength(3)
+    expect(key.text()).toContain('3 problems')
+  })
+
+  it('calls a problem with no name "Problem 1", never the bare number', async () => {
+    const detail = fixture(STRUCTURED)
+    detail.brief = {
+      ...detail.brief!,
+      problems: detail.brief!.problems!.map(problem => ({ ...problem, label: null })),
+    }
+    await withReview(detail)
+
+    const page = await understand(STRUCTURED)
+    const tags = page.findAll('.flow--wrong .tag')
+    expect(tags.length).toBeGreaterThan(0)
+    expect(tags[0]!.text()).toContain('Problem 1')
+    expect(page.find('.key').text()).toContain('Problem 2')
   })
 
   it('never leaves colour carrying a mark on its own', async () => {
@@ -505,12 +644,12 @@ describe('Understand', () => {
     const [before, after] = page.findAll('.flow')
     /*
      * The words are in the accessible name, so a reader who cannot tell the two hues apart
-     * still reads which side of the picture a mark is on.
+     * still reads which side of the picture a tag is on.
      */
-    expect(before!.find('.mark--wrong').text()).toContain('what is wrong')
-    expect(after!.find('.mark--fixed').text()).toContain('what fixes it')
+    expect(before!.find('.tag--wrong').text()).toContain('what is wrong')
+    expect(after!.find('.tag--fixed').text()).toContain('what fixes it')
     /* And the number itself is visible in both. */
-    expect(before!.find('.mark--wrong [aria-hidden="true"]').text()).toMatch(/^\d+$/)
+    expect(before!.find('.tag--wrong .circle').text()).toMatch(/^\d+$/)
   })
 
   it('lists what was wrong and what it is now, one line each', async () => {
@@ -552,8 +691,8 @@ describe('Understand', () => {
     const detail = page.find('#problem-1')
     expect(detail.exists()).toBe(true)
     expect(detail.text()).toContain('The request-scoped singleton')
-    expect(detail.text()).toContain('TenantContext::current() is written by the web')
-    expect(detail.text()).toContain('ExportContext is constructed by the schedule')
+    expect(detail.text()).toContain('is written by the web middleware on every request')
+    expect(detail.text()).toContain('is constructed by the schedule')
     /* Nothing on this page is a link to GitHub, let alone the only way to read this. */
     expect(page.findAll('a').map(one => one.attributes('href') ?? ''))
       .not.toContain('https://github.com')
@@ -607,43 +746,74 @@ describe('Understand', () => {
     expect(page.text()).toContain('Every report is built by one class.')
   })
 
-  it('says what is already decided, with the sources it rests on', async () => {
+  /**
+   * **Three levels, in order: the decision, what is still open, then the sources.**
+   *
+   * DEV-917's defect 4. This was a heading, a small paragraph and seven source lines that
+   * all looked alike, one of them carrying a 40-character commit id twice — "lacking
+   * structure and it's difficult to read".
+   */
+  it('puts the decision first, as a pill and a title with a way to the rest', async () => {
     const page = await understand(STRUCTURED)
     expect(page.text()).toContain('Already decided')
-    expect(page.text()).toContain(
-      'Option C of 8 — An export context passed explicitly, and one filter chain for both',
+
+    const decision = page.find('.decision')
+    expect(decision.text()).toContain('Option C of 8')
+    expect(decision.text()).toContain(
+      'An export context passed explicitly, and one filter chain for both',
     )
-    expect(page.text()).toContain('ABC-402 · Scheduled exports carry their own context')
+    expect(
+      decision.findAll('a').map(one => one.attributes('href')),
+      'and a way to the options it was chosen from',
+    ).toContain(`/reviews/${STRUCTURED}/alternatives`)
   })
 
-  /**
-   * **The decision in one line, its sources as links, and the rest behind a fold.**
-   *
-   * DEV-892's defect 3. "Already decided" printed `provenance` open, and on a real review
-   * that was a 59-word paragraph about the ticket, the base commit and the dispatcher's
-   * ledger, sitting under a heading that promises one settled thing.
-   */
-  it('folds where the decision came from, rather than printing it', async () => {
+  it('draws what is still open as figures, not as a clause', async () => {
     const page = await understand(STRUCTURED)
-    const provenance = fixture(STRUCTURED).brief!.provenance!
+    const counts = page.find('.open-counts')
+    expect(counts.exists()).toBe(true)
+    const figures = counts.findAll('.open-count').map(one => one.text())
+    expect(figures).toEqual([
+      '3 choices the ticket left open',
+      '2 places the description and the code disagree',
+    ])
+    /* Each figure is the number, drawn as the thing to look at. */
+    expect(counts.find('.open-count b').text()).toBe('3')
+  })
 
-    const decided = page.find('.decided')
-    expect(decided.text(), 'the paragraph is not printed open').not.toContain(provenance)
-    expect(page.find('#came-from').exists()).toBe(false)
+  it('draws no figure for a count of nought', async () => {
+    const detail = fixture(STRUCTURED)
+    detail.brief = { ...detail.brief!, disagreements: [] }
+    await withReview(detail)
 
-    /* The decision itself is a line, and its sources are links beside it. */
-    expect(decided.text()).toContain('Option C of 8')
-    expect(decided.findAll('.source a').length).toBeGreaterThan(0)
+    const page = await understand(STRUCTURED)
+    const figures = page.findAll('.open-count').map(one => one.text())
+    expect(figures).toEqual(['3 choices the ticket left open'])
+  })
 
-    const control = decided.findAll('button')
-      .find(one => one.text().includes('Where this came from'))!
-    expect(control.attributes('aria-expanded')).toBe('false')
-    expect(control.attributes('aria-controls')).toBe('came-from')
+  it('draws the sources as a table of kind, reference, state and what it tells us', async () => {
+    const page = await understand(STRUCTURED)
+    const table = page.findAll('table')
+      .find(one => one.text().includes('ABC-402'))
+    expect(table, 'the sources are a table').toBeDefined()
 
-    await control.trigger('click')
-    await settle(page)
+    expect(table!.findAll('thead th, thead .th').map(one => one.text()).slice(0, 4))
+      .toEqual(['Kind', 'Reference', 'State', 'What it tells us'])
 
-    expect(page.find('#came-from').text()).toContain(provenance)
+    const rows = table!.findAll('tbody tr')
+    expect(rows).toHaveLength(4)
+    expect(rows[0]!.text()).toContain('ticket')
+    expect(rows[0]!.text()).toContain('ABC-402 · Scheduled exports carry their own context')
+    expect(rows[0]!.text()).toContain('In Review')
+    expect(rows[0]!.text()).toContain('The problem, four options, and three open questions')
+    /* A link is an extra way to read one, never the only way. */
+    expect(rows[0]!.find('a').attributes('href')).toContain('ABC-402')
+
+    /* And a source that reported no state and no note shows its reference alone. */
+    const bare = rows[2]!
+    expect(bare.text()).toContain('Agreed with you on the ticket on 6 October')
+    expect(bare.findAll('td').at(2)!.text()).toBe('')
+    expect(bare.findAll('td').at(3)!.text()).toBe('')
   })
 
   it('leaves the open-choices table to Solution, and links to it', async () => {

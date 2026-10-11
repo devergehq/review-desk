@@ -14,10 +14,13 @@
 //! and never stored: there is one copy of when each state was entered, so a total and the
 //! times it was computed from cannot come to disagree.
 
-use rusqlite::{params, OptionalExtension, Row};
+use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior};
 
 use crate::error::{Result, StoreError};
-use crate::model::{ReviewLayer, ReviewLayerName, ReviewLayerRun, ReviewLayerState, Timestamp};
+use crate::model::{
+    LayerFact, NewLayerFact, ReviewLayer, ReviewLayerName, ReviewLayerRun, ReviewLayerState,
+    Timestamp,
+};
 use crate::{is_foreign_key_violation, Store};
 
 const COLUMNS: &str = "review_id, number, state, detail, updated_at";
@@ -136,6 +139,7 @@ impl Store {
             Some(layer) => Ok(Some(ReviewLayer {
                 name: ReviewLayerName::for_number(layer.number)?,
                 runs: self.review_layer_runs(review_id, layer.number)?,
+                facts: self.list_review_layer_facts(review_id, layer.number)?,
                 ..layer
             })),
             None => Ok(None),
@@ -178,6 +182,95 @@ impl Store {
         Ok(runs_from(&changes))
     }
 
+    /// Record the facts one step came to, replacing whatever it recorded before.
+    ///
+    /// **The list is the statement**, which is the bargain every other ordered list on
+    /// this record strikes — the sources, the criteria, the options. So the position is
+    /// the store's to assign and no caller numbers anything, and an empty list is how a
+    /// step takes its facts back off the record.
+    ///
+    /// **Separate from [`Store::set_review_layer`], and that is the point.** Setting a
+    /// layer is the call a session makes to report progress, over and over, with whatever
+    /// it knows at the time; facts that were cleared by a call that said nothing about
+    /// them would be facts no session could keep. A step's facts change when the step has
+    /// something new to say about them and not before.
+    ///
+    /// Refused: a pair with an empty label or an empty value, for the reason
+    /// `put_review_sources` refuses a blank label — a field nobody filled in wearing the
+    /// clothes of one somebody did. No length is refused; a label that runs long is a
+    /// writing fault and belongs to the linter in Locus.
+    pub fn put_review_layer_facts(
+        &self,
+        review_id: i64,
+        number: i64,
+        facts: Vec<NewLayerFact>,
+    ) -> Result<Vec<LayerFact>> {
+        // Checked before the write, so an eighth layer is refused with the valid range
+        // named rather than caught by a foreign key and reported as a breakage.
+        ReviewLayerName::for_number(number)?;
+
+        let facts = facts
+            .into_iter()
+            .enumerate()
+            .map(|(index, fact)| {
+                Ok((
+                    index as i64 + 1,
+                    NewLayerFact {
+                        label: required(&fact.label, "facts.label", "what this fact is called")?,
+                        value: required(&fact.value, "facts.value", "what the fact says")?,
+                    },
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+
+        // **The parent is the step, not the review**, and it is checked here so the
+        // refusal names it. Facts about a step nothing has written are facts about
+        // nothing, and the delete below would otherwise report success for one.
+        if self.find_review_layer(review_id, number)?.is_none() {
+            return Err(StoreError::UnknownParent {
+                entity: "layer fact",
+                parent: "review layer",
+                id: format!("{review_id}/{number}"),
+            });
+        }
+
+        self.conn.execute(
+            "DELETE FROM review_layer_facts WHERE review_id = ?1 AND number = ?2",
+            params![review_id, number],
+        )?;
+        for (position, fact) in &facts {
+            self.conn.execute(
+                "INSERT INTO review_layer_facts (review_id, number, position, label, value)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![review_id, number, position, fact.label, fact.value],
+            )?;
+        }
+
+        self.mark_review_active(review_id)?;
+        tx.commit()?;
+        self.list_review_layer_facts(review_id, number)
+    }
+
+    /// The facts one step recorded, in the order they were written.
+    pub fn list_review_layer_facts(&self, review_id: i64, number: i64) -> Result<Vec<LayerFact>> {
+        let mut statement = self.conn.prepare(
+            "SELECT review_id, number, position, label, value FROM review_layer_facts
+             WHERE review_id = ?1 AND number = ?2 ORDER BY position ASC",
+        )?;
+        let rows = statement.query_map(params![review_id, number], |row| {
+            Ok(LayerFact {
+                review_id: row.get("review_id")?,
+                number: row.get("number")?,
+                position: row.get("position")?,
+                label: row.get("label")?,
+                value: row.get("value")?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     /// All seven layers of a review, in order.
     ///
     /// **A layer nothing has written comes back as `pending` with no time**, rather
@@ -198,6 +291,7 @@ impl Store {
                 Some(layer) => layers.push(ReviewLayer {
                     name,
                     runs: self.review_layer_runs(review_id, layer.number)?,
+                    facts: self.list_review_layer_facts(review_id, layer.number)?,
                     ..layer.clone()
                 }),
                 None => layers.push(ReviewLayer {
@@ -208,6 +302,7 @@ impl Store {
                     detail: None,
                     updated_at: None,
                     runs: Vec::new(),
+                    facts: Vec::new(),
                 }),
             }
         }
@@ -231,6 +326,7 @@ fn row_to_layer(row: &Row<'_>) -> rusqlite::Result<ReviewLayer> {
         detail: row.get("detail")?,
         updated_at: row.get("updated_at")?,
         runs: Vec::new(),
+        facts: Vec::new(),
     })
 }
 
@@ -274,6 +370,24 @@ fn runs_from(changes: &[(ReviewLayerState, Option<String>, Timestamp)]) -> Vec<R
 
     runs.extend(open);
     runs
+}
+
+/// A required string, trimmed, or a refusal naming the field.
+///
+/// The same rule `provenance.rs` applies to a source's label, stated again here rather
+/// than shared: these two modules are the two halves of DEV-917's record and a helper
+/// moved to `model.rs` for two callers would be a third place to read before either makes
+/// sense.
+fn required(value: &str, field: &'static str, expected: &str) -> Result<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(StoreError::InvalidValue {
+            field,
+            value: value.to_string(),
+            expected: expected.to_string(),
+        });
+    }
+    Ok(trimmed.to_string())
 }
 
 #[cfg(test)]

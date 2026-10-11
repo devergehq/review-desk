@@ -52,12 +52,13 @@ pub use crate::model::{
     now, Actor, Brief, BriefOption, Carryable, DecidedBy, Decision, DecisionMade, Disposition,
     Draft, DraftLint, DraftSection, DraftSectionKind, DraftStatus, Finding, FindingCarry,
     FindingDecision, FindingHunk, FindingInRound, FindingRef, FullReview, HunkLine, HunkLineMarker,
-    NewBrief, NewDraft, NewDraftSection, NewFinding, NewOutcome, NewReview, NewRoundCommit,
-    NewRule, NitTicket, NitTicketStatus, OpenedReview, Outcome, OutcomeKind, PrState, RepoSummary,
-    Review, ReviewAtLayer, ReviewEvent, ReviewFacts, ReviewLayer, ReviewLayerName, ReviewLayerRun,
-    ReviewLayerState, ReviewLinks, ReviewTimings, RoundCommit, RoundStatus, RoundStatusCounts,
-    RoundSummary, Rule, RuleCounts, RuleException, RuleScope, RuleStage, RulesSummary, Severity,
-    SignOff, Timestamp, Verification, WorkFilter, WorkItem, WorkKind, ACTIVE_RULES_CAP,
+    LayerFact, NewBrief, NewDraft, NewDraftSection, NewFinding, NewLayerFact, NewOutcome,
+    NewReview, NewRoundCommit, NewRule, NitTicket, NitTicketStatus, OpenedReview, Outcome,
+    OutcomeKind, PrState, RepoSummary, Review, ReviewAtLayer, ReviewEvent, ReviewFacts,
+    ReviewLayer, ReviewLayerName, ReviewLayerRun, ReviewLayerState, ReviewLinks, ReviewTimings,
+    RoundCommit, RoundStatus, RoundStatusCounts, RoundSummary, Rule, RuleCounts, RuleException,
+    RuleScope, RuleStage, RulesSummary, Severity, SignOff, Timestamp, Verification, WorkFilter,
+    WorkItem, WorkKind, ACTIVE_RULES_CAP,
 };
 pub use crate::path::{default_db_path, resolve_db_path, DB_ENV_VAR};
 

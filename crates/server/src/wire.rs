@@ -19,10 +19,10 @@ use review_desk_store::{
     finding_heading, AcceptanceCriterion, BlindPassState, Brief, BriefBlindPass, BriefDisagreement,
     BriefFlowBox, BriefFlowRow, BriefOpenChoice, BriefOption, BriefOptionVerdict, BriefPart,
     BriefPartFile, BriefProblem, BriefSupportTable, DescriptionLintResult, Disposition, Draft,
-    DraftLint, DraftSection, FileChange, Finding, FindingHunk, FindingInRound, NitTicket, Outcome,
-    ProblemStatement, RepoSummary, Review, ReviewLayer, ReviewLayerRun, ReviewProvenance,
-    ReviewSource, ReviewTimings, RoundCommit, RoundStatusCounts, RoundSummary, Rule, RuleCounts,
-    RuleScope, RuleStage, RulesSummary, Severity, Timestamp,
+    DraftLint, DraftSection, FileChange, Finding, FindingHunk, FindingInRound, LayerFact,
+    NitTicket, Outcome, ProblemStatement, RepoSummary, Review, ReviewLayer, ReviewLayerRun,
+    ReviewProvenance, ReviewSource, ReviewTimings, RoundCommit, RoundStatusCounts, RoundSummary,
+    Rule, RuleCounts, RuleScope, RuleStage, RulesSummary, Severity, Timestamp,
 };
 use serde_json::{json, Value};
 
@@ -499,6 +499,18 @@ pub fn review_layer(layer: &ReviewLayer) -> Value {
         // about two coverage records applies here for the same reason.
         "runs": layer.runs.iter().map(review_layer_run).collect::<Vec<_>>(),
         "seconds": layer.seconds(),
+        // **What the step came to, as pairs rather than as a sentence.** `detail` is one
+        // line and the trail draws it on one line; these are what the card beside the
+        // step holds. Empty for a step that recorded none, which draws no card at all.
+        "facts": layer.facts.iter().map(layer_fact).collect::<Vec<_>>(),
+    })
+}
+
+/// The contract's `LayerFact`: one label, one value.
+pub fn layer_fact(fact: &LayerFact) -> Value {
+    json!({
+        "label": fact.label,
+        "value": fact.value,
     })
 }
 
@@ -985,6 +997,10 @@ pub fn review_source(source: &ReviewSource) -> Value {
         "kind": source.kind.as_str(),
         "label": source.label,
         "link": source.link,
+        // What the session read off the ticket, and what it says the source tells us.
+        // Both are the session's own words and neither was fetched.
+        "status": source.status,
+        "note": source.note,
     })
 }
 

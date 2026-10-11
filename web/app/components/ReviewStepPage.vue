@@ -60,14 +60,19 @@ defineProps<{
       -->
       <ReviewTimings :timings="detail.timings" />
 
+      <!--
+        The headline and the line under it are a session's prose, so the backtick pairs in
+        them are drawn as code — `TickedText` owns that, and every field on these four
+        pages that a session wrote goes through it.
+      -->
       <h1 class="rd-display headline">
-        {{ headline }}
+        <TickedText :text="headline" />
       </h1>
       <p
         v-if="sub"
         class="sub"
       >
-        {{ sub }}
+        <TickedText :text="sub" />
       </p>
     </header>
 

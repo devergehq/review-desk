@@ -1286,6 +1286,41 @@ pub struct ReviewLayer {
     /// of its state changes. Empty for a layer nothing has written.
     #[serde(default)]
     pub runs: Vec<ReviewLayerRun>,
+    /// The facts this step recorded, in the order they were written. Empty for a step
+    /// that recorded none, which is most steps and every step of a review from before
+    /// migration 14.
+    #[serde(default)]
+    pub facts: Vec<LayerFact>,
+}
+
+/// One fact a step recorded: a label and a value, both short.
+///
+/// **This is what the note was trying to be.** A step's `detail` is one line on the trail
+/// and is drawn on one line; the facts behind it are a list of pairs, which a card beside
+/// the step can draw as two columns and a 150-pixel column never could.
+///
+/// Neither half is derived and neither is checked. "Problems" and "3" is what the session
+/// said the step came to; Review Desk counts nothing to agree or disagree with it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LayerFact {
+    pub review_id: i64,
+    /// Which of the review's seven steps this is a fact about.
+    pub number: i64,
+    /// Where it comes in the list, from 1. Assigned by the store from the order written.
+    pub position: i64,
+    /// The left column — "Problems", "Held for a ticket", "Blockers".
+    pub label: String,
+    /// The right column — "3", "8", "none; the second reader agrees".
+    pub value: String,
+}
+
+/// A fact to record. Unknown fields are refused, for the reason [`NewBrief`] gives: a
+/// misspelled `value` is a fact with nothing in it, which is worse than a refusal.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NewLayerFact {
+    pub label: String,
+    pub value: String,
 }
 
 impl ReviewLayer {

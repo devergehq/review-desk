@@ -3,7 +3,14 @@ import { resolve } from 'node:path'
 
 import { expect, test } from '@playwright/test'
 
-import { cli, cliJson, readAddresses, serversUnderTest, stillServing } from './harness'
+import {
+  cli,
+  cliJson,
+  readAddresses,
+  serversUnderTest,
+  stillServing,
+  STRUCTURED_LONG_NOTE,
+} from './harness'
 
 /*
  * **Review Desk, end to end.** The command line records a review, the binary serves it,
@@ -18,6 +25,14 @@ import { cli, cliJson, readAddresses, serversUnderTest, stillServing } from './h
  * independent tests: the draft cannot be approved until the brief is confirmed, because
  * confirming it is what puts the draft in the Inbox.
  */
+
+/**
+ * The 44px this app gives anything you press, as `--rd-control-min` sets it.
+ *
+ * The trail's one line is a control as well as a label, so its box is taller than its text
+ * — and a height assertion about the text has to allow for that rather than fail on it.
+ */
+const CONTROL_MIN = 44
 
 const addresses = readAddresses()
 
@@ -507,8 +522,18 @@ test.describe('the whole path, on a seeded database', () => {
     await expect(page.getByText('Problem confirmed.')).toHaveCount(0)
 
     /* The brief itself is on screen: the developer can still read it. */
+    /*
+     * **The headline, with its code name drawn as code.** The seeded brief writes
+     * "prints `null` for a latency" with the backticks a session writes, and since DEV-917
+     * the page draws that pair as a chip — so the sentence on screen has no backticks in
+     * it, and the word is a `<code>` element.
+     */
     await expect(
-      page.getByText('The delivery log prints `null` for a latency it never measured'),
+      page.getByText('The delivery log prints null for a latency it never measured'),
+    ).toBeVisible()
+    await expect(
+      page.locator('code').filter({ hasText: /^null$/ }).first(),
+      'the backtick pair is a code chip, not two characters',
     ).toBeVisible()
 
     /* Layer 2 is finished with on write, and the trail carries why. */
@@ -816,84 +841,206 @@ test.describe('the three step pages of one review', () => {
   })
 
   /**
-   * **A long step note is two lines on the trail, and the rest opens in place.**
+   * **A step's detail is one line, whatever its length, and the page's headline does not
+   * move.**
    *
-   * DEV-892's defect 1, measured where it can be: a clamp is layout, and the unit tests
-   * run in jsdom, which computes none. So this reads the rendered height of step 2's
-   * note — the 45-word one the invented example carries — against its own line height,
-   * presses the control, and reads it again.
+   * DEV-917's first two acceptance criteria, measured where they can be: both are layout,
+   * and the unit tests run in jsdom, which computes none. So this reads the rendered height
+   * of step 2's line — the 34-word note the invented example carries — at a laptop's width
+   * and at a phone's, and then rewrites that step with a three-word detail through the
+   * command line and checks the headline is in exactly the same place.
    *
-   * **The duration under it is measured too.** The clamp is on the note alone and a rule
-   * that ate the figure beneath it would break what DEV-890 put there, which is the one
-   * way this fix could be worse than the defect.
+   * The record is put back at the end, because every other test in this file reads the same
+   * database.
    */
-  test('a long step note is clamped to two lines and opens whole', async ({ page }) => {
+  test('a long step detail is one line at both widths, and moves the headline nowhere', async ({ page }) => {
+    /** The step's line and the page's headline, as the browser lays them out. */
+    const measure = async () => {
+      await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
+      await expect(page.locator('h1')).toBeVisible()
+      await page.waitForLoadState('networkidle')
+      const step = page.locator('.steps li').nth(1)
+      await expect(step).toContainText('2 Understand')
+      return {
+        line: await step.locator('.outcome').evaluate((element) => {
+          const style = getComputedStyle(element)
+          return {
+            height: element.getBoundingClientRect().height,
+            lineHeight: Number.parseFloat(style.lineHeight)
+              || Number.parseFloat(style.fontSize) * 1.2,
+            scrollWidth: element.scrollWidth,
+            clientWidth: element.clientWidth,
+            whiteSpace: style.whiteSpace,
+            textOverflow: style.textOverflow,
+          }
+        }),
+        headline: await page.locator('h1').evaluate(
+          element => Math.round(element.getBoundingClientRect().top + window.scrollY),
+        ),
+      }
+    }
+
+    /* The 34-word detail, at a laptop's width and at a phone's. */
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      const { line } = await measure()
+
+      /*
+       * **One line of text, overflowing rather than wrapping.** The element is 44px tall
+       * because it is also the control that opens the card, so what is measured is the
+       * text: `nowrap`, an ellipsis, and more text than there is room for — without that
+       * last part this test would pass against a short detail and prove nothing.
+       */
+      expect(line.whiteSpace, `at ${width}px the line is ${line.whiteSpace}`).toBe('nowrap')
+      expect(line.textOverflow).toBe('ellipsis')
+      expect(
+        line.scrollWidth,
+        `at ${width}px the detail is ${line.scrollWidth}px of text in ${line.clientWidth}px`,
+      ).toBeGreaterThan(line.clientWidth)
+      expect(
+        line.height,
+        `at ${width}px the line is drawn ${line.height}px tall at a ${line.lineHeight}px line`,
+      ).toBeLessThan(line.lineHeight * 2 + CONTROL_MIN)
+    }
+
+    /*
+     * **And the headline sits where it would with a three-word detail.** Written through
+     * the command line, which is the only way a step's detail is ever written, and put back
+     * afterwards because every other test here reads the same database.
+     */
+    await page.setViewportSize({ width: 1440, height: 900 })
+    const withThirtyFour = (await measure()).headline
+
+    const setDetail = (detail: string) =>
+      cli(seededDatabase, [
+        'layer',
+        'set',
+        '--review',
+        String(structuredReviewId),
+        '--layer',
+        '2',
+        '--state',
+        'done',
+        '--detail',
+        detail,
+      ])
+
+    setDetail('Three short words')
+    try {
+      const withThree = (await measure()).headline
+      expect(
+        withThree,
+        `the headline is at ${withThirtyFour}px with 34 words and ${withThree}px with three`,
+      ).toBe(withThirtyFour)
+    }
+    finally {
+      setDetail(STRUCTURED_LONG_NOTE)
+    }
+  })
+
+  /**
+   * **Opening a step's card moves no other element on the page.**
+   *
+   * DEV-917's third acceptance criterion, in its own words: "a test compares positions
+   * before and after". It is the reason the card floats rather than opening in place —
+   * DEV-892's control did open in place, and everything below it moved every time a reader
+   * asked for the rest of a note.
+   */
+  test('opening a step’s card moves nothing else', async ({ page }) => {
+    await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
+    await expect(page.locator('h1')).toBeVisible()
+    await page.waitForLoadState('networkidle')
+
+    /* Every element with a box on this page, by where it is. */
+    const positions = () => page.evaluate(() =>
+      [...document.querySelectorAll('h1, h2, .steps li, section, .totals, .pair, .key')]
+        .map((element) => {
+          const box = element.getBoundingClientRect()
+          return `${element.tagName}.${element.className}@${Math.round(box.top + window.scrollY)}x${Math.round(box.left)}`
+        }))
+
+    const before = await positions()
+    const tall = await page.evaluate(() => document.documentElement.scrollHeight)
+
+    const control = page.locator('.steps li').nth(1).locator('.outcome')
+    await control.click()
+    await expect(page.locator('.floating')).toBeVisible()
+
+    expect(await positions(), 'nothing on the page moved').toEqual(before)
+    expect(
+      await page.evaluate(() => document.documentElement.scrollHeight),
+      'and the page did not grow',
+    ).toBe(tall)
+
+    /*
+     * The card really is over the page rather than beside it: it overlaps whatever was
+     * under the step, which is what "nothing below it moves" means in the end.
+     */
+    const overlaps = await page.evaluate(() => {
+      const card = document.querySelector('.floating')!.getBoundingClientRect()
+      return [...document.querySelectorAll('h1, h2')].some((element) => {
+        const box = element.getBoundingClientRect()
+        return card.bottom > box.top && card.top < box.bottom
+          && card.right > box.left && card.left < box.right
+      })
+    })
+    expect(overlaps, 'the card is drawn over the page, not between its rows').toBe(true)
+  })
+
+  /**
+   * **The card opens and closes by keyboard alone, and the focus comes back.**
+   *
+   * The acceptance criterion's own list. Hover is welcome and is not enough: a reader on a
+   * keyboard has no hover, and a reader on a phone has no pointer at all.
+   */
+  test('a step’s card opens and closes by keyboard, and returns the focus', async ({ page }) => {
     await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
     await expect(page.locator('h1')).toBeVisible()
 
-    const step = page.locator('.steps li').nth(1)
-    await expect(step).toContainText('2 Understand')
-
-    const note = step.locator('.outcome')
-    const clamped = await note.evaluate((element) => {
-      const style = getComputedStyle(element)
-      return {
-        height: element.getBoundingClientRect().height,
-        lineHeight: Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.2,
-        scrollHeight: element.scrollHeight,
-      }
-    })
-    /*
-     * Two lines and a pixel of rounding. `scrollHeight` is what the note *would* be, and
-     * it has to be more than what is drawn — otherwise this test would pass against a
-     * short note and prove nothing about the clamp.
-     */
-    expect(
-      clamped.height,
-      `the note is drawn ${clamped.height}px tall at a ${clamped.lineHeight}px line`,
-    ).toBeLessThanOrEqual(clamped.lineHeight * 2 + 1)
-    expect(
-      clamped.scrollHeight,
-      'the note is longer than the two lines drawn, so the clamp is doing something',
-    ).toBeGreaterThan(clamped.height + 1)
-
-    /*
-     * **The duration keeps its own line under the clamped note**, whole and not clipped.
-     * The seeded record writes each step's state once through the command line, so it has a
-     * finish and no start and the figure reads "time not recorded" — which is DEV-890's own
-     * answer for that and is exactly as long as a figure would be. What is asserted is that
-     * the line is there, is not empty, and is drawn below the note rather than inside it.
-     */
-    const took = step.locator('.took')
-    await expect(took).toBeVisible()
-    await expect(took).not.toHaveText('')
-    const stacked = await step.evaluate((element) => {
-      const note = element.querySelector('.outcome')!.getBoundingClientRect()
-      const figure = element.querySelector('.took')!.getBoundingClientRect()
-      return { below: figure.top >= note.bottom - 1, height: Math.round(figure.height) }
-    })
-    expect(stacked.below, 'the figure is under the note, not inside it').toBe(true)
-    expect(stacked.height, 'the figure has a line of its own').toBeGreaterThan(0)
-
-    /* Opened by keyboard, which is the acceptance criterion's own word. */
-    const control = step.getByRole('button', { name: /Read the rest/ })
+    const control = page.locator('.steps li').nth(1).locator('.outcome')
     await control.focus()
-    await page.keyboard.press('Enter')
-    await expect(step.getByRole('button', { name: /Fold/ })).toBeVisible()
+    await expect(control).toBeFocused()
 
-    const opened = await note.evaluate(element => element.getBoundingClientRect().height)
-    expect(opened, 'the whole note is drawn once it is opened').toBeGreaterThan(clamped.height)
-    await expect(note).toContainText('the options pass was asked for anything at all')
-    /* And the figure is still there, still on its own line, under a note four times taller. */
-    await expect(took).toBeVisible()
-    expect(
-      await step.evaluate((element) => {
-        const note = element.querySelector('.outcome')!.getBoundingClientRect()
-        const figure = element.querySelector('.took')!.getBoundingClientRect()
-        return figure.top >= note.bottom - 1 && figure.height > 0
-      }),
-      'the figure survives the note being opened',
-    ).toBe(true)
+    await page.keyboard.press('Enter')
+    const card = page.locator('.floating')
+    await expect(card).toBeVisible()
+    await expect(card).toContainText('Problems')
+    await expect(control).toHaveAttribute('aria-expanded', 'true')
+
+    await page.keyboard.press('Escape')
+    await expect(card).toHaveCount(0)
+    await expect(control, 'the focus is back on the step that opened it').toBeFocused()
+
+    /* And Space opens it too, since it is a button rather than a link. */
+    await page.keyboard.press('Space')
+    await expect(card).toBeVisible()
+
+    /*
+     * **A press outside closes it**, and "outside" has to mean somewhere the card is not
+     * drawn over: the line naming the review, above the trail. Pressing the headline would
+     * press the card itself, which overlays it — that overlap is the whole point of the
+     * card and is measured in the test above.
+     */
+    await page.locator('.where').click()
+    await expect(card).toHaveCount(0)
+  })
+
+  /**
+   * **A step that recorded no facts has no card and no control for one.**
+   *
+   * Steps 4 and 7 of the seeded review recorded none, which is most steps of most reviews
+   * and every step of every review recorded before DEV-917.
+   */
+  test('a step with no facts draws no control', async ({ page }) => {
+    await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
+    await expect(page.locator('h1')).toBeVisible()
+
+    for (const index of [3, 6]) {
+      const step = page.locator('.steps li').nth(index)
+      await expect(step.locator('.outcome')).toBeVisible()
+      await expect(step.locator('button')).toHaveCount(0)
+    }
+    await expect(page.locator('.trail button')).toHaveCount(5)
   })
 
   /**
