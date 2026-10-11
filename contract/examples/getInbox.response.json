@@ -25,6 +25,8 @@
         "pr": 407,
         "title": "Invoice totals in cents"
       },
+      "ticket_id": "ABC-198",
+      "ticket_url": "https://linear.app/acme/issue/ABC-198",
       "round": 1,
       "severities": {
         "blocker": 1,
@@ -43,6 +45,8 @@
         "pr": 88,
         "title": "Cache the permissions lookup"
       },
+      "ticket_id": "ABC-240",
+      "ticket_url": null,
       "round": 2,
       "severities": {
         "blocker": 0,
@@ -63,6 +67,8 @@
         "pr": 398,
         "title": "Split the export job"
       },
+      "ticket_id": "ABC-187",
+      "ticket_url": null,
       "events": [
         {
           "finding_seq": 2,

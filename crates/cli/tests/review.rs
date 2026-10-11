@@ -525,3 +525,75 @@ fn a_ticket_address_that_is_not_https_is_refused() {
         "the refused call opened no second round: {rounds:?}"
     );
 }
+
+/// **`--ticket-url` with no ticket is refused: nothing would draw the address.**
+///
+/// The dashboard draws the ticket's **id** as the link's text, so an address stored beside
+/// a null id reaches no screen — it exists only in `review show`. A silent no-op is worse
+/// than a refusal, because it looks like the flag worked.
+#[test]
+fn a_ticket_address_with_no_ticket_is_refused() {
+    let desk = Desk::new();
+
+    let document = desk.refused_json(&[
+        "review",
+        "open",
+        "--repo",
+        "acme/portal",
+        "--pr",
+        "412",
+        "--head",
+        "3f9c2ab",
+        "--ticket-url",
+        "https://linear.app/acme/issue/ABC-231",
+    ]);
+    assert_eq!(document["error"]["code"], "invalid_value");
+    assert!(
+        document["error"]["message"]
+            .as_str()
+            .expect("a message")
+            .contains("ticket_id"),
+        "the refusal names the field that is missing: {document}"
+    );
+
+    // And it spends no round, like the refusal of a bad address: the pair is checked
+    // before the review is opened.
+    let found = desk.json(&["review", "find", "--repo", "acme/portal", "--pr", "412"]);
+    assert!(
+        found["reviews"].as_array().expect("the rounds").is_empty(),
+        "the refused call opened no review: {found}"
+    );
+
+    // The address alone is accepted on a later call, once the record holds the id — which
+    // is what a session does when it learns the address after opening the review.
+    let review = desk.run(&[
+        "review",
+        "open",
+        "--repo",
+        "acme/portal",
+        "--pr",
+        "412",
+        "--head",
+        "3f9c2ab",
+        "--ticket",
+        "ABC-231",
+    ]);
+    desk.run(&[
+        "review",
+        "open",
+        "--repo",
+        "acme/portal",
+        "--pr",
+        "412",
+        "--head",
+        "3f9c2ab",
+        "--ticket-url",
+        "https://linear.app/acme/issue/ABC-231",
+    ]);
+    let shown = desk.json(&["review", "show", "--review", &review]);
+    assert_eq!(
+        shown["review"]["ticket_url"],
+        "https://linear.app/acme/issue/ABC-231"
+    );
+    assert_eq!(shown["review"]["round"], 1, "and spent no second round");
+}

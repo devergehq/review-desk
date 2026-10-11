@@ -530,6 +530,35 @@ describe('the queue', () => {
     }
   })
 
+  it('keeps the ticket link on a row whose brief has been confirmed', async () => {
+    /*
+     * **The defect this is a regression test for.** The ticket and its address were served
+     * on `briefs_to_confirm` alone, and the queue reads one row per review — so the moment
+     * review 17's brief was confirmed, its row moved to being about the draft, the brief
+     * item went away, and the ticket link went with it. The row was still there, the
+     * address was still on the record, and the Reviews list still showed the link for the
+     * same review. All three arrays that make a row carry the pair now.
+     */
+    const page = await shown(Inbox)
+    const ticketOn = (where: VueWrapper) =>
+      lines(where)
+        .find(line => line.row.text().includes('#412'))
+        ?.out.map(link => link.attributes('href')) ?? []
+
+    expect(ticketOn(page)).toContain('https://linear.app/acme/issue/ABC-231')
+
+    await useReviewDesk().confirmBrief(17)
+    await settle(page)
+
+    /* The row is still here and is now about the draft. */
+    const row = lines(page).find(line => line.row.text().includes('#412'))
+    expect(row!.row.text()).toContain('Draft ready')
+    expect(ticketOn(page)).toEqual([
+      'https://github.com/acme/portal/pull/412',
+      'https://linear.app/acme/issue/ABC-231',
+    ])
+  })
+
   it('puts a row’s links beside the row’s own link, never inside it', async () => {
     /*
      * **The whole criterion, and it holds by construction rather than by a handler.** An

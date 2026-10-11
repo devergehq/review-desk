@@ -184,11 +184,12 @@ impl Api {
                 Ok(json!({
                     "review_id": review.id,
                     "pull_request": wire::inbox_pr(review),
+                    // The ticket and its address, so the queue's row can link the ticket
+                    // without the review being opened first. On all three arrays that make
+                    // a row — this one, `drafts_to_approve` and `author_replies` — because
+                    // the queue draws one row per review and reads the ticket from
+                    // whichever of the three put it there. See `Inbox`'s own description.
                     "ticket_id": review.ticket_id,
-                    // The address beside the id, so the queue's row can link the ticket
-                    // without the review being opened first. Served on this item and not
-                    // on the others because this is the only one carrying the id, and the
-                    // queue draws one row per review and reads the ticket from here.
                     "ticket_url": review.ticket_url,
                     "brief_ready_at": wire::rfc3339_or_null(ready_at),
                     // True when the session is holding at layer 2 for this confirmation,
@@ -219,6 +220,11 @@ impl Api {
                 Ok(json!({
                     "review_id": review.id,
                     "pull_request": wire::inbox_pr(review),
+                    // The same pair the brief item carries, and for the same reason: a
+                    // review whose brief is confirmed and whose draft is waiting reaches
+                    // the queue through this array and no other.
+                    "ticket_id": review.ticket_id,
+                    "ticket_url": review.ticket_url,
                     "round": review.round,
                     "severities": wire::severity_counts(&in_draft),
                     "held_back": held_back,
@@ -270,6 +276,9 @@ impl Api {
                     json!({
                         "review_id": review.id,
                         "pull_request": wire::inbox_pr(review),
+                        // The third array that makes a row, so it carries the pair too.
+                        "ticket_id": review.ticket_id,
+                        "ticket_url": review.ticket_url,
                         "events": events,
                         "replied_at": wire::rfc3339_or_null(replied_at),
                     })

@@ -154,11 +154,21 @@ impl Store {
         facts: &ReviewFacts,
     ) -> Result<OpenedReview> {
         // **The facts are checked before a round is spent.** `open_review` creates the
-        // review, so a `ticket_url` refused on the second step would leave behind a review
-        // the refused call appears not to have made — and on a head commit nobody had
-        // reviewed yet it would have spent a round number doing it. Refusing here costs one
-        // string comparison and keeps `review open --ticket-url` all-or-nothing.
-        ticket_url(facts.ticket_url.as_deref())?;
+        // review, so a fact refused on the second step would leave behind a review the
+        // refused call appears not to have made — and on a head commit nobody had reviewed
+        // yet it would have spent a round number doing it. Checking here keeps
+        // `review open --ticket-url` all-or-nothing.
+        //
+        // The pairing check needs the review the call is about, which may or may not exist:
+        // a session can record the id on one call and the address on a later one, so an
+        // address with no id in *this* call is fine when the record already holds one.
+        // `find_review_by_head` is the same lookup `open_review` does first, and writes
+        // nothing.
+        check_ticket(
+            facts,
+            self.find_review_by_head(repo, pr, head_sha)?
+                .and_then(|review| review.ticket_id),
+        )?;
 
         let opened = self.open_review(repo, pr, head_sha)?;
         if facts.is_empty() {
@@ -182,11 +192,10 @@ impl Store {
     /// thing a stored address is for is being drawn as a link, so a `javascript:` or
     /// `data:` value is the whole of the risk and it never reaches the column.
     pub fn set_review_facts(&self, id: i64, facts: &ReviewFacts) -> Result<Review> {
-        let ticket_url = ticket_url(facts.ticket_url.as_deref())?;
-
         // Checked first, so a bad id is NotFound rather than a silent update of
         // nothing.
-        self.get_review(id)?;
+        let held = self.get_review(id)?;
+        let ticket_url = check_ticket(facts, held.ticket_id)?;
 
         self.conn.execute(
             "UPDATE reviews SET
@@ -507,6 +516,16 @@ fn validate(new: NewReview) -> Result<NewReview> {
     }
 
     let url = ticket_url(new.ticket_url.as_deref())?;
+    if url.is_some() && new.ticket_id.is_none() {
+        // The same pairing rule `check_ticket` holds, for the one writer that does not go
+        // through it: a review created with an address and no id holds a value nothing
+        // draws.
+        return Err(StoreError::InvalidValue {
+            field: "ticket_id",
+            value: String::new(),
+            expected: "the ticket's id, which is what its address is drawn as".to_string(),
+        });
+    }
 
     Ok(NewReview {
         repo: repo.to_string(),
@@ -531,6 +550,30 @@ fn validate(new: NewReview) -> Result<NewReview> {
 /// refused with the rest: a ticket read over plain HTTP is a ticket read by anyone on the
 /// path, and Review Desk's own rule is that it never fetches a tracker, so there is no
 /// case where the insecure form is the only one available.
+/// The two ticket facts, checked together, and the address as it will be stored.
+///
+/// `held` is the id already on the record — `None` for a review that does not exist yet —
+/// because a session may record the id on one call and the address on a later one.
+///
+/// **An address with no id anywhere is refused.** Nothing would ever draw it: both
+/// renderers key on the id, which is the link's text, and an address drawn as its own text
+/// is a link a reader has to parse rather than read. So a `ticket_url` stored beside a null
+/// `ticket_id` is a value that exists only in `review show` — a silent no-op, and the kind
+/// of silent that looks like success.
+fn check_ticket(facts: &ReviewFacts, held: Option<String>) -> Result<Option<String>> {
+    let url = ticket_url(facts.ticket_url.as_deref())?;
+
+    if url.is_some() && facts.ticket_id.is_none() && held.is_none() {
+        return Err(StoreError::InvalidValue {
+            field: "ticket_id",
+            value: String::new(),
+            expected: "the ticket's id, which is what its address is drawn as".to_string(),
+        });
+    }
+
+    Ok(url)
+}
+
 fn ticket_url(given: Option<&str>) -> Result<Option<String>> {
     let Some(given) = given else {
         return Ok(None);

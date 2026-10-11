@@ -159,6 +159,22 @@ function draftById(id: number): DraftDetail | undefined {
   return source.drafts.find(item => item.draft.review_id === id)
 }
 
+/**
+ * The ticket and its address, for an inbox item that makes a queue row.
+ *
+ * **On all three of them**, which is what the contract requires and what the queue needs:
+ * it draws one row per review, so a review reaches its row through `briefs_to_confirm`,
+ * `drafts_to_approve` or `author_replies` depending on what it is waiting for — and a pair
+ * served on only one of the three means a review whose brief is confirmed and whose draft
+ * is waiting has a ticket on the record and no way to reach it.
+ */
+function ticketOf(detail: ReviewDetail): { ticket_id: string | null, ticket_url: string | null } {
+  return {
+    ticket_id: detail.review.ticket_id ?? null,
+    ticket_url: detail.review.ticket_url ?? null,
+  }
+}
+
 function prOf(detail: ReviewDetail): InboxPr {
   return {
     repo: detail.review.repo,
@@ -291,9 +307,7 @@ function inbox(): Inbox {
     .map(detail => ({
       review_id: detail.review.id,
       pull_request: prOf(detail),
-      ticket_id: detail.review.ticket_id ?? null,
-      /* The address beside the id, so the queue's row can link the ticket. */
-      ticket_url: detail.review.ticket_url ?? null,
+      ...ticketOf(detail),
       brief_ready_at: detail.brief!.updated_at,
       /* The session held at layer 2 only if nothing after it has run. */
       blocks_later_layers: detail.layers
@@ -318,6 +332,7 @@ function inbox(): Inbox {
     .map(({ owner }) => ({
       review_id: owner!.review.id,
       pull_request: prOf(owner!),
+      ...ticketOf(owner!),
       round: owner!.review.round,
       /*
        * **The findings in the draft, not the review's**, which is what the binary sends
@@ -344,6 +359,7 @@ function inbox(): Inbox {
     .map(detail => ({
       review_id: detail.review.id,
       pull_request: prOf(detail),
+      ...ticketOf(detail),
       events: detail.outcomes
         .filter(outcome => outcome.actor !== 'developer')
         .map(outcome => ({

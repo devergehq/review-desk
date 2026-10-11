@@ -1885,6 +1885,8 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
             json!({
                 "review_id": review.id,
                 "pull_request": pull_request(review),
+                "ticket_id": review.ticket_id,
+                "ticket_url": review.ticket_url,
                 "round": review.round,
                 "severities": severity_counts(&in_draft),
                 "held_back": store.held_back_findings(review.id).expect("held back").len(),
@@ -1906,6 +1908,8 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
             json!({
                 "review_id": review.id,
                 "pull_request": pull_request(review),
+                "ticket_id": review.ticket_id,
+                "ticket_url": review.ticket_url,
                 "events": outcomes.iter().filter(|outcome| {
                     matches!(outcome.actor, Actor::Author | Actor::Harvester)
                 }).map(|outcome| json!({

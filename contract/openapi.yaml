@@ -3443,20 +3443,24 @@ components:
     InboxBriefItem:
       type: object
       additionalProperties: false
-      required: [review_id, pull_request, blocks_later_layers]
+      required:
+        [review_id, pull_request, blocks_later_layers, ticket_id, ticket_url]
       description: A brief waiting to be confirmed. Layer 2.
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }
-        ticket_id: { $ref: '#/components/schemas/ForeignId' }
+        ticket_id:
+          allOf:
+            - $ref: '#/components/schemas/ForeignId'
+          description: |
+            The ticket the change is for, opaque.
         ticket_url:
           allOf:
             - $ref: '#/components/schemas/TicketUrl'
           description: |
             Where that ticket is, so the queue's row can link it without the review being
-            opened first. **Served on this item and not on the others**, because this is
-            the only inbox item that carries `ticket_id` — the queue draws one row per
-            review and reads the ticket from here.
+            opened first. Null for a review with an id and no address, which the row then
+            names on its own line and does not link.
         brief_ready_at:
           type: [string, 'null']
           format: date-time
@@ -3473,12 +3477,26 @@ components:
     InboxDraftItem:
       type: object
       additionalProperties: false
-      required: [review_id, pull_request, round, severities, held_back, is_delta]
+      required:
+        [review_id, pull_request, round, severities, held_back, is_delta, ticket_id,
+         ticket_url]
       description: A draft waiting to be approved. Layer 6.
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }
         round: { type: integer, format: int64, minimum: 1 }
+        ticket_id:
+          allOf:
+            - $ref: '#/components/schemas/ForeignId'
+          description: |
+            The ticket the change is for, opaque.
+        ticket_url:
+          allOf:
+            - $ref: '#/components/schemas/TicketUrl'
+          description: |
+            Where that ticket is, so the queue's row can link it without the review being
+            opened first. Null for a review with an id and no address, which the row then
+            names on its own line and does not link.
         severities:
           allOf:
             - $ref: '#/components/schemas/SeverityCounts'
@@ -3525,13 +3543,25 @@ components:
     InboxReplyItem:
       type: object
       additionalProperties: false
-      required: [review_id, pull_request, events]
+      required: [review_id, pull_request, events, ticket_id, ticket_url]
       description: |
         An author has acted on a posted review. Built from outcomes with actor `author`
         or `harvester`.
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }
+        ticket_id:
+          allOf:
+            - $ref: '#/components/schemas/ForeignId'
+          description: |
+            The ticket the change is for, opaque.
+        ticket_url:
+          allOf:
+            - $ref: '#/components/schemas/TicketUrl'
+          description: |
+            Where that ticket is, so the queue's row can link it without the review being
+            opened first. Null for a review with an id and no address, which the row then
+            names on its own line and does not link.
         events:
           type: array
           minItems: 1
@@ -3837,6 +3867,19 @@ components:
         **Seven arrays, five of which are waiting on the developer.** `in_progress` is
         with the agent and `posted_awaiting_author` is with the author, and neither is in
         `totals.items` — see `InboxTotals`.
+
+        **The ticket's id and address are on the three arrays that make a row**, and on no
+        others: `briefs_to_confirm`, `drafts_to_approve` and `author_replies`. A client
+        drawing one row per review — which is what DEV-876 requires of the queue — builds
+        that row from these three and *joins* `in_progress` and `posted_awaiting_author`
+        onto it, so a review waiting on the developer reaches a row through one of the
+        three whatever it is waiting for. Serving the pair on the joined arrays as well
+        would be a second answer to one question.
+
+        It was on `briefs_to_confirm` alone to begin with, which was the same bug worn
+        differently: a review whose brief had been confirmed and whose draft was waiting
+        had a row, an address on the record, and no way to reach it — while the Reviews
+        list showed the link for that same review.
       properties:
         totals: { $ref: '#/components/schemas/InboxTotals' }
         briefs_to_confirm:

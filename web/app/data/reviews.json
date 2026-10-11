@@ -374,7 +374,7 @@
       "round": 1,
       "title": "Invoice totals in cents",
       "ticket_id": "ABC-198",
-      "ticket_url": null,
+      "ticket_url": "https://linear.app/acme/issue/ABC-198",
       "changed_lines": 486,
       "session_id": "ses_8c0271aa",
       "ledger_id": "ledger-2026-10-08-407",

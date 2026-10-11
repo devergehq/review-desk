@@ -26,11 +26,16 @@
  *
  * DEV-936 puts a review's pull request and its ticket on the row, so that either can be
  * opened without opening the review first. They are a **sibling** of the row's own link,
- * not a cell inside it: an `<a>` inside an `<a>` is not something a browser will draw —
- * the parser closes the first one — and the criterion is that pressing one of these does
- * not open the review. A sibling makes that true by construction rather than by a handler
- * that stops the event, which is a thing that can be got wrong and a thing a keyboard can
- * get round.
+ * not a cell inside it, and the criterion is the reason: pressing one of these must not
+ * open the review.
+ *
+ * **A nested anchor would not save you here.** `<a>` inside `<a>` is invalid HTML, and an
+ * HTML *parser* closes the first when it meets the second — but this dashboard renders on
+ * the client, so Vue would build the nesting through the DOM API, where nothing refuses
+ * it. The browser would draw it and a click on the inner link would bubble to the outer
+ * one and open the review as well, which is precisely the thing forbidden. A sibling makes
+ * it true by construction; the alternative is a handler that stops the event, which is a
+ * thing that can be got wrong and a thing a keyboard gets round.
  *
  * ```
  * ┌─ .line ─────────────────────────────────────────────────────────────────┐
@@ -238,6 +243,33 @@ withDefaults(
 
 .title {
   display: block;
+}
+
+/*
+ * **A repository name with nothing in it to break on, broken anyway.**
+ *
+ * DEV-936's measurement found this: `devergehq/reviewdeskdashboardandcontractfixtures` is
+ * 48 characters with no hyphen or space in the name part, so there is no break opportunity
+ * in it — and the row's meta line then set a min-content width wider than a 390-pixel
+ * screen: the rows then overflowed their own section by 12 pixels.
+ * `e2e/review-desk.spec.ts` has asserted that nothing scrolls sideways at a phone since
+ * DEV-876, and it was true of every name the seed had — all of them hyphenated, all of
+ * them breakable.
+ *
+ * **`anywhere` rather than `break-word`, and the difference is the one that matters here.**
+ * Both break a word that cannot fit a line; only `anywhere` counts the break when the box's
+ * **min-content** width is computed, which is the number a flex item is shrunk against. With
+ * `break-word` the span stays as wide as its longest token and pushes the line out; with
+ * `anywhere` it shrinks and the token wraps. Measured in `e2e/header-links.spec.ts`'s own
+ * terms: with `break-word`, `section.group` holds 370 pixels of content in 358; with
+ * `anywhere` it holds 358.
+ *
+ * It predates this change — nothing about the two links causes it, and at 390 they are on a
+ * line of their own — and is fixed here because the measurement that found it is here.
+ */
+.title,
+.about .rd-meta {
+  overflow-wrap: anywhere;
 }
 
 /* A quieter row's title is the body face, and its meta sits under it just the same. */

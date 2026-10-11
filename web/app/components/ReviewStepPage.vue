@@ -165,15 +165,18 @@ const ticket = computed(() => ticketUrl(props.detail.review.ticket_url))
 /*
  * **Underlined, not accent-coloured alone.** This line is 13px, uppercase and letterspaced,
  * and at that size a colour change is the one cue a reader can miss — so the link carries
- * the one cue that survives being small, being grey-on-grey and being printed. `anywhere`
- * rather than `break-word` on the repository: a long `owner/name` is one unbroken token and
- * at 390 pixels it is wider than the screen, where `break-word` would let it overflow
- * rather than break it.
+ * the one cue that survives being small, being grey-on-grey and being printed.
+ *
+ * **No wrapping rule of its own**, and that is measured rather than assumed. `.where`
+ * above already carries `overflow-wrap: break-word`, which the anchor inherits, and in an
+ * ordinary paragraph that is enough to break a 38-character repository name at 390 pixels:
+ * `e2e/header-links.spec.ts` passes with nothing here. `QueueRow` needs `anywhere` for the
+ * same name because its meta line is a **flex item**, whose min-content width `break-word`
+ * does not reduce — a difference that does not arise here.
  */
 .out {
   text-decoration: underline;
   text-underline-offset: 2px;
-  overflow-wrap: anywhere;
 }
 
 .headline {

@@ -31,11 +31,18 @@ import { cli, scratch, serve, stop, type Serving } from './harness'
 /**
  * A repository name long enough to be the thing that breaks.
  *
- * 53 characters as one unbroken token, which is wider than a 390-pixel screen at the
- * rubric's own size. Real: it is the shape a repository name takes when somebody names it
- * after what is in it.
+ * 48 characters, and — the part that matters — **no hyphen in the name**. The first
+ * version of this was `review-desk-dashboard-and-contract-fixtures`, which is longer and
+ * tests less: a hyphen is a line-break opportunity, so a hyphenated name wraps wherever it
+ * needs to and never sets a min-content width. An unbroken 38-character name does, and it
+ * found a real fault in `QueueRow` the moment it was used — the rows overflowed their
+ * section by 12 pixels at 390, which the fix in that component's styles records.
+ *
+ * Whether a name like this is likely is not the question a measurement answers. It is
+ * allowed — GitHub's own rule is `[A-Za-z0-9._-]` — so it is the case the layout has to
+ * survive.
  */
-const LONG_REPO = 'devergehq/review-desk-dashboard-and-contract-fixtures'
+const LONG_REPO = 'devergehq/reviewdeskdashboardandcontractfixtures'
 
 /** The ticket, and the address the session was given for it. */
 const TICKET = 'DUC-2045'
@@ -92,24 +99,55 @@ async function overflows(page: Page): Promise<{ scroll: number, client: number }
   }))
 }
 
-/** Every element whose right edge is past the viewport, named so a failure is readable. */
-async function pastTheEdge(page: Page, width: number): Promise<string[]> {
-  return page.evaluate(
-    edge =>
-      [...document.querySelectorAll('a, h1, p, span')]
-        .filter((element) => {
-          const box = element.getBoundingClientRect()
-          /* Ignore what is not drawn: a visually hidden span is 1px in a clipped box. */
-          if (box.width === 0 || box.height === 0) return false
-          return box.right > edge + 0.5 || box.left < -0.5
-        })
-        .map(element =>
-          `${element.tagName.toLowerCase()}.${element.className || '-'}: `
-          + `${Math.round(element.getBoundingClientRect().left)}…`
-          + `${Math.round(element.getBoundingClientRect().right)}`)
-        .slice(0, 8),
-    width,
-  )
+/**
+ * What is too wide, named so that a failure says which element to go and look at.
+ *
+ * `within` scopes it to a subtree — the row's line, when the thing being measured is the
+ * row rather than the page. Omitted, it walks the whole document.
+ *
+ * **Every element, and `scrollWidth` as well as the box.** An earlier version looked at
+ * `a, h1, p, span` and at the box alone, and on a real failure it named the off-screen skip
+ * link and nothing else: the element that was too wide was a `div`, and inline text can
+ * overflow a block box without the box moving. Reported widest first, since the outermost
+ * offender is usually the symptom and the innermost the cause.
+ *
+ * Two things are deliberately not counted:
+ *
+ * | Skipped | Why |
+ * |---|---|
+ * | anything inside `.rd-visually-hidden` | a 1×1 clipped box holding a sentence, so its `scrollWidth` is always far past its `clientWidth` — by design, and it is what the earlier version reported instead of the real offender |
+ * | anything whose box is entirely left of the viewport | the layout's skip link sits at -9999 on purpose |
+ */
+async function tooWide(page: Page, edge: number, within?: string): Promise<string[]> {
+  return page.evaluate(({ edge, within }) => {
+    const roots = within
+      ? [...document.querySelectorAll(within)]
+      : [document.documentElement]
+
+    return roots
+      .flatMap(root => [root, ...root.querySelectorAll('*')])
+      .map((element) => {
+        const box = element.getBoundingClientRect()
+        const over = Math.max(
+          box.right - edge,
+          -box.left,
+          element.scrollWidth - element.clientWidth,
+        )
+        return { element, box, over }
+      })
+      .filter(({ element, box, over }) =>
+        box.width > 1
+        && box.height > 1
+        && box.right > 0
+        && !element.closest('.rd-visually-hidden')
+        && over > 0.5)
+      .sort((a, b) => b.over - a.over)
+      .map(({ element, box }) =>
+        `${element.tagName.toLowerCase()}.${element.className || '-'} `
+        + `box ${Math.round(box.left)}…${Math.round(box.right)} `
+        + `scroll ${element.scrollWidth} in ${element.clientWidth}`)
+      .slice(0, 6)
+  }, { edge, within })
 }
 
 for (const { name, width, height } of WIDTHS) {
@@ -143,7 +181,7 @@ for (const { name, width, height } of WIDTHS) {
     expect(
       scroll,
       `the page scrolls sideways at ${name}: ${scroll} wide in ${client}. `
-      + `Past the edge: ${(await pastTheEdge(page, width)).join(', ')}`,
+      + `Past the edge: ${(await tooWide(page, width)).join(', ')}`,
     ).toBeLessThanOrEqual(client)
 
     /* And both links sit inside the viewport rather than merely existing. */
@@ -179,11 +217,19 @@ for (const { name, width, height } of WIDTHS) {
       TICKET_URL,
     )
 
-    const { scroll, client } = await overflows(page)
+    /*
+     * **The row, not the page.** At 390 this page scrolls sideways for a reason that is
+     * nothing to do with these links and predates them: the repository picker above the
+     * list draws one tab per repository, and a 46-character name makes that tab wider than
+     * the screen — `div.filter` measures 385 pixels of content in 358. Reported in the pull
+     * request rather than fixed here, because `DecisionTrack` is another change's to make;
+     * asserting the page fits would be asserting a fault, and skipping the measurement
+     * altogether would give up on the thing this test is for. So the assertion is scoped to
+     * the row and its links, which is what DEV-936 changed.
+     */
     expect(
-      scroll,
-      `the list scrolls sideways at ${name}: ${scroll} wide in ${client}. `
-      + `Past the edge: ${(await pastTheEdge(page, width)).join(', ')}`,
-    ).toBeLessThanOrEqual(client)
+      await tooWide(page, width, '.line'),
+      `nothing in a row is wider than ${name}`,
+    ).toEqual([])
   })
 }

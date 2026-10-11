@@ -100,9 +100,9 @@ interface Waiting {
   /**
    * Where that ticket is, when the record holds an address for it.
    *
-   * Read from the same inbox item the id is read from, and `null` for a row whose review
-   * has an id and no address — which the row then does not link, the way the header does
-   * not.
+   * Read from the same inbox item the id is read from — any of the three that make a row —
+   * and `null` for a row whose review has an id and no address, which the row then names
+   * on its own line and does not link.
    */
   ticketUrl: string | null
   is_delta: boolean
@@ -162,21 +162,34 @@ function needingYou(data: Inbox): Waiting[] {
     return made
   }
 
+  /*
+   * **The ticket comes off whichever of the three put the row here.** All three carry it —
+   * the contract requires them to — and reading it from `briefs_to_confirm` alone was a
+   * defect with a name: a review whose brief had been confirmed and whose draft was
+   * waiting had a row, a ticket on the record, and no way to reach it, while the Reviews
+   * list showed the link for that same review.
+   */
+  const ticket = (row: Waiting, item: { ticket_id?: string | null, ticket_url?: string | null }) => {
+    row.ticket = item.ticket_id ?? null
+    row.ticketUrl = ticketUrl(item.ticket_url)
+  }
+
   for (const item of data.briefs_to_confirm) {
     const row = slot(item.review_id, item.pull_request)
     row.brief = item
-    row.ticket = item.ticket_id ?? null
-    row.ticketUrl = ticketUrl(item.ticket_url)
+    ticket(row, item)
   }
   for (const item of data.drafts_to_approve) {
     const row = slot(item.review_id, item.pull_request)
     row.draft = item
     row.round = item.round
     row.is_delta = item.is_delta
+    ticket(row, item)
   }
   for (const item of data.author_replies) {
     const row = slot(item.review_id, item.pull_request)
     row.reply = item
+    ticket(row, item)
   }
   /*
    * **Joined, never slotted.** Neither of these makes a row: a posted review and a review

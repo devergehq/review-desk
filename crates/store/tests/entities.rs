@@ -691,6 +691,76 @@ fn a_tickets_address_is_refused_unless_it_is_https() {
     );
 }
 
+/// **An address with no id anywhere is refused, because nothing would ever draw it.**
+///
+/// Both renderers key on the id: it is the link's text, and an address drawn as its own
+/// text is a link a reader has to parse rather than read. So a `ticket_url` beside a null
+/// `ticket_id` is a value that reaches no screen — a silent no-op, and the kind of silent
+/// that looks like success.
+///
+/// **The id may arrive in the same call or be already on the record**, which is what lets a
+/// session record the id when it opens the review and the address later.
+#[test]
+fn a_ticket_address_with_no_id_is_refused_because_nothing_would_draw_it() {
+    let (_dir, store) = temp_store();
+    let review = seed_review(&store);
+
+    match store.set_review_facts(
+        review.id,
+        &ReviewFacts {
+            ticket_url: Some("https://linear.app/acme/issue/ABC-231".to_string()),
+            ..Default::default()
+        },
+    ) {
+        Err(StoreError::InvalidValue { field, .. }) => assert_eq!(field, "ticket_id"),
+        other => panic!("expected an address with no id to be refused, got {other:?}"),
+    }
+    assert_eq!(store.get_review(review.id).unwrap().ticket_url, None);
+
+    // The two together are accepted.
+    let both = store
+        .set_review_facts(
+            review.id,
+            &ReviewFacts {
+                ticket_id: Some("ABC-231".to_string()),
+                ticket_url: Some("https://linear.app/acme/issue/ABC-231".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("an id and its address");
+    assert_eq!(both.ticket_id.as_deref(), Some("ABC-231"));
+
+    // And the address alone is accepted once the record holds the id, which is the second
+    // call a session makes when it learns the address after opening the review.
+    let later = store
+        .set_review_facts(
+            review.id,
+            &ReviewFacts {
+                ticket_url: Some("https://linear.app/acme/issue/ABC-999".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("the address, against an id already held");
+    assert_eq!(
+        later.ticket_url.as_deref(),
+        Some("https://linear.app/acme/issue/ABC-999")
+    );
+
+    // `create_review` is the one writer that does not go through the same helper, and it
+    // holds the same rule.
+    match store.create_review(NewReview {
+        repo: "acme/portal".to_string(),
+        pr: 999,
+        head_sha: "abc1234".to_string(),
+        round: 1,
+        ticket_url: Some("https://linear.app/acme/issue/ABC-231".to_string()),
+        ..Default::default()
+    }) {
+        Err(StoreError::InvalidValue { field, .. }) => assert_eq!(field, "ticket_id"),
+        other => panic!("expected an address with no id to be refused, got {other:?}"),
+    }
+}
+
 /// An address with nothing in it is an argument nobody filled in, not a mistake.
 ///
 /// The field is optional, and `--ticket-url ""` from a shell whose variable was empty is
@@ -700,6 +770,17 @@ fn a_tickets_address_is_refused_unless_it_is_https() {
 fn a_blank_ticket_address_is_no_address_rather_than_an_error() {
     let (_dir, store) = temp_store();
     let review = seed_review(&store);
+    // The id first, because an address with no id anywhere is refused — see
+    // `a_ticket_address_with_no_id_is_refused_because_nothing_would_draw_it` below.
+    store
+        .set_review_facts(
+            review.id,
+            &ReviewFacts {
+                ticket_id: Some("ABC-231".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("the ticket's id");
 
     let blank = store
         .set_review_facts(
