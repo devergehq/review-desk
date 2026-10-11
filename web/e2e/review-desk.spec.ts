@@ -786,10 +786,15 @@ test.describe('the three step pages of one review', () => {
     /*
      * **The summary, which says more than the row's one line did.** That is the whole
      * point of the fold: the row carries "A new column says which fields each report may
-     * export", and this carries which column and what reads it.
+     * export", and this carries the backfill and what reads the column.
+     *
+     * **One assertion, on a phrase only the summary has.** A second one here matched
+     * `allowed_columns`, which proved nothing: `toContainText` reads `textContent`,
+     * including the closed fold two lines below — and that fold lists
+     * `…_add_allowed_columns_to_report_definitions.php`. It would have passed with the
+     * summary deleted.
      */
-    await expect(part).toContainText('with a backfill for rows recorded before it')
-    await expect(part).toContainText('allowed_columns')
+    await expect(part).toContainText('with a backfill for the rows recorded before it')
     await expect(part).toContainText('F6')
     await expect(part).toContainText('F9')
     /* Not the file list, which is one click further in. */

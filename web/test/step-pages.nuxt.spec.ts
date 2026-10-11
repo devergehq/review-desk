@@ -1420,7 +1420,7 @@ describe('Solution', () => {
     expect(context.find('.cell--found').text()).toContain('1 held for a ticket')
 
     /* And nothing that was on the card: no summary, no file list, no finding reprinted. */
-    expect(context.text()).not.toContain('Replaces the request-scoped slot')
+    expect(context.text()).not.toContain('The slot that lived on the request is gone')
     expect(context.text()).not.toContain('app/Reporting/ExportContext.php')
   })
 
@@ -1537,7 +1537,10 @@ describe('Solution', () => {
      * whole point of the change is that the summary is not read down a column.
      */
     expect(opened.find('.summary').text())
-      .toContain('Replaces the request-scoped slot')
+      .toContain('The slot that lived on the request is gone')
+    /* And it says more than the row's own line, which is what the fold is for. */
+    expect(opened.find('.summary').text())
+      .not.toBe(row(page, 'The export context').find('.one-line').text())
   })
 
   it('lists one line per finding in the part, linking each to that finding', async () => {

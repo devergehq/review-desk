@@ -624,7 +624,7 @@
     "parts": [
       {
         "title": "The export context",
-        "summary": "Replaces the request-scoped slot with `ExportContext`, built by whoever starts an export and passed down. Nothing reads the tenant off a shared surface any more.",
+        "summary": "The slot that lived on the request is gone. Whatever starts an export builds the context and passes it down, so nothing reads the tenant off a shared surface.",
         "one_line": "Every export is handed the tenant it is for.",
         "fixes": [
           1
@@ -654,7 +654,7 @@
       },
       {
         "title": "The scheduled export's own entry point",
-        "summary": "`DispatchScheduledExports` resolves the tenant and builds the context before the job is queued, so the worker is handed one rather than reaching for it.",
+        "summary": "The scheduling command resolves the tenant and builds the context before the job is queued, so the worker is handed one rather than reaching for it.",
         "one_line": "The schedule builds the context and hands it to the worker.",
         "fixes": [
           1,
@@ -691,7 +691,7 @@
       },
       {
         "title": "Allowed columns on the report definition",
-        "summary": "`allowed_columns` on the report definition, with a backfill for rows recorded before it. `ColumnPolicy` reads it, and the pipeline applies it on both paths.",
+        "summary": "One column on the report definition, with a backfill for the rows recorded before it. The policy reads that column, and both entry points apply it.",
         "one_line": "A new column says which fields each report may export.",
         "fixes": [
           2
@@ -733,7 +733,7 @@
       },
       {
         "title": "One filter chain for both paths",
-        "summary": "`ExportPipeline` runs the four steps in a fixed order for both entry points. The web path used to run three of them, in an order of its own.",
+        "summary": "One pipeline runs the four steps in a fixed order for both entry points. The web path used to run three of them, in an order of its own.",
         "one_line": "Row filter, column policy, redaction and audit, in one order.",
         "fixes": [
           3
@@ -769,7 +769,7 @@
       },
       {
         "title": "The web path, with the branch taken out",
-        "summary": "`ReportBuilder` loses its branch on request state and `RequestState` goes entirely. The controller now builds a context the way the scheduled path does.",
+        "summary": "The builder loses its branch on where it is running, and the request-state helper goes entirely. The controller builds a context the way the schedule does.",
         "one_line": "Mostly deletions. The builder stops asking where it is running.",
         "fixes": [
           2

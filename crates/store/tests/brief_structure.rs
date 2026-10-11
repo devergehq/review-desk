@@ -1572,9 +1572,10 @@ fn the_contracts_real_length_brief_is_at_real_length() {
 
     // **Every part carries a one line, and every one of them is inside the writing rules.**
     //
-    // Two limits, both review-craft's `brief_lint.py` as of 11 October 2026, and both
+    // Four limits, all review-craft's `brief_lint.py` as of 11 October 2026, and all
     // checked here because this example is the document that linter is run against: a
-    // part's `one_line` is at most 12 words of plain English, and its `summary` at most 30.
+    // part's `one_line` is at most 12 words of plain English, its `summary` at most 30
+    // and plain too, and the summary is not the one line over again.
     // Seven of each are read at once -- the one lines down a column and the summaries one
     // open row at a time -- which is why these two slots are capped where the brief's
     // deeper fields are not.
@@ -1608,6 +1609,27 @@ fn the_contracts_real_length_brief_is_at_real_length() {
             words <= 30,
             "{where_}: a summary is at most 30 words, not {words}: {summary}"
         );
+
+        // **And it is plain, which is the half this block was missing.** The same linter
+        // applies `parts.plain` to a summary -- no class name, no path, no `::` -- and
+        // this test checked it on `one_line` only. So a commit that fixed one defect by
+        // writing `ExportContext` into five summaries took the example from 24/24 to
+        // 23/24 and CI said nothing. Its remedy is the right one and worth repeating: a
+        // part lists its files, so the summary does not need to name them.
+        for word in summary.split_whitespace() {
+            let bare = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '_');
+            assert!(
+                !bare.contains("::") && !bare.contains('/') && !bare.contains('`'),
+                "{where_}: a summary is plain English, and this holds {bare:?}: {summary}"
+            );
+            let camel = bare.chars().skip(1).any(|c| c.is_ascii_uppercase())
+                && bare.chars().next().is_some_and(|c| c.is_ascii_alphabetic());
+            assert!(
+                !camel,
+                "{where_}: a summary names no class, and this looks like one -- \
+                 {bare:?}: {summary}"
+            );
+        }
 
         // **And it is not the one line again.** Two of these were the same string, which
         // makes an opened row repeat what the closed row already said -- so the example
