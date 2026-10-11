@@ -1145,6 +1145,107 @@ test.describe('the three step pages of one review', () => {
   })
 
   /**
+   * **A harvested step 7 is drawn on the trail, and nothing on the page moves.**
+   *
+   * DEV-933's sixth acceptance criterion, in a browser because that is the only thing that
+   * computes a layout. Until DEV-933 step 7 only ever said "posted, waiting for the
+   * harvest" — nothing in `crates/harvest` wrote a layer — so the state measured here is
+   * one the trail had never been drawn with: a step at `running`, carrying facts, in the
+   * group that repeats each round.
+   *
+   * **Written through the command line**, which is how every step of this seed is written,
+   * with the words and the pairs `Store::record_harvest_step` produces — pinned in
+   * `crates/store/tests/harvest.rs` and in the harvester's own tests against the recording.
+   * The step is put back at the end, because every other test in this file reads the same
+   * database and the one above counts the trail's controls.
+   */
+  test('a harvested step 7 draws on the trail and moves nothing', async ({ page }) => {
+    const understand = `${seeded}reviews/${structuredReviewId}/understand`
+
+    /* Every element with a box on this page, by where it is. */
+    const positions = () => page.evaluate(() =>
+      [...document.querySelectorAll('h1, h2, .steps li, section, .totals, .pair, .key')]
+        .map((element) => {
+          const box = element.getBoundingClientRect()
+          return `${element.tagName}.${element.className}@${Math.round(box.top + window.scrollY)}x${Math.round(box.left)}`
+        }))
+
+    /* `--clear-facts` is a flag and `--fact` takes a pair, so the caller passes whichever
+       whole arguments it means rather than a list this helper has to guess at. */
+    const setStepSeven = (state: string, detail: string, aboutTheFacts: string[]) =>
+      cli(seededDatabase, [
+        'layer',
+        'set',
+        '--review',
+        String(structuredReviewId),
+        '--layer',
+        '7',
+        '--state',
+        state,
+        '--detail',
+        detail,
+        ...aboutTheFacts,
+      ])
+
+    try {
+      for (const [label, width, height] of [
+        ['a laptop', 1440, 900],
+        ['a phone', 390, 844],
+      ] as const) {
+        await page.setViewportSize({ width, height })
+
+        /* What the trail looks like for a review no harvest has read. */
+        setStepSeven('pending', 'posted, waiting for the harvest', ['--clear-facts'])
+        await page.goto(understand)
+        await expect(page.locator('h1')).toBeVisible()
+        await page.waitForLoadState('networkidle')
+        const step = page.locator('.steps li').nth(6)
+        await expect(step).toContainText('7 Harvest')
+        await expect(step.locator('.outcome')).toHaveText('posted, waiting for the harvest')
+        await expect(step.locator('button')).toHaveCount(0)
+        const before = await positions()
+        const tall = await page.evaluate(() => document.documentElement.scrollHeight)
+
+        /* And what a harvest of an open pull request leaves there. */
+        setStepSeven('running', '3 replies back', [
+          '--fact',
+          'Replies=3',
+          '--fact',
+          'Threads resolved=3',
+          '--fact',
+          'Code changed since=3 findings',
+        ])
+        await page.reload()
+        await expect(page.locator('h1')).toBeVisible()
+        await page.waitForLoadState('networkidle')
+        await expect(step.locator('.outcome')).toHaveText(/3 replies back/)
+
+        expect(await positions(), `nothing moved at ${label}`).toEqual(before)
+        expect(
+          await page.evaluate(() => document.documentElement.scrollHeight),
+          `and the page did not grow at ${label}`,
+        ).toBe(tall)
+
+        /*
+         * The counts are on the card, which is the only new thing on the trail: a step
+         * that recorded facts draws its line as the control that opens one.
+         */
+        await step.locator('.outcome').click()
+        const card = page.locator('.floating')
+        await expect(card).toBeVisible()
+        await expect(card).toContainText('Replies')
+        await expect(card).toContainText('Threads resolved')
+        await expect(card).toContainText('Code changed since')
+        await expect(card).toContainText('3 findings')
+        expect(await positions(), `the card moved nothing either at ${label}`).toEqual(before)
+      }
+    }
+    finally {
+      setStepSeven('pending', 'posted, waiting for the harvest', ['--clear-facts'])
+    }
+  })
+
+  /**
    * **The one line on a row is one line, at a laptop's width and at a phone's.**
    *
    * DEV-919's fourth criterion. It cannot be checked from a board — a board is drawn at one
