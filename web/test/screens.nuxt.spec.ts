@@ -545,15 +545,69 @@ describe('the draft preview', () => {
     expect(text).toContain('Passes')
   })
 
-  it('lists the developer’s edits and the findings held back', async () => {
+  /*
+   * **One line a finding, and the verb once.** DEV-928: the panel printed every toggle as
+   * its own line and the verb twice — "Kept F1 · kept", four times over on the review it was
+   * raised from. These three were each edited once, so each is one line; the five-edit case
+   * is `test/draft.spec.ts`'s, and the browser measures it on review 42.
+   */
+  it('lists the developer’s edits, one line a finding', async () => {
     const page = await open(17)
     const text = page.text()
     expect(text).toContain('Your edits to this draft')
-    expect(text).toContain('Cut')
-    expect(text).toContain('F6 · rename suggestion')
-    expect(text).toContain('Regraded')
+    expect(text).toContain('Rewrote F1 · first sentence')
+    expect(text).toContain('Regraded F3 · Blocker to Should')
+    expect(text).toContain('Cut F6 · rename suggestion')
+    expect(page.findAll('.edit')).toHaveLength(3)
+    /* Nothing changed twice here, so nothing claims it did. */
+    expect(text).not.toContain('changed')
+  })
+
+  /*
+   * **The findings held back are rows, not paragraphs.** The claim is behind the row, the
+   * severity is a word, and nothing on the row grades the finding: this is the list of what
+   * the developer has decided *not* to post, and a red blocker on it would be telling them
+   * to be afraid of something they have already settled.
+   */
+  it('draws the findings held back as rows, grouped and counted', async () => {
+    const page = await open(17)
+    const text = page.text()
     expect(text).toContain('Held back · 3 findings')
-    expect(text).toContain('F4 · Backoff schedule is repeated in two files')
+    /* Board A8's order: the question above the nits. */
+    expect(page.findAll('.held-group').map(group => group.text()))
+      .toEqual(['1 question', '2 nits'])
+    expect(page.findAll('.held-row')).toHaveLength(3)
+
+    const first = page.findAll('.held-row')[0]!
+    expect(first.find('.cell--key').text()).toBe('F7')
+    expect(first.find('.cell--severity').text()).toContain('question')
+    expect(first.find('.cell--line').text())
+      .toContain('Is the 24-hour ceiling the ticket\'s number or the queue\'s?')
+    expect(first.attributes('aria-expanded')).toBe('false')
+    /* No severity tag and no severity colour anywhere in the panel. */
+    expect(page.find('.held').findAll('.tag')).toHaveLength(0)
+  })
+
+  it('opens one held-back row at a time, in place', async () => {
+    const page = await open(17)
+    const rows = () => page.findAll('.held-row')
+
+    /* Nothing is open, so no claim and no file are on the page. */
+    expect(page.findAll('.held-opened')).toHaveLength(0)
+
+    await rows()[0]!.trigger('click')
+    expect(rows()[0]!.attributes('aria-expanded')).toBe('true')
+    const opened = page.find('.held-opened')
+    expect(opened.attributes('id')).toBe(rows()[0]!.attributes('aria-controls'))
+    expect(opened.text()).toContain('config/webhooks.php:31')
+
+    await rows()[1]!.trigger('click')
+    expect(page.findAll('.held-opened')).toHaveLength(1)
+    expect(rows()[0]!.attributes('aria-expanded')).toBe('false')
+    expect(rows()[1]!.attributes('aria-expanded')).toBe('true')
+
+    await rows()[1]!.trigger('click')
+    expect(page.findAll('.held-opened')).toHaveLength(0)
   })
 
   it('records an edit and updates the checks without a reload', async () => {
