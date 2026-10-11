@@ -413,11 +413,12 @@ function seedStructured(directory: string, database: string): number {
 
   /*
    * **Step 2's note is the long one, and deliberately.** It is the same note
-   * `getReview.response.code-review.json` carries, and it runs to 45 words — which is
-   * what a session actually wrote on the review DEV-892 was measured against. A trail
-   * drawn against seven short notes cannot show whether a long one is clamped to two
-   * lines and openable, so the one example these screenshots and the unit tests share
-   * carries one.
+   * `getReview.response.code-review.json` carries — **invented, like everything else in
+   * this example**, and written to 45 words because that is the length DEV-892 measured a
+   * real one at: 27 words under Understand when the step had finished, 52 while the brief
+   * was half written. A trail drawn against seven short notes cannot show whether a long
+   * one is clamped to two lines and openable, so the one example these screenshots and the
+   * unit tests share carries one.
    */
   const longNote
     = 'The brief was rewritten twice: the first pass mixed how the system works today '

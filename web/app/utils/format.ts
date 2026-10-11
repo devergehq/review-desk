@@ -206,10 +206,12 @@ export function activityLabel(
  * being exact: nothing here knows the width it is being drawn at, and a note is not a
  * monospace string. **The threshold errs low on purpose.** A control that opens a note
  * already fully visible does nothing a reader will mind; a note clipped at two lines with
- * no control is DEV-892's defect 1, which is what this exists to prevent. Every outcome the
- * store writes short — "passes, 2 warnings", "14 findings, 1 blocker", "waiting on you" —
- * is under it, and the 45-word note from the review this was measured against is six times
- * over it.
+ * no control is DEV-892's defect 1, which is what this exists to prevent.
+ *
+ * 28 rather than 26, which is the slack and the whole of it. Every outcome the store writes
+ * short — "passes, 2 warnings", "14 findings, 1 blocker", "waiting on you", "signed off by
+ * the developer" — is under it, and the invented example's 45-word note is 251 characters,
+ * nine times over.
  */
 const FITS_TWO_TRAIL_LINES = 28
 

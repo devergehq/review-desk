@@ -212,7 +212,8 @@ describe('a step note that two lines will not hold', () => {
     expect(stepNoteRunsLong(outcome)).toBe(false)
   })
 
-  it('opens the 45-word note the real review recorded', () => {
+  it('opens the invented example’s 45-word note', () => {
+    /* Invented, at the length DEV-892 measured a real note at. 251 characters. */
     const recorded = 'The brief was rewritten twice: the first pass mixed how the system '
       + 'works today into the problem, so the problem half could not be handed over, and '
       + 'the second split them and numbered three problems before the options pass was '
