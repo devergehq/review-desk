@@ -170,27 +170,39 @@ function titleOf(said: string, read: string | null): string {
 const steps = computed<Step[]>(() =>
   [...props.layers]
     .sort((one, two) => one.number - two.number)
-    .map(layer => ({
-      number: layer.number,
-      name: layer.name,
-      label: layerLabel(layer.name),
-      detail: layerOutcome(layer),
+    .map((layer) => {
+      const said = layerOutcome(layer)
+      /*
+       * **Read once.** The line, the title and the card all say this, and
+       * `harvestReadLabel` defaults to the clock: called three times it would answer from
+       * three readings of it, and the title could say "read just now" beside a card
+       * saying "read 1 min ago".
+       */
+      const read = harvestReadLabel(layer)
       /*
        * `?? []` because the contract added `facts` after this response shape existed: a
        * review served by a build from before DEV-917 is missing the field rather than
        * wrong, and the sample fixtures are briefs recorded before it.
        */
-      facts: layer.facts ?? [],
-      duration: stepDurationLabel(layer),
-      read: harvestReadLabel(layer),
-      title: titleOf(layerOutcome(layer), harvestReadLabel(layer)),
-      opens: (layer.facts ?? []).length > 0 || harvestReadLabel(layer) != null,
-      to: PAGES[layer.name] == null
-        ? null
-        : `/reviews/${props.reviewId}/${PAGES[layer.name]}`,
-      current: layer.name === props.active,
-      tone: layerTone(layer.state),
-    })),
+      const facts = layer.facts ?? []
+
+      return {
+        number: layer.number,
+        name: layer.name,
+        label: layerLabel(layer.name),
+        detail: said,
+        facts,
+        duration: stepDurationLabel(layer),
+        read,
+        title: titleOf(said, read),
+        opens: facts.length > 0 || read != null,
+        to: PAGES[layer.name] == null
+          ? null
+          : `/reviews/${props.reviewId}/${PAGES[layer.name]}`,
+        current: layer.name === props.active,
+        tone: layerTone(layer.state),
+      }
+    }),
 )
 
 /**
@@ -240,11 +252,17 @@ function close() {
 /**
  * The pointer arriving on a step, and leaving it.
  *
- * Only a step that has facts opens: a step with none has no card, and setting the state to
- * it would close whatever a click had pinned for nothing.
+ * Only a step with a card opens — `step.opens`, the same test the control is drawn on.
+ * A step with nothing behind it has no card, and setting the state to it would close
+ * whatever a click had pinned for nothing.
+ *
+ * **The same test, and that is the whole of it.** This read `facts.length` until the
+ * review of the commit that broadened the control to facts *or* a read time: the one step
+ * the broadening was for drew a button, answered a click, and did nothing at all under a
+ * pointer — the unreachable answer moved rather than fixed.
  */
 function over(step: Step) {
-  if (step.facts.length) hovered.value = step.number
+  if (step.opens) hovered.value = step.number
 }
 
 function out(number: number) {
@@ -305,8 +323,9 @@ const groups = computed(() => [
           <!--
             The one line under the name, and the control that opens the card.
 
-            **A button when the step recorded facts, a plain span when it did not.** Both
-            draw the same one ellipsised line, so the trail keeps its height either way —
+            **A button when the step has a card, a plain span when it has not.** A card is
+            facts to show or — on step 7 alone — a read time to say. Both branches draw
+            the same one ellipsised line, so the trail keeps its height either way —
             which is what makes the page's headline sit where it sits whatever a session
             wrote. Outside the face above, because that face is a link on five of the seven.
           -->
@@ -322,9 +341,15 @@ const groups = computed(() => [
             @click="toggle(step.number)"
           >
             {{ step.detail }}
+            <!--
+              What the control opens, for a reader who cannot see that it is one. The
+              facts branch counts them; step 7 with none says when it was last read,
+              which is the whole of what its card holds.
+            -->
             <span class="rd-visually-hidden">
-              — {{ step.facts.length ? count(step.facts.length, 'fact') : step.read }}
-              about step {{ step.number }} {{ step.label }}</span>
+              — <template v-if="step.facts.length">{{ count(step.facts.length, 'fact') }}
+                about</template><template v-else>{{ step.read }}; opens</template>
+              step {{ step.number }} {{ step.label }}</span>
           </button>
           <span
             v-else

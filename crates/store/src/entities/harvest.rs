@@ -15,11 +15,15 @@
 //! | The pull request merged or closed | `done`, how it ended, and the same counts |
 //!
 //! **Every one of those records `Pull request` as a fact**, `open` until it is `merged` or
-//! `closed`. The trail draws a card beside a step only when the step recorded facts, and
-//! that card is where the page says when the harvest last read the review — which the
-//! step's own line, 154 pixels wide and full of its four words, has no room for. So the
-//! row that needs the card most, nothing-came-back, is the row that would not have had
-//! one.
+//! `closed`. It is a fact about the review rather than a device: an open pull request is
+//! why a step is still `running`, and it is the pair the settled rows answer with
+//! `merged` or `closed`.
+//!
+//! It was also, for one commit, what gave a harvested step a card at all — the trail drew
+//! one only for a step with facts, and the card is where the page says when the harvest
+//! last read the review, which the step's own line has no room for. **The trail no longer
+//! depends on it**: it opens a card for a step with facts *or* a read time, so this fact
+//! may be changed on its own merits and nothing on the page disappears with it.
 //!
 //! **The counts are read from the outcomes the record holds, not from what the run just
 //! wrote.** Running a harvest twice records nothing twice — that is the whole of

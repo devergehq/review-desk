@@ -1297,6 +1297,14 @@ test.describe('the three step pages of one review', () => {
         await expect(page.locator('h1')).toBeVisible()
         await page.waitForLoadState('networkidle')
         await expect(step.locator('.outcome')).toHaveText(/^nothing back yet/)
+        /* Under a pointer as well as a click: the card is drawn on `opens`, and so is
+           the hover that opens it. The review of the commit that broadened one and not
+           the other is why this line is here. */
+        await step.hover()
+        await expect(page.locator('.floating .card-took')).toHaveText('read just now')
+        await page.mouse.move(0, 0)
+        await expect(page.locator('.floating')).toHaveCount(0)
+
         await step.locator('.outcome').click()
         await expect(page.locator('.floating .card-took')).toHaveText('read just now')
         await expect(page.locator('.floating .facts')).toHaveCount(0)
