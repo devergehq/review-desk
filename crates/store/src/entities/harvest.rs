@@ -277,11 +277,11 @@ fn detail_for(ended: Option<&'static str>, found: &Found) -> String {
 /// nought: "Replies 0" fills the card of a review nobody has replied to with three facts
 /// that say nothing, and the detail already says nothing came back.
 ///
-/// **Always at least that first pair, so a harvested step always has a card.** The trail
-/// draws a card only for a step that recorded facts, and the card is where the review page
-/// says when the harvest last read this review — a measurement settled that it cannot go
-/// on the step's own line, which is 154 pixels wide at 1440 and already full. "open" is
-/// not filler there: on a step that is still running it is the reason it is still running.
+/// **Always at least that first pair.** "open" is not filler: on a step that is still
+/// running it is the reason it is still running, and it is the pair the settled rows
+/// answer with `merged` or `closed`. The module header has the rest of the argument,
+/// including what this pair is *not* load-bearing for any more — the trail opens a card
+/// for a step with facts or a read time, so changing this costs the page nothing.
 fn facts_for(ended: Option<&'static str>, found: &Found) -> Vec<NewLayerFact> {
     let mut facts = vec![fact("Pull request", ended.unwrap_or("open").to_string())];
     if found.replies > 0 {
@@ -395,7 +395,7 @@ mod tests {
     }
 
     #[test]
-    fn a_harvest_that_found_nothing_says_so_and_still_draws_a_card() {
+    fn a_harvest_that_found_nothing_says_so_and_still_records_where_it_stands() {
         assert_eq!(detail_for(None, &Found::default()), "nothing back yet");
 
         let recorded = facts_for(None, &Found::default());
@@ -405,9 +405,7 @@ mod tests {
                 .map(|fact| (fact.label.as_str(), fact.value.as_str()))
                 .collect::<Vec<_>>(),
             vec![("Pull request", "open")],
-            "where the pull request stands, and nothing invented beside it — the trail \
-             draws a card only for a step with facts, and the card is where the page says \
-             when the harvest last read this review"
+            "where the pull request stands, and nothing invented beside it"
         );
     }
 

@@ -27,9 +27,10 @@ import type { LayerFact, ReviewLayer, ReviewLayerName } from '~/types/desk'
  * stopped that and bought a new problem — opening the note in place moved everything below
  * it, every time a reader asked.
  *
- * **So the rest floats.** A step that recorded facts draws its `detail` line as a button,
- * and activating it opens a [`FloatingCard`] anchored to the step: the step's name, how
- * long it took, and the facts as two columns. The card is out of flow, so nothing on the
+ * **So the rest floats.** A step with something behind it draws its `detail` line as a
+ * button, and activating it opens a [`FloatingCard`] anchored to the step: the step's
+ * name, how long it took or when a harvest last read the review, and the facts as two
+ * columns. The card is out of flow, so nothing on the
  * page moves when it opens — which is the acceptance criterion, measured in
  * `e2e/review-desk.spec.ts` by comparing positions either side of the click.
  *
