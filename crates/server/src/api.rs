@@ -103,6 +103,7 @@ impl Api {
         match operation {
             Operation::GetInbox => self.inbox(),
             Operation::ListRepos => self.repos(),
+            Operation::ListReviews => self.reviews(query),
             Operation::StartReview => self.start_review(body),
             Operation::GetReview { review_id } => self.review(review_id),
             Operation::ConfirmBrief { review_id } => self.confirm_brief(review_id),
@@ -138,6 +139,7 @@ impl Api {
         let drafts = self.records.reviews_with_draft_status(DraftStatus::Ready)?;
         let replies = self.records.reviews_with_author_activity()?;
         let in_progress = self.records.reviews_in_progress()?;
+        let posted = self.records.posted_reviews_awaiting_author()?;
         let proposed = self.records.rules_at_stages(None, &[RuleStage::Proposed])?;
 
         let briefs_to_confirm = briefs
@@ -310,6 +312,19 @@ impl Api {
             })
             .collect();
 
+        // Posted, and with the author. **Not a group that is waiting on the developer**,
+        // which is why it is absent from `totals_items` below — and why the screen has to
+        // count it separately rather than read the headline.
+        //
+        // `rounds_on_pr` is `review.round` without a second read: the store returns only
+        // the newest round of a pull request, so the round this review is on *is* the
+        // highest the pull request has reached. Stated here rather than left for the
+        // screen to assume, which is what the contract's field is for.
+        let posted_awaiting_author: Vec<Value> = posted
+            .iter()
+            .map(|item| wire::inbox_posted(item, item.review.round))
+            .collect();
+
         let since = now() - WINDOW_DAYS * wire::DAY;
         let filed = self.records.filed_nit_tickets(since)?;
         let nits_filed: i64 = filed
@@ -320,6 +335,12 @@ impl Api {
         // `own_prs_without_reviewer` is empty, and that is the contract's own position:
         // it is GitHub state, nothing lists the developer's own pull requests, and no
         // issue covers it. Empty reads as absent, which is true.
+        // **The five waiting groups, and deliberately not the other two.** `in_progress`
+        // is with the agent and `posted_awaiting_author` is with the author; neither asks
+        // the developer for anything, and the screen's headline is a count of what does.
+        // The contract's `InboxTotals.items` names the five rather than counting them,
+        // because "the five groups" stopped being a safe way to say it the moment there
+        // were seven arrays.
         let totals_items = briefs_to_confirm.len()
             + drafts_to_approve.len()
             + author_replies.len()
@@ -341,6 +362,7 @@ impl Api {
                 "own_prs_without_reviewer": Value::Array(Vec::new()),
                 "proposed_rules": proposed_rules,
                 "in_progress": in_progress,
+                "posted_awaiting_author": posted_awaiting_author,
                 "handled_without_you": {
                     "window_days": WINDOW_DAYS,
                     // Needs a CI source Review Desk has not got.
@@ -350,6 +372,39 @@ impl Api {
                 },
             }),
         ))
+    }
+
+    /// `GET /reviews`: every review on the record, newest first.
+    ///
+    /// **The one page where a review that is not waiting on anybody can be found.**
+    /// `GET /inbox` is what is waiting and `GET /timings` is what has finished, so a
+    /// review posted and not yet replied to appeared in neither and was reachable only by
+    /// typing its id.
+    ///
+    /// The repository is checked rather than merely filtered on, as `listRules` and
+    /// `listReviewTimings` check the same parameter: an unchecked filter answers a
+    /// mistyped repository with an empty list, which reads as "no reviews there" rather
+    /// than "there is no such repository".
+    fn reviews(&self, query: &str) -> Result<(u16, Value), ApiError> {
+        let repo = query_value(query, "repo");
+        if let Some(repo) = &repo {
+            if !wire::is_repo_name(repo) {
+                return Err(ApiError::invalid_value(
+                    "repo",
+                    format!("{repo:?} is not a repository"),
+                    "a repository as owner/repo",
+                ));
+            }
+        }
+
+        let reviews: Vec<Value> = self
+            .records
+            .reviews_at_step(repo.as_deref())?
+            .iter()
+            .map(wire::review_list_item)
+            .collect();
+
+        Ok((200, json!({ "repo": repo, "reviews": reviews })))
     }
 
     /// `GET /repos`: the repositories Review Desk holds a record for.

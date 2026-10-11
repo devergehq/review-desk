@@ -348,7 +348,7 @@ fn parse(raw: &[u8]) -> Answer {
     }
 }
 
-/// A record with enough in it that every one of the twenty operations has something
+/// A record with enough in it that every one of the twenty-one operations has something
 /// real to answer with.
 ///
 /// Built through the store's public API rather than by writing SQL, so it cannot drift

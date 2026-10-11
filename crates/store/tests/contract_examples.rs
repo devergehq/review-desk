@@ -177,6 +177,12 @@ struct Seeded {
     /// on the struct so the seed's shape is readable from one place.
     #[allow(dead_code)]
     posted_review: Review,
+    /// A fifth review, posted **and harvested**, whose author has replied and whose pull
+    /// request is still open. It is the one state in which the posted group's three
+    /// figures are measurements; `posted_review` above is the same group's unmeasured
+    /// item, and the two together are both halves of telling a nought from an absence.
+    #[allow(dead_code)]
+    answered_review: Review,
     proposed_rule: Rule,
     excepted_rule: Rule,
     stale_rule: Rule,
@@ -861,6 +867,101 @@ fn seed(store: &Store) -> Seeded {
         )
         .expect("the harvest");
 
+    // **A fifth review, posted and answered**: the one state `posted_awaiting_author`'s
+    // three figures are measurements in. The fourth review above is posted and never
+    // harvested, which is the same group's unmeasured item — so the two together are both
+    // halves of the one rule that matters here, that a nought and an absence are told
+    // apart. A different pull request from any above, because the group serves only a
+    // pull request's newest round and a second round of #401 would evict it.
+    let answered_review = store
+        .create_review(NewReview {
+            repo: "acme/portal".to_string(),
+            pr: 398,
+            head_sha: "7c1d4e8".to_string(),
+            round: 1,
+            title: Some("Split the export job".to_string()),
+            ticket_id: Some("ABC-204".to_string()),
+            changed_lines: Some(512),
+            session_id: Some("ses_2a7e9014".to_string()),
+            ledger_id: Some("ledger-2026-10-08-398".to_string()),
+            github_review_id: None,
+        })
+        .expect("a review the author answered");
+    let answered_seq = store
+        .add_finding(
+            answered_review.id,
+            NewFinding {
+                lens: "boundary".to_string(),
+                severity: Severity::Should,
+                claim: "The chunk size is read before the config is bound".to_string(),
+                file: Some("jobs/ExportRows.php".to_string()),
+                line: Some(44),
+                disposition: Disposition::InDraft,
+                ..Default::default()
+            },
+        )
+        .expect("a finding to be replied to")
+        .seq;
+    store
+        .put_draft(
+            answered_review.id,
+            NewDraft::composed(vec![review_desk_store::NewDraftSection::finding(
+                answered_seq,
+                "The chunk size is read before the config is bound",
+                "The first export after a deploy uses the default size.",
+            )]),
+        )
+        .expect("its draft");
+    store
+        .approve_draft(
+            answered_review.id,
+            ReviewEvent::RequestChanges,
+            Actor::Developer,
+        )
+        .expect("signed off");
+    store
+        .post_draft(answered_review.id, "PRR_kwDOA1")
+        .expect("the session reported it posted");
+    // **The comment the finding was posted as.** The harvester reaches a thread through
+    // this and reads none without it, so it is what makes a reply count a measurement
+    // rather than a nought over something nobody could see.
+    store
+        .set_finding_github_comment(answered_review.id, answered_seq, "IC_kwDOA1")
+        .expect("the comment it was posted as");
+    for (kind, actor, at) in [
+        // The author's own two acts. Counted by actor: the harvester records a reply from
+        // any other login against the developer, and the group is about the author.
+        (OutcomeKind::Replied, Actor::Author, 1_760_000_100),
+        (OutcomeKind::ThreadResolved, Actor::Author, 1_760_000_200),
+        // The harvester's own observation about the code, which is nobody's act.
+        (
+            OutcomeKind::CodeChangedAfter,
+            Actor::Harvester,
+            1_760_000_300,
+        ),
+    ] {
+        store
+            .add_outcome(
+                FindingRef {
+                    review_id: answered_review.id,
+                    seq: answered_seq,
+                },
+                NewOutcome {
+                    kind,
+                    actor,
+                    detail: None,
+                    occurred_at: Some(at),
+                },
+            )
+            .expect("what came back");
+    }
+    store
+        .set_review_pr_state(answered_review.id, review_desk_store::PrState::Open, None)
+        .expect("still open at the last harvest");
+    store
+        .mark_review_harvested(answered_review.id, 1_760_000_400)
+        .expect("the harvester has looked");
+
     // A proposal to decide on, a rule with an accepted exception, and a deferred one.
     let proposed_rule = store
         .create_rule(NewRule {
@@ -947,6 +1048,7 @@ fn seed(store: &Store) -> Seeded {
         other_review,
         waiting_review,
         posted_review,
+        answered_review,
         proposed_rule,
         excepted_rule,
         stale_rule,
@@ -988,6 +1090,8 @@ fn review_document(review: &Review) -> Value {
         "ledger_id": review.ledger_id,
         "github_review_id": review.github_review_id,
         "created_at": review.created_at,
+        "pr_state": review.pr_state.map(|state| state.as_str()),
+        "harvested_at": review.harvested_at,
     })
 }
 
@@ -1281,6 +1385,37 @@ fn review_timing_rows(store: &Store) -> Value {
                 "timings": timings_document(timings),
                 "layers": timings.layers.iter().map(layer_document).collect::<Vec<_>>(),
             }))
+            .collect::<Vec<_>>(),
+    })
+}
+
+/// `GET /reviews`: every review, newest first, with the step it has reached.
+fn review_list(store: &Store) -> Value {
+    json!({
+        // The repository asked about, echoed back. `None` here, for every repository.
+        "repo": Value::Null,
+        "reviews": store
+            .reviews_at_step(None)
+            .expect("every review")
+            .iter()
+            .map(|at| {
+                let mut row = json!({
+                    "review": review_document(&at.review),
+                    "rounds_on_pr": at.rounds_on_pr,
+                    "steps_total": ReviewLayerName::COUNT,
+                    "last_activity_at": at.review.last_activity_at,
+                });
+                // Absent together, for a review nothing has reported on at all: a step
+                // number of 1 would say the lint is pending, which is a different claim.
+                if let Some(step) = &at.step {
+                    let object = row.as_object_mut().expect("an object");
+                    object.insert("step_number".to_string(), json!(step.number));
+                    object.insert("step_name".to_string(), json!(step.name.as_str()));
+                    object.insert("step_state".to_string(), json!(step.state.as_str()));
+                    object.insert("step_detail".to_string(), json!(step.detail));
+                }
+                row
+            })
             .collect::<Vec<_>>(),
     })
 }
@@ -1698,11 +1833,23 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
         .iter()
         .map(|review| {
             let findings = store.list_findings(review.id).expect("its findings");
+            // **The findings in the draft, not the review's.** This file was the third
+            // copy of that figure and the second to get it wrong: the server counts
+            // `in_draft`, the dashboard's sample records counted the whole review, and so
+            // did this — in the file whose own header calls itself "the store's own
+            // statement of which fields it owns". The contract said nothing either way
+            // until DEV-930, which is how three answers to one question survived. A
+            // held-back nit is not in the draft.
+            let in_draft: Vec<Finding> = findings
+                .iter()
+                .filter(|finding| finding.disposition == Disposition::InDraft)
+                .cloned()
+                .collect();
             json!({
                 "review_id": review.id,
                 "pull_request": pull_request(review),
                 "round": review.round,
-                "severities": severity_counts(&findings),
+                "severities": severity_counts(&in_draft),
                 "held_back": store.held_back_findings(review.id).expect("held back").len(),
                 // Derived: a later round reviews only what changed.
                 "is_delta": review.round > 1,
@@ -1778,6 +1925,43 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
         })
         .collect::<Vec<_>>();
 
+    // Posted, and with the author. The three counts come back whatever the record holds;
+    // nulling them where nothing could have measured one is the *server's* decision, as
+    // `entities::inbox`'s header says, so this document carries the figures and the two
+    // facts that qualify them.
+    let posted = store
+        .posted_reviews_awaiting_author(None)
+        .expect("posted reviews awaiting their author")
+        .iter()
+        .map(|item| {
+            let harvested = item.review.harvested_at.is_some();
+            let readable = harvested && item.findings_linked > 0;
+            let counted = |count: i64, could_look: bool| {
+                if count > 0 || could_look {
+                    json!(count)
+                } else {
+                    Value::Null
+                }
+            };
+            json!({
+                "review_id": item.review.id,
+                "pull_request": pull_request(&item.review),
+                "round": item.review.round,
+                // The group holds only the newest round, so these are one number.
+                "rounds_on_pr": item.review.round,
+                "posted_at": item.posted_at,
+                "posted_as": item.posted_as.map(|event| event.as_str()),
+                "pr_state": item.review.pr_state.map(|state| state.as_str()),
+                "harvested_at": item.review.harvested_at,
+                "findings": item.findings,
+                "findings_linked": item.findings_linked,
+                "replies": counted(item.response.replies, readable),
+                "threads_resolved": counted(item.response.threads_resolved, readable),
+                "code_changed_after": counted(item.response.code_changed_after, harvested),
+            })
+        })
+        .collect::<Vec<_>>();
+
     let tickets = store.filed_nit_tickets(None, None).expect("filed tickets");
     let items = briefs.len() + drafts.len() + replies.len() + proposals.len() + in_progress.len();
     let repos = store
@@ -1797,6 +1981,7 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
         "own_prs_without_reviewer": [],
         "proposed_rules": proposals,
         "in_progress": in_progress,
+        "posted_awaiting_author": posted,
         "handled_without_you": {
             "window_days": 7,
             // No source: the description lint runs in CI.
@@ -1921,6 +2106,7 @@ fn every_response_example_can_be_produced_from_the_store() {
     fields += check("listRepos", &repos_page(&store));
     fields += check("listRules", &rules_page(&store, Some("acme/portal")));
     fields += check("listReviewTimings", &review_timing_rows(&store));
+    fields += check("listReviews", &review_list(&store));
 
     // The groups those two checks read must not have been empty, or they checked
     // nothing: an empty array has no leaf paths, so a vacuous group would pass
@@ -1940,6 +2126,14 @@ fn every_response_example_can_be_produced_from_the_store() {
             .is_empty(),
         "review {} should be waiting on a confirmation",
         seeded.waiting_review.id
+    );
+    assert!(
+        !store
+            .posted_reviews_awaiting_author(None)
+            .expect("posted reviews")
+            .is_empty(),
+        "review {} should be posted and waiting on its author",
+        seeded.answered_review.id
     );
     let page = rules_page(&store, Some("acme/portal"));
     for group in ["proposed", "active", "stale"] {
@@ -2153,7 +2347,7 @@ fn every_response_example_can_be_produced_from_the_store() {
     );
 
     // Said out loud, so that a refactor which quietly stops checking most of the
-    // contract fails here rather than passing. The sixteen examples carry well over
+    // contract fails here rather than passing. The twenty-one examples carry well over
     // three hundred leaf fields between them.
     assert!(
         fields >= 300,
@@ -2173,6 +2367,7 @@ fn every_response_example_is_checked() {
         "listRepos",
         "listRules",
         "listReviewTimings",
+        "listReviews",
         "startReview",
         "confirmBrief",
         "getProblemStatement",
