@@ -15,6 +15,7 @@ import {
   severityTally,
   sinceLabel,
   stepDurationLabel,
+  stepNoteRunsLong,
 } from '../app/utils/format'
 
 /*
@@ -188,5 +189,47 @@ describe('the seven layers', () => {
     expect(editVerb('cut')).toBe('Cut')
     expect(editVerb('rewritten')).toBe('Rewrote')
     expect(editVerb('code_changed_after')).toBe('Code changed after')
+  })
+})
+
+/*
+ * **Which notes the trail has to be able to open.** Defect 1 of DEV-892: the store holds no
+ * length, so a session's note arrives as long as it was written and a step column is about
+ * 150px wide. The trail clamps every note to two lines — so the question this answers is
+ * which of them a reader would otherwise be unable to finish.
+ */
+describe('a step note that two lines will not hold', () => {
+  it.each([
+    'passes, 2 warnings',
+    '14 findings, 1 blocker',
+    'waiting on you',
+    'brief settled',
+    '8 options, C built',
+    'after posting',
+    'right shape',
+    'not yet',
+  ])('%s is short enough to read whole', (outcome) => {
+    expect(stepNoteRunsLong(outcome)).toBe(false)
+  })
+
+  it('opens the 45-word note the real review recorded', () => {
+    const recorded = 'The brief was rewritten twice: the first pass mixed how the system '
+      + 'works today into the problem, so the problem half could not be handed over, and '
+      + 'the second split them and numbered three problems before the options pass was '
+      + 'asked for anything at all.'
+    expect(stepNoteRunsLong(recorded)).toBe(true)
+  })
+
+  it('opens the reason a waived brief carries, which is a sentence', () => {
+    /* From the seeded record: layer 2's own detail, and 54 characters of it. */
+    expect(
+      stepNoteRunsLong('61 changed lines, under this caller’s 200-line threshold'),
+    ).toBe(true)
+  })
+
+  it('measures what is there, not what was typed around it', () => {
+    /* Whitespace is not a note. A padded short outcome still fits two lines. */
+    expect(stepNoteRunsLong('   waiting on you                       ')).toBe(false)
+    expect(stepNoteRunsLong('')).toBe(false)
   })
 })

@@ -816,6 +816,65 @@ test.describe('the three step pages of one review', () => {
   })
 
   /**
+   * **A long step note is two lines on the trail, and the rest opens in place.**
+   *
+   * DEV-892's defect 1, measured where it can be: a clamp is layout, and the unit tests
+   * run in jsdom, which computes none. So this reads the rendered height of step 2's
+   * note — the 45-word one the invented example carries — against its own line height,
+   * presses the control, and reads it again.
+   *
+   * **The duration under it is measured too.** The clamp is on the note alone and a rule
+   * that ate the figure beneath it would break what DEV-890 put there, which is the one
+   * way this fix could be worse than the defect.
+   */
+  test('a long step note is clamped to two lines and opens whole', async ({ page }) => {
+    await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
+    await expect(page.locator('h1')).toBeVisible()
+
+    const step = page.locator('.steps li').nth(1)
+    await expect(step).toContainText('2 Understand')
+
+    const note = step.locator('.outcome')
+    const clamped = await note.evaluate((element) => {
+      const style = getComputedStyle(element)
+      return {
+        height: element.getBoundingClientRect().height,
+        lineHeight: Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.2,
+        scrollHeight: element.scrollHeight,
+      }
+    })
+    /*
+     * Two lines and a pixel of rounding. `scrollHeight` is what the note *would* be, and
+     * it has to be more than what is drawn — otherwise this test would pass against a
+     * short note and prove nothing about the clamp.
+     */
+    expect(
+      clamped.height,
+      `the note is drawn ${clamped.height}px tall at a ${clamped.lineHeight}px line`,
+    ).toBeLessThanOrEqual(clamped.lineHeight * 2 + 1)
+    expect(
+      clamped.scrollHeight,
+      'the note is longer than the two lines drawn, so the clamp is doing something',
+    ).toBeGreaterThan(clamped.height + 1)
+
+    /* The duration keeps its own line under the clamped note. */
+    const took = step.locator('.took')
+    await expect(took).toBeVisible()
+    await expect(took).toHaveText(/\d+ (sec|min|hr|day)/)
+
+    /* Opened by keyboard, which is the acceptance criterion's own word. */
+    const control = step.getByRole('button', { name: /Read the rest/ })
+    await control.focus()
+    await page.keyboard.press('Enter')
+    await expect(step.getByRole('button', { name: /Fold/ })).toBeVisible()
+
+    const opened = await note.evaluate(element => element.getBoundingClientRect().height)
+    expect(opened, 'the whole note is drawn once it is opened').toBeGreaterThan(clamped.height)
+    await expect(note).toContainText('the options pass was asked for anything at all')
+    await expect(took).toBeVisible()
+  })
+
+  /**
    * **Nothing scrolls sideways**, at the width of a laptop and at the width of a phone.
    *
    * The first acceptance criterion, and the one a board cannot be checked against: a board

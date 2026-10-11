@@ -192,6 +192,38 @@ export function activityLabel(
   return `Last activity ${sinceLabel(lastActivityAt, now)}`
 }
 
+/**
+ * The longest note that is certain to fit two lines of a step on the trail.
+ *
+ * **The trail draws a step in about 84px of text at its narrowest.** The shell is 1240px
+ * wide with 40px of padding each side; the two groups split 1136px four parts to three, so
+ * the first group's four columns are about 153px each with 12px gaps, less 8px of face
+ * padding on each side. That is the figure at 1240px — but the trail stays two groups side
+ * by side down to 860px, and just above that breakpoint the same arithmetic gives about
+ * 84px, which at 13px is roughly thirteen characters a line.
+ *
+ * So two lines is about twenty-six characters, and this is where the measurement stops
+ * being exact: nothing here knows the width it is being drawn at, and a note is not a
+ * monospace string. **The threshold errs low on purpose.** A control that opens a note
+ * already fully visible does nothing a reader will mind; a note clipped at two lines with
+ * no control is DEV-892's defect 1, which is what this exists to prevent. Every outcome the
+ * store writes short — "passes, 2 warnings", "14 findings, 1 blocker", "waiting on you" —
+ * is under it, and the 45-word note from the review this was measured against is six times
+ * over it.
+ */
+const FITS_TWO_TRAIL_LINES = 28
+
+/**
+ * Whether a step's note is long enough to need opening.
+ *
+ * The trail clamps every note to two lines, which is defect 1's fix and is also what makes
+ * a long one unreadable unless something opens it. This is what decides whether that
+ * something is drawn.
+ */
+export function stepNoteRunsLong(outcome: string): boolean {
+  return outcome.trim().length > FITS_TWO_TRAIL_LINES
+}
+
 /** A step's outcome on the trail: what the store recorded, else its state. */
 export function layerOutcome(layer: {
   state: ReviewLayerState

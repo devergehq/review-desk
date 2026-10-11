@@ -182,6 +182,72 @@ describe('the shell every step page sits in', () => {
     expect(trail).not.toMatch(/\b0 sec\b/)
   })
 
+  /**
+   * **A step's note is two lines at most, and the rest opens in place.** DEV-892's defect
+   * 1: on the review this was measured against a session wrote 27 words under Understand
+   * when the step had finished and 52 while the brief was half written, and the trail
+   * printed each whole in a column about 150px wide — which pushed the page's headline
+   * half a screen down.
+   *
+   * The clamp is CSS and jsdom computes no layout, so what is asserted here is everything
+   * either side of it: the class that carries the clamp, the control that opens the note,
+   * the note still being whole in the document when it is opened, and the duration keeping
+   * its own line underneath. The clamp itself is measured in a real browser, in
+   * `e2e/review-desk.spec.ts`.
+   */
+  it('clamps a long step note and opens the rest in place', async () => {
+    const page = await understand(STRUCTURED)
+
+    /* Step 2's note is the 45-word one the example carries. */
+    const steps = page.findAll('.steps li')
+    const understandStep = steps[1]!
+    expect(understandStep.text()).toContain('2 Understand')
+
+    const note = understandStep.find('.outcome')
+    expect(note.exists()).toBe(true)
+    expect(note.text()).toContain('the options pass was asked for anything at all')
+    /* Clamped: the class the two-line rule hangs off is the one that is absent when open. */
+    expect(note.classes()).not.toContain('outcome--whole')
+
+    const control = understandStep.find('button')
+    expect(control.exists(), 'a long note has a control that opens it').toBe(true)
+    expect(control.text()).toContain('Read the rest')
+    expect(control.attributes('aria-expanded')).toBe('false')
+    /* It names what it opens, so the note is reachable by keyboard and nothing else. */
+    expect(control.attributes('aria-controls')).toBe(note.attributes('id'))
+
+    await control.trigger('click')
+    await settle(page)
+
+    const opened = page.findAll('.steps li')[1]!
+    expect(opened.find('.outcome').classes()).toContain('outcome--whole')
+    expect(opened.find('button').attributes('aria-expanded')).toBe('true')
+    expect(opened.find('button').text()).toContain('Fold')
+
+    /*
+     * **And the duration is still its own line.** The clamp is on the note alone; a rule
+     * that hid or ate the figure under it would break what DEV-890 put there.
+     */
+    expect(opened.find('.took').exists()).toBe(true)
+    expect(opened.find('.took').text()).toMatch(/\d+ (sec|min|hr|day)/)
+  })
+
+  it('draws no control on a step whose note fits two lines', async () => {
+    const page = await understand(STRUCTURED)
+    const steps = page.findAll('.steps li')
+
+    /* Step 1's outcome is "passes, 2 warnings": nothing to open. */
+    expect(steps[0]!.text()).toContain('1 Lint')
+    expect(steps[0]!.find('button').exists()).toBe(false)
+
+    /*
+     * Six of the seven, which is the measurement worth making: a control under every step
+     * would be a row of buttons that reveal nothing, and the clamp would be invisible.
+     */
+    const controls = page.findAll('.trail button')
+    expect(controls).toHaveLength(1)
+  })
+
   it('shows the total with the agent and the total waiting on the developer', async () => {
     const page = await understand(STRUCTURED)
     const totals = page.find('.totals')
