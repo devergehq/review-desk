@@ -468,7 +468,7 @@ function coverage(data: ReviewDetail): string | null {
                       :title="finding.title == null ? finding.claim : undefined"
                     >
                       <span class="key rd-mono">{{ finding.key }}</span>
-                      {{ finding.title ?? finding.claim }}
+                      <TickedText :text="finding.title ?? finding.claim" />
                     </span>
                     <span class="where rd-mono">{{ whereOf(finding) }}</span>
                   </span>
@@ -508,7 +508,7 @@ function coverage(data: ReviewDetail): string | null {
                   class="detail"
                 >
                   <h3 class="rd-display-card claim">
-                    {{ finding.title ?? finding.claim }}
+                    <TickedText :text="finding.title ?? finding.claim" />
                   </h3>
 
                   <p
@@ -529,7 +529,7 @@ function coverage(data: ReviewDetail): string | null {
                       <div class="field">
                         <span class="rd-rubric">What</span>
                         <p class="rd-recorded said-text">
-                          {{ finding.claim }}
+                          <TickedText :text="finding.claim" />
                         </p>
                       </div>
 
@@ -539,7 +539,7 @@ function coverage(data: ReviewDetail): string | null {
                       >
                         <span class="rd-rubric">Why it matters</span>
                         <p class="rd-recorded matters-text">
-                          {{ finding.why_it_matters }}
+                          <TickedText :text="finding.why_it_matters" />
                         </p>
                       </div>
 
@@ -709,7 +709,7 @@ function coverage(data: ReviewDetail): string | null {
                           {{ block.label }}
                         </h4>
                         <p class="rd-recorded block-text">
-                          {{ block.text }}
+                          <TickedText :text="block.text" />
                         </p>
                       </div>
                     </div>

@@ -132,7 +132,7 @@ function labelFor(number: number): string | null {
           <span
             v-if="box.note"
             class="note"
-          >{{ box.note }}</span>
+          ><TickedText :text="box.note" /></span>
         </div>
       </div>
     </template>

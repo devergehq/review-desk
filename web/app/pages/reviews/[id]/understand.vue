@@ -235,7 +235,7 @@ function sources(data: ReviewDetail) {
 
         <DeskSection heading="The problem, as recorded">
           <p class="rd-recorded recorded">
-            {{ data.brief.problem }}
+            <TickedText :text="data.brief.problem" />
           </p>
           <!--
             The one `MermaidFigure` on these three pages, and only for a brief old enough
@@ -254,7 +254,7 @@ function sources(data: ReviewDetail) {
           heading="Where this came from"
         >
           <p class="rd-recorded recorded">
-            {{ data.brief.provenance }}
+            <TickedText :text="data.brief.provenance" />
           </p>
         </DeskSection>
       </ReviewStepPage>
@@ -441,7 +441,7 @@ function sources(data: ReviewDetail) {
                 <span
                   class="cell"
                   data-label="Was wrong"
-                >{{ problem.was_wrong }}</span>
+                ><TickedText :text="problem.was_wrong" /></span>
                 <!--
                   `now_fixed` is nullable by design: the problem half can be written before
                   the change is described, which is what lets a blind pass be handed a
@@ -451,7 +451,9 @@ function sources(data: ReviewDetail) {
                   class="cell"
                   data-label="Now"
                 >
-                  <template v-if="problem.now_fixed">{{ problem.now_fixed }}</template>
+                  <template v-if="problem.now_fixed">
+                    <TickedText :text="problem.now_fixed" />
+                  </template>
                   <span
                     v-else
                     class="rd-meta"
@@ -483,7 +485,7 @@ function sources(data: ReviewDetail) {
                         v-for="(line, index) in problem.detail_before"
                         :key="index"
                       >
-                        {{ line }}
+                        <TickedText :text="line" />
                       </li>
                     </ul>
                     <p
@@ -505,7 +507,7 @@ function sources(data: ReviewDetail) {
                         v-for="(line, index) in problem.detail_after"
                         :key="index"
                       >
-                        {{ line }}
+                        <TickedText :text="line" />
                       </li>
                     </ul>
                     <p
@@ -549,7 +551,7 @@ function sources(data: ReviewDetail) {
                 :class="{ 'td--strong': column === 0 }"
                 :data-label="data.brief.support_table.columns[column]"
               >
-                {{ cell }}
+                <TickedText :text="cell" />
               </td>
             </tr>
           </DeskTable>
@@ -565,7 +567,7 @@ function sources(data: ReviewDetail) {
             How it works today
           </h2>
           <p class="rd-recorded recorded">
-            {{ data.brief.how_it_works_today }}
+            <TickedText :text="data.brief.how_it_works_today" />
           </p>
         </section>
 
@@ -649,7 +651,7 @@ function sources(data: ReviewDetail) {
                 id="came-from"
                 class="rd-recorded recorded"
               >
-                {{ data.brief.provenance }}
+                <TickedText :text="data.brief.provenance" />
               </p>
             </template>
           </div>
@@ -687,7 +689,7 @@ function sources(data: ReviewDetail) {
             id="as-recorded"
             class="rd-recorded recorded"
           >
-            {{ data.brief.problem }}
+            <TickedText :text="data.brief.problem" />
           </p>
         </DeskCard>
       </ReviewStepPage>
