@@ -253,17 +253,24 @@ describe('the queue', () => {
 
   /*
    * **The same rule, one group earlier.** Review 12 is posted, its author has replied, and
-   * its harvest step is running — so `GET /inbox` serves it in `author_replies` *and* in
-   * `in_progress`. One row, under "Needs you", with what the other group would have said
-   * about the session on it; and "With the agent" says it held one back rather than
-   * quietly counting one fewer.
+   * a session is back on its code review step working those replies — so `GET /inbox`
+   * serves it in `author_replies` *and* in `in_progress`. One row, under "Needs you", with
+   * what the other group would have said about the session on it; and "With the agent"
+   * says it held one back rather than quietly counting one fewer.
+   *
+   * **It was the harvest step that put it in both groups until DEV-933.** A harvest now
+   * sets step 7 `running` for as long as the pull request stays open, and
+   * `reviews_in_progress` leaves step 7 out for that reason — otherwise every posted
+   * review would sit under "with the agent" for weeks. So the shape this rule needs is a
+   * session on a step of its own, which is the step a review goes back to when the author
+   * has replied.
    */
   it('draws a review that needs you and has a session running once, saying both', async () => {
     const page = await shown(Inbox)
     const rows = page.findAll('.row').filter(row => row.text().includes('#398'))
     expect(rows).toHaveLength(1)
     expect(rows[0]!.text()).toContain('The author replied')
-    expect(rows[0]!.text()).toContain('a session is on step 7 of 7')
+    expect(rows[0]!.text()).toContain('a session is on step 5 of 7')
     expect(page.text()).toContain('1 more is with the agent and is already drawn above')
   })
 

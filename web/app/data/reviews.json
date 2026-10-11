@@ -1052,8 +1052,8 @@
       {
         "number": 5,
         "name": "code_review",
-        "state": "done",
-        "detail": "3 findings",
+        "state": "running",
+        "detail": "working the replies",
         "updated_at": "2026-10-06T12:50:00Z",
         "runs": [
           {

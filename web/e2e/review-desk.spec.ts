@@ -2396,6 +2396,81 @@ test.describe('the list of every review', () => {
   }
 })
 
+test.describe('a harvested review, on the queue and in the list', () => {
+  /**
+   * **DEV-933's last two checks, and both are about a state that did not exist before
+   * it.** A harvest writes step 7: `running` while the pull request is open, `done` once
+   * it has settled. The queue groups on a running step and the list prints the furthest
+   * started one, so both screens had to be looked at with a review in that state.
+   *
+   * The seed's posted review is the one used, written through `layer set` with the words
+   * and the pairs `record_harvest_step` produces, and put back in a hook — a `finally`
+   * does not run when Playwright abandons a test at its timeout, and every other test
+   * here reads the same database.
+   */
+  const setStepSeven = (state: string, detail: string, aboutTheFacts: string[]) =>
+    cli(seededDatabase, [
+      'layer',
+      'set',
+      '--review',
+      String(postedReviewId),
+      '--layer',
+      '7',
+      '--state',
+      state,
+      '--detail',
+      detail,
+      ...aboutTheFacts,
+    ])
+
+  test.afterEach(() => {
+    setStepSeven('pending', 'posted, waiting for the harvest', ['--clear-facts'])
+  })
+
+  test('is on the queue exactly once, and never with the agent', async ({ page }) => {
+    setStepSeven('running', 'nothing back yet', ['--fact', 'Pull request=open'])
+    await page.goto(seeded)
+    await expect(page.locator('.row').first()).toBeVisible()
+    await page.waitForLoadState('networkidle')
+
+    /*
+     * **Once across the whole page**, which is the claim: the three groups a posted
+     * review can fall into are "Needs you", "With the agent" and "Waiting on the author",
+     * and a review drawn in two of them is a developer counting the same work twice.
+     */
+    const rows = page.locator('.row').filter({ hasText: 'Record the delivery attempt' })
+    await expect(rows).toHaveCount(1)
+
+    /* And never under "With the agent": a harvest reading GitHub is not a session. */
+    await expect(page.getByText('a session is on step 7 of 7')).toHaveCount(0)
+    await expect(page.getByText('Layer 7 of 7')).toHaveCount(0)
+    await expect(page.locator('body')).not.toContainText('7 Harvest · running')
+  })
+
+  for (const [what, state, detail, facts] of [
+    ['running', 'running', 'nothing back yet', ['--fact', 'Pull request=open']],
+    ['done', 'done', 'merged, 2 replies back', ['--fact', 'Pull request=merged', '--fact', 'Replies=2']],
+  ] as const) {
+    test(`the list reads sensibly for step 7 ${what}`, async ({ page }) => {
+      setStepSeven(state, detail, [...facts])
+      await page.goto(`${seeded}reviews`)
+      await expect(page.getByRole('heading', { name: /\d+ reviews?$/ })).toBeVisible()
+      await page.waitForLoadState('networkidle')
+
+      const row = page.locator('.row').filter({ hasText: 'Record the delivery attempt' })
+      await expect(row).toHaveCount(1)
+      /*
+       * The step, its own words, and the number of seven — never the bare state word,
+       * which on step 7 means "the pull request is open and still being watched" and
+       * would read as a harvest executing for as long as a pull request stays open.
+       */
+      await expect(row).toContainText(`Harvest · ${detail}`)
+      await expect(row).toContainText('step 7 of 7')
+      await expect(row).not.toContainText('· running')
+    })
+  }
+})
+
 test.describe('a database with nothing in it', () => {
   test('all five pages read as new rather than as broken', async ({ page }) => {
     await page.goto(empty)

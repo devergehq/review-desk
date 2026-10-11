@@ -364,17 +364,30 @@ function inbox(): Inbox {
     }))
 
   /*
-   * **Any review with a running layer, which is what the server asks.**
+   * **Any review with a running layer but the harvest, which is what the server asks.**
    * `Store::reviews_in_progress` has no draft-status condition — a layer `running` is the
-   * whole of it — and this carried `draft_status === 'drafting'`, so the one shape the
-   * queue's cross-group deduplication exists for was unreachable here: a posted review
-   * whose harvest step is running, in `author_replies` and `in_progress` at once. The
-   * behaviour shipped untested because the records could not express the state.
+   * whole of it — and this carried `draft_status === 'drafting'`, which hid the shape the
+   * queue's cross-group deduplication exists for.
    *
-   * Review 12 is now that shape, and the queue draws it once.
+   * **Step 7 is excluded, as the server excludes it** since DEV-933: a harvest sets that
+   * step `running` for as long as the pull request stays open, which is a quarter-hourly
+   * read of GitHub rather than a session at work, so every posted review would otherwise
+   * sit under "with the agent" for weeks. The contract says the same — an
+   * `InboxInProgressItem` may not carry layer 7 — so sample mode without this line serves
+   * a shape the real server cannot and the contract refuses.
+   *
+   * Review 12 is the review that shape was reachable through: it is posted with its
+   * harvest step running, so it is in `author_replies` and no longer here. A review with
+   * an earlier step running and a reply on the record is still in both, which is the case
+   * the deduplication is for.
    */
   const in_progress = source.reviews
-    .map(detail => ({ detail, running: detail.layers.find(item => item.state === 'running') }))
+    .map(detail => ({
+      detail,
+      running: detail.layers.find(
+        item => item.state === 'running' && item.name !== 'harvest',
+      ),
+    }))
     .filter(pair => pair.running != null)
     .map(({ detail, running }) => ({
       review_id: detail.review.id,

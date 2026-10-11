@@ -463,19 +463,36 @@ export function prStateLabel(state: PrState | null | undefined): string {
  * holds seven pending steps, which is a thing it knows rather than a thing it has not
  * measured.
  *
- * **A posted review usually reports step 6**, because nothing in the harvest path writes
- * step 7 — the posting writes it `pending` and the harvester writes no step. A session
- * that records it is reported as `harvest` like any other step; there is no special case
- * here, and there must not be one that derives a step from a harvest time.
+ * **A harvested review reports step 7, and the row says when it was last read.** Until
+ * DEV-933 nothing in the harvest path wrote a step, so a posted review reported step 6
+ * and this said so. Now the harvest writes `running` while the pull request is open and
+ * `done` once it has settled, and the state word never reaches the row: `layerOutcome`
+ * prefers the step's own note, and a harvest always writes one — "nothing back yet",
+ * "2 replies back", "merged, 2 replies back".
+ *
+ * **The read time comes from `review.harvested_at`**, the harvester's own stamp, rather
+ * than from the step's `updated_at` as the trail's does — this row holds the review and
+ * not the layer, and `harvested_at` is the more exact answer to the question anyway. The
+ * two are written microseconds apart by the same harvest. A row has the width for it,
+ * which the trail's 154-pixel column does not; that argument is in `harvestReadLabel`.
+ *
+ * A *session* may write step 7 too, and is reported like any other step. What there must
+ * not be is a step derived from a harvest time.
  */
-export function stepLabel(row: ReviewListItem): string {
+export function stepLabel(row: ReviewListItem, now: Date = new Date()): string {
   if (row.step_number == null || row.step_name == null || row.step_state == null) {
     return 'Not started'
   }
-  return `${layerLabel(row.step_name)} · ${layerOutcome({
+  const said = `${layerLabel(row.step_name)} · ${layerOutcome({
     state: row.step_state,
     detail: row.step_detail,
   })}`
+  const read = harvestReadLabel({
+    name: row.step_name,
+    state: row.step_state,
+    updated_at: row.review.harvested_at,
+  }, now)
+  return read ? `${said} · ${read}` : said
 }
 
 /**

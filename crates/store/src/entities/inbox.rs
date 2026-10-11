@@ -240,16 +240,17 @@ impl Store {
     /// still needs signing off while the queue says it is with the author. "Draft,
     /// approved by you" says the same record and misleads nobody.
     ///
-    /// **Nothing in the harvest path writes step 7**, which is a gap in the record rather
-    /// than in this query. `post_draft` writes the harvest step as `pending` and
-    /// `review_desk_harvest` writes no step at all, so a harvest that ran leaves the step
-    /// it ran as untouched — and a review that has been harvested reports step 6.
+    /// **A harvest writes step 7, so a harvested review reports it.** `post_draft` writes
+    /// the step `pending`, and since DEV-933 `record_harvest_step` writes what the harvest
+    /// found: `running` while the pull request is open, `done` once it has settled. A
+    /// review a harvest has read therefore reports step 7, where until that change it
+    /// reported step 6 — nothing in the harvest path wrote a step at all.
     ///
-    /// A *session* may still write it: `set_review_layer` takes any step and any state,
-    /// and the seed behind `contract/examples/listReviews.response.json` writes step 7
-    /// `done`. So this query does report `Harvest` when the record holds it. What it will
-    /// not do is derive one from `harvested_at`, which would be inventing a step state —
-    /// DEV-864 settled that as the session's to write.
+    /// A *session* may write it too: `set_review_layer` takes any step and any state, and
+    /// the seed behind `contract/examples/listReviews.response.json` writes step 7 `done`.
+    /// What this query will not do is derive one from `harvested_at`, which would be
+    /// inventing a step state — DEV-864 settled that as the writer's to state, and
+    /// `record_harvest_step` states it.
     ///
     /// One statement. The step comes off a `LEFT JOIN` to the layer the subquery picks,
     /// rather than seven reads per review: this is a list of the whole record, and a

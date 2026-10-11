@@ -1453,14 +1453,17 @@ components:
         still needs signing off while the queue says it is with the author. "Draft,
         approved by you" says the same record and misleads nobody.
 
-        **Nothing in the harvest path writes step 7**, which is a gap in the record rather
-        than in this operation. `draft posted` writes the harvest step as `pending` and
-        `review-desk harvest` writes no step at all, so a harvest that ran leaves the step
-        it ran as untouched. A *session* may still write it — `review-desk layer set`
-        writes any step to any state, and the example beside this schema carries a review
-        whose step 7 is `done` — so a client must handle `harvest` here. What this document
-        will not do is derive one from `Review.harvested_at`: that would be inventing a
-        step state, which is the session's to write.
+        **A harvest writes step 7, so a posted review reports it.** `draft posted` writes
+        the step as `pending`, and from DEV-933 `review-desk harvest` writes what it found
+        there: `running` while the pull request is open, `done` once it has merged or
+        closed. So the step a harvested review reports is `harvest`, and a client must
+        draw it. Until that change nothing in the harvest path wrote the step at all and a
+        harvested review reported `draft`.
+
+        A *session* may write it too — `review-desk layer set` writes any step to any
+        state, and the example beside this schema carries a review whose step 7 is `done`.
+        What this document will not do is derive one from `Review.harvested_at`: a derived
+        state is an invented one, and the two are written together anyway.
       properties:
         review: { $ref: '#/components/schemas/Review' }
         rounds_on_pr:

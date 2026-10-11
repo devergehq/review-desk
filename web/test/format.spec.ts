@@ -413,6 +413,46 @@ describe('what came back on a posted review', () => {
       .toBe('Not started')
   })
 
+  /*
+   * DEV-933: a harvested review reports step 7, and the row says when the harvest last
+   * read it — from `review.harvested_at`, the harvester's own stamp, which is the exact
+   * answer to that question and is written by the same call that writes the step.
+   */
+  it('says when the harvest last read a review it is still watching', () => {
+    const at = '2026-10-12T09:00:00Z'
+    const row = (over: Record<string, unknown>) => ({
+      review: { id: 12, harvested_at: at },
+      rounds_on_pr: 1,
+      step_number: 7,
+      step_name: 'harvest',
+      step_state: 'running',
+      step_detail: 'nothing back yet',
+      steps_total: 7,
+      last_activity_at: null,
+      ...over,
+    } as unknown as ReviewListItem)
+    const later = (minutes: number) => new Date(Date.parse(at) + minutes * 60_000)
+
+    expect(stepLabel(row({}), later(3)))
+      .toBe('Harvest · nothing back yet · read 3 min ago')
+
+    /* Settled: how it ended, and no read time — nothing will read it again. */
+    expect(stepLabel(
+      row({ step_state: 'done', step_detail: 'merged, 2 replies back' }),
+      later(3),
+    )).toBe('Harvest · merged, 2 replies back')
+
+    /* And posted, with no harvest yet: what posting wrote, and no invented time. */
+    expect(stepLabel(
+      row({
+        review: { id: 12, harvested_at: null },
+        step_state: 'pending',
+        step_detail: 'posted, waiting for the harvest',
+      }),
+      later(3),
+    )).toBe('Harvest · posted, waiting for the harvest')
+  })
+
   it('does not claim a pull request is open when nothing has looked', () => {
     expect(prStateLabel(null)).toBe('pull request state not established')
     expect(prStateLabel('open')).toBe('pull request open at the last harvest')
