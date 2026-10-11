@@ -682,7 +682,7 @@ describe('Understand', () => {
     const page = await understand(STRUCTURED)
     expect(page.find('#as-recorded').exists()).toBe(false)
 
-    await open(page, 'Read the problem as the session recorded it')
+    await open(page, 'Read the problem as recorded')
 
     const recorded = page.find('#as-recorded')
     expect(recorded.exists()).toBe(true)
@@ -699,7 +699,7 @@ describe('Understand', () => {
    */
   it('draws each piece of recorded text in exactly one place', async () => {
     const page = await understand(STRUCTURED)
-    await open(page, 'Read the problem as the session recorded it')
+    await open(page, 'Read the problem as recorded')
     await open(page, 'Where this came from, as recorded')
 
     const brief = fixture(STRUCTURED).brief!

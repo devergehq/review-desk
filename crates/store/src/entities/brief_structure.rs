@@ -128,7 +128,6 @@ pub struct BriefProblem {
     /// number and puts the sentence one click away; it never prints the sentence as a
     /// heading. The two are different kinds of thing, and a default would make them
     /// indistinguishable on the record.
-    #[serde(default)]
     pub label: Option<String>,
     /// One line: what was wrong.
     pub was_wrong: String,

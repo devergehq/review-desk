@@ -17,7 +17,7 @@ import type { Brief, ReviewDetail } from '~/types/desk'
  * | the supporting table | the idea behind the change | one small table |
  * | how it works today | the context a newcomer needs | a paragraph |
  * | already decided | what is settled, and by whom | one line, and a fold |
- * | as the session recorded it | the raw record | a fold |
+ * | the problem, as recorded | what the session wrote | a fold |
  *
  * **Nothing below the picture has to be read to understand the picture.** That is the
  * mechanism behind "it gives you a very clear way… your cognitive load is much lower", and
@@ -654,7 +654,7 @@ function sources(data: ReviewDetail) {
             aria-controls="as-recorded"
             @click="recordedOpen = !recordedOpen"
           >
-            {{ recordedOpen ? 'Fold' : 'Read the problem as the session recorded it' }}
+            {{ recordedOpen ? 'Fold' : 'Read the problem as recorded' }}
           </button>
 
           <p
@@ -858,11 +858,17 @@ function sources(data: ReviewDetail) {
 .measured {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
   gap: 14px;
 }
 
-/* Both controls sit at the start of their column; neither is pushed to an edge. */
+/*
+ * Both controls sit at the start of their column rather than being pushed to an edge — the
+ * figure that used to pin `.read-it` to the right is gone, and a lone button hanging off
+ * the far side of a card reads as the end of a row that is not there.
+ *
+ * `align-self` on the control, not `align-items` on the card: the recorded text under it is
+ * a sibling in the same column and should still take the whole width.
+ */
 .read-it,
 .came-from {
   align-self: flex-start;

@@ -21,6 +21,13 @@ import type { ReviewLayer, ReviewLayerName } from '~/types/desk'
  *
  * ## How long it took
  *
+ * Under the outcome, for a step that has finished: "17 min", summed over every pass the
+ * step made, so a draft written twice reports both. A step the record holds no duration
+ * for says "time not recorded" rather than drawing a nought — which is every finished step
+ * of a review from before DEV-890, and the distinction the whole change rests on.
+ * `stepDurationLabel` owns the three answers; a step still going shows none, because the
+ * figure would grow while you read it.
+ *
  * ## How long the note is
  *
  * **Two lines at most, and the rest opens in place.** `layer.detail` is the store's own
@@ -34,14 +41,8 @@ import type { ReviewLayer, ReviewLayerName } from '~/types/desk'
  * **The control is a sibling of the face, not a child of it.** Five of the seven steps draw
  * their face as a link, and a button inside a link is neither valid markup nor clickable.
  * It toggles the clamp on the outcome it names through `aria-controls`, so what opens is
- * the note already on screen rather than a second copy of it underneath.
- *
- * Under the outcome, for a step that has finished: "17 min", summed over every pass the
- * step made, so a draft written twice reports both. A step the record holds no duration
- * for says "time not recorded" rather than drawing a nought — which is every finished step
- * of a review from before DEV-890, and the distinction the whole change rests on.
- * `stepDurationLabel` owns the three answers; a step still going shows none, because the
- * figure would grow while you read it.
+ * the note already on screen rather than a second copy of it underneath. The duration is a
+ * sibling of the note, so it keeps its own line under either state of it.
  *
  * ## Which steps are links
  *
@@ -148,12 +149,6 @@ const steps = computed<Step[]>(() =>
 )
 
 /**
- * The two groups, and the boundary between them.
- *
- * Four and three, which is where the pull request stops being settled once and the round
- * starts repeating. Named here rather than inline so the split has one statement.
- */
-/**
  * Which step's note is open, by number, or `null`.
  *
  * One at a time, which is the rule every fold on these pages follows. A trail with three
@@ -165,6 +160,12 @@ function toggleNote(number: number) {
   openNote.value = openNote.value === number ? null : number
 }
 
+/**
+ * The two groups, and the boundary between them.
+ *
+ * Four and three, which is where the pull request stops being settled once and the round
+ * starts repeating. Named here rather than inline so the split has one statement.
+ */
 const SETTLED_THROUGH = 4
 
 const groups = computed(() => [

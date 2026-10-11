@@ -1111,6 +1111,23 @@ several attempts, in which case the table needs an attempt column and the deriva
 to group by it. Nothing in this slice deletes or rewrites a row, so a set-aside attempt's
 record is already left alone.
 
+### Added by DEV-892, for the two or three words a column heading can be
+
+Migration 13 on this branch — the next free one, for the reason `migrations.rs` gives.
+
+- [x] **S41 — `brief_problems.label`.** Nullable, no length enforced, the empty string
+      refused by `put_brief` beside the blank `detail_title` it sits next to. Needed by:
+      `brief.problems[].label`, which is what heads a problem's column on the Alternatives
+      page. Null on every problem already recorded, and the page then heads the column with
+      the number alone — **never with `was_wrong`**, which is a line of prose and on a real
+      review wrapped ten lines deep as a heading.
+
+**Not added to the problem statement.** `GET …/brief/problem-statement` still serves
+`number` and `was_wrong` and nothing else. A label names a problem for a column heading and
+a pass that has not seen the answer reads sentences, so there is nothing for it to do there;
+`crates/server/src/wire.rs` says so at the projection rather than leaving it to be
+rediscovered.
+
 ### Not a store change, but do not miss it
 
 - **Times.** The store holds `Timestamp = i64`, epoch seconds. The contract is RFC 3339.
