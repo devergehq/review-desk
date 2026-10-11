@@ -43,7 +43,7 @@ import type { DraftThread } from '~/types/desk'
  *    diagram the developer must *see* belongs under `### Problem fit` or under a finding
  *    with no thread, both of which the body preview draws.
  */
-const props = defineProps<{ threads: DraftThread[] }>()
+const props = defineProps<{ threads: DraftThread[], posted?: boolean }>()
 
 const heading = computed(() => count(props.threads.length, 'thread'))
 </script>
@@ -57,8 +57,23 @@ const heading = computed(() => count(props.threads.length, 'thread'))
       On the code · {{ heading }}
     </div>
 
+    <!--
+      **Past tense once it is posted, and a caveat with it.** The body is stored and is what
+      went to GitHub; these are composed from the record every time it is read, and after
+      the post the record is allowed to move on — the harvest reads the author's replies
+      back and a finding it settles drops out of this list. Saying "posts" there would be a
+      page claiming to show something it cannot.
+    -->
     <p
-      v-if="threads.length > 0"
+      v-if="threads.length > 0 && posted"
+      class="rd-meta help"
+    >
+      The comments this review put on the code, composed from the record as it stands. A
+      finding the harvest has settled since is no longer among them; the body above is the
+      text that was posted, and it does not move.
+    </p>
+    <p
+      v-else-if="threads.length > 0"
       class="rd-meta help"
     >
       Each of these is a row of the index, and posts as a comment on the line it names.

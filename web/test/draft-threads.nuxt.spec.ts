@@ -100,6 +100,23 @@ describe('the threads the draft hands over', () => {
     expect(panel.find('.marker').text()).not.toContain('GitHub')
   })
 
+  it('speaks of a posted review in the past, and says what has moved since', async () => {
+    const panel = await mountSuspended(DraftThreads, {
+      props: { threads: [thread(9)], posted: true },
+    })
+
+    /*
+     * The body is stored and is what went to GitHub; these are composed from the record
+     * every time they are read, and after the post the record moves on — the harvest reads
+     * the author's replies back. A card saying "posts as a comment" there would be
+     * claiming to show something it cannot.
+     */
+    const help = panel.find('.help').text()
+    expect(help).toContain('put on the code')
+    expect(help).toContain('the harvest has settled')
+    expect(help).not.toContain('posts as a comment')
+  })
+
   it('says what it means for a review with nothing to anchor', async () => {
     const panel = await mountSuspended(DraftThreads, { props: { threads: [] } })
 

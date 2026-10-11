@@ -425,7 +425,10 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                     </div>
                   </DeskCard>
 
-                  <DraftThreads :threads="data.threads" />
+                  <DraftThreads
+                    :threads="data.threads"
+                    :posted="data.draft.status === 'posted'"
+                  />
                 </div>
 
                 <aside class="aside">
