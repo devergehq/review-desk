@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { Brief, BriefPart, Finding, ReviewDetail } from '~/types/desk'
+import type { Brief, BriefPart, Finding, ReviewDetail, ReviewLayer } from '~/types/desk'
+import type { Absence } from '~/utils/steps'
 
 /**
  * Step 4 — **Solution**. Board A7, which Patrick liked in principle on 10 October 2026 and
@@ -40,15 +41,38 @@ useHead({
 /**
  * The page's one heading.
  *
- * The verdict on the approach when the brief has one; otherwise a sentence about what is
- * and is not written. A brief whose change half has not been written has no verdict either,
- * because both arrive in the same write.
+ * The verdict on the approach when the brief has one; otherwise what step 4's own state
+ * says. A brief whose change half has not been written has no verdict either, because both
+ * arrive in the same write.
+ *
+ * **The absence is read off the step, not off the emptiness of the list.** DEV-892's defect
+ * 6: this said "The change has not been described in parts yet" whatever the trail above it
+ * said about step 4, and the notice underneath said the same sentence again — one claim,
+ * drawn twice, and wrong whenever a session was writing the parts at that moment.
  */
-function headline(brief: Brief): string {
+function headline(brief: Brief, layers: ReviewLayer[]): string {
   if (brief.approach_verdict) return brief.approach_verdict
-  return parts(brief).length
-    ? 'What was built'
-    : 'The change has not been described in parts yet.'
+  return parts(brief).length ? 'What was built' : sentence(nothingYet(layers, 'solution_map'))
+}
+
+/**
+ * What follows from step 4's state, as the one sentence under the heading.
+ *
+ * Never the heading again. "One sentence, once" is the issue's own wording, and the pair it
+ * was written about was a headline and a notice carrying the same words three inches apart.
+ *
+ * Keyed off `absenceOf`, so the two cannot disagree about which absence this is.
+ */
+const WHY: Record<Absence, string> = {
+  being_worked_on: 'A session is writing them now.',
+  not_written_yet:
+    'A session writes the problem first and what was built second, so this arrives after '
+    + 'the Understand page is already readable. Nothing is wrong.',
+  none_recorded: 'The step finished without describing the change in parts.',
+}
+
+function whyNoParts(layers: ReviewLayer[]): string {
+  return WHY[absenceOf(layers, 'solution_map')]
 }
 
 /** The line under the heading: the size of the change, when there is one to measure. */
@@ -172,6 +196,13 @@ function severityWord(severity: string, n: number): string {
     what="this review"
   >
     <template #default="{ data }">
+      <!--
+        **No brief at all, which is not one of the four absences below.** This is a statement
+        about the record — step 2 has not written one — and it stays a statement about the
+        record rather than being routed through step 4's state: a review with no brief cannot
+        have a step 4 under way, and a heading that said "being worked on now" here would be
+        reporting on a step that has nothing to work from.
+      -->
       <ReviewStepPage
         v-if="!data.brief"
         :detail="data"
@@ -194,7 +225,7 @@ function severityWord(severity: string, n: number): string {
         v-else
         :detail="data"
         step="solution_map"
-        :headline="headline(data.brief)"
+        :headline="headline(data.brief, data.layers)"
         :sub="sub(data.brief)"
       >
         <!-- ------------------------------ What was built ------------------------------ -->
@@ -398,14 +429,22 @@ function severityWord(severity: string, n: number): string {
           The change in parts, when a session has not written it. Said here rather than by
           replacing the page, because the two lists below are recorded separately and may
           well be there when this is not.
+
+          **The state is named once on this page.** It leads this notice only when the
+          heading is the approach verdict and therefore did not say it; where the heading is
+          the state, this carries the sentence that follows from it and nothing else. That
+          pair — the same words as a heading and as a notice — is what DEV-892's defect 6
+          named on this page.
         -->
         <DeskNotice
           v-else
           tone="plain"
         >
-          <strong>The change has not been described in parts yet.</strong>
-          A session writes the problem first and what was built second, so this arrives
-          after the Understand page is already readable. Nothing is wrong.
+          <strong v-if="data.brief.approach_verdict">
+            {{ sentence(nothingYet(data.layers, 'solution_map')) }}
+          </strong>
+          Step 4 is where a session says what was built, as the parts the change divides
+          into. {{ whyNoParts(data.layers) }}
         </DeskNotice>
 
         <!--

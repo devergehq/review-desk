@@ -1041,9 +1041,19 @@ describe('Alternatives', () => {
     /* Eight options: four on the ticket, seven from the pass, three on both. */
     expect(page.text()).toContain('4 options')
     expect(page.text()).toContain('7 options')
-    expect(page.text()).toContain('It looked up: nothing')
+    /*
+     * **What it looked up is behind the same control as what it was given.** DEV-892: this
+     * printed open, as a line beginning "It looked up:", and on a real review that line was
+     * a 91-word paragraph in a card beside another card.
+     */
+    const folds = page.findAll('details.given')
+    expect(folds).toHaveLength(2)
+    expect(page.text()).not.toContain('It looked up:')
+    expect(folds[1]!.find('summary').text()).toContain('What it looked up')
+    expect(folds[1]!.find('.given-text').text()).toContain('nothing')
+
     /* And what it was given, verbatim, on the page rather than linked to. */
-    expect(page.find('.given-text').text()).toContain(
+    expect(folds[0]!.find('.given-text').text()).toContain(
       'A multi-tenant PHP web application serves reports.',
     )
   })
@@ -1156,13 +1166,30 @@ describe('Alternatives', () => {
     })
   })
 
-  it('says step 3 has not run when no options are recorded', async () => {
+  /**
+   * **No options, and the page says which nothing it is — from step 3's own state.**
+   *
+   * DEV-892's defect 6. This said "No alternatives are recorded for this change… Nothing has
+   * written any" whatever the trail said, and on the review it was found on the trail said
+   * the blind pass was running. A page contradicting the record it is drawn from is worse
+   * than a page with nothing on it.
+   */
+  it.each([
+    ['running', 'Being worked on now.', 'A session is writing them now.'],
+    ['pending', 'Not written yet.', 'Nothing has written any.'],
+    ['done', 'None was recorded.', 'The step finished without recording any.'],
+  ] as const)('says step 3 is %s in its own words', async (state, headline, why) => {
     const detail = fixture(STRUCTURED)
     detail.brief!.options = []
+    detail.layers = detail.layers.map(layer =>
+      layer.name === 'alternatives' ? { ...layer, state } : layer)
     await withReview(detail)
 
     const page = await alternatives(STRUCTURED)
-    expect(page.text()).toContain('No alternatives are recorded for this change.')
+    expect(page.find('h1').text()).toBe(headline)
+    expect(page.text()).toContain(why)
+    /* Never the sentence the defect was: it asserted an absence the record contradicted. */
+    expect(page.text()).not.toContain('No alternatives are recorded')
   })
 })
 
@@ -1477,13 +1504,49 @@ describe('Solution', () => {
     expect(table.text()).toContain('the backfill leaves older definitions naming none')
   })
 
-  it('says step 4 has not run when the change is in no parts', async () => {
+  /**
+   * **No parts, said once, and from step 4's own state.** The other half of defect 6: the
+   * headline and the notice under it carried the same sentence three inches apart, and both
+   * of them asserted an absence whatever the trail said about step 4.
+   *
+   * The example's brief carries an `approach_verdict`, so the heading here is the verdict
+   * and the state leads the notice — which is the one arrangement in which it is said in
+   * the notice at all.
+   */
+  it.each([
+    ['running', 'Being worked on now.', 'A session is writing them now.'],
+    ['pending', 'Not written yet.', 'A session writes the problem first'],
+    ['done', 'None was recorded.', 'The step finished without describing the change'],
+  ] as const)('says step 4 is %s in its own words, once', async (state, said, why) => {
     const detail = fixture(STRUCTURED)
     detail.brief!.parts = []
+    detail.layers = detail.layers.map(layer =>
+      layer.name === 'solution_map' ? { ...layer, state } : layer)
     await withReview(detail)
 
     const page = await solution(STRUCTURED)
-    expect(page.text()).toContain('The change has not been described in parts yet.')
+    /* The heading is the verdict; the notice says the state, and says it once. */
+    expect(page.find('h1').text()).toBe(detail.brief!.approach_verdict)
+    expect(page.text().split(said).length - 1, `${said} is on the page once`).toBe(1)
+    expect(page.text()).toContain(why)
+    expect(page.text()).not.toContain('The change has not been described in parts yet.')
+  })
+
+  it('says the state as its heading when there is no verdict to head the page', async () => {
+    const detail = fixture(STRUCTURED)
+    detail.brief!.parts = []
+    detail.brief!.approach_verdict = null
+    detail.layers = detail.layers.map(layer =>
+      layer.name === 'solution_map' ? { ...layer, state: 'running' as const } : layer)
+    await withReview(detail)
+
+    const page = await solution(STRUCTURED)
+    expect(page.find('h1').text()).toBe('Being worked on now.')
+    /*
+     * And not again in the notice underneath. "One sentence, once" is the issue's own
+     * wording about exactly this pair.
+     */
+    expect(page.text().split('Being worked on now.').length - 1).toBe(1)
   })
 
   it('still draws the choices and the clashes when there are no parts', async () => {

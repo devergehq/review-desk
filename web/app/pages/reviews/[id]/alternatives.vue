@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import type { BlindPassState, Brief, BriefOption, BriefProblem } from '~/types/desk'
+import type {
+  BlindPassState,
+  Brief,
+  BriefOption,
+  BriefProblem,
+  ReviewLayer,
+} from '~/types/desk'
+import type { Absence } from '~/utils/steps'
 
 /**
  * Step 3 — **Alternatives**. Board A6, with a real blind pass overlaid, which Patrick
@@ -153,7 +160,14 @@ function blindState(brief: Brief): { heading: string, says: string, tone: 'plain
   switch (state(brief)) {
     case 'not_run':
       return {
-        heading: 'No blind pass was run',
+        /*
+         * **The fourth of DEV-892's four wordings, read from where they are all declared.**
+         * "No blind pass was run" and "none was recorded" are the two easiest sentences on
+         * these pages to collapse into one, and they are opposite statements about how much
+         * the option list has been tested. `NOTHING_HERE` is where all four live and
+         * `test/steps.spec.ts` is what keeps them apart.
+         */
+        heading: NOTHING_HERE.blind_pass_not_run,
         says:
           'Nothing has looked at this problem without also seeing the answer, so the '
           + 'options below are the ones the ticket already contained. Review Desk runs no '
@@ -197,6 +211,25 @@ function matrixTemplate(brief: Brief): string {
 }
 
 /**
+ * The second half of the empty page's sentence: what the step's state means for a reader.
+ *
+ * One sentence, and never the headline again. The headline is the state in three words;
+ * this says what follows from it — whether to come back, or that there is nothing coming.
+ *
+ * Keyed off `absenceOf` rather than off the state, so the pair cannot disagree: one place
+ * decides which absence this is, and this only words the consequence.
+ */
+const WHY: Record<Absence, string> = {
+  being_worked_on: 'A session is writing them now.',
+  not_written_yet: 'Nothing has written any.',
+  none_recorded: 'The step finished without recording any.',
+}
+
+function whyNothingYet(layers: ReviewLayer[]): string {
+  return WHY[absenceOf(layers, 'alternatives')]
+}
+
+/**
  * What heads a problem's column, in the narrow layout's own words.
  *
  * **The number and its label, or the number alone — never the sentence.** DEV-892's defect
@@ -226,12 +259,19 @@ function matrixLabel(brief: Brief): string {
     what="this review"
   >
     <template #default="{ data }">
+      <!--
+        **No options, and the page says which nothing this is — from step 3's own state.**
+        DEV-892's defect 6: this read "No alternatives are recorded… Nothing has written any"
+        while the trail two inches above it drew step 3 as running. A page that contradicts
+        the record it is drawn from is worse than a page with nothing on it.
+      -->
       <ReviewStepPage
         v-if="!data.brief || !options(data.brief).length"
         :detail="data"
         step="alternatives"
-        headline="No alternatives are recorded for this change."
-        sub="Step 3 is where a session writes down the ways it considered solving the problem, before it reads the diff. Nothing has written any."
+        :headline="sentence(nothingYet(data.layers, 'alternatives'))"
+        :sub="`Step 3 is where a session writes down the ways it considered solving the `
+          + `problem, before it reads the diff. ${whyNothingYet(data.layers)}`"
       />
 
       <ReviewStepPage
@@ -611,19 +651,18 @@ function matrixLabel(brief: Brief): string {
               <p class="rd-note">
                 {{ blindState(data.brief).says }}
               </p>
-              <p
-                v-if="data.brief.blind_pass"
-                class="rd-note"
-              >
-                <strong>It looked up:</strong> {{ data.brief.blind_pass.looked_up }}
-              </p>
             </DeskCard>
           </div>
 
           <!--
-            What the pass was given, verbatim, behind a fold. It is long — a page of prose —
-            and it is the only way to judge whether a blind pass was really blind, so it is
-            on the page rather than linked to.
+            What the pass was given and what it looked up, verbatim, behind the same control.
+            The first is long — a page of prose — and it is the only way to judge whether a
+            blind pass was really blind, so it is on the page rather than linked to.
+
+            **The second used to print open**, as a line beginning "It looked up:", and on a
+            real review that line was a 91-word paragraph in a card beside another card. It
+            is the same kind of thing as the first — the session's own account of its own
+            pass — so it is behind the same kind of control.
           -->
           <details
             v-if="data.brief.blind_pass"
@@ -632,6 +671,16 @@ function matrixLabel(brief: Brief): string {
             <summary>What the blind pass was given, word for word</summary>
             <p class="rd-recorded given-text">
               {{ data.brief.blind_pass.given }}
+            </p>
+          </details>
+
+          <details
+            v-if="data.brief.blind_pass"
+            class="given"
+          >
+            <summary>What it looked up, in its own words</summary>
+            <p class="rd-recorded given-text">
+              {{ data.brief.blind_pass.looked_up }}
             </p>
           </details>
         </section>
