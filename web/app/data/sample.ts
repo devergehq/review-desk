@@ -376,10 +376,12 @@ function inbox(): Inbox {
    * `InboxInProgressItem` may not carry layer 7 — so sample mode without this line serves
    * a shape the real server cannot and the contract refuses.
    *
-   * Review 12 is the review that shape was reachable through: it is posted with its
-   * harvest step running, so it is in `author_replies` and no longer here. A review with
-   * an earlier step running and a reply on the record is still in both, which is the case
-   * the deduplication is for.
+   * Review 12 is still in both groups, and by the step that can put it there: its
+   * harvest step no longer counts, and a session has gone back to its code review to work
+   * the author's replies — which is the next thing that happens in this loop, and the
+   * case the deduplication is for. Its step 7 carries what `record_harvest_step` would
+   * write for its outcomes, so the facts card and the wording are drawn here from a
+   * record the real path could have produced.
    */
   const in_progress = source.reviews
     .map(detail => ({

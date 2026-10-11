@@ -245,12 +245,12 @@ impl Store {
     /// `record_harvest_step` writes what the harvest found: `running` while the pull
     /// request is open, `done` once it has settled.
     ///
-    /// **Harvested is not posted.** The sweep reads every review whose pull request is
-    /// open, including one still being drafted, and `record_harvest_step` answers `None`
-    /// for a review with no `github_review_id` rather than claim a loop nobody has
-    /// started. So a review with a `harvested_at` and nothing posted still reports the
-    /// step a session last wrote — step 6 for a review whose draft is done, which is what
-    /// every harvested review reported until DEV-933.
+    /// **A `harvested_at` does not by itself mean step 7.** A review read before DEV-933
+    /// holds the stamp and no step — which is every harvested review until that change,
+    /// and is what `contract/examples/listReviews.response.json` still shows. And the
+    /// sweep reads every review whose pull request is open, including one still being
+    /// drafted, where `record_harvest_step` answers `None` rather than claim a loop
+    /// nobody has started. Either way the step reported is the one the record holds.
     ///
     /// A *session* may write it too: `set_review_layer` takes any step and any state, and
     /// the seed behind `contract/examples/listReviews.response.json` writes step 7 `done`.

@@ -2449,10 +2449,13 @@ test.describe('a harvested review, on the queue and in the list', () => {
      * exclusion out of `reviews_in_progress` fails this line.
      *
      * `getByLabel` for the bar, not `getByText`: "Layer 7 of 7" is a `SegmentBar`'s
-     * `aria-label` and never text, so a text matcher there could not fail.
+     * `aria-label` and never text, so a text matcher there could not fail. **Nor could
+     * the first `getByLabel` I wrote**, anchored at the seven — the label carries the
+     * step's name after it, "Layer 7 of 7, harvest", so the pattern matched nothing on
+     * any page. Found by the review of the commit that was fixing the same mistake.
      */
     await expect(page.getByText('With the agent')).toHaveCount(0)
-    await expect(page.getByLabel(/^Layer \d+ of 7$/)).toHaveCount(0)
+    await expect(page.getByLabel(/^Layer \d+ of 7, /)).toHaveCount(0)
     await expect(page.getByText('a session is on step 7 of 7')).toHaveCount(0)
   })
 

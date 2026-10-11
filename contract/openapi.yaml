@@ -1458,13 +1458,16 @@ components:
         harvest` writes what it found there: `running` while the pull request is open,
         `done` once it has merged or closed. A client must draw `harvest` here.
 
-        **Harvested is not posted, and the example beside this schema is the case.** The
-        harvest reads every review whose pull request is open, including one still being
-        drafted, and writes the step only where the record holds a `github_review_id` —
-        a step saying a feedback loop is running on a review nobody has posted would be a
-        lie. So a review with a `harvested_at` and no posted id reports the step a session
-        last wrote, which in that example is `draft`. Until DEV-933 nothing in the harvest
-        path wrote the step at all and every harvested review reported `draft`.
+        **A `harvested_at` does not by itself mean step 7, and the example beside this
+        schema is such a record.** Two ways a review holds the stamp without the step.
+        One: it was read before DEV-933, when nothing in the harvest path wrote a step and
+        every harvested review reported `draft` — which is the example's review 12, posted
+        and read back and reporting `draft`. Two: the harvest reads every review whose
+        pull request is open, including one still being drafted, and writes the step only
+        where the record holds a `github_review_id`, because a step saying a feedback loop
+        is running on a review nobody posted would be a lie.
+
+        So a client draws the step the record holds and infers nothing from the stamp.
 
         A *session* may write it too — `review-desk layer set` writes any step to any
         state, and the example beside this schema carries a review whose step 7 is `done`.
