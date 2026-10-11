@@ -19,6 +19,15 @@ import type { ReviewLayer, ReviewLayerName } from '~/types/desk'
  * Each step shows **its outcome in a few words**, from `layer.detail` — the store's own
  * words — falling back to its state. `layerOutcome` owns that.
  *
+ * ## How long it took
+ *
+ * Under the outcome, for a step that has finished: "17 min", summed over every pass the
+ * step made, so a draft written twice reports both. A step the record holds no duration
+ * for says "time not recorded" rather than drawing a nought — which is every finished step
+ * of a review from before DEV-890, and the distinction the whole change rests on.
+ * `stepDurationLabel` owns the three answers; a step still going shows none, because the
+ * figure would grow while you read it.
+ *
  * ## Which steps are links
  *
  * **Five of the seven, and the trail is the only way to four of them.**
@@ -89,6 +98,8 @@ interface Step {
   name: ReviewLayerName
   label: string
   outcome: string
+  /** How long it took, or that nothing recorded it. `null` for a step still going. */
+  duration: string | null
   to: string | null
   current: boolean
   tone: 'done' | 'current' | 'pending' | 'failed'
@@ -109,6 +120,7 @@ const steps = computed<Step[]>(() =>
       name: layer.name,
       label: layerLabel(layer.name),
       outcome: layerOutcome(layer),
+      duration: stepDurationLabel(layer),
       to: PAGES[layer.name] == null
         ? null
         : `/reviews/${props.reviewId}/${PAGES[layer.name]}`,
@@ -169,6 +181,10 @@ const groups = computed(() => [
           >
             <span class="name">{{ step.number }} {{ step.label }}</span>
             <span class="outcome">{{ step.outcome }}</span>
+            <span
+              v-if="step.duration"
+              class="took"
+            >{{ step.duration }}</span>
           </component>
         </li>
       </ol>
@@ -281,6 +297,23 @@ a.face:hover .name {
   font-size: 13px;
   color: var(--rd-ink-muted);
   overflow-wrap: break-word;
+}
+
+/*
+ * The duration, under the outcome. It is the second thing you want off a
+ * step — what it did, then how long it took — and at 12px seven of them across the trail
+ * read as a column of figures rather than as more words.
+ *
+ * The same ink as the outcome, and smaller: `ink-faint` is for display sizes only — it is
+ * 3.19:1 on white and clears nothing under 24px — and `ink-dim` is *darker* than the
+ * outcome above it, which would put the louder colour on the quieter fact. Size does the
+ * separating, and `test/contrast.spec.ts` holds this ink to 4.5:1 on all three
+ * backgrounds.
+ */
+.took {
+  font-size: 12px;
+  color: var(--rd-ink-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /*

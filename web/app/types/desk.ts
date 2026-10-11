@@ -107,6 +107,8 @@ export type SeverityCounts = Schema['SeverityCounts']
 export type DispositionCounts = Schema['DispositionCounts']
 export type Review = Schema['Review']
 export type ReviewLayer = Schema['ReviewLayer']
+export type ReviewLayerRun = Schema['ReviewLayerRun']
+export type ReviewTimings = Schema['ReviewTimings']
 export type BriefOption = Schema['BriefOption']
 export type Brief = Schema['Brief']
 

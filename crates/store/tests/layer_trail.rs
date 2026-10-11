@@ -283,10 +283,46 @@ fn a_sign_off_whose_layer_row_fails_writes_neither() {
         "and no layer row was left behind either"
     );
 
-    // The same for the draft's three transitions, which share the arrangement.
+    // **Writing a draft as ready is the fourth transition in this family**, since
+    // DEV-890: it is what puts layer 6 at `waiting_on_you`, and it is the only record of
+    // when the draft became ready. So it fails here too, and leaves no draft behind — a
+    // draft sitting in the Inbox's sign-off group under a trail that says nothing is
+    // waiting is the disagreement this file exists to rule out.
+    let refused = store.put_draft(review.id, NewDraft::ready("the body"));
+    assert!(
+        refused.is_err(),
+        "a draft whose trail cannot be written is not written: {refused:?}"
+    );
+    assert_eq!(
+        store.find_draft(review.id).expect("a read"),
+        None,
+        "and no draft was left behind either"
+    );
+
+    // The draft the next assertion needs, written with the trigger out of the way and
+    // put back afterwards. Dropping it is the only way to get a draft onto this database
+    // at all now, and leaving it dropped would test approving against nothing.
+    {
+        let conn = rusqlite::Connection::open(common::db_path(&dir)).expect("a connection");
+        conn.execute_batch("DROP TRIGGER no_layer_rows")
+            .expect("dropped");
+    }
     store
         .put_draft(review.id, NewDraft::ready("the body"))
         .expect("a draft");
+    {
+        let conn = rusqlite::Connection::open(common::db_path(&dir)).expect("a connection");
+        conn.execute_batch(
+            "CREATE TRIGGER no_layer_rows
+                 BEFORE INSERT ON review_layers
+             BEGIN
+                 SELECT RAISE(ABORT, 'this layer row is refused on purpose');
+             END;",
+        )
+        .expect("the trigger again");
+    }
+
+    // The same for the draft's other three transitions, which share the arrangement.
     let refused = store.approve_draft(review.id, ReviewEvent::Comment, Actor::Developer);
     assert!(
         refused.is_err(),

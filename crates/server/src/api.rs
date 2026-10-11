@@ -121,6 +121,7 @@ impl Api {
             Operation::TicketRestAndApprove { review_id } => {
                 self.ticket_rest_and_approve(review_id, body)
             }
+            Operation::ListReviewTimings => self.review_timings(query),
             Operation::ListRules => self.rules(query),
             Operation::PromoteRule { rule_id } => self.promote_rule(rule_id, body),
             Operation::DismissRule { rule_id } => self.dismiss_rule(rule_id, body),
@@ -144,11 +145,45 @@ impl Api {
             .map(|review| -> Result<Value, ApiError> {
                 let layers = self.records.review_layers(review.id)?;
                 let at_two = layers.iter().find(|layer| layer.number == 2);
+                // **The brief's own time when the step has none.** A session that writes a
+                // brief and nothing else leaves layer 2 unwritten — DEV-864's rule, that
+                // what a session's steps say about its progress is the session's to write
+                // — and the queue showed "no time recorded" over a row it could date from
+                // the brief in front of it. The step first, because a step that *has* been
+                // written is the one that says whose turn it is and when it became theirs.
+                // **When step 2 began waiting on the developer, not when its row was
+                // last written.** `set_review_layer` is idempotent, so a session
+                // re-reporting the same state moves `updated_at` and would reset "brief
+                // ready 6 min ago" — and its place in the oldest-first sort — without
+                // anything having changed. The pass's own start is the stable answer, and
+                // it is what `draft_ready_at` uses.
+                //
+                // **The waiting pass, not whatever pass is open.** A session that reports
+                // step 2 `running` and then writes the brief without reporting
+                // `waiting_on_you` is in this group all the same — the group is keyed on
+                // the brief being unconfirmed — and dating it from the open `running` pass
+                // would say the brief was ready when the agent *started* reading. That
+                // review falls to the brief's own time below, which is what it has.
+                //
+                // **Falling back to the brief's own time**, for a session that wrote a
+                // brief and never reported the step (DEV-864 leaves that step unwritten on
+                // a first write). `briefs.updated_at` is written by the write that made
+                // the brief ready, which is the thing being dated. The draft has no such
+                // fallback on purpose: `drafts.updated_at` moves when the *developer*
+                // edits the draft, so it would date their wait from their own last
+                // keystroke.
+                let ready_at = match at_two.and_then(|layer| layer.waiting_on_you_since()) {
+                    Some(entered) => Some(entered),
+                    None => self
+                        .records
+                        .find_brief(review.id)?
+                        .map(|brief| brief.updated_at),
+                };
                 Ok(json!({
                     "review_id": review.id,
                     "pull_request": wire::inbox_pr(review),
                     "ticket_id": review.ticket_id,
-                    "brief_ready_at": wire::rfc3339_or_null(at_two.and_then(|l| l.updated_at)),
+                    "brief_ready_at": wire::rfc3339_or_null(ready_at),
                     // True when the session is holding at layer 2 for this confirmation,
                     // which is what justifies "nothing else runs until you confirm" on
                     // the screen. Read from the layer rather than assumed: a review whose
@@ -182,6 +217,11 @@ impl Api {
                     "held_back": held_back,
                     // "delta since your last review" is what a round above one means.
                     "is_delta": review.round > 1,
+                    // When the draft became ready: layer 6 entering `waiting_on_you`. The
+                    // queue's age cell said "no time recorded" here until DEV-890.
+                    "draft_ready_at": wire::rfc3339_or_null(
+                        self.records.draft_ready_at(review.id)?,
+                    ),
                 }))
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -189,12 +229,18 @@ impl Api {
         let author_replies = replies
             .iter()
             .map(|review| -> Result<Option<Value>, ApiError> {
-                let events: Vec<Value> = self
-                    .records
-                    .full_review(review.id)?
+                // One read, two answers. The author's acts are read once and both the
+                // list and its newest time come off that: a second `full_review` here
+                // would be a second read of the same review per row of the queue.
+                let full = self.records.full_review(review.id)?;
+                let acted: Vec<_> = full
                     .outcomes
                     .iter()
                     .filter(|outcome| matches!(outcome.actor, Actor::Author | Actor::Harvester))
+                    .collect();
+
+                let events: Vec<Value> = acted
+                    .iter()
                     .map(|outcome| {
                         json!({
                             "finding_seq": outcome.finding_seq,
@@ -205,6 +251,11 @@ impl Api {
                     })
                     .collect();
 
+                // The newest of those acts' own times. The outcomes have carried one all
+                // along; nothing served it, so the queue's age cell read "no time
+                // recorded" over a reply it could have dated.
+                let replied_at = acted.iter().map(|outcome| outcome.occurred_at).max();
+
                 // `events` has minItems 1, so a review with none is not an item. The
                 // store's query should not return one; serving an invalid item if it did
                 // would be worse than serving a shorter list.
@@ -213,6 +264,7 @@ impl Api {
                         "review_id": review.id,
                         "pull_request": wire::inbox_pr(review),
                         "events": events,
+                        "replied_at": wire::rfc3339_or_null(replied_at),
                     })
                 }))
             })
@@ -248,6 +300,12 @@ impl Api {
                     // it. Null is the honest answer, and the contract requires the screen
                     // to render it rather than showing "session alive" by default.
                     "session_alive": Value::Null,
+                    // **What the server can say instead, since DEV-890**: when this step's
+                    // current pass began, and when anything last wrote to the review. The
+                    // queue shows "last activity 4 min ago" where it showed "session state
+                    // unknown" — a fact the record holds, rather than a guess at Allele's.
+                    "in_state_since": wire::rfc3339_or_null(at.layer.in_state_since()),
+                    "last_activity_at": wire::rfc3339_or_null(at.review.last_activity_at),
                 })
             })
             .collect();
@@ -459,6 +517,9 @@ impl Api {
                     .collect::<Vec<_>>(),
                 "description_lint": wire::description_lint(&provenance),
                 "coverage": wire::coverage(source, rows),
+                // The totals. Each step's own figures are inside `layers` above, with the
+                // passes they were computed from.
+                "timings": wire::review_timings(&self.records.review_timings(review_id)?),
                 "rounds": rounds.iter().map(wire::round_summary).collect::<Vec<_>>(),
                 "commits_since_previous_round": commits
                     .iter()
@@ -870,6 +931,51 @@ impl Api {
             .records
             .request_nit_ticket(review_id, ticket_id.as_deref())?;
         Ok((200, wire::nit_ticket(&ticket)))
+    }
+
+    // -- timings ------------------------------------------------------------------
+
+    /// `GET /timings`: how long every finished review took, in one read.
+    ///
+    /// **No statistics**: the figures and nothing computed from them. DEV-890 puts averages,
+    /// a window and a chart out of scope, and a server that had picked any of them would
+    /// have decided somebody else's question.
+    ///
+    /// Finished means posted. A review still open has a span with no end, so a total for it
+    /// would grow every time this was read.
+    fn review_timings(&self, query: &str) -> Result<(u16, Value), ApiError> {
+        let repo = query_value(query, "repo");
+        // Checked, as `listRules` checks the same parameter. An unchecked filter answers a
+        // typed repository with an empty list, which reads as "nothing finished there"
+        // rather than "there is no such repository".
+        if let Some(repo) = &repo {
+            if !wire::is_repo_name(repo) {
+                return Err(ApiError::invalid_value(
+                    "repo",
+                    format!("{repo:?} is not a repository"),
+                    "a repository as owner/repo",
+                ));
+            }
+        }
+
+        let rows = self
+            .records
+            .finished_review_timings(repo.as_deref())?
+            .iter()
+            .map(|(review, timings)| {
+                json!({
+                    "review": wire::review(review),
+                    "timings": wire::review_timings(timings),
+                    "layers": timings
+                        .layers
+                        .iter()
+                        .map(wire::review_layer)
+                        .collect::<Vec<_>>(),
+                })
+            })
+            .collect::<Vec<_>>();
+
+        Ok((200, json!({ "reviews": rows })))
     }
 
     // -- rules --------------------------------------------------------------------

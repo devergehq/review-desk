@@ -4,7 +4,7 @@ use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior}
 
 use crate::error::{Result, StoreError};
 use crate::model::{
-    now, FindingRef, NewRule, OutcomeKind, Rule, RuleCounts, RuleException, RuleScope, RuleStage,
+    FindingRef, NewRule, OutcomeKind, Rule, RuleCounts, RuleException, RuleScope, RuleStage,
     RulesSummary, Timestamp, ACTIVE_RULES_CAP,
 };
 use crate::{is_foreign_key_violation, normalise, Store};
@@ -48,7 +48,7 @@ impl Store {
 
         // One time for both columns, so a rule nothing has touched yet does not read as
         // having been changed a microsecond after it was created.
-        let created_at = now();
+        let created_at = self.now();
 
         tx.execute(
             "INSERT INTO rules
@@ -197,7 +197,7 @@ impl Store {
         let reason = reason.map(str::trim).filter(|reason| !reason.is_empty());
         self.conn.execute(
             "UPDATE rules SET stage = ?2, note = ?3, updated_at = ?4 WHERE id = ?1",
-            params![id, stage, reason, now()],
+            params![id, stage, reason, self.now()],
         )?;
         self.get_rule(id)
     }
@@ -214,7 +214,7 @@ impl Store {
         self.conn.execute(
             "UPDATE rules SET review_again_at = ?2, note = ?3, updated_at = ?4
              WHERE id = ?1",
-            params![id, until, note, now()],
+            params![id, until, note, self.now()],
         )?;
         self.get_rule(id)
     }
@@ -366,7 +366,7 @@ impl Store {
         }
 
         let repo = repo.map(normalise::repo);
-        let since = now() - window_days * 86_400;
+        let since = self.now() - window_days * 86_400;
 
         let active_rules = self.list_rules_at_stages(repo.as_deref(), IN_FORCE)?.len() as i64;
 
@@ -433,7 +433,7 @@ impl Store {
             });
         }
 
-        let created_at = now();
+        let created_at = self.now();
         self.conn
             .execute(
                 "INSERT INTO rule_exceptions (rule_id, reason, created_at)

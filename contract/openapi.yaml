@@ -549,6 +549,59 @@ paths:
         '500':
           $ref: '#/components/responses/StoreUnavailable'
 
+  /timings:
+    get:
+      operationId: listReviewTimings
+      tags: [review]
+      summary: How long every finished review took
+      description: |
+        **One read, so statistics can be computed from it.** Every review whose draft has
+        been posted, newest first, with the figures DEV-890 records: when it was requested,
+        when the draft was ready, when it was signed off and posted, how long it was with
+        the agent, how long it waited on the developer, and each of its seven steps with
+        the passes it made.
+
+        **There is no statistics page**, deliberately: this issue makes the numbers
+        available and shows one review its own. Averages, charts and a window are
+        somebody's later decision, and a server that had already picked them would have
+        decided it.
+
+        **Finished means posted.** A review the developer has not signed off yet has an
+        open span and no total, so including it would mean serving a figure that grows
+        every time the page is read. A review recorded before DEV-890 *is* here, with its
+        figures null — leaving it out would quietly make "how long does a review take" a
+        question about the reviews recorded since the change, which is a different
+        question.
+      parameters:
+        - name: repo
+          in: query
+          required: false
+          description: One repository, as `owner/repo`. Omit it for every repository.
+          schema: { $ref: '#/components/schemas/RepoName' }
+      responses:
+        '200':
+          description: |
+            The finished reviews and their timings, newest first.
+
+            **Unpaginated, deliberately.** This is one developer's own record on their own
+            machine, and the read exists so that every finished review can be counted;
+            answering with a page would make a count of "how long does a review take" a
+            count of the last page of them.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [reviews]
+                properties:
+                  reviews:
+                    type: array
+                    items: { $ref: '#/components/schemas/ReviewTimingRow' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
   /rules:
     get:
       operationId: listRules
@@ -1039,6 +1092,195 @@ components:
         updated_at:
           type: [string, 'null']
           format: date-time
+          description: |
+            When the layer was last written. **Overwritten on every write**, which is why
+            `runs` exists: this one time could not say when the layer started.
+
+        # -- how long this step took (DEV-890) ---------------------------------------
+        runs:
+          type: array
+          items: { $ref: '#/components/schemas/ReviewLayerRun' }
+          description: |
+            Every pass this step has made, oldest first — **a step that ran twice reports
+            both**. Derived from the store's append-only record of the states the step
+            entered, so a total and the times it came from cannot disagree.
+
+            Empty for a step nothing has written. Always served by this server; a response
+            written before DEV-890 is missing it rather than wrong, which is why it is not
+            required here.
+        seconds:
+          type: [integer, 'null']
+          minimum: 0
+          description: |
+            How long this step took in total, in whole seconds, over every pass it made —
+            the developer's own waits included. The split between the agent's time and the
+            developer's is `ReviewTimings`, which does not fold it in here.
+
+            **Null is not zero.** It means no pass of this step has both a start and a
+            finish on the record, which is every finished step of a review from before
+            DEV-890. A pass still going is left out of the total: a figure that grew on
+            every reload would not be an answer to how long the step took.
+
+            Whole seconds, never formatted text — how to say "17 min" is the screen's
+            decision and the store holds no opinion about it.
+
+    ReviewLayerRun:
+      type: object
+      additionalProperties: false
+      required: [state, started_at, ended_as, finished_at, seconds]
+      description: |
+        One pass a step made: what it was doing, when that began, and what ended it.
+
+        **A pass is one continuous occupancy of one working state**, so a draft that was
+        written, sent back and written again is two passes at `running` with the
+        developer's own wait between them.
+
+        Both halves are nullable, and each null says something different:
+
+        | Shape | What it means |
+        |---|---|
+        | start and finish | a pass that is over, and its length is known |
+        | start, no finish | the pass going on now |
+        | finish, no start | a step finished before anything recorded a start — every finished step of a review from before DEV-890 |
+      properties:
+        state:
+          oneOf:
+            - $ref: '#/components/schemas/ReviewLayerState'
+            - type: 'null'
+          description: |
+            What the step was doing: `running` for the agent's own work,
+            `waiting_on_you` for the developer's turn. Null when the start was never
+            recorded, in which case nothing says which of the two it was.
+        started_at:
+          type: [string, 'null']
+          format: date-time
+        ended_as:
+          oneOf:
+            - $ref: '#/components/schemas/ReviewLayerState'
+            - type: 'null'
+          description: |
+            The state the step moved to, which is what ended the pass. Null while the pass
+            is still going.
+        finished_at:
+          type: [string, 'null']
+          format: date-time
+        seconds:
+          type: [integer, 'null']
+          minimum: 0
+          description: |
+            How long the pass took, in whole seconds. Null when either end is missing —
+            never zero for a pass nothing measured.
+        detail:
+          type: [string, 'null']
+          description: |
+            What was written against the state this pass was in — "waiting on you", or the
+            developer's own instruction back. Null when none was written, or when the start
+            was not recorded.
+
+    ReviewTimings:
+      type: object
+      additionalProperties: false
+      required:
+        - requested_at
+        - draft_ready_at
+        - signed_off_at
+        - posted_at
+        - with_the_agent_seconds
+        - waiting_on_you_seconds
+        - last_activity_at
+      description: |
+        How long one review took, as the four questions DEV-890 exists to answer. The
+        per-step figures are not here: they are on `layers[]`, with the passes they were
+        computed from, because a page that could render the same fact from two lists could
+        render a disagreement.
+
+        **Every duration is whole seconds and every one is nullable.** A figure the record
+        cannot answer is absent; it is never a nought, which for a review recorded before
+        DEV-890 would say it took no time at all.
+      properties:
+        requested_at:
+          type: string
+          format: date-time
+          description: |
+            When the review was asked for — the review's own `created_at`, which is the
+            developer starting it or a session opening it.
+        draft_ready_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When the draft was last ready for the developer: step 6 entering
+            `waiting_on_you`. **The last time rather than the first** — a draft sent back
+            and redrafted is ready again, and the one that matters is the one the developer
+            was last shown.
+        signed_off_at:
+          type: [string, 'null']
+          format: date-time
+          description: The draft's `approved_at`. Only the developer signs off.
+        posted_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When a session reported the review posted. A review with a time here is
+            finished, and is what `GET /timings` lists.
+        with_the_agent_seconds:
+          type: [integer, 'null']
+          minimum: 0
+          description: |
+            Requested to draft ready, less the developer's own time inside that span.
+
+            **The overlap, not the waits that finished.** A session may draft before the
+            brief is confirmed — `blocks_later_layers` exists to say whether it did — so a
+            wait on the developer can still be open when the draft becomes ready. Its own
+            length is unknown; the part of it that fell inside this span is not.
+
+            Null until the draft is ready: there is no end to measure to, and measuring to
+            now would make a figure that grows while nothing happens.
+        waiting_on_you_seconds:
+          type: [integer, 'null']
+          minimum: 0
+          description: |
+            How long the review waited on the developer, over every step and every pass:
+            brief ready to confirmed, and draft ready to signed off. Null when no wait has
+            finished — which is not the same as a review nobody has been waiting on, and
+            the screen says which.
+
+            **This and `with_the_agent_seconds` do not add up to `draft_ready_at` minus
+            `requested_at`, and that is not an error.** They answer two different
+            questions. This one counts waits that have *ended*, because a wait still going
+            has no length. The other subtracts the developer's time *inside one span*,
+            where a wait still going does have one — it ran to the moment the draft was
+            ready. A review whose brief is still unconfirmed while its draft is ready
+            shows exactly that gap: the open wait is in the one figure and not in the
+            other.
+        last_activity_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When anything last wrote to this review. **Every write moves it and no read
+            does**, so it is how long a session has been silent — the nearest thing Review
+            Desk can say about whether one is alive, because Allele owns that and tells
+            this server nothing.
+
+            Null for a review nothing has written to since the record started keeping
+            this, which is every review from before DEV-890 and is not the same answer as
+            a long time ago.
+
+    ReviewTimingRow:
+      type: object
+      additionalProperties: false
+      required: [review, timings, layers]
+      description: One finished review's timings, as a row of `GET /timings`.
+      properties:
+        review: { $ref: '#/components/schemas/Review' }
+        timings: { $ref: '#/components/schemas/ReviewTimings' }
+        layers:
+          type: array
+          minItems: 7
+          maxItems: 7
+          items: { $ref: '#/components/schemas/ReviewLayer' }
+          description: |
+            All seven steps, in order, each with its passes and its total — so a per-step
+            figure can be computed from this one read.
 
     BriefOption:
       type: object
@@ -1910,6 +2152,7 @@ components:
         - sources
         - criteria
         - coverage
+        - timings
       description: Everything the One review screen shows.
       properties:
         review: { $ref: '#/components/schemas/Review' }
@@ -1975,6 +2218,12 @@ components:
             post. Null when it has not run, for the reason `DraftDetail.lint` is nullable:
             a failing lint and an absent one are not the same thing.
         coverage: { $ref: '#/components/schemas/Coverage' }
+        timings:
+          allOf:
+            - $ref: '#/components/schemas/ReviewTimings'
+          description: |
+            How long the review has taken: the totals. **Each step's own figures are on
+            `layers[]`** rather than repeated here — see `ReviewTimings`.
 
         # -- the review's place in the pull request (DEV-873) ------------------------
         rounds:
@@ -2693,7 +2942,13 @@ components:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }
         ticket_id: { $ref: '#/components/schemas/ForeignId' }
-        brief_ready_at: { type: [string, 'null'], format: date-time }
+        brief_ready_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When the brief became ready for the developer: step 2's own time, or — for a
+            session that wrote a brief and never reported the step — the brief's
+            `updated_at`. Null only when neither exists.
         blocks_later_layers:
           type: boolean
           description: |
@@ -2719,6 +2974,15 @@ components:
           description: |
             Whether this round reviews only what changed since the last one. True when
             `round` is above 1, which the screen words as "delta since your last review".
+        draft_ready_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When the draft became ready for the developer — step 6 entering
+            `waiting_on_you`, the last time it did. **The queue's age cell read "no time
+            recorded" here until DEV-890**: the draft holds `approved_at`, `sent_back_at`
+            and `posted_at`, and had no time for the one state the developer is waiting in.
+            Null for a review from before DEV-890.
 
     InboxReplyEvent:
       type: object
@@ -2744,6 +3008,13 @@ components:
           type: array
           minItems: 1
           items: { $ref: '#/components/schemas/InboxReplyEvent' }
+        replied_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When the author last acted — the newest of these events' own times. The queue's
+            age cell, which read "no time recorded" before DEV-890 although the outcomes
+            had carried a time all along. Null for an item built from no timed outcome.
 
     DescriptionLint:
       type: object
@@ -2807,6 +3078,24 @@ components:
             Whether the Allele session is still running. Allele owns this, not Review
             Desk; null when nothing has told the server. Null is the honest answer and
             the screen must render it, rather than showing "session alive" by default.
+
+            **`last_activity_at` is what the queue shows instead**, since DEV-890: how
+            long the record has been silent is a fact Review Desk holds, and "session
+            state unknown" was the only thing it could say before.
+        in_state_since:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When the review entered the state it is in now — the start of the step's
+            current pass. The queue's "running 20 min". Null when the step's current pass
+            has no recorded start, which is a review from before DEV-890.
+        last_activity_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When anything last wrote to this review. See `ReviewTimings.last_activity_at`;
+            null means nothing has written since the record started keeping this, and the
+            queue says so rather than drawing a figure.
 
     InboxHandled:
       type: object

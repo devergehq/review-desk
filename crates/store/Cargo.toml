@@ -10,11 +10,20 @@ repository.workspace = true
 name = "review_desk_store"
 path = "src/lib.rs"
 
+# **A dev-dependency on itself, which is how the tests reach a clock they can move.**
+# `Clock::fixed` is behind this feature, so a release binary cannot build a clock that
+# lies; an integration test is an external consumer of this crate, so `#[cfg(test)]`
+# could not reach it. Cargo allows the cycle for a dev-dependency and turns the feature
+# on for the test targets only.
+[features]
+fixed-clock = []
+
 [dependencies]
 rusqlite.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+review-desk-store = { path = ".", features = ["fixed-clock"] }
 serde_json.workspace = true
 tempfile.workspace = true

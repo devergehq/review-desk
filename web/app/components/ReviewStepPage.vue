@@ -53,6 +53,13 @@ defineProps<{
         :round="detail.review.round"
       />
 
+      <!--
+        How long the review has taken, under the trail it is about: the total with the
+        agent and the total waiting on the developer. Here rather than on one page, because
+        it is a fact about the review and every one of these pages is the review.
+      -->
+      <ReviewTimings :timings="detail.timings" />
+
       <h1 class="rd-display headline">
         {{ headline }}
       </h1>

@@ -31,8 +31,9 @@ use rusqlite::{params, Transaction, TransactionBehavior};
 use crate::entities::{composition, only_the_developer};
 use crate::error::{Result, StoreError};
 use crate::model::{
-    now, Actor, DecidedBy, Decision, DecisionMade, Disposition, Draft, Finding, FindingDecision,
+    Actor, DecidedBy, Decision, DecisionMade, Disposition, Draft, Finding, FindingDecision,
     FindingRef, NitTicket, NitTicketStatus, Outcome, OutcomeKind, ReviewEvent, RoundStatus,
+    Timestamp,
 };
 use crate::Store;
 
@@ -226,7 +227,7 @@ impl Store {
                     status,
                     DecidedBy::Developer,
                     decision.note,
-                    now()
+                    self.now()
                 ],
             )?;
         }
@@ -259,13 +260,14 @@ impl Store {
         // The body last, so it is composed from everything the decision changed, and the
         // lint with it: after a decision the draft's lint reads as not checked, never as
         // passing.
-        composition::recompose(&tx, review_id, composition::Lint::Clear)?;
+        composition::recompose(&tx, review_id, composition::Lint::Clear, self.now())?;
 
         let outcome = write_outcome(
             &tx,
             FindingRef { review_id, seq },
             settled.outcome,
             detail.as_deref(),
+            self.now(),
         )?;
 
         let made = DecisionMade {
@@ -274,6 +276,7 @@ impl Store {
             outcome,
         };
 
+        self.mark_review_active(review_id)?;
         tx.commit()?;
         Ok(made)
     }
@@ -325,7 +328,7 @@ impl Store {
             });
         }
 
-        let at = now();
+        let at = self.now();
         for finding in &open {
             tx.execute(
                 "UPDATE findings SET
@@ -355,6 +358,7 @@ impl Store {
                 },
                 OutcomeKind::Ticketed,
                 note,
+                at,
             )?;
         }
 
@@ -363,7 +367,7 @@ impl Store {
         // rather than a second list stored against it.
         super::review::write_nit_ticket(&tx, review_id, NitTicketStatus::Requested, None, at)?;
 
-        composition::recompose(&tx, review_id, composition::Lint::Clear)?;
+        composition::recompose(&tx, review_id, composition::Lint::Clear, self.now())?;
 
         // And the same statements `approve_draft` runs, layer 6 included. The event is not
         // the caller's to choose: this act is an approval, and a request for changes that
@@ -382,6 +386,7 @@ impl Store {
             ticketed: open.iter().map(|finding| finding.seq).collect(),
         };
 
+        self.mark_review_active(review_id)?;
         tx.commit()?;
         Ok(settled)
     }
@@ -589,13 +594,17 @@ fn detail_for(decision: &Decision, finding: &Finding) -> Result<Option<String>> 
 ///
 /// Written through the transaction rather than through `Store::add_outcome`, which would
 /// open a second one: the decision and the outcome that says who made it are one step.
+///
+/// **The time is passed in rather than read here**, because the store's clock lives on the
+/// store and this is a free function — and because the decision and its outcome should
+/// carry the same instant rather than two readings a tick apart.
 fn write_outcome(
     tx: &Transaction<'_>,
     finding: FindingRef,
     kind: OutcomeKind,
     detail: Option<&str>,
+    at: Timestamp,
 ) -> Result<Outcome> {
-    let at = now();
     tx.execute(
         "INSERT INTO outcomes (review_id, finding_seq, kind, actor, occurred_at, detail)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",

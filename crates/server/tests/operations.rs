@@ -1,4 +1,4 @@
-//! Every one of the contract's nineteen operations is routed and answers.
+//! Every one of the contract's twenty operations is routed and answers.
 //!
 //! This walks `Operation::ALL` rather than listing routes by hand, so an operation added
 //! to the contract and not to the server fails here instead of 404ing in a browser.
@@ -7,10 +7,10 @@ mod common;
 
 use review_desk_server::route::Operation;
 
-/// The nineteen operations, as `contract/README.md` counts them.
+/// The twenty operations, as `contract/README.md` counts them.
 #[test]
-fn the_contract_has_nineteen_operations() {
-    assert_eq!(Operation::ALL.len(), 19);
+fn the_contract_has_twenty_operations() {
+    assert_eq!(Operation::ALL.len(), 20);
 }
 
 #[test]

@@ -26,7 +26,7 @@ use rusqlite::{params, OptionalExtension, Transaction, TransactionBehavior};
 
 use crate::error::{Result, StoreError};
 use crate::model::{
-    now, Carryable, Finding, FindingCarry, FindingInRound, NewRoundCommit, Review, RoundCommit,
+    Carryable, Finding, FindingCarry, FindingInRound, NewRoundCommit, Review, RoundCommit,
     RoundStatus, RoundStatusCounts, RoundSummary,
 };
 use crate::{normalise, Store};
@@ -102,7 +102,7 @@ impl Store {
         // evidence, so a round 2 page can show what was said without reading round 1.
         let earlier = self.get_finding(from_review_id, seq)?;
 
-        let at = now();
+        let at = self.now();
         let commit = commit_sha_for("commit", carry.commit.as_deref())?;
 
         // One statement for "insert the carried finding, or update the one already here".
@@ -169,6 +169,7 @@ impl Store {
 
         carry_evidence_tables(&tx, from_review_id, into_review_id, seq)?;
 
+        self.mark_review_active(into_review_id)?;
         tx.commit()?;
         self.get_finding(into_review_id, seq)
     }
@@ -186,7 +187,7 @@ impl Store {
         // Checked first, so an unknown finding is NotFound rather than a no-op update.
         self.get_finding(review_id, seq)?;
 
-        let at = now();
+        let at = self.now();
         self.conn.execute(
             "UPDATE findings SET
                  round_status         = ?3,
@@ -206,6 +207,7 @@ impl Store {
             ],
         )?;
 
+        self.mark_review_active(review_id)?;
         self.get_finding(review_id, seq)
     }
 
@@ -320,6 +322,7 @@ impl Store {
             }
         }
 
+        self.mark_review_active(review_id)?;
         tx.commit()?;
         self.list_round_commits(review_id)
     }

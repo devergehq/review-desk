@@ -13,21 +13,36 @@
 //! prose, which is honest and has one visible consequence: the developer's per-finding
 //! decisions refuse on such a draft, because nothing can say which characters are F1's.
 //!
-//! **Each of the three transitions below also writes its layer row, in the same
-//! transaction.** Approving finishes layer 6, sending back puts it in progress carrying
-//! the developer's note, and marking a draft posted leaves layer 7 `pending` — waiting
-//! for a harvest that has not happened — rather than `done`. Until DEV-864 none of them
-//! wrote a layer at all, so the trail went stale the moment the developer acted.
+//! **Each of the four transitions below also writes its layer row, in the same
+//! transaction.** Writing a draft as ready puts layer 6 at `waiting_on_you`, approving
+//! finishes it, sending back puts it in progress carrying the developer's note, and
+//! marking a draft posted leaves layer 7 `pending` — waiting for a harvest that has not
+//! happened — rather than `done`. Until DEV-864 none of them wrote a layer at all, so the
+//! trail went stale the moment the developer acted; the first of the four was still
+//! missing until DEV-890, which is where when a draft became ready has to come from.
 
 use rusqlite::{params, Connection, OptionalExtension, Row, Transaction, TransactionBehavior};
 
 use crate::entities::{composition, only_the_developer};
 use crate::error::{Result, StoreError};
 use crate::model::{
-    now, Actor, Draft, DraftLint, DraftStatus, NewDraft, NewDraftSection, ReviewEvent,
-    ReviewLayerName, ReviewLayerState, Timestamp,
+    Actor, Draft, DraftLint, DraftStatus, NewDraft, NewDraftSection, ReviewEvent, ReviewLayerName,
+    ReviewLayerState, Timestamp,
 };
 use crate::{is_foreign_key_violation, Store};
+
+/// What layer 6 says when a session takes a ready draft back to work on.
+///
+/// Not the developer's own note — that is what `send_back_draft` writes, and the
+/// difference is who asked for the change.
+pub(crate) const TAKEN_BACK_DETAIL: &str = "the session is rewriting it";
+
+/// What layer 6 says while the draft is waiting to be signed off.
+///
+/// The same words the Inbox and the trail already use for a layer waiting on the
+/// developer, so a draft written as ready reads the same whether the session reported the
+/// layer itself or this module wrote it.
+pub(crate) const READY_DETAIL: &str = "waiting on you";
 
 /// What layer 6 says once the developer has approved the draft.
 ///
@@ -100,10 +115,10 @@ impl Store {
         let checked_at = if lint.is_empty() {
             None
         } else {
-            Some(lint.checked_at.unwrap_or_else(now))
+            Some(lint.checked_at.unwrap_or_else(|| self.now()))
         };
 
-        let updated_at = now();
+        let updated_at = self.now();
         tx.execute(
             "INSERT INTO drafts
                  (review_id, body, status, updated_at, lint_passes, lint_visible_words,
@@ -150,7 +165,8 @@ impl Store {
         match &new.sections {
             Some(sections) => {
                 composition::write(&tx, review_id, sections)?;
-                let composed = composition::recompose(&tx, review_id, composition::Lint::Keep)?;
+                let composed =
+                    composition::recompose(&tx, review_id, composition::Lint::Keep, self.now())?;
                 let given = new.body.trim_end_matches('\n');
                 if !given.is_empty() && given != composed.trim_end_matches('\n') {
                     return Err(StoreError::InvalidValue {
@@ -174,10 +190,64 @@ impl Store {
                     vec![NewDraftSection::prose(whole)]
                 };
                 composition::write(&tx, review_id, &sections)?;
-                composition::recompose(&tx, review_id, composition::Lint::Keep)?;
+                composition::recompose(&tx, review_id, composition::Lint::Keep, self.now())?;
             }
         }
 
+        // **A draft that is ready is layer 6 waiting on the developer, and the trail has
+        // to say so.** Nothing wrote that before: `approve_draft`, `send_back_draft` and
+        // `post_draft` each move layer 6, and the one transition that left it alone was
+        // the draft becoming ready in the first place — so the record could hold a draft
+        // in the Inbox's "Sign off a draft" group under a trail still reading `pending`.
+        // That is the disagreement `layer_trail.rs` exists to remove, and DEV-890 needs
+        // the state change for a second reason: when the draft became ready is where "how
+        // long was the review with the agent" stops, and this is the only record of it.
+        //
+        // **And the reverse: a ready draft taken back is no longer waiting on anybody.**
+        // `put_draft` accepts `drafting` over a draft that is `ready`, which is a session
+        // taking it back to work on — and leaving layer 6 at `waiting_on_you` would say
+        // the developer was being waited on while the agent typed, and keep a wait run
+        // open that no one is in. That is the stale trail this change exists to remove, on
+        // the one transition that still had it.
+        //
+        // **`draft_ready_at` is unchanged by this, and that is correct**: it answers when
+        // the draft was *last* ready, which the taking-back does not alter. What moves is
+        // that the wait is now a closed pass with a length, so it reaches
+        // `waiting_on_you_seconds` instead of sitting open for ever.
+        //
+        // **Only from `waiting_on_you`.** A draft that was already `drafting` is the
+        // session's business and the session reports it with `review-desk layer set`;
+        // moving layer 6 to `running` on every part-written draft would put it in the
+        // queue's "With the agent" group on the store's say-so rather than the session's.
+        //
+        // Inside the transaction, like the other three, so a draft and its trail are
+        // written together or not at all. A state is recorded only when it changes, so the
+        // developer editing a draft that is already ready does not restart the clock on
+        // their own wait.
+        let waiting = self
+            .find_review_layer(review_id, ReviewLayerName::Draft.number())?
+            .is_some_and(|layer| layer.state == ReviewLayerState::WaitingOnYou);
+        match new.status {
+            DraftStatus::Ready => {
+                self.set_review_layer(
+                    review_id,
+                    ReviewLayerName::Draft.number(),
+                    ReviewLayerState::WaitingOnYou,
+                    Some(READY_DETAIL),
+                )?;
+            }
+            DraftStatus::Drafting if waiting => {
+                self.set_review_layer(
+                    review_id,
+                    ReviewLayerName::Draft.number(),
+                    ReviewLayerState::Running,
+                    Some(TAKEN_BACK_DETAIL),
+                )?;
+            }
+            _ => {}
+        }
+
+        self.mark_review_active(review_id)?;
         tx.commit()?;
         self.get_draft(review_id)
     }
@@ -238,7 +308,7 @@ impl Store {
         };
 
         if !already_approved {
-            write_approval(&self.conn, review_id, event, by, now())?;
+            write_approval(&self.conn, review_id, event, by, self.now())?;
         }
 
         self.set_review_layer(
@@ -248,6 +318,7 @@ impl Store {
             Some(APPROVED_DETAIL),
         )?;
 
+        self.mark_review_active(review_id)?;
         tx.commit()?;
         self.get_draft(review_id)
     }
@@ -282,7 +353,7 @@ impl Store {
         };
 
         if !already_sent_back {
-            let at = now();
+            let at = self.now();
             self.conn.execute(
                 "UPDATE drafts SET
                      status         = ?2,
@@ -306,6 +377,7 @@ impl Store {
             Some(note),
         )?;
 
+        self.mark_review_active(review_id)?;
         tx.commit()?;
         self.get_draft(review_id)
     }
@@ -349,7 +421,7 @@ impl Store {
         };
 
         if !already_posted {
-            let at = now();
+            let at = self.now();
             self.conn.execute(
                 "UPDATE drafts SET status = ?2, posted_at = ?3, updated_at = ?3
                  WHERE review_id = ?1",
@@ -385,6 +457,7 @@ impl Store {
             )?;
         }
 
+        self.mark_review_active(review_id)?;
         tx.commit()?;
         self.get_draft(review_id)
     }

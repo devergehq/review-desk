@@ -109,6 +109,89 @@ const LAYER_OUTCOMES: Record<ReviewLayerState, string> = {
   skipped: 'skipped',
 }
 
+/**
+ * A duration in whole seconds as "17 min".
+ *
+ * **Null in, null out, and the caller renders the absence.** The API serves a duration the
+ * record cannot answer as null — which is every finished step of a review from before
+ * DEV-890 — and a formatter that turned that into "0 sec" would be the one thing the whole
+ * change is against. Returning null makes the screen decide what to say instead, which is
+ * where `NotMeasured` lives.
+ *
+ * Minutes are the unit a review is read in: under a minute is seconds, under a day is
+ * minutes and hours, and anything longer is days. One unit and at most one below it — "1
+ * hr 4 min", never "1 hr 4 min 12 sec" — because the figure is read at a glance and the
+ * seconds of an hour-long step are noise.
+ */
+export function durationLabel(seconds: number | null | undefined): string | null {
+  if (seconds == null) return null
+  if (seconds < 60) return `${seconds} sec`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} min`
+  const hours = Math.floor(minutes / 60)
+  const over = minutes % 60
+  if (hours < 24) return over ? `${hours} hr ${over} min` : `${hours} hr`
+  const days = Math.floor(hours / 24)
+  const spare = hours % 24
+  return spare ? `${days} ${days === 1 ? 'day' : 'days'} ${spare} hr` : `${days} ${days === 1 ? 'day' : 'days'}`
+}
+
+/**
+ * How long a step took, for the line under its name on the trail.
+ *
+ * **Only for a step that has finished**, which is what DEV-890 asks the trail to show. A
+ * step still going has a total too — the passes it has already closed — and showing it was
+ * worse than showing nothing: step 2 waiting on the developer read "7 sec", which is how
+ * long the agent took before the wait and reads like how long you have been keeping it.
+ * The queue is where a step still going is timed, and it times the right thing: how long
+ * the review has been in the state it is in.
+ *
+ * A step that finished with no duration on the record says so rather than drawing a nought
+ * — that is every finished step of a review from before DEV-890, and a nought would say it
+ * was instant.
+ */
+export function stepDurationLabel(layer: {
+  state: ReviewLayerState
+  seconds?: number | null
+}): string | null {
+  const finished = layer.state === 'done' || layer.state === 'failed' || layer.state === 'skipped'
+  if (!finished) return null
+  return durationLabel(layer.seconds) ?? 'time not recorded'
+}
+
+/**
+ * How long the thing has been where it is now — "20 min", from when it got there.
+ *
+ * `sinceLabel` says "20 min ago", which is the same measurement worded as a point in the
+ * past. This is for the places that are about the span: "Code review · 20 min".
+ */
+export function forLabel(at: Instant | null | undefined, now: Date = new Date()): string | null {
+  if (!at) return null
+  const seconds = Math.max(0, Math.floor((now.getTime() - new Date(at).getTime()) / 1000))
+  return durationLabel(seconds)
+}
+
+/**
+ * What the queue says about a session, strongest fact first.
+ *
+ * **"Session state unknown" was all this could say until DEV-890.** Allele owns whether a
+ * session is running and tells Review Desk nothing, so `session_alive` is null in every
+ * response this server serves — and the row said so, which is honest and useless. What the
+ * record does hold is when anything last wrote to the review, and that is what the row
+ * shows instead. The two `session_alive` branches are kept for the day Allele reports it:
+ * an answer from the system that owns the fact outranks an inference from the record.
+ */
+export function activityLabel(
+  alive: boolean | null | undefined,
+  lastActivityAt: Instant | null | undefined,
+  now: Date = new Date(),
+): string {
+  if (alive === true) return 'Session running'
+  if (alive === false) return 'Session ended'
+  if (!lastActivityAt) return 'No activity recorded'
+  return `Last activity ${sinceLabel(lastActivityAt, now)}`
+}
+
 /** A step's outcome on the trail: what the store recorded, else its state. */
 export function layerOutcome(layer: {
   state: ReviewLayerState

@@ -29,13 +29,19 @@ import type { DeskNotice } from '~/utils/format'
  * | The board draws | Source |
  * |---|---|
  * | Waiting on the author | **None.** No `/inbox` group lists a posted review awaiting a reply |
- * | The age of a draft, a reply or a running session | **None.** Only a brief and a pull request carry a time |
- * | "Session not seen for 20 min" | `session_alive` is a tri-state boolean; there is no last-seen time |
+ * | The age of a draft, a reply or a running session | `draft_ready_at`, `replied_at`, `in_state_since` — **DEV-890** |
+ * | "Session not seen for 20 min" | `last_activity_at`, which is when anything last wrote to the review |
  *
- * Each is drawn in the state it is in rather than filled with a number: the group is
- * present and says it is not measured, and a row with no time says so where the time goes.
- * Inventing either would be the one thing the brief forbids — "a figure with no data source
- * is shown as unknown, never as a number".
+ * **Two of those three were "None" until DEV-890**, and the rows said so where the figure
+ * goes. What changed is the record, not the screen's rule: each step now keeps every state
+ * it entered, so there is a time to show for a draft waiting, a reply and a session's
+ * current step — and how long the record has been silent is what the row says where it
+ * said "Session state unknown". `session_alive` is still Allele's to answer and still null.
+ *
+ * The group nothing can answer is drawn in the state it is in rather than filled with a
+ * number, and a row whose time is still absent says so where the time goes. Inventing
+ * either would be the one thing the brief forbids — "a figure with no data source is shown
+ * as unknown, never as a number".
  *
  * Two facts the boards do not draw and the API does serve are kept as one line each at the
  * foot: what was handled without the developer, and a rule proposal waiting on them.
@@ -170,8 +176,8 @@ function nextAction(row: Waiting) {
       detail: [tally, held].filter(Boolean).join(' · ') || 'nothing in the draft yet',
       action: 'Read and sign off',
       to: stepFor(row),
-      at: null,
-      atUnknown: 'a draft waiting to be signed off carries no time in the inbox',
+      at: row.draft.draft_ready_at ?? null,
+      atUnknown: 'this review was recorded before Review Desk kept when a draft became ready',
     }
   }
   const first = row.reply!.events[0]!
@@ -180,8 +186,8 @@ function nextAction(row: Waiting) {
     detail: first.detail ?? replyLabel(first),
     action: 'Read the reply',
     to: stepFor(row),
-    at: null,
-    atUnknown: 'an author reply carries no time in the inbox',
+    at: row.reply!.replied_at ?? null,
+    atUnknown: 'no outcome on this review carries a time',
   }
 }
 
@@ -270,8 +276,12 @@ const rows = computed(() => {
     needingYou(data).filter(row => showing(row.repo)).map(queueRow),
     row => row.at,
   )
-  const withAgent: InboxInProgressItem[] = data.in_progress.filter(item =>
-    showing(item.pull_request.repo),
+  // Sorted like every other group, now that it has a time to sort by: the caption over
+  // the page says "oldest first", and until DEV-890 this group was the one it could not
+  // be true of. The store serves these newest first, which is the opposite.
+  const withAgent: InboxInProgressItem[] = oldestFirst(
+    data.in_progress.filter(item => showing(item.pull_request.repo)),
+    item => item.in_state_since ?? null,
   )
   const ownPrs = oldestFirst(
     data.own_prs_without_reviewer.filter(item => showing(item.pull_request.repo)),
@@ -284,7 +294,7 @@ const rows = computed(() => {
 const someTimesMissing = computed(
   () =>
     rows.value.needsYou.some(row => row.at == null)
-    || rows.value.withAgent.length > 0
+    || rows.value.withAgent.some(item => item.in_state_since == null)
     || rows.value.ownPrs.some(item => item.opened_at == null),
 )
 
@@ -317,11 +327,18 @@ const besides = computed(() => {
   return said.join(' · ')
 })
 
-/** What the right-hand cell says about a session Allele owns and may not have reported. */
-function sessionAction(alive: boolean | null | undefined): string {
-  if (alive === true) return 'Session running'
-  if (alive === false) return 'Session ended'
-  return 'Session state unknown'
+/**
+ * What the right-hand cell says about a review a session is working on.
+ *
+ * **"Session state unknown" was all it could say until DEV-890.** Allele owns whether a
+ * session is running and tells Review Desk nothing, so `session_alive` is null on every
+ * row this server serves — which was honest and useless. What the record does hold is when
+ * anything last wrote to the review, so the row says that instead, and says when nothing
+ * has. `activityLabel` holds the order: an answer from the system that owns the fact
+ * outranks an inference from the record.
+ */
+function sessionAction(item: InboxInProgressItem): string {
+  return activityLabel(item.session_alive, item.last_activity_at)
 }
 
 /** The seven layers, as the bar's segments: done, the one running, then the rest. */
@@ -465,15 +482,26 @@ function handledLine(data: Inbox): string {
             :title="item.pull_request.title ?? 'no title recorded'"
             :meta="`· ${item.pull_request.repo}`"
             :to="`/reviews/${item.review_id}/understand`"
-            :action="sessionAction(item.session_alive)"
+            :action="sessionAction(item)"
             :action-tone="item.session_alive === false ? 'warn' : 'quiet'"
-            age-unknown-because="the inbox carries no time for a running session"
+            :age="item.in_state_since ? sinceLabel(item.in_state_since) : null"
+            age-unknown-because="this review was recorded before Review Desk kept when a step started"
           >
             <SegmentBar
               :segments="layerSegments(item)"
               :label="`Layer ${item.layer_number} of ${item.layers_total}, ${layerLabel(item.layer_name).toLowerCase()}`"
             />
-            <span class="rd-meta">{{ layerLabel(item.layer_name) }}</span>
+            <span class="rd-meta">
+              {{ layerLabel(item.layer_name) }}
+              <!--
+                How long the review has been in its present state, beside the step it is
+                in: "Code review · 20 min". The age cell says when that began; this says
+                how long it has lasted, which is the figure Patrick asked for.
+              -->
+              <template v-if="item.in_state_since">
+                · {{ forLabel(item.in_state_since) }}
+              </template>
+            </span>
           </QueueRow>
         </DeskSection>
 

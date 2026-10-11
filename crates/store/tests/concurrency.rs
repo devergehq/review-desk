@@ -11,7 +11,7 @@ use std::thread;
 use common::new_review;
 use review_desk_store::{
     newest_version, Actor, Decision, Disposition, FindingDecision, NewDraft, NewDraftSection,
-    NewFinding, Severity, Store,
+    NewFinding, ReviewLayerState, Severity, Store,
 };
 
 fn a_finding(claim: &str) -> NewFinding {
@@ -167,4 +167,55 @@ fn two_connections_deciding_about_two_findings_both_succeed() {
         "both findings were cut, so nothing is left to post: {body:?}"
     );
     assert_eq!(after.list_outcomes(review_id).unwrap().len(), 2);
+}
+
+#[test]
+fn two_connections_reporting_the_same_step_record_one_pass() {
+    // **`review-desk layer set` opens its own store, one process per invocation**, so the
+    // read of the held state and the append of a new one are not inside a transaction
+    // anybody else's write has to wait for. Two sessions reporting the same step at the
+    // same moment could each read the old state and each append — and the second row
+    // would be a pass of no length that every total then counted.
+    //
+    // The test and the insert are one statement for that reason, and this is the
+    // assertion: one state entered, one pass, whoever got there first.
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("contended.db");
+
+    let first = Store::open(&path).unwrap();
+    let second = Store::open(&path).unwrap();
+    let review_id = first
+        .create_review(new_review("devergehq/review-desk", 2, "head", 1))
+        .unwrap()
+        .id;
+
+    let worker = thread::spawn(move || {
+        second.set_review_layer(review_id, 5, ReviewLayerState::Running, Some("from there"))
+    });
+    let mine = first.set_review_layer(review_id, 5, ReviewLayerState::Running, Some("from here"));
+    let theirs = worker.join().unwrap();
+
+    assert!(mine.is_ok(), "one caller failed: {mine:?}");
+    assert!(theirs.is_ok(), "the other caller failed: {theirs:?}");
+
+    let layer = first.get_review_layer(review_id, 5).expect("the layer");
+    assert_eq!(
+        layer.runs.len(),
+        1,
+        "two reports of one state are one pass, not two: {:?}",
+        layer.runs
+    );
+    assert_eq!(layer.state, ReviewLayerState::Running);
+
+    // And a real change still appends, so the guard above has not turned into "append
+    // nothing ever".
+    first
+        .set_review_layer(review_id, 5, ReviewLayerState::Done, Some("3 findings"))
+        .expect("the step finishes");
+    let layer = first
+        .get_review_layer(review_id, 5)
+        .expect("the layer again");
+    assert_eq!(layer.runs.len(), 1, "still one pass — now a finished one");
+    assert_eq!(layer.runs[0].ended_as, Some(ReviewLayerState::Done));
+    assert!(layer.seconds().is_some(), "with both ends, so a length");
 }

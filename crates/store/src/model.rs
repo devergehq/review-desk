@@ -399,6 +399,33 @@ string_enum! {
     }
 }
 
+impl ReviewLayerState {
+    /// Whether this state is the step being got on with: the agent working at it, or the
+    /// developer being waited on.
+    ///
+    /// **The two together, because both are time the review is inside this step** — which
+    /// is what "how long did each step take" asks. Which of the two it was is the split
+    /// between time with the agent and time waiting on the developer, and
+    /// [`ReviewTimings`] serves that separately rather than folding it in here.
+    pub fn is_being_worked(&self) -> bool {
+        matches!(
+            self,
+            ReviewLayerState::Running | ReviewLayerState::WaitingOnYou
+        )
+    }
+
+    /// Whether this state is a step finished with: it ran, or it was deliberately not run.
+    ///
+    /// `pending` is not one of these, and that is the distinction the stored state exists
+    /// to make: a step nothing has started is not a step that was skipped.
+    pub fn is_finished(&self) -> bool {
+        matches!(
+            self,
+            ReviewLayerState::Done | ReviewLayerState::Failed | ReviewLayerState::Skipped
+        )
+    }
+}
+
 /// How widely a rule applies.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -487,6 +514,14 @@ pub struct Review {
     pub nit_ticket_id: Option<String>,
     pub nit_ticket_requested_at: Option<Timestamp>,
     pub nit_ticket_filed_at: Option<Timestamp>,
+    /// When anything last wrote to this review.
+    ///
+    /// **Every write moves it; no read does.** It is how long a session has been silent,
+    /// which is the nearest thing Review Desk can say about whether one is still alive —
+    /// Allele owns that fact and tells this store nothing. `None` is a review nothing has
+    /// written to since the record started keeping this, which is every review from before
+    /// DEV-890 and is not the same answer as a long time ago.
+    pub last_activity_at: Option<Timestamp>,
     pub created_at: Timestamp,
 }
 
@@ -1247,6 +1282,149 @@ pub struct ReviewLayer {
     pub detail: Option<String>,
     /// `None` for a layer nothing has written yet.
     pub updated_at: Option<Timestamp>,
+    /// Every pass this layer has made, oldest first, derived from the append-only record
+    /// of its state changes. Empty for a layer nothing has written.
+    #[serde(default)]
+    pub runs: Vec<ReviewLayerRun>,
+}
+
+impl ReviewLayer {
+    /// How long this layer has taken, in seconds, over every pass it has made.
+    ///
+    /// **`None` is not zero.** It means no pass of this layer has both a start and a
+    /// finish on the record — which is every finished layer of a review from before
+    /// DEV-890, because the only time such a review holds is when the layer finished.
+    /// A screen must say so rather than draw a nought.
+    ///
+    /// A pass still going is left out: a total that counted it would grow every time the
+    /// page was reloaded, and "how long did it take" is a question about passes that are
+    /// over.
+    pub fn seconds(&self) -> Option<i64> {
+        let measured: Vec<i64> = self
+            .runs
+            .iter()
+            .filter_map(ReviewLayerRun::seconds)
+            .collect();
+        (!measured.is_empty()).then(|| measured.iter().sum())
+    }
+
+    /// When this layer last began waiting on the developer, if it is waiting now.
+    ///
+    /// **Not `in_state_since`, and the difference is a queue row's age.** That one answers
+    /// for whatever state the layer is in, so a step reported `running` and never reported
+    /// `waiting_on_you` would date the developer's wait from when the agent started. This
+    /// asks the question the Inbox is asking: since when has this been mine to do?
+    pub fn waiting_on_you_since(&self) -> Option<Timestamp> {
+        self.runs
+            .last()
+            .filter(|run| run.is_open() && run.is_waiting_on_you())
+            .and_then(|run| run.started_at)
+    }
+
+    /// When the layer entered the state it is in now, if a pass is still going.
+    ///
+    /// The queue's "waiting 20 min": how long the review has been in its present state.
+    /// `None` once the layer is finished with, and `None` for a layer whose current pass
+    /// has no recorded start.
+    pub fn in_state_since(&self) -> Option<Timestamp> {
+        self.runs
+            .last()
+            .filter(|run| run.is_open())
+            .and_then(|run| run.started_at)
+    }
+}
+
+/// One pass a layer has made: what it was doing, when that began, and what ended it.
+///
+/// **A pass is one continuous occupancy of one working state**, so a draft that was written,
+/// sent back and written again is two passes at `running` with the developer's own wait
+/// between them — which is what "a step that ran more than once" has to be able to count.
+///
+/// Both halves are optional, and each `None` says something different:
+///
+/// | Shape | What it means |
+/// |---|---|
+/// | start and finish | a pass that is over, and its length is known |
+/// | start, no finish | the pass going on now |
+/// | finish, no start | a layer that was finished before anything recorded a start — every finished layer of a review from before DEV-890 |
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReviewLayerRun {
+    /// What the layer was doing: `running` for the agent's own work, `waiting_on_you` for
+    /// the developer's turn. `None` when the start was never recorded, in which case
+    /// nothing says which of the two it was.
+    pub state: Option<ReviewLayerState>,
+    pub started_at: Option<Timestamp>,
+    /// The state the layer moved to, which is what ended the pass. `None` while the pass
+    /// is still going.
+    pub ended_as: Option<ReviewLayerState>,
+    pub finished_at: Option<Timestamp>,
+    /// The detail written against the state this pass was in — "waiting on you", or the
+    /// developer's instruction back. `None` when none was written, or when the start was
+    /// not recorded.
+    pub detail: Option<String>,
+}
+
+impl ReviewLayerRun {
+    /// How long this pass took, in whole seconds, or `None` when either end is missing.
+    ///
+    /// Never negative: a clock moved backwards between two writes would otherwise serve a
+    /// duration that cannot have happened, and a zero there says "the record cannot tell"
+    /// no less honestly than a negative number would say something false.
+    pub fn seconds(&self) -> Option<i64> {
+        match (self.started_at, self.finished_at) {
+            (Some(from), Some(to)) => Some((to - from).max(0)),
+            _ => None,
+        }
+    }
+
+    /// Whether this is the pass going on now.
+    pub fn is_open(&self) -> bool {
+        self.finished_at.is_none()
+    }
+
+    /// Whether this pass was the developer being waited on.
+    pub fn is_waiting_on_you(&self) -> bool {
+        self.state == Some(ReviewLayerState::WaitingOnYou)
+    }
+}
+
+/// How long a review has taken, as the four questions DEV-890 exists to answer.
+///
+/// **Every duration is whole seconds, and every one of them is nullable.** A figure the
+/// record cannot answer is absent; it is never a nought, because a review from before
+/// DEV-890 would then report that it took no time at all.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReviewTimings {
+    pub review_id: i64,
+    /// When the review was asked for: the review's own creation, which is the developer
+    /// starting it or a session opening it.
+    pub requested_at: Timestamp,
+    /// When the draft was last ready for the developer — layer 6 entering
+    /// `waiting_on_you`.
+    ///
+    /// The last time rather than the first: a draft sent back and redrafted is ready
+    /// again, and the one that matters is the one the developer was last shown.
+    pub draft_ready_at: Option<Timestamp>,
+    /// When the developer signed the draft off.
+    pub signed_off_at: Option<Timestamp>,
+    /// When a session reported the review posted. A review with a time here is finished.
+    pub posted_at: Option<Timestamp>,
+    /// How long the review was with the agent: requested to draft ready, less the time
+    /// spent waiting on the developer in between.
+    ///
+    /// `None` until the draft is ready — there is no end to measure to, and measuring to
+    /// now would make a figure that grows while nothing happens.
+    pub with_the_agent_seconds: Option<i64>,
+    /// How long the review waited on the developer, over every layer and every pass:
+    /// brief ready to confirmed, and draft ready to signed off.
+    ///
+    /// `None` when no wait has finished — which is not the same as a review nobody has
+    /// been waiting on, and the screen says which.
+    pub waiting_on_you_seconds: Option<i64>,
+    /// When anything last wrote to this review. See [`Review::last_activity_at`].
+    pub last_activity_at: Option<Timestamp>,
+    /// All seven layers, in order, each with its passes and its total.
+    pub layers: Vec<ReviewLayer>,
 }
 
 /// A review and the layer it is currently on.
@@ -1352,6 +1530,19 @@ impl NewDraft {
         NewDraft {
             body: body.into(),
             status: DraftStatus::Ready,
+            lint: None,
+            sections: None,
+        }
+    }
+
+    /// A draft part-written: this body, still the session's, written as one block.
+    ///
+    /// The counterpart of [`NewDraft::ready`], and what a session writes when it takes a
+    /// ready draft back — which moves layer 6 off the developer, as `put_draft` says.
+    pub fn drafting(body: impl Into<String>) -> Self {
+        NewDraft {
+            body: body.into(),
+            status: DraftStatus::Drafting,
             lint: None,
             sections: None,
         }

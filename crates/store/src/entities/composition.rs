@@ -29,8 +29,8 @@ use rusqlite::{params, Connection, Transaction, TransactionBehavior};
 
 use crate::error::{Result, StoreError};
 use crate::model::{
-    now, Disposition, DraftSection, DraftSectionKind, Finding, NewDraftSection, RoundStatus,
-    Severity,
+    Disposition, DraftSection, DraftSectionKind, Finding, NewDraftSection, RoundStatus, Severity,
+    Timestamp,
 };
 use crate::{is_foreign_key_violation, Store};
 
@@ -88,7 +88,8 @@ impl Store {
         }
 
         write(&tx, review_id, sections)?;
-        recompose(&tx, review_id, Lint::Clear)?;
+        recompose(&tx, review_id, Lint::Clear, self.now())?;
+        self.mark_review_active(review_id)?;
         tx.commit()?;
         self.draft_sections(review_id)
     }
@@ -222,7 +223,12 @@ fn composed(section: &DraftSection) -> Option<String> {
 /// convenience.** The review-craft lint was run by the agent over the body it wrote; the
 /// moment a decision changes that body the result is about a different document, and a
 /// lint that still said "passes" would be the record vouching for words nobody checked.
-pub(crate) fn recompose(tx: &Transaction<'_>, review_id: i64, lint: Lint) -> Result<String> {
+pub(crate) fn recompose(
+    tx: &Transaction<'_>,
+    review_id: i64,
+    lint: Lint,
+    at: Timestamp,
+) -> Result<String> {
     let body = compose(tx, review_id)?;
 
     match lint {
@@ -239,7 +245,7 @@ pub(crate) fn recompose(tx: &Transaction<'_>, review_id: i64, lint: Lint) -> Res
                  lint_checked_at          = NULL,
                  updated_at               = ?3
              WHERE review_id = ?1",
-            params![review_id, body, now()],
+            params![review_id, body, at],
         )?,
         Lint::Keep => tx.execute(
             "UPDATE drafts SET body = ?2 WHERE review_id = ?1",

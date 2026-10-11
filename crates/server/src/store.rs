@@ -17,8 +17,8 @@ use review_desk_store::{
     Actor, Brief, Decision, DecisionMade, Disposition, Draft, DraftSection, Finding,
     FindingInRound, FullReview, NewDraft, NewOutcome, NitTicket, OpenedReview, ProblemStatement,
     RepoSummary, Review, ReviewAtLayer, ReviewEvent, ReviewFacts, ReviewLayer, ReviewProvenance,
-    RoundCommit, RoundSummary, Rule, RuleCounts, RuleStage, RulesSummary, Store, StoreError,
-    TicketedAndApproved, Timestamp,
+    ReviewTimings, RoundCommit, RoundSummary, Rule, RuleCounts, RuleStage, RulesSummary, Store,
+    StoreError, TicketedAndApproved, Timestamp,
 };
 
 use crate::error::{ApiError, Code};
@@ -182,12 +182,42 @@ impl Records {
         self.with(|store| store.filed_nit_tickets(None, Some(since)))
     }
 
+    /// When this review's draft last became ready for the developer.
+    ///
+    /// The queue's age cell on a draft waiting to be signed off, which read "no time
+    /// recorded" until DEV-890: the draft holds `approved_at`, `sent_back_at` and
+    /// `posted_at`, and had no time for the one state the developer is waiting in.
+    pub fn draft_ready_at(&self, review_id: i64) -> Result<Option<Timestamp>, ApiError> {
+        self.with(|store| store.draft_ready_at(review_id))
+    }
+
+    /// How long one review has taken, with all seven layers and their passes.
+    pub fn review_timings(&self, review_id: i64) -> Result<ReviewTimings, ApiError> {
+        self.with(|store| store.review_timings(review_id))
+    }
+
+    /// Every finished review's timings, newest first. `GET /timings`.
+    pub fn finished_review_timings(
+        &self,
+        repo: Option<&str>,
+    ) -> Result<Vec<(Review, ReviewTimings)>, ApiError> {
+        self.with(|store| store.finished_review_timings(repo))
+    }
+
     /// Every repository Review Desk holds a record for.
     pub fn list_repos(&self) -> Result<Vec<RepoSummary>, ApiError> {
         self.with(|store| store.list_repos())
     }
 
     // -- briefs -------------------------------------------------------------------
+
+    /// The review's brief, or `None` when nothing has written one.
+    ///
+    /// For a read that has something to say either way — the Inbox dates a brief waiting
+    /// to be confirmed from the brief itself when the step carries no time.
+    pub fn find_brief(&self, review_id: i64) -> Result<Option<Brief>, ApiError> {
+        self.with(|store| store.find_brief(review_id))
+    }
 
     /// The review's brief, or a `conflict`.
     ///

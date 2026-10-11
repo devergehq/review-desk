@@ -1,4 +1,4 @@
-//! The contract's nineteen operations, as a type.
+//! The contract's twenty operations, as a type.
 //!
 //! [`Operation::ALL`] is the point of this module: a test can walk every operation the
 //! contract declares and assert that each one is routed and answers, rather than the set
@@ -28,6 +28,7 @@ pub enum Operation {
     SendBackDraft { review_id: i64 },
     RequestNitTicket { review_id: i64 },
     TicketRestAndApprove { review_id: i64 },
+    ListReviewTimings,
     ListRules,
     PromoteRule { rule_id: i64 },
     DismissRule { rule_id: i64 },
@@ -58,6 +59,7 @@ impl Operation {
         Operation::SendBackDraft { review_id: 1 },
         Operation::RequestNitTicket { review_id: 1 },
         Operation::TicketRestAndApprove { review_id: 1 },
+        Operation::ListReviewTimings,
         Operation::ListRules,
         Operation::PromoteRule { rule_id: 1 },
         Operation::DismissRule { rule_id: 1 },
@@ -82,6 +84,7 @@ impl Operation {
             Operation::SendBackDraft { .. } => "sendBackDraft",
             Operation::RequestNitTicket { .. } => "requestNitTicket",
             Operation::TicketRestAndApprove { .. } => "ticketRestAndApprove",
+            Operation::ListReviewTimings => "listReviewTimings",
             Operation::ListRules => "listRules",
             Operation::PromoteRule { .. } => "promoteRule",
             Operation::DismissRule { .. } => "dismissRule",
@@ -124,6 +127,7 @@ impl Operation {
             Operation::TicketRestAndApprove { review_id } => {
                 format!("POST /reviews/{review_id}/draft/ticket-and-approve")
             }
+            Operation::ListReviewTimings => "GET /timings".to_string(),
             Operation::ListRules => "GET /rules".to_string(),
             Operation::PromoteRule { rule_id } => format!("POST /rules/{rule_id}/promote"),
             Operation::DismissRule { rule_id } => format!("POST /rules/{rule_id}/dismiss"),
@@ -162,6 +166,13 @@ pub fn match_route(method: &str, path: &str) -> Target {
         ["inbox"] => (Target::Operation(Operation::GetInbox), method == "GET"),
         ["repos"] => (Target::Operation(Operation::ListRepos), method == "GET"),
         ["rules"] => (Target::Operation(Operation::ListRules), method == "GET"),
+        // **`/timings`, not `/reviews/timings`.** The review paths take an integer id, so
+        // a sibling segment there would be read as a review called "timings" and come back
+        // as `Unknown`.
+        ["timings"] => (
+            Target::Operation(Operation::ListReviewTimings),
+            method == "GET",
+        ),
         ["reviews"] => (Target::Operation(Operation::StartReview), method == "POST"),
 
         ["reviews", id] => match number(id) {

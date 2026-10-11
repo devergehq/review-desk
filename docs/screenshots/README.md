@@ -53,6 +53,33 @@ then Playwright at `{width: 1440, height: 1000}`, `deviceScaleFactor: 2`, `fullP
 `/reviews/16?sample`. For the "before", `app/components/MermaidFigure.vue` at its state
 before this pull request and nothing else changed.
 
+## DEV-890 — how long each step took
+
+| File | What it is |
+| -- | -- |
+| `dev-890-queue.png` | The queue. The row with the agent says which step it is on **and how long it has been on it** — "Alternatives · 26 min" — and reads "Last activity 9 min ago" where it read "Session state unknown". **Every row carries a time**, so the caption reads "Oldest first" with nothing after it: the clause about rows with no recorded time is drawn only when there is one. |
+| `dev-890-trail.png` | A step page. Each finished step carries its duration under its outcome, and step 4 — reported straight to `done` with no start — says "time not recorded". Under the trail: the total with the agent, and the total waiting on the developer, which this review has not finished one of. |
+| `dev-890-old-review.png` | **A review as it was recorded before this change.** Every step says "time not recorded", both totals say "not recorded", and nothing anywhere says 0. That is the acceptance criterion: an old review is never given a made-up start. |
+
+**Three real reviews in a real database**, written through `review-desk review open`,
+`brief put`, `finding add`, `layer set` and `draft put`, served by the binary with the
+dashboard in it. Two things in them are not what a day's work would leave, and both are
+named here rather than left to be assumed:
+
+- **The elapsed times were moved back with `sqlite3`** after the commands ran, because the
+  commands ran in seconds and the figures are the point of the picture. Nothing invented a
+  duration: every pass still has the two ends the store stamped, and only the instants
+  moved. There is no other way to photograph an hour.
+- **The third review's state record was replaced** with what migration 12's backfill
+  leaves — one row per step, from `updated_at`, and no start anywhere — so that the "before
+  this change" state could be seen on a database created after it.
+
+```sh
+cd web && pnpm run generate && cargo build --manifest-path ../Cargo.toml
+# seed a database through the command line, serve it, then Playwright at
+# {width: 1440, height: 1000}, deviceScaleFactor: 2, fullPage
+```
+
 ## `uplift/` — the approved boards beside the pages built from them
 
 DEV-876 rebuilt the queue and the rules page from the boards in

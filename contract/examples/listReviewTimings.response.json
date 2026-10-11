@@ -1,0 +1,317 @@
+{
+  "reviews": [
+    {
+      "review": {
+        "id": 14,
+        "repo": "acme/portal",
+        "pr": 401,
+        "head_sha": "9d41c0e",
+        "round": 1,
+        "title": "Hold the queue connection open",
+        "ticket_id": "ABC-219",
+        "changed_lines": 86,
+        "session_id": "ses_41b7c208",
+        "ledger_id": "ledger-2026-10-06-401",
+        "github_review_id": "gh-review-3291",
+        "created_at": "2026-10-06T09:02:00Z"
+      },
+      "timings": {
+        "requested_at": "2026-10-06T09:02:00Z",
+        "draft_ready_at": "2026-10-06T09:41:00Z",
+        "signed_off_at": "2026-10-06T10:06:00Z",
+        "posted_at": "2026-10-06T10:07:00Z",
+        "with_the_agent_seconds": 1680,
+        "waiting_on_you_seconds": 2160,
+        "last_activity_at": "2026-10-06T10:07:00Z"
+      },
+      "layers": [
+        {
+          "number": 1,
+          "name": "lint",
+          "state": "done",
+          "detail": "passed",
+          "updated_at": "2026-10-06T09:03:00Z",
+          "runs": [
+            {
+              "state": "running",
+              "started_at": "2026-10-06T09:02:00Z",
+              "ended_as": "done",
+              "finished_at": "2026-10-06T09:03:00Z",
+              "seconds": 60,
+              "detail": null
+            }
+          ],
+          "seconds": 60
+        },
+        {
+          "number": 2,
+          "name": "understand",
+          "state": "done",
+          "detail": "confirmed by you",
+          "updated_at": "2026-10-06T09:20:00Z",
+          "runs": [
+            {
+              "state": "running",
+              "started_at": "2026-10-06T09:03:00Z",
+              "ended_as": "waiting_on_you",
+              "finished_at": "2026-10-06T09:09:00Z",
+              "seconds": 360,
+              "detail": "the brief"
+            },
+            {
+              "state": "waiting_on_you",
+              "started_at": "2026-10-06T09:09:00Z",
+              "ended_as": "done",
+              "finished_at": "2026-10-06T09:20:00Z",
+              "seconds": 660,
+              "detail": "waiting on you"
+            }
+          ],
+          "seconds": 1020
+        },
+        {
+          "number": 3,
+          "name": "alternatives",
+          "state": "done",
+          "detail": "2 options",
+          "updated_at": "2026-10-06T09:26:00Z",
+          "runs": [
+            {
+              "state": "running",
+              "started_at": "2026-10-06T09:20:00Z",
+              "ended_as": "done",
+              "finished_at": "2026-10-06T09:26:00Z",
+              "seconds": 360,
+              "detail": null
+            }
+          ],
+          "seconds": 360
+        },
+        {
+          "number": 4,
+          "name": "solution_map",
+          "state": "done",
+          "detail": "the right shape",
+          "updated_at": "2026-10-06T09:29:00Z",
+          "runs": [
+            {
+              "state": "running",
+              "started_at": "2026-10-06T09:26:00Z",
+              "ended_as": "done",
+              "finished_at": "2026-10-06T09:29:00Z",
+              "seconds": 180,
+              "detail": null
+            }
+          ],
+          "seconds": 180
+        },
+        {
+          "number": 5,
+          "name": "code_review",
+          "state": "done",
+          "detail": "2 findings",
+          "updated_at": "2026-10-06T09:38:00Z",
+          "runs": [
+            {
+              "state": "running",
+              "started_at": "2026-10-06T09:29:00Z",
+              "ended_as": "done",
+              "finished_at": "2026-10-06T09:38:00Z",
+              "seconds": 540,
+              "detail": null
+            }
+          ],
+          "seconds": 540
+        },
+        {
+          "number": 6,
+          "name": "draft",
+          "state": "done",
+          "detail": "approved by the developer",
+          "updated_at": "2026-10-06T10:06:00Z",
+          "runs": [
+            {
+              "state": "running",
+              "started_at": "2026-10-06T09:38:00Z",
+              "ended_as": "waiting_on_you",
+              "finished_at": "2026-10-06T09:41:00Z",
+              "seconds": 180,
+              "detail": "drafting"
+            },
+            {
+              "state": "waiting_on_you",
+              "started_at": "2026-10-06T09:41:00Z",
+              "ended_as": "done",
+              "finished_at": "2026-10-06T10:06:00Z",
+              "seconds": 1500,
+              "detail": "waiting on you"
+            }
+          ],
+          "seconds": 1680
+        },
+        {
+          "number": 7,
+          "name": "harvest",
+          "state": "done",
+          "detail": "2 outcomes harvested",
+          "updated_at": "2026-10-07T07:15:00Z",
+          "runs": [
+            {
+              "state": "running",
+              "started_at": "2026-10-07T07:14:00Z",
+              "ended_as": "done",
+              "finished_at": "2026-10-07T07:15:00Z",
+              "seconds": 60,
+              "detail": null
+            }
+          ],
+          "seconds": 60
+        }
+      ]
+    },
+    {
+      "review": {
+        "id": 9,
+        "repo": "acme/billing-api",
+        "pr": 88,
+        "head_sha": "4c2f7ab",
+        "round": 1,
+        "title": "Charge in cents",
+        "ticket_id": null,
+        "changed_lines": null,
+        "session_id": null,
+        "ledger_id": null,
+        "github_review_id": "gh-review-3104",
+        "created_at": "2026-09-29T11:00:00Z"
+      },
+      "timings": {
+        "requested_at": "2026-09-29T11:00:00Z",
+        "draft_ready_at": null,
+        "signed_off_at": "2026-09-29T13:40:00Z",
+        "posted_at": "2026-09-29T13:44:00Z",
+        "with_the_agent_seconds": null,
+        "waiting_on_you_seconds": null,
+        "last_activity_at": null
+      },
+      "layers": [
+        {
+          "number": 1,
+          "name": "lint",
+          "state": "done",
+          "detail": "passed",
+          "updated_at": "2026-09-29T11:04:00Z",
+          "runs": [
+            {
+              "state": null,
+              "started_at": null,
+              "ended_as": "done",
+              "finished_at": "2026-09-29T11:04:00Z",
+              "seconds": null,
+              "detail": null
+            }
+          ],
+          "seconds": null
+        },
+        {
+          "number": 2,
+          "name": "understand",
+          "state": "done",
+          "detail": "confirmed by you",
+          "updated_at": "2026-09-29T11:52:00Z",
+          "runs": [
+            {
+              "state": null,
+              "started_at": null,
+              "ended_as": "done",
+              "finished_at": "2026-09-29T11:52:00Z",
+              "seconds": null,
+              "detail": null
+            }
+          ],
+          "seconds": null
+        },
+        {
+          "number": 3,
+          "name": "alternatives",
+          "state": "skipped",
+          "detail": "one way to do it",
+          "updated_at": "2026-09-29T11:53:00Z",
+          "runs": [
+            {
+              "state": null,
+              "started_at": null,
+              "ended_as": "skipped",
+              "finished_at": "2026-09-29T11:53:00Z",
+              "seconds": null,
+              "detail": null
+            }
+          ],
+          "seconds": null
+        },
+        {
+          "number": 4,
+          "name": "solution_map",
+          "state": "done",
+          "detail": "done",
+          "updated_at": "2026-09-29T12:01:00Z",
+          "runs": [
+            {
+              "state": null,
+              "started_at": null,
+              "ended_as": "done",
+              "finished_at": "2026-09-29T12:01:00Z",
+              "seconds": null,
+              "detail": null
+            }
+          ],
+          "seconds": null
+        },
+        {
+          "number": 5,
+          "name": "code_review",
+          "state": "done",
+          "detail": "4 findings",
+          "updated_at": "2026-09-29T13:02:00Z",
+          "runs": [
+            {
+              "state": null,
+              "started_at": null,
+              "ended_as": "done",
+              "finished_at": "2026-09-29T13:02:00Z",
+              "seconds": null,
+              "detail": null
+            }
+          ],
+          "seconds": null
+        },
+        {
+          "number": 6,
+          "name": "draft",
+          "state": "done",
+          "detail": "approved by the developer",
+          "updated_at": "2026-09-29T13:40:00Z",
+          "runs": [
+            {
+              "state": null,
+              "started_at": null,
+              "ended_as": "done",
+              "finished_at": "2026-09-29T13:40:00Z",
+              "seconds": null,
+              "detail": null
+            }
+          ],
+          "seconds": null
+        },
+        {
+          "number": 7,
+          "name": "harvest",
+          "state": "pending",
+          "detail": "posted, waiting for the harvest",
+          "updated_at": "2026-09-29T13:44:00Z",
+          "runs": [],
+          "seconds": null
+        }
+      ]
+    }
+  ]
+}

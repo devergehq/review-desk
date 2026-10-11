@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  activityLabel,
   count,
   descriptionLintLabel,
+  durationLabel,
   editVerb,
   figure,
+  forLabel,
   layerDetail,
   layerLabel,
   layerTone,
@@ -11,6 +14,7 @@ import {
   sessionLabel,
   severityTally,
   sinceLabel,
+  stepDurationLabel,
 } from '../app/utils/format'
 
 /*
@@ -75,6 +79,60 @@ describe('an absent measurement is not a zero', () => {
     expect(descriptionLintLabel({ passes: false, budget_ratio: null })).toBe(
       'description lint fails',
     )
+  })
+})
+
+describe('saying how long', () => {
+  it.each([
+    [0, '0 sec'],
+    [42, '42 sec'],
+    [60, '1 min'],
+    [1020, '17 min'],
+    [3600, '1 hr'],
+    [3840, '1 hr 4 min'],
+    [86_400, '1 day'],
+    [90_000, '1 day 1 hr'],
+    [180_000, '2 days 2 hr'],
+  ])('%d seconds reads as %s', (seconds, expected) => {
+    expect(durationLabel(seconds)).toBe(expected)
+  })
+
+  it('has nothing to say about a duration the record cannot answer', () => {
+    // **The rule the whole of DEV-890 rests on.** A null duration is not a nought: a
+    // review recorded before the change has no start for any step, and "0 sec" there
+    // would say it took no time at all. Null out, and the screen says which absence it is.
+    expect(durationLabel(null)).toBeNull()
+    expect(durationLabel(undefined)).toBeNull()
+    expect(durationLabel(0)).toBe('0 sec')
+  })
+
+  it('tells a step with no duration from one that has not finished', () => {
+    expect(stepDurationLabel({ state: 'done', seconds: 1020 })).toBe('17 min')
+    expect(stepDurationLabel({ state: 'done', seconds: null })).toBe('time not recorded')
+    expect(stepDurationLabel({ state: 'skipped', seconds: null })).toBe('time not recorded')
+    /*
+     * **A step still going shows nothing, even when it has a total.** Measured on the
+     * binary: step 2 waiting on the developer read "7 sec", which is the agent's pass
+     * before the wait and reads like how long you have been keeping it. How long a step
+     * still going has been where it is belongs to the queue, which says exactly that.
+     */
+    expect(stepDurationLabel({ state: 'running', seconds: 420 })).toBeNull()
+    expect(stepDurationLabel({ state: 'waiting_on_you', seconds: 420 })).toBeNull()
+    expect(stepDurationLabel({ state: 'pending', seconds: null })).toBeNull()
+  })
+
+  it('says how long something has been where it is', () => {
+    expect(forLabel('2026-10-08T11:10:00Z', NOW)).toBe('20 min')
+    expect(forLabel('2026-10-08T07:30:00Z', NOW)).toBe('4 hr')
+    expect(forLabel(null, NOW)).toBeNull()
+  })
+
+  it('says how long the record has been silent, and when it holds nothing', () => {
+    // Allele's answer first, because Allele owns the fact. Then the record's own.
+    expect(activityLabel(true, null, NOW)).toBe('Session running')
+    expect(activityLabel(false, '2026-10-08T11:10:00Z', NOW)).toBe('Session ended')
+    expect(activityLabel(null, '2026-10-08T11:24:00Z', NOW)).toBe('Last activity 6 min ago')
+    expect(activityLabel(null, null, NOW)).toBe('No activity recorded')
   })
 })
 

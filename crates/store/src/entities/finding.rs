@@ -8,7 +8,7 @@ use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior}
 
 use crate::entities::finding_evidence;
 use crate::error::{Result, StoreError};
-use crate::model::{now, Disposition, Finding, NewFinding};
+use crate::model::{Disposition, Finding, NewFinding};
 use crate::{is_foreign_key_violation, Store};
 
 pub(super) const COLUMNS: &str = "review_id, seq, lens, severity, file, line, claim, title, \
@@ -102,7 +102,7 @@ impl Store {
             |row| row.get(0),
         )?;
 
-        let created_at = now();
+        let created_at = self.now();
         tx.execute(
             "INSERT INTO findings
                  (review_id, seq, lens, severity, file, line, claim, title, evidence,
@@ -167,6 +167,7 @@ impl Store {
             )?;
         }
 
+        self.mark_review_active(review_id)?;
         tx.commit()?;
         self.get_finding(review_id, seq)
     }
@@ -225,6 +226,7 @@ impl Store {
             params![review_id, seq, disposition, reason],
         )?;
 
+        self.mark_review_active(review_id)?;
         self.get_finding(review_id, seq)
     }
 
@@ -268,6 +270,7 @@ impl Store {
             params![review_id, seq, comment_id],
         )?;
 
+        self.mark_review_active(review_id)?;
         self.get_finding(review_id, seq)
     }
 
