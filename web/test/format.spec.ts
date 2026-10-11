@@ -144,6 +144,22 @@ describe('counting things', () => {
     expect(count(2, 'repository', 'repositories')).toBe('2 repositories')
   })
 
+  /*
+   * **The order, with all four present.** It is the order `SEVERITY_WORDS` declares its
+   * keys in, and that is a real dependency: since DEV-928 the tally walks the shared table
+   * rather than an array of its own, so the four would reorder silently if somebody tidied
+   * the table alphabetically. The case above has `question` at nought and cannot see it.
+   *
+   * **It is not the code review page's order**, which puts a question above a nit — that is
+   * `SEVERITY_ORDER`, and the two are deliberately different: this is a tally, that is a
+   * ranking.
+   */
+  it('counts the four severities in the order the record declares them', () => {
+    expect(severityTally({ blocker: 1, should: 2, nit: 3, question: 4 })).toBe(
+      '1 blocker, 2 should, 3 nits, 4 questions',
+    )
+  })
+
   it('leaves out a severity nothing was found at', () => {
     expect(severityTally({ blocker: 1, should: 2, nit: 4, question: 0 })).toBe(
       '1 blocker, 2 should, 4 nits',

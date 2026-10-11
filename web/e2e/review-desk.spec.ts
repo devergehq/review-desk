@@ -1864,6 +1864,30 @@ test.describe('a drawing opens larger', () => {
   })
 
   /**
+   * **At a phone's width it takes the whole screen**, which is what the gutter is dropped
+   * for: 24 pixels of backdrop on each side of a 390-pixel screen is a third of the room the
+   * diagram was opened to get. Measured because the panel is measured at both widths and
+   * this was only ever measured at one.
+   */
+  test('it fills a phone’s screen, and still closes', async ({ page }) => {
+    await draftPage(page, 390)
+
+    await page.locator('button.canvas').first().click()
+    const sheet = page.getByRole('dialog')
+    await expect(sheet).toBeVisible()
+
+    const box = (await sheet.boundingBox())!
+    expect(box.width).toBe(390)
+    expect(box.x).toBe(0)
+    /* And the drawing is inside it rather than over the page. */
+    const drawing = (await sheet.locator('svg').boundingBox())!
+    expect(drawing.width).toBeLessThanOrEqual(390)
+
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+  })
+
+  /**
    * **A source shown as written offers no larger view.**
    *
    * The waived review's `diagram` field holds a flow a session drew by hand in text — the
