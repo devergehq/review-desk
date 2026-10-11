@@ -108,6 +108,21 @@ export interface Addresses {
    * going to it.
    */
   waivedReviewId: number
+  /**
+   * A fourth review whose draft holds **eight findings back**, which is the state DEV-928
+   * was raised from: six nits and two questions, claims of 41 to 63 words, one of them past
+   * 60, one with no title at all and one whose title carries a long code name.
+   *
+   * **It is here because one or two rows prove nothing.** What went wrong on the real review
+   * — a code name running out of the card, 63 words printed where a title belongs, eight
+   * paragraphs where a reader wanted a list — are properties of the panel at that volume,
+   * and the only place they can be measured is a browser at a real width. The other three
+   * reviews between them hold one held-back finding and three.
+   *
+   * It has a ready draft, so it is a fourth thing waiting on the developer: "Needs you"
+   * holds three rows and the counts in this suite say three.
+   */
+  heldBackReviewId: number
 }
 
 /** The addresses, as the setup wrote them. */
@@ -528,6 +543,7 @@ export function seed(
   reviewId: number
   waivedReviewId: number
   structuredReviewId: number
+  heldBackReviewId: number
 } {
   const database = join(directory, 'seeded.db')
 
@@ -765,7 +781,339 @@ Ran the job twice against a local endpoint that 500s once, and counted the deliv
     reviewId,
     waivedReviewId,
     structuredReviewId: seedStructured(directory, database),
+    heldBackReviewId: seedHeldBack(directory, database),
   }
+}
+
+/**
+ * The body of that fourth review's draft. One block of prose; it raises the three findings
+ * that are in the draft and says nothing about the eight that are not.
+ *
+ * **It carries a ```` ```mermaid ```` fence, and that is the only drawn diagram in a draft
+ * body anywhere in this seed.** DEV-928's sixth criterion asks for the larger view to work
+ * "for a diagram in the draft preview and for one on the Understand page", and the two are
+ * different paths into the same component: a fence goes through `MarkdownView`, which passes
+ * `declared`, and the Understand page's comes from an old brief's `diagram` field, which
+ * does not. The seeded review's own body had no fence at all — the drawn diagram in this
+ * seed was its brief's — so the browser could not reach the first of the two.
+ */
+const HELD_BACK_BODY
+  = 'Redacting in the writer rather than in the query is the right place for it, and the '
+    + 'column list on the definition is the right record. One thing blocks the merge and two '
+    + 'should be fixed with it; the rest is a ticket.\n\n'
+    + '### Blocker · F2 · The redaction list is read once at boot, not per export\n\n'
+    + '`app/Reporting/Redaction.php:24` reads the list at boot, so a column added to it '
+    + 'while a worker is up is exported in the clear until that worker restarts.\n\n'
+    + '### Should · F1 · The JSON writer does not redact the columns the CSV writer does\n\n'
+    + '`app/Reporting/Redaction.php:58` redacts in the CSV writer only. The same export '
+    + 'downloaded as JSON carries the personal data the ticket asks to remove.\n\n'
+    + '### Should · F3 · The redaction test passes with the redaction reverted\n\n'
+    + '`tests/Reporting/RedactionTest.php:31` asserts the value is `null`, which is what an '
+    + 'absent column reads as too.\n\n'
+    + '```mermaid\n'
+    + 'flowchart LR\n'
+    + '  A["Schedule runs"] --> B["ColumnPolicy allows"]\n'
+    + '  B --> C["ReportBuilder writes"]\n'
+    + '  C --> D["CSV writer redacts"]\n'
+    + '  C --> E["JSON writer does not"]\n'
+    + '  E --> F["Personal data exported"]\n'
+    + '```\n\n'
+    + '**Not checked:** the warehouse loader, which reads the same definitions and was not '
+    + 'changed.'
+
+/**
+ * A claim of **exactly** `n` words, opening with something readable about the finding.
+ *
+ * Padded to the length and asserted on the way in. The panel's defects are properties of the
+ * length — 41 to 63 words is what the real review held — so a claim that drifted shorter
+ * would leave them untested with every test still passing.
+ */
+function claimOf(n: number, about: string): string {
+  const opening = `The ${about}`.split(/\s+/)
+  const padding = Array.from({ length: n - opening.length }, (_, at) => `word${at + 1}`)
+  const claim = [...opening, ...padding].join(' ')
+  const words = claim.split(/\s+/).length
+  if (words !== n) throw new Error(`a claim of ${n} words came out at ${words}`)
+  return claim
+}
+
+/**
+ * The eleven findings of that review: three in the draft and **eight held back**.
+ *
+ * `seq` is carried only so the order is readable here and the padding can name it; it is
+ * stripped before the record is written, because the store assigns the number from the order
+ * findings are added. They are added in that order for the same reason.
+ *
+ * Three of these exist for one acceptance criterion each, and every one of the three is a
+ * state no other seeded review can show:
+ *
+ * | Finding | What it is for |
+ * |---|---|
+ * | F6 | a claim past 60 words |
+ * | F7 | **no title at all**, so the row stands in with twelve words of the claim |
+ * | F4 | a title carrying `report_definitions.allowed_columns` |
+ */
+function heldBackFindings(): Array<Record<string, unknown>> {
+  /*
+   * One factory. The two severities differed in three fields and repeated eleven, which
+   * review pointed out — and the eleven are the shape of a held-back record, so they are
+   * the ones that would have to be edited in both places.
+   */
+  const heldBack = (
+    lens: string,
+    severity: string,
+    reason: string,
+  ) => (seq: number, title: string | null, file: string, line: number, words: number, about: string) => ({
+    seq,
+    lens,
+    severity,
+    file,
+    line,
+    claim: claimOf(words, about),
+    title,
+    disposition: 'held_back',
+    disposition_reason: reason,
+    verification: 'read_not_run',
+  })
+
+  const nit = heldBack('repetition', 'nit', 'a nit; it goes in the ticket')
+  const question = heldBack('correctness', 'question', 'a question for the author; it goes in the ticket')
+
+  return [
+    {
+      seq: 1,
+      lens: 'correctness',
+      severity: 'should',
+      file: 'app/Reporting/Redaction.php',
+      line: 58,
+      claim:
+        'A column named in `redacted_columns` is redacted in the CSV writer and not in the '
+        + 'JSON writer, so the same export downloaded in the other format carries the '
+        + 'personal data the ticket asks to remove.',
+      title: 'The JSON writer does not redact the columns the CSV writer does',
+      disposition: 'in_draft',
+      verification: 'read_not_run',
+    },
+    {
+      seq: 2,
+      lens: 'correctness',
+      severity: 'blocker',
+      file: 'app/Reporting/Redaction.php',
+      line: 24,
+      claim:
+        'The redaction list is read once at boot, so a column added to it while a '
+        + 'long-running worker is up is not redacted until that worker is restarted.',
+      title: 'The redaction list is read once at boot, not per export',
+      disposition: 'in_draft',
+      verification: 'read_not_run',
+    },
+    {
+      seq: 3,
+      lens: 'tests',
+      severity: 'should',
+      file: 'tests/Reporting/RedactionTest.php',
+      line: 31,
+      claim:
+        'The test asserts the redacted value is `null`, which is what an absent column also '
+        + 'reads as, so it passes with the redaction reverted.',
+      title: 'The redaction test passes with the redaction reverted',
+      disposition: 'in_draft',
+      verification: 'read_not_run',
+    },
+    nit(
+      4,
+      '`report_definitions.allowed_columns` is read twice, in two orders',
+      'app/Reporting/ColumnPolicy.php',
+      44,
+      57,
+      'list in `report_definitions.allowed_columns` is read twice in this class, once to '
+      + 'decide whether a column may be exported and once to decide whether it has to be '
+      + 'redacted, and the two reads sort it differently, so a reader comparing them has to '
+      + 'work out that the order carries no meaning in either place and that',
+    ),
+    nit(
+      5,
+      'The class is named for the smaller half of what it does',
+      'app/Reporting/Redaction.php',
+      12,
+      44,
+      'class is called `Redaction` and three of its five public methods are about reading '
+      + 'the policy rather than about redacting anything, so the name describes the smaller '
+      + 'half of what is in the file and',
+    ),
+    nit(
+      6,
+      'The address pattern is written twice, and the two have drifted',
+      'app/Reporting/ExportPipeline.php',
+      96,
+      61,
+      'pattern list that decides whether a value looks like an email address is written out '
+      + 'here and again in `app/Audit/RecordsAnExport.php`, and the two have already drifted: '
+      + 'this one accepts an address with no dot in the domain and the other does not, so the '
+      + 'same value is redacted in the export and printed in the audit entry about it, which',
+    ),
+    nit(
+      7,
+      null,
+      'app/Reporting/ReportBuilder.php',
+      140,
+      50,
+      'comment above this block says the redaction happens after the column policy is '
+      + 'applied, which was true before the policy moved into its own class in this change '
+      + 'and is now the opposite way round, so the one line of prose in the file describes',
+    ),
+    nit(
+      8,
+      'The builder method this change replaced has no caller left',
+      'app/Reporting/ExportContext.php',
+      71,
+      41,
+      '`withRedaction()` builder method has no caller left after this change, because the '
+      + 'pipeline reads the policy for itself now, and it is still public with nothing saying',
+    ),
+    nit(
+      9,
+      'The redaction default is a string where every reader wants a boolean',
+      'config/exports.php',
+      18,
+      63,
+      'default for `exports.redaction.enabled` is written as the string `"true"` rather than '
+      + 'as a boolean, and every reader of it compares with `===` against a boolean, so the '
+      + 'default is falsy everywhere it is read and the behaviour comes from the environment '
+      + 'file instead of from the configuration the ticket asked to add, which means',
+    ),
+    question(
+      10,
+      'What an existing schedule with no policy does is not established',
+      'app/Jobs/RunScheduledExport.php',
+      118,
+      54,
+      'schedule written before this change names no redaction policy at all, and nothing in '
+      + 'the diff says what one of those should do when it next runs: whether it redacts '
+      + 'nothing, as it did yesterday, or everything the new default names, which would',
+    ),
+    question(
+      11,
+      'Whether the per-row policy read is paid once or per row is unsaid',
+      'app/Reporting/ColumnPolicy.php',
+      88,
+      59,
+      'policy is resolved per row rather than per export, which is a database read for every '
+      + 'row of a file that runs to tens of thousands of them on the largest tenant, and '
+      + 'whether that is paid once from a warm cache or a hundred thousand times is not',
+    ),
+  ]
+}
+
+/**
+ * A fourth review, whose aside is the one DEV-928 is about: eight findings held back.
+ *
+ * **Every number here is measured rather than described.** The claims are padded to a word
+ * count and the count is asserted on the way in, because "about sixty words" is what the
+ * example had before this and it measured nothing: the panel's defects are all properties
+ * of the length, so a seed that drifted shorter would leave them untested while every test
+ * still passed.
+ *
+ * Three states the other three reviews cannot show, and each is one of the issue's criteria:
+ * a claim past 60 words, a title carrying a long code name, and a finding with **no title at
+ * all**, whose row has to stand in with the claim's first twelve words and say that it did.
+ */
+function seedHeldBack(directory: string, database: string): number {
+  const opened = cli(database, [
+    'review',
+    'open',
+    '--repo',
+    'acme/portal',
+    '--pr',
+    '519',
+    '--head',
+    '7b31fa0',
+    '--title',
+    'Redact personal columns from scheduled exports',
+    '--ticket',
+    'ABC-410',
+    '--changed-lines',
+    '318',
+  ])
+  const reviewId = Number(opened.match(/\d+/)?.[0])
+  if (!Number.isInteger(reviewId)) {
+    throw new Error(`review open printed no id: ${opened}`)
+  }
+
+  for (const finding of heldBackFindings()) {
+    const path = join(directory, `held-back-finding-${finding.seq}.json`)
+    const { seq: _seq, ...written } = finding
+    writeFileSync(path, JSON.stringify(written))
+    cli(database, ['finding', 'add', '--review', String(reviewId), '--file', path])
+  }
+
+  /*
+   * The draft, as one block of prose. It raises the three findings that are in it and holds
+   * the other eight back, which is what this review is seeded to show — the body is not the
+   * point here, and `draft put --sections` composes it so nothing states it twice.
+   */
+  const sections = join(directory, 'held-back-sections.json')
+  writeFileSync(sections, JSON.stringify([{ kind: 'prose', text: HELD_BACK_BODY }]))
+  cli(database, ['draft', 'put', '--review', String(reviewId), '--sections', sections])
+
+  /*
+   * **Five edits on one finding, which is the third defect.** The real review's own shape:
+   * kept, kept, kept, cut, kept, inside twelve seconds. Four of them are recorded with no
+   * detail, and `wire::draft_edit` writes the kind into `summary` when there is none — so
+   * the panel printed "Kept F1 · kept" four times over. Seeded through `outcome add`,
+   * because the developer's edits are outcomes with actor `developer` and that is the only
+   * way to put one in the record from outside the dashboard.
+   */
+  const at = Math.floor(Date.parse('2026-10-11T08:03:00Z') / 1000)
+  const edits: Array<[string, string | null]> = [
+    ['kept', null],
+    ['kept', null],
+    ['kept', null],
+    ['cut', 'the second sentence'],
+    ['kept', null],
+  ]
+  edits.forEach(([kind, detail], index) => {
+    cli(database, [
+      'outcome',
+      'add',
+      '--review',
+      String(reviewId),
+      '--finding',
+      '1',
+      '--kind',
+      kind,
+      '--by',
+      'developer',
+      '--at',
+      String(at + index * 3),
+      ...(detail == null ? [] : ['--detail', detail]),
+    ])
+  })
+
+  /* Step 6 waiting on the developer, so the queue's age cell has a time to read. */
+  for (const [number, state, detail] of [
+    [1, 'done', 'passed'],
+    [2, 'done', 'confirmation not required: the ticket names the columns'],
+    [3, 'done', '2 options, one built'],
+    [4, 'done', 'done'],
+    [5, 'done', '11 findings, 8 of them held for a ticket'],
+    [6, 'waiting_on_you', 'waiting on you'],
+  ] as Array<[number, string, string]>) {
+    cli(database, [
+      'layer',
+      'set',
+      '--review',
+      String(reviewId),
+      '--layer',
+      String(number),
+      '--state',
+      state,
+      '--detail',
+      detail,
+    ])
+  }
+
+  return reviewId
 }
 
 /** A database with nothing in it: what the first `review-desk serve` serves. */

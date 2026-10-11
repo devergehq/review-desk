@@ -32,8 +32,12 @@ import { count } from './format'
  * can; a nit is something neither of them has to do anything about. Sorting by the enum
  * would put the four nits above the three questions on the review this was measured against,
  * which is the wrong way round for the thing the page is for.
+ *
+ * **Exported, because the draft page's held-back rows group by severity and have to group in
+ * this order.** Two modules with their own copy of it would be two pages that disagreed
+ * about whether a question is more serious than a nit.
  */
-const SEVERITY_ORDER: Record<Severity, number> = {
+export const SEVERITY_ORDER: Record<Severity, number> = {
   blocker: 0,
   should: 1,
   question: 2,

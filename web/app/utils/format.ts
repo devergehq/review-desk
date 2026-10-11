@@ -41,17 +41,35 @@ export function count(n: number, one: string, many: string = `${one}s`): string 
   return `${n} ${n === 1 ? one : many}`
 }
 
-/** "1 blocker, 2 should" — what a reader wants before opening a draft. */
+/**
+ * How each severity is counted, as one and as many. **`should` has no plural.**
+ *
+ * One table, read by this tally and by the draft page's held-back groups. It was written
+ * out twice — found by review — and the two copies are the kind that drift quietly: a
+ * heading reading "3 shoulds" is wrong in a way nothing fails on.
+ *
+ * Keyed off the record's four severities rather than listed as an array, so a fifth added
+ * to the contract is a type error here rather than a heading with no plural rule.
+ */
+export const SEVERITY_WORDS: Record<keyof SeverityCounts, [string, string]> = {
+  blocker: ['blocker', 'blockers'],
+  should: ['should', 'should'],
+  nit: ['nit', 'nits'],
+  question: ['question', 'questions'],
+}
+
+/**
+ * "1 blocker, 2 should" — what a reader wants before opening a draft.
+ *
+ * **In the contract's own enum order**, which is not the order the code review page sorts
+ * findings in: there, a question reads above a nit, because a question is something the
+ * author can answer and a nit is not. This is a tally rather than a ranking, so it keeps
+ * the order the counts are declared in and `SEVERITY_ORDER` keeps the other.
+ */
 export function severityTally(counts: SeverityCounts): string {
-  const order: Array<[keyof SeverityCounts, string, string]> = [
-    ['blocker', 'blocker', 'blockers'],
-    ['should', 'should', 'should'],
-    ['nit', 'nit', 'nits'],
-    ['question', 'question', 'questions'],
-  ]
-  return order
-    .filter(([key]) => counts[key] > 0)
-    .map(([key, one, many]) => `${counts[key]} ${counts[key] === 1 ? one : many}`)
+  return (Object.keys(SEVERITY_WORDS) as Array<keyof SeverityCounts>)
+    .filter(key => counts[key] > 0)
+    .map(key => `${counts[key]} ${counts[key] === 1 ? SEVERITY_WORDS[key][0] : SEVERITY_WORDS[key][1]}`)
     .join(', ')
 }
 

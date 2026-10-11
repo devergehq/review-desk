@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { detectEdits, splitMermaid, visibleWords } from '../app/utils/draft'
-import type { Finding } from '../app/types/desk'
+import {
+  TITLE_WORDS,
+  detectEdits,
+  editDetail,
+  editLines,
+  heldBackGroups,
+  heldBackRows,
+  shortenClaim,
+  splitMermaid,
+  visibleWords,
+  whereInCode,
+} from '../app/utils/draft'
+import type { DraftEdit, Finding, HeldBackFinding } from '../app/types/desk'
 
 /*
  * Reading a draft body. Two of DEV-855's acceptance criteria rest on this: the preview
@@ -88,26 +99,31 @@ describe('the word budget counts what is read', () => {
   })
 })
 
-function finding(seq: number, key: string): Finding {
+/**
+ * One finding, with whatever this test needs set on it.
+ *
+ * **The file had two of these for a while**, and review pointed out that they disagreed on
+ * every default that matters — severity, file, disposition — so a reader of a failing
+ * assertion had to work out which one it came from. Declared here, above its first use, and
+ * used by both halves of the file.
+ */
+function raised(seq: number, extra: Partial<Finding> = {}): Finding {
   return {
-    review_id: 1,
+    review_id: 41,
     seq,
-    key,
-    lens: 'test',
-    severity: 'should',
-    file: null,
-    line: null,
-    claim: 'a claim',
-    evidence: null,
-    disposition: 'in_draft',
-    disposition_reason: null,
-    rule_id: null,
-    rule_key: null,
-    created_at: '2026-10-08T11:00:00Z',
-  }
+    key: `F${seq}`,
+    lens: 'correctness',
+    severity: 'nit',
+    file: 'app/Reporting/ExportContext.php',
+    line: 44,
+    claim: 'something is worth saying about this',
+    disposition: 'held_back',
+    created_at: '2026-10-11T00:00:00Z',
+    ...extra,
+  } as Finding
 }
 
-const FINDINGS = [finding(1, 'F1'), finding(2, 'F2')]
+const FINDINGS = [raised(1, { key: 'F1', severity: 'should', file: null, line: null }), raised(2, { key: 'F2', severity: 'should', file: null, line: null })]
 
 describe('what changed between two versions of a draft', () => {
   it('reports nothing when nothing changed', () => {
@@ -139,5 +155,300 @@ describe('what changed between two versions of a draft', () => {
   it('ignores a change to the intro, which is about no finding', () => {
     const after = BODY.replace('Intro prose.', 'A different intro.')
     expect(detectEdits(BODY, after, FINDINGS)).toEqual([])
+  })
+})
+
+/* ========================= The held-back findings, as rows ========================= */
+
+/*
+ * **The rules the aside's two panels are built out of, checked without a render.**
+ *
+ * DEV-928's first and third changes are almost entirely these: which line a row carries and
+ * whether it says it was cut, which group it is announced under, and which of a finding's
+ * five edits the one line about it reports. `test/screens.nuxt.spec.ts` mounts the page
+ * against the fixtures; this is the arithmetic on its own.
+ */
+
+/** A claim of a given number of words, so a length is a length rather than a guess. */
+function words(n: number): string {
+  return Array.from({ length: n }, (_, at) => `word${at + 1}`).join(' ')
+}
+
+function held(seq: number, extra: Partial<HeldBackFinding> = {}): HeldBackFinding {
+  return {
+    finding_seq: seq,
+    finding_key: `F${seq}`,
+    claim: 'something is worth saying about this',
+    severity: 'nit',
+    ...extra,
+  } as HeldBackFinding
+}
+
+describe('a claim standing in for a title the session never wrote', () => {
+  it('is cut to twelve words, with the cut shown', () => {
+    const { text, shortened } = shortenClaim(words(40))
+    expect(text.split(' ')).toHaveLength(TITLE_WORDS)
+    expect(text.endsWith('…')).toBe(true)
+    expect(shortened).toBe(true)
+  })
+
+  it('is twelve words, which is the figure the issue gives', () => {
+    expect(TITLE_WORDS).toBe(12)
+  })
+
+  /* Nothing was shortened, so nothing says it was. */
+  it('says nothing was cut when the claim already fits', () => {
+    expect(shortenClaim(words(12))).toEqual({ text: words(12), shortened: false })
+    expect(shortenClaim('four words long enough').shortened).toBe(false)
+  })
+
+  it('reads a claim whose spacing is untidy as the words it holds', () => {
+    expect(shortenClaim('  two   words  ')).toEqual({ text: 'two words', shortened: false })
+  })
+})
+
+describe('where a held-back finding is, as one string', () => {
+  it('is the path and the line', () => {
+    expect(whereInCode(raised(1))).toBe('app/Reporting/ExportContext.php:44')
+  })
+
+  it('is the path alone when the record holds no line', () => {
+    expect(whereInCode(raised(1, { line: null }))).toBe('app/Reporting/ExportContext.php')
+  })
+
+  /* A finding about the description names no file, and the row says nothing rather than ":". */
+  it('is nothing for a finding about the description', () => {
+    expect(whereInCode(raised(1, { file: null, line: null }))).toBeNull()
+    expect(whereInCode(undefined)).toBeNull()
+  })
+})
+
+describe('the held-back findings as rows', () => {
+  it('carries the finding’s own title, and the claim only behind it', () => {
+    const rows = heldBackRows([held(2)], [raised(2, { title: 'The accessor is still public' })])
+    expect(rows[0]!.line).toBe('The accessor is still public')
+    expect(rows[0]!.shortened).toBe(false)
+    expect(rows[0]!.claim).toBe('something is worth saying about this')
+  })
+
+  /*
+   * The join is what makes the title, the file and the line available at all: the contract's
+   * `HeldBackFinding` holds none of the three, and DEV-928 changes no contract.
+   */
+  it('joins the review’s findings by sequence number for the title and the code', () => {
+    const rows = heldBackRows(
+      [held(7)],
+      [raised(3), raised(7, { title: 'A title', file: 'app/Money.php', line: 71 })],
+    )
+    expect(rows[0]!.line).toBe('A title')
+    expect(rows[0]!.where).toBe('app/Money.php:71')
+  })
+
+  it('falls back to twelve words of the claim, and says so, where no title was written', () => {
+    const rows = heldBackRows([held(4, { claim: words(63) })], [raised(4, { title: null })])
+    expect(rows[0]!.line).toBe(`${words(12)}…`)
+    expect(rows[0]!.shortened).toBe(true)
+    /* And the whole claim is still there to be read on opening. */
+    expect(rows[0]!.claim).toBe(words(63))
+  })
+
+  it('treats a blank title as no title', () => {
+    const rows = heldBackRows([held(4, { claim: words(63) })], [raised(4, { title: '   ' })])
+    expect(rows[0]!.shortened).toBe(true)
+  })
+
+  /*
+   * A short claim with no title is drawn once. Printing it as the line and again under the
+   * row is the duplication this panel replaced.
+   */
+  it('does not draw a short claim twice when it is already the whole line', () => {
+    const rows = heldBackRows([held(5, { claim: 'Unused import left in the job class' })], [])
+    expect(rows[0]!.line).toBe('Unused import left in the job class')
+    expect(rows[0]!.claim).toBeNull()
+  })
+
+  it('still draws a row for an entry the review’s findings do not account for', () => {
+    const rows = heldBackRows([held(9, { claim: words(20), severity: 'question' })], [])
+    expect(rows[0]!.key).toBe('F9')
+    expect(rows[0]!.severity).toBe('question')
+    expect(rows[0]!.where).toBeNull()
+    expect(rows[0]!.shortened).toBe(true)
+  })
+
+  /* `severity` is optional in the contract, and a row must not print `undefined` for it. */
+  it('reads the severity off the finding when the draft’s entry has none', () => {
+    const entry = { finding_seq: 6, finding_key: 'F6', claim: 'a claim' } as HeldBackFinding
+    expect(heldBackRows([entry], [raised(6, { severity: 'blocker' })])[0]!.severity)
+      .toBe('blocker')
+  })
+
+  it('says nothing about a severity neither record names', () => {
+    const entry = { finding_seq: 6, finding_key: 'F6', claim: 'a claim' } as HeldBackFinding
+    expect(heldBackRows([entry], [])[0]!.severity).toBeNull()
+  })
+
+  it('keeps the record’s own order', () => {
+    const rows = heldBackRows([held(7), held(2), held(5)], [])
+    expect(rows.map(row => row.key)).toEqual(['F7', 'F2', 'F5'])
+  })
+})
+
+describe('the rows in severity groups', () => {
+  const rows = heldBackRows(
+    [
+      held(1, { severity: 'nit' }),
+      held(2, { severity: 'question' }),
+      held(3, { severity: 'nit' }),
+      held(4, { severity: 'blocker' }),
+    ],
+    [],
+  )
+
+  it('counts each group in the severity’s own word', () => {
+    expect(heldBackGroups(rows).map(group => group.heading))
+      .toEqual(['1 blocker', '1 question', '2 nits'])
+  })
+
+  /* Board A8's order, imported rather than restated: a question is above a nit. */
+  it('puts the most serious group first, and a question above a nit', () => {
+    expect(heldBackGroups(rows).map(group => group.severity))
+      .toEqual(['blocker', 'question', 'nit'])
+  })
+
+  it('leaves out a severity nothing is held back under', () => {
+    expect(heldBackGroups(heldBackRows([held(1)], [])).map(group => group.severity))
+      .toEqual(['nit'])
+  })
+
+  /* "should" has no plural, as the review's own tally has it. */
+  it('does not pluralise "should"', () => {
+    const two = heldBackRows([held(1, { severity: 'should' }), held(2, { severity: 'should' })], [])
+    expect(heldBackGroups(two)[0]!.heading).toBe('2 should')
+  })
+
+  /*
+   * A severity the record does not name is an absence, not a fifth severity: the group goes
+   * last and is counted in findings, because that is what is true about it.
+   */
+  it('puts rows with no severity last, counted as findings', () => {
+    const mixed = heldBackRows(
+      [{ finding_seq: 9, finding_key: 'F9', claim: 'a claim' } as HeldBackFinding, held(1)],
+      [],
+    )
+    const groups = heldBackGroups(mixed)
+    expect(groups.map(group => group.heading)).toEqual(['1 nit', '1 finding'])
+    expect(groups[1]!.severity).toBeNull()
+  })
+
+  it('accounts for every row exactly once', () => {
+    const counted = heldBackGroups(rows).reduce((total, group) => total + group.rows.length, 0)
+    expect(counted).toBe(rows.length)
+  })
+})
+
+/* ====================== The developer's edits, as one line each ===================== */
+
+function edit(extra: Partial<DraftEdit> = {}): DraftEdit {
+  return {
+    finding_seq: 1,
+    finding_key: 'F1',
+    kind: 'kept',
+    summary: 'kept',
+    occurred_at: '2026-10-11T09:00:00Z',
+    ...extra,
+  } as DraftEdit
+}
+
+describe('what an edit said beyond its own verb', () => {
+  /* The defect itself: the server writes the kind into `summary` when nothing else was. */
+  it('is nothing when the summary is only the kind', () => {
+    expect(editDetail('kept', 'kept')).toBeNull()
+    expect(editDetail('regraded', 'Regraded')).toBeNull()
+  })
+
+  it('is nothing when the summary is only the verb the screen prints', () => {
+    expect(editDetail('ticketed', 'Moved to a ticket')).toBeNull()
+  })
+
+  it('drops a summary’s leading repetition of the kind and keeps the rest', () => {
+    expect(editDetail('cut', 'cut from the body')).toBe('from the body')
+  })
+
+  it('keeps a summary that says something the verb does not', () => {
+    expect(editDetail('regraded', 'Blocker to Should')).toBe('Blocker to Should')
+    expect(editDetail('cut', 'rename suggestion')).toBe('rename suggestion')
+  })
+
+  it('is nothing for a summary of no words at all', () => {
+    expect(editDetail('kept', '   ')).toBeNull()
+  })
+})
+
+describe('the developer’s edits as one line a finding', () => {
+  /*
+   * The review DEV-928 was raised from: five edits on F1 inside twelve seconds, four of
+   * them printing "Kept F1 · kept".
+   */
+  const FIVE = [
+    edit({ occurred_at: '2026-10-11T09:00:00Z' }),
+    edit({ occurred_at: '2026-10-11T09:00:03Z' }),
+    edit({ occurred_at: '2026-10-11T09:00:06Z' }),
+    edit({ kind: 'cut', summary: 'cut', occurred_at: '2026-10-11T09:00:09Z' }),
+    edit({ occurred_at: '2026-10-11T09:00:12Z' }),
+  ]
+
+  it('draws one line for a finding toggled five times', () => {
+    expect(editLines(FIVE)).toHaveLength(1)
+  })
+
+  it('reports the latest decision, and the verb once', () => {
+    const [line] = editLines(FIVE)
+    expect(line!.verb).toBe('Kept')
+    expect(line!.detail).toBeNull()
+  })
+
+  it('says how many times it changed', () => {
+    expect(editLines(FIVE)[0]!.changed).toBe('changed 5 times')
+  })
+
+  it('says nothing about a count for a finding edited once', () => {
+    expect(editLines([edit()])[0]!.changed).toBeNull()
+  })
+
+  it('keeps one line per finding when several were edited', () => {
+    const lines = editLines([
+      edit({ finding_seq: 1, finding_key: 'F1', occurred_at: '2026-10-11T09:00:00Z' }),
+      edit({ finding_seq: 3, finding_key: 'F3', kind: 'regraded', summary: 'Blocker to Should', occurred_at: '2026-10-11T09:01:00Z' }),
+      edit({ finding_seq: 1, finding_key: 'F1', kind: 'cut', summary: 'cut', occurred_at: '2026-10-11T09:02:00Z' }),
+    ])
+    expect(lines.map(line => line.key)).toEqual(['F1', 'F3'])
+    expect(lines[0]).toMatchObject({ verb: 'Cut', changed: 'changed 2 times' })
+    expect(lines[1]).toMatchObject({ verb: 'Regraded', detail: 'Blocker to Should', changed: null })
+  })
+
+  /* Newest first: this panel is a record of what the developer has just been doing. */
+  it('puts the finding decided most recently first', () => {
+    const lines = editLines([
+      edit({ finding_seq: 9, finding_key: 'F9', occurred_at: '2026-10-11T08:00:00Z' }),
+      edit({ finding_seq: 2, finding_key: 'F2', occurred_at: '2026-10-11T10:00:00Z' }),
+    ])
+    expect(lines.map(line => line.key)).toEqual(['F2', 'F9'])
+  })
+
+  /*
+   * `occurred_at` is optional in the contract. With none, the server's own order stands —
+   * oldest last within a finding — so the last entry is the latest.
+   */
+  it('falls back to the order the server served them in', () => {
+    const lines = editLines([
+      edit({ occurred_at: null }),
+      edit({ kind: 'cut', summary: 'cut', occurred_at: null }),
+    ])
+    expect(lines).toHaveLength(1)
+    expect(lines[0]!.verb).toBe('Cut')
+  })
+
+  it('is empty for a draft nobody has edited', () => {
+    expect(editLines([])).toEqual([])
   })
 })

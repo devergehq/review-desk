@@ -102,6 +102,25 @@ watch(
 
 const dirty = computed(() => editing.value !== loadedBody.value)
 
+/**
+ * The aside's two derived lists, computed rather than called from the template.
+ *
+ * **The editor is in the same slot.** `v-model="editing"` on the textarea is tracked by the
+ * slot's render effect, so a call in the template re-ran both derivations on every keystroke
+ * — and, because each handed back a fresh array, re-rendered the whole held-back panel with
+ * them. Measured by review at 76µs a keystroke against 7µs from a stable identity: sub-
+ * millisecond either way and nothing a reader could feel, which is why this is three lines
+ * and not a component.
+ *
+ * They read the two resources rather than the slot's `data`, which is the same object: the
+ * slot cannot be closed over, and it does not need to be.
+ */
+const editRows = computed(() => editLines(detail.data.value?.edits ?? []))
+
+const heldRows = computed(() =>
+  heldBackRows(detail.data.value?.held_back ?? [], review.data.value?.findings ?? []),
+)
+
 function decided(data: DraftDetail): boolean {
   return data.draft.status !== 'ready'
 }
@@ -452,13 +471,29 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                     >
                       You have not changed this draft.
                     </p>
+                    <!--
+                      **One line a finding, not one a toggle.** Every edit was its own line
+                      and the verb was printed twice — "Kept F1 · kept", four times over on
+                      the review DEV-928 was raised from. The record keeps every edit and
+                      still does; `editLines` is what changed, and it reports where each
+                      finding ended up and how many times it moved to get there.
+                    -->
                     <p
-                      v-for="edit in data.edits"
-                      :key="`${edit.finding_key}-${edit.kind}`"
+                      v-for="line in editRows"
+                      :key="line.key"
                       class="edit"
                     >
-                      <span class="edit-verb">{{ editVerb(edit.kind) }}</span>
-                      {{ edit.finding_key }} · {{ edit.summary }}
+                      <span class="edit-verb">{{ line.verb }}</span>
+                      {{ line.key }}<!--
+                        **The separators are in the strings, not in the stylesheet.** A
+                        newline between two tags in a Vue template is condensed away, so a
+                        margin would move the boxes apart and leave the text nodes touching —
+                        which is what a screen reader reads and what a copy gives. The
+                        Solution page learned this on a finding's round status.
+                      --><span v-if="line.detail"> · {{ line.detail }}</span><span
+                        v-if="line.changed"
+                        class="rd-meta edit-times"
+                      > · {{ line.changed }}</span>
                     </p>
                     <p class="rd-meta foot">
                       Saved as feedback when you sign off. Three edits of the same kind become a
@@ -470,21 +505,14 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                     v-if="data.held_back.length"
                     class="panel"
                   >
-                    <div class="rd-label">
-                      Held back ·
-                      {{
-                        data.held_back.every(item => item.severity === 'nit')
-                          ? count(data.held_back.length, 'nit')
-                          : count(data.held_back.length, 'finding')
-                      }}
-                    </div>
-                    <p
-                      v-for="item in data.held_back"
-                      :key="item.finding_key"
-                      class="rd-note held"
-                    >
-                      {{ item.finding_key }} · {{ item.claim }}
-                    </p>
+                    <!--
+                      **The rows, and the join that makes them possible.** `HeldBackFinding`
+                      carries a key, a claim and a severity; the title, the file and the line
+                      a row needs come from the review's own findings, which this page is
+                      already reading for the frame and the trail. Nothing about the record
+                      or the contract changed to allow it.
+                    -->
+                    <HeldBackRows :rows="heldRows" />
                     <button
                       type="button"
                       class="rd-btn"
@@ -782,8 +810,13 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
   font-weight: 500;
 }
 
-.held {
-  margin: 0;
+/*
+ * How many times a finding moved, beside where it ended up. Quiet and never wrapping inside
+ * itself — it is a phrase, not a sentence — and in the body ink, because the number of times
+ * somebody changed their mind is not a fault.
+ */
+.edit-times {
+  white-space: nowrap;
 }
 
 .help,

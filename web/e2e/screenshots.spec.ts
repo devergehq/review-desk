@@ -21,7 +21,8 @@ import { readAddresses } from './harness'
 
 const addresses = readAddresses()
 
-const { seeded, empty, reviewId, waivedReviewId, structuredReviewId } = addresses
+const { seeded, empty, reviewId, waivedReviewId, structuredReviewId, heldBackReviewId }
+  = addresses
 
 const INTO = resolve('../docs/screenshots')
 
@@ -47,7 +48,7 @@ test.describe.configure({ mode: 'serial' })
 test.describe('a seeded database', () => {
   test('the four pages', async ({ page }) => {
     await page.goto(seeded)
-    await expect(page.getByRole('heading', { name: '2 reviews need you' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '3 reviews need you' })).toBeVisible()
     await shot(page, 'seeded-1-queue')
 
     /*
@@ -80,7 +81,7 @@ test.describe('a seeded database', () => {
      */
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto(seeded)
-    await expect(page.getByRole('heading', { name: '2 reviews need you' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '3 reviews need you' })).toBeVisible()
     await shot(page, 'seeded-6-queue-390')
     await page.setViewportSize({ width: 1440, height: 900 })
 
@@ -284,6 +285,64 @@ test.describe('the solution as a table', () => {
       await shot(page, `dev-919-2-row-open${suffix}`)
     }
     await page.setViewportSize({ width: 1440, height: 900 })
+  })
+})
+
+/**
+ * The draft page's aside, and a drawing opened larger. DEV-928's three changes, in pictures.
+ *
+ * **Both widths for the panel, because the complaint was about a width.** Eight findings
+ * were printed as 41-to-63-word paragraphs in a column about 290 pixels wide; a picture of
+ * eight rows in that column is the measurement, and the acceptance suite's own assertion
+ * that nothing leaves the card is the proof. The fourth seeded review is the one that holds
+ * eight of them.
+ */
+test.describe('the draft page, after DEV-928', () => {
+  test('the held-back rows, closed and open, at both widths', async ({ page }) => {
+    for (const [width, suffix] of [[1440, ''], [390, '-390']] as const) {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
+
+      await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
+      await expect(page.locator('h1')).toBeVisible()
+      await expect(page.locator('.held-row')).toHaveCount(8)
+      await shot(page, `dev-928-1-held-back${suffix}`)
+
+      /*
+       * The row with the longest claim open — 61 words, which is what the panel used to
+       * print eight of — beside the row whose line the page had to cut.
+       */
+      await page.locator('.held-row').filter({ hasText: 'F6' }).first().click()
+      await expect(page.locator('.held-opened')).toHaveCount(1)
+      await shot(page, `dev-928-2-row-open${suffix}`)
+    }
+    await page.setViewportSize({ width: 1440, height: 900 })
+  })
+
+  /**
+   * A drawing over the page, zoomed.
+   *
+   * At 169%, because 100% is the fit and a picture of the fit says nothing about whether it
+   * can be zoomed. The bar reads the scale, which is the one thing in the picture that
+   * cannot be mistaken for the inline figure.
+   */
+  test('a drawing opened larger, and zoomed', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
+    await expect(page.locator('h1')).toBeVisible()
+    await page.waitForLoadState('networkidle')
+
+    await page.locator('button.canvas').first().click()
+    const sheet = page.getByRole('dialog')
+    await expect(sheet).toBeVisible()
+    await shot(page, 'dev-928-3-diagram-larger')
+
+    await sheet.getByRole('button', { name: 'Zoom in' }).click()
+    await sheet.getByRole('button', { name: 'Zoom in' }).click()
+    await expect(sheet.locator('.reading')).toContainText('169%')
+    await shot(page, 'dev-928-4-diagram-zoomed')
+
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
   })
 })
 
