@@ -608,7 +608,6 @@ onBeforeUnmount(() => {
 .written {
   line-height: 1.55;
 }
-</style>
 
 /* ------------------------------ The drawing, opened larger ----------------------------- */
 
@@ -695,17 +694,36 @@ onBeforeUnmount(() => {
  * something up.
  */
 .moved {
+  /*
+   * **It fills the stage, and that is load-bearing.** mermaid writes `width="100%"` on its
+   * SVG, so the width resolves against this box — and a box sized to its content makes that
+   * percentage indefinite, which sends the SVG to the 300×150 default every replaced element
+   * falls back to. The drawing came out 300 pixels wide inside a 1392-pixel stage: opening
+   * it larger made it smaller than the pane it came from. Measured in the browser, because
+   * nothing else in this repository can draw it.
+   */
+  width: 100%;
+  height: 100%;
   transform-origin: center center;
   will-change: transform;
 }
 
 /*
- * The drawing, inside the stage. It is allowed to be larger than the stage — that is the
- * whole point — so the `max-width: 100%` the inline figure gives it is taken back, and the
- * stage's own `overflow: hidden` is what keeps it off the page.
+ * **The drawing fits the stage, and the SVG's own `viewBox` is what fits it.**
+ *
+ * `width: 100%; height: 100%` against mermaid's `viewBox` and its default
+ * `preserveAspectRatio` — `xMidYMid meet` — scales the drawing to the largest size that fits
+ * inside the stage and centres it. So a flow 936 pixels wide in the 560-pixel preview pane
+ * opens at about 1392, which is the point of opening it, and a diagram taller than it is
+ * wide is fitted by its height instead with nothing cropped.
+ *
+ * The inline figure's `max-width: 100%` is taken back because the zoom is allowed to take it
+ * past the stage; the stage's own `overflow: hidden` is what keeps it off the page.
  */
 .moved :deep(svg) {
   display: block;
+  width: 100%;
+  height: 100%;
   max-width: none;
   max-height: none;
 }
@@ -721,3 +739,4 @@ onBeforeUnmount(() => {
     border-radius: 0;
   }
 }
+</style>

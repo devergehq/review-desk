@@ -43,6 +43,7 @@ const {
   reviewId,
   waivedReviewId,
   structuredReviewId,
+  heldBackReviewId,
 } = addresses
 
 /**
@@ -107,12 +108,17 @@ test.describe('the whole path, on a seeded database', () => {
     await page.goto(seeded)
 
     /*
-     * **Two, and they are two reviews rather than one review twice.** The structured
-     * review gained a draft in DEV-878 — the code review page's decisions change a
-     * finding's *block*, so a review with no draft has nothing to decide against — and its
+     * **Three, and they are three reviews rather than one review three times.** The
+     * structured review gained a draft in DEV-878 — the code review page's decisions change
+     * a finding's *block*, so a review with no draft has nothing to decide against — and its
      * own layer trail already claimed one by saying step 6 was waiting on the developer.
+     *
+     * The third is DEV-928's: a review whose draft holds eight findings back, which is the
+     * state that issue was raised from and the only one in this seed where the aside's panel
+     * can be measured at that volume. A review with a ready draft is waiting on the
+     * developer, so it is in this count.
      */
-    await expect(page.getByRole('heading', { name: '2 reviews need you' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '3 reviews need you' })).toBeVisible()
 
     /*
      * **DEV-876's first acceptance criterion, on a real database.** This session wrote the
@@ -122,7 +128,7 @@ test.describe('the whole path, on a seeded database', () => {
      * behind it. The screen this replaced drew the title twice.
      */
     await expect(page.getByText('Retry failed webhook deliveries')).toHaveCount(1)
-    await expect(page.locator('.row')).toHaveCount(2)
+    await expect(page.locator('.row')).toHaveCount(3)
     await expect(page.getByText('Problem brief ready')).toBeVisible()
     await expect(page.getByText('nothing posts until you confirm')).toBeVisible()
     await expect(page.getByText('a draft is ready behind it')).toBeVisible()
@@ -227,12 +233,12 @@ test.describe('the whole path, on a seeded database', () => {
      */
     await page.goto(seeded)
     /*
-     * **Still two rows, and the same two.** What moved is this one's next action: from the
-     * brief to the draft, because layer 2 is settled and layer 6 is not. That is what "one
-     * row showing its next action" buys — a review waiting for two things does not become
-     * two rows, and does not stop being a row when one of them is answered.
+     * **Still three rows, and the same three.** What moved is this one's next action: from
+     * the brief to the draft, because layer 2 is settled and layer 6 is not. That is what
+     * "one row showing its next action" buys — a review waiting for two things does not
+     * become two rows, and does not stop being a row when one of them is answered.
      */
-    await expect(page.locator('.row')).toHaveCount(2)
+    await expect(page.locator('.row')).toHaveCount(3)
     const webhooks = page.locator('.row').filter({ hasText: 'Retry failed webhook deliveries' })
     await expect(webhooks).toHaveCount(1)
     await expect(webhooks.getByText('Draft ready')).toBeVisible()
@@ -1460,6 +1466,485 @@ test.describe('the three step pages of one review', () => {
    * lists the review once", and the draft in "the agent's draft is what is left waiting to
    * be signed off".
    */
+})
+
+/*
+ * ======================== The draft page's aside, and a diagram ========================
+ *
+ * **DEV-928's ninth criterion: "each of the above is measured in a real browser".** Every
+ * one of these is something the unit suite cannot answer. Three of them are about a drawing
+ * that jsdom cannot draw at all — `svg` is only ever set by a successful `mermaid.render`,
+ * and jsdom has no `getBBox` — and the rest are about a panel at a width, which is a
+ * measurement and not a render.
+ */
+test.describe('the findings held back, as rows', () => {
+  /**
+   * The state the issue was raised from: eight rows in a column about 290 pixels wide.
+   *
+   * Closed, the panel carries a key, a severity word and a title, and **not one of the eight
+   * claims**. That is the whole complaint — 41 to 63 words each, printed as paragraphs — so
+   * it is asserted as an absence rather than as a layout.
+   */
+  test('eight rows, grouped and counted, with no claim until one is opened', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
+    await expect(page.locator('h1')).toBeVisible()
+
+    const panel = page.locator('.held')
+    await expect(panel.getByText('Held back · 8 findings')).toBeVisible()
+    await expect(panel.locator('.held-row')).toHaveCount(8)
+    await expect(panel.locator('.held-group')).toHaveCount(2)
+    await expect(panel.getByText('6 nits')).toBeVisible()
+    await expect(panel.getByText('2 questions')).toBeVisible()
+
+    /* Nothing is open, so there is no claim and no file anywhere in the panel. */
+    await expect(panel.locator('.held-opened')).toHaveCount(0)
+    await expect(panel.getByText('In the code')).toHaveCount(0)
+
+    /* The severity is a word. No tag, and nothing coloured by how serious it is. */
+    const first = panel.locator('.held-row').first()
+    await expect(first.locator('.cell--severity')).toHaveText(/question|nit/)
+    await expect(panel.locator('.tag')).toHaveCount(0)
+  })
+
+  /**
+   * **A row opens in place, by click, to the claim and where it is in the code.**
+   *
+   * The Solution page's pattern, which DEV-928 asks for by name, so the assertion is the
+   * same one DEV-919's rows get: the detail is the element the row's `aria-controls` names,
+   * and it is under the row rather than somewhere else on the page.
+   */
+  test('a row opens in place to its claim and its file', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
+    await expect(page.locator('h1')).toBeVisible()
+
+    const row = page.locator('.held-row').filter({ hasText: 'F4' }).first()
+    await expect(row).toHaveAttribute('aria-expanded', 'false')
+    const id = await row.getAttribute('aria-controls')
+    await row.click()
+
+    await expect(row).toHaveAttribute('aria-expanded', 'true')
+    const opened = page.locator(`#${id}`)
+    await expect(opened).toBeVisible()
+    await expect(opened.getByText('In the code')).toBeVisible()
+    await expect(opened.getByText('app/Reporting/ColumnPolicy.php:44')).toBeVisible()
+    /* 57 words, which is why they are not on the row. */
+    await expect(opened.locator('.claim')).toContainText('is read twice in this class')
+
+    /* And it is under the row that opened it, not elsewhere on the page. */
+    const rowBox = (await row.boundingBox())!
+    const openedBox = (await opened.boundingBox())!
+    expect(openedBox.y).toBeGreaterThanOrEqual(rowBox.y + rowBox.height - 2)
+  })
+
+  /** One at a time, by keyboard alone. Enter and Space, because the row is a button. */
+  test('a row opens and folds by keyboard, and only one is open', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
+    await expect(page.locator('h1')).toBeVisible()
+
+    const rows = page.locator('.held-row')
+    await rows.first().focus()
+    await expect(rows.first()).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(page.locator('.held-opened')).toHaveCount(1)
+    await expect(rows.first()).toHaveAttribute('aria-expanded', 'true')
+
+    await page.keyboard.press('Enter')
+    await expect(page.locator('.held-opened')).toHaveCount(0)
+    await page.keyboard.press('Space')
+    await expect(page.locator('.held-opened')).toHaveCount(1)
+
+    /* A second row, and the first folds rather than both standing open. */
+    await rows.nth(4).click()
+    await expect(page.locator('.held-opened')).toHaveCount(1)
+    await expect(rows.first()).toHaveAttribute('aria-expanded', 'false')
+    await expect(rows.nth(4)).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  /**
+   * **A title the page cut says so, and a backtick pair is drawn as code.**
+   *
+   * Two of the issue's criteria on one panel: F7 has no title in the record, so its row
+   * stands in with the claim's first twelve words; F4's title carries
+   * `report_definitions.allowed_columns`, which is drawn as a code chip and never as
+   * backticks — backticks printed literally is the defect this is measured against.
+   */
+  test('a shortened line says so, and a code name is drawn as code', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
+    await expect(page.locator('h1')).toBeVisible()
+
+    const panel = page.locator('.held')
+    await expect(panel.getByText('`')).toHaveCount(0)
+    await expect(panel.locator('code').first()).toHaveText('report_definitions.allowed_columns')
+
+    const cut = panel.locator('.held-row').filter({ hasText: 'shortened' })
+    await expect(cut).toHaveCount(1)
+    await expect(cut.locator('.cell--line')).toContainText('…')
+    await cut.click()
+    await expect(page.locator('.held-opened')).toContainText('No title was written')
+    await expect(page.locator('.held-opened')).toContainText('first 12 words')
+  })
+
+  /**
+   * **Nothing leaves the card, at a laptop's width and at a phone's.**
+   *
+   * The criterion names both widths, and it is measured on the elements rather than on the
+   * document: the page-level check further up this file would pass on a panel whose own
+   * contents overflowed inside a card that clipped them. A code name wider than its column
+   * is the defect, so the column is what is measured — closed and with a row open, since a
+   * panel that fits closed and overflows open fits nothing.
+   */
+  for (const [label, width, height] of [
+    ['a laptop', 1440, 900],
+    ['a phone', 390, 844],
+  ] as const) {
+    test(`no held-back text leaves the card at ${label}`, async ({ page }) => {
+      await page.setViewportSize({ width, height })
+      await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
+      await expect(page.locator('h1')).toBeVisible()
+      await page.waitForLoadState('networkidle')
+
+      /*
+       * **Measured against the card, not against the panel inside it.** The rows carry a
+       * negative margin so the rule above each one reaches the card's own edges — a row
+       * inset by 16px on both sides in a 290px column loses an eighth of the width its line
+       * has to live in — so a child of the panel legitimately reaches 16px past the panel's
+       * content box. The card's border box is the edge the criterion is about, and the first
+       * version of this assertion used the wrong one and failed on a correct layout.
+       */
+      const measure = async (where: string) => {
+        const panel = page.locator('.held')
+        const sizes = await panel.evaluate((element) => {
+          const card = element.closest('.panel') ?? element
+          const box = card.getBoundingClientRect()
+          /*
+           * **The visually-hidden names are left out, and they are the reason this reads
+           * the way it does.** `.rd-visually-hidden` is a one-pixel box holding its whole
+           * string behind `overflow: hidden`, which is what makes it hidden — so every one
+           * of them reports 512 pixels of content in one pixel of box, and the first version
+           * of this assertion called each a defect. They are the only elements on the page
+           * for which overflowing is the point.
+           */
+          return [...element.querySelectorAll('*')]
+            .filter(child => child.closest('.rd-visually-hidden') == null)
+            .map(child => ({
+              right: child.getBoundingClientRect().right,
+              own: child.scrollWidth > child.clientWidth + 1,
+              text: `${child.tagName.toLowerCase()}.${child.className} `
+                + `[${child.scrollWidth}/${child.clientWidth}] `
+                + (child.textContent ?? '').slice(0, 30),
+            }))
+            .concat([{ right: box.right, own: false, text: 'the card' }])
+        })
+        const edge = sizes.at(-1)!.right
+        for (const child of sizes) {
+          expect(
+            child.right,
+            `${where} at ${width}px: "${child.text}" reaches ${child.right} past ${edge}`,
+          ).toBeLessThanOrEqual(edge + 1)
+          expect(child.own, `${where} at ${width}px: "${child.text}" scrolls inside itself`)
+            .toBe(false)
+        }
+      }
+
+      await measure('closed')
+      /* The 61-word claim and the longest path, which is the widest the panel ever is. */
+      await page.locator('.held-row').filter({ hasText: 'F6' }).first().click()
+      await expect(page.locator('.held-opened')).toHaveCount(1)
+      await measure('with a row open')
+    })
+  }
+
+  /**
+   * **Five edits on one finding is one line.**
+   *
+   * The third defect, on the record that produced it: `kept`, `kept`, `kept`, `cut`, `kept`
+   * inside twelve seconds, four of them with no detail — so `wire::draft_edit` wrote the
+   * kind into `summary` and the panel printed "Kept F1 · kept" four times over.
+   */
+  test('a finding toggled five times is one line, with the verb once', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
+    await expect(page.locator('h1')).toBeVisible()
+
+    const lines = page.locator('.edit')
+    await expect(lines).toHaveCount(1)
+    await expect(lines.first()).toContainText('Kept F1')
+    await expect(lines.first()).toContainText('changed 5 times')
+    /* The verb once: "Kept F1 · kept" is what this replaced. */
+    await expect(lines.first()).not.toContainText('· kept')
+  })
+})
+
+test.describe('a drawing opens larger', () => {
+  /**
+   * **The draft preview's diagram**, which is a ```` ```mermaid ```` fence in the body, and
+   * the first of the two places the criterion names.
+   *
+   * Opened by click, zoomed, dragged, and closed on Escape with the focus back where it
+   * was. Every one of these is unreachable in jsdom: `svg` is only ever set by a successful
+   * render and jsdom cannot draw.
+   */
+  test('the diagram in the draft preview opens, zooms, drags and closes', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
+    await expect(page.locator('h1')).toBeVisible()
+    await page.waitForLoadState('networkidle')
+
+    const canvas = page.locator('button.canvas').first()
+    await expect(canvas).toBeVisible()
+    await expect(canvas.locator('svg')).toHaveCount(1)
+    await expect(canvas).toHaveAttribute('aria-expanded', 'false')
+
+    await canvas.click()
+    const sheet = page.getByRole('dialog')
+    await expect(sheet).toBeVisible()
+
+    /*
+     * **The same element, not a copy.** One drawing in the document is the property the
+     * whole design turns on: a copy would need a second `v-html`, and mermaid scopes its own
+     * stylesheet by the figure's id so a clone either renders unstyled or duplicates every
+     * id on the page.
+     */
+    await expect(page.locator('svg')).toHaveCount(1)
+    await expect(sheet.locator('svg')).toHaveCount(1)
+
+    /* It fills the window, rather than the 560-pixel pane it came out of. */
+    const box = (await sheet.boundingBox())!
+    expect(box.width).toBeGreaterThan(1440 * 0.8)
+
+    /*
+      * Zoomed: the control says so, and the transform changes.
+      *
+      * Read off `.reading` rather than by text. mermaid writes its own stylesheet into the
+      * SVG and that stylesheet contains `100%`, so `getByText('100%')` matches two elements
+      * and fails on the ambiguity rather than on the page.
+      */
+    await expect(sheet.locator('.reading')).toContainText('100%')
+    const before = await sheet.locator('.moved').getAttribute('style')
+    await sheet.getByRole('button', { name: 'Zoom in' }).click()
+    await expect(sheet.locator('.reading')).toContainText('130%')
+    expect(await sheet.locator('.moved').getAttribute('style')).not.toBe(before)
+
+    /*
+     * **Zoomed again before the drag, and that is not padding.** The seeded diagram is 936
+     * pixels wide in a stage about 1392 wide, so at 130% it is *still* narrower than the
+     * window it was opened into — and `panLimit` is nought for a drawing that fits, which
+     * is the rule that stops a reader shoving a small diagram off the side and being left
+     * looking at the backdrop. A drag at 130% correctly moves nothing. The first version of
+     * this test dragged there and read the nought as a defect.
+     */
+    await sheet.getByRole('button', { name: 'Zoom in' }).click()
+    await expect(sheet.locator('.reading')).toContainText('169%')
+
+    /* Dragged: the offset moves, and it is the drag that moved it. */
+    const stage = sheet.locator('.stage')
+    const area = (await stage.boundingBox())!
+    const centre = { x: area.x + area.width / 2, y: area.y + area.height / 2 }
+    await page.mouse.move(centre.x, centre.y)
+    await page.mouse.down()
+    await page.mouse.move(centre.x - 120, centre.y - 60, { steps: 8 })
+    await page.mouse.up()
+    const dragged = await sheet.locator('.moved').getAttribute('style')
+    expect(dragged).toContain('translate(')
+    expect(dragged).not.toContain('translate(0px, 0px)')
+
+    /* Escape closes it, and the focus comes back to the drawing it came from. */
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(canvas).toBeFocused()
+    await expect(canvas.locator('svg')).toHaveCount(1)
+    await expect(canvas).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  /** By keyboard alone, which is the half a pointer test cannot show. */
+  test('it opens by keyboard, pans by arrow key, and closes on Escape', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
+    await expect(page.locator('h1')).toBeVisible()
+    await page.waitForLoadState('networkidle')
+
+    const canvas = page.locator('button.canvas').first()
+    await canvas.focus()
+    await expect(canvas).toBeFocused()
+    await page.keyboard.press('Enter')
+
+    const sheet = page.getByRole('dialog')
+    await expect(sheet).toBeVisible()
+    /* Focus lands on the stage, so the arrow keys work without a Tab first. */
+    await expect(sheet.locator('.stage')).toBeFocused()
+
+    /* Zoomed in first: a drawing that fits has nowhere to pan to, which is the clamp. */
+    await page.keyboard.press('+')
+    await page.keyboard.press('+')
+    await expect(sheet.locator('.reading')).toContainText('169%')
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('ArrowRight')
+    const panned = await sheet.locator('.moved').getAttribute('style')
+    expect(panned).toContain('translate(-')
+
+    /* Fit puts it back, and then Escape leaves. */
+    await sheet.getByRole('button', { name: 'Fit' }).click()
+    await expect(sheet.locator('.reading')).toContainText('100%')
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(canvas).toBeFocused()
+  })
+
+  /** A click outside closes it, and a click on the drawing does not. */
+  test('a click outside closes it, and one inside does not', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
+    await expect(page.locator('h1')).toBeVisible()
+    await page.waitForLoadState('networkidle')
+
+    await page.locator('button.canvas').first().click()
+    await expect(page.getByRole('dialog')).toBeVisible()
+
+    /* Inside the sheet: still open. */
+    await page.locator('.stage').click({ position: { x: 20, y: 20 } })
+    await expect(page.getByRole('dialog')).toBeVisible()
+
+    /* The backdrop, which is the 24 pixels of gutter around the sheet. */
+    await page.locator('.over').click({ position: { x: 4, y: 4 } })
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+  })
+
+  /**
+   * **The second of the two places the criterion names: a diagram on the Understand page.**
+   *
+   * The whole reason this lives in `MermaidFigure` rather than on a page. The seeded
+   * review's brief is an old-style one, which is the only kind that carries a `diagram`
+   * field, and that field is handed to the same component.
+   */
+  test('the diagram on the Understand page opens larger too', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(`${seeded}reviews/${reviewId}/understand`)
+    await expect(page.locator('h1')).toBeVisible()
+    await page.waitForLoadState('networkidle')
+
+    const canvas = page.locator('button.canvas').first()
+    await expect(canvas).toBeVisible()
+    await canvas.click()
+    await expect(page.getByRole('dialog')).toBeVisible()
+    await expect(page.getByRole('dialog').locator('svg')).toHaveCount(1)
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(canvas).toBeFocused()
+  })
+
+  /**
+   * **A source shown as written offers no larger view.**
+   *
+   * The waived review's `diagram` field holds a flow a session drew by hand in text — the
+   * real one from DEV-880. There is nothing to enlarge, and a control over a block of text
+   * promising a larger view of it would be a lie the page tells.
+   */
+  test('a sketch offers nothing to enlarge', async ({ page }) => {
+    await page.goto(`${seeded}reviews/${waivedReviewId}/understand`)
+    await expect(page.locator('h1')).toBeVisible()
+    await page.waitForLoadState('networkidle')
+
+    await expect(page.locator('pre.written')).toBeVisible()
+    await expect(page.locator('button.canvas')).toHaveCount(0)
+    await expect(page.getByText('Opens larger')).toHaveCount(0)
+  })
+
+  /**
+   * **The page behind it does not move**, which is the cost of moving the one drawing into
+   * the overlay rather than copying it: the figure holds the height its drawing had, so a
+   * reader comes back to the scroll position they left.
+   */
+  test('the page behind it neither jumps nor scrolls', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
+    await expect(page.locator('h1')).toBeVisible()
+    await page.waitForLoadState('networkidle')
+
+    const canvas = page.locator('button.canvas').first()
+    /*
+     * **Scrolled into view first, and measured in the page's own coordinates.** Clicking
+     * scrolls the control into view, so a viewport-relative box read before the click and
+     * again after it is comparing two different scroll positions — which is what the first
+     * version of this test did, and it failed on a page that had not moved at all.
+     */
+    await canvas.scrollIntoViewIfNeeded()
+    const place = () => page.evaluate(() => {
+      const element = document.querySelector('button.canvas')!
+      return {
+        top: Math.round(element.getBoundingClientRect().top + window.scrollY),
+        height: Math.round(element.getBoundingClientRect().height),
+        scrolled: Math.round(window.scrollY),
+        page: document.documentElement.scrollHeight,
+      }
+    })
+    const before = await place()
+
+    await canvas.click()
+    await expect(page.getByRole('dialog')).toBeVisible()
+    /* The figure is still the size it was, with its drawing elsewhere. */
+    const holding = await place()
+    expect(Math.abs(holding.height - before.height)).toBeLessThanOrEqual(2)
+    expect(holding.page).toBe(before.page)
+    expect(holding.top).toBe(before.top)
+
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    const after = await place()
+    expect(after.top).toBe(before.top)
+    expect(after.scrolled).toBe(before.scrolled)
+    expect(after.page).toBe(before.page)
+  })
+
+  /**
+   * **Nothing is left over the page after it closes**, and nothing is left behind when the
+   * page it was on goes away. DEV-880's own failure in a new costume: the overlay is
+   * teleported to the body, so a leak is a sheet nobody can close sitting on every screen
+   * the developer opens afterwards.
+   */
+  test('it leaves nothing over the page when the page goes away open', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    /* A page to come back to, so leaving is a navigation rather than a fresh load. */
+    await page.goto(`${seeded}reviews/${heldBackReviewId}/code-review`)
+    await expect(page.locator('h1')).toBeVisible()
+    await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
+    await expect(page.locator('h1')).toBeVisible()
+    await page.waitForLoadState('networkidle')
+
+    await page.locator('button.canvas').first().click()
+    await expect(page.getByRole('dialog')).toBeVisible()
+
+    /*
+     * **It covers the page, which is what `aria-modal` promises.** Measured rather than
+     * assumed: the trail's links are still painted behind a translucent backdrop, so
+     * "visible" says nothing — what matters is that a press over one of them lands on the
+     * backdrop. It is also why leaving is a history navigation below and not a click: the
+     * first version of this test tried to click a link under the backdrop and waited a
+     * minute for a click that correctly never landed.
+     */
+    const covered = await page.evaluate(() => {
+      const points: Array<[number, number]> = [
+        [4, 4],
+        [window.innerWidth / 2, window.innerHeight / 2],
+        [window.innerWidth - 4, window.innerHeight - 4],
+      ]
+      return points.map(([x, y]) => document.elementFromPoint(x, y)?.closest('.over') != null)
+    })
+    expect(covered, 'every corner and the middle of the window belong to the overlay')
+      .toEqual([true, true, true])
+
+    /* Away by the browser's own Back, with the view still open. */
+    await page.goBack()
+    await expect(page).toHaveURL(`${seeded}reviews/${heldBackReviewId}/code-review`)
+    await expect(page.locator('.over')).toHaveCount(0)
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    /* And the page is usable: the body scroll was given back. */
+    expect(await page.evaluate(() => document.body.style.overflow)).not.toBe('hidden')
+    await expect(page.locator('h1')).toBeVisible()
+  })
 })
 
 test.describe('a database with nothing in it', () => {

@@ -19,7 +19,8 @@ import { ADDRESSES, fresh, scratch, seed, serve, stop, type Addresses, type Serv
 export default async function globalSetup() {
   const directory = scratch()
 
-  const { database, reviewId, waivedReviewId, structuredReviewId } = seed(directory)
+  const { database, reviewId, waivedReviewId, structuredReviewId, heldBackReviewId }
+    = seed(directory)
   /* The two share nothing, so they boot together rather than one after the other. */
   const [seeded, empty] = await Promise.all([serve(database), serve(fresh(directory))])
 
@@ -34,6 +35,7 @@ export default async function globalSetup() {
     reviewId,
     waivedReviewId,
     structuredReviewId,
+    heldBackReviewId,
   }
   writeFileSync(ADDRESSES, JSON.stringify(addresses, null, 2))
 
