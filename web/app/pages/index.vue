@@ -168,13 +168,6 @@ function needingYou(data: Inbox): Waiting[] {
    * defect with a name: a review whose brief had been confirmed and whose draft was
    * waiting had a row, a ticket on the record, and no way to reach it, while the Reviews
    * list showed the link for that same review.
-   *
-   * **The two quieter groups below are a gap, and it is theirs rather than this merge's.**
-   * A row under "With the agent" or "Waiting on the author" is drawn from
-   * `in_progress` or `posted_awaiting_author` directly, and `GET /inbox` serves no ticket
-   * on either — so those rows carry a link to the pull request and none to the ticket. The
-   * contract's `Inbox` description says so and says why; nothing here can work around it,
-   * because the ticket is not in the answer.
    */
   const ticket = (row: Waiting, item: { ticket_id?: string | null, ticket_url?: string | null }) => {
     row.ticket = item.ticket_id ?? null
@@ -376,6 +369,14 @@ const drawnAbove = computed(() => {
 
 /**
  * The reviews a session is working on, minus the ones already waiting on the developer.
+ *
+ * **These rows carry no ticket link, and nothing here can give them one.** `GET /inbox`
+ * serves the ticket and its address on the three arrays a needs-you row is built from and
+ * not on `in_progress` or `posted_awaiting_author` — so a review that is *only* in one of
+ * those two draws a row with a link to its pull request and none to its ticket, while the
+ * Reviews list links both for the same review. The contract's `Inbox` description states
+ * the gap and why it is left. It is not a thing this file can work around: the ticket is
+ * not in the answer.
  *
  * **The same rule, one group earlier.** `reviews_in_progress` asks only whether a layer is
  * `running`, and nothing stops a review being there *and* in one of the needs-you arrays:

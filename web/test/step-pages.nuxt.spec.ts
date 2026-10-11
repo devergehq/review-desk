@@ -150,6 +150,28 @@ describe('the shell every step page sits in', () => {
     expect(pull!.attributes('href')).toBe('https://github.com/acme/portal/pull/514')
   })
 
+  /**
+   * **All five pages that have one, and the index that redirects to the first.**
+   *
+   * DEV-936's first criterion names six pages, and `ReviewStepPage` is the shell all of
+   * them sit in — so one assertion on one page would be an assertion about the component
+   * and a claim about the other five. Alternatives and Solution are mounted here; the code
+   * review page and the draft page have their own specs, and `/reviews/{id}` is a redirect
+   * to Understand rather than a page, which `screens.nuxt.spec.ts` holds.
+   */
+  it('links the pull request on every step page, not only the first', async () => {
+    for (const [name, open] of [
+      ['Understand', understand],
+      ['Alternatives', alternatives],
+      ['Solution', solution],
+    ] as const) {
+      const page = await open(STRUCTURED)
+      const [pull] = wayOut(page)
+      expect(pull, `${name} carries the link`).toBeDefined()
+      expect(pull!.attributes('href'), name).toBe('https://github.com/acme/portal/pull/514')
+    }
+  })
+
   it('opens both links in a new tab, and says so where only a reader would not see it', async () => {
     const page = await understand(OLD_WAY)
     const links = wayOut(page)

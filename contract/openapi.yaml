@@ -3877,27 +3877,29 @@ components:
         with the agent and `posted_awaiting_author` is with the author, and neither is in
         `totals.items` — see `InboxTotals`.
 
-        **The ticket's id and address are on the three arrays that are waiting on the
-        developer**: `briefs_to_confirm`, `drafts_to_approve` and `author_replies`. A
-        client drawing one row per review — which is what DEV-876 requires of the queue —
-        builds that row from these three, so a review waiting on the developer reaches a
-        row carrying the pair whatever of the three it is waiting for.
+        **One row per review, built from the three arrays that wait on a developer's act**
+        — `briefs_to_confirm`, `drafts_to_approve` and `author_replies` — with
+        `in_progress` and `posted_awaiting_author` **joined onto** a row one of those three
+        already made. That is DEV-876's rule and it is a requirement on a client, not a
+        convenience: a review in two arrays is one thing to do, not one thing to do twice.
+        The example holds exactly that case — review 12 is in `author_replies` *and* in
+        `posted_awaiting_author`, and is one row.
 
-        It was on `briefs_to_confirm` alone to begin with, which was a bug: a review whose
+        **The ticket's id and address are on those three.** So a review waiting on the
+        developer reaches a row carrying the pair whatever of the three put it there. It
+        was on `briefs_to_confirm` alone to begin with, which was a bug: a review whose
         brief had been confirmed and whose draft was waiting had a row, an address on the
         record, and no way to reach it — while the Reviews list showed the link for that
         same review.
 
-        **`in_progress` and `posted_awaiting_author` do not carry it, and a row built from
-        one of those alone therefore cannot link its ticket.** That is a gap, stated here
-        rather than implied: a review with a session running on it and nothing waiting on
-        the developer draws a row under "With the agent" with a link to its pull request
-        and none to its ticket, while `GET /reviews` links both for the same review. It is
-        left because `InboxInProgressItem`'s shape is being changed by DEV-933 in parallel
-        and widening it here would be two changes to one schema at once — not because the
-        two groups are joined onto a row the other three made. An earlier wording claimed
-        that, and it was false: both arrays hold reviews that are in no other array, and
-        those reviews draw their own rows.
+        **The two joined arrays do not carry the pair, and a review in one of them and in
+        none of the three is therefore a row that cannot link its ticket.** The join is not
+        all those arrays do: `in_progress` holds reviews nothing is waiting on the developer
+        for — 18 and 19 in the example — and `posted_awaiting_author` holds 14, and each of
+        those draws a row of its own. Those rows link a pull request and no ticket, while
+        `GET /reviews` links both for the same review. A gap, stated rather than implied,
+        and left because `InboxInProgressItem`'s shape is being changed by DEV-933 in
+        parallel: widening it here would be two changes to one schema at once.
       properties:
         totals: { $ref: '#/components/schemas/InboxTotals' }
         briefs_to_confirm:

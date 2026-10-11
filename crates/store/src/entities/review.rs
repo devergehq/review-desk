@@ -206,8 +206,23 @@ impl Store {
         // Checked first, so a bad id is NotFound rather than a silent update of
         // nothing.
         let held = self.get_review(id)?;
-        let ticket_url = check_ticket(facts, held.ticket_id)?;
+        let ticket_url = check_ticket(facts, held.ticket_id.clone())?;
         let ticket_id = normalise::optional_fact(facts.ticket_id.as_deref());
+
+        // **A call with nothing to write writes nothing, and says so by not marking the
+        // review active.** The guard was in `open_review_with` alone, which is one level
+        // away from the method that can break the invariant: the `UPDATE` below is a no-op
+        // when every fact is absent, but `mark_review_active` after it is not, and
+        // `last_activity_at` is what the queue reads for "last written to 4 min ago" and
+        // for whether a session looks alive. The one other caller guards itself today; a
+        // future one would have got the old behaviour back for free.
+        //
+        // **After the checks, not before.** A refused `ticket_url` is still refused even
+        // though it would have written nothing — a caller that passed a `javascript:`
+        // address wants to be told, not quietly told nothing happened.
+        if facts.is_empty() {
+            return Ok(held);
+        }
 
         self.conn.execute(
             "UPDATE reviews SET
@@ -527,18 +542,15 @@ fn validate(new: NewReview) -> Result<NewReview> {
         });
     }
 
-    let url = ticket_url(new.ticket_url.as_deref())?;
+    // The same pairing rule, through the same function, so the two writers cannot drift
+    // apart in what they refuse or in what they say about it. A review being created holds
+    // nothing yet, which is what the `None` is.
+    let url = paired(
+        ticket_url(new.ticket_url.as_deref())?,
+        new.ticket_id.as_deref(),
+        None,
+    )?;
     let id = normalise::optional_fact(new.ticket_id.as_deref());
-    if url.is_some() && id.is_none() {
-        // The same pairing rule `check_ticket` holds, for the one writer that does not go
-        // through it: a review created with an address and no id holds a value nothing
-        // draws.
-        return Err(StoreError::InvalidValue {
-            field: "ticket_id",
-            value: String::new(),
-            expected: "the ticket's id, which is what its address is drawn as".to_string(),
-        });
-    }
 
     Ok(NewReview {
         repo: repo.to_string(),
@@ -546,6 +558,62 @@ fn validate(new: NewReview) -> Result<NewReview> {
         ticket_id: id,
         ticket_url: url,
         ..new
+    })
+}
+
+/// The two ticket facts, checked together, and the address as it will be stored.
+///
+/// `held` is the id already on the record — `None` for a review that does not exist yet —
+/// because a session may record the id on one call and the address on a later one.
+fn check_ticket(facts: &ReviewFacts, held: Option<String>) -> Result<Option<String>> {
+    paired(
+        ticket_url(facts.ticket_url.as_deref())?,
+        facts.ticket_id.as_deref(),
+        held.as_deref(),
+    )
+}
+
+/// An address is refused unless a ticket id goes with it, from this call or the record.
+///
+/// **Nothing would ever draw an address with no id.** Both renderers key on the id, which
+/// is the link's *text* — an address drawn as its own text is a link a reader has to parse
+/// rather than read — so a `ticket_url` stored beside a null `ticket_id` is a value that
+/// reaches no screen and exists only in `review show`. A silent no-op, and the kind of
+/// silent that looks like success.
+///
+/// **All three ids are read through [`normalise::optional_fact`], and that is the whole
+/// care this function needs.** Reading any one of them more loosely than the others is
+/// what this check has twice been let through by: first the *passed* id, tested with
+/// `is_none()` while the address was normalised, so `--ticket "" --ticket-url https://…`
+/// passed; then the *held* id, tested the same way, so a review whose stored id was already
+/// `""` — which `--ticket ""` used to write — satisfied the "the record holds one" branch.
+/// One function, one rule, three fields.
+///
+/// **Shared by both writers**, so the two cannot drift apart in what they refuse or in what
+/// they say about it. `create_review` and `set_review_facts` are two ways to the same two
+/// columns.
+fn paired(url: Option<String>, passed: Option<&str>, held: Option<&str>) -> Result<Option<String>> {
+    if url.is_none()
+        || normalise::optional_fact(passed).is_some()
+        || normalise::optional_fact(held).is_some()
+    {
+        return Ok(url);
+    }
+
+    Err(StoreError::InvalidValue {
+        field: "ticket_id",
+        // **What was passed, not an empty string regardless.** `InvalidValue` formats as
+        // `{field} holds {value:?}`, so a hard-coded `""` told a caller who passed
+        // `--ticket "  "` that the field held nothing, and told one who passed no
+        // `--ticket` at all about a value they never gave. The id as it arrived is true in
+        // both cases, and the `expected` clause below carries the reason without claiming
+        // anything about which case this is.
+        value: passed.unwrap_or_default().to_string(),
+        expected: concat!(
+            "a ticket id beside the address, in this call or already on the record: ",
+            "an address is drawn as its id, so one with no id reaches no screen",
+        )
+        .to_string(),
     })
 }
 
@@ -565,47 +633,6 @@ fn validate(new: NewReview) -> Result<NewReview> {
 /// refused with the rest: a ticket read over plain HTTP is a ticket read by anyone on the
 /// path, and Review Desk's own rule is that it never fetches a tracker, so there is no
 /// case where the insecure form is the only one available.
-/// The two ticket facts, checked together, and the address as it will be stored.
-///
-/// `held` is the id already on the record — `None` for a review that does not exist yet —
-/// because a session may record the id on one call and the address on a later one.
-///
-/// **An address with no id anywhere is refused.** Nothing would ever draw it: both
-/// renderers key on the id, which is the link's text, and an address drawn as its own text
-/// is a link a reader has to parse rather than read. So a `ticket_url` stored beside a null
-/// `ticket_id` is a value that exists only in `review show` — a silent no-op, and the kind
-/// of silent that looks like success.
-fn check_ticket(facts: &ReviewFacts, held: Option<String>) -> Result<Option<String>> {
-    let url = ticket_url(facts.ticket_url.as_deref())?;
-
-    // **The id is read the way the address is: blank is absent.** Checked as
-    // `facts.ticket_id.is_none()` it was not, and `--ticket "" --ticket-url https://…`
-    // from a shell whose variable was unset passed this check and stored an address beside
-    // an id of `""` — which both renderers treat as no id, so the address reached no
-    // screen. Exactly the silent no-op this function exists to refuse, let through by
-    // reading one of its two fields more loosely than the other.
-    if url.is_some()
-        && normalise::optional_fact(facts.ticket_id.as_deref()).is_none()
-        && held.is_none()
-    {
-        return Err(StoreError::InvalidValue {
-            field: "ticket_id",
-            value: String::new(),
-            // **The last clause says no id was passed**, because the message this variant
-            // formats begins `ticket_id holds ""` — which, for a call that passed no
-            // `--ticket` at all, reads as a complaint about a value the caller never gave
-            // and sends them looking for it.
-            expected: concat!(
-                "the ticket's id, which is what its address is drawn as; ",
-                "this call passed none and the review holds none",
-            )
-            .to_string(),
-        });
-    }
-
-    Ok(url)
-}
-
 fn ticket_url(given: Option<&str>) -> Result<Option<String>> {
     let Some(given) = normalise::optional_fact(given) else {
         return Ok(None);

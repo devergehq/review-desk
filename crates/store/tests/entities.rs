@@ -2,12 +2,13 @@
 
 mod common;
 
-use common::{new_review, temp_store};
+use common::{db_path, new_review, temp_store};
 use review_desk_store::{
-    Actor, BriefOption, Disposition, FindingRef, NewBrief, NewFinding, NewOutcome, NewReview,
-    NewRule, NitTicketStatus, OptionProposer, OutcomeKind, Review, ReviewFacts, RuleScope,
-    RuleStage, Severity, StoreError,
+    Actor, BriefOption, Clock, Disposition, FindingRef, NewBrief, NewFinding, NewOutcome,
+    NewReview, NewRule, NitTicketStatus, OptionProposer, OutcomeKind, Review, ReviewFacts,
+    RuleScope, RuleStage, Severity, Store, StoreError,
 };
+use tempfile::TempDir;
 
 /// A review to hang the other entities off.
 fn seed_review(store: &review_desk_store::Store) -> Review {
@@ -857,8 +858,19 @@ fn a_blank_ticket_id_is_absent_rather_than_an_id() {
 /// and marked the review active anyway.
 #[test]
 fn a_call_whose_only_fact_is_blank_does_not_mark_the_review_active() {
-    let (_dir, store) = temp_store();
-    let review = seed_review(&store);
+    // **A clock the test holds, and moved between the write and the check.** With the
+    // system clock this assertion could not fail: `Timestamp` is whole seconds, the whole
+    // test runs inside one, so `last_activity_at` read the same either way and the
+    // behavioural half of this test was inert — which is what reviewing it found. Measured:
+    // with the fix reverted and the `is_empty` assertion removed, the system-clock version
+    // still passed.
+    let dir = TempDir::new().expect("temporary directory");
+    let clock = Clock::fixed(1_760_000_000);
+    let store = Store::open_with_clock(db_path(&dir), clock.clone()).expect("open store");
+
+    let review = store
+        .create_review(new_review("devergehq/review-desk", 12, "deadbeef", 1))
+        .expect("seed review");
     let before = store.get_review(review.id).unwrap().last_activity_at;
 
     for blank in [
@@ -872,6 +884,11 @@ fn a_call_whose_only_fact_is_blank_does_not_mark_the_review_active() {
         },
     ] {
         assert!(blank.is_empty(), "a blank ticket field is not a fact");
+
+        // A minute on, so a write would be visible and the assertion can fail.
+        let moved = clock.advance(60);
+        assert_ne!(Some(moved), before, "the clock really did move");
+
         let opened = store
             .open_review_with("devergehq/review-desk", 12, "deadbeef", &blank)
             .expect("reopen with nothing to write");
@@ -880,6 +897,55 @@ fn a_call_whose_only_fact_is_blank_does_not_mark_the_review_active() {
             "nothing was written, so nothing says the review was touched"
         );
     }
+
+    // **And `set_review_facts` holds the same invariant on its own**, because that is the
+    // method that can break it: the `UPDATE` is a no-op when every fact is absent and the
+    // activity mark after it is not. It was guarded in `open_review_with` alone, one level
+    // away from the code that writes.
+    let direct = clock.advance(60);
+    assert_ne!(Some(direct), before, "the clock moved again");
+    let quiet = store
+        .set_review_facts(
+            review.id,
+            &ReviewFacts {
+                ticket_url: Some(String::new()),
+                ..Default::default()
+            },
+        )
+        .expect("nothing to write");
+    assert_eq!(
+        quiet.last_activity_at, before,
+        "a no-op write does not touch the review's activity"
+    );
+
+    // A refused value is still refused, even though it too would have written nothing: a
+    // caller that passed a `javascript:` address wants to be told.
+    match store.set_review_facts(
+        review.id,
+        &ReviewFacts {
+            ticket_url: Some("javascript:alert(1)".to_string()),
+            ..Default::default()
+        },
+    ) {
+        Err(StoreError::InvalidValue { field, .. }) => assert_eq!(field, "ticket_url"),
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+
+    // And a call that *does* write moves it, so the assertions above are about the blanks
+    // rather than about the writers never marking anything active.
+    let wrote = clock.advance(60);
+    let set = store
+        .open_review_with(
+            "devergehq/review-desk",
+            12,
+            "deadbeef",
+            &ReviewFacts {
+                ticket_id: Some("ABC-231".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("reopen with a fact to write");
+    assert_eq!(set.review.last_activity_at, Some(wrote));
 }
 
 /// An address with nothing in it is an argument nobody filled in, not a mistake.
