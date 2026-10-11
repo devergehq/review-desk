@@ -385,9 +385,15 @@ describe('the queue', () => {
 
   it('links a pull request of the developer’s own out to GitHub rather than writing to it', async () => {
     const page = await shown(Inbox)
+    /*
+     * **Found by what it says, not by being the first GitHub link on the page.** It was
+     * the first until DEV-936 put a "GitHub" link on every row above it, and "the first
+     * one" was never what this test is about: the claim is that *this* row's own
+     * destination is the pull request, which is what its action cell says out loud.
+     */
     const out = page
       .findAll('a')
-      .find(link => link.attributes('href')?.startsWith('https://github.com/'))
+      .find(link => link.text().includes('Open on GitHub'))
     expect(out).toBeDefined()
     expect(out!.attributes('href')).toBe('https://github.com/acme/portal/pull/415')
     expect(out!.attributes('rel')).toContain('noopener')
@@ -488,6 +494,89 @@ describe('the queue', () => {
     for (const row of rows) {
       expect(row.attributes('href')).toMatch(/^\/reviews\/\d+\/understand$/)
     }
+  })
+
+  /* ------------- The two ways out of a row (DEV-936) ------------- */
+
+  /**
+   * The links beside a row, and the row they are beside.
+   *
+   * Found by `.line` rather than by `.row`, because the point of the assertion below is
+   * that they are **not** inside the row.
+   */
+  function lines(page: VueWrapper) {
+    return page.findAll('.line').map(line => ({
+      row: line.find('.row'),
+      out: line.findAll('.out-link'),
+    }))
+  }
+
+  it('carries a pull request link and a ticket link on a queue row', async () => {
+    const page = await shown(Inbox)
+    /* Review 17 is `acme/portal#412`, ticket ABC-231, and the record holds its address. */
+    const first = lines(page).find(line => line.row.text().includes('#412'))
+    expect(first, 'the needs-you row for #412').toBeDefined()
+
+    const [pull, ticket] = first!.out
+    expect(pull!.attributes('href')).toBe('https://github.com/acme/portal/pull/412')
+    expect(pull!.text()).toContain('GitHub')
+    expect(ticket!.attributes('href')).toBe('https://linear.app/acme/issue/ABC-231')
+    expect(ticket!.text()).toContain('ABC-231')
+
+    for (const link of [pull!, ticket!]) {
+      expect(link.attributes('target')).toBe('_blank')
+      expect(link.attributes('rel')).toBe('noopener noreferrer')
+      expect(link.find('.rd-visually-hidden').text()).toContain('opens in a new tab')
+    }
+  })
+
+  it('puts a row’s links beside the row’s own link, never inside it', async () => {
+    /*
+     * **The whole criterion, and it holds by construction rather than by a handler.** An
+     * `<a>` inside an `<a>` is not something a browser will draw — the parser closes the
+     * first — and a click handler that stopped the event would be a thing that can be got
+     * wrong and a thing a keyboard can get round. So the assertion is structural: no link
+     * out is a descendant of the link to the review.
+     */
+    for (const page of [await shown(Inbox), await shown(Reviews)]) {
+      const withLinks = lines(page).filter(line => line.out.length > 0)
+      expect(withLinks.length).toBeGreaterThan(0)
+
+      for (const line of withLinks) {
+        for (const link of line.out) {
+          expect(
+            line.row.element.contains(link.element),
+            'a link out is not inside the row',
+          ).toBe(false)
+        }
+        /* And the row still goes to the review, which is what it is for. */
+        expect(line.row.attributes('href') ?? line.row.attributes('to') ?? '')
+          .toMatch(/\/reviews\/\d+\//)
+      }
+    }
+  })
+
+  it('carries the same two links on a Reviews list row', async () => {
+    const page = await shown(Reviews)
+    const first = lines(page).find(line => line.row.text().includes('#412'))
+    expect(first, 'the list row for #412').toBeDefined()
+
+    expect(first!.out.map(link => link.attributes('href'))).toEqual([
+      'https://github.com/acme/portal/pull/412',
+      'https://linear.app/acme/issue/ABC-231',
+    ])
+  })
+
+  it('draws no ticket link on a row whose review has an id and no address', async () => {
+    const page = await shown(Reviews)
+    /* Review 41 is `#514`, ticket ABC-402, and the record holds no address for it. */
+    const row = lines(page).find(line => line.row.text().includes('#514'))
+    expect(row, 'the list row for #514').toBeDefined()
+
+    /* The pull request alone, and the ticket still named on the row's own meta line. */
+    expect(row!.out).toHaveLength(1)
+    expect(row!.out[0]!.attributes('href')).toBe('https://github.com/acme/portal/pull/514')
+    expect(row!.row.text()).toContain('ABC-402')
   })
 
   it('keeps the figures the boards do not draw, rather than dropping them', async () => {

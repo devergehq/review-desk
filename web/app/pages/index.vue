@@ -97,6 +97,14 @@ interface Waiting {
   title: string
   round: number | null
   ticket: string | null
+  /**
+   * Where that ticket is, when the record holds an address for it.
+   *
+   * Read from the same inbox item the id is read from, and `null` for a row whose review
+   * has an id and no address — which the row then does not link, the way the header does
+   * not.
+   */
+  ticketUrl: string | null
   is_delta: boolean
   brief: InboxBriefItem | null
   draft: InboxDraftItem | null
@@ -142,6 +150,7 @@ function needingYou(data: Inbox): Waiting[] {
       title: pull.title ?? 'no title recorded',
       round: null,
       ticket: null,
+      ticketUrl: null,
       is_delta: false,
       brief: null,
       draft: null,
@@ -157,6 +166,7 @@ function needingYou(data: Inbox): Waiting[] {
     const row = slot(item.review_id, item.pull_request)
     row.brief = item
     row.ticket = item.ticket_id ?? null
+    row.ticketUrl = ticketUrl(item.ticket_url)
   }
   for (const item of data.drafts_to_approve) {
     const row = slot(item.review_id, item.pull_request)
@@ -438,6 +448,15 @@ function queueRow(row: Waiting) {
     title: row.title,
     about: about(row),
     detail: [next.detail, ...alsoWaiting(row)].join(' · '),
+    /*
+     * **The two ways out of the review, built here rather than in the template.** The pull
+     * request's address is built from the row's own repository and number; the ticket's is
+     * the one the record holds, or nothing. `prUrl` is a function for a reason its own
+     * comment in `app/utils/links.ts` gives, and this is the call site that reason is about.
+     */
+    prHref: prUrl(row.repo, row.pr),
+    ticketHref: row.ticketUrl,
+    ticketId: row.ticket,
   }
 }
 
@@ -705,6 +724,9 @@ function handledLine(data: Inbox): string {
             action-tone="go"
             :age="row.at ? sinceLabel(row.at) : null"
             :age-unknown-because="row.atUnknown"
+            :pr-href="row.prHref"
+            :ticket-href="row.ticketHref"
+            :ticket-id="row.ticketId"
           >
             <span class="what-title">{{ row.what }}</span>
             <span class="rd-meta what-detail">{{ row.detail }}</span>
@@ -729,6 +751,7 @@ function handledLine(data: Inbox): string {
             :action-tone="item.session_alive === false ? 'warn' : 'quiet'"
             :age="item.in_state_since ? sinceLabel(item.in_state_since) : null"
             age-unknown-because="this review was recorded before Review Desk kept when a step started"
+            :pr-href="prUrl(item.pull_request.repo, item.pull_request.pr)"
           >
             <SegmentBar
               :segments="layerSegments(item)"
@@ -775,6 +798,7 @@ function handledLine(data: Inbox): string {
             action-tone="quiet"
             :age="item.posted_at ? sinceLabel(item.posted_at) : null"
             age-unknown-because="this review's GitHub id was recorded without a draft, so nothing holds when it was posted"
+            :pr-href="prUrl(item.pull_request.repo, item.pull_request.pr)"
           >
             <span class="what-title">{{ postedTitle(item) }}</span>
             <!--

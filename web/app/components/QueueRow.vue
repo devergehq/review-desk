@@ -21,6 +21,27 @@
  *
  * **The whole row is the link**, not a link inside it, so the thing you click is the thing
  * you read. At 390px the cells wrap onto their own lines in the order they are read.
+ *
+ * ## The two ways out, beside the row rather than inside it
+ *
+ * DEV-936 puts a review's pull request and its ticket on the row, so that either can be
+ * opened without opening the review first. They are a **sibling** of the row's own link,
+ * not a cell inside it: an `<a>` inside an `<a>` is not something a browser will draw —
+ * the parser closes the first one — and the criterion is that pressing one of these does
+ * not open the review. A sibling makes that true by construction rather than by a handler
+ * that stops the event, which is a thing that can be got wrong and a thing a keyboard can
+ * get round.
+ *
+ * ```
+ * ┌─ .line ─────────────────────────────────────────────────────────────────┐
+ * │ ┌─ .row, the link to the review ───────────────────────┐ ┌─ .out ─────┐ │
+ * │ │ #412 │ Retry failed … │ Draft ready │ 4 min │ Read … │ │ GitHub     │ │
+ * │ └──────────────────────────────────────────────────────┘ │ ABC-231    │ │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ * ```
+ *
+ * The line under a row is on `.line` now rather than on `.row`, so it runs the width of
+ * the row *and* its links instead of stopping short of them.
  */
 /*
  * **`NuxtLink` resolved to the component, not named as a string.** Measured in the built
@@ -51,6 +72,23 @@ withDefaults(
     ageUnknownBecause?: string
     /** Needs-you rows set the title in display type and give the row more air. */
     emphasis?: boolean
+    /**
+     * Where this row's pull request is, drawn beside the row.
+     *
+     * Left off for a row whose own destination is already the pull request — "Your pull
+     * requests" is that row, and a second link to where the row goes is noise.
+     */
+    prHref?: string | null
+    /**
+     * Where this row's ticket is, and the id to draw as the link's text.
+     *
+     * **Both or neither.** An id with no address is drawn by the header as text and is
+     * drawn here not at all: this is a row, and the meta line beside it already names the
+     * ticket. An address with no id has nothing to call itself but the address, and a link
+     * whose text is a URL is a link a reader has to parse.
+     */
+    ticketHref?: string | null
+    ticketId?: string | null
   }>(),
   {
     meta: null,
@@ -60,64 +98,110 @@ withDefaults(
     age: null,
     ageUnknownBecause: 'the inbox carries no time for this kind of item',
     emphasis: false,
+    prHref: null,
+    ticketHref: null,
+    ticketId: null,
   },
 )
 </script>
 
 <template>
-  <component
-    :is="to ? NuxtLink : href ? 'a' : 'div'"
-    :to="to ?? undefined"
-    :href="href ?? undefined"
-    :target="href ? '_blank' : undefined"
-    :rel="href ? 'noreferrer noopener' : undefined"
-    class="row"
-    :class="{ 'row--emphasis': emphasis }"
+  <div
+    class="line"
+    :class="{ 'line--emphasis': emphasis }"
   >
-    <span class="pr rd-mono">#{{ pr }}</span>
-
-    <span class="about">
-      <span :class="emphasis ? 'rd-display-row title' : 'title'">{{ title }}</span>
-      <span
-        v-if="meta"
-        class="rd-meta"
-      >{{ meta }}</span>
-    </span>
-
-    <span class="what">
-      <slot />
-    </span>
-
-    <span class="age rd-meta">
-      <template v-if="age">{{ age }}</template>
-      <NotMeasured
-        v-else
-        :because="ageUnknownBecause"
-        says="no time recorded"
-      />
-    </span>
-
-    <span
-      class="action"
-      :class="`action--${actionTone}`"
+    <component
+      :is="to ? NuxtLink : href ? 'a' : 'div'"
+      :to="to ?? undefined"
+      :href="href ?? undefined"
+      :target="href ? '_blank' : undefined"
+      :rel="href ? 'noreferrer noopener' : undefined"
+      class="row"
+      :class="{ 'row--emphasis': emphasis }"
     >
-      {{ action }}
+      <span class="pr rd-mono">#{{ pr }}</span>
+
+      <span class="about">
+        <span :class="emphasis ? 'rd-display-row title' : 'title'">{{ title }}</span>
+        <span
+          v-if="meta"
+          class="rd-meta"
+        >{{ meta }}</span>
+      </span>
+
+      <span class="what">
+        <slot />
+      </span>
+
+      <span class="age rd-meta">
+        <template v-if="age">{{ age }}</template>
+        <NotMeasured
+          v-else
+          :because="ageUnknownBecause"
+          says="no time recorded"
+        />
+      </span>
+
       <span
-        v-if="href"
-        class="rd-visually-hidden"
-      >, opens in a new tab</span>
+        class="action"
+        :class="`action--${actionTone}`"
+      >
+        {{ action }}
+        <span
+          v-if="href"
+          class="rd-visually-hidden"
+        >, opens in a new tab</span>
+      </span>
+    </component>
+
+    <!--
+      The two ways out, outside the row's own link. Each says where it goes and that it
+      opens elsewhere, because neither is something a reader can see coming.
+    -->
+    <span
+      v-if="prHref || (ticketHref && ticketId)"
+      class="out"
+    >
+      <a
+        v-if="prHref"
+        class="out-link"
+        :href="prHref"
+        target="_blank"
+        rel="noopener noreferrer"
+      >GitHub<span class="rd-visually-hidden">: pull request #{{ pr }}, opens in a new tab</span></a>
+      <a
+        v-if="ticketHref && ticketId"
+        class="out-link"
+        :href="ticketHref"
+        target="_blank"
+        rel="noopener noreferrer"
+      >{{ ticketId }}<span class="rd-visually-hidden">, on the tracker, opens in a new tab</span></a>
     </span>
-  </component>
+  </div>
 </template>
 
 <style scoped>
+/*
+ * **The row and its two links, on one line with one rule under it.** The rule is here and
+ * not on `.row` so that it runs under the links as well; before DEV-936 there was nothing
+ * beside the row for it to stop short of.
+ */
+.line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 20px;
+  align-items: center;
+  border-bottom: 1px solid var(--rd-line);
+}
+
 .row {
   display: flex;
+  flex: 1 1 auto;
   flex-wrap: wrap;
   gap: 6px 20px;
   align-items: center;
   padding: 12px 0;
-  border-bottom: 1px solid var(--rd-line);
+  min-width: 0;
   color: var(--rd-ink);
   text-decoration: none;
 }
@@ -205,6 +289,33 @@ withDefaults(
 }
 
 /*
+ * The two links, stacked at the end of the line and the same width down the page so the
+ * column reads as a column. Underlined rather than accent-coloured alone: at 13px beside a
+ * row of grey meta text, colour is the cue a reader misses.
+ */
+.out {
+  display: flex;
+  flex: 0 0 96px;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  font-size: 13px;
+  padding: 12px 0;
+}
+
+/* The same air the needs-you row gives itself, so the two cells line up vertically. */
+.line--emphasis .out {
+  padding: 16px 0;
+}
+
+.out-link {
+  max-width: 100%;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+
+/*
  * At a phone's width the five cells become five lines, and the right-aligned action would
  * read as belonging to the row below. Left-aligned, with the age beside it.
  */
@@ -221,6 +332,22 @@ withDefaults(
 
   .action {
     text-align: left;
+  }
+
+  /*
+   * At a phone's width the links are the last line of the row rather than a column at its
+   * end, and they sit side by side there: two stacked lines of one word each is three
+   * lines of furniture under one row.
+   */
+  .out {
+    flex: 1 1 100%;
+    flex-direction: row;
+    gap: 4px 12px;
+    padding: 0 0 12px;
+  }
+
+  .line--emphasis .out {
+    padding: 0 0 16px;
   }
 }
 </style>

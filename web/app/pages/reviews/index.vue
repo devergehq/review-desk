@@ -81,6 +81,11 @@ const repoTabs = computed(() => [
  * has carried `github_review_id` since the first slice.
  *
  * It is a state, not a mark: this page says where a review is and never how it went.
+ *
+ * **The ticket stays on this line even though the row now links it.** The line is what the
+ * page is read by — a review is found by scanning it — and a review whose record holds an
+ * id and no address has no link to be found by. Saying it twice for the reviews that have
+ * both is cheaper than saying it inconsistently.
  */
 function about(row: ReviewListItem): string {
   const parts = [row.review.repo]
@@ -182,6 +187,9 @@ function isEmpty(answer: { repo: string | null, reviews: ReviewListItem[] }): bo
             action-tone="quiet"
             :age="row.last_activity_at ? `last written to ${sinceLabel(row.last_activity_at)}` : null"
             age-unknown-because="nothing has written to this review since Review Desk started keeping when one last changed"
+            :pr-href="prUrl(row.review.repo, row.review.pr)"
+            :ticket-href="ticketUrl(row.review.ticket_url)"
+            :ticket-id="row.review.ticket_id"
           >
             <span class="step">{{ stepLabel(row) }}</span>
             <!--
