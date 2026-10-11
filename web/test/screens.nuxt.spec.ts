@@ -626,6 +626,30 @@ describe('the draft preview', () => {
   })
 
   /*
+   * **The one way out of a sign-off, offered where the sign-off was made.** A draft the
+   * hand-over refuses — one approved before the composition changed shape — could not be
+   * posted, rewritten or sent back, which the session building the posting half measured.
+   * The page offers taking the sign-off back, and says why on a draft that is stuck.
+   */
+  it('offers taking the sign-off back on an approved draft, and says why on a stale one', async () => {
+    expect((await useReviewDesk().approveDraft(41, 'request_changes')).ok).toBe(true)
+
+    const page = await open(41)
+    const back = page.findAll('button').find(one =>
+      one.text() === 'Take back the sign-off and send it back')
+    expect(back, 'the button is offered on an approved draft').toBeDefined()
+    expect(back!.attributes('disabled')).toBeUndefined()
+    expect(page.text()).toContain('Signed off. Will be posted as')
+
+    /* And the sign-off goes with it: the record holds no event once it is taken back. */
+    expect((await useReviewDesk().sendBackDraft(41, 'the index is in the old shape')).ok)
+      .toBe(true)
+    const after = await open(41)
+    expect(after.text()).toContain('Sent back.')
+    expect(after.text()).toContain('the index is in the old shape')
+  })
+
+  /*
    * **The body is an index, and the threads are the rest of what posts.** DEV-929: the
    * review on tc-portal#9585 went out as 309 lines with no index and two threads because
    * the posted body *was* the blocks joined. The page's own job did not change — nothing is

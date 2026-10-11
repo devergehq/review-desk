@@ -440,7 +440,11 @@ involves GitHub, and the session makes it: Review Desk never posts.
 review-desk draft posted --review "$REVIEW" --github-review gh-review-3312
 ```
 
-A draft goes `drafting → ready → approved → posted`, with `ready ⇄ sent_back`. The
+A draft goes `drafting → ready → approved → posted`, with `ready ⇄ sent_back` and
+`approved → sent_back`. **That last one is the way out of a sign-off**, and it is the
+developer's: it takes the sign-off back with it — the event, the time and whose assent it
+was are cleared — and it exists because a draft the hand-over refuses had nowhere else to
+go. A posted review is not sent back; what follows it is the next round. The
 command line can reach `drafting`, `ready` and `posted`. It cannot reach `approved` or
 `sent_back`: those are the developer's, in the dashboard. **And a change that would alter what the
 review posts is refused once the draft is approved** — moving a finding between the draft,
@@ -807,7 +811,7 @@ sessions call has no command for either.
 | Confirm the brief | the developer | the dashboard only |
 | Write the draft | the review session | `draft put` |
 | Sign off the draft, choosing the event | the developer | the dashboard only |
-| Send the draft back with a note | the developer | the dashboard only |
+| Send the draft back with a note, taking back a sign-off if there is one | the developer | the dashboard only |
 | Read what to post, once it is signed off | the review session | `draft handover` |
 | Post it and report the GitHub review | the review session | `draft posted` |
 

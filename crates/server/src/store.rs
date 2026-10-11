@@ -384,6 +384,11 @@ impl Records {
         self.with(|store| store.draft_threads(review_id))
     }
 
+    /// Whether the stored body is no longer what the draft's blocks compose to.
+    pub fn draft_body_is_stale(&self, review_id: i64) -> Result<bool, ApiError> {
+        self.with(|store| store.draft_body_is_stale(review_id))
+    }
+
     /// Record the developer's decision about one finding, and recompose the draft.
     ///
     /// One transaction in the store: the finding, the block, the body and the outcome that

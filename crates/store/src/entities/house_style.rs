@@ -134,18 +134,16 @@ impl Store {
         // is allowed to move on — the harvest reads outcomes back and a finding's round
         // status changes with them — and the body that was posted is the stored one, which
         // is what a session retrying step 2's "is it already up" check has to match on.
-        if draft.status == DraftStatus::Approved {
-            let composed = composition::compose(&self.conn, review_id)?;
-            if composed.trim_end_matches('\n') != draft.body.trim_end_matches('\n') {
-                return Err(StoreError::DraftStatus {
-                    review_id,
-                    found: draft.status,
-                    wanted: "a draft whose body is what its blocks compose to. This one was \
+        if draft.status == DraftStatus::Approved && self.draft_body_is_stale(review_id)? {
+            return Err(StoreError::DraftStatus {
+                review_id,
+                found: draft.status,
+                wanted: "a draft whose body is what its blocks compose to. This one was \
                              approved in an older shape, so posting it with the threads \
-                             would carry each anchored finding twice. Send it back and have \
-                             the session write it again",
-                });
-            }
+                             would carry each anchored finding twice. Take the sign-off \
+                             back, send it back with a note, and the session writes it \
+                             again",
+            });
         }
 
         let review = self.get_review(review_id)?;
@@ -156,6 +154,20 @@ impl Store {
             draft,
             threads,
         })
+    }
+
+    /// Whether the stored body is no longer what the draft's blocks compose to.
+    ///
+    /// **The one state the hand-over cannot serve, and the page has to be able to say so.**
+    /// Every write keeps the two in step, so this is false on a draft written by this
+    /// build; what it catches is a draft approved before the composition changed shape,
+    /// which an upgrade leaves behind. The way out is the developer's: take the sign-off
+    /// back, send it back with a note, and the session writes it again.
+    pub fn draft_body_is_stale(&self, review_id: i64) -> Result<bool> {
+        let draft = self.get_draft(review_id)?;
+        let composed = composition::compose(&self.conn, review_id)?;
+
+        Ok(composed.trim_end_matches('\n') != draft.body.trim_end_matches('\n'))
     }
 
     /// The inline threads this review's draft hands over, in severity order.

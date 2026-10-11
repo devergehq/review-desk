@@ -1214,3 +1214,132 @@ fn two_findings_on_one_line_are_told_apart_by_the_marker_and_not_by_the_line() {
     // differ by it even where everything else about where they sit is the same.
     assert_ne!(threads[0].body, threads[1].body);
 }
+
+#[test]
+fn a_body_the_blocks_no_longer_compose_to_is_not_handed_over_and_has_a_way_out() {
+    let (dir, store) = temp_store();
+    let review = house_shape(&store);
+    store
+        .approve_draft(
+            review,
+            review_desk_store::ReviewEvent::RequestChanges,
+            Actor::Developer,
+        )
+        .expect("the developer signs off");
+
+    // **The state an upgrade leaves behind, written the way the database holds it.** A
+    // draft approved before DEV-929 carries the body the old composition made — every
+    // finding a section, no index — beside blocks that would compose differently now.
+    // Nothing in this build can produce it, which is the point: every write composes the
+    // body from the blocks in the same transaction. So it is written in the database's own
+    // SQL, as `tests/rules.rs` ages a citation, rather than by adding a store function that
+    // exists so that a test can reach a state the real world reaches by upgrading.
+    let old_shape = "The approach fits the ticket.\n\n### Blocker · F1 · The column policy \
+                     is skipped\n\n**in diff** · `Open`\n";
+    let conn = rusqlite::Connection::open(common::db_path(&dir)).expect("the database");
+    conn.execute(
+        "UPDATE drafts SET body = ?2 WHERE review_id = ?1",
+        rusqlite::params![review, old_shape],
+    )
+    .expect("the body an older build composed");
+
+    assert!(store.draft_body_is_stale(review).expect("the standing"));
+    let message = store
+        .draft_handover(review)
+        .expect_err("a body the blocks do not compose to")
+        .to_string();
+    assert!(
+        message.contains("approved in an older shape") && message.contains("send it back"),
+        "the refusal names the state and the way out: {message}"
+    );
+
+    // **And the way out it names works.** This is the whole of what the worker half
+    // measured: before a send-back could take an approved draft, such a draft could not be
+    // handed over, could not be rewritten and could not be sent back, and the only
+    // transition left was posting the body the refusal exists to stop.
+    store
+        .send_back_draft(review, "the index is in the old shape; write it again")
+        .expect("the developer takes the sign-off back");
+
+    let draft = store.get_draft(review).expect("draft");
+    assert_eq!(draft.status, DraftStatus::SentBack);
+    assert_eq!(draft.event, None, "the sign-off went with it");
+    assert_eq!(draft.approved_at, None);
+
+    // The session sees it the way it sees every other send-back.
+    let waiting = store
+        .work_list(&review_desk_store::WorkFilter::default())
+        .expect("the work list");
+    let item = waiting
+        .iter()
+        .find(|item| item.review.id == review)
+        .expect("the review is waiting on the session");
+    assert_eq!(item.kind, review_desk_store::WorkKind::DraftSentBack);
+    assert_eq!(
+        item.note.as_deref(),
+        Some("the index is in the old shape; write it again")
+    );
+
+    // It writes the draft again, the developer signs it off again, and the hand-over
+    // serves it.
+    store
+        .put_draft(
+            review,
+            NewDraft {
+                body: String::new(),
+                status: DraftStatus::Ready,
+                lint: None,
+                sections: Some(house_blocks()),
+            },
+        )
+        .expect("the session writes it again");
+    assert!(!store.draft_body_is_stale(review).expect("the standing"));
+
+    store
+        .approve_draft(
+            review,
+            review_desk_store::ReviewEvent::RequestChanges,
+            Actor::Developer,
+        )
+        .expect("and the developer signs it off again");
+
+    let handover = store.draft_handover(review).expect("handed over");
+    assert_eq!(handover.threads.len(), 4);
+    assert!(handover.draft.body.contains("### Open — needs a decision"));
+}
+
+#[test]
+fn a_sign_off_taken_back_while_a_session_is_mid_post_stops_the_post() {
+    let (_dir, store) = temp_store();
+    let review = house_shape(&store);
+    store
+        .approve_draft(
+            review,
+            review_desk_store::ReviewEvent::RequestChanges,
+            Actor::Developer,
+        )
+        .expect("the developer signs off");
+
+    // **The race the send-back opens, in the order that matters.** A session reads the
+    // approved draft, starts posting, and the developer takes the sign-off back while it is
+    // in flight. What must not happen is the old body being recorded as posted — and
+    // `post_draft` takes an approved draft and nothing else, which is what closes it.
+    store
+        .send_back_draft(review, "hold on — the blocker is wrong")
+        .expect("the developer takes it back");
+
+    let refused = store
+        .post_draft(review, "gh-review-3312")
+        .expect_err("a sent-back draft is not posted");
+    assert!(
+        refused.to_string().contains("approved"),
+        "the refusal says what it wanted: {refused}"
+    );
+
+    // And the review holds no GitHub review id, which is the fact a second session would
+    // otherwise read as "already posted".
+    assert_eq!(
+        store.get_review(review).expect("review").github_review_id,
+        None
+    );
+}

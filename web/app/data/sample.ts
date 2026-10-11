@@ -792,17 +792,24 @@ function sendBackDraft(id: number, note: string): DraftDetail {
 
   const detail = draftById(id)
   if (!detail) throw notFound(`draft on review ${id}`)
-  if (detail.draft.status !== 'ready') {
+  /*
+   * **Ready, or approved and not yet posted.** Taking a sign-off back is the one transition
+   * out of `approved`, and it is the developer's: without it a draft the hand-over refuses
+   * cannot be posted, rewritten or sent back at all.
+   */
+  if (detail.draft.status !== 'ready' && detail.draft.status !== 'approved') {
     throw conflict(
-      `This draft is ${detail.draft.status} and only a draft that is ready can be sent `
-      + 'back.',
+      `This draft is ${detail.draft.status} and only a draft that is ready, or one approved `
+      + 'and not yet posted, can be sent back.',
     )
   }
 
   detail.draft.status = 'sent_back'
   detail.draft.sent_back_note = trimmed
   detail.draft.sent_back_at = nowIso()
+  /* The sign-off goes with it: the record should not hold one that was withdrawn. */
   detail.draft.event = null
+  detail.draft.approved_at = null
 
   const owner = reviewById(id)
   if (owner) owner.draft_status = 'sent_back'

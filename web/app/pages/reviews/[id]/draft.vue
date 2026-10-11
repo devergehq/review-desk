@@ -125,6 +125,17 @@ function decided(data: DraftDetail): boolean {
   return data.draft.status !== 'ready'
 }
 
+/**
+ * Whether the draft can be sent back: one that is ready, or one signed off and not posted.
+ *
+ * **Not `!decided`**, which is what it was. Taking a sign-off back is the one way out of
+ * `approved`, and it is the developer's — the session has no route to it, as it has none to
+ * approving. A posted review is on GitHub and what follows it is the next round.
+ */
+function canSendBack(data: DraftDetail): boolean {
+  return data.draft.status === 'ready' || data.draft.status === 'approved'
+}
+
 function said(result: WriteResult): boolean {
   notice.value = noticeFor(result)
   return result.ok
@@ -219,6 +230,16 @@ const openFindings = computed(
 
 function statusLine(data: DraftDetail): string {
   const draft = data.draft
+  if (draft.status === 'approved' && data.body_is_stale) {
+    /*
+     * **The one state the session cannot post**, and the page has to say so: this body was
+     * composed in an older shape, so handing it over with the threads would post each
+     * anchored finding twice. The way out is below, and it is the only thing offered.
+     */
+    return 'Signed off, and it cannot be posted: this body was composed before the review '
+      + 'took its present shape, so posting it would carry each finding on the code twice. '
+      + 'Take the sign-off back and send it back; the session writes it again.'
+  }
   if (draft.status === 'approved') {
     return `Signed off. Will be posted as "${eventLabel(draft.event)}" — waiting for the `
       + 'session to post it.'
@@ -632,14 +653,27 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                       </div>
                     </div>
 
+                    <!--
+                      **The one transition out of a sign-off.** A draft that is approved and
+                      not yet posted can be sent back, which takes the sign-off with it —
+                      and without that a draft the hand-over refuses has nowhere to go at
+                      all: it cannot be posted, cannot be rewritten, and could not be sent
+                      back. Measured by the session building the posting half of DEV-929.
+                      The label says what the button does, because taking back a sign-off is
+                      not the same act as sending back a draft nobody has signed.
+                    -->
                     <template v-if="!sendingBack">
                       <button
                         type="button"
                         class="rd-btn"
-                        :disabled="decided(data) || working"
+                        :disabled="!canSendBack(data) || working"
                         @click="sendingBack = true"
                       >
-                        Send back with a note
+                        {{
+                          data.draft.status === 'approved'
+                            ? 'Take back the sign-off and send it back'
+                            : 'Send back with a note'
+                        }}
                       </button>
                     </template>
                     <div

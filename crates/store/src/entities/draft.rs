@@ -336,6 +336,22 @@ impl Store {
     ///
     /// The note is required: a bare rejection teaches the session nothing, and the
     /// whole point of the record is that it can be learned from.
+    ///
+    /// **An approved draft can be sent back too, and that is the one transition out of a
+    /// sign-off.** It took `ready` alone until DEV-929, and the gap was measured rather
+    /// than argued: a draft the hand-over refuses — one approved before the composition
+    /// changed shape — could not be sent back, could not be rewritten, and the only
+    /// transition left was posting the body the refusal existed to stop. The draft was
+    /// terminal, and a stuck review is worse than the thing the refusal prevents.
+    ///
+    /// So a developer who has signed off and changed their mind, for any reason, has
+    /// somewhere to go while nothing is posted. **The sign-off is taken back with it**:
+    /// the event, the time and whose assent it was are cleared, because the record should
+    /// not hold a sign-off that has been withdrawn. The trail keeps what happened — layer 6
+    /// was finished and is in progress again, carrying the note.
+    ///
+    /// **A posted draft is not sent back.** It is on GitHub; what follows a posted review
+    /// is the next round, not an edit of the last one.
     pub fn send_back_draft(&self, review_id: i64, note: &str) -> Result<Draft> {
         let note = note.trim();
         if note.is_empty() {
@@ -350,25 +366,35 @@ impl Store {
         let draft = self.get_draft(review_id)?;
 
         let already_sent_back = match draft.status {
-            DraftStatus::Ready => false,
+            DraftStatus::Ready | DraftStatus::Approved => false,
             DraftStatus::SentBack if draft.sent_back_note.as_deref() == Some(note) => true,
             found => {
                 return Err(StoreError::DraftStatus {
                     review_id,
                     found,
-                    wanted: "only a draft that is ready can be sent back",
+                    wanted: "a draft that is ready, or one approved and not yet posted. A \
+                             posted review is on GitHub, and what follows it is the next \
+                             round rather than an edit of the last one",
                 })
             }
         };
 
         if !already_sent_back {
             let at = self.now();
+            // **The sign-off is cleared with it.** A draft sent back is not approved, and a
+            // record still holding the event, the time and whose assent it was would say
+            // otherwise — to `draft show`, which a session polls, and to anyone reading the
+            // row. What happened is not lost: the trail has layer 6 finished and then in
+            // progress again, carrying the note.
             self.conn.execute(
                 "UPDATE drafts SET
                      status         = ?2,
                      sent_back_note = ?3,
                      sent_back_at   = ?4,
-                     updated_at     = ?4
+                     updated_at     = ?4,
+                     event          = NULL,
+                     approved_at    = NULL,
+                     approved_by    = NULL
                  WHERE review_id = ?1",
                 params![review_id, DraftStatus::SentBack, note, at],
             )?;

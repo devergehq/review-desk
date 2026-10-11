@@ -560,6 +560,19 @@ paths:
       description: |
         Behind "Send back with a note". Sets the status to `sent_back` and stores the
         note, which is the instruction the session reworks against.
+
+        **A draft that is approved and not yet posted can be sent back too, and doing so
+        takes the sign-off back**: the event, the time and whose assent it was are cleared,
+        because the record should not hold a sign-off that has been withdrawn. It is the
+        one transition out of `approved`, and it is the developer's — nothing here approves
+        or posts anything, and a session still cannot reach either.
+
+        Without it a draft the hand-over refuses had nowhere to go: it could not be sent
+        back, could not be rewritten, and the only transition left was posting the body the
+        refusal existed to stop. Measured by the DEV-929 worker half.
+
+        A **posted** draft is not sent back. It is on GitHub, and what follows it is the
+        next round rather than an edit of the last one.
       requestBody:
         required: true
         content:
@@ -576,7 +589,9 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: The draft is not in a state that can be sent back.
+          description: |
+            The draft is drafting or posted: only one that is ready, or approved and not
+            yet posted, can be sent back.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -2825,7 +2840,8 @@ components:
     DraftDetail:
       type: object
       additionalProperties: false
-      required: [draft, review, lint, sections, threads, edits, held_back, nit_ticket]
+      required:
+        [draft, review, lint, sections, threads, body_is_stale, edits, held_back, nit_ticket]
       description: Everything the Draft preview screen shows.
       properties:
         draft: { $ref: '#/components/schemas/Draft' }
@@ -2863,6 +2879,18 @@ components:
             index and a comment on the code, so the screen that exists so nothing is posted
             unread has to draw both. They change together: cutting a finding takes its row
             and its thread.
+        body_is_stale:
+          type: boolean
+          description: |
+            Whether the stored body is no longer what the draft's blocks compose to — the
+            one state the hand-over cannot serve.
+
+            **False on every draft this API wrote**: each write composes the body from the
+            blocks in the same transaction. What it catches is a draft approved before the
+            composition changed shape, which an upgrade leaves behind and which would post
+            each anchored finding twice, once as a section and once as a comment. The way
+            out is the developer's: take the sign-off back by sending the draft back with a
+            note, and the session writes it again.
         edits:
           type: array
           items: { $ref: '#/components/schemas/DraftEdit' }

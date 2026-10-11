@@ -1793,6 +1793,11 @@ fn draft_detail(store: &Store, review_id: i64) -> Value {
             .iter()
             .map(draft_section_document)
             .collect::<Vec<_>>(),
+        // Whether the stored body is still what the blocks compose to. False on every
+        // draft this build writes, and the one state the hand-over cannot serve. DEV-929.
+        "body_is_stale": store
+            .draft_body_is_stale(review_id)
+            .expect("the body's standing"),
         // The inline threads the draft hands over, which the body does not carry: an
         // anchored finding is a row in the index and a comment on the code. DEV-929.
         "threads": store
