@@ -156,6 +156,7 @@ fn whole_brief() -> NewBrief {
             BriefPart {
                 title: "The delivery row".to_string(),
                 summary: "One row per attempt.".to_string(),
+                one_line: Some("One row per attempt, with what became of it.".to_string()),
                 fixes: vec![2],
                 files: vec![BriefPartFile {
                     path: "app/Models/WebhookDelivery.php".to_string(),
@@ -167,6 +168,7 @@ fn whole_brief() -> NewBrief {
             BriefPart {
                 title: "The queue worker".to_string(),
                 summary: "Sends a delivery and retries it.".to_string(),
+                one_line: None,
                 fixes: vec![1, 2],
                 files: vec![
                     BriefPartFile {
@@ -403,6 +405,7 @@ fn a_solution_part_fixing_a_problem_that_is_not_there_is_refused_by_field_and_nu
             parts: vec![BriefPart {
                 title: "a part".to_string(),
                 summary: "one line".to_string(),
+                one_line: None,
                 fixes: vec![4],
                 files: Vec::new(),
             }],
@@ -583,6 +586,7 @@ fn a_file_outside_the_diff_with_lines_against_it_is_refused() {
             parts: vec![BriefPart {
                 title: "a part".to_string(),
                 summary: "one line".to_string(),
+                one_line: None,
                 fixes: Vec::new(),
                 files: vec![BriefPartFile {
                     path: "app/Support/Backoff.php".to_string(),
@@ -607,6 +611,7 @@ fn one_file_cannot_belong_to_two_parts() {
     let part = |title: &str| BriefPart {
         title: title.to_string(),
         summary: "one line".to_string(),
+        one_line: None,
         fixes: Vec::new(),
         files: vec![BriefPartFile {
             path: "jobs/DeliverWebhook.php".to_string(),
@@ -892,6 +897,123 @@ fn a_blank_label_on_a_problem_is_refused_rather_than_stored() {
         },
     ));
     assert_eq!(refused, "problems.label");
+    assert!(expected.contains("leave the field out"), "{expected}");
+}
+
+/// A part's one line: kept as written, absent when it was not written, never empty.
+///
+/// **The three states are what the Solution page branches on.** Its table draws the one line
+/// under the title when there is one and cuts the summary to a line when there is not —
+/// and on the review board A10 was measured against those summaries ran 33 to 52 words, so
+/// the branch is the difference between a row and four wrapped lines. A blank one stored as
+/// a one line would draw an empty row under the title, which looks exactly like a page that
+/// failed to join.
+#[test]
+fn a_solution_part_keeps_the_one_line_it_was_written_with() {
+    let (_dir, store) = temp_store();
+    let review = seed(&store);
+
+    let part = |title: &str, one_line: Option<&str>| BriefPart {
+        title: title.to_string(),
+        summary: "What this part did, at the length a session writes it.".to_string(),
+        one_line: one_line.map(str::to_string),
+        fixes: Vec::new(),
+        files: vec![BriefPartFile {
+            path: format!("app/{title}.php"),
+            lines_added: 3,
+            lines_removed: 1,
+            in_diff: true,
+        }],
+    };
+
+    let stored = store
+        .put_brief(
+            review.id,
+            NewBrief {
+                problems: Vec::new(),
+                flow_before: Vec::new(),
+                flow_after: Vec::new(),
+                flow_before_caption: None,
+                flow_after_caption: None,
+                options: Vec::new(),
+                blind_pass: None,
+                parts: vec![
+                    part(
+                        "Written",
+                        Some("The queue keeps the attempt under its own name."),
+                    ),
+                    part("Unwritten", None),
+                ],
+                open_choices: Vec::new(),
+                disagreements: Vec::new(),
+                ..whole_brief()
+            },
+        )
+        .expect("a one line is optional, one part each way");
+
+    assert_eq!(
+        stored.parts[0].one_line.as_deref(),
+        Some("The queue keeps the attempt under its own name."),
+        "the one line is kept as written, not shortened from the summary"
+    );
+    assert_eq!(
+        stored.parts[1].one_line, None,
+        "a part written with no one line reads back with none, not with its summary"
+    );
+
+    // And no length is enforced, which is migration 10's ruling about every field of the
+    // brief: a one line that runs to three lines is a writing fault and belongs to the
+    // linter in Locus.
+    let long = "a line nobody should write ".repeat(12);
+    let stored = store
+        .put_brief(
+            review.id,
+            NewBrief {
+                problems: Vec::new(),
+                flow_before: Vec::new(),
+                flow_after: Vec::new(),
+                flow_before_caption: None,
+                flow_after_caption: None,
+                options: Vec::new(),
+                blind_pass: None,
+                parts: vec![part("Long", Some(&long))],
+                open_choices: Vec::new(),
+                disagreements: Vec::new(),
+                ..whole_brief()
+            },
+        )
+        .expect("no length is enforced on a one line");
+    assert_eq!(stored.parts[0].one_line.as_deref(), Some(long.as_str()));
+}
+
+#[test]
+fn a_blank_one_line_on_a_part_is_refused_rather_than_stored() {
+    let (_dir, store) = temp_store();
+    let review = seed(&store);
+
+    let (refused, _, expected) = refusal(store.put_brief(
+        review.id,
+        NewBrief {
+            problems: Vec::new(),
+            flow_before: Vec::new(),
+            flow_after: Vec::new(),
+            flow_before_caption: None,
+            flow_after_caption: None,
+            options: Vec::new(),
+            blind_pass: None,
+            parts: vec![BriefPart {
+                title: "a part".to_string(),
+                summary: "what it did".to_string(),
+                one_line: Some("  ".to_string()),
+                fixes: Vec::new(),
+                files: Vec::new(),
+            }],
+            open_choices: Vec::new(),
+            disagreements: Vec::new(),
+            ..whole_brief()
+        },
+    ));
+    assert_eq!(refused, "parts.one_line");
     assert!(expected.contains("leave the field out"), "{expected}");
 }
 
@@ -1186,6 +1308,7 @@ fn brief_marked_through_the_change_half() -> NewBrief {
         parts: vec![BriefPart {
             title: marked("a part"),
             summary: marked("one line"),
+            one_line: Some(marked("the one line")),
             fixes: vec![1],
             files: vec![BriefPartFile {
                 path: format!("app/{MARKER}.php"),
@@ -1397,7 +1520,7 @@ fn the_contracts_real_length_brief_is_at_real_length() {
         sources.len()
     );
 
-    assert_eq!(rows("parts").len(), 6, "six solution parts");
+    assert_eq!(rows("parts").len(), 7, "seven solution parts");
 
     // And one thing the issue did not ask for but the real review needed: a part claiming
     // a file the pull request never changed.
@@ -1407,6 +1530,224 @@ fn the_contracts_real_length_brief_is_at_real_length() {
         .filter(|file| file["in_diff"] == serde_json::json!(false))
         .count();
     assert!(outside >= 1, "at least one file outside the diff");
+
+    // The three shapes DEV-919's table has to draw, each of which is a *group* or a
+    // *branch* on the Solution page rather than a nicety — so an example missing one of
+    // them is an example the page can be built wrong against and still pass.
+    let parts = rows("parts");
+    let no_file_in_the_change = parts
+        .iter()
+        .filter(|part| {
+            let files = part["files"].as_array().expect("files");
+            !files.is_empty()
+                && files
+                    .iter()
+                    .all(|file| file["in_diff"] == serde_json::json!(false))
+        })
+        .count();
+    assert_eq!(
+        no_file_in_the_change, 1,
+        "a part none of whose files is in the change, which is its own group"
+    );
+
+    // **And it has a file in the change**, which is the half that makes it Supporting.
+    // Without that condition this passed on the "not changed" part above -- which also
+    // fixes nothing, and which `groupOf` tests first -- so the example could lose its only
+    // genuinely supporting part and the guard would not notice. Found reviewing DEV-919.
+    let supporting = parts
+        .iter()
+        .filter(|part| {
+            part["fixes"].as_array().expect("fixes").is_empty()
+                && part["files"]
+                    .as_array()
+                    .expect("files")
+                    .iter()
+                    .any(|file| file["in_diff"] == serde_json::json!(true))
+        })
+        .count();
+    assert!(
+        supporting >= 1,
+        "a part that fixes no problem and has a file in the change, which is Supporting"
+    );
+
+    // **Every part carries a one line, and every one of them is inside the writing rules.**
+    //
+    // Four limits, all review-craft's `brief_lint.py` as of 11 October 2026, and all
+    // checked here because this example is the document that linter is run against: a
+    // part's `one_line` is at most 12 words of plain English, its `summary` at most 30
+    // and plain too, and the summary is not the one line over again.
+    // Seven of each are read at once -- the one lines down a column and the summaries one
+    // open row at a time -- which is why these two slots are capped where the brief's
+    // deeper fields are not.
+    //
+    // **The cases the page has to survive and this example is not are in the page's own
+    // tests**: a part with no `one_line` at all, and a summary at the 52 words the review
+    // this was measured against actually ran to. Both are briefs written before these
+    // caps, so writing them in here would mean the linter and the example could not both
+    // be right.
+    // **The slots the linter's plain rule actually governs**, which this guard did not
+    // reach: its `top_layer` is the headline and every problem's `was_wrong` and
+    // `now_fixed`. A class name written into the headline passed CI while the same word in
+    // a part's summary failed, which is the guard covering the one slot `brief_lint.py`
+    // has never heard of and skipping the three it reads. Found reviewing this file.
+    reads_as_plain_english(
+        brief["headline"].as_str().expect("a headline"),
+        "the headline",
+    );
+    for problem in rows("problems") {
+        let number = problem["number"].as_i64().expect("a number");
+        for slot in ["was_wrong", "now_fixed"] {
+            let line = problem[slot].as_str().expect("a line");
+            reads_as_plain_english(line, &format!("problem {number}'s {slot}"));
+        }
+    }
+
+    for part in &parts {
+        let where_ = part["title"].as_str().expect("a title");
+
+        let one_line = part["one_line"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{where_} carries a one line"));
+        let words = one_line.split_whitespace().count();
+        assert!(
+            words <= 12,
+            "{where_}: a one line is at most 12 words, not {words}: {one_line}"
+        );
+        reads_as_plain_english(one_line, &format!("{where_}: a one line"));
+
+        let summary = part["summary"].as_str().expect("a summary");
+        let words = summary.split_whitespace().count();
+        assert!(
+            words <= 30,
+            "{where_}: a summary is at most 30 words, not {words}: {summary}"
+        );
+        reads_as_plain_english(summary, &format!("{where_}: a summary"));
+
+        // **And it is not the one line again.** Two of these were the same string, which
+        // makes an opened row repeat what the closed row already said -- so the example
+        // demonstrated nothing about the one thing the fold is for. Caught by looking at
+        // the screenshot, which is what the screenshots are for.
+        assert_ne!(
+            summary.trim().trim_end_matches('.'),
+            one_line.trim().trim_end_matches('.'),
+            "{where_}: the summary says more than the one line, or the fold is empty"
+        );
+    }
+}
+
+/// The humped words `brief_lint.py` permits: plain English that happens to carry a hump.
+///
+/// Its own list, as of 11 October 2026. Without it a summary saying "GitHub" fails a rule
+/// about class names, which on a project whose subject is reviewing pull requests is the
+/// first thing anybody would write.
+const HUMPED_ENGLISH: &[&str] = &[
+    "github",
+    "gitlab",
+    "bitbucket",
+    "oauth",
+    "openapi",
+    "openid",
+    "javascript",
+    "typescript",
+    "postgresql",
+    "mysql",
+    "sqlite",
+    "graphql",
+    "nodejs",
+    "ios",
+    "ipados",
+    "macos",
+    "iphone",
+    "ipad",
+    "youtube",
+    "paypal",
+    "wordpress",
+    "mongodb",
+    "dynamodb",
+    "redis",
+    "kubernetes",
+    "webhook",
+    "webhooks",
+    "linkedin",
+    "powershell",
+    "mermaid",
+    "jsonapi",
+    "deverge",
+];
+
+/// The extensions that make a word a path even with no separator in it. `brief_lint.py`'s.
+const EXTENSIONS: &[&str] = &[
+    "php", "ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "rs", "go", "rb", "java", "kt", "swift",
+    "cs", "c", "h", "cpp", "hpp", "sql", "json", "yaml", "yml", "toml", "vue", "svelte", "css",
+    "scss", "html", "md", "sh", "bash", "zsh", "tf", "ini", "env", "lock",
+];
+
+/// Refuse a line that reads as code where it is meant to read as plain English.
+///
+/// **A subset of `brief_lint.py`'s `code_names()`, and deliberately not a re-invention of
+/// it.** That linter is the authority, it lives in the review-craft skill, and it does not
+/// run in this repository's CI — so this exists to catch the drift early, in the one
+/// document the linter is pointed at. Three earlier versions of this check were each wrong
+/// in a different direction, which is the argument for copying the rule rather than
+/// paraphrasing it:
+///
+/// | Version | What it did | Why it was wrong |
+/// |---|---|---|
+/// | first | checked only `one_line`'s length and plainness | let five class names into the summaries |
+/// | second | trimmed punctuation, then looked for a backtick | strips the thing it looks for |
+/// | third | any capital after the first | calls `CSV` and `JSON` class names |
+///
+/// What is copied: `::` anywhere; a path, which is two separators or a known extension and
+/// **not** one bare slash, because "and/or" is a word; a call, `name()`; and a hump, a
+/// lowercase letter followed by an uppercase one, unless the word is humped English.
+///
+/// A backtick is **not** refused, which an earlier version did: the linter permits
+/// `allowed_columns` in a summary and a guard stricter than its authority is one somebody
+/// deletes the first time it blocks a sentence that was fine.
+fn reads_as_plain_english(line: &str, at: &str) {
+    assert!(!line.contains("::"), "{at} carries `::`: {line}");
+
+    for word in line.split_whitespace() {
+        let bare = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '_');
+
+        assert!(
+            !word.contains("()"),
+            "{at} calls something -- {word:?}: {line}"
+        );
+
+        // **A path needs a letter in it.** The linter filters its own path matches on
+        // `[A-Za-z]`, and without that "11/10/2026" is a path -- a date written the way
+        // the comments in this file write them.
+        assert!(
+            word.matches('/').count() < 2 || !word.chars().any(|c| c.is_ascii_alphabetic()),
+            "{at} carries a path -- {word:?}: {line}"
+        );
+
+        // **Any dot segment, not only the last.** `schema.sql.gz` is a file the linter
+        // catches and `rsplit_once` did not, which is a false negative in the guard whose
+        // whole job is catching this early.
+        for segment in bare.split('.').skip(1) {
+            assert!(
+                !EXTENSIONS.contains(&segment.to_ascii_lowercase().as_str()),
+                "{at} names a file -- {word:?}: {line}"
+            );
+        }
+
+        // **Each maximal run of letters, not the trimmed word.** The linter's own pattern
+        // matches a letter run, so `GitHub's`, `TypeScript-only` and `GitHub/GitLab` are
+        // humped English to it and were class names here -- the guard being stricter than
+        // its authority on the very word the allowance exists for.
+        for run in bare.split(|c: char| !c.is_ascii_alphabetic()) {
+            let humped = run
+                .chars()
+                .zip(run.chars().skip(1))
+                .any(|(one, two)| one.is_ascii_lowercase() && two.is_ascii_uppercase());
+            assert!(
+                !humped || HUMPED_ENGLISH.contains(&run.to_ascii_lowercase().as_str()),
+                "{at} names a class -- {run:?}: {line}"
+            );
+        }
+    }
 }
 
 /// The real-length example is a brief the store can hold, not only one the schema allows.
@@ -1490,7 +1831,7 @@ fn the_contracts_real_length_brief_can_be_written_and_read_back() {
     assert_eq!(stored.flow_before.len(), 5);
     assert_eq!(stored.flow_after.len(), 6);
     assert_eq!(stored.options.len(), 8);
-    assert_eq!(stored.parts.len(), 6);
+    assert_eq!(stored.parts.len(), 7);
     assert_eq!(
         stored
             .options

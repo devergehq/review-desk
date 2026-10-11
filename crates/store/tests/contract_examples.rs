@@ -500,6 +500,7 @@ fn seed(store: &Store) -> Seeded {
                 parts: vec![BriefPart {
                     title: "The delivery row and its states".to_string(),
                     summary: "One row per attempt, written before anything is sent.".to_string(),
+                    one_line: None,
                     fixes: vec![2],
                     files: vec![
                         BriefPartFile {

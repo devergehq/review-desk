@@ -180,6 +180,7 @@ pub fn brief_part(part: &BriefPart) -> Value {
     json!({
         "title": part.title,
         "summary": part.summary,
+        "one_line": part.one_line,
         "fixes": part.fixes,
         "files": part.files.iter().map(brief_part_file).collect::<Vec<_>>(),
         "lines_added": part.files.iter().map(|file| file.lines_added).sum::<i64>(),

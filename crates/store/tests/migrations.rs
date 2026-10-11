@@ -592,3 +592,61 @@ fn a_source_written_before_the_two_reading_columns_keeps_its_label_and_gains_nul
         "a step recorded before the facts existed has none, and draws no card"
     );
 }
+
+/// What migration 15 does to a brief recorded before it: nothing it has to apologise for.
+///
+/// A part written at version 14 keeps its title and its summary and reads back with no one
+/// line — which is the honest answer, because nothing wrote one. **The page has a different
+/// rendering for that**, and it needs `None` rather than a copy of the summary in order to
+/// choose it: a backfill here would leave nothing afterwards able to tell a one line a
+/// session wrote from one the migration derived.
+#[test]
+fn a_part_written_before_the_one_line_column_keeps_its_summary_and_gains_a_null() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+
+    const FROM: i64 = 14;
+    assert!(
+        newest_version() > FROM,
+        "this test needs migration 15 to come from"
+    );
+
+    {
+        let old = Store::open_at_version(&path, FROM).expect("open at 14");
+        assert_eq!(old.schema_version().unwrap(), FROM);
+    }
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        // In its own SQL, for the reason the tests above give: today's typed functions
+        // speak the newest schema, which is the one this is testing the absence of.
+        conn.execute_batch(
+            "INSERT INTO reviews (id, repo, pr, head_sha, round, created_at)
+                 VALUES (1, 'acme/portal', 412, 'abc123', 1, 1000);
+             INSERT INTO briefs (review_id, problem, updated_at)
+                 VALUES (1, 'the problem, as it was written', 1001);
+             INSERT INTO brief_parts (review_id, position, title, summary)
+                 VALUES (1, 1, 'The queue worker',
+                         'Sends a delivery and retries it, at the length a session writes.');
+             INSERT INTO brief_part_files
+                 (review_id, part, position, path, lines_added, lines_removed, in_diff)
+                 VALUES (1, 1, 1, 'jobs/DeliverWebhook.php', 96, 31, 1);",
+        )
+        .expect("write a part under the older schema");
+    }
+
+    let migrated = Store::open(&path).expect("reopen migrates");
+    assert_eq!(migrated.schema_version().unwrap(), newest_version());
+
+    let brief = migrated.get_brief(1).expect("the brief");
+    let parts = brief.parts;
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0].title, "The queue worker");
+    assert_eq!(
+        parts[0].summary,
+        "Sends a delivery and retries it, at the length a session writes."
+    );
+    assert_eq!(
+        parts[0].one_line, None,
+        "nothing wrote one, so the page cuts the summary rather than being handed a copy"
+    );
+}

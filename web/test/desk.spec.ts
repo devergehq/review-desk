@@ -442,7 +442,7 @@ describe('the draft', () => {
  * that does not — and not merely that a click changes something.
  */
 describe('deciding on a finding', () => {
-  /** #514, the real-length review: fourteen findings and a draft composed of blocks. */
+  /** #514, the real-length review: fifteen findings and a draft composed of blocks. */
   const REAL = 41
 
   async function findingOn(id: number, seq: number) {

@@ -1308,6 +1308,35 @@ ALTER TABLE review_sources ADD COLUMN status TEXT;
 ALTER TABLE review_sources ADD COLUMN note TEXT;
 "#,
     },
+    Migration {
+        version: 15,
+        name: "solution-part-one-line",
+        sql: r#"
+-- A part's one line: the sentence its row on the Solution page carries under the title.
+--
+-- **`summary` is not one line, and the page was drawing it as though it were.** On the
+-- review this was measured against the eight parts' summaries ran 33 to 52 words each, and
+-- board A10 reads them down a single column -- so the column either wrapped four deep or cut
+-- the sentence mid-word. The summary is right where it is, inside the opened row; what the
+-- record had nothing for was the line above it.
+--
+-- **Nullable, and that is the honest default**, which is migration 13's reasoning for a
+-- problem's label and holds here for the same reason: every part already on the record has
+-- none, and the page then cuts the summary to a line with an ellipsis and says so by drawing
+-- it that way. Copying the first sentence of the summary onto the record at write time would
+-- put a derived value in a column nothing could afterwards tell from a written one.
+--
+-- **No length is enforced here**, which is migration 10's rule for the whole brief and
+-- migrations 13 and 14's for their own columns. A one-line summary that runs to three lines
+-- is a writing fault and belongs to the linter in Locus -- DEV-920, filed alongside this --
+-- not to a CHECK that refuses the part. What is refused is a value that is not one: the
+-- empty string, a field nobody filled in wearing the clothes of one somebody did, and it is
+-- refused by `put_brief` beside the refusals of a blank `label` and a blank `now_fixed`,
+-- because SQLite cannot add a CHECK to a table that already exists. Stated here so the
+-- absence of a constraint reads as a decision rather than an omission.
+ALTER TABLE brief_parts ADD COLUMN one_line TEXT;
+"#,
+    },
 ];
 
 /// The version a freshly created database lands on.

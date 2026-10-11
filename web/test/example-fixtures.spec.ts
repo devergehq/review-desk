@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -31,7 +31,7 @@ function example<T>(name: string): T {
   return JSON.parse(readFileSync(resolve(examples, name), 'utf8')) as T
 }
 
-/** The real-length review: #514, fourteen findings, six parts. */
+/** The real-length review: #514, fifteen findings, seven parts. */
 const REAL_LENGTH = 41
 
 describe('the invented example and the fixtures', () => {
@@ -163,6 +163,97 @@ describe('the invented example and the fixtures', () => {
       ...detail.layers.map(layer => (layer.detail ?? '').trim().split(/\s+/).filter(Boolean).length),
     )
     expect(longest, 'a step note runs to at least 40 words').toBeGreaterThanOrEqual(40)
+  })
+
+  /**
+   * **The two contract examples describe the same parts.**
+   *
+   * `confirmBrief.response.real-length.json` is the brief the end-to-end seed feeds the
+   * binary and the document review-craft's `brief_lint.py` is run against;
+   * `getReview.response.code-review.json` is the whole review the pages render, and the
+   * fixture above is pinned to it. Nothing pinned the first two to each other — so a part
+   * summary edited in the second only would be rendered by every page, seeded into every
+   * end-to-end run, and never seen by the linter.
+   *
+   * **That is not hypothetical: this change edited those copies separately four times.**
+   * Once it went wrong, and the writing rule it broke was checked against the copy that
+   * had not drifted.
+   */
+  it('holds the same brief in both contract examples', () => {
+    const brief = example<ReviewDetail['brief']>('confirmBrief.response.real-length.json')
+    const review = example<ReviewDetail>('getReview.response.code-review.json')
+
+    /*
+     * **The whole brief, not only its parts.** Every field has the same failure mode: the
+     * headline, a problem's label, a flow row and the supporting table are all asserted
+     * by the Rust real-length test, which reads the *first* document — so a drift in the
+     * second is rendered by every page and seen by nothing. Asserted whole rather than
+     * field by field, because the point is that there is no difference at all.
+     */
+    expect(review.brief).toEqual(brief)
+    /* And not two absences agreeing with each other. */
+    expect(review.brief?.parts?.length, 'the example describes the change in parts')
+      .toBeGreaterThan(1)
+  })
+
+  /**
+   * **The review's two tallies are counted from its own findings.**
+   *
+   * The server derives both — `wire::severity_counts` and `disposition_counts` count every
+   * finding of the review — so an example whose tallies disagree with its `findings` array
+   * is one the server it documents could not have produced.
+   *
+   * **Found by review, after this file passed.** DEV-919 added a fifteenth finding to the
+   * example and left `nit: 4` and `suppressed: 1` behind it. The fixture and the example
+   * were stale in the same way, so the whole-document comparison above compared two copies
+   * of the same wrong number and said nothing. Every review here is checked, not only the
+   * one the step pages are drawn from, because the next one to go stale will be another.
+   */
+  it('counts every review fixture\u2019s tallies off its own findings', () => {
+    /*
+     * **The contract's own `getReview` examples as well as the fixtures**, which is the
+     * layer the first version of this guard was short of. The whole-document comparison
+     * above covers only review 41, so the other documented responses — hand-written, and
+     * not regenerated from anything — had no check at all. Found reviewing the commit that
+     * added this.
+     */
+    const documented = readdirSync(examples)
+      .filter(name => /^getReview\.response.*\.json$/.test(name))
+      .map(name => ({ name, detail: example<ReviewDetail>(name) }))
+    expect(documented.length, 'the contract documents several review responses')
+      .toBeGreaterThan(1)
+
+    /*
+     * **Named by their file, not only by their review id.** Three of these documents are
+     * review 17 — the fixture and two contract responses — so "review 17's tally is
+     * stale" would not say which of the three to open, which is the one thing the
+     * failure has to carry.
+     */
+    const all = [
+      ...(reviews as unknown as ReviewDetail[]).map(detail => ({ name: 'reviews.json', detail })),
+      ...documented,
+    ]
+
+    for (const { name, detail } of all) {
+      const where = `review ${detail.review.id} in ${name}`
+      const severities = detail.finding_severities
+      const dispositions = detail.finding_dispositions
+
+      if (severities != null) {
+        const counted = { blocker: 0, should: 0, nit: 0, question: 0 }
+        for (const finding of detail.findings) counted[finding.severity] += 1
+        expect(severities, `${where}'s severity tally`).toEqual(counted)
+      }
+      if (dispositions != null) {
+        const counted = { in_draft: 0, held_back: 0, suppressed: 0 }
+        for (const finding of detail.findings) counted[finding.disposition] += 1
+        expect(dispositions, `${where}'s disposition tally`).toEqual(counted)
+        expect(
+          Object.values(counted).reduce((total, n) => total + n, 0),
+          `${where} accounts for each of its findings once`,
+        ).toBe(detail.findings.length)
+      }
+    }
   })
 
   /*

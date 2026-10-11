@@ -149,7 +149,7 @@
       "number": 5,
       "name": "code_review",
       "state": "done",
-      "detail": "14 findings, 1 blocker",
+      "detail": "15 findings, 1 blocker",
       "updated_at": "2026-10-09T23:00:00Z",
       "runs": [
         {
@@ -624,7 +624,8 @@
     "parts": [
       {
         "title": "The export context",
-        "summary": "Replaces the request-scoped slot. Constructed by whatever starts an export.",
+        "summary": "The slot that lived on the request is gone. Whatever starts an export builds the context and passes it down, so nothing reads the tenant off a shared surface.",
+        "one_line": "Every export is handed the tenant it is for.",
         "fixes": [
           1
         ],
@@ -653,7 +654,8 @@
       },
       {
         "title": "The scheduled export's own entry point",
-        "summary": "The schedule builds a context and hands it to the worker.",
+        "summary": "The scheduling command resolves the tenant and builds the context before the job is queued, so the worker is handed one rather than reaching for it.",
+        "one_line": "The schedule builds the context and hands it to the worker.",
         "fixes": [
           1,
           2
@@ -689,7 +691,8 @@
       },
       {
         "title": "Allowed columns on the report definition",
-        "summary": "A new column says which fields each report may export.",
+        "summary": "One column on the report definition, with a backfill for the rows recorded before it. The policy reads that column, and both entry points apply it.",
+        "one_line": "A new column says which fields each report may export.",
         "fixes": [
           2
         ],
@@ -730,7 +733,8 @@
       },
       {
         "title": "One filter chain for both paths",
-        "summary": "Row filter, column policy, redaction and the audit entry, in one place.",
+        "summary": "One pipeline runs the four steps in a fixed order for both entry points. The web path used to run three of them, in an order of its own.",
+        "one_line": "Row filter, column policy, redaction and audit, in one order.",
         "fixes": [
           3
         ],
@@ -765,7 +769,8 @@
       },
       {
         "title": "The web path, with the branch taken out",
-        "summary": "Mostly deletions. The builder stops asking where it is running.",
+        "summary": "The builder loses its branch on where it is running, and the request-state helper goes entirely. The controller builds a context the way the schedule does.",
+        "one_line": "Mostly deletions. The builder stops asking where it is running.",
         "fixes": [
           2
         ],
@@ -806,7 +811,8 @@
       },
       {
         "title": "Tests and generated types",
-        "summary": "Three feature tests rewritten for the new entry point, and two generated files.",
+        "summary": "The scheduled-export test is rewritten around the new entry point and the web one follows it. The two generated type files are regenerated, not edited.",
+        "one_line": "Three feature tests rewritten, and two generated files.",
         "fixes": [],
         "files": [
           {
@@ -842,6 +848,22 @@
         ],
         "lines_added": 350,
         "lines_removed": 154
+      },
+      {
+        "title": "The long-running queue it relies on",
+        "summary": "The pipeline holds a page of rows in memory while it redacts them. Safe on the long-running queue, not on the default one. Nothing here changed.",
+        "one_line": "Nothing here changed. The new pipeline only fits this queue.",
+        "fixes": [],
+        "files": [
+          {
+            "path": "config/queue.php",
+            "lines_added": 0,
+            "lines_removed": 0,
+            "in_diff": false
+          }
+        ],
+        "lines_added": 0,
+        "lines_removed": 0
       }
     ],
     "open_choices": [
@@ -1788,19 +1810,45 @@
       "disposition_reason": null,
       "rule_id": null,
       "rule_key": null
+    },
+    {
+      "review_id": 41,
+      "seq": 15,
+      "key": "F15",
+      "lens": "release",
+      "severity": "nit",
+      "file": "config/horizon.php",
+      "line": 24,
+      "claim": "The scheduled export is dispatched to the `exports` queue, and no Horizon supervisor is configured to work it on this branch.",
+      "disposition": "suppressed",
+      "created_at": "2026-10-09T22:11:00Z",
+      "evidence": "Detail: `RunScheduledExport::$queue` is `exports`. `config/horizon.php` on this branch names `default` and `notifications`. Nothing in this repository would work the new queue.",
+      "title": "No supervisor is configured for the queue the export is dispatched to",
+      "why_it_matters": null,
+      "suggested_fix": null,
+      "inline_comment": null,
+      "proof": null,
+      "proof_note": null,
+      "verification": "read_not_run",
+      "hunk": null,
+      "flagged_line": null,
+      "fix_references": [],
+      "disposition_reason": "The supervisor lives in the deployment repository, not this one. Raising it here would ask the author for a change they cannot make in this pull request.",
+      "rule_id": null,
+      "rule_key": null
     }
   ],
   "outcomes": [],
   "finding_severities": {
     "blocker": 1,
     "should": 6,
-    "nit": 4,
+    "nit": 5,
     "question": 3
   },
   "finding_dispositions": {
     "in_draft": 12,
     "held_back": 1,
-    "suppressed": 1
+    "suppressed": 2
   },
   "not_checked": "The reporting front end, which reads the same definitions but was not changed.",
   "nit_ticket": {

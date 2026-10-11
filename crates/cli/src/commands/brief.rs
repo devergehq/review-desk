@@ -72,10 +72,16 @@ pub enum BriefCommand {
     ///   "questions": ["..."]}`. **Review Desk runs no blind pass**; this records one.
     ///   Leaving it out, sending it with no pick, and sending it with options whose
     ///   `proposed_by` names it are three distinguishable states.
-    /// * `parts` — the change in parts: `{"title": "...", "summary": "...", "fixes": [1],
-    ///   "files": [{"path": "...", "lines_added": 0, "lines_removed": 0,
-    ///   "in_diff": true}]}`. `in_diff: false` is how a part claims a file the pull
-    ///   request did not change, and such a file has no lines added or removed.
+    /// * `parts` — the change in parts: `{"title": "...", "summary": "...",
+    ///   "one_line": "...", "fixes": [1], "files": [{"path": "...", "lines_added": 0,
+    ///   "lines_removed": 0, "in_diff": true}]}`. `in_diff: false` is how a part claims a
+    ///   file the pull request did not change, and such a file has no lines added or
+    ///   removed. `one_line` is the sentence the part's row carries under its title —
+    ///   **not a shortening of `summary`** so much as the thing `summary` is not: the
+    ///   summaries on the review this was measured against ran 33 to 52 words, and the
+    ///   table reads them down one column. Leave it out and the Solution page cuts the
+    ///   summary to a line; a blank one is refused, because a field nobody filled in is
+    ///   not the same as a field left out.
     /// * `open_choices` — `{"left_open": "...", "chosen": "...", "why": "...",
     ///   "departs_from_ticket": false, "finding_seq": 3}`.
     /// * `disagreements` — `{"description_says": "...", "code_does": "...",

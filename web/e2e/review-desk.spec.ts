@@ -756,26 +756,86 @@ test.describe('the three step pages of one review', () => {
     await expect(
       page.getByRole('heading', { name: /C is the right shape/, level: 1 }),
     ).toBeVisible()
-    await expect(page.getByText('26 files')).toBeVisible()
+    /* Every file the parts name, and how many the pull request did not touch. */
+    await expect(
+      page.getByText('27 files (3 the pull request did not change)'),
+    ).toBeVisible()
     await expect(page.getByText('959 lines added and 423 removed')).toBeVisible()
-    await expect(page.locator('.part')).toHaveCount(6)
-    /* A part the review found nothing in says so. */
-    await expect(page.getByText('Nothing found here')).toBeVisible()
+    await expect(page.locator('.part')).toHaveCount(7)
+
+    /* The three groups, each from the rule and each with a row under it. */
+    for (const heading of [
+      'Fixes a problem',
+      'Supporting',
+      'Not changed, but the change relies on it',
+    ]) {
+      await expect(page.getByText(heading, { exact: true })).toBeVisible()
+    }
+    /* A part the review found nothing in says so, and one outside the change says that. */
+    await expect(page.getByText('Nothing').first()).toBeVisible()
+    await expect(page.getByText('unchanged').first()).toBeVisible()
 
     /*
-     * A part opens to its files and the findings joined to it **by file** — the one place
-     * a finding is shown beside the part of the change it is about.
+     * A row opens in place to the part's full summary and the findings joined to it **by
+     * file** — the one place a finding is shown beside the part of the change it is about.
+     * The files are behind a fold, closed, because they are reference.
      */
     await page.getByRole('button', { name: /Allowed columns on the report definition/ }).click()
     const part = page.locator('#part-2')
     await expect(part).toBeVisible()
-    await expect(part).toContainText('app/Reporting/ColumnPolicy.php')
+    /*
+     * **The summary, which says more than the row's one line did.** That is the whole
+     * point of the fold: the row carries "A new column says which fields each report may
+     * export", and this carries the backfill and what reads the column.
+     *
+     * **One assertion, on a phrase only the summary has.** A second one here matched
+     * `allowed_columns`, which proved nothing: `toContainText` reads `textContent`,
+     * including the closed fold two lines below — and that fold lists
+     * `…_add_allowed_columns_to_report_definitions.php`. It would have passed with the
+     * summary deleted.
+     */
+    await expect(part).toContainText('with a backfill for the rows recorded before it')
     await expect(part).toContainText('F6')
     await expect(part).toContainText('F9')
+    /* Not the file list, which is one click further in. */
+    await expect(part.locator('details')).toHaveCount(1)
+    await expect(part.locator('details[open]')).toHaveCount(0)
+    /*
+     * **Not visible, rather than not present.** A closed `<details>` keeps its content in
+     * the document — which is what makes it findable and is why the fold is the right
+     * element — so "behind a fold" is a claim about what is drawn, and that is what is
+     * measured.
+     */
+    const path = part.getByText('app/Reporting/ColumnPolicy.php')
+    await expect(path).not.toBeVisible()
+    await part.locator('summary').click()
+    await expect(path).toBeVisible()
+
+    /*
+     * **A finding line reaches that finding on the code review page**, which is the whole
+     * reason the row carries counts rather than the findings themselves.
+     */
+    await part.locator('.finding', { hasText: 'F9' }).click()
+    await expect(page).toHaveURL(
+      `${seeded}reviews/${structuredReviewId}/code-review#F9`,
+    )
+    await expect(page.locator('#finding-9')).toBeVisible()
+    /* `.title .key` — the row's own reference. The decision buttons carry `.key` too, for
+     * their keyboard shortcuts. */
+    await expect(page.locator('li.row--open').locator('.title .key')).toHaveText('F9')
+
+    await page.goBack()
+    await expect(page.locator('.part').first()).toBeVisible()
 
     /* A file the pull request never changed says so, rather than showing two noughts. */
     await page.getByRole('button', { name: /One filter chain for both paths/ }).click()
-    await expect(page.locator('#part-3')).toContainText('not changed by this pull request')
+    await page.locator('#part-3').locator('summary').click()
+    await expect(page.locator('#part-3')).toContainText('not in the change')
+
+    /* Findings no part accounts for are listed rather than lost. */
+    await expect(
+      page.getByRole('heading', { name: '2 findings are not about any one part' }),
+    ).toBeVisible()
 
     /* The open choices and the disagreements, each naming its finding. */
     await expect(
@@ -1044,63 +1104,140 @@ test.describe('the three step pages of one review', () => {
   })
 
   /**
-   * **Every part card's head reads the same way, and a row of them lines up.**
+   * **The one line on a row is one line, at a laptop's width and at a phone's.**
    *
-   * DEV-892's defect 5, measured where it can be. A title that did not fit beside its
-   * marks went under them, so on one grid some cards read "2 · the title" across and others
-   * put the number on one line and the title on the next; and every card took its own
-   * height, so a row of three stood at three heights with holes between them.
+   * DEV-919's fourth criterion. It cannot be checked from a board — a board is drawn at one
+   * width — and it cannot be checked from a rendered tree either, because what holds the
+   * line to one line is `white-space: nowrap` and an `overflow` that only a layout engine
+   * resolves. So it is measured: the cell's height against one line of its own text.
    *
-   * Both are layout, so both are read off the rendered boxes: the title's left edge is past
-   * the marks' right edge in every card that has marks, and every card sharing a row shares
-   * a height.
+   * **Measured twice, and the second is the one that matters.** The second pass writes a
+   * 52-word summary into the cell — the length the summaries on the review this was
+   * measured against actually ran to, and longer than the writing rule now allows — and
+   * measures again. That is a brief written *before* the 30-word cap, which is a record
+   * this page has to survive and the contract's own example deliberately is not.
    */
-  test('a part card’s title is beside its marks, and a row of cards lines up', async ({
+  for (const [label, width, height] of [
+    ['a laptop', 1440, 900],
+    ['a phone', 390, 844],
+  ] as const) {
+    test(`a part’s one line stays one line at ${label}`, async ({ page }) => {
+      await page.setViewportSize({ width, height })
+      await page.goto(`${seeded}reviews/${structuredReviewId}/solution`)
+      await expect(page.locator('h1')).toBeVisible()
+      await expect(page.locator('.part').first()).toBeVisible()
+
+      const lines = page.locator('.part .one-line')
+      const count = await lines.count()
+      expect(count, 'the example describes the change in several parts').toBeGreaterThan(3)
+
+      for (let at = 0; at < count; at += 1) {
+        const measured = await lines.nth(at).evaluate((element) => {
+          const style = getComputedStyle(element)
+          const one = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize)
+          return { height: element.getBoundingClientRect().height, one }
+        })
+        /*
+         * **One line, whatever the text is.** Not "and it fits": a line longer than its
+         * column *should* be clipped, and three of the seven are at this width — that the
+         * clipping happens rather than the wrapping is the whole property. What it must
+         * never do is become two lines, or widen the page to avoid it, and the page's own
+         * width is measured by the no-horizontal-scroll test below.
+         */
+        expect(
+          measured.height,
+          `part ${at + 1}'s one line is ${measured.height}px against one line of `
+          + `${measured.one}px`,
+        ).toBeLessThanOrEqual(measured.one * 1.4)
+      }
+
+      /*
+       * And with a summary at the length a session actually wrote one. Written into the
+       * cell rather than seeded, because the seed comes from the contract's example and
+       * that example is held to the 30-word rule — see the note above.
+       */
+      const first = lines.first()
+      const spilled = await first.evaluate((element) => {
+        element.textContent
+          = 'Replaces the request-scoped slot with a context object constructed by whatever '
+            + 'starts an export, so the scheduled path and the web path each carry the '
+            + 'tenant they are acting for explicitly rather than reading it out of a shared '
+            + 'surface that only one of the two of them ever writes to today.'
+        const style = getComputedStyle(element)
+        const one = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize)
+        return {
+          height: element.getBoundingClientRect().height,
+          one,
+          clipped: element.scrollWidth > element.clientWidth,
+          wide: document.documentElement.scrollWidth,
+          client: document.documentElement.clientWidth,
+        }
+      })
+      expect(
+        spilled.height,
+        `a 52-word summary draws ${spilled.height}px against one line of ${spilled.one}px`,
+      ).toBeLessThanOrEqual(spilled.one * 1.4)
+      expect(spilled.clipped, 'and it is clipped rather than drawn in full').toBe(true)
+      /* And it did not widen the page to fit, which is the other way this fails. */
+      expect(spilled.wide).toBeLessThanOrEqual(spilled.client)
+    })
+  }
+
+  /**
+   * **A row opens and closes by keyboard alone, and the files fold is reachable.**
+   *
+   * DEV-919's own criterion. Hover is welcome and is not enough: a reader on a keyboard has
+   * no hover, and a reader on a phone has no pointer at all. `<summary>` is focusable and
+   * opens on Enter without any script, which is why the fold is a `<details>`.
+   */
+  test('a part’s row opens and closes by keyboard, and so does its files fold', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto(`${seeded}reviews/${structuredReviewId}/solution`)
     await expect(page.locator('h1')).toBeVisible()
-    await expect(page.locator('.part').first()).toBeVisible()
 
-    const cards = await page.locator('.part').evaluateAll(elements =>
-      elements.map((element) => {
-        const box = element.getBoundingClientRect()
-        const marks = element.querySelector('.part-marks')?.getBoundingClientRect() ?? null
-        const title = element.querySelector('.part-title')!.getBoundingClientRect()
-        return {
-          top: Math.round(box.top),
-          height: Math.round(box.height),
-          beside: marks == null ? null : title.left >= marks.right,
-          /* The title's first line sits against the marks rather than below them. */
-          level: marks == null ? null : title.top < marks.bottom,
-        }
-      }),
-    )
+    const row = page.locator('.part').first()
+    await row.focus()
+    await expect(row).toBeFocused()
+    await expect(row).toHaveAttribute('aria-expanded', 'false')
 
-    expect(cards.length, 'the example describes the change in several parts')
-      .toBeGreaterThan(3)
-    expect(
-      cards.filter(card => card.beside !== null).length,
-      'some of them fix a numbered problem',
-    ).toBeGreaterThan(0)
+    await page.keyboard.press('Enter')
+    const opened = page.locator('#part-0')
+    await expect(opened).toBeVisible()
+    await expect(row).toHaveAttribute('aria-expanded', 'true')
 
-    for (const [at, card] of cards.entries()) {
-      if (card.beside === null) continue
-      expect(card.beside, `part ${at + 1}'s title is beside its marks`).toBe(true)
-      expect(card.level, `part ${at + 1}'s title is not under its marks`).toBe(true)
-    }
+    /* The fold inside it, reached and opened without a pointer. */
+    const fold = opened.locator('summary')
+    await fold.focus()
+    await expect(opened.locator('details[open]')).toHaveCount(0)
+    await page.keyboard.press('Enter')
+    await expect(opened.locator('details[open]')).toHaveCount(1)
 
-    /* Grouped by the row they are drawn on; a row of cards is one height. */
-    const rows = new Map<number, number[]>()
-    for (const card of cards) {
-      rows.set(card.top, [...(rows.get(card.top) ?? []), card.height])
-    }
-    expect([...rows.values()].some(row => row.length > 1), 'the grid draws a row of cards')
-      .toBe(true)
-    for (const [top, heights] of rows) {
-      expect(new Set(heights).size, `the cards on the row at ${top}px are one height`).toBe(1)
-    }
+    /* And the row folds again from the keyboard. Space too, since it is a button. */
+    await row.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.locator('#part-0')).toHaveCount(0)
+    await page.keyboard.press('Space')
+    await expect(page.locator('#part-0')).toBeVisible()
+  })
+
+  /**
+   * **One row is open at a time**, which is what keeps the table a table rather than a page
+   * of unfolded detail.
+   */
+  test('opening a second row folds the first', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(`${seeded}reviews/${structuredReviewId}/solution`)
+    await expect(page.locator('h1')).toBeVisible()
+
+    await page.getByRole('button', { name: /The export context/ }).click()
+    await expect(page.locator('#part-0')).toBeVisible()
+
+    await page.getByRole('button', { name: /Allowed columns on the report definition/ }).click()
+    await expect(page.locator('#part-2')).toBeVisible()
+    await expect(page.locator('#part-0')).toHaveCount(0)
+    await expect(page.locator('.opened')).toHaveCount(1)
   })
 
   /**

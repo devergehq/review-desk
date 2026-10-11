@@ -290,10 +290,12 @@ Every field is **plain text**. The pages interpolate and never use `v-html`.
 | 9 | Alternatives | the "Ticket" and "Blind" badges | `brief.options[].proposed_by` |
 | 10 | Alternatives | the blind pass: what it was given, its pick, its questions, what it looked up | `brief.blind_pass.given`, `.pick_key`, `.pick_why`, `.questions[]`, `.looked_up` |
 | 10 | Alternatives | whether to draw the blind column at all | `brief.blind_pass_state` |
-| 11 | Solution | the change in parts, as cards | `brief.parts[].title`, `.summary`, `.lines_added`, `.lines_removed` |
+| 11 | Solution | the change in parts, as rows of one table | `brief.parts[].title`, `.one_line`, `.lines_added`, `.lines_removed` |
+| 11 | Solution | the part's full summary, inside its opened row | `brief.parts[].summary` |
 | 11 | Solution | a part's files, with what the change did to each | `brief.parts[].files[].path`, `.lines_added`, `.lines_removed`, `.in_diff` |
-| 11 | Solution | the green problem number on a part | `brief.parts[].fixes[]` |
-| 11 | Solution | which findings sit on which part | **derived**: the review's findings whose `file` is one of `brief.parts[].files[].path` |
+| 11 | Solution | the named problem tags on a part's row | `brief.parts[].fixes[]`, `brief.problems[].label` |
+| 11 | Solution | which findings sit on which part | **derived**: the review's findings whose `file` is one of `brief.parts[].files[].path`. **The first part that claims the path**, so a finding belongs to one part and is counted once |
+| 11 | Solution | the findings no part accounts for | **derived**: the rest of them |
 | 12 | Solution | where the ticket left a choice | `brief.open_choices[].left_open`, `.chosen`, `.why`, `.departs_from_ticket` |
 | 12 | Solution | where the description and the code disagree | `brief.disagreements[].description_says`, `.code_does`, `.finding_seq` |
 
