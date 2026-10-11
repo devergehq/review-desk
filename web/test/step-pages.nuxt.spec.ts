@@ -1387,12 +1387,13 @@ describe('Solution', () => {
     expect(page.find('h1').text()).toContain('C is the right shape.')
     /*
      * And the size of the change, counted off the parts rather than asserted. **Every
-     * file the parts name**, which is 27 — three of them outside the diff. `sub`'s
-     * docstring argues why this counts claimed files rather than changed ones: the rows
-     * below count claimed files too, and a line that counted changed ones would not sum
-     * to the column under it.
+     * file the parts name, and how many of them the pull request did not touch.** The
+     * rows below count claimed files too, so a line counting only changed ones would not
+     * sum to the column under it — and a reader holding this against GitHub's own "24
+     * files changed" is told the difference rather than left to find it. `sub`'s
+     * docstring has the argument and the two readings this replaced.
      */
-    expect(page.text()).toContain('27 files')
+    expect(page.text()).toContain('27 files (3 the pull request did not change)')
     expect(page.text()).toContain('959 lines added and 423 removed')
     expect(page.text()).toContain('in 7 parts')
   })

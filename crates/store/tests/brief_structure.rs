@@ -1608,6 +1608,16 @@ fn the_contracts_real_length_brief_is_at_real_length() {
             words <= 30,
             "{where_}: a summary is at most 30 words, not {words}: {summary}"
         );
+
+        // **And it is not the one line again.** Two of these were the same string, which
+        // makes an opened row repeat what the closed row already said -- so the example
+        // demonstrated nothing about the one thing the fold is for. Caught by looking at
+        // the screenshot, which is what the screenshots are for.
+        assert_ne!(
+            summary.trim().trim_end_matches('.'),
+            one_line.trim().trim_end_matches('.'),
+            "{where_}: the summary says more than the one line, or the fold is empty"
+        );
     }
 }
 

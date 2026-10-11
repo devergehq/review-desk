@@ -134,15 +134,24 @@ function whyNoParts(layers: ReviewLayer[]): string {
  *
  * Both halves — this line and the rows — count claimed files, so they agree. Making them
  * both count changed files means marking a partly-outside part on its row, which is a
- * change to the row that board A10 does not draw and DEV-919 did not ask for. Filed as the
- * smaller thing it is; the fold inside each row already lists which file is which.
+ * change to the row that board A10 does not draw and DEV-919 did not ask for.
  *
- * This predates DEV-919. Found reviewing its diff, fixed, and the fix reverted when
- * reviewing *that* — which is the whole of the argument above.
+ * **So the line says how many of them the pull request did not change**, which is the
+ * option neither of the first two readings of this had: the count still sums the column,
+ * and a reader comparing it with GitHub's own "24 files changed" is told the difference
+ * rather than left to find it. Drawn only when there is one, because "(0 not changed)" is
+ * a nought nobody asked for.
+ *
+ * This predates DEV-919. Found reviewing its diff, fixed by counting only the changed
+ * files, that fix reverted when reviewing *it* — the rows still summed to 27 — and settled
+ * here on the third reading.
  */
 function sub(brief: Brief): string | null {
   if (!parts(brief).length) return null
-  return `${count(allFiles(brief).length, 'file')}, ${linesAdded(brief)} lines added `
+  const outside = allFiles(brief).filter(file => !file.in_diff).length
+  const named = `${count(allFiles(brief).length, 'file')}`
+    + (outside ? ` (${outside} the pull request did not change)` : '')
+  return `${named}, ${linesAdded(brief)} lines added `
     + `and ${linesRemoved(brief)} removed, in ${count(parts(brief).length, 'part')}.`
 }
 

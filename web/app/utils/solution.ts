@@ -287,8 +287,11 @@ export function findingLink(reviewId: number, finding: Finding): string {
  * between two tags in a Vue template is condensed away; so the separator has to be part of
  * what is interpolated.
  *
- * Null for a finding raised in this round: "Raised this round" beside every line of a
- * first-round review is a column of the same words, which is `roundStatusLabel`'s own rule.
+ * Null for a finding **not carried in** — which is `roundStatusLabel`'s own rule, and not
+ * the same as "raised this round" however much it reads like it. That helper keys on
+ * `continues_review_id`, because `round_status` is `NOT NULL DEFAULT 'new'`: a carried
+ * finding nobody has decided about still carries `new`, and still says "Raised this round"
+ * beside its title. An earlier draft of this sentence said the other thing.
  */
 export function carriedAfterTitle(finding: Finding): string | null {
   const label = roundStatusLabel(finding)

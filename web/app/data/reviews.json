@@ -2236,7 +2236,7 @@
       "parts": [
         {
           "title": "The export context",
-          "summary": "Replaces the request-scoped slot. Constructed by whatever starts an export.",
+          "summary": "Replaces the request-scoped slot with `ExportContext`, built by whoever starts an export and passed down. Nothing reads the tenant off a shared surface any more.",
           "one_line": "Every export is handed the tenant it is for.",
           "fixes": [
             1
@@ -2266,7 +2266,7 @@
         },
         {
           "title": "The scheduled export's own entry point",
-          "summary": "The schedule builds a context and hands it to the worker.",
+          "summary": "`DispatchScheduledExports` resolves the tenant and builds the context before the job is queued, so the worker is handed one rather than reaching for it.",
           "one_line": "The schedule builds the context and hands it to the worker.",
           "fixes": [
             1,
@@ -2303,7 +2303,7 @@
         },
         {
           "title": "Allowed columns on the report definition",
-          "summary": "A new column says which fields each report may export.",
+          "summary": "`allowed_columns` on the report definition, with a backfill for rows recorded before it. `ColumnPolicy` reads it, and the pipeline applies it on both paths.",
           "one_line": "A new column says which fields each report may export.",
           "fixes": [
             2
@@ -2345,7 +2345,7 @@
         },
         {
           "title": "One filter chain for both paths",
-          "summary": "Row filter, column policy, redaction and the audit entry, in one place.",
+          "summary": "`ExportPipeline` runs the four steps in a fixed order for both entry points. The web path used to run three of them, in an order of its own.",
           "one_line": "Row filter, column policy, redaction and audit, in one order.",
           "fixes": [
             3
@@ -2381,7 +2381,7 @@
         },
         {
           "title": "The web path, with the branch taken out",
-          "summary": "Mostly deletions. The builder stops asking where it is running.",
+          "summary": "`ReportBuilder` loses its branch on request state and `RequestState` goes entirely. The controller now builds a context the way the scheduled path does.",
           "one_line": "Mostly deletions. The builder stops asking where it is running.",
           "fixes": [
             2
@@ -2423,7 +2423,7 @@
         },
         {
           "title": "Tests and generated types",
-          "summary": "Three feature tests rewritten for the new entry point, and two generated files.",
+          "summary": "The scheduled-export test is rewritten around the new entry point and the web one follows it. The two generated type files are regenerated, not edited.",
           "one_line": "Three feature tests rewritten, and two generated files.",
           "fixes": [],
           "files": [
@@ -2463,7 +2463,7 @@
         },
         {
           "title": "The long-running queue it relies on",
-          "summary": "The pipeline holds a page of rows in memory while it redacts them. That is safe on this queue and not on the default one. Nothing here changed.",
+          "summary": "The pipeline holds a page of rows in memory while it redacts them. Safe on the long-running queue, not on the default one. Nothing here changed.",
           "one_line": "Nothing here changed. The new pipeline only fits this queue.",
           "fixes": [],
           "files": [

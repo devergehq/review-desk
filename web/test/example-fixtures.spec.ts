@@ -188,12 +188,23 @@ describe('the invented example and the fixtures', () => {
      */
     const documented = readdirSync(examples)
       .filter(name => /^getReview\.response.*\.json$/.test(name))
-      .map(name => example<ReviewDetail>(name))
+      .map(name => ({ name, detail: example<ReviewDetail>(name) }))
     expect(documented.length, 'the contract documents several review responses')
       .toBeGreaterThan(1)
 
-    for (const detail of [...(reviews as unknown as ReviewDetail[]), ...documented]) {
-      const where = `review ${detail.review.id}`
+    /*
+     * **Named by their file, not only by their review id.** Three of these documents are
+     * review 17 — the fixture and two contract responses — so "review 17's tally is
+     * stale" would not say which of the three to open, which is the one thing the
+     * failure has to carry.
+     */
+    const all = [
+      ...(reviews as unknown as ReviewDetail[]).map(detail => ({ name: 'reviews.json', detail })),
+      ...documented,
+    ]
+
+    for (const { name, detail } of all) {
+      const where = `review ${detail.review.id} in ${name}`
       const severities = detail.finding_severities
       const dispositions = detail.finding_dispositions
 

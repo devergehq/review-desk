@@ -756,8 +756,10 @@ test.describe('the three step pages of one review', () => {
     await expect(
       page.getByRole('heading', { name: /C is the right shape/, level: 1 }),
     ).toBeVisible()
-    /* Every file the parts name — see `sub`'s docstring on why not only the changed. */
-    await expect(page.getByText('27 files')).toBeVisible()
+    /* Every file the parts name, and how many the pull request did not touch. */
+    await expect(
+      page.getByText('27 files (3 the pull request did not change)'),
+    ).toBeVisible()
     await expect(page.getByText('959 lines added and 423 removed')).toBeVisible()
     await expect(page.locator('.part')).toHaveCount(7)
 
@@ -781,7 +783,13 @@ test.describe('the three step pages of one review', () => {
     await page.getByRole('button', { name: /Allowed columns on the report definition/ }).click()
     const part = page.locator('#part-2')
     await expect(part).toBeVisible()
-    await expect(part).toContainText('A new column says which fields each report may export')
+    /*
+     * **The summary, which says more than the row's one line did.** That is the whole
+     * point of the fold: the row carries "A new column says which fields each report may
+     * export", and this carries which column and what reads it.
+     */
+    await expect(part).toContainText('with a backfill for rows recorded before it')
+    await expect(part).toContainText('allowed_columns')
     await expect(part).toContainText('F6')
     await expect(part).toContainText('F9')
     /* Not the file list, which is one click further in. */
