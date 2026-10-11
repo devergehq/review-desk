@@ -116,8 +116,9 @@ export interface Addresses {
    * **It is here because one or two rows prove nothing.** What went wrong on the real review
    * — a code name running out of the card, 63 words printed where a title belongs, eight
    * paragraphs where a reader wanted a list — are properties of the panel at that volume,
-   * and the only place they can be measured is a browser at a real width. The other three
-   * reviews between them hold one held-back finding and three.
+   * and the only place they can be measured is a browser at a real width. The other four
+   * reviews between them hold one held-back finding and three; DEV-930's posted review,
+   * added after this comment was written, holds none.
    *
    * It has a ready draft, so it is a fourth thing waiting on the developer: "Needs you"
    * holds three rows and the counts in this suite say three.
@@ -555,9 +556,10 @@ function seedStructured(directory: string, database: string): number {
  * That is the complaint the issue was opened about, and this is the record it is about.
  *
  * **It is the only posted review the command line can make.** Approving a draft is the
- * developer's act and happens in the dashboard; `draft posted` refuses a draft that is not
- * approved. So the acceptance path posts the *other* review through the browser and then
- * the command line, and this one covers the path that needs neither.
+ * developer's act and happens in the dashboard, and `draft posted` refuses a draft that is
+ * not approved — so a seed cannot carry a review posted the ordinary way at all. Nothing in
+ * this suite runs `draft posted`: the acceptance path signs a draft off in the browser and
+ * stops there, which is where the boundary it exists to test ends.
  *
  * Nothing has harvested it, which is every review until `review-desk harvest` runs: its
  * pull-request state is unknown and its three figures are unmeasured, which is the half of
@@ -1092,7 +1094,7 @@ function heldBackFindings(): Array<Record<string, unknown>> {
  * of the length, so a seed that drifted shorter would leave them untested while every test
  * still passed.
  *
- * Three states the other three reviews cannot show, and each is one of the issue's criteria:
+ * Three states the other four reviews cannot show, and each is one of the issue's criteria:
  * a claim past 60 words, a title carrying a long code name, and a finding with **no title at
  * all**, whose row has to stand in with the claim's first twelve words and say that it did.
  */
