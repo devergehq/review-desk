@@ -1546,11 +1546,34 @@ test.describe('the three step pages of one review', () => {
       const runs = [...li.childNodes].filter(node =>
         node.nodeType === Node.TEXT_NODE && node.textContent!.trim() !== '')
 
+      /*
+       * **The `li`'s flex items, which is not the same as its children.** An element at
+       * `display: contents` is a child and is not an item: it generates no box, and what
+       * the row lays out is its contents instead. Counting children here would read 1 on
+       * the broken page as well as the fixed one — the markup was `<li><span
+       * class="prose">` either way — and a message saying "laid out as 1 item" would print
+       * over a row of thirteen. So the pieces are counted the way the row sees them.
+       */
+      const items = (parent: Element): string[] =>
+        [...parent.childNodes].flatMap((node) => {
+          if (node.nodeType === Node.TEXT_NODE) {
+            return node.textContent!.trim() === '' ? [] : ['(text)']
+          }
+          if (node.nodeType !== Node.ELEMENT_NODE) return []
+          const element = node as Element
+          const name = `${element.tagName.toLowerCase()}${
+            [...element.classList].map(c => `.${c}`).join('')}`
+          return getComputedStyle(element).display === 'contents'
+            ? items(element)
+            : [name]
+        })
+
+      const laidOut = items(li)
+
       return {
         found: true as const,
-        children: li.childElementCount,
-        childTags: [...li.children].map(child =>
-          `${child.tagName.toLowerCase()}.${[...child.classList].join('.')}`),
+        children: laidOut.length,
+        childTags: laidOut,
         wrappers: wrappers.length,
         /*
          * **Whether the box exists, not whether the element does.** The element was always
@@ -1573,11 +1596,6 @@ test.describe('the three step pages of one review', () => {
         liContent: Math.round(li.clientWidth),
         innerWidth: inner && Math.round(inner.width),
         innerRightGap: inner && Math.round(box.right - inner.right),
-        innerHeight: inner && inner.height,
-        lineHeight: wrapper
-          ? Number.parseFloat(getComputedStyle(wrapper).lineHeight)
-          || Number.parseFloat(getComputedStyle(wrapper).fontSize) * 1.2
-          : 0,
         /*
          * **The defect and the fix, measured against each other.** Taking the box away
          * again is exactly what the page did before this: the wrapper stops laying the
@@ -1657,10 +1675,19 @@ test.describe('the three step pages of one review', () => {
         seen.innerRightGap,
         `${at} the box stops ${seen.innerRightGap}px short of the column's edge`,
       ).toBe(0)
+      /*
+       * **Within a pixel, because these are three separately rounded numbers.** The column
+       * width is fractional — `.detail-pair` is `minmax(..., 1fr)` tracks with a gap — and
+       * `clientWidth` is rounded by the DOM while the box's width and offset are rounded
+       * here, so an exact comparison can disagree by one on a page that is laid out
+       * correctly. The two assertions above pin both edges; this says the width in the
+       * criterion's own terms.
+       */
       expect(
-        seen.innerWidth,
-        `${at} the box is ${seen.innerWidth}px of a ${seen.liContent}px column`,
-      ).toBe(seen.liContent - seen.dashAndGap!)
+        Math.abs(seen.innerWidth! - (seen.liContent - seen.dashAndGap!)),
+        `${at} the box is ${seen.innerWidth}px of a ${seen.liContent}px column, `
+        + `starting ${seen.dashAndGap}px in`,
+      ).toBeLessThanOrEqual(1)
 
       /* ---- 3 · Six chips, one of them over 40 characters ---- */
 

@@ -959,12 +959,30 @@ function sources(data: ReviewDetail) {
 /*
  * The line's words and chips, as one paragraph beside the dash.
  *
- * `min-width: 0` because a flex item's minimum is its content: without it a 40-character
- * code name sets the item's width and the row grows past the column it is in, which at
- * 390px is the difference between a line that wraps and a page that scrolls sideways. The
- * chip's own `overflow-wrap: anywhere` is what then breaks the name, inside this box.
+ * **`min-width: 0` is a guard here, not the thing holding the line inside the column.** A
+ * flex item's automatic minimum is its content, which is the usual way one long token
+ * widens a row past its container — but the chip carries `overflow-wrap: anywhere`, and
+ * that drives its min-content down to a single character, so the automatic minimum never
+ * reaches the column's width. Measured at 1440 and 390 with the 46-character name in the
+ * record: the box comes out the same size either way.
+ *
+ * It is kept because what it guards against is real and lives on the chip rather than
+ * here. A piece drawn in this box without `anywhere` — a path, a URL, a name some later
+ * rule declines to break — would widen the row, and at 390px that is the difference
+ * between a line that wraps and a page that scrolls sideways.
+ */
+/*
+ * **`flex: 1` so the box is the column less the dash for *every* line, not just a long
+ * one.** Shrink-to-fit is the default, and a shrink-to-fit box only reaches the column's
+ * far edge while its content overflows — so on a short line the box would stop where the
+ * words stop. Nothing a reader sees changes either way, because the text is left-aligned
+ * in both; what changes is whether "one box, the width of the column" is something the
+ * stylesheet guarantees or something this particular line happens to produce. The test
+ * below measures the former, so the stylesheet has to mean it. `.says-line` on
+ * Alternatives carries the same pair for the same reason.
  */
 .line-text {
+  flex: 1;
   min-width: 0;
 }
 
