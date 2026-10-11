@@ -79,6 +79,22 @@ function detailId(seq: number): string {
 }
 
 /**
+ * The row's name for a screen reader.
+ *
+ * **Without the backticks**, which is the one thing a label made of recorded text has to do
+ * and which this got wrong on its first run: `TickedText` draws a pair of them as a code
+ * chip on screen, but `OpenRow`'s accessible name is a plain string, so a title holding
+ * `report_definitions.allowed_columns` was announced as "backtick report underscore
+ * definitions… backtick". Found by the test that asserts no backtick reaches the page.
+ *
+ * It drops the marks rather than reading the words out of them: the code name *is* the
+ * title's subject, so a label without it would name the wrong row.
+ */
+function said(row: HeldBackRow): string {
+  return `${row.key}, ${row.line.replace(/`/g, '')}`
+}
+
+/**
  * How the panel's own heading counts what is in it.
  *
  * "8 nits" where every one of them is a nit, and "8 findings" where they are not — which is
@@ -120,7 +136,7 @@ const heading = computed(() =>
             :open="open === row.seq"
             :controls="detailId(row.seq)"
             opens="Open"
-            :label="`${row.key}, ${row.line}`"
+            :label="said(row)"
             class="held-row"
             @toggle="toggle(row.seq)"
           >

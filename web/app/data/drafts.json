@@ -574,7 +574,7 @@
       {
         "finding_seq": 2,
         "finding_key": "F2",
-        "claim": "The superseded accessor is still public with nothing marking it superseded.",
+        "claim": "The superseded accessor `TenantContext::tenantForRequest()` is still public with nothing marking it superseded, so the next person who needs a tenant reads the accessor that is still there, reaches for the obvious name, and writes a second call path into the export code this change exists to remove — and because the `@deprecated` annotation is what the static analyser reads, that second caller is found in review by somebody rather than failing the build on the way in.",
         "severity": "nit"
       }
     ],
