@@ -48,10 +48,29 @@
  * **Both rules are `utils/ticked.ts`'s**, and so is the table above. This component is what
  * draws them; `spoken()` in the same module is what says them where there is no markup.
  */
-const props = defineProps<{
-  /** What the session wrote. Drawn as it is, apart from the two rules above. */
-  text: string | null | undefined
-}>()
+const props = withDefaults(
+  defineProps<{
+    /** What the session wrote. Drawn as it is, apart from the two rules above. */
+    text: string | null | undefined
+    /**
+     * This text is **inside a control** — a row's button, say — rather than in prose.
+     *
+     * A commit chip is ordinarily its own small control: focusable, so a reader who cannot
+     * see forty characters of hex can still reach them, and carrying the whole value as its
+     * accessible name. Inside a `<button>` neither can be true. The chip becomes a second
+     * tab stop in a thing that is already one, and its name joins the button's — so a row
+     * showing seven characters is announced with all forty, which is the "name nobody can
+     * listen past" the shortening exists to prevent. Found by review of DEV-928's own fix
+     * for the same class of defect one layer up.
+     *
+     * Inside a control the chip is drawn and nothing else: the seven characters the eye
+     * sees, with the whole value still on `title` for a pointer. The row is the control,
+     * and the row's own name is what says the finding.
+     */
+    inControl?: boolean
+  }>(),
+  { inControl: false },
+)
 
 /**
  * **The split lives in `utils/ticked.ts`**, and this component draws what it answers.
@@ -86,13 +105,14 @@ const drawn = computed(() => pieces(props.text))
   >{{ piece.text }}</code><code
     v-else-if="piece.kind === 'commit'"
     class="code code--commit"
-    tabindex="0"
+    :tabindex="inControl ? undefined : 0"
     :title="piece.whole"
-    :aria-label="`commit ${piece.whole}`"
+    :aria-label="inControl ? undefined : `commit ${piece.whole}`"
   ><span
     class="short"
     aria-hidden="true"
   >{{ piece.text }}</span><span
+    v-if="!inControl"
     class="whole"
     aria-hidden="true"
   >{{ piece.whole }}</span></code><template

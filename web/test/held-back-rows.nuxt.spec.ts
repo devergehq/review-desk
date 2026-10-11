@@ -151,6 +151,29 @@ describe('eight findings held back, which is what the complaint was about', () =
     expect(row.text()).not.toContain('`')
   })
 
+  /*
+   * **A row's name is what the eye sees, including a commit id.**
+   *
+   * `OpenRow`'s name is computed from everything inside its button, so the chip's own
+   * `aria-label` would put forty characters of hex into the name of a row whose line shows
+   * seven. `in-control` is what stops it, and this is the assertion that would have caught
+   * the first version — review found it by reading, which is the harder way.
+   */
+  it('keeps forty characters of hex out of a row’s name', async () => {
+    const sha = 'a3f91c2e8b4d7f60a1c5e9b2d8f4a7c3e6b9d2f5'
+    const rows = heldBackRows(
+      [held(12, 'nit', `The comment still names the branch removed in ${sha} and nothing here says so`)],
+      [raised(12, `The comment names the branch removed in ${sha}`, 'app/One.php', 4)],
+    )
+    const page = await mountSuspended(HeldBackRows, { props: { rows } })
+
+    const row = page.find('.held-row')
+    expect(row.text()).toContain('a3f91c2')
+    expect(row.text()).not.toContain(sha)
+    /* And the chip is not a second tab stop inside a button. */
+    expect(row.find('code.code--commit').attributes('tabindex')).toBeUndefined()
+  })
+
   it('says a line it cut is shortened, and shows the whole claim when opened', async () => {
     const page = await panel()
     const row = page.findAll('.held-row').find(one => one.text().includes('shortened'))!

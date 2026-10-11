@@ -1824,6 +1824,50 @@ test.describe('a drawing opens larger', () => {
     await expect(canvas).toBeFocused()
   })
 
+  /**
+   * **A click on the dialog's own chrome leaves the focus in the dialog.**
+   *
+   * Review raised this as an escape from the trap, and measuring it says something more
+   * exact. Before the fix, a click on the bar's text — which nothing can focus — dropped
+   * `document.activeElement` to `<body>`, outside a dialog marked `aria-modal="true"`.
+   * What review predicted next, that Tab would then walk into the page behind, **does not
+   * happen in Chromium**: a click also sets the sequential-navigation starting point, so
+   * Tab resumes from the thing that was clicked and comes back into the dialog. Measured,
+   * not assumed — the first version of this test asserted the escape and passed against the
+   * unfixed code, which is a test that proves nothing.
+   *
+   * So what is asserted is the part that is really different: `tabindex="-1"` on the sheet
+   * means the click lands on the dialog rather than on the body. The starting point is a
+   * Chromium behaviour this component should not be resting on in Firefox or Safari, which
+   * is why the trap also acts from outside the sheet — that part has no browser here that
+   * can show it, and it is listed as untested rather than claimed.
+   */
+  test('a click on the dialog’s own chrome keeps the focus in it', async ({ page }) => {
+    await draftPage(page)
+    await page.locator('button.canvas').first().click()
+    const sheet = page.getByRole('dialog')
+    await expect(sheet).toBeVisible()
+
+    const inside = () => page.evaluate(
+      () => document.activeElement?.closest('[role="dialog"]') != null,
+    )
+
+    await sheet.locator('.reading').click()
+    expect(await inside(), 'after a click on the bar’s own text').toBe(true)
+
+    await page.keyboard.press('Tab')
+    expect(await inside(), 'and after Tab from there').toBe(true)
+
+    /* A control that disables itself under the pointer keeps it too. */
+    await sheet.getByRole('button', { name: 'Zoom in' }).click()
+    await sheet.getByRole('button', { name: 'Fit' }).click()
+    await expect(sheet.getByRole('button', { name: 'Fit' })).toBeDisabled()
+    expect(await inside(), 'after a control disabled itself').toBe(true)
+
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+  })
+
   /** A click outside closes it, and a click on the drawing does not. */
   test('a click outside closes it, and one inside does not', async ({ page }) => {
     await draftPage(page)

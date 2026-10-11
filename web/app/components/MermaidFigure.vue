@@ -313,11 +313,6 @@ function onWheel(event: WheelEvent) {
  * Escape is not here: it is on the window, because it should close this from anywhere.
  */
 function onDialogKey(event: KeyboardEvent) {
-  if (event.key === 'Tab') {
-    trapTab(event)
-    return
-  }
-
   const by = panByKey(event.key)
   if (by) {
     event.preventDefault()
@@ -393,11 +388,27 @@ function trapTab(event: KeyboardEvent) {
   const last = stops.at(-1)
   if (!first || !last) return
 
-  if (event.shiftKey && document.activeElement === first) {
+  /*
+   * **Focus outside the dialog is the case that mattered, and the first version of this
+   * could not see it.** It only acted when the focus was exactly on the first or the last
+   * stop — so from anywhere else Tab went wherever the browser pleased, which from the body
+   * is the first tabbable thing on the page *behind* an `aria-modal` dialog. Two ways in,
+   * both found by review and both a click: on the sheet's own chrome, which is not
+   * focusable, and on a control that then disables itself — `Fit`, or `Zoom in` at eight
+   * times — because a disabled element cannot hold focus and Chromium drops it to the body.
+   */
+  const here = document.activeElement
+  if (!(here instanceof HTMLElement) || !sheet.value.contains(here)) {
+    event.preventDefault()
+    ;(event.shiftKey ? last : first).focus()
+    return
+  }
+
+  if (event.shiftKey && here === first) {
     event.preventDefault()
     last.focus()
   }
-  else if (!event.shiftKey && document.activeElement === last) {
+  else if (!event.shiftKey && here === last) {
     event.preventDefault()
     first.focus()
   }
@@ -411,7 +422,14 @@ function trapTab(event: KeyboardEvent) {
  * have to find their way back to the stage before Escape works.
  */
 function onKey(event: KeyboardEvent) {
-  if (large.value && event.key === 'Escape') closeLarge()
+  if (!large.value) return
+  if (event.key === 'Escape') closeLarge()
+  /*
+   * **Tab is heard here and not on the dialog**, for the same reason Escape is: a key
+   * pressed while the focus has fallen to the body never reaches a listener on the sheet,
+   * and the whole job of a trap is to act in exactly that case.
+   */
+  if (event.key === 'Tab') trapTab(event)
 }
 
 onMounted(() => window.addEventListener('keydown', onKey))
@@ -510,6 +528,7 @@ onBeforeUnmount(() => {
           class="sheet"
           role="dialog"
           aria-modal="true"
+          tabindex="-1"
           :aria-label="`${label ?? 'This diagram'}, larger`"
           @keydown="onDialogKey"
         >

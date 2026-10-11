@@ -101,6 +101,31 @@ describe('a commit id in a sentence', () => {
     expect(page.text()).toContain(', the base commit.')
   })
 
+  /*
+   * **Inside a control, a chip is drawn and nothing else.**
+   *
+   * `OpenRow`'s accessible name is computed from everything inside its button, so a chip
+   * that kept its own `aria-label` put all forty characters into a row whose visible line
+   * shows seven — the "name nobody can listen past" the shortening exists to prevent — and
+   * its `tabindex` made it a second tab stop inside a control. Found by review of DEV-928.
+   */
+  it('inside a control, is neither a tab stop nor a name of its own', async () => {
+    const page = await mountSuspended(TickedText, {
+      props: { text: `fixed in ${COMMIT}`, inControl: true },
+    })
+
+    const chip = page.find('code.code--commit')
+    expect(chip.exists()).toBe(true)
+    expect(chip.find('.short').text()).toBe('a1b2c3d')
+    expect(chip.attributes('tabindex')).toBeUndefined()
+    expect(chip.attributes('aria-label')).toBeUndefined()
+    /* The whole value is still a pointer away, which is all a control can offer. */
+    expect(chip.attributes('title')).toBe(COMMIT)
+    /* And the forty characters are nowhere in what the row reads out. */
+    expect(page.text()).not.toContain(COMMIT)
+    expect(page.text()).toContain('fixed in a1b2c3d')
+  })
+
   it('shortens one inside a backtick pair too', async () => {
     const page = await drawn(`the base commit \`${COMMIT}\``)
     const chip = page.find('code.code--commit')

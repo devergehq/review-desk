@@ -158,7 +158,16 @@ const heading = computed(() => count(props.rows.length, 'finding'))
                 `TickedText`, so a backtick pair in a title draws as code rather than
                 printing its backticks — which is what the paragraphs this replaces did.
               -->
-              <TickedText :text="row.line" />
+              <!--
+                `in-control`, because this is inside `OpenRow`'s button. A commit chip that
+                was focusable here would be a second tab stop inside the row, and its own
+                accessible name would put all forty characters into the row's — where the
+                eye sees seven. Review of the commit before this found it.
+              -->
+              <TickedText
+                :text="row.line"
+                in-control
+              />
               <!--
                 **A line the page cut says so.** The claim's first twelve words standing in
                 for a title the session never wrote is not what the review said, and a reader
@@ -322,9 +331,10 @@ const heading = computed(() => count(props.rows.length, 'finding'))
 }
 
 /*
- * The severity, in the body ink. **Capitalised by CSS and not by a second copy of the word**
- * — the record holds `nit`, the page shows `Nit`, and a mapping in script would be a place
- * for the two to disagree.
+ * The severity, as quiet as the key beside it — `.rd-meta` carries the ink, applied in the
+ * template. **Capitalised by CSS and not by a second copy of the word**: the record holds
+ * `nit`, the page shows `Nit`, and a mapping in script would be a place for the two to
+ * disagree.
  */
 .cell--severity {
   grid-area: severity;
