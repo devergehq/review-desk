@@ -1499,10 +1499,15 @@ pub struct AuthorResponse {
     /// **Counted whole, unlike the other two**: the harvester attributes this to nobody,
     /// because it is an observation about the code rather than an act by a person.
     ///
+    /// **Distinct findings, counted once each.** The harvester keys this outcome on the
+    /// commit it saw the change in — `code_changed:<sha>` — so a finding whose file is
+    /// touched by three successive pushes gets three rows. Counting the rows would have
+    /// drawn "6 findings with code changed since" on a review holding two, a figure that
+    /// can exceed the findings it is about.
+    ///
     /// **And not "commits since".** DEV-930 asks for that phrase and the record has no
-    /// such figure: this is one outcome per finding whose file changed, so one commit
-    /// touching three findings' files writes three of them, and `round_commits` counts
-    /// the commits *before* a round rather than after its posting. Named as what it is.
+    /// such figure: `round_commits` counts the commits *before* a round rather than after
+    /// its posting, and this counts findings. Named as what it is.
     pub code_changed_after: i64,
 }
 

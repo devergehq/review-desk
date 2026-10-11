@@ -366,12 +366,19 @@ export function authorResponseLabel(item: InboxPostedItem): string {
   }
 
   /*
-   * The measurement's own time, and only where there is a measurement to date. "as at 2
-   * hr ago" over a figure taken then is what stops a nought reading as a statement about
+   * **The measurement's own time, and only where there is a measurement to date.** "as at
+   * 2 hr ago" over a figure taken then is what stops a nought reading as a statement about
    * now; over "not harvested yet" it would be dating an absence.
+   *
+   * And where a figure exists with no harvest behind it, the row says so — for *any* of
+   * the three, not only `replies`. They are nulled on their own sources, so the one that
+   * survives without a harvest is not always the first: `review-desk outcome add` can
+   * record a resolution without a reply, and that figure needs its basis as much.
    */
+  const measured
+    = item.replies != null || item.threads_resolved != null || item.code_changed_after != null
   if (item.harvested_at != null) said.push(`as at ${sinceLabel(item.harvested_at)}`)
-  else if (item.replies != null) said.push('recorded without a harvest')
+  else if (measured) said.push('recorded without a harvest')
 
   return said.join(' · ')
 }
@@ -388,24 +395,6 @@ export function prStateLabel(state: PrState | null | undefined): string {
   return `pull request ${state} at the last harvest`
 }
 
-/**
- * Where a review has got to, as the step **and its state** — never the step alone.
- *
- * A bare step name is the step a review is *waiting at* when the state is `waiting_on_you`
- * and the step it has *left* when the state is `done`. A posted review's furthest started
- * step is the draft, so a cell reading "Draft" tells a reader it still needs signing off
- * while the queue says it is with the author. "Draft · approved by you" says the same
- * record and misleads nobody.
- *
- * A review nothing has reported on is "Not started" and not a step number: the record
- * holds seven pending steps, which is a thing it knows rather than a thing it has not
- * measured.
- *
- * **A posted review usually reports step 6**, because nothing in the harvest path writes
- * step 7 — the posting writes it `pending` and the harvester writes no step. A session
- * that records it is reported as `harvest` like any other step; there is no special case
- * here, and there must not be one that derives a step from a harvest time.
- */
 /**
  * Where a review has got to, as the step **and what the step says** — never the step alone.
  *

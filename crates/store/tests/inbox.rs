@@ -510,6 +510,11 @@ fn a_posted_review_carries_what_the_harvester_recorded() {
     recorded(OutcomeKind::ThreadResolved, Actor::Author, 1_200);
     // The harvester's own observation about the code, which is nobody's act.
     recorded(OutcomeKind::CodeChangedAfter, Actor::Harvester, 1_300);
+    // **The same finding, seen changed again on a later commit.** The harvester keys this
+    // outcome on the commit it saw the change in, so a finding whose file is touched by
+    // three pushes holds three rows — and a count of the rows would say three findings
+    // changed on a review that holds one.
+    recorded(OutcomeKind::CodeChangedAfter, Actor::Harvester, 1_350);
     // A kind that is not the author answering, so the counts cannot be a count of
     // outcomes.
     recorded(OutcomeKind::Kept, Actor::Developer, 1_400);
@@ -520,7 +525,10 @@ fn a_posted_review_carries_what_the_harvester_recorded() {
 
     assert_eq!(item.response.replies, 2);
     assert_eq!(item.response.threads_resolved, 1);
-    assert_eq!(item.response.code_changed_after, 1);
+    assert_eq!(
+        item.response.code_changed_after, 1,
+        "one finding, however many commits it was seen changed in"
+    );
     assert_eq!(
         item.review.harvested_at,
         Some(2_000),

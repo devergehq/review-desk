@@ -279,7 +279,7 @@ function repoTabs(data: Inbox) {
   const tally = new Map<string, number>()
   const bump = (name: string) => tally.set(name, (tally.get(name) ?? 0) + 1)
   for (const row of waiting.value) bump(row.repo)
-  for (const item of data.in_progress) bump(item.pull_request.repo)
+  for (const item of withAgent.value) bump(item.pull_request.repo)
   for (const item of data.own_prs_without_reviewer) bump(item.pull_request.repo)
   /*
    * The posted rows the page actually draws, which is the group minus the reviews already
@@ -308,13 +308,33 @@ function repoTabs(data: Inbox) {
  *   developer's turn rather than the author's
  * - a session is running a layer on it, which puts it in `in_progress`. The server's
  *   query has no draft-status guard — any layer `running` qualifies — so a posted review
- *   whose harvest step is running is in both arrays at once, and review 12 of the sample
- *   records is exactly that shape.
+ *   whose harvest step is running is in both arrays at once.
  */
 const drawnAbove = computed(() => {
   const drawn = new Set(waiting.value.map(row => row.review_id))
-  for (const item of inbox.data.value?.in_progress ?? []) drawn.add(item.review_id)
+  for (const item of withAgent.value) drawn.add(item.review_id)
   return drawn
+})
+
+/**
+ * The reviews a session is working on, minus the ones already waiting on the developer.
+ *
+ * **The same rule, one group earlier.** `reviews_in_progress` asks only whether a layer is
+ * `running`, and nothing stops a review being there *and* in one of the needs-you arrays:
+ * the harvester records an author's reply while a session has the harvest step running,
+ * and the review is in `author_replies` and `in_progress` at once. Drawn from both, one
+ * review becomes two rows — the defect DEV-876 exists to prevent, one group further up
+ * than the posted group where it was first noticed.
+ *
+ * It stays where the developer has something to do about it. "Needs you" is a to-do list;
+ * "With the agent" is captioned "nothing for you to do", which stops being true the
+ * moment the author has answered.
+ */
+const withAgent = computed(() => {
+  const needing = new Set(waiting.value.map(row => row.review_id))
+  return (inbox.data.value?.in_progress ?? []).filter(
+    item => !needing.has(item.review_id),
+  )
 })
 
 /**
@@ -396,8 +416,8 @@ const rows = computed(() => {
   // Sorted like every other group, now that it has a time to sort by: the caption over
   // the page says "oldest first", and until DEV-890 this group was the one it could not
   // be true of. The store serves these newest first, which is the opposite.
-  const withAgent: InboxInProgressItem[] = oldestFirst(
-    data.in_progress.filter(item => showing(item.pull_request.repo)),
+  const agentRows: InboxInProgressItem[] = oldestFirst(
+    withAgent.value.filter(item => showing(item.pull_request.repo)),
     item => item.in_state_since ?? null,
   )
   const ownPrs = oldestFirst(
@@ -410,7 +430,13 @@ const rows = computed(() => {
     withAuthor.value.filter(item => showing(item.pull_request.repo)),
     item => item.posted_at ?? null,
   )
-  return { needsYou, withAgent, ownPrs, withAuthor: shown, alsoPosted: alsoPosted.value }
+  return {
+    needsYou,
+    withAgent: agentRows,
+    ownPrs,
+    withAuthor: shown,
+    alsoPosted: alsoPosted.value,
+  }
 })
 
 /** Whether any row on the page has no recorded time, which the caption then says. */
@@ -484,9 +510,16 @@ function sessionAction(item: InboxInProgressItem): string {
 const postedNote = computed(() => {
   const held = rows.value.alsoPosted
   if (held === 0) return 'nothing for you to do'
+  /*
+   * **"Drawn above", not "under Needs you".** The subtraction removes reviews waiting on
+   * the developer *and* reviews a session is working on, and the second is not something
+   * the author has done — a posted review whose harvest step is running is held back with
+   * nothing having come back on it at all. Naming the group would have sent the reader to
+   * one the row is not in, for a reason untrue of it.
+   */
   return held === 1
-    ? '1 more is posted and is under Needs you, because something has come back on it'
-    : `${held} more are posted and are under Needs you, because something has come back on them`
+    ? '1 more is posted and is drawn above, where something else is waiting on it'
+    : `${held} more are posted and are drawn above, where something else is waiting on them`
 })
 
 /** The first line of a posted row: what was posted, as what, and which round. */

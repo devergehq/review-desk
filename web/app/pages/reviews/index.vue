@@ -99,9 +99,18 @@ const someTimesMissing = computed(
   () => (reviews.data.value?.reviews ?? []).some(row => row.last_activity_at == null),
 )
 
-/** Nothing at all, which is a new database rather than a broken one. */
-function isEmpty(answer: { reviews: ReviewListItem[] }): boolean {
-  return answer.reviews.length === 0
+/**
+ * Nothing at all, which is a new database rather than a broken one.
+ *
+ * **Only when no repository is being asked about.** The read follows the picker, so a
+ * repository with no reviews answers with an empty list too — and `GET /repos` lists any
+ * repository holding a review *or* a repository-scoped rule, so one with only a rule is
+ * reachable from the picker. Treating that as empty said "This database holds no reviews"
+ * about a database holding several, and took the picker away with it: the control lives in
+ * the default slot, so the reader had no way back to "All repositories" but the URL.
+ */
+function isEmpty(answer: { repo: string | null, reviews: ReviewListItem[] }): boolean {
+  return answer.repo == null && answer.reviews.length === 0
 }
 </script>
 
@@ -142,7 +151,21 @@ function isEmpty(answer: { reviews: ReviewListItem[] }): boolean {
           </span>
         </div>
 
+        <!--
+          A repository with nothing in it. Said here rather than through the empty card,
+          which claims something about the whole database — and said inside the default
+          slot so the picker stays on the page to get back out with.
+        -->
+        <p
+          v-if="data.reviews.length === 0"
+          class="rd-empty"
+        >
+          No review on {{ data.repo }} yet. Every other repository's are under
+          <strong>All repositories</strong>.
+        </p>
+
         <DeskSection
+          v-else
           heading="Every review"
           :count="data.reviews.length"
         >

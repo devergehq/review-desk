@@ -230,8 +230,12 @@ describe('the queue', () => {
     expect(forThreeNineEight).toHaveLength(1)
     expect(forThreeNineEight[0]!.text()).toContain('The author replied')
 
-    /* And the group says where it went, so its count cannot read as the whole truth. */
-    expect(page.text()).toContain('1 more is posted and is under Needs you')
+    /*
+     * And the group says where it went, so its count cannot read as the whole truth.
+     * "drawn above" rather than a named group: the subtraction also removes reviews a
+     * session is working on, which is not something the author has done.
+     */
+    expect(page.text()).toContain('1 more is posted and is drawn above')
   })
 
   /*

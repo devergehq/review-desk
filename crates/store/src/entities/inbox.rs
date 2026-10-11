@@ -174,7 +174,7 @@ impl Store {
                  (SELECT COUNT(*) FROM outcomes o
                   WHERE o.review_id = v.id
                     AND o.kind = ?2 AND o.actor = ?4) AS threads_resolved,
-                 (SELECT COUNT(*) FROM outcomes o
+                 (SELECT COUNT(DISTINCT o.finding_seq) FROM outcomes o
                   WHERE o.review_id = v.id AND o.kind = ?3) AS code_changed_after
              FROM reviews v
              LEFT JOIN drafts d ON d.review_id = v.id

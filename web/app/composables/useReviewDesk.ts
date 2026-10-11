@@ -154,11 +154,14 @@ async function refreshEverything(): Promise<void> {
 /**
  * Resources more than one component on a page wants, and the count of who still wants them.
  *
- * **One read, however many ask for it.** The layout reads the inbox to know which review to
- * link "Reviews" at, and the Inbox screen reads it to draw itself — so the Inbox issued
- * `GET /inbox` twice on load and twice more after every write, for one document that is the
- * same both times. Sharing it is also what keeps the two consistent: two resources could
- * answer differently for as long as one of them was in flight.
+ * **One read, however many ask for it.** The layout used to read the inbox to know which
+ * review to link "Reviews" at while the queue read it to draw itself, so the queue issued
+ * `GET /inbox` twice on load and twice more after every write, for one document that is
+ * the same both times. DEV-930 pointed that item at `/reviews` and deleted the layout's
+ * read, so **the double read this was written for is gone** — recorded here rather than
+ * left as a reason a reader would check and not find. What it still buys is the other
+ * half of the argument, which has no second reader to depend on: two resources over one
+ * document can answer differently for as long as one of them is in flight.
  *
  * Counted rather than kept forever: the last component to go takes the resource with it, so
  * a long-lived page does not hold a refresher nothing is watching.

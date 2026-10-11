@@ -300,7 +300,7 @@ fn set_finding_disposition_validates_as_a_finding() {
 #[test]
 fn the_inbox_validates() {
     let harness = common::start_with_no_github();
-    common::seed(&harness.store);
+    let seeded = common::seed(&harness.store);
 
     let answer = harness.api("GET", "/inbox", None);
     assert_eq!(answer.status, 200, "{}", answer.text());
@@ -344,12 +344,49 @@ fn the_inbox_validates() {
         ),
         "totals.items is the five waiting groups' combined length: {inbox}"
     );
-    // And the two groups that are *not* in it are not empty, or the sum above would hold
+    // **And the two groups that are not in it are not empty**, or the sum above would hold
     // whether they counted or not. Nothing in either asks the developer for anything, and
     // the screen's headline counts what does.
+    //
+    // The seeded record has a session running but nothing posted, so the posted group is
+    // empty until something posts — and its term in the sum was vacuous until this did.
     assert!(
         group("in_progress") > 0,
         "the seeded record has a session running: {inbox}"
+    );
+
+    harness
+        .store
+        .approve_draft(
+            seeded.review_id,
+            review_desk_store::ReviewEvent::RequestChanges,
+            review_desk_store::Actor::Developer,
+        )
+        .expect("signed off");
+    harness
+        .store
+        .post_draft(seeded.review_id, "gh-review-3401")
+        .expect("posted");
+
+    let after = harness.api("GET", "/inbox", None).json();
+    assert_valid("Inbox", &after);
+    let group = |name: &str| after[name].as_array().expect(name).len();
+    assert!(
+        group("posted_awaiting_author") > 0,
+        "a posted review with an open pull request: {after}"
+    );
+    assert_eq!(
+        after["totals"]["items"]
+            .as_u64()
+            .map(|items| items as usize),
+        Some(
+            group("briefs_to_confirm")
+                + group("drafts_to_approve")
+                + group("author_replies")
+                + group("own_prs_without_reviewer")
+                + group("proposed_rules")
+        ),
+        "and posting a review does not change what is waiting on the developer: {after}"
     );
 }
 

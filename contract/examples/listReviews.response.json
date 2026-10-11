@@ -14,7 +14,7 @@
         "session_id": "ses_9f1c0b42",
         "ledger_id": "ledger-2026-10-10-514",
         "github_review_id": null,
-        "created_at": "2026-10-10T08:02:00Z",
+        "created_at": "2026-10-09T20:40:00Z",
         "pr_state": null,
         "harvested_at": null
       },
@@ -39,7 +39,7 @@
         "session_id": null,
         "ledger_id": null,
         "github_review_id": null,
-        "created_at": "2026-10-11T07:14:00Z",
+        "created_at": "2026-10-09T09:10:00Z",
         "pr_state": null,
         "harvested_at": null
       },
@@ -85,7 +85,7 @@
         "session_id": "ses_55c1b7d0",
         "ledger_id": "ledger-2026-10-09-88",
         "github_review_id": null,
-        "created_at": "2026-10-09T16:04:00Z",
+        "created_at": "2026-10-07T09:14:00Z",
         "pr_state": null,
         "harvested_at": null
       },
@@ -110,7 +110,7 @@
         "session_id": "ses_2a7e9014",
         "ledger_id": "ledger-2026-10-08-398",
         "github_review_id": "PRR_kwDOA1",
-        "created_at": "2026-10-09T08:15:00Z",
+        "created_at": "2026-10-05T12:40:00Z",
         "pr_state": "open",
         "harvested_at": "2026-10-09T08:15:00Z"
       },
@@ -135,7 +135,7 @@
         "session_id": "ses_31d9ac70",
         "ledger_id": "ledger-2026-10-07-88",
         "github_review_id": "gh-review-3104",
-        "created_at": "2026-10-09T08:15:00Z",
+        "created_at": "2026-09-29T11:00:00Z",
         "pr_state": "open",
         "harvested_at": "2026-10-09T08:15:00Z"
       },

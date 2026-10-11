@@ -3451,16 +3451,19 @@ components:
           minimum: 0
           description: |
             Findings whose code the harvester found changed after the commit the review
-            read. Counted whole rather than by actor: the harvester attributes this to
-            nobody, because it is an observation about the code and not an act by a
-            person. Null when it would be zero and nothing has harvested the review.
+            read, **counted once each**. Not by actor, unlike the two above: the harvester
+            attributes this to nobody, because it is an observation about the code and not
+            an act by a person. Null when it would be zero and nothing has harvested the
+            review.
 
-            **This issue asks for "commits since" and this is not that.** The harvester
-            writes one of these per finding whose file changed, so one commit touching
-            three findings' files writes three — and `commits_since_previous_round`
-            counts the commits *before* a round rather than after its posting. There is
-            no count of commits since a posting in the record, so a screen must not head
-            this column with one.
+            Counted once each because the harvester records this per *commit* it saw the
+            change in, so a finding whose file is touched by three successive pushes holds
+            three rows. A count of the rows would exceed the findings it is about.
+
+            **This issue asks for "commits since" and this is not that.** There is no count
+            of commits since a posting anywhere in the record —
+            `commits_since_previous_round` counts the commits *before* a round — so a
+            screen must not head this column with one.
 
     DescriptionLint:
       type: object

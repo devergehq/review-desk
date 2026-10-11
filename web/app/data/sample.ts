@@ -433,9 +433,17 @@ function inbox(): Inbox {
         findings_linked: linked,
         replies: counted(byAuthor('replied'), readable),
         threads_resolved: counted(byAuthor('thread_resolved'), readable),
-        /* The harvester's own observation about the code, attributed to nobody. */
+        /*
+         * The harvester's own observation about the code, attributed to nobody — and
+         * **distinct findings**, because it records one of these per commit it saw the
+         * change in, so a finding touched by three pushes holds three.
+         */
         code_changed_after: counted(
-          detail.outcomes.filter(one => one.kind === 'code_changed_after').length,
+          new Set(
+            detail.outcomes
+              .filter(one => one.kind === 'code_changed_after')
+              .map(one => one.finding_seq),
+          ).size,
           harvested,
         ),
       }
