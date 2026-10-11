@@ -683,9 +683,10 @@ harvest" — so a review read back every quarter of an hour went on saying it wa
 | The pull request is open and something has | `running`, the strongest fact as the detail |
 | The pull request merged or closed | `done`, prefixed `merged, ` or `closed, ` |
 
-The counts go beside it as the step's facts — `Replies`, `Threads resolved`,
-`Code changed since`, and `Pull request` once it has settled — with a count of nothing left
-out rather than written as a nought. The detail keeps to four words and the facts to five,
+The counts go beside it as the step's facts — `Pull request`, then `Replies`,
+`Threads resolved` and `Code changed since` — with a count of nothing left out rather than
+written as a nought. `Pull request` is always there, saying `open` until it says `merged`
+or `closed`. The detail keeps to four words and the facts to five,
 as every other step does.
 
 Three things are worth saying about it:
@@ -703,10 +704,17 @@ Three things are worth saying about it:
 
 The time it read is the layer row's `updated_at`, not a date written into a fact: every
 other time this record holds is an instant the screen words — and **the screen words this
-one**. While step 7 is `running` the trail draws "read 3 min ago · nothing back yet", the
-read time first, because the question a developer asks of this step is whether anything is
-still looking. Once it is `done` the pull request has settled and nothing will read it
-again, so the line is what the harvest found and no read time.
+one**. While step 7 is `running` the card beside the step says "read 3 min ago", where a
+finished step says how long it took, and the step's line carries it in its `title`. Once
+the step is `done` the pull request has settled and nothing will read it again, so there is
+no read time to say.
+
+**It is not on the step's line, and that was measured rather than argued.** A step's column
+holds 154 pixels of text at 1440 and 175 at 390; the four-word detail fills it exactly, and
+every way of writing both on one line ran 186 to 239 pixels — so whichever went first, the
+other was cut. The line keeps what the four-word rule protects. That is also why a harvest
+always records `Pull request` as a fact: the trail draws a card only for a step that
+recorded some, and the card is where the read time lives.
 
 DEV-933's own table asked for "read 3 min ago" *in the detail*. It is not stored, and that
 is the one place this slice departs from the issue: a detail is a frozen string, so a

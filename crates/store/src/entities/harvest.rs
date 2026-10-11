@@ -261,16 +261,18 @@ fn detail_for(ended: Option<&'static str>, found: &Found) -> String {
 
 /// The pairs the card beside step 7 draws.
 ///
-/// How it ended first, because a merged pull request is the strongest thing the step has
+/// Where the pull request stands first, because that is the strongest thing the step has
 /// to say, then the counts. **A count of nothing is left out** rather than written as a
 /// nought: "Replies 0" fills the card of a review nobody has replied to with three facts
 /// that say nothing, and the detail already says nothing came back.
+///
+/// **Always at least that first pair, so a harvested step always has a card.** The trail
+/// draws a card only for a step that recorded facts, and the card is where the review page
+/// says when the harvest last read this review — a measurement settled that it cannot go
+/// on the step's own line, which is 154 pixels wide at 1440 and already full. "open" is
+/// not filler there: on a step that is still running it is the reason it is still running.
 fn facts_for(ended: Option<&'static str>, found: &Found) -> Vec<NewLayerFact> {
-    let mut facts = Vec::new();
-
-    if let Some(ended) = ended {
-        facts.push(fact("Pull request", ended.to_string()));
-    }
+    let mut facts = vec![fact("Pull request", ended.unwrap_or("open").to_string())];
     if found.replies > 0 {
         facts.push(fact("Replies", found.replies.to_string()));
     }
@@ -382,12 +384,19 @@ mod tests {
     }
 
     #[test]
-    fn a_harvest_that_found_nothing_says_so_and_records_no_facts() {
+    fn a_harvest_that_found_nothing_says_so_and_still_draws_a_card() {
         assert_eq!(detail_for(None, &Found::default()), "nothing back yet");
-        assert!(
-            facts_for(None, &Found::default()).is_empty(),
-            "nothing came back, so there is nothing to put on a card — and a step with \
-             no facts draws no card and no control for one"
+
+        let recorded = facts_for(None, &Found::default());
+        assert_eq!(
+            recorded
+                .iter()
+                .map(|fact| (fact.label.as_str(), fact.value.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("Pull request", "open")],
+            "where the pull request stands, and nothing invented beside it — the trail \
+             draws a card only for a step with facts, and the card is where the page says \
+             when the harvest last read this review"
         );
     }
 
@@ -436,7 +445,7 @@ mod tests {
         };
         assert_eq!(
             facts_for(None, &overtaken)
-                .first()
+                .last()
                 .map(|fact| fact.value.clone()),
             Some("1 finding".to_string())
         );
@@ -463,6 +472,14 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["Pull request", "Replies", "Threads resolved"],
             "and a count of nothing is left out rather than written as a nought"
+        );
+
+        assert_eq!(
+            facts_for(None, &found)
+                .first()
+                .map(|fact| (fact.label.clone(), fact.value.clone())),
+            Some(("Pull request".to_string(), "open".to_string())),
+            "and an open one says so, which is why the step is still running"
         );
     }
 

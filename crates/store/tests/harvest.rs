@@ -390,10 +390,15 @@ fn a_harvest_that_found_nothing_puts_step_seven_at_running_and_says_when_it_read
         Some("nothing back yet"),
         "not \"posted, waiting for the harvest\": a harvest has read this review"
     );
-    assert!(
-        written.facts.is_empty(),
-        "nothing came back, so the step draws no card: {:?}",
-        written.facts
+    assert_eq!(
+        written
+            .facts
+            .iter()
+            .map(|fact| (fact.label.as_str(), fact.value.as_str()))
+            .collect::<Vec<_>>(),
+        vec![("Pull request", "open")],
+        "where the pull request stands and nothing else — which is also what gives the \
+         step a card for the page to put the read time on"
     );
 
     let read_at = written.updated_at.expect("when the harvest read it");
@@ -453,6 +458,7 @@ fn every_kind_of_thing_that_came_back_is_a_fact_on_step_seven() {
     assert_eq!(
         said,
         vec![
+            ("Pull request".to_string(), "open".to_string()),
             ("Replies".to_string(), "2".to_string()),
             ("Threads resolved".to_string(), "1".to_string()),
             ("Code changed since".to_string(), "1 finding".to_string()),

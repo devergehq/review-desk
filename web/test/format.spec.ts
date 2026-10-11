@@ -12,6 +12,7 @@ import {
   forLabel,
   layerDetail,
   layerLabel,
+  harvestReadLabel,
   layerOutcome,
   layerTone,
   openForLabel,
@@ -208,54 +209,45 @@ describe('the seven layers', () => {
 
   /*
    * DEV-933: a harvest writes step 7, and the question the step exists to answer is
-   * whether anything is still looking. The words are the store's; the read time is
-   * worded here from the layer row's `updated_at`, because a relative time stored in a
+   * whether anything is still looking. The words are the store's; when it was last read
+   * is worded here from the layer row's `updated_at`, because a relative time stored in a
    * detail is wrong fifteen minutes later and the harvest runs every fifteen minutes.
+   *
+   * It is a label of its own rather than part of the step's line, and that was measured:
+   * a step's column holds 154 pixels of text and the two together run 186 to 239. The
+   * line keeps the detail; this goes on the card and in the line's `title`.
    */
-  describe('step 7, once a harvest has read the review', () => {
+  describe('when a harvest last read the review', () => {
     const at = '2026-10-11T09:00:00Z'
     const read = (minutes: number) => new Date(Date.parse(at) + minutes * 60_000)
+    const watching = { name: 'harvest' as const, state: 'running' as const, updated_at: at }
 
-    it('leads with when it was last read, then what came back', () => {
-      const step = {
-        name: 'harvest' as const,
-        state: 'running' as const,
-        detail: 'nothing back yet',
-        updated_at: at,
-      }
-      expect(layerOutcome(step, read(3))).toBe('read 3 min ago · nothing back yet')
-      expect(layerOutcome(step, read(0))).toBe('read just now · nothing back yet')
-      expect(layerOutcome({ ...step, detail: '2 replies back' }, read(90)))
-        .toBe('read 1 hour ago · 2 replies back')
+    it('says how long ago, in the desk\'s own words', () => {
+      expect(harvestReadLabel(watching, read(3))).toBe('read 3 min ago')
+      expect(harvestReadLabel(watching, read(0))).toBe('read just now')
+      expect(harvestReadLabel(watching, read(90))).toBe('read 1 hour ago')
     })
 
-    it('says how it ended and no read time once the pull request has settled', () => {
+    it('says nothing once the pull request has settled', () => {
       // Nothing will read it again — a settled pull request is not fetched — so a read
       // time here would be a fossil growing older beside a fact that is finished.
-      expect(layerOutcome({
-        name: 'harvest',
-        state: 'done',
-        detail: 'merged, 2 replies back',
-        updated_at: at,
-      }, read(60 * 24 * 60))).toBe('merged, 2 replies back')
+      expect(harvestReadLabel({ ...watching, state: 'done' }, read(3))).toBeNull()
     })
 
-    it('says only what posting wrote for a review no harvest has read', () => {
-      expect(layerOutcome({
-        name: 'harvest',
-        state: 'pending',
-        detail: 'posted, waiting for the harvest',
-        updated_at: at,
-      }, read(3))).toBe('posted, waiting for the harvest')
+    it('says nothing for a review no harvest has read', () => {
+      expect(harvestReadLabel({ ...watching, state: 'pending' }, read(3))).toBeNull()
+      expect(harvestReadLabel({ ...watching, updated_at: null }, read(3))).toBeNull()
     })
 
-    it('leaves every other step alone', () => {
-      expect(layerOutcome({
-        name: 'code_review',
-        state: 'running',
-        detail: '15 findings, 1 blocker',
-        updated_at: at,
-      }, read(3))).toBe('15 findings, 1 blocker')
+    it('says nothing about any other step', () => {
+      expect(harvestReadLabel({ ...watching, name: 'code_review' }, read(3))).toBeNull()
+    })
+
+    it('leaves the step\'s own line to the store\'s words', () => {
+      expect(layerOutcome({ state: 'running', detail: 'nothing back yet' }))
+        .toBe('nothing back yet')
+      expect(layerOutcome({ state: 'done', detail: 'merged, 2 replies back' }))
+        .toBe('merged, 2 replies back')
     })
   })
 

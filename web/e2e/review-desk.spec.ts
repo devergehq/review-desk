@@ -1145,21 +1145,6 @@ test.describe('the three step pages of one review', () => {
     await expect(page.locator('.trail button')).toHaveCount(5)
   })
 
-  /**
-   * **A harvested step 7 is drawn on the trail, and nothing on the page moves.**
-   *
-   * DEV-933's sixth acceptance criterion, in a browser because that is the only thing that
-   * computes a layout. Until DEV-933 step 7 only ever said "posted, waiting for the
-   * harvest" — nothing in `crates/harvest` wrote a layer — so the state measured here is
-   * one the trail had never been drawn with: a step at `running`, carrying facts, in the
-   * group that repeats each round.
-   *
-   * **Written through the command line**, which is how every step of this seed is written,
-   * with the words and the pairs `Store::record_harvest_step` produces — pinned in
-   * `crates/store/tests/harvest.rs` and in the harvester's own tests against the recording.
-   * The step is put back at the end, because every other test in this file reads the same
-   * database and the one above counts the trail's controls.
-   */
   /*
    * **The write and the putting back, outside the test.**
    *
@@ -1189,6 +1174,19 @@ test.describe('the three step pages of one review', () => {
       ...aboutTheFacts,
     ])
 
+  /**
+   * **A harvested step 7 is drawn on the trail, and nothing on the page moves.**
+   *
+   * DEV-933's sixth acceptance criterion, in a browser because that is the only thing that
+   * computes a layout. Until DEV-933 step 7 only ever said "posted, waiting for the
+   * harvest" — nothing in `crates/harvest` wrote a layer — so the state measured here is
+   * one the trail had never been drawn with: a step at `running`, carrying facts, in the
+   * group that repeats each round.
+   *
+   * **Written through the command line**, which is how every step of this seed is written,
+   * with the words and the pairs `Store::record_harvest_step` produces — pinned in
+   * `crates/store/tests/harvest.rs` and in the harvester's own tests against the recording.
+   */
   test.describe('a harvested step 7', () => {
     /* Exactly what `seedStructured` wrote, word for word, whatever the test did or how it
        ended. */
@@ -1228,6 +1226,8 @@ test.describe('the three step pages of one review', () => {
         /* And what a harvest of an open pull request leaves there. */
         setStepSeven('running', '3 replies back', [
           '--fact',
+          'Pull request=open',
+          '--fact',
           'Replies=3',
           '--fact',
           'Threads resolved=3',
@@ -1238,13 +1238,26 @@ test.describe('the three step pages of one review', () => {
         await expect(page.locator('h1')).toBeVisible()
         await page.waitForLoadState('networkidle')
         /*
-           The read time first, worded from the layer row's `updated_at` at the moment
-           of drawing — "just now", because `layer set` has only this second written it.
-           What came back follows. Neither the word "running" nor a stored relative time
-           appears anywhere: DEV-933's own words on both.
+           **The line is the store's four words and nothing else, and it fits.** That is
+           what the four-word rule buys and what measuring this column settled: the two
+           facts together run 186 to 239 pixels in 154, so the read time is on the card
+           and in the title instead. The word "running" reaches the page nowhere.
         */
-        await expect(step.locator('.outcome')).toHaveText(/read just now · 3 replies back/)
+        await expect(step.locator('.outcome')).toHaveText(/^3 replies back/)
         await expect(step.locator('.outcome')).not.toHaveText(/running/)
+        await expect(step.locator('.outcome')).toHaveAttribute(
+          'title',
+          '3 replies back — read just now',
+        )
+        const line = await step.locator('.outcome').evaluate(element => ({
+          scroll: element.scrollWidth,
+          client: element.clientWidth,
+        }))
+        expect(
+          line.scroll,
+          `at ${label} the step's own words are ${line.scroll}px in ${line.client}px, so `
+          + 'the reader does not see what the harvest found',
+        ).toBeLessThanOrEqual(line.client)
 
         expect(await positions(), `nothing moved at ${label}`).toEqual(before)
         expect(
@@ -1263,6 +1276,8 @@ test.describe('the three step pages of one review', () => {
         await expect(card).toContainText('Threads resolved')
         await expect(card).toContainText('Code changed since')
         await expect(card).toContainText('3 findings')
+        /* And the read time, where a finished step shows how long it took. */
+        await expect(card.locator('.card-took')).toHaveText('read just now')
         expect(await positions(), `the card moved nothing either at ${label}`).toEqual(before)
       }
     })

@@ -125,6 +125,8 @@ interface Step {
   facts: LayerFact[]
   /** How long it took, or that nothing recorded it. `null` for a step still going. */
   duration: string | null
+  /** When a harvest last read the review. `null` for every step but a running step 7. */
+  read: string | null
   to: string | null
   current: boolean
   tone: 'done' | 'current' | 'pending' | 'failed'
@@ -152,6 +154,7 @@ const steps = computed<Step[]>(() =>
        */
       facts: layer.facts ?? [],
       duration: stepDurationLabel(layer),
+      read: harvestReadLabel(layer),
       to: PAGES[layer.name] == null
         ? null
         : `/reviews/${props.reviewId}/${PAGES[layer.name]}`,
@@ -283,7 +286,7 @@ const groups = computed(() => [
             type="button"
             class="outcome outcome--opens"
             :class="{ 'outcome--open': open === step.number }"
-            :title="step.detail"
+            :title="step.read ? `${step.detail} — ${step.read}` : step.detail"
             :aria-expanded="open === step.number"
             :aria-controls="`step-facts-${step.number}`"
             @click="toggle(step.number)"
@@ -296,7 +299,7 @@ const groups = computed(() => [
           <span
             v-else
             class="outcome"
-            :title="step.detail"
+            :title="step.read ? `${step.detail} — ${step.read}` : step.detail"
           >{{ step.detail }}</span>
 
           <FloatingCard
@@ -319,6 +322,18 @@ const groups = computed(() => [
                 v-if="step.duration"
                 class="card-took"
               >{{ step.duration }}</span>
+              <!--
+                **And when a harvest last read the review**, which is step 7's and no
+                other step's. It sits where the duration sits because the two never
+                appear together: a duration is for a step that has finished, and this is
+                for the one step that is `running` for as long as a pull request stays
+                open. Why it is here rather than on the step's line is measured in
+                `harvestReadLabel` — the line is 154 pixels wide and the detail fills it.
+              -->
+              <span
+                v-else-if="step.read"
+                class="card-took"
+              >{{ step.read }}</span>
             </div>
             <!--
               Label then value, as a description list: that is what two columns of pairs

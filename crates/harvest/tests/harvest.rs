@@ -655,6 +655,7 @@ fn a_harvest_of_an_open_pull_request_puts_step_seven_at_running_with_what_came_b
     assert_eq!(
         facts,
         vec![
+            ("Pull request", "open"),
             ("Replies", "3"),
             ("Threads resolved", "3"),
             ("Code changed since", "3 findings"),
@@ -699,10 +700,13 @@ fn a_harvest_of_a_review_with_nothing_back_says_so_rather_than_waiting_for_itsel
         Some("nothing back yet"),
         "a harvest has read this review, so it no longer says it is waiting for one"
     );
-    assert!(
-        step.facts.is_empty(),
-        "nothing came back, so the step draws no card: {:?}",
+    assert_eq!(
         step.facts
+            .iter()
+            .map(|fact| (fact.label.as_str(), fact.value.as_str()))
+            .collect::<Vec<_>>(),
+        vec![("Pull request", "open")],
+        "where the pull request stands, which is what gives a harvested step its card"
     );
 }
 
