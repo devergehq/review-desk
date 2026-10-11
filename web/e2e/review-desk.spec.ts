@@ -2441,10 +2441,19 @@ test.describe('a harvested review, on the queue and in the list', () => {
     const rows = page.locator('.row').filter({ hasText: 'Record the delivery attempt' })
     await expect(rows).toHaveCount(1)
 
-    /* And never under "With the agent": a harvest reading GitHub is not a session. */
+    /*
+     * **And no "With the agent" group at all**, which is the load-bearing half: nothing
+     * else in this seed has a step running, so that section exists only if step 7 leaked
+     * into it — and the row above proves the review is on the page, so its absence here
+     * is the exclusion working rather than the review having gone missing. Taking the
+     * exclusion out of `reviews_in_progress` fails this line.
+     *
+     * `getByLabel` for the bar, not `getByText`: "Layer 7 of 7" is a `SegmentBar`'s
+     * `aria-label` and never text, so a text matcher there could not fail.
+     */
+    await expect(page.getByText('With the agent')).toHaveCount(0)
+    await expect(page.getByLabel(/^Layer \d+ of 7$/)).toHaveCount(0)
     await expect(page.getByText('a session is on step 7 of 7')).toHaveCount(0)
-    await expect(page.getByText('Layer 7 of 7')).toHaveCount(0)
-    await expect(page.locator('body')).not.toContainText('7 Harvest · running')
   })
 
   for (const [what, state, detail, facts] of [

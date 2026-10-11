@@ -463,12 +463,17 @@ export function prStateLabel(state: PrState | null | undefined): string {
  * holds seven pending steps, which is a thing it knows rather than a thing it has not
  * measured.
  *
- * **A harvested review reports step 7, and the row says when it was last read.** Until
- * DEV-933 nothing in the harvest path wrote a step, so a posted review reported step 6
- * and this said so. Now the harvest writes `running` while the pull request is open and
- * `done` once it has settled, and the state word never reaches the row: `layerOutcome`
- * prefers the step's own note, and a harvest always writes one — "nothing back yet",
- * "2 replies back", "merged, 2 replies back".
+ * **A review harvested after it was posted reports step 7, and the row says when it was
+ * last read.** Until DEV-933 nothing in the harvest path wrote a step, so a posted review
+ * reported step 6 and this said so. Now the harvest writes `running` while the pull
+ * request is open and `done` once it has settled, and the state word never reaches the
+ * row: `layerOutcome` prefers the step's own note, and a harvest always writes one —
+ * "nothing back yet", "2 replies back", "merged, 2 replies back".
+ *
+ * **A `harvested_at` alone does not make it step 7.** The sweep reads every review whose
+ * pull request is open, and writes the step only where a GitHub review id says one was
+ * posted — so a review read before it was posted keeps reporting whatever step a session
+ * last wrote, and this row says nothing about a harvest.
  *
  * **The read time comes from `review.harvested_at`**, the harvester's own stamp, rather
  * than from the step's `updated_at` as the trail's does — this row holds the review and

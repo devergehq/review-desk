@@ -240,11 +240,17 @@ impl Store {
     /// still needs signing off while the queue says it is with the author. "Draft,
     /// approved by you" says the same record and misleads nobody.
     ///
-    /// **A harvest writes step 7, so a harvested review reports it.** `post_draft` writes
-    /// the step `pending`, and since DEV-933 `record_harvest_step` writes what the harvest
-    /// found: `running` while the pull request is open, `done` once it has settled. A
-    /// review a harvest has read therefore reports step 7, where until that change it
-    /// reported step 6 — nothing in the harvest path wrote a step at all.
+    /// **A harvest writes step 7 for a review it was posted on, and that review reports
+    /// it.** `post_draft` writes the step `pending`, and since DEV-933
+    /// `record_harvest_step` writes what the harvest found: `running` while the pull
+    /// request is open, `done` once it has settled.
+    ///
+    /// **Harvested is not posted.** The sweep reads every review whose pull request is
+    /// open, including one still being drafted, and `record_harvest_step` answers `None`
+    /// for a review with no `github_review_id` rather than claim a loop nobody has
+    /// started. So a review with a `harvested_at` and nothing posted still reports the
+    /// step a session last wrote — step 6 for a review whose draft is done, which is what
+    /// every harvested review reported until DEV-933.
     ///
     /// A *session* may write it too: `set_review_layer` takes any step and any state, and
     /// the seed behind `contract/examples/listReviews.response.json` writes step 7 `done`.

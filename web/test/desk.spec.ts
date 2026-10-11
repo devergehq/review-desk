@@ -96,12 +96,19 @@ describe('the inbox', () => {
   it('shows every session running, one of them with unknown liveness', async () => {
     const inbox = await settled(desk().inbox())
     /*
-     * **Three, and the third is a posted review whose harvest step is running.** This
+     * **Three, and the third is a posted review a session has gone back to.** This
      * asserted two until DEV-930: sample mode carried a `draft_status === 'drafting'`
      * filter that `Store::reviews_in_progress` has not got, so the one state the queue's
      * cross-group deduplication exists for — a review in `author_replies` and
      * `in_progress` at once — could not be expressed here at all. The queue draws review
      * 12 once; this is the array it has to do that from.
+     *
+     * **It was the harvest step that put review 12 here, and since DEV-933 it cannot
+     * be.** A harvest sets step 7 `running` for as long as the pull request stays open,
+     * so neither the server nor this mode counts that step as a session at work. What
+     * puts review 12 here now is its code review step, which a session went back to when
+     * the author replied — the next thing that happens in this loop, and a shape the
+     * server can serve.
      */
     expect(inbox.in_progress.map(item => item.review_id)).toEqual([12, 18, 19])
     expect(inbox.in_progress.map(item => item.session_alive)).toEqual([null, true, null])
@@ -192,10 +199,11 @@ describe('the reviews list', () => {
     expect(answer.reviews.map(row => row.review.id)).toEqual([43, 41, 19, 18, 17, 16, 15, 12])
 
     /*
-     * **A posted review reports step 6, not step 7.** Posting writes the harvest step as
-     * `pending` and nothing records the harvest itself, so the furthest *started* step is
-     * the draft — and the row carries the state and the note, because "Draft" alone would
-     * read as a sign-off still owed.
+     * **A posted review nothing has harvested reports step 6, not step 7.** Posting
+     * writes the harvest step as `pending`, so the furthest *started* step is the draft
+     * until a harvest reads the review and writes step 7 — which is DEV-933, and review
+     * 43 has not been read. The row carries the state and the note either way, because
+     * "Draft" alone would read as a sign-off still owed.
      */
     const posted = answer.reviews.find(row => row.review.id === 43)!
     expect(posted.step_number).toBe(6)

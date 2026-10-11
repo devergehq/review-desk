@@ -1453,12 +1453,18 @@ components:
         still needs signing off while the queue says it is with the author. "Draft,
         approved by you" says the same record and misleads nobody.
 
-        **A harvest writes step 7, so a posted review reports it.** `draft posted` writes
-        the step as `pending`, and from DEV-933 `review-desk harvest` writes what it found
-        there: `running` while the pull request is open, `done` once it has merged or
-        closed. So the step a harvested review reports is `harvest`, and a client must
-        draw it. Until that change nothing in the harvest path wrote the step at all and a
-        harvested review reported `draft`.
+        **A harvest writes step 7 for a review it was posted on, so that review reports
+        it.** `draft posted` writes the step `pending`, and from DEV-933 `review-desk
+        harvest` writes what it found there: `running` while the pull request is open,
+        `done` once it has merged or closed. A client must draw `harvest` here.
+
+        **Harvested is not posted, and the example beside this schema is the case.** The
+        harvest reads every review whose pull request is open, including one still being
+        drafted, and writes the step only where the record holds a `github_review_id` —
+        a step saying a feedback loop is running on a review nobody has posted would be a
+        lie. So a review with a `harvested_at` and no posted id reports the step a session
+        last wrote, which in that example is `draft`. Until DEV-933 nothing in the harvest
+        path wrote the step at all and every harvested review reported `draft`.
 
         A *session* may write it too — `review-desk layer set` writes any step to any
         state, and the example beside this schema carries a review whose step 7 is `done`.
