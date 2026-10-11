@@ -501,7 +501,16 @@ describe('the queue', () => {
     expect(reviews!.attributes('href')).toBe('/reviews')
 
     const page = await shown(Reviews)
-    const rows = page.findAll('.row')
+    /*
+     * **Scoped to a queue row's wrapper**, not every `.row` on the page. `.row` belongs to
+     * `QueueRow`, `OpenRow`, `DeskTable`, `FlowDiagram` and two pages, and this assertion
+     * reads `href` off every match — so the first non-anchor `.row` to reach this screen
+     * would throw for a reason with nothing to do with the rule being asserted. The same
+     * unscoped-shared-selector shape as the `.line` rename in `QueueRow.vue`, which that
+     * component's comment states as a rule; this one fails loudly rather than passing
+     * wrongly, which is why it is a narrower problem and still worth not having.
+     */
+    const rows = page.findAll('.queue-line .row')
     expect(rows.length).toBeGreaterThan(0)
     for (const row of rows) {
       expect(row.attributes('href')).toMatch(/^\/reviews\/\d+\/understand$/)

@@ -923,7 +923,8 @@ components:
         it and never parses it.
 
         **One exception, stated where it applies**: `Review.ticket_id` is trimmed, and a
-        blank one is null. Nothing else here is.
+        blank one is read as absent — which leaves a stored id alone rather than clearing
+        it. Nothing else here is.
 
         A review's ticket is a fact about *that round*. Round 2 of a pull request does not
         inherit round 1's, any more than it inherits its title or its changed-line count —
@@ -1155,12 +1156,21 @@ components:
           description: |
             The ticket the change is for, opaque.
 
-            **Trimmed on the way in, and blank is null**, which is the one exception to
-            `ForeignId`'s round-trip: `" ABC-231 "` is stored and returned as `ABC-231`,
-            and `" "` is stored as null. It exists because this id is now checked against
-            `ticket_url` — an address beside a blank id would reach no screen — and a field
-            read one way by a check and another by a writer is what let that fault through
-            twice. The other `ForeignId`s on this object are untouched.
+            **Trimmed on the way in, and a blank one is read as absent**, which is the one
+            exception to `ForeignId`'s round-trip: `" ABC-231 "` is stored and returned as
+            `ABC-231`.
+
+            **Absent means "leave it as it was", not "clear it".** A blank id does not null
+            a stored one — the write is `COALESCE(?, ticket_id)`, which only a `NULL` tells
+            to leave the column alone, so reading blank as absent is exactly what stops
+            `--ticket ""` from wiping a recorded `ABC-231`. On a review being created there
+            is nothing to leave, so it simply has no ticket. A request whose only field is a
+            blank id writes nothing at all, and does not even mark the review as written to.
+
+            It exists because this id is checked against `ticket_url` — an address beside a
+            blank id would reach no screen — and a field read one way by a check and another
+            by a writer is what let that fault through twice. The other `ForeignId`s on this
+            object are untouched.
         ticket_url:
           allOf:
             - $ref: '#/components/schemas/TicketUrl'

@@ -607,25 +607,31 @@ fn paired(url: Option<String>, passed: Option<&str>, held: Option<&str>) -> Resu
         return Ok(url);
     }
 
+    // **Which of the two cases this is belongs in the sentence, not in the value.**
+    // `InvalidValue` formats as `{field} holds {value:?}`, and two attempts to carry the
+    // distinction through that slot were both wrong: a hard-coded `""` told a caller who
+    // passed `--ticket "  "` that the field held nothing, and a `"<none>"` sentinel asserts
+    // the field holds a value *and* is a legal `ForeignId`, so it cannot be told from a
+    // caller who passed the literal id `<none>`. The value is what arrived; the clause says
+    // what was missing.
+    //
+    // **"on this review", not "on the record".** The held id is this review's own, and a
+    // review is one round: round 2 of a pull request does not inherit round 1's ticket, any
+    // more than it inherits its title. Saying "on the record" sent a caller opening a later
+    // round to look at `review find`, which shows the id plainly on the round before — and
+    // tells them nothing about why this call was refused.
+    let missing = match passed {
+        Some(_) => "the id passed is blank, and this review holds none",
+        None => "no id was passed, and this review holds none",
+    };
+
     Err(StoreError::InvalidValue {
         field: "ticket_id",
-        // **What was passed, and `<none>` when nothing was.** `InvalidValue` formats as
-        // `{field} holds {value:?}`, so a hard-coded `""` told a caller who passed
-        // `--ticket "  "` that the field held nothing, *and* told one who passed no
-        // `--ticket` at all about a value they never gave. Reporting the value as it
-        // arrived fixed the first and not the second — `unwrap_or_default` turns absence
-        // straight back into `""`. The two cases are different and the message says which.
-        value: passed.map_or_else(|| "<none>".to_string(), str::to_string),
-        // **"on this review", not "on the record".** The held id is this review's own, and
-        // a review is one round: round 2 of a pull request does not inherit round 1's
-        // ticket, any more than it inherits its title. Saying "on the record" sent a caller
-        // opening a later round to look at `review find`, which shows the id plainly on the
-        // round before — and tells them nothing about why this call was refused.
-        expected: concat!(
-            "a ticket id beside the address, in this call or already on this review: ",
-            "an address is drawn as its id, so one with no id reaches no screen",
-        )
-        .to_string(),
+        value: passed.unwrap_or_default().to_string(),
+        expected: format!(
+            "a ticket id beside the address — an address is drawn as its id, so one with \
+             no id reaches no screen; {missing}"
+        ),
     })
 }
 
