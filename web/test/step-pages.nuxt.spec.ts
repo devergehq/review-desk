@@ -561,25 +561,82 @@ describe('Understand', () => {
     expect(split!.attributes('style')).toContain('--columns: 2')
   })
 
-  it('marks a problem red on the before flow and green on the after', async () => {
+  it('names a problem on the flow, red before and green after', async () => {
     const page = await understand(STRUCTURED)
     const [before, after] = page.findAll('.flow')
-    const wrong = before!.findAll('.mark--wrong')
-    const fixed = after!.findAll('.mark--fixed')
+    const wrong = before!.findAll('.tag--wrong')
+    const fixed = after!.findAll('.tag--fixed')
     expect(wrong.length).toBeGreaterThan(0)
     expect(fixed.length).toBeGreaterThan(0)
+
+    /*
+     * **The name, which is DEV-917's defect 2.** The marks read 1, 1, 2, 3, 1 down the
+     * flow on the review this was read against: every number right, and a bare number
+     * down a flow reads as a step count.
+     */
+    expect(wrong[0]!.text()).toContain('The shared slot')
+
     /*
      * The same number is on both sides, which is the whole mechanism of the picture. Read
-     * off the visible numeral: a mark's full text is the numeral *and* the words behind it,
-     * which is the point of the words but makes `.text()` the wrong thing to compare.
+     * off the circle: a tag's full text is the numeral, the name, and the words behind
+     * it, which is the point of the words but makes `.text()` the wrong thing to compare.
      */
-    const numerals = (marks: typeof wrong) =>
-      marks.map(one => one.find('[aria-hidden="true"]').text())
+    const numerals = (tags: typeof wrong) =>
+      tags.map(one => one.find('.circle').text())
     expect(numerals(wrong)).toContain('1')
     expect(numerals(fixed)).toContain('1')
     /* And neither flow carries the other's colour. */
-    expect(before!.findAll('.mark--fixed')).toHaveLength(0)
-    expect(after!.findAll('.mark--wrong')).toHaveLength(0)
+    expect(before!.findAll('.tag--fixed')).toHaveLength(0)
+    expect(after!.findAll('.tag--wrong')).toHaveLength(0)
+  })
+
+  it('carries the same name on every box one problem touches', async () => {
+    /*
+     * **One problem on four boxes, which is the shape the defect was found in.** Problem 1
+     * touched four boxes of the flow and the column read 1, 1, 2, 3, 1; four tags carrying
+     * one name is what makes that repetition legible instead of confusing.
+     */
+    const detail = fixture(STRUCTURED)
+    detail.brief = {
+      ...detail.brief!,
+      flow_before: [
+        [{ title: 'One', note: null, problem: 1 }],
+        [{ title: 'Two', note: null, problem: 1 }],
+        [
+          { title: 'Three', note: null, problem: 1 },
+          { title: 'Four', note: null, problem: 1 },
+        ],
+      ],
+    }
+    await withReview(detail)
+
+    const page = await understand(STRUCTURED)
+    const tags = page.findAll('.flow--wrong .tag')
+    expect(tags).toHaveLength(4)
+    for (const tag of tags) {
+      expect(tag.text()).toContain('The shared slot')
+      expect(tag.find('.circle').text()).toBe('1')
+    }
+
+    /* And the row above the flows lists it once, however many boxes it is on. */
+    const key = page.find('.key')
+    expect(key.findAll('.tag')).toHaveLength(3)
+    expect(key.text()).toContain('3 problems')
+  })
+
+  it('calls a problem with no name "Problem 1", never the bare number', async () => {
+    const detail = fixture(STRUCTURED)
+    detail.brief = {
+      ...detail.brief!,
+      problems: detail.brief!.problems!.map(problem => ({ ...problem, label: null })),
+    }
+    await withReview(detail)
+
+    const page = await understand(STRUCTURED)
+    const tags = page.findAll('.flow--wrong .tag')
+    expect(tags.length).toBeGreaterThan(0)
+    expect(tags[0]!.text()).toContain('Problem 1')
+    expect(page.find('.key').text()).toContain('Problem 2')
   })
 
   it('never leaves colour carrying a mark on its own', async () => {
@@ -587,12 +644,12 @@ describe('Understand', () => {
     const [before, after] = page.findAll('.flow')
     /*
      * The words are in the accessible name, so a reader who cannot tell the two hues apart
-     * still reads which side of the picture a mark is on.
+     * still reads which side of the picture a tag is on.
      */
-    expect(before!.find('.mark--wrong').text()).toContain('what is wrong')
-    expect(after!.find('.mark--fixed').text()).toContain('what fixes it')
+    expect(before!.find('.tag--wrong').text()).toContain('what is wrong')
+    expect(after!.find('.tag--fixed').text()).toContain('what fixes it')
     /* And the number itself is visible in both. */
-    expect(before!.find('.mark--wrong [aria-hidden="true"]').text()).toMatch(/^\d+$/)
+    expect(before!.find('.tag--wrong .circle').text()).toMatch(/^\d+$/)
   })
 
   it('lists what was wrong and what it is now, one line each', async () => {

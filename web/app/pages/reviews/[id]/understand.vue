@@ -282,6 +282,29 @@ function sources(data: ReviewDetail) {
           v-if="flowBefore(data.brief).length || flowAfter(data.brief).length"
           class="flows"
         >
+          <!--
+            **The problems, listed once, above both flows.** DEV-917: each mark in a box is
+            a tag carrying the problem's name, and the names have to be readable in one
+            place before a reader meets them scattered down two columns. In number order,
+            which is the record's own order and the only order that makes "the same 2" easy
+            to find.
+          -->
+          <div
+            v-if="problems(data.brief).length"
+            class="key"
+          >
+            <span class="rd-note">
+              {{ count(problems(data.brief).length, 'problem') }}:
+            </span>
+            <ProblemTag
+              v-for="problem in problems(data.brief)"
+              :key="problem.number"
+              :number="problem.number"
+              :label="problem.label"
+              tone="wrong"
+            />
+          </div>
+
           <div class="pair">
             <DeskCard
               v-if="flowBefore(data.brief).length"
@@ -304,6 +327,7 @@ function sources(data: ReviewDetail) {
                 :rows="flowBefore(data.brief)"
                 tone="wrong"
                 :focus="openProblem"
+                :problems="problems(data.brief)"
               />
             </DeskCard>
 
@@ -328,6 +352,7 @@ function sources(data: ReviewDetail) {
                 :rows="flowAfter(data.brief)"
                 tone="fixed"
                 :focus="openProblem"
+                :problems="problems(data.brief)"
               />
             </DeskCard>
 
@@ -364,16 +389,16 @@ function sources(data: ReviewDetail) {
             v-if="flowBefore(data.brief).length && flowAfter(data.brief).length"
             class="rd-note legend"
           >
-            Each number is one of the problems below. Red on the left marks what was wrong;
+            Each tag is one of the problems above. Red on the left marks what was wrong;
             green on the right, with the same number, marks what fixes it. Open a problem
-            to pick its boxes out of both flows.
+            below to pick its boxes out of both flows.
           </p>
           <p
             v-else-if="flowBefore(data.brief).length"
             class="rd-note legend"
           >
-            Each red number is one of the problems below. The green marks that say what
-            fixes each one arrive with the after flow.
+            Each red tag is one of the problems above. The green marks that say what fixes
+            each one arrive with the after flow.
           </p>
         </section>
 
@@ -684,6 +709,19 @@ function sources(data: ReviewDetail) {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
+}
+
+/*
+ * The row of tags over both flows. It wraps, and each tag moves whole: three tags of two
+ * or three words each do not fit a phone's width on one line, and a tag split across two
+ * is two halves of a shape.
+ */
+.key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
   min-width: 0;
 }
 

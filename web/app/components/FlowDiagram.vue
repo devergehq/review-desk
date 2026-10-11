@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { BriefFlow } from '~/types/desk'
+import type { BriefFlow, BriefProblem } from '~/types/desk'
 
 /**
  * How the system works, as rows of boxes with arrows between them.
@@ -30,6 +30,19 @@ import type { BriefFlow } from '~/types/desk'
  * with the same number on both. A box carrying none is plain — it is part of the story and
  * not part of what is wrong.
  *
+ * ## The mark is a tag, since DEV-917
+ *
+ * **It carries the problem's name, because a bare number down a flow reads as a step
+ * count.** The marks read 1, 1, 2, 3, 1 on the review this was read against: every number
+ * correct, since problem 1 touches four boxes, and the column still unreadable. So the mark
+ * moved to the box's top right and became a [`ProblemTag`] — the number in a circle and two
+ * or three words — and the problems are listed once as a row of the same tags above both
+ * flows, which the page draws.
+ *
+ * The tag sits on the title's own line and **moves whole to the next line when the title
+ * leaves no room**, which is this app's rule for anything pill-shaped. `flex-wrap` on the
+ * line is what does the moving; the tag is what refuses to break.
+ *
  * ## Where this differs from the board, deliberately
  *
  * The board dims the boxes a selected problem does not touch to `opacity: 0.28`. Computed
@@ -39,13 +52,31 @@ import type { BriefFlow } from '~/types/desk'
  * ring, and nothing is suppressed. The question the dimming answered — which boxes does
  * problem 2 touch — is still answered, by highlight rather than by hiding.
  */
-defineProps<{
+const props = defineProps<{
   rows: BriefFlow
   /** `wrong` is the before flow, `fixed` is the after flow. */
   tone: 'wrong' | 'fixed'
   /** The problem number a reader has opened, so its boxes can be picked out. */
   focus?: number | null
+  /**
+   * The brief's numbered problems, for the names the tags carry.
+   *
+   * The whole list rather than a map of labels, so this component takes what the record
+   * holds and `labelFor` owns the one decision — what a problem with no label is called.
+   */
+  problems?: BriefProblem[]
 }>()
+
+/**
+ * The name a box's tag carries, or null when the box marks no problem.
+ *
+ * A problem the flow marks and the brief does not list is possible — the store numbers
+ * them separately — and it reads as "Problem 2" rather than as a blank tag, which is the
+ * same answer a problem with no label gets.
+ */
+function labelFor(number: number): string | null {
+  return (props.problems ?? []).find(problem => problem.number === number)?.label ?? null
+}
 </script>
 
 <template>
@@ -84,19 +115,24 @@ defineProps<{
             'box--focus': box.problem != null && box.problem === focus,
           }"
         >
-          <ProblemMark
-            v-if="box.problem != null"
-            :number="box.problem"
-            :tone="tone"
-            size="box"
-          />
-          <span class="words">
+          <!--
+            The title and the tag on one line, and the tag at its right. `flex-wrap` is
+            what moves the tag whole to the next line when the title leaves no room for
+            it: a tag broken across two lines is two halves of a shape.
+          -->
+          <div class="head">
             <span class="title">{{ box.title }}</span>
-            <span
-              v-if="box.note"
-              class="note"
-            >{{ box.note }}</span>
-          </span>
+            <ProblemTag
+              v-if="box.problem != null"
+              :number="box.problem"
+              :label="labelFor(box.problem)"
+              :tone="tone"
+            />
+          </div>
+          <span
+            v-if="box.note"
+            class="note"
+          >{{ box.note }}</span>
         </div>
       </div>
     </template>
@@ -159,8 +195,8 @@ defineProps<{
 
 .box {
   display: flex;
-  gap: 12px;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
   min-width: 0;
   padding: 14px 16px;
   border: 1px solid var(--rd-line-strong);
@@ -168,10 +204,17 @@ defineProps<{
   background: var(--rd-surface);
 }
 
-.words {
+/*
+ * The title and its tag, with the tag pushed to the right of the line. `flex-start` on the
+ * cross axis so a title that runs to two lines keeps the tag level with its first line
+ * rather than centred against the block.
+ */
+.head {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 6px 12px;
   min-width: 0;
 }
 
