@@ -1,0 +1,55 @@
+{
+  "repo": "acme/billing-api",
+  "reviews": [
+    {
+      "review": {
+        "id": 16,
+        "repo": "acme/billing-api",
+        "pr": 88,
+        "head_sha": "5b2e0af",
+        "round": 2,
+        "title": "Cache the permissions lookup",
+        "ticket_id": null,
+        "changed_lines": 96,
+        "session_id": "ses_55c1b7d0",
+        "ledger_id": "ledger-2026-10-09-88",
+        "github_review_id": null,
+        "created_at": "2026-10-09T16:04:00Z",
+        "pr_state": null,
+        "harvested_at": null
+      },
+      "rounds_on_pr": 2,
+      "step_number": 6,
+      "step_name": "draft",
+      "step_state": "waiting_on_you",
+      "step_detail": "waiting on you",
+      "steps_total": 7,
+      "last_activity_at": "2026-10-09T16:40:00Z"
+    },
+    {
+      "review": {
+        "id": 9,
+        "repo": "acme/billing-api",
+        "pr": 88,
+        "head_sha": "9a0c117",
+        "round": 1,
+        "title": "Cache the permissions lookup",
+        "ticket_id": null,
+        "changed_lines": 74,
+        "session_id": "ses_31d9ac70",
+        "ledger_id": "ledger-2026-10-07-88",
+        "github_review_id": "gh-review-3104",
+        "created_at": "2026-10-09T08:15:00Z",
+        "pr_state": "open",
+        "harvested_at": "2026-10-09T08:15:00Z"
+      },
+      "rounds_on_pr": 2,
+      "step_number": 7,
+      "step_name": "harvest",
+      "step_state": "done",
+      "step_detail": "2 outcomes harvested",
+      "steps_total": 7,
+      "last_activity_at": "2026-10-09T08:15:00Z"
+    }
+  ]
+}

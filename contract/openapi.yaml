@@ -52,7 +52,7 @@ paths:
       summary: Everything waiting on the developer, grouped
       description: |
         Serves the whole Inbox screen in one call: the five waiting groups, the reviews in
-        progress, and the week's figures.
+        progress, the posted reviews waiting on their author, and the week's figures.
       responses:
         '200':
           description: The inbox.
@@ -87,6 +87,60 @@ paths:
           $ref: '#/components/responses/StoreUnavailable'
 
   /reviews:
+    get:
+      operationId: listReviews
+      tags: [review]
+      summary: Every review on the record, newest first
+      description: |
+        **The one place every review is named, whatever became of it.** Every other read
+        here is about a review that needs something: `GET /inbox` is what is waiting, and
+        `GET /timings` is what has finished. A review that was posted and whose author has
+        not replied appeared in neither, so until DEV-930 it was reachable only by typing
+        its id.
+
+        Newest first, by the order the reviews were opened. **Deliberately not by when
+        they last changed**: `last_activity_at` is null for every review from before
+        DEV-890, so sorting on it would place those in whatever order the database felt
+        like. It is a column the list draws, not the one it is ordered by.
+
+        **It describes and does not grade.** There is no score, no ranking and no figure
+        about how well a review went; each row is where the review is and when it last
+        moved. How long one took is `GET /timings`, which is a different question asked
+        on purpose.
+
+        **Unpaginated**, for the reason `GET /timings` is: this is one developer's own
+        record on their own machine, and the read exists so that nothing is unreachable.
+      parameters:
+        - name: repo
+          in: query
+          required: false
+          description: One repository, as `owner/repo`. Omit it for every repository.
+          schema: { $ref: '#/components/schemas/RepoName' }
+      responses:
+        '200':
+          description: Every review, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [repo, reviews]
+                properties:
+                  repo:
+                    oneOf:
+                      - $ref: '#/components/schemas/RepoName'
+                      - type: 'null'
+                    description: |
+                      The repository asked about, echoed back, or null for every one — as
+                      `GET /rules` echoes it. The page's filter reads it rather than
+                      trusting its own state.
+                  reviews:
+                    type: array
+                    items: { $ref: '#/components/schemas/ReviewListItem' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
     post:
       operationId: startReview
       tags: [review]
@@ -948,6 +1002,18 @@ components:
       type: string
       description: The GitHub review event the approved draft is to be posted as.
       enum: [comment, request_changes, approve]
+    PrState:
+      type: string
+      description: |
+        What a pull request was last seen to be, **at the last harvest and not now**.
+        Review Desk reads GitHub once — `POST /reviews`, to resolve a head commit — and
+        `review-desk harvest` is what writes this; nothing here polls GitHub to keep it
+        fresh.
+
+        Null, wherever this appears, is the harvester never having looked. That is not
+        `open`: it is nothing known, and a screen says so rather than assuming a pull
+        request is still going.
+      enum: [open, merged, closed]
     HunkLineMarker:
       type: string
       description: |
@@ -993,7 +1059,7 @@ components:
     Review:
       type: object
       additionalProperties: false
-      required: [id, repo, pr, head_sha, round, created_at]
+      required: [id, repo, pr, head_sha, round, created_at, pr_state, harvested_at]
       description: One review of one pull request at one head commit.
       properties:
         id: { type: integer, format: int64, minimum: 1 }
@@ -1028,6 +1094,46 @@ components:
         ledger_id: { $ref: '#/components/schemas/ForeignId' }
         github_review_id: { $ref: '#/components/schemas/ForeignId' }
         created_at: { type: string, format: date-time }
+
+        # -- what the harvester last saw (DEV-930) -----------------------------------
+        #
+        # Served here rather than on the one item that needed them, because they are
+        # columns of the review either way — and because the dashboard's sample records
+        # are built out of `ReviewDetail`, so an inbox group that knew them and the
+        # review that did not would have been two answers to one question.
+        pr_state:
+          oneOf:
+            - $ref: '#/components/schemas/PrState'
+            - type: 'null'
+          description: |
+            What the pull request was last seen to be. Null is the harvester never
+            having looked, which is every review until `review-desk harvest` has run
+            over it.
+
+            **Required, unlike the other fields added late to this document.** The
+            convention here has been to leave a new field out of `required`, so that a
+            response written before it existed is missing it rather than wrong — and
+            that convention is exactly what would have let this one drift unseen.
+            Optional, every check passes while the server, the examples and the
+            dashboard's sample records hold three different answers: the example
+            validator skips a field the example omits, the store's example test walks
+            the *example's* fields, and the generated type becomes `pr_state?` so a
+            fixture without it is not even a type error. Required, all three fail
+            loudly. The reverse direction was already caught — the conformance test
+            asserts `additionalProperties: false` rejects a field this document does
+            not declare — and the asymmetry was entirely in `required`.
+        harvested_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When the harvester last read this review's outcomes back from GitHub.
+            **Null is what makes every figure about the author unmeasured** — see
+            `InboxPostedItem`, whose three counts are null exactly when this is.
+
+            The store also holds `pr_state_at` — when a pull request was merged or
+            closed — and this document does not serve it, because no screen draws it.
+            A field with no reader is the kind that goes stale unnoticed; the store
+            keeps it and `review-desk review show` prints it.
 
     StartReviewRequest:
       type: object
@@ -1319,6 +1425,74 @@ components:
           description: |
             All seven steps, in order, each with its passes and its total — so a per-step
             figure can be computed from this one read.
+
+    ReviewListItem:
+      type: object
+      additionalProperties: false
+      required: [review, rounds_on_pr, steps_total, last_activity_at]
+      description: |
+        One row of `GET /reviews`: the review, the step it has reached, and when it last
+        moved.
+
+        **The step is the furthest one that has started**, which is to say the
+        highest-numbered of the seven whose state is not `pending`. `step_number` and the
+        two fields with it are absent together, for a review nothing has reported on at
+        all — which is not the same as the lint being pending, and the row says so in
+        words rather than drawing a 1.
+
+        Deliberately *not* a `ReviewLayer`: that carries every pass a step made and every
+        fact it recorded, and a list of the whole record would be reading a statement per
+        step per review to fill them. The one review screen is where a step opens up.
+
+        **A screen must draw `step_state` or `step_detail` and never the name alone.**
+        When the furthest started step is finished, its name is the step the review has
+        *left*: a posted review's is `draft`, and a cell reading "Draft" tells a reader it
+        still needs signing off while the queue says it is with the author. "Draft,
+        approved by you" says the same record and misleads nobody.
+
+        **No review reports step 7, and that is a gap in the record.** `draft posted`
+        writes the harvest step as `pending` and the harvester writes no step at all, so
+        the harvest has no recorded progress to report. Deriving one from
+        `Review.harvested_at` would be this document inventing a step state, which is the
+        session's to write.
+      properties:
+        review: { $ref: '#/components/schemas/Review' }
+        rounds_on_pr:
+          type: integer
+          format: int64
+          minimum: 1
+          description: |
+            The highest round this pull request has reached, so the row reads "round 1 of
+            3". **A bare round number is not safe in a column of its own**: beside the
+            repository and the pull request it reads as a count of rework against the
+            author named next to it. As one of a total it is a position in a sequence.
+        step_number:
+          type: integer
+          minimum: 1
+          maximum: 7
+          description: |
+            Which of the seven the review has reached. Absent when every step is still
+            `pending`.
+        step_name: { $ref: '#/components/schemas/ReviewLayerName' }
+        step_state: { $ref: '#/components/schemas/ReviewLayerState' }
+        step_detail:
+          type: [string, 'null']
+          description: |
+            The short phrase written against that step — "passed", "3 options", "waiting
+            on you". Written by the step that ran; never derived, so a skipped step
+            cannot read as a finished one.
+        steps_total:
+          type: integer
+          const: 7
+          description: Stated so the page's "step 6 of 7" needs no constant of its own.
+        last_activity_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When anything last wrote to this review. See `ReviewTimings.last_activity_at`
+            — null means nothing has written since the record began keeping it, which is
+            every review from before DEV-890, and the row says so rather than drawing a
+            figure.
 
     BriefOption:
       type: object
@@ -2988,7 +3162,16 @@ components:
         items:
           type: integer
           minimum: 0
-          description: Every item across the five waiting groups.
+          description: |
+            Every item across the five waiting groups: briefs to confirm, drafts to
+            approve, author replies, the developer's own pull requests, and proposed
+            rules.
+
+            **`in_progress` and `posted_awaiting_author` are not in it**, and the
+            distinction is the screen's headline. Both are the record saying where a
+            review is, not a thing asking for an act — so a desk whose only review is
+            posted reads "nothing is waiting on you", which is true, rather than
+            reporting an item the developer cannot do anything about.
         repos:
           type: integer
           minimum: 0
@@ -3035,7 +3218,20 @@ components:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }
         round: { type: integer, format: int64, minimum: 1 }
-        severities: { $ref: '#/components/schemas/SeverityCounts' }
+        severities:
+          allOf:
+            - $ref: '#/components/schemas/SeverityCounts'
+          description: |
+            **The findings at disposition `in_draft`, and only those** — what this draft
+            is about to post, which is what the screen captions it as.
+
+            Said here because it was not, and three copies of the figure came to mean
+            three things: the server counted the findings in the draft, the dashboard's
+            sample records counted the whole review, and the store's own example test
+            counted the whole review too. A held-back nit is not in the draft, and the
+            example beside this field carried four nits in `severities` and
+            `held_back: 4` at once — asserting both. A figure a schema does not define
+            is one every implementation defines for itself.
         held_back:
           type: integer
           minimum: 0
@@ -3086,6 +3282,157 @@ components:
             When the author last acted — the newest of these events' own times. The queue's
             age cell, which read "no time recorded" before DEV-890 although the outcomes
             had carried a time all along. Null for an item built from no timed outcome.
+
+    InboxPostedItem:
+      type: object
+      additionalProperties: false
+      required:
+        [review_id, pull_request, round, rounds_on_pr, posted_at, posted_as, pr_state,
+         harvested_at, findings, findings_linked, replies, threads_resolved,
+         code_changed_after]
+      description: |
+        **A review that was posted, whose pull request has not been merged or closed.**
+        The queue's "Waiting on the author", and the group that did not exist until
+        DEV-930: a review the developer signed off and the session posted left every
+        other group here, so the screen could only say the whole thing was not measured
+        and the review was reachable by typing its id.
+
+        **Posted** is the draft reported posted, or the review carrying a GitHub review
+        id. Two columns in the store answer that question and different commands write
+        them: `draft posted` writes both in one transaction, and
+        `review link --github-review` writes only the second and needs no draft at all —
+        while `RepoSummary.open_reviews` has always counted *that* one as the review no
+        longer being open. A review posted through `review link` was therefore in no
+        group on any screen, which is the complaint this group exists to answer, so both
+        count and the two readings are reconciled rather than noted.
+
+        **Open** means open **or never looked at**: a review the harvester has not read
+        back has no recorded pull-request state, so the honest answer is that nothing is
+        known and it belongs in the group that says so. One merged or closed at its last
+        harvest has no author left to wait for and is not here.
+
+        **Only the newest round of a pull request**, so one pull request is one item.
+        The author pushing a fix is the event this group waits for, and it opens the next
+        round — after which nothing ever moves the old round's state again, so nothing
+        could retract it. Without that, a pull request on round four would draw four
+        items each claiming its author owed a reply, which is the defect DEV-876 exists
+        to prevent. The store's `work_list` has carried the same restriction, and the
+        same argument, since DEV-867.
+
+        **Not a group that is waiting on the developer**, which is why it is outside
+        `totals.items`. Nothing in it needs an act; it is the record saying where a
+        posted review went.
+      properties:
+        review_id: { type: integer, format: int64, minimum: 1 }
+        pull_request: { $ref: '#/components/schemas/InboxPr' }
+        round: { type: integer, format: int64, minimum: 1 }
+        rounds_on_pr:
+          type: integer
+          format: int64
+          minimum: 1
+          description: |
+            The highest round this pull request has reached, so the item can read "round
+            2 of 2" rather than a bare number. Equal to `round` for every item in this
+            group, because the group holds only the newest round — stated so that no
+            screen has to assume it.
+        posted_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When the review session reported it posted. **Null for a review posted
+            through `review link --github-review`**, which records the GitHub review id
+            with no draft transition and so leaves nothing holding the time. The screen
+            says so rather than guessing one.
+        posted_as:
+          oneOf:
+            - $ref: '#/components/schemas/ReviewEvent'
+            - type: 'null'
+          description: |
+            The GitHub review event the developer chose at approval, which is what the
+            author received it as. Null on the same terms as `posted_at`: no draft, no
+            chosen event.
+        pr_state:
+          oneOf:
+            - $ref: '#/components/schemas/PrState'
+            - type: 'null'
+          description: |
+            `open`, or null for a pull request the harvester has never looked at. Never
+            `merged` or `closed`: such a review is not in this group at all.
+
+            **Null is the usual answer today**, because nothing in Review Desk polls
+            GitHub and running the harvest is another issue's work. The screen has to
+            say that the state is not established rather than let the group's heading
+            assert that an author is being waited on.
+        harvested_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When the harvester last read this review back from GitHub.
+
+            **It is also the three counts' measurement time**, and a screen drawing them
+            has to say so: a bare nought over a figure measured two hours ago reads as a
+            statement about now, and the record only supports one about then.
+        findings:
+          type: integer
+          minimum: 0
+          description: How many findings the review holds.
+        findings_linked:
+          type: integer
+          minimum: 0
+          description: |
+            How many of them carry the id of the GitHub comment they were posted as.
+
+            **This is what says whether a reply could have been seen at all**, and
+            `harvested_at` cannot. The harvester reaches a thread through a finding's
+            comment id, skips thread reading altogether when no finding has one, and
+            marks the review harvested regardless — so a review posted as one body
+            rather than as inline comments comes back harvested with nothing read. Zero
+            here means there is nothing a reply could attach to, and `replies` is then
+            null rather than nought.
+        replies:
+          type: [integer, 'null']
+          minimum: 0
+          description: |
+            Replies **the pull request's author** wrote in this review's finding threads.
+
+            **The actor, not only the kind.** The harvester records a reply from any
+            login that is not the pull request's author against `developer`, so counting
+            replies by kind alone credits the author with the reviewer's own. A reply the
+            harvester could not attribute to the author is not counted here; the one
+            review screen shows every outcome either way.
+
+            **Null, never zero, when nothing could have found one** — that is, when it
+            would be zero and either nothing has harvested the review or no finding is
+            linked to a comment. Zero is served only when something looked and found
+            none, which is a measurement. The converse is served too: a reply the record
+            holds is counted even with `harvested_at` null, because the harvest writes
+            its outcomes and its own timestamp in separate statements and
+            `review-desk outcome add` writes outcomes without a harvest at all — and
+            "not harvested yet" printed over a reply the same screen is drawing in
+            another group is the same failure in the other direction.
+        threads_resolved:
+          type: [integer, 'null']
+          minimum: 0
+          description: |
+            Findings whose thread **the author** resolved. Counted by actor and nulled on
+            exactly the terms `replies` is — and the actor matters more here, because on
+            most repositories the author cannot resolve a review thread, so the reviewer
+            does.
+        code_changed_after:
+          type: [integer, 'null']
+          minimum: 0
+          description: |
+            Findings whose code the harvester found changed after the commit the review
+            read. Counted whole rather than by actor: the harvester attributes this to
+            nobody, because it is an observation about the code and not an act by a
+            person. Null when it would be zero and nothing has harvested the review.
+
+            **This issue asks for "commits since" and this is not that.** The harvester
+            writes one of these per finding whose file changed, so one commit touching
+            three findings' files writes three — and `commits_since_previous_round`
+            counts the commits *before* a round rather than after its posting. There is
+            no count of commits since a posting in the record, so a screen must not head
+            this column with one.
 
     DescriptionLint:
       type: object
@@ -3201,11 +3548,16 @@ components:
         - own_prs_without_reviewer
         - proposed_rules
         - in_progress
+        - posted_awaiting_author
         - handled_without_you
       description: |
         The whole Inbox screen. The five waiting groups are separate arrays rather than
         one tagged list, because each carries different fields and the screen renders
         each differently; `totals.items` is their combined length.
+
+        **Seven arrays, five of which are waiting on the developer.** `in_progress` is
+        with the agent and `posted_awaiting_author` is with the author, and neither is in
+        `totals.items` — see `InboxTotals`.
       properties:
         totals: { $ref: '#/components/schemas/InboxTotals' }
         briefs_to_confirm:
@@ -3226,6 +3578,14 @@ components:
         in_progress:
           type: array
           items: { $ref: '#/components/schemas/InboxInProgressItem' }
+        posted_awaiting_author:
+          type: array
+          items: { $ref: '#/components/schemas/InboxPostedItem' }
+          description: |
+            Posted reviews whose pull request has not been merged or closed, newest
+            posting first. **Empty is a claim**, and a true one: it says the record holds
+            no posted review with an open pull request. Before DEV-930 there was no array
+            here at all, and the screen could only say the question was not measured.
         handled_without_you: { $ref: '#/components/schemas/InboxHandled' }
 
     # ----------------------------------------------------------------------------------

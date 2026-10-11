@@ -1,0 +1,151 @@
+{
+  "repo": null,
+  "reviews": [
+    {
+      "review": {
+        "id": 41,
+        "repo": "acme/portal",
+        "pr": 514,
+        "head_sha": "d41c8e2",
+        "round": 1,
+        "title": "Give a scheduled export its own context",
+        "ticket_id": "ABC-402",
+        "changed_lines": 1442,
+        "session_id": "ses_9f1c0b42",
+        "ledger_id": "ledger-2026-10-10-514",
+        "github_review_id": null,
+        "created_at": "2026-10-10T08:02:00Z",
+        "pr_state": null,
+        "harvested_at": null
+      },
+      "rounds_on_pr": 1,
+      "step_number": 6,
+      "step_name": "draft",
+      "step_state": "waiting_on_you",
+      "step_detail": "waiting on you",
+      "steps_total": 7,
+      "last_activity_at": "2026-10-10T11:48:00Z"
+    },
+    {
+      "review": {
+        "id": 17,
+        "repo": "acme/portal",
+        "pr": 412,
+        "head_sha": "3f9c2ab",
+        "round": 1,
+        "title": "Retry failed webhook deliveries",
+        "ticket_id": "ABC-231",
+        "changed_lines": 214,
+        "session_id": "ses_c81f40ad",
+        "ledger_id": "ledger-2026-10-08-412",
+        "github_review_id": null,
+        "created_at": "2026-10-08T10:31:00Z",
+        "pr_state": null,
+        "harvested_at": null
+      },
+      "rounds_on_pr": 1,
+      "step_number": 6,
+      "step_name": "draft",
+      "step_state": "waiting_on_you",
+      "step_detail": "waiting on you",
+      "steps_total": 7,
+      "last_activity_at": "2026-10-08T11:02:00Z"
+    },
+    {
+      "review": {
+        "id": 12,
+        "repo": "acme/portal",
+        "pr": 398,
+        "head_sha": "7c1d4e8",
+        "round": 1,
+        "title": "Split the export job",
+        "ticket_id": "ABC-204",
+        "changed_lines": 512,
+        "session_id": "ses_2a7e9014",
+        "ledger_id": "ledger-2026-10-08-398",
+        "github_review_id": "PRR_kwDOA1",
+        "created_at": "2026-10-09T08:15:00Z",
+        "pr_state": "open",
+        "harvested_at": "2026-10-09T08:15:00Z"
+      },
+      "rounds_on_pr": 1,
+      "step_number": 6,
+      "step_name": "draft",
+      "step_state": "done",
+      "step_detail": "approved by you",
+      "steps_total": 7,
+      "last_activity_at": "2026-10-09T08:15:00Z"
+    },
+    {
+      "review": {
+        "id": 16,
+        "repo": "acme/billing-api",
+        "pr": 88,
+        "head_sha": "5b2e0af",
+        "round": 2,
+        "title": "Cache the permissions lookup",
+        "ticket_id": null,
+        "changed_lines": 96,
+        "session_id": "ses_55c1b7d0",
+        "ledger_id": "ledger-2026-10-09-88",
+        "github_review_id": null,
+        "created_at": "2026-10-09T16:04:00Z",
+        "pr_state": null,
+        "harvested_at": null
+      },
+      "rounds_on_pr": 2,
+      "step_number": 6,
+      "step_name": "draft",
+      "step_state": "waiting_on_you",
+      "step_detail": "waiting on you",
+      "steps_total": 7,
+      "last_activity_at": "2026-10-09T16:40:00Z"
+    },
+    {
+      "review": {
+        "id": 9,
+        "repo": "acme/billing-api",
+        "pr": 88,
+        "head_sha": "9a0c117",
+        "round": 1,
+        "title": "Cache the permissions lookup",
+        "ticket_id": null,
+        "changed_lines": 74,
+        "session_id": "ses_31d9ac70",
+        "ledger_id": "ledger-2026-10-07-88",
+        "github_review_id": "gh-review-3104",
+        "created_at": "2026-10-09T08:15:00Z",
+        "pr_state": "open",
+        "harvested_at": "2026-10-09T08:15:00Z"
+      },
+      "rounds_on_pr": 2,
+      "step_number": 7,
+      "step_name": "harvest",
+      "step_state": "done",
+      "step_detail": "2 outcomes harvested",
+      "steps_total": 7,
+      "last_activity_at": "2026-10-09T08:15:00Z"
+    },
+    {
+      "review": {
+        "id": 21,
+        "repo": "acme/portal",
+        "pr": 420,
+        "head_sha": "e71b3c0",
+        "round": 1,
+        "title": null,
+        "ticket_id": null,
+        "changed_lines": null,
+        "session_id": null,
+        "ledger_id": null,
+        "github_review_id": null,
+        "created_at": "2026-10-11T07:14:00Z",
+        "pr_state": null,
+        "harvested_at": null
+      },
+      "rounds_on_pr": 1,
+      "steps_total": 7,
+      "last_activity_at": null
+    }
+  ]
+}

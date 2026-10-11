@@ -11,7 +11,9 @@
     "session_id": "ses_c81f40ad",
     "ledger_id": "ledger-2026-10-08-412",
     "github_review_id": null,
-    "created_at": "2026-10-08T10:31:00Z"
+    "created_at": "2026-10-08T10:31:00Z",
+    "pr_state": null,
+    "harvested_at": null
   },
   "layers": [
     {
@@ -215,7 +217,7 @@
       }
     ],
     "approach_verdict": "B is the right shape for this ticket. It leaves out the one useful part of C: once the 24 hours run out there is no way to replay a delivery by hand. That is finding F2.",
-    "provenance": "from the ticket and the code · you corrected one sentence",
+    "provenance": "from the ticket and the code \u00b7 you corrected one sentence",
     "confirmed": true,
     "confirmed_at": "2026-10-08T10:58:00Z",
     "confirmation_required": true,
@@ -513,7 +515,7 @@
       "line": null,
       "claim": "No way to replay a delivery after the retry window closes",
       "title": null,
-      "evidence": "from the option map · ticket acceptance criterion 3",
+      "evidence": "from the option map \u00b7 ticket acceptance criterion 3",
       "disposition": "in_draft",
       "disposition_reason": null,
       "rule_id": null,
@@ -673,7 +675,7 @@
       "claim": "Rename `attempt` to `attemptNumber`",
       "evidence": null,
       "disposition": "suppressed",
-      "disposition_reason": "No consequence named · matches a proposed rule to stop raising these",
+      "disposition_reason": "No consequence named \u00b7 matches a proposed rule to stop raising these",
       "rule_id": 22,
       "rule_key": "R-22",
       "hunk": null,
@@ -783,7 +785,7 @@
     {
       "position": 1,
       "kind": "ticket",
-      "label": "ABC-231 · Retry webhook deliveries for 24 hours",
+      "label": "ABC-231 \u00b7 Retry webhook deliveries for 24 hours",
       "link": "https://linear.app/acme/issue/ABC-231"
     },
     {
