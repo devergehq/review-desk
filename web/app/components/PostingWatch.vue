@@ -52,10 +52,18 @@ const props = defineProps<{
    * Locus of being down because Review Desk is down is the worst sentence on the page.
    */
   recordIsCurrent: boolean
+  /**
+   * Read the review and its draft again. The page owns the reads; this only asks.
+   *
+   * **A function rather than an emit, because this has to know when the answer landed.**
+   * An emit is fire-and-forget, and moving the clock on the way *out* rather than on the
+   * way *back* is what let a hung server look like a dead session: a server that accepts
+   * a connection and never answers leaves no error to catch, so `recordIsCurrent` stays
+   * true while the clock walks past forty seconds. Awaiting the read makes the clock stop
+   * when the answers stop, which is the honest thing for it to do and needs no flag.
+   */
+  reread: () => Promise<void>
 }>()
-
-/** Read the review and its draft again. The page owns the reads; this only asks. */
-const emit = defineEmits<{ refresh: [] }>()
 
 /**
  * The clock the figures are worded from, moved by the timer and by nothing else.
@@ -78,6 +86,13 @@ const now = ref(new Date())
  * `approved` is the only status where something else is coming: a session posts it, or the
  * developer sends it back from the controls above. `ready` and `drafting` wait on people,
  * and `posted` and `sent_back` are where this stops.
+ *
+ * **Something is coming after a send-back too, and this deliberately does not wait for
+ * it.** The session rewrites the draft and puts it back to `ready`, which is a second wait
+ * on a second system and the same not-knowing in the other direction — and DEV-932 scoped
+ * itself to the first: "re-reading the review every few seconds until the draft is posted
+ * **or sent back**, and stopping then" is the issue's own criterion. Watching the way back
+ * is a change to what this waits for, not a bug in what it waits for now.
  *
  * **A stale body is not waiting on anything.** The hand-over refuses it, so no session will
  * post it however long this watched, and "the session may not be running" would be the
@@ -144,10 +159,36 @@ function start(): void {
    * nobody is looking at.
    */
   if (timer != null || !waiting.value || document.visibilityState === 'hidden') return
-  timer = setInterval(() => {
+  timer = setInterval(() => void readNow(), RE_READ_EVERY_SECONDS * 1000)
+}
+
+/**
+ * Ask the page to read, and move the clock to when it answered.
+ *
+ * **One read at a time.** The timer fires every five seconds whether or not the last read
+ * came back, so against a server that has stopped answering the requests would otherwise
+ * stack two deep a tick. A skipped tick costs nothing: the next one is five seconds away
+ * and the read it skipped is still in flight.
+ *
+ * The clock moves *after* the answer, which is the whole reason this is a function and not
+ * an emit. Two things fall out of it. A server that hangs stops the clock rather than
+ * letting it walk past the threshold over a record that is no longer arriving. And coming
+ * back to a tab hidden across the posting no longer renders — or announces — the
+ * accusation for the length of a round trip, because the figures are drawn from the answer
+ * rather than from the moment the question was asked.
+ */
+let reading = false
+
+async function readNow(): Promise<void> {
+  if (reading) return
+  reading = true
+  try {
+    await props.reread()
     now.value = new Date()
-    emit('refresh')
-  }, RE_READ_EVERY_SECONDS * 1000)
+  }
+  finally {
+    reading = false
+  }
 }
 
 /**
@@ -168,12 +209,17 @@ function onVisibilityChange(): void {
    * one place this panel departs from "a time is as fresh as the page". A posted draft
    * whose figure stops moving is stale, which the desk accepts everywhere; a posted draft
    * that says "12 sec ago" an hour after you left the tab is *wrong*, and this is the only
-   * part of the desk that is told when you came back. It costs one recompute: no timer
-   * starts for a draft nothing is coming to.
+   * part of the desk that is told when you came back.
+   *
+   * For a draft still waiting the clock moves inside `readNow`, with the answer, so the
+   * figures on return are drawn from what the record says and not from what it said ten
+   * minutes ago.
    */
-  now.value = new Date()
-  if (!waiting.value) return
-  emit('refresh')
+  if (!waiting.value) {
+    now.value = new Date()
+    return
+  }
+  void readNow()
   start()
 }
 
@@ -214,15 +260,12 @@ const sinceSignOff = computed(() => secondsSince(props.draft.approved_at, now.va
  * served this page from another machine would need a reference instant on the wire before
  * this sentence could be trusted.
  *
- * **And it needs the record to be current, not merely old.** `recordIsCurrent` is the
- * other half: a clock that keeps moving over a record that has stopped arriving is the
- * same false accusation by a different route.
- *
- * One window is left, and it is bounded: coming back to a tab hidden across the posting
- * moves the clock before the read it asks for has answered, so the accusation can render
- * for one round trip. On loopback that is milliseconds and the read closes it. Closing it
- * properly would mean holding the clock back until a read lands, which costs the thing
- * that return was for — being current the moment you look.
+ * **And it needs the record to be current, not merely old**, which takes two things.
+ * `recordIsCurrent` covers a read that was refused: the answer is kept on screen and the
+ * refusal drawn over it, so without the flag the clock would walk past the threshold over
+ * a record nobody could reach. A read that is accepted and never answered leaves no
+ * refusal to catch, and that one is covered by where the clock is moved — inside
+ * `readNow`, after the answer — so when the answers stop, so does the clock.
  */
 const late = computed(
   () => waiting.value
@@ -332,6 +375,28 @@ const whoPosts
     + 'silent, which is the nearest thing the record holds.'
 
 /**
+ * Why the two figures above usually read the same, said rather than left to be puzzled at.
+ *
+ * **The sign-off is itself a write**, so it moves `last_activity_at` to `approved_at` in
+ * the same transaction, and the API refuses the writes that could move it again while the
+ * draft is approved. So for most of this state the two rows are one number twice, and two
+ * identical figures stacked read as two measurements that happen to agree. They are not:
+ * the second is the first until something other than the posting writes, and the day they
+ * differ is the day that sentence is worth having.
+ */
+const sameFigureTwice = computed(
+  () => props.lastActivityAt != null
+    && props.draft.approved_at != null
+    && secondsSince(props.lastActivityAt, now.value)
+    === secondsSince(props.draft.approved_at, now.value),
+)
+
+const bothTheSignOff
+  = 'Those are one time twice: signing off is itself a write, so it is the last thing to '
+    + 'have touched this review. They part company only if something other than the '
+    + 'posting writes to it.'
+
+/**
  * The sentence the long wait adds, which states nothing the paragraph above it already has.
  *
  * The forty seconds are stated once, up there, as what a running session takes. Repeating
@@ -402,6 +467,12 @@ const noAnchorSentence = computed(
         :value="lastWrittenLabel"
         :numeric="lastActivityAt != null"
       />
+      <p
+        v-if="sameFigureTwice"
+        class="rd-meta who"
+      >
+        {{ bothTheSignOff }}
+      </p>
       <p class="rd-meta who">
         {{ whoPosts }}
       </p>

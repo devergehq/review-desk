@@ -66,6 +66,7 @@ interface Props {
   lastActivityAt: Instant | null | undefined
   bodyIsStale: boolean
   recordIsCurrent: boolean
+  reread: () => Promise<void>
 }
 
 function props(over: Partial<Props> = {}): Props {
@@ -75,6 +76,7 @@ function props(over: Partial<Props> = {}): Props {
     lastActivityAt: SIGNED_OFF_AT,
     bodyIsStale: false,
     recordIsCurrent: true,
+    reread: heard,
     ...over,
   }
 }
@@ -86,12 +88,12 @@ function props(over: Partial<Props> = {}): Props {
  * component and then asks what it did — and an unmounted wrapper has no record of its own
  * emits left to read, so the assertion passed by being unanswerable.
  */
-let heard = vi.fn()
+let heard = vi.fn<() => Promise<void>>()
 
 /** Mounted attached to the document, so `visibilityState` and the live region are real. */
 async function watching(over: Partial<Props> = {}) {
   return mountSuspended(PostingWatch, {
-    props: { ...props(over), onRefresh: heard },
+    props: props(over),
     attachTo: document.body,
   })
 }
@@ -120,7 +122,7 @@ function announced(page: VueWrapper): string {
 }
 
 beforeEach(() => {
-  heard = vi.fn()
+  heard = vi.fn<() => Promise<void>>().mockResolvedValue(undefined)
   vi.useFakeTimers()
   vi.setSystemTime(START)
   Object.defineProperty(document, 'visibilityState', {
@@ -236,6 +238,31 @@ describe('when nothing has posted it', () => {
      * Repeated a line below as what this one has exceeded, it was one number stated twice.
      */
     expect(page.text().match(/40 seconds/g) ?? []).toHaveLength(1)
+  })
+
+  it('stops the clock when the answers stop, rather than walking past the threshold', async () => {
+    /*
+     * **A server that accepts a connection and never answers leaves no error to catch**,
+     * which is the failure `crates/server/tests/concurrency.rs` is written for. The flag
+     * cannot see it. What can is where the clock is moved: after the answer, so when the
+     * answers stop, so does the figure.
+     */
+    let hang: (() => void) | null = null
+    heard.mockImplementation(() => new Promise<void>((settle) => {
+      hang = settle
+    }))
+
+    const page = await watching()
+    await tick(page, RE_READ_EVERY_SECONDS * 20)
+
+    expect(page.text()).not.toContain('may not be running')
+    /* And the asks do not stack up behind the one that never came back. */
+    expect(reads(page)).toBe(1)
+
+    /* It answers, and the clock catches up to where it really is. */
+    hang?.()
+    await tick(page, 0)
+    expect(page.text()).toContain('may not be running')
   })
 
   it('says nothing of the sort while the page cannot read the record', async () => {
@@ -461,6 +488,7 @@ describe('a hidden tab', () => {
      * looking at a ten-minute-old answer.
      */
     expect(reads(page)).toBe(1)
+    await tick(page, 0)
     expect(page.text()).toContain('10 min ago')
 
     await tick(page, RE_READ_EVERY_SECONDS)

@@ -453,10 +453,10 @@ test.describe('the whole path, on a seeded database', () => {
     await page.getByRole('button', { name: 'Sign off and post' }).click()
 
     await expect(
-      page.getByText('Signed off. Will be posted as "Request changes".'),
+      page.getByText(
+        'Signed off. Will be posted as "Request changes" — waiting for the session to post it.',
+      ),
     ).toBeVisible()
-    /* And the waiting is said once, by the panel, rather than twice on one screen. */
-    await expect(page.getByText('Waiting for this review’s session to post it.')).toBeVisible()
     await expect(
       page.getByText('The review session posts it under your name, with no bot banner.'),
     ).toBeVisible()
@@ -3117,7 +3117,12 @@ test.describe('the draft page after a sign-off', () => {
     await page.goto(`${seeded}reviews/${id}/draft`)
     await page.locator('select#event').selectOption(event)
     await page.getByRole('button', { name: 'Sign off and post' }).click()
-    await expect(page.getByText('Waiting for this review’s session to post it.')).toBeVisible()
+    /*
+     * **The status line, which is drawn.** This waited on the live region's sentence, and
+     * the region is `rd-visually-hidden` — a one-pixel clipped box, which `toBeVisible()`
+     * accepts. The whole waiting block could have been deleted and this would have passed.
+     */
+    await expect(page.getByText('— waiting for the session to post it.')).toBeVisible()
   }
 
   test('while it waits, the page says what is known and keeps it current', async ({ page }) => {

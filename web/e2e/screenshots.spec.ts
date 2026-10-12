@@ -510,7 +510,8 @@ test.describe('waiting for the session that posts it', () => {
     await page.goto(`${seeded}reviews/${id}/draft`)
     await page.locator('select#event').selectOption('request_changes')
     await page.getByRole('button', { name: 'Sign off and post' }).click()
-    await expect(page.getByText('Waiting for this review’s session to post it.')).toBeVisible()
+    /* The status line, which is drawn; the live region is hidden and always was 1px. */
+    await expect(page.getByText('— waiting for the session to post it.')).toBeVisible()
   }
 
   /**

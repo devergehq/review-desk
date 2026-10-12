@@ -1032,7 +1032,7 @@ describe('the draft preview', () => {
     await click(page, 'Sign off and post')
 
     expect(page.text()).toContain(
-      'Signed off. Will be posted as "Comment".',
+      'Signed off. Will be posted as "Comment" — waiting for the session to post it.',
     )
     expect(page.text()).toContain('The review session posts it under your name')
     expect(button(page, 'Sign off and post')!.attributes('disabled')).toBeDefined()

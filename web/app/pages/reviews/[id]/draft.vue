@@ -290,12 +290,19 @@ function statusLine(data: DraftDetail): string {
   }
   if (draft.status === 'approved') {
     /*
-     * **It used to end "— waiting for the session to post it", and the panel says that
-     * now.** `PostingWatch`'s live region carries the waiting, in those words, a few
-     * inches away; this line is the page's one-sentence summary of where the draft stands,
-     * and the clause was the same sentence at two sizes.
+     * **The clause came off and went back on, and the round trip is the lesson.** It was
+     * cut because `PostingWatch`'s live region said the same words a few inches away — and
+     * then the region was made `rd-visually-hidden`, which is right for an announcer and
+     * took the only visible statement of the waiting with it. For a few commits a
+     * developer reloading a draft signed off four minutes ago was told what it would post
+     * as and never that anything was being waited for.
+     *
+     * Three end-to-end assertions should have caught that and did not: they ask
+     * `toBeVisible()` of the region, and Playwright calls a one-pixel clipped element
+     * visible. They assert on this line now.
      */
-    return `Signed off. Will be posted as "${eventLabel(draft.event)}".`
+    return `Signed off. Will be posted as "${eventLabel(draft.event)}" — waiting for the `
+      + 'session to post it.'
   }
   if (draft.status === 'sent_back') return 'Sent back to the session with a note.'
   if (draft.status === 'posted') return 'Posted. Layer 7 reads the author’s replies.'
@@ -789,7 +796,7 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                       :last-activity-at="review.data.value?.timings.last_activity_at"
                       :body-is-stale="data.body_is_stale"
                       :record-is-current="recordIsCurrent"
-                      @refresh="reread"
+                      :reread="reread"
                     />
                     <p class="rd-meta foot">
                       The review session posts it under your name, with no bot banner.
