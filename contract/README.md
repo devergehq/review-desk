@@ -694,6 +694,11 @@ review: "Delete review 13 — acme/portal #777?". Where a review holds a brief, 
 a draft the control is not drawn at all and the card says what it holds; the API refuses it
 in the same words, which is what makes the two agree.
 
+**A dismissed review refuses the four acts that need an agent afterwards** — `confirmBrief`,
+`approveDraft`, `sendBackDraft` and `requestNitTicket`, each a `409` — because each is an
+item in the work list a dismissed review is not in, and performing one would be a sign-off
+nothing will ever act on. Everything that needs nobody after it still works on one.
+
 **Neither has a command.** Both are the developer's act from the page — Patrick, 12 October
 2026, DEV-945 — for the reason confirming a brief and approving a draft have no command: a
 session that could dismiss a review could take its own work out of the developer's sight,

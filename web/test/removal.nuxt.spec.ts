@@ -280,6 +280,34 @@ describe('dismissing a review from its page', () => {
   })
 })
 
+describe('what a dismissed review refuses', () => {
+  it('refuses a sign-off rather than succeeding into nothing', async () => {
+    // Sample mode refuses the way the binary refuses, which is what makes a refusal
+    // state tested here one that works against the record. The four acts are the ones
+    // that are items in `work list` — the list a dismissed review is not in.
+    await resetDesk()
+    const desk = useReviewDesk()
+    await desk.dismissReview(17, 'the pull request was closed unmerged')
+
+    for (const result of [
+      await desk.confirmBrief(17),
+      await desk.approveDraft(17, 'comment'),
+      await desk.sendBackDraft(17, 'cut the nits'),
+      await desk.requestNitTicket(17),
+    ]) {
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.error.code).toBe('conflict')
+        expect(result.error.message).toContain('bring it back first')
+      }
+    }
+
+    /* And what needs nobody afterwards still works. */
+    const moved = await desk.setFindingDisposition(17, 1, 'held_back', 'a nit')
+    expect(moved.ok).toBe(true)
+  })
+})
+
 describe('deleting a review that never started', () => {
   it('is not offered for a review with work on it, and says what it holds', async () => {
     await resetDesk()

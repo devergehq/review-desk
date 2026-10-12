@@ -300,6 +300,7 @@ impl Store {
         note: Option<&str>,
         by: Actor,
     ) -> Result<TicketedAndApproved> {
+        self.refuse_if_dismissed(review_id, "ticketing what is left and approving")?;
         only_the_developer(by, "approve a draft")?;
 
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;

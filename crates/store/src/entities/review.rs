@@ -514,6 +514,7 @@ impl Store {
             });
         }
 
+        self.refuse_if_dismissed(id, "asking for its held-back findings to be ticketed")?;
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
         let review = self.get_review(id)?;
 
@@ -701,6 +702,34 @@ impl Store {
         Ok(review)
     }
 
+    /// Refuse an act that needs an agent afterwards, on a review the developer dismissed.
+    ///
+    /// **The four acts this guards are the ones whose completion is somebody else's.**
+    /// Confirming a brief asks an agent to carry on past layer 2; approving a draft asks
+    /// one to post it; sending it back asks one to revise it; asking for the held-back
+    /// nits to be ticketed asks one to file the ticket. Each is an item in `work list`,
+    /// and `work list` is the list a dismissed review is not in — so performing one would
+    /// be the developer signing something off that nothing will ever act on, with the
+    /// dashboard telling them "the review session posts it".
+    ///
+    /// Found by a review of this branch, which drove it: dismiss a review, approve its
+    /// draft, and the draft is approved for ever while `work list` says nothing is
+    /// waiting. The record is not wrong there — it is the developer who has been told
+    /// something untrue — and the honest fix is to refuse the act rather than to let it
+    /// succeed into nothing.
+    ///
+    /// **It is not a lock on the record.** Everything that changes a review *without*
+    /// needing an agent still works on a dismissed one: a finding's disposition, a
+    /// decision on a finding, writing the draft, the harvest's own writes. Dismissal
+    /// takes a review out of the lists; it does not freeze what is on it, which is what
+    /// "every record under it is kept" means.
+    pub(crate) fn refuse_if_dismissed(&self, review_id: i64, act: &'static str) -> Result<()> {
+        if self.get_review(review_id)?.is_dismissed() {
+            return Err(StoreError::DismissedReview { review_id, act });
+        }
+        Ok(())
+    }
+
     /// Read a review by id. Fails with [`StoreError::NotFound`] if it is not there.
     pub fn get_review(&self, id: i64) -> Result<Review> {
         self.find_review_by_id(id)?.ok_or(StoreError::NotFound {
@@ -812,18 +841,30 @@ impl Store {
         // update of nothing.
         self.get_review(id)?;
 
+        let (session_id, ledger_id, github_review_id) = (
+            normalise::optional_fact(links.session_id.as_deref()),
+            normalise::optional_fact(links.ledger_id.as_deref()),
+            normalise::optional_fact(links.github_review_id.as_deref()),
+        );
+
+        // **A call with nothing to write writes nothing, and says so by not marking the
+        // review active**, which is `set_review_facts`' own rule and is here for the
+        // same reason read through this branch's new caller: `review open --session
+        // "$SESSION_ID"` from a shell whose variable is unset normalises to three
+        // `None`s, and marking the review active anyway moves `last_activity_at` — the
+        // one thing the queue has to say whether a session is still alive. A dead
+        // session would read as freshly alive. Measured by a review of this branch.
+        if session_id.is_none() && ledger_id.is_none() && github_review_id.is_none() {
+            return self.get_review(id);
+        }
+
         self.conn.execute(
             "UPDATE reviews SET
                  session_id       = COALESCE(?2, session_id),
                  ledger_id        = COALESCE(?3, ledger_id),
                  github_review_id = COALESCE(?4, github_review_id)
              WHERE id = ?1",
-            params![
-                id,
-                normalise::optional_fact(links.session_id.as_deref()),
-                normalise::optional_fact(links.ledger_id.as_deref()),
-                normalise::optional_fact(links.github_review_id.as_deref())
-            ],
+            params![id, session_id, ledger_id, github_review_id],
         )?;
 
         self.mark_review_active(id)?;

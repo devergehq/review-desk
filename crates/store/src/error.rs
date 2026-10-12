@@ -59,6 +59,13 @@ pub enum StoreError {
     )]
     AlreadyDismissed { review_id: i64 },
 
+    /// An act that needs an agent afterwards was asked for on a dismissed review.
+    #[error(
+        "review {review_id} is dismissed, so no session will be started for it and \
+         nothing would come of {act}; bring it back first"
+    )]
+    DismissedReview { review_id: i64, act: &'static str },
+
     /// A review that is not dismissed cannot be brought back.
     #[error("review {review_id} is not dismissed, so there is nothing to bring back")]
     NotDismissed { review_id: i64 },
@@ -150,6 +157,7 @@ impl StoreError {
             StoreError::DraftStatus { .. } => "draft_status",
             StoreError::NoDraftSection { .. } => "no_draft_section",
             StoreError::AlreadyDismissed { .. } => "already_dismissed",
+            StoreError::DismissedReview { .. } => "dismissed_review",
             StoreError::NotDismissed { .. } => "not_dismissed",
             StoreError::ReviewStarted { .. } => "review_started",
             StoreError::NotFound { .. } => "not_found",
@@ -174,6 +182,7 @@ impl StoreError {
                 | StoreError::DraftStatus { .. }
                 | StoreError::NoDraftSection { .. }
                 | StoreError::AlreadyDismissed { .. }
+                | StoreError::DismissedReview { .. }
                 | StoreError::NotDismissed { .. }
                 | StoreError::ReviewStarted { .. }
                 | StoreError::NotFound { .. }

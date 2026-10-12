@@ -158,6 +158,7 @@ impl From<StoreError> for ApiError {
             | StoreError::DraftStatus { .. }
             | StoreError::NoDraftSection { .. }
             | StoreError::AlreadyDismissed { .. }
+            | StoreError::DismissedReview { .. }
             | StoreError::NotDismissed { .. }
             | StoreError::ReviewStarted { .. } => ApiError::conflict(message),
             StoreError::InvalidValue {

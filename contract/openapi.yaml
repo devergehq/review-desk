@@ -393,7 +393,10 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: The review has no brief to confirm.
+          description: |
+            The review has no brief to confirm, or it is dismissed — a dismissed review is
+            in no agent's work list, so confirming its brief would ask for a layer nothing
+            will carry on past. Bring it back first.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -643,7 +646,10 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: The draft is not in a state that can be approved.
+          description: |
+            The draft is not in a state that can be approved, or the review is dismissed —
+            a dismissed review is in no agent's work list, so nothing would post it. Bring
+            it back first.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -700,7 +706,10 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: The draft is not in a state that can be approved.
+          description: |
+            The draft is not in a state that can be approved, or the review is dismissed —
+            a dismissed review is in no agent's work list, so nothing would post it. Bring
+            it back first.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -748,7 +757,8 @@ paths:
         '409':
           description: |
             The draft is drafting or posted: only one that is ready, or approved and not
-            yet posted, can be sent back.
+            yet posted, can be sent back. Or the review is dismissed — a dismissed review
+            is in no agent's work list, so nothing would revise it. Bring it back first.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -784,7 +794,9 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: This review holds back no nits.
+          description: |
+            This review holds back no nits, or it is dismissed — a dismissed review is in
+            no agent's work list, so nothing would file the ticket. Bring it back first.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

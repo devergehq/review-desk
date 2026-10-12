@@ -453,3 +453,49 @@ fn starting_a_review_that_was_dismissed_hands_it_back_saying_so() {
     /* And starting it did not quietly bring it back. */
     assert!(harness.store.get_review(review_id).unwrap().is_dismissed());
 }
+
+#[test]
+fn a_dismissed_review_refuses_a_sign_off_rather_than_succeeding_into_nothing() {
+    // **The developer's acts whose completion is somebody else's.** A dismissed review is
+    // in no `work list`, so approving its draft would leave it approved for ever while
+    // the dashboard said "the review session posts it". A review of this branch drove
+    // exactly that against a running server.
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+    harness
+        .store
+        .dismiss_review(seeded.review_id, "the pull request was closed unmerged")
+        .expect("dismiss it");
+
+    for (path, body) in [
+        (format!("/reviews/{}/brief/confirm", seeded.review_id), None),
+        (
+            format!("/reviews/{}/draft/approve", seeded.review_id),
+            Some(r#"{"event":"comment"}"#),
+        ),
+        (
+            format!("/reviews/{}/draft/send-back", seeded.review_id),
+            Some(r#"{"note":"cut the nits"}"#),
+        ),
+        (
+            format!("/reviews/{}/held-back/ticket", seeded.review_id),
+            Some("{}"),
+        ),
+    ] {
+        let answer = harness.api("POST", &path, body);
+        assert_eq!(answer.status, 409, "{path}: {}", answer.text());
+        assert_eq!(answer.error_code(), "conflict", "{path}");
+        let said = answer.json();
+        assert!(
+            said["message"]
+                .as_str()
+                .is_some_and(|said| said.contains("bring it back first")),
+            "{path}: {}",
+            answer.text()
+        );
+    }
+
+    // And the draft is where it was: nothing was signed off on the way to the refusal.
+    let draft = harness.api("GET", &format!("/reviews/{}/draft", seeded.review_id), None);
+    assert_eq!(draft.json()["draft"]["status"], "ready");
+}

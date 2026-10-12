@@ -707,9 +707,29 @@ function startReview(prUrl: string): Review {
  * fixed here, because fixing it is a change to what `confirmBrief` writes, which is beyond
  * DEV-862.
  */
+/**
+ * Refuse an act that needs an agent afterwards, on a review the developer dismissed.
+ *
+ * **The binary's own rule, in the binary's own words**, which is what makes a refusal
+ * state tested on fixtures one that works against the record: a dismissed review is in no
+ * `work list`, so confirming its brief, approving or sending back its draft, or asking for
+ * its held-back findings to be ticketed would be the developer signing off something
+ * nothing will ever act on.
+ */
+function refuseIfDismissed(id: number, act: string): void {
+  const detail = reviewById(id)
+  if (detail?.review.dismissed_at != null) {
+    throw conflict(
+      `Review ${id} is dismissed, so no session will be started for it and nothing would `
+      + `come of ${act}; bring it back first.`,
+    )
+  }
+}
+
 function confirmBrief(id: number): Brief {
   const detail = reviewById(id)
   if (!detail) throw notFound(`review ${id}`)
+  refuseIfDismissed(id, 'confirming its brief')
   if (!detail.brief) throw conflict(`Review ${id} has no brief to confirm.`)
   if (detail.brief.confirmed) return detail.brief
 
@@ -817,6 +837,7 @@ function saveDraft(id: number, body: string, edits: DraftEditToRecord[]): DraftD
 function approveDraft(id: number, event: ReviewEvent): DraftDetail {
   const detail = draftById(id)
   if (!detail) throw notFound(`draft on review ${id}`)
+  refuseIfDismissed(id, 'approving its draft')
   if (detail.draft.status !== 'ready') {
     throw conflict(
       `This draft is ${detail.draft.status} and only a draft that is ready can be `
@@ -849,6 +870,8 @@ function sendBackDraft(id: number, note: string): DraftDetail {
     )
   }
 
+  refuseIfDismissed(id, 'sending its draft back')
+
   const detail = draftById(id)
   if (!detail) throw notFound(`draft on review ${id}`)
   /*
@@ -880,6 +903,7 @@ function sendBackDraft(id: number, note: string): DraftDetail {
 function requestNitTicket(id: number, ticketId: string | null = null): NitTicket {
   const detail = reviewById(id)
   if (!detail) throw notFound(`review ${id}`)
+  refuseIfDismissed(id, 'asking for its held-back findings to be ticketed')
 
   const seqs = detail.findings
     .filter(finding => finding.disposition === 'held_back')
@@ -1273,6 +1297,7 @@ function ticketRestAndApprove(id: number, note: string | null): TicketedAndAppro
   const drafted = draftById(id)
   const owner = reviewById(id)
   if (!drafted || !owner) throw notFound(`draft on review ${id}`)
+  refuseIfDismissed(id, 'ticketing what is left and approving')
 
   if (drafted.draft.status !== 'ready') {
     throw conflict(

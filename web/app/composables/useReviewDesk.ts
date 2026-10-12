@@ -495,7 +495,7 @@ export function useReviewDesk() {
    * deciding the refusal.
    */
   async function deleteReview(id: number): Promise<WriteResult> {
-    return write(
+    const result = await write(
       to => to.deleteReview(id),
       (review: Review) =>
         `Review ${review.id} — ${review.repo}#${review.pr} — is deleted. It held no `
@@ -508,6 +508,17 @@ export function useReviewDesk() {
        */
       false,
     )
+
+    /*
+     * **A refusal does read again**, and it is the one write where that matters. The
+     * card hides the delete by reading the review's own four facts, so the only way to
+     * be refused is for one of them to have changed since the page read it — a finding
+     * written between the read and the `DELETE`. Without this the refusal is drawn
+     * directly under "This review never started. No brief, no findings, no draft", with
+     * the button still offered, until the developer reloads.
+     */
+    if (!result.ok) await refreshEverything()
+    return result
   }
 
   /** `POST /reviews/{id}/brief/confirm` — layer 2, and the gate on everything after it. */

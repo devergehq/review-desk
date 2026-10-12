@@ -13,8 +13,8 @@ mod common;
 use common::{new_review, temp_store};
 use review_desk_store::{
     Actor, DismissedReviews, Disposition, DraftStatus, FileCheck, FindingRef, NewBrief, NewDraft,
-    NewFileChange, NewFinding, NewOutcome, NewReviewSource, OutcomeKind, Review, ReviewFacts,
-    ReviewLayerState, ReviewLinks, Severity, SourceKind, Store, WorkFilter,
+    NewFileChange, NewFinding, NewOutcome, NewReviewSource, OutcomeKind, Review, ReviewEvent,
+    ReviewFacts, ReviewLayerState, ReviewLinks, Severity, SourceKind, Store, WorkFilter,
 };
 
 const REPO: &str = "acme/portal";
@@ -1393,5 +1393,130 @@ fn the_refusal_says_them_about_several_things_and_that_about_one() {
     assert!(
         said.contains("holds 2 findings, and deleting it would lose them"),
         "{said}"
+    );
+}
+
+#[test]
+fn a_dismissed_review_refuses_the_acts_that_need_an_agent_afterwards() {
+    // **Four acts, and each is an item in `work list` — the list a dismissed review is
+    // not in.** Performing one would be the developer signing something off that nothing
+    // will ever act on, while the dashboard tells them the review session posts it. A
+    // review of this branch drove exactly that: dismiss a review, approve its draft, and
+    // the draft is approved for ever while `work list` says nothing is waiting.
+    let (_dir, store) = temp_store();
+    let review = requested(&store, 870, "aaa1111");
+    store
+        .put_brief(
+            review.id,
+            NewBrief {
+                problem: "the problem".to_string(),
+                ..Default::default()
+            },
+        )
+        .expect("a brief");
+    store
+        .add_finding(review.id, a_finding("a nit"))
+        .expect("a finding");
+    store
+        .set_finding_disposition(
+            review.id,
+            1,
+            Disposition::HeldBack,
+            Some("a nit".to_string()),
+        )
+        .expect("held back");
+    store
+        .put_draft(
+            review.id,
+            NewDraft {
+                body: "A review body.".to_string(),
+                status: DraftStatus::Ready,
+                lint: None,
+                sections: None,
+            },
+        )
+        .expect("a draft");
+    store
+        .dismiss_review(review.id, "the pull request was closed unmerged")
+        .expect("dismiss it");
+
+    for (what, error) in [
+        (
+            "confirming the brief",
+            store.confirm_brief(review.id, Actor::Developer).err(),
+        ),
+        (
+            "approving the draft",
+            store
+                .approve_draft(review.id, ReviewEvent::Comment, Actor::Developer)
+                .err(),
+        ),
+        (
+            "sending it back",
+            store.send_back_draft(review.id, "cut the nits").err(),
+        ),
+        (
+            "asking for the ticket",
+            store.request_nit_ticket(review.id, None).err(),
+        ),
+    ] {
+        let error = error.unwrap_or_else(|| panic!("{what} should be refused"));
+        assert!(error.is_refusal(), "{what}");
+        assert_eq!(error.code(), "dismissed_review", "{what}");
+        assert!(
+            error.to_string().contains("bring it back first"),
+            "{what}: {error}"
+        );
+    }
+
+    // **And the record is not frozen.** Everything that changes a review without needing
+    // an agent still works, which is what "every record under it is kept" means.
+    store
+        .set_finding_disposition(review.id, 1, Disposition::InDraft, None)
+        .expect("a disposition is the developer's own, and needs nobody after it");
+    store
+        .put_draft(
+            review.id,
+            NewDraft {
+                body: "A rewritten body.".to_string(),
+                status: DraftStatus::Drafting,
+                lint: None,
+                sections: None,
+            },
+        )
+        .expect("and a session may still write to it");
+
+    // Restored, the four are offered again.
+    store.restore_review(review.id).expect("restore it");
+    store
+        .confirm_brief(review.id, Actor::Developer)
+        .expect("confirming is the developer's again");
+}
+
+#[test]
+fn linking_nothing_does_not_move_the_last_activity_time() {
+    // `last_activity_at` is the one thing the queue has to say whether a session is still
+    // alive, and `review open --session "$SESSION_ID"` from a shell whose variable is
+    // unset reaches here with nothing to write. Marking the review active anyway would
+    // make a dead session read as freshly alive. `set_review_facts` has had this rule
+    // since a `--title ""` wiped a title; this is the same rule on the same row.
+    let (_dir, store) = temp_store();
+    let review = requested(&store, 871, "aaa1111");
+    let before = store.get_review(review.id).unwrap().last_activity_at;
+
+    store
+        .set_review_links(
+            review.id,
+            ReviewLinks {
+                session_id: Some("  ".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("a shell that said nothing");
+
+    assert_eq!(
+        store.get_review(review.id).unwrap().last_activity_at,
+        before,
+        "a call with nothing to write writes nothing, the activity time included"
     );
 }

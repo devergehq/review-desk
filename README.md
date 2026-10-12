@@ -994,6 +994,18 @@ the Reviews list leaves it out of its default view and has a filter for it.
 review-desk work list --json
 ```
 
+**And the acts that need an agent afterwards are refused on it.** Confirming its brief,
+approving or sending back its draft, and asking for its held-back findings to be ticketed
+are each an item in that list, so performing one on a dismissed review would be signing
+off something nothing will ever act on — while the dashboard says the review session posts
+it. Each answers `409` naming the dismissal and saying to bring it back first.
+
+**It is not a lock on the record.** Everything that changes a review without needing an
+agent still works on a dismissed one: a finding's disposition, a decision on a finding,
+a session writing the draft, the harvest's own writes. Dismissal takes a review out of
+the lists; it does not freeze what is on it, which is what "every record under it is
+kept" means.
+
 **And a review that was dismissed is still read by `review open`**, which is what the
 dispatcher calls to record a request: the answer carries `dismissed_at`, so a dispatcher
 that sees a request on GitHub can record it and then decline to start a session for it.

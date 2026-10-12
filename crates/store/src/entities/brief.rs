@@ -284,6 +284,7 @@ impl Store {
     pub fn confirm_brief(&self, review_id: i64, by: Actor) -> Result<Brief> {
         only_the_developer(by, "confirm a brief")?;
 
+        self.refuse_if_dismissed(review_id, "confirming its brief")?;
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
         let brief = self.get_brief(review_id)?;
 
