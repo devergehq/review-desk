@@ -95,12 +95,19 @@ const props = withDefaults(
      */
     prHref?: string | null
     /**
-     * Where this row's ticket is, and the id to draw as the link's text.
+     * Where this row's ticket is, and the id to draw with it.
      *
-     * **Both or neither.** An id with no address is drawn by the header as text and is
-     * drawn here not at all: this is a row, and the meta line beside it already names the
-     * ticket. An address with no id has nothing to call itself but the address, and a link
-     * whose text is a URL is a link a reader has to parse.
+     * **The row names the ticket once, here, and links it when the record has an
+     * address.** It used to do neither without both: an id with no address was left to the
+     * caller's `meta` string, and an id *with* one was drawn twice — once in that string
+     * and once as the link. That was tolerable while the two sat in different places, and
+     * DEV-957 put them on one line, where "acme/portal · round 1 · ABC-231 · GitHub ·
+     * ABC-231" is plainly one id too many. So the callers stopped putting it in `meta` and
+     * this draws it, which is the rule being true by construction rather than by three
+     * pages agreeing.
+     *
+     * An address with no id is drawn not at all: a link whose text is a URL is a link a
+     * reader has to parse.
      */
     ticketHref?: string | null
     ticketId?: string | null
@@ -188,7 +195,7 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
       request link and no ticket draws no empty line.
     -->
     <span
-      v-if="meta || prHref || (ticket && ticketId)"
+      v-if="meta || prHref || ticketId"
       class="row-meta"
     >
       <span
@@ -202,7 +209,7 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
         as punctuation; these are elements, and an element gets announced.
       -->
       <span
-        v-if="prHref || (ticket && ticketId)"
+        v-if="prHref || ticketId"
         class="row-out"
       >
         <template v-if="prHref">
@@ -218,18 +225,28 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
             rel="noopener noreferrer"
           >GitHub<span class="rd-visually-hidden">: pull request #{{ pr }}, opens in a new tab</span></a>
         </template>
-        <template v-if="ticket && ticketId">
+        <template v-if="ticketId">
           <span
             v-if="meta || prHref"
             class="sep"
             aria-hidden="true"
           >·</span>
+          <!--
+            Linked when the record holds an address, and named as text when it does not.
+            The contract's own words for the second case: "a review with an id and no
+            address, which the row then names on its own line and does not link".
+          -->
           <a
+            v-if="ticket"
             class="row-out-link"
             :href="ticket"
             target="_blank"
             rel="noopener noreferrer"
           >{{ ticketId }}<span class="rd-visually-hidden">, on the tracker, opens in a new tab</span></a>
+          <span
+            v-else
+            class="rd-meta"
+          >{{ ticketId }}</span>
         </template>
       </span>
     </span>
@@ -263,21 +280,30 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
 .queue-line {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 20px;
+  gap: 2px 20px;
   align-items: flex-start;
-  padding: 12px 0;
+  padding: 10px 0;
   border-bottom: 1px solid var(--rd-line);
 }
 
 /* The needs-you rows carry more air, which is the board's own difference between them. */
 .queue-line--emphasis {
-  padding: 16px 0;
+  padding: 14px 0;
 }
 
 /*
  * **The full width, so the meta line falls under it rather than beside it.** `1 1 auto`
  * let the links cell sit at the row's end, which is where DEV-957 found the GitHub link
  * "floating top right above the action".
+ *
+ * **`min-height` is the touch target, and it is here rather than implied by padding.**
+ * `--rd-control-min` is this project's floor for anything you press — "Nothing you can
+ * press is shorter than the first one", says the token's own comment — and
+ * `e2e/review-desk.spec.ts` measures every row against 44 at 1440 and at 390. It
+ * used to come out of the row's own 12 or 16 pixels of padding plus two lines of text; the
+ * padding moved to the wrapper and the second line left the anchor, and a one-line row
+ * measured 42.6 — found by that measurement, which is what it is for. Stated as the floor
+ * it is, so the next change to this box cannot take it away by arithmetic.
  */
 .row {
   display: flex;
@@ -285,6 +311,7 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
   flex-wrap: wrap;
   gap: 6px 20px;
   align-items: center;
+  min-height: var(--rd-control-min);
   min-width: 0;
   color: var(--rd-ink);
   text-decoration: none;

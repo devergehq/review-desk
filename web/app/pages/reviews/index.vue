@@ -133,10 +133,13 @@ const repoTabs = computed(() => [
  *
  * It is a state, not a mark: this page says where a review is and never how it went.
  *
- * **The ticket stays on this line even though the row now links it.** The line is what the
- * page is read by — a review is found by scanning it — and a review whose record holds an
- * id and no address has no link to be found by. Saying it twice for the reviews that have
- * both is cheaper than saying it inconsistently.
+ * **The ticket is not here, and the reasoning it used to carry has been answered.** This
+ * said the id twice for a review with an address — once here and once as the row's link —
+ * on the ground that a review with an id and *no* address would otherwise have no ticket on
+ * its row at all. DEV-957 put the link inline in this very line, which made the repetition
+ * read as a mistake, and `QueueRow` now draws the id either way: a link when the record
+ * holds an address, plain text when it does not. The line is still what the page is read
+ * by; the ticket on it is written by the component rather than by this.
  */
 function about(row: ReviewListItem): string {
   const parts = [row.review.repo]
@@ -146,7 +149,6 @@ function about(row: ReviewListItem): string {
       : `round ${row.review.round}`,
   )
   if (row.review.github_review_id) parts.push('posted')
-  if (row.review.ticket_id) parts.push(row.review.ticket_id)
   return parts.join(' · ')
 }
 

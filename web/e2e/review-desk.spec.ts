@@ -50,6 +50,8 @@ const {
   heldBackReviewId,
   postedReviewId,
   requestedReviewId,
+  mergedReviewIds,
+  supersededReviewIds,
 } = addresses
 
 /**
@@ -136,7 +138,7 @@ test.describe('the whole path, on a seeded database', () => {
     await page.goto(seeded)
 
     /*
-     * **Three, and they are three reviews rather than one review three times.** The
+     * **Three, and they are three pull requests rather than one thing three times.** The
      * structured review gained a draft in DEV-878 — the code review page's decisions change
      * a finding's *block*, so a review with no draft has nothing to decide against — and its
      * own layer trail already claimed one by saying step 6 was waiting on the developer.
@@ -145,8 +147,25 @@ test.describe('the whole path, on a seeded database', () => {
      * state that issue was raised from and the only one in this seed where the aside's panel
      * can be measured at that volume. A review with a ready draft is waiting on the
      * developer, so it is in this count.
+     *
+     * **Four since DEV-957, and the noun changed with the count.** The fourth is
+     * `tc/portal#9541`, which has *two* rounds with unposted drafts and draws **one** row:
+     * a row is one pull request, and the heading counts rows. The four rounds of merged
+     * `tc/portal#9568` add nothing at all — a finished review is in no group, which is that
+     * issue and is asserted below.
      */
-    await expect(page.getByRole('heading', { name: '3 reviews need you' })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: '4 pull requests need you' }),
+    ).toBeVisible()
+
+    /* One row for #9541, and it is the newer round's. */
+    const superseded = page.locator('.queue-line').filter({ hasText: '#9541' })
+    await expect(superseded, 'one row for two rounds').toHaveCount(1)
+    await expect(superseded).toContainText('round 2')
+    await expect(superseded.locator('.row')).toHaveAttribute(
+      'href',
+      `/reviews/${supersededReviewIds[1]}/understand`,
+    )
 
     /*
      * **DEV-876's first acceptance criterion, on a real database.** This session wrote the
@@ -157,22 +176,31 @@ test.describe('the whole path, on a seeded database', () => {
      */
     await expect(page.getByText('Retry failed webhook deliveries')).toHaveCount(1)
     /*
-     * **Four rows for three reviews that need you**, which is not a contradiction: the
-     * fourth is the posted review under "Waiting on the author", and nothing there is
+     * **Five rows for four pull requests that need you**, which is not a contradiction: the
+     * fifth is the posted review under "Waiting on the author", and nothing there is
      * waiting on the developer. The headline counts what is.
      */
-    await expect(page.locator('.row')).toHaveCount(4)
+    await expect(page.locator('.row')).toHaveCount(5)
     await expect(page.getByText('Problem brief ready')).toBeVisible()
     await expect(page.getByText('nothing posts until you confirm')).toBeVisible()
     await expect(page.getByText('a draft is ready behind it')).toBeVisible()
     await expect(page.getByText('Read the brief')).toBeVisible()
     /*
-     * **The ticket is on the row's own line**, named rather than matched loosely: since
-     * DEV-936 the row also carries a *link* to the ticket, so a bare `getByText('ABC-231')`
-     * matches two elements and fails on strictness. Both are wanted and the link is asserted
-     * in its own test; what this line is about is the meta line saying which ticket it is.
+     * **The ticket is on the row's own line, and named once.** DEV-936 gave the row a link
+     * to the ticket beside a meta line that also named it; DEV-957 put the two on one line,
+     * where the id read twice — "acme/portal · round 1 · ABC-231 · GitHub · ABC-231" — so
+     * the component names it and the page's meta no longer does. This asserts the line as
+     * it now reads, with the id in it exactly once.
      */
-    await expect(page.getByText('acme/portal · round 1 · ABC-231')).toBeVisible()
+    const line = page.locator('.queue-line').filter({ hasText: '#412' }).locator('.row-meta')
+    await expect(line).toContainText('acme/portal · round 1')
+    /*
+     * Counted in the line's own text rather than by locator: the ticket anchor carries a
+     * visually hidden ", on the tracker, opens in a new tab", so an exact-text locator
+     * matches nothing and a loose one would match whatever else held the id.
+     */
+    const said = (await line.textContent()) ?? ''
+    expect(said.split('ABC-231').length - 1, `the id once, in: ${said}`).toBe(1)
 
     /*
      * **And the row opens the review, which starts at Understand** — Patrick on
@@ -301,12 +329,12 @@ test.describe('the whole path, on a seeded database', () => {
      */
     await page.goto(seeded)
     /*
-     * **Still four rows, and the same four.** What moved is this one's next action: from
+     * **Still five rows, and the same five.** What moved is this one's next action: from
      * the brief to the draft, because layer 2 is settled and layer 6 is not. That is what
      * "one row showing its next action" buys — a review waiting for two things does not
      * become two rows, and does not stop being a row when one of them is answered.
      */
-    await expect(page.locator('.row')).toHaveCount(4)
+    await expect(page.locator('.row')).toHaveCount(5)
     const webhooks = page.locator('.row').filter({ hasText: 'Retry failed webhook deliveries' })
     await expect(webhooks).toHaveCount(1)
     await expect(webhooks.getByText('Draft ready')).toBeVisible()
@@ -2764,7 +2792,13 @@ test.describe('the list of every review', () => {
      * started step is the draft, and a cell reading "Draft" would say it still needs
      * signing off while the queue says it is with the author.
      */
-    const posted = page.locator('.row').filter({ hasText: 'Record the delivery attempt' })
+    /*
+     * **The line, not the anchor inside it.** DEV-957 moved the repository line out of the
+     * row's own link so that the pull request and the ticket could be anchors inline in it,
+     * and "posted" and "round 1 of 3" are on that line. `.queue-line` is the whole row; the
+     * `.row` inside it is where it goes.
+     */
+    const posted = page.locator('.queue-line').filter({ hasText: 'Record the delivery attempt' })
     /*
      * **"Not started", and "posted" beside it, which is not a contradiction.** The seven
      * steps are the review process; this review's GitHub id was recorded by `review link`
@@ -2775,7 +2809,7 @@ test.describe('the list of every review', () => {
     await expect(posted).toContainText('posted')
     await expect(posted).not.toContainText('step 0 of 7')
 
-    const webhooks = page.locator('.row').filter({ hasText: 'Retry failed webhook' })
+    const webhooks = page.locator('.queue-line').filter({ hasText: 'Retry failed webhook' })
     await expect(webhooks).toContainText('Draft')
     await expect(webhooks).toContainText('step 6 of 7')
     /* A round is one of a total, never a bare count of rework against the author. */
@@ -2786,7 +2820,7 @@ test.describe('the list of every review', () => {
     await expect(page.getByText('blocker', { exact: false })).toHaveCount(0)
 
     /* **Click two**, and the review is open at Understand, where a review starts. */
-    await posted.click()
+    await posted.locator('.row').click()
     await expect(page).toHaveURL(new RegExp(`/reviews/${postedReviewId}/understand$`))
     await expect(page.getByText('Record the delivery attempt count')).toBeVisible()
   })
@@ -2971,8 +3005,15 @@ test.describe('a database with nothing in it', () => {
     await expect(page.getByRole('heading', { name: 'No reviews in play' })).toBeVisible()
     await expect(page.getByText('No review is waiting, running or finished here'))
       .toBeVisible()
-    await page.getByRole('button', { name: 'Look at the dismissed reviews' }).click()
-    await expect(page.getByText('No review has been dismissed')).toBeVisible()
+    /*
+     * **The card's way out goes to Everything since DEV-957.** There are two ways off the
+     * desk now, and the answer this card is drawn from leaves both out — so it cannot say
+     * which this database's reviews took, and sending the reader to Dismissed would be a
+     * guess that is wrong half the time.
+     */
+    await page.getByRole('button', { name: 'Look at the reviews that have left the desk' })
+      .click()
+    await expect(page.getByText('No review yet')).toBeVisible()
     await expect(page.getByRole('radio').filter({ hasText: 'In play' })).toHaveCount(1)
 
     await page.goto(`${empty}rules`)
@@ -3533,4 +3574,317 @@ test.describe('taking a review off the desk', () => {
     ]) as unknown as { reviews: unknown[] }
     expect(found.reviews).toHaveLength(0)
   })
+})
+
+/*
+ * **A merged pull request's review, finished automatically, in a browser.**
+ *
+ * DEV-957, and its acceptance criterion by name: "Tested on a record shaped like
+ * Patrick's: four rounds of one merged pull request, one posted, three not." `seedMerged`
+ * is that record, and the state is written by a real `review-desk harvest` reading a
+ * recorded response — the same code path a live harvest takes, with nothing leaving the
+ * machine.
+ *
+ * **Only round 1 carries a `pr_state`**, because a harvest reads the round a review was
+ * posted on. So every assertion below is about the derivation and not about a column: a
+ * dashboard reading the round's own state would show three of these four rounds as open on
+ * a pull request that merged on 11 October.
+ */
+test.describe('a merged pull request finishes its review', () => {
+  test('is in no group of the queue, and in no work list', async ({ page }) => {
+    await page.goto(seeded)
+    await expect(page.locator('.row').first()).toBeVisible()
+
+    /* Not under Needs you, not with the agent, not waiting on an author. */
+    await expect(page.getByText('#9568')).toHaveCount(0)
+    await expect(page.getByText('Retry a failed delivery')).toHaveCount(0)
+
+    /*
+     * **And no agent is offered work on it**, which is the half the screen cannot show.
+     * `work list` is what the Locus dispatcher polls, so an item here is a session started
+     * on a review that can never be posted.
+     */
+    const work = cliJson(seededDatabase, ['work', 'list']) as unknown as {
+      work: Array<{ repo: string, pr: number }>
+    }
+    expect(work.work.filter(item => item.pr === 9568)).toHaveLength(0)
+    expect(work.work.length, 'and the list is not empty, so this is not vacuous')
+      .toBeGreaterThan(0)
+  })
+
+  test('every round of it is under Finished, posted or not', async ({ page }) => {
+    await page.goto(`${seeded}reviews`)
+    await expect(page.locator('.row').first()).toBeVisible()
+
+    /* Not in the default view. */
+    await expect(page.getByText('#9568')).toHaveCount(0)
+
+    await page.getByRole('radio').filter({ hasText: 'Finished' }).click()
+    await expect(page.getByText('whose pull request merged or closed')).toBeVisible()
+
+    /* All four, which is the derivation: three of them hold no state of their own. */
+    const rows = page.locator('.queue-line').filter({ hasText: '#9568' })
+    await expect(rows).toHaveCount(mergedReviewIds.length)
+
+    /* And each says what happened, in the words of the thing that happened. */
+    await expect(rows.first()).toContainText('Finished — the pull request merged')
+    await expect(rows.first()).toContainText('No round of it can be posted')
+    await expect(rows.first()).not.toContainText('Dismissed')
+
+    /* Dismissed is a different view, and nothing here is in it. */
+    await page.getByRole('radio').filter({ hasText: 'Dismissed' }).click()
+    await expect(page.getByText('#9568')).toHaveCount(0)
+  })
+
+  test('step 7 of the round that posted reads done, and says how it ended', async ({ page }) => {
+    await page.goto(`${seeded}reviews/${mergedReviewIds[0]}/understand`)
+    const steps = await trail(page)
+    expect(steps[6], 'step 7').toContain('merged')
+  })
+
+  for (const { name, width, height } of [
+    { name: 'a laptop', width: 1440, height: 900 },
+    { name: 'a phone', width: 390, height: 844 },
+  ]) {
+    test(`an unposted draft on it says so and offers no sign-off at ${name}`, async ({ page }) => {
+      await page.setViewportSize({ width, height })
+      /* Round 2: a draft the session finished and nothing will ever post. */
+      await page.goto(`${seeded}reviews/${mergedReviewIds[1]}/draft`)
+
+      /*
+       * **Said twice, deliberately, and both are asserted.** The status line under the
+       * heading is where the draft's state goes, and the card in the sign-off's place is
+       * where a reader looking for the button finds out why there is none. Scoped, because
+       * one page saying one thing in two places is a strict-mode violation for an
+       * unscoped locator rather than a fault.
+       */
+      /*
+       * The format rather than the day: `dayLabel` words the developer's own local day, so
+       * a machine east of UTC reads the 12th of a merge at 22:41 on the 11th. What this
+       * pins is day-month-year, which is the thing `toLocaleDateString` got wrong.
+       */
+      const said = /Not posted — the pull request merged on \d{1,2} [A-Z][a-z]+ \d{4}/
+      await expect(page.locator('.prose').filter({ hasText: said })).toBeVisible()
+      const aside = page.getByRole('complementary')
+      await expect(aside.getByText('Nothing to sign off')).toBeVisible()
+      await expect(aside.getByText(said)).toBeVisible()
+
+      /*
+       * **No control, rather than a disabled one.** Each of the three acts the panel offers
+       * asks a session to do something afterwards, and on a merged pull request none is
+       * coming — a greyed-out "Sign off and post" would still be offering the act, and the
+       * API refuses it.
+       */
+      await expect(page.getByRole('button', { name: 'Sign off and post' })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: /Send back/ })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: /Ticket what is left/ })).toHaveCount(0)
+
+      /* The draft itself is still there to read, which is what "kept" means. */
+      await expect(page.getByText('One finding on the key the retry carries')).toBeVisible()
+    })
+
+    test(`the round that posted still reads as posted at ${name}`, async ({ page }) => {
+      await page.setViewportSize({ width, height })
+      await page.goto(`${seeded}reviews/${mergedReviewIds[0]}/draft`)
+      await expect(page.getByText('Not posted —')).toHaveCount(0)
+    })
+  }
+
+  /*
+   * **And the API refuses it, naming the reason.** The page offers no button, so this is
+   * the race the hidden button cannot cover: a pull request that merges between the page's
+   * read and the press. The screen and the server answer from one value, which is what
+   * makes them agree.
+   */
+  test('the API refuses a sign-off on it, naming the merge', async ({ page }) => {
+    /*
+     * **From inside the page**, as the cross-origin test above is and for its reason: the
+     * server's guard accepts the dashboard's own origin, and a browser will not let a page
+     * forge one. A request from Playwright's own context carries no origin the guard knows.
+     */
+    await page.goto(seeded)
+    const refusal = await page.evaluate(async ({ base, reviewId }) => {
+      const answer = await fetch(`${base}api/v1/reviews/${reviewId}/draft/approve`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ event: 'comment' }),
+      })
+      return { status: answer.status, body: await answer.text() }
+    }, { base: seeded, reviewId: mergedReviewIds[1] })
+
+    expect(refusal.status, refusal.body).toBe(409)
+    const body = JSON.parse(refusal.body) as { code: string, message: string }
+    expect(body.code).toBe('conflict')
+    expect(body.message, 'the refusal names the reason').toContain('merged')
+  })
+})
+
+/*
+ * **A round a newer round supersedes, in a browser.**
+ *
+ * DEV-957's comment: "The older round's draft page says it is superseded, and its draft
+ * cannot be signed off." `tc/portal#9541` round 1 is that round — its pull request is open,
+ * so this is the supersession on its own rather than the merge.
+ */
+test.describe('a superseded round', () => {
+  test('its draft page says which round superseded it, and offers no sign-off', async ({
+    page,
+  }) => {
+    await page.goto(`${seeded}reviews/${supersededReviewIds[0]}/draft`)
+
+    const said = /Not posted — superseded by round 2/
+    await expect(page.locator('.prose').filter({ hasText: said })).toBeVisible()
+    const aside = page.getByRole('complementary')
+    await expect(aside.getByText('Nothing to sign off')).toBeVisible()
+    await expect(aside.getByText(said)).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Sign off and post' })).toHaveCount(0)
+  })
+
+  test('the newer round’s draft page still offers the sign-off', async ({ page }) => {
+    /* The converse: a guard that refused every round would refuse the one that can post. */
+    await page.goto(`${seeded}reviews/${supersededReviewIds[1]}/draft`)
+    await expect(page.getByRole('button', { name: 'Sign off and post' })).toBeVisible()
+    await expect(page.getByText('Nothing to sign off')).toHaveCount(0)
+  })
+})
+
+/*
+ * **The row's two links, in its repository line, measured at both widths.**
+ *
+ * DEV-957's comment: "The GitHub link sits in the row's repository line on every row, at
+ * 1440 and 390" and "No row's text extends past the row's right edge". The first is where
+ * the link is and the second is what a long line does to the row it is in — and neither is
+ * a thing reasoning about a flex box settles, which is why they are measured.
+ */
+test.describe('a queue row’s links and its edges', () => {
+  for (const { name, width, height } of [
+    { name: 'a laptop', width: 1440, height: 900 },
+    { name: 'a phone', width: 390, height: 844 },
+  ]) {
+    test(`the GitHub link is in the repository line at ${name}`, async ({ page }) => {
+      await page.setViewportSize({ width, height })
+      /*
+       * **`tc/portal#9541`, on the queue.** This block runs after the acceptance path,
+       * which signs `#412`'s draft off and takes it out of the queue — so a row named
+       * there is a row whose presence depends on the order these tests ran in. Nothing in
+       * this suite touches #9541, so its row is on the queue from the first test to the
+       * last.
+       */
+      await page.goto(seeded)
+
+      const row = page.locator('.queue-line').filter({ hasText: '#9541' }).first()
+      await expect(row).toBeVisible()
+
+      /*
+       * **In the line, and not in the row's own link.** Both halves: DEV-957 asks for the
+       * first, and DEV-936's seventh criterion forbids the second — an anchor inside the
+       * row's anchor opens the review when you press it.
+       */
+      const line = row.locator('.row-meta')
+      await expect(line).toBeVisible()
+      await expect(line).toContainText('tc/portal')
+      const github = line.getByRole('link', { name: /pull request #9541/ })
+      await expect(github).toHaveAttribute(
+        'href',
+        'https://github.com/tc/portal/pull/9541',
+      )
+      await expect(row.locator('.row').locator('.row-out-link')).toHaveCount(0)
+
+      /*
+       * **And it reads after the repository rather than above it or beside the action.**
+       * The complaint was where it sat: "on most rows it sits alone on a line under the
+       * pull request number, and on the #9568 row it floats top right above the action".
+       *
+       * **At 1440 it shares a line with the repository; at 390 that line wraps**, and the
+       * link falls under the repository text rather than beside it — which is the line
+       * wrapping and is what it should do, because the repository, the round and two links
+       * do not fit in 358 pixels. So the measurement is the thing that is true at both
+       * widths: the link never sits *above* the repository, and when the two do share a
+       * line it begins after it. The floating column this replaced failed both.
+       */
+      const repo = await line.locator('.meta-text').boundingBox()
+      const link = await github.boundingBox()
+      const title = await row.locator('.title').boundingBox()
+      expect(repo, 'the repository text has a box').not.toBeNull()
+      expect(link, 'the link has a box').not.toBeNull()
+      expect(title, 'the title has a box').not.toBeNull()
+
+      /* Under the title, which is where the repository line is. */
+      expect(link!.y, 'the link is below the title, not level with the action')
+        .toBeGreaterThan(title!.y)
+      /* Never above the repository text. */
+      expect(link!.y, `repo at y=${repo!.y}, link at y=${link!.y}`)
+        .toBeGreaterThanOrEqual(repo!.y)
+
+      const sharesALine = link!.y < repo!.y + repo!.height && repo!.y < link!.y + link!.height
+      if (sharesALine) {
+        expect(link!.x, 'on one line, the link is after the repository')
+          .toBeGreaterThanOrEqual(repo!.x)
+      }
+      else {
+        /*
+         * **Wrapped: the links are the next line of the same line.** Measured on the cell
+         * that holds them rather than on the anchor, because the cell begins with the
+         * separator that carries the continuation — the wrapped line reads "· GitHub ·
+         * DEV-941", and the anchor therefore starts one separator's width in. What the
+         * criterion is about is that the line continues at the line's own left edge, which
+         * is the cell.
+         */
+        expect(width, 'only a phone-width line wraps').toBeLessThan(560)
+        const cell = await line.locator('.row-out').boundingBox()
+        expect(cell, 'the links cell has a box').not.toBeNull()
+        expect(Math.abs(cell!.x - repo!.x), 'and it begins where the line begins')
+          .toBeLessThanOrEqual(1)
+        expect(link!.x, 'with the link inside it').toBeGreaterThanOrEqual(cell!.x)
+      }
+    })
+
+    test(`no row's text runs past the row's edge at ${name}`, async ({ page }) => {
+      await page.setViewportSize({ width, height })
+
+      /*
+       * **Both pages, and every view of the list**, because the rows differ: a queue row
+       * carries a next action and a tally, a list row carries the step and a finished row
+       * carries a whole sentence about the merge. They are one component and the widest
+       * line is not always on the same page.
+       */
+      let measured = 0
+      for (const [where, path, view] of [
+        ['the queue', '', null],
+        ['the reviews', 'reviews', null],
+        ['the finished reviews', 'reviews', 'Finished'],
+      ] as Array<[string, string, string | null]>) {
+        await page.goto(`${seeded}${path}`)
+        if (view != null) {
+          await page.getByRole('radio').filter({ hasText: view }).click()
+        }
+        await expect(page.locator('.queue-line').first()).toBeVisible()
+
+        /*
+         * **Every row, measured against its own right edge rather than the viewport's.**
+         * That is the criterion's wording — "no row's text extends past the row's right
+         * edge" — and it is the stricter of the two: a row inside a section that is itself
+         * too wide passes a viewport check and still has text hanging out of it.
+         */
+        const over = await page.evaluate(() =>
+          [...document.querySelectorAll('.queue-line')].flatMap((row) => {
+            const edge = row.getBoundingClientRect().right
+            return [...row.querySelectorAll('*')]
+              .filter(one => !one.closest('.rd-visually-hidden'))
+              .map((one) => {
+                const box = one.getBoundingClientRect()
+                return {
+                  what: `${one.tagName.toLowerCase()}.${one.className || '-'}`,
+                  over: Math.max(box.right - edge, one.scrollWidth - one.clientWidth),
+                }
+              })
+              .filter(({ over }) => over > 0.5)
+          }))
+        expect(over, `nothing in a row runs past it on ${where} at ${name}`).toEqual([])
+        measured += await page.locator('.queue-line').count()
+      }
+
+      expect(measured, 'some rows were measured, so this is not vacuous').toBeGreaterThan(0)
+    })
+  }
 })

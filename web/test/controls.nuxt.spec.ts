@@ -793,23 +793,35 @@ describe('a queue row', () => {
    * call sites pass `prUrl(…)`, which is the accidental safety the guard was moved inwards
    * to remove; the test above could not see it either, because it always passes `prHref`.
    */
-  it('draws no links cell at all when there is nothing to put in it', async () => {
+  /*
+   * **A refused address leaves the id, as text.** The anchor was guarded and the cell
+   * around it was not — `v-if` on the `.row-out` span still keyed on the raw `ticketHref`,
+   * so a row with no `prHref` and a refused address drew the span with nothing inside it.
+   * Since DEV-957 there *is* something to put in it: the id, which this row names whether
+   * or not it can link it, because the pages stopped naming it in their `meta` string.
+   *
+   * So the rule is now the narrower one: the refused address never becomes a link, and the
+   * id is still on the row.
+   */
+  it('names the ticket as text when its address is refused, and links nothing', async () => {
     const page = await row({ ticketHref: 'javascript:alert(1)', ticketId: 'ABC-231' })
-    expect(page.find('.row-out').exists(), 'no empty cell').toBe(false)
-    expect(page.findAll('.row-out-link')).toHaveLength(0)
+    expect(page.findAll('.row-out-link'), 'nothing is linked').toHaveLength(0)
+    expect(page.find('.row-out').text(), 'and the id is named').toContain('ABC-231')
+    expect(page.findAll('a')).toHaveLength(0)
 
     /* And the row itself is untouched — it is still the thing you read and click. */
     expect(page.find('.row').text()).toContain('Retry failed webhook deliveries')
   })
 
   /*
-   * **And no repository line either, when there is nothing for it to say.** The line is
-   * where the links went in DEV-957, so the empty-cell rule above is now a rule about two
-   * elements: a row with no meta and no links draws neither, rather than an empty line
-   * above the row's rule.
+   * **And no repository line at all when there is nothing for it to say.** The line is
+   * where the links went in DEV-957, so the empty-cell rule is now a rule about two
+   * elements: a row with no meta, no ticket and no pull request draws neither, rather than
+   * an empty line above the row's rule.
    */
-  it('draws no repository line when there is no meta and no link', async () => {
-    const page = await row({ ticketHref: 'javascript:alert(1)', ticketId: 'ABC-231' })
+  it('draws neither a links cell nor a repository line when there is nothing to say', async () => {
+    const page = await row({})
+    expect(page.find('.row-out').exists(), 'no empty cell').toBe(false)
     expect(page.find('.row-meta').exists(), 'no empty line').toBe(false)
   })
 

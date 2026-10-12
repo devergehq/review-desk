@@ -129,7 +129,7 @@ describe('the Reviews list’s Finished view', () => {
     expect(row.text()).toContain('No round of it can be posted')
     expect(row.text(), 'and nobody dismissed it').not.toContain('Dismissed')
     /* The day the record holds, worded as a day rather than as an elapsed figure. */
-    expect(row.text()).toMatch(/merged on \d{1,2} October 2026/)
+    expect(row.text()).toMatch(/merged on \d{1,2} [A-Z][a-z]+ \d{4}/)
   })
 
   it('shows nothing finished as a state of the record, not as an empty database', async () => {
@@ -143,8 +143,15 @@ describe('the Reviews list’s Finished view', () => {
 describe('the draft page of a review that cannot be posted', () => {
   it('says the pull request merged, and on which day', async () => {
     const page = await draftOf(MERGED.unposted[0]!)
+    /*
+     * **And the heading does not instruct.** "Read it, then sign it off." over a draft this
+     * page is refusing to let anybody sign off is the page contradicting itself in its
+     * largest type.
+     */
+    expect(page.text()).toContain('Nothing left to do.')
+    expect(page.text()).not.toContain('Read it, then sign it off')
     expect(page.text()).toContain('Not posted — the pull request merged on')
-    expect(page.text()).toMatch(/merged on \d{1,2} October 2026/)
+    expect(page.text()).toMatch(/merged on \d{1,2} [A-Z][a-z]+ \d{4}/)
     expect(page.text()).toContain('No round of it can be posted now')
   })
 

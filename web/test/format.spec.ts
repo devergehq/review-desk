@@ -410,6 +410,47 @@ describe('what came back on a posted review', () => {
     expect(stepLabel(row)).toBe('Draft · signed off by the developer')
   })
 
+  /*
+   * **A row that has left the desk reads in the past tense**, which is DEV-957 and a defect
+   * its screenshots showed: the Finished view drew "Draft · waiting on you" beside
+   * "Finished — the pull request merged … No round of it can be posted", one row saying two
+   * contradictory things. It was true of a dismissed row too, and had been since DEV-945.
+   */
+  it('says a step that was waiting on you in the past tense once the review has left', () => {
+    const row = (over: Record<string, unknown>) => ({
+      review: { id: 1 },
+      rounds_on_pr: 1,
+      step_number: 6,
+      step_name: 'draft',
+      step_state: 'waiting_on_you',
+      step_detail: 'waiting on you',
+      steps_total: 7,
+      last_activity_at: null,
+      left_the_desk: null,
+      finished_at: null,
+      ...over,
+    } as unknown as ReviewListItem)
+
+    /* In play, it is a claim about now and it stands. */
+    expect(stepLabel(row({}))).toBe('Draft · waiting on you')
+
+    for (const left of ['finished', 'dismissed']) {
+      expect(stepLabel(row({ left_the_desk: left })), left)
+        .toBe('Draft · was waiting on you')
+    }
+
+    /*
+     * **Only the claim about whose turn it is.** A step that finished says what it found,
+     * and a review leaving the desk does not make that less true — so a `done` step reads
+     * exactly as it did.
+     */
+    expect(stepLabel(row({
+      left_the_desk: 'finished',
+      step_state: 'done',
+      step_detail: 'approved by the developer',
+    }))).toBe('Draft · signed off by the developer')
+  })
+
   it('falls back to the state when a step recorded no note, and says so in words', () => {
     const row = (over: Record<string, unknown>) => ({
       review: { id: 1 },

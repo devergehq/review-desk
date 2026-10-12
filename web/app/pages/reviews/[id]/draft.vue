@@ -46,8 +46,16 @@ useHead({
 const heading = computed(() => {
   if (detail.error.value?.code === 'not_found') return 'No draft yet.'
   const status = detail.data.value?.draft.status
-  if (status === 'approved') return 'Signed off.'
   if (status === 'posted') return 'Posted.'
+  /*
+   * **Before the status, because it outranks it.** "Read it, then sign it off." is an
+   * instruction to do the one thing this page is refusing, and "Signed off." over a draft
+   * that merged says it is on its way to GitHub when nothing is going to take it there.
+   * DEV-957's screenshots showed the first of those over "Not posted — the pull request
+   * merged". A posted draft is exempt and is answered above: it did post.
+   */
+  if (detail.data.value && notForSigning(detail.data.value)) return 'Nothing left to do.'
+  if (status === 'approved') return 'Signed off.'
   if (status === 'sent_back') return 'Sent back.'
   if (status === 'drafting') return 'Still being written.'
   return 'Read it, then sign it off.'

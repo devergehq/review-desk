@@ -425,35 +425,38 @@ function alsoWaiting(row: Waiting): string[] {
 /**
  * The line under the title for the two groups no developer act is waiting on.
  *
- * **It names the ticket, which is what makes the id-without-address case readable.** The
- * contract says of `ticket_url` that null is "a review with an id and no address, which the
- * row then names on its own line and does not link" — true of the needs-you rows and the
- * Reviews list because both put the id on their meta line, and it was *not* true of these
- * two: their meta was the repository alone, so a review with an id and no address drew no
- * ticket at all, neither link nor text. Serving the pair to these rows without this left
- * half the gap open while the text said otherwise.
+ * **The repository, and nothing else — the ticket is `QueueRow`'s now.** It named the
+ * ticket here too, which was right while the row's own ticket link was a column at the
+ * row's end: a review with an id and no address drew no ticket at all unless this said it.
+ * DEV-957 put the link inline in this very line, so saying it here as well drew the id
+ * twice in a row — and the component draws it once, linked or not, which is that rule being
+ * true by construction. Both halves of the contract's "names it on its own line and does
+ * not link" are kept; only who writes it moved.
  *
- * **Two call sites, which is what the name says.** "Your pull requests" keeps its literal
- * repository line: `InboxOwnPrItem` is the one array the contract gives no ticket, because
- * it is the one with no review — a pull request nobody has reviewed. Passing it through
- * here read a property its own type does not declare, and the output was identical, so
- * nothing could have told.
+ * **It also lost its leading `· `.** The line used to sit under the title in the row's own
+ * cell, where a leading separator read as a continuation; it is a line of its own now, and
+ * a line beginning with a middle dot reads as a stray mark.
+ *
+ * **Two call sites, which is what the name says.** "Your pull requests" is the one array
+ * the contract gives no ticket, because it is the one with no review — a pull request
+ * nobody has reviewed.
  */
-function alsoAbout(item: {
-  pull_request: { repo: string }
-  ticket_id: string | null
-}): string {
-  const parts = [`· ${item.pull_request.repo}`]
-  if (item.ticket_id) parts.push(item.ticket_id)
-  return parts.join(' · ')
+function alsoAbout(item: { pull_request: { repo: string } }): string {
+  return item.pull_request.repo
 }
 
-/** The second line under a review's title: where it is, which round, what changed. */
+/**
+ * The second line under a review's title: where it is, which round, what changed.
+ *
+ * **The ticket is not here, and it was.** `QueueRow` draws it on this same line now —
+ * linked when the record holds an address and as text when it does not — so naming it here
+ * as well put the id on the line twice: "acme/portal · round 1 · ABC-231 · GitHub ·
+ * ABC-231". DEV-957.
+ */
 function about(row: Waiting): string {
   const parts = [row.repo]
   if (row.round != null) parts.push(`round ${row.round}`)
   if (row.is_delta) parts.push('changes since your last review')
-  if (row.ticket) parts.push(row.ticket)
   return parts.join(' · ')
 }
 
@@ -599,15 +602,27 @@ const showing = (name: string) => repo.value === ALL_REPOSITORIES || repo.value 
  * Every group has a time to sort by now — the posted rows by when they were posted, which
  * is the last of the four to get one — and a row whose own time is still absent sorts last
  * and says so where the figure goes.
+ *
+ * **Tie-broken by the review's id, which is stable.** Without it two rows with the same
+ * time — or two rows with no time at all — came back in whatever order the arrays had been
+ * read in, and `needingYou` reads three of them. DEV-957 reordered those reads for a reason
+ * that has nothing to do with the sort, and the first row of the seeded queue changed: a
+ * page whose order depends on the order its own merge happens to iterate is a page whose
+ * order moves under an unrelated edit. `Store::work_list` tie-breaks on the id for the same
+ * reason and states it: "a list whose order changed between two polls of an unchanged
+ * record would make a caller's progress look like churn."
  */
-function oldestFirst<T>(rows: T[], at: (row: T) => string | null): T[] {
+function oldestFirst<T>(rows: T[], at: (row: T) => string | null, id: (row: T) => number): T[] {
   return [...rows].sort((a, b) => {
     const left = at(a)
     const right = at(b)
-    if (left == null && right == null) return 0
-    if (left == null) return 1
-    if (right == null) return -1
-    return new Date(left).getTime() - new Date(right).getTime()
+    if (left != null && right != null) {
+      const by = new Date(left).getTime() - new Date(right).getTime()
+      if (by !== 0) return by
+    }
+    else if (left == null && right != null) return 1
+    else if (left != null && right == null) return -1
+    return id(a) - id(b)
   })
 }
 
@@ -649,6 +664,7 @@ const rows = computed(() => {
   const needsYou = oldestFirst(
     waiting.value.filter(row => showing(row.repo)).map(queueRow),
     row => row.at,
+    row => row.review_id,
   )
   // Sorted like every other group, now that it has a time to sort by: the caption over
   // the page says "oldest first", and until DEV-890 this group was the one it could not
@@ -656,19 +672,27 @@ const rows = computed(() => {
   const agentRows: InboxInProgressItem[] = oldestFirst(
     withAgent.value.filter(item => showing(item.pull_request.repo)),
     item => item.in_state_since ?? null,
+    item => item.review_id,
   )
   // The link, its label and its tone worked out once per row, here. Three bindings in the
   // template each needed the answer, and three calls there are three evaluations per render
   // — on every press of a repository chip — plus three chances for them to drift apart.
+  /*
+   * **Tie-broken by the pull request's number**, because these rows have no review at all:
+   * `own_prs_without_reviewer` is a pull request nobody has reviewed, which is the one
+   * array with no `review_id` to be stable on.
+   */
   const ownPrs = oldestFirst(
     data.own_prs_without_reviewer.filter(item => showing(item.pull_request.repo)),
     item => item.opened_at ?? null,
+    item => item.pull_request.pr,
   ).map(item => ({ ...item, link: ownPr(item) }))
   // Oldest posting first, like every other group, so the caption over the page stays
   // true: the API serves these newest first, which is the opposite.
   const shown = oldestFirst(
     withAuthor.value.filter(item => showing(item.pull_request.repo)),
     item => item.posted_at ?? null,
+    item => item.review_id,
   )
   return {
     needsYou,
