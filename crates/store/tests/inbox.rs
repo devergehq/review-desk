@@ -5,9 +5,9 @@ mod common;
 
 use common::{new_review, temp_store};
 use review_desk_store::{
-    Actor, DismissedReviews, Disposition, DraftStatus, FindingRef, NewDraft, NewFinding,
-    NewOutcome, NewRule, OutcomeKind, PrState, Review, ReviewEvent, ReviewLayerName,
-    ReviewLayerState, RuleScope, RuleStage, Severity, Store,
+    Actor, Disposition, DraftStatus, FindingRef, NewDraft, NewFinding, NewOutcome, NewRule,
+    OutcomeKind, PrState, Review, ReviewEvent, ReviewLayerName, ReviewLayerState, ReviewsShown,
+    RuleScope, RuleStage, Severity, Store,
 };
 
 /// A review on a repository, at round 1.
@@ -740,7 +740,7 @@ fn every_review_is_listed_newest_first_with_the_step_it_reached() {
         .unwrap();
 
     let listed = store
-        .reviews_at_step(None, DismissedReviews::default())
+        .reviews_at_step(None, ReviewsShown::default())
         .unwrap();
     assert_eq!(
         listed.iter().map(|at| at.review.id).collect::<Vec<_>>(),
@@ -788,7 +788,7 @@ fn a_listed_review_says_which_round_of_how_many_it_is() {
     let alone = seed(&store, "acme/billing-api", 88, "bbbbbbb");
 
     let listed = store
-        .reviews_at_step(None, DismissedReviews::default())
+        .reviews_at_step(None, ReviewsShown::default())
         .unwrap();
     let rounds = |id: i64| {
         listed
@@ -817,7 +817,7 @@ fn the_reviews_list_can_be_asked_about_one_repository() {
 
     assert_eq!(
         store
-            .reviews_at_step(Some("ACME/Portal"), DismissedReviews::default())
+            .reviews_at_step(Some("ACME/Portal"), ReviewsShown::default())
             .unwrap()
             .iter()
             .map(|at| at.review.id)
@@ -827,7 +827,7 @@ fn the_reviews_list_can_be_asked_about_one_repository() {
     );
     assert!(
         store
-            .reviews_at_step(Some("acme/nothing"), DismissedReviews::default())
+            .reviews_at_step(Some("acme/nothing"), ReviewsShown::default())
             .unwrap()
             .is_empty(),
         "and a repository with no reviews is empty rather than everything"

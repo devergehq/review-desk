@@ -25,6 +25,7 @@
     "github_review_id": null,
     "created_at": "2026-10-08T10:31:00Z",
     "pr_state": null,
+    "pr_state_at": null,
     "harvested_at": null,
     "dismissed_at": null,
     "dismissed_reason": null
@@ -58,5 +59,6 @@
     ],
     "requested_at": null,
     "filed_at": null
-  }
+  },
+  "not_for_signing": null
 }

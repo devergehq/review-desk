@@ -245,7 +245,7 @@ fn a_review_carries_the_pull_requests_state_and_when_it_was_harvested() {
 }
 
 #[test]
-fn only_reviews_whose_pull_request_was_open_are_up_for_harvest() {
+fn a_merged_pull_request_is_never_read_again_and_a_closed_one_is() {
     let (_dir, store) = temp_store();
 
     let never_looked = store
@@ -279,19 +279,63 @@ fn only_reviews_whose_pull_request_was_open_are_up_for_harvest() {
         .collect();
     assert_eq!(
         up,
-        vec![never_looked.id, open.id],
-        "a review never looked at qualifies; a settled one does not"
+        vec![never_looked.id, open.id, closed.id],
+        "a review never looked at qualifies, an open one does, and a closed one is read \
+         again so a reopen can be seen; a merged one never is"
     );
 
+    // **The bound is a fact about GitHub rather than a window.** A merged pull request
+    // cannot be reopened there, so reading it again could never tell Review Desk anything
+    // — and a closed one can, which is the whole of DEV-957's "a reopened pull request
+    // returns its latest round to play on the next harvest". The cost is one call per
+    // sweep per closed-and-unmerged pull request.
     let narrowed: Vec<i64> = store
         .reviews_to_harvest(Some("devergehq/review-desk"))
         .unwrap()
         .into_iter()
         .map(|review| review.id)
         .collect();
-    assert!(
-        narrowed.is_empty(),
-        "that repository's only review is closed"
+    assert_eq!(
+        narrowed,
+        vec![closed.id],
+        "that repository's only review is closed, which is read again"
+    );
+}
+
+#[test]
+fn only_the_newest_round_of_a_closed_pull_request_is_read_again() {
+    // **One call per sweep per closed pull request, not one per round.** The newest round
+    // is the one a reopen would put back in play, and it is the round the pull request's
+    // derived state is taken from — so reading an earlier closed round would be a call
+    // whose answer nothing would use.
+    let (_dir, store) = temp_store();
+
+    let one = store.open_review("devergehq/locus", 70, "aaa1111").unwrap();
+    store
+        .add_finding(
+            one.review.id,
+            a_finding("round one was reviewed", None, None),
+        )
+        .unwrap();
+    let two = store.open_review("devergehq/locus", 70, "bbb2222").unwrap();
+    assert_eq!(two.review.round, 2, "two rounds of one pull request");
+
+    for round in [&one, &two] {
+        store
+            .set_review_pr_state(round.review.id, PrState::Closed, Some(9))
+            .unwrap();
+    }
+
+    let up: Vec<i64> = store
+        .reviews_to_harvest(None)
+        .unwrap()
+        .into_iter()
+        .map(|review| review.id)
+        .collect();
+    assert_eq!(
+        up,
+        vec![two.review.id],
+        "the newest round, and not the one a reopen could not revive"
     );
 }
 

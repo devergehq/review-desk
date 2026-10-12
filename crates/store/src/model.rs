@@ -587,33 +587,94 @@ impl Review {
     }
 }
 
+/// How a review came to leave the desk, for a reader listing one.
+///
+/// **Dismissed and finished are told apart everywhere a review is listed**, which is
+/// DEV-957's own criterion, and this is the one answer both the Reviews list and the draft
+/// page read. The order of the two arms is the decision: a review the developer dismissed
+/// and whose pull request later merged reads as **dismissed**, because the issue says a
+/// dismissed review that then merges stays dismissed — the dismissal is something somebody
+/// did, and the merge is something that happened to it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LeftTheDesk {
+    /// The developer dismissed it, with a reason on the review.
+    Dismissed,
+    /// Its pull request merged or closed, so no round of it can be posted.
+    Finished,
+}
+
 string_enum! {
-    /// Which of the dismissed reviews a list of reviews is being asked for.
+    /// Which reviews a list of reviews is being asked for.
     ///
-    /// **The default is to leave them out, and it is the only safe default.** A caller
-    /// that had never heard of a dismissal — the queue's groups, the work list the
-    /// dispatcher polls — must not be handed a review the developer has taken out of
-    /// play, so the absence of a choice is the exclusion rather than "everything".
-    DismissedReviews as "dismissed" {
-        /// Only the reviews in play. What the Reviews list draws by default.
-        Excluded => "excluded",
-        /// Only the dismissed ones, which is the filter DEV-945 asks for.
-        Only => "only",
-        /// Both, for a reader who wants the whole record on one page.
-        Included => "included",
+    /// **The default is the ones in play, and it is the only safe default.** A caller
+    /// that had never heard of a dismissal or of a finish — the queue's groups, the work
+    /// list the dispatcher polls — must not be handed a review that has left the desk, so
+    /// the absence of a choice is the narrow view rather than "everything".
+    ///
+    /// **Four positions rather than three, because there are two ways off the desk.** It
+    /// was [`DismissedReviews`] with `excluded`, `only` and `included` until DEV-957, and
+    /// a fourth value named `finished` on a filter named `dismissed` would have been the
+    /// parameter's own name telling the reader something untrue. The two are told apart
+    /// everywhere a review is listed, which is that issue's own criterion, and a filter
+    /// that could not name one of them is where that promise would break first.
+    ReviewsShown as "show" {
+        /// Neither dismissed nor finished. What the Reviews list draws by default.
+        InPlay => "in_play",
+        /// Only the ones the developer dismissed, which is the filter DEV-945 asks for.
+        Dismissed => "dismissed",
+        /// Only the ones whose pull request merged or closed — DEV-957's filter.
+        Finished => "finished",
+        /// All of them, for a reader who wants the whole record on one page.
+        Everything => "everything",
     }
 }
 
 // Written out rather than derived, which clippy would rather it were: the derive list
 // belongs to `string_enum!` and that macro takes no default variant, so `#[default]` on
-// `Excluded` would be an attribute with no `#[derive(Default)]` to answer it. Teaching the
+// `InPlay` would be an attribute with no `#[derive(Default)]` to answer it. Teaching the
 // macro a default for the one set that wants one is a change to every closed set in the
 // crate.
 #[allow(clippy::derivable_impls)]
-impl Default for DismissedReviews {
+impl Default for ReviewsShown {
     fn default() -> Self {
-        DismissedReviews::Excluded
+        ReviewsShown::InPlay
     }
+}
+
+/// Why nothing on this review may be signed off, or `None` when it may.
+///
+/// **One answer, read by the guard and by the page.** The four acts that need an agent
+/// afterwards are refused on exactly the reviews this names, and the draft page draws its
+/// sentence from the same value — so a page cannot offer a sign-off the API refuses, which
+/// is the failure [`Store::refuse_if_dismissed`]'s own comment describes from the other
+/// side.
+///
+/// **The order of the variants is the order they are asked in**, and each ordering is a
+/// decision:
+///
+/// | Both true | Says | Why |
+/// | -- | -- | -- |
+/// | dismissed and merged | dismissed | the issue's rule: a dismissed review that then merges stays dismissed |
+/// | merged and superseded | merged | the pull request is over, so which round is newest no longer matters |
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "reason", rename_all = "snake_case")]
+pub enum NotForSigning {
+    /// The developer dismissed this review, and no session will act on it.
+    Dismissed,
+    /// Its pull request merged or closed, so nothing of it can be posted.
+    Finished {
+        /// Merged or closed. Never [`PrState::Open`]: an open pull request is not this.
+        how: PrState,
+        /// When it reached that state, when GitHub said. `None` is a date nobody holds,
+        /// and the sentence then says the pull request merged without naming the day.
+        at: Option<Timestamp>,
+    },
+    /// A newer round of the same pull request exists and this round was never posted.
+    Superseded {
+        /// The newest round of the pull request, which is the one that can still post.
+        by_round: i64,
+    },
 }
 
 /// A review to create.
@@ -1858,6 +1919,20 @@ pub struct ReviewAtStep {
     /// step 7 as `pending` the moment a review is posted, so that rule would report
     /// step 7 — the harvest — for a review whose harvest has not begun.
     pub step: Option<ReviewStep>,
+    /// How this review left the desk, or `None` while it is in play.
+    ///
+    /// **Served rather than derived by the reader, because only one of the two is on the
+    /// review.** A dismissal is `dismissed_at` and a page can see it; a finish is a fact
+    /// about the pull request, read off whichever round of it a harvest last got to, and
+    /// a page holding one row cannot compute that at all. DEV-957 asks for the two to be
+    /// told apart everywhere a review is listed, and this is what a row reads to do it.
+    pub left_the_desk: Option<LeftTheDesk>,
+    /// When its pull request merged or closed, for a finished review.
+    ///
+    /// `None` for a review in play, for a dismissed one, and for a finished one whose
+    /// `pr_state_at` GitHub did not give — the draft page then says the pull request
+    /// merged without naming the day rather than inventing one.
+    pub finished_at: Option<Timestamp>,
 }
 
 /// What running the review-craft lint over a draft body reported.

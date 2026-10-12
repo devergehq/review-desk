@@ -16,8 +16,8 @@
 //! methods and no write in it.
 
 use review_desk_store::{
-    Actor, Decision, DismissedReviews, Disposition, DraftSectionKind, DraftStatus, FindingDecision,
-    NewDraft, NewDraftSection, NewOutcome, OutcomeKind, ReviewEvent, ReviewFacts, RuleStage,
+    Actor, Decision, Disposition, DraftSectionKind, DraftStatus, FindingDecision, NewDraft,
+    NewDraftSection, NewOutcome, OutcomeKind, ReviewEvent, ReviewFacts, ReviewsShown, RuleStage,
     Severity, DEVELOPER_DECISIONS,
 };
 use serde::Deserialize;
@@ -436,41 +436,47 @@ impl Api {
             }
         }
 
-        // **The dismissed ones are left out unless they are asked for.** The default is
-        // the exclusion rather than everything, for the reason `DismissedReviews`'s own
-        // doc gives: a caller that has never heard of a dismissal must not be handed a
-        // review the developer took out of play. A value that is not one of the three is
+        // **A review off the desk is left out unless it is asked for.** The default is
+        // the narrow view rather than everything, for the reason `ReviewsShown`'s own doc
+        // gives: a caller that has never heard of a dismissal or of a finish must not be
+        // handed a review that has left the desk. A value that is not one of the four is
         // refused by name rather than falling back to the default — a mistyped filter
         // answering with the default view would read as "there are no dismissed reviews".
-        // **An empty value is a value.** `query_value` drops one, so `?dismissed=` arrived
+        //
+        // **The parameter is `show`, and it was `dismissed` until DEV-957.** That issue
+        // adds a fourth position, Finished, and `dismissed=finished` would have been a
+        // parameter whose name said the opposite of its value. Renamed rather than
+        // extended, and nothing outside this dashboard reads it.
+        //
+        // **An empty value is a value.** `query_value` drops one, so `?show=` arrived
         // as "nothing was asked" and answered with the default view — which is what this
         // paragraph says must not happen, for a client that serialises its filters
         // whether or not they are set: the page reads its view line off this field, so it
         // would have said "Every review in play" under a picker set to Dismissed.
         let asked_blank = query
             .split('&')
-            .any(|pair| pair == "dismissed=" || pair == "dismissed");
-        let dismissed = match query_value(query, "dismissed") {
+            .any(|pair| pair == "show=" || pair == "show");
+        let shown = match query_value(query, "show") {
             None if asked_blank => {
                 return Err(ApiError::invalid_value(
-                    "dismissed",
-                    "\"\" is not a choice about dismissed reviews".to_string(),
-                    DismissedReviews::valid_values(),
+                    "show",
+                    "\"\" is not a choice about which reviews to show".to_string(),
+                    ReviewsShown::valid_values(),
                 ))
             }
-            None => DismissedReviews::default(),
-            Some(asked) => asked.parse::<DismissedReviews>().map_err(|_| {
+            None => ReviewsShown::default(),
+            Some(asked) => asked.parse::<ReviewsShown>().map_err(|_| {
                 ApiError::invalid_value(
-                    "dismissed",
-                    format!("{asked:?} is not a choice about dismissed reviews"),
-                    DismissedReviews::valid_values(),
+                    "show",
+                    format!("{asked:?} is not a choice about which reviews to show"),
+                    ReviewsShown::valid_values(),
                 )
             })?,
         };
 
         let reviews: Vec<Value> = self
             .records
-            .reviews_at_step(repo.as_deref(), dismissed)?
+            .reviews_at_step(repo.as_deref(), shown)?
             .iter()
             .map(wire::review_list_item)
             .collect();
@@ -479,7 +485,7 @@ impl Api {
             200,
             json!({
                 "repo": repo,
-                "dismissed": dismissed.as_str(),
+                "show": shown.as_str(),
                 "reviews": reviews,
             }),
         ))
@@ -868,6 +874,11 @@ impl Api {
             // is stuck. False on every draft this build wrote; true of one approved before
             // the composition changed shape.
             "body_is_stale": self.records.draft_body_is_stale(review_id)?,
+            // **Why this draft may not be signed off, or null.** The screen draws its
+            // sentence from this and the store refuses from the same value, so the page
+            // cannot offer a sign-off the API would refuse — DEV-957's "an unposted draft
+            // on a finished review says so and cannot be signed off" is one field.
+            "not_for_signing": wire::not_for_signing(self.records.not_for_signing(review_id)?),
             "edits": edits,
             "held_back": held_back,
             "nit_ticket": wire::nit_ticket(&ticket),

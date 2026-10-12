@@ -159,6 +159,8 @@ impl From<StoreError> for ApiError {
             | StoreError::NoDraftSection { .. }
             | StoreError::AlreadyDismissed { .. }
             | StoreError::DismissedReview { .. }
+            | StoreError::FinishedReview { .. }
+            | StoreError::SupersededRound { .. }
             | StoreError::NotDismissed { .. }
             | StoreError::ReviewStarted { .. } => ApiError::conflict(message),
             StoreError::InvalidValue {
