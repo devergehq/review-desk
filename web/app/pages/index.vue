@@ -317,10 +317,16 @@ function alsoWaiting(row: Waiting): string[] {
  * two: their meta was the repository alone, so a review with an id and no address drew no
  * ticket at all, neither link nor text. Serving the pair to these rows without this left
  * half the gap open while the text said otherwise.
+ *
+ * **Two call sites, which is what the name says.** "Your pull requests" keeps its literal
+ * repository line: `InboxOwnPrItem` is the one array the contract gives no ticket, because
+ * it is the one with no review — a pull request nobody has reviewed. Passing it through
+ * here read a property its own type does not declare, and the output was identical, so
+ * nothing could have told.
  */
 function alsoAbout(item: {
   pull_request: { repo: string }
-  ticket_id?: string | null
+  ticket_id: string | null
 }): string {
   const parts = [`· ${item.pull_request.repo}`]
   if (item.ticket_id) parts.push(item.ticket_id)
@@ -867,7 +873,7 @@ function handledLine(data: Inbox): string {
             :key="`${item.pull_request.repo}-${item.pull_request.pr}`"
             :pr="item.pull_request.pr"
             :title="item.pull_request.title ?? 'no title recorded'"
-            :meta="alsoAbout(item)"
+            :meta="`· ${item.pull_request.repo}`"
             :href="prUrl(item.pull_request.repo, item.pull_request.pr)"
             action="Open on GitHub"
             action-tone="go"

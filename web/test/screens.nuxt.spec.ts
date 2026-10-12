@@ -667,12 +667,43 @@ describe('the queue', () => {
 
     /* Review 19 is `acme/billing-api#93`, step 3 running, ticket ABC-246 and no address. */
     const row = lines(page).find(line => line.row.text().includes('#93'))
-    expect(row, 'the row for #93').toBeDefined()
+    expect(row, 'the With the agent row for #93').toBeDefined()
     expect(row!.row.text(), 'the id is named on the row').toContain('ABC-246')
     expect(
       row!.out.map(link => link.attributes('href')),
       'and the pull request is the only link',
     ).toEqual(['https://github.com/acme/billing-api/pull/93'])
+  })
+
+  it('names the ticket on a posted row that has no address either', async () => {
+    /*
+     * **The same half-gap on the other group, which nothing reached.** Proved by mutation:
+     * reverting "Waiting on the author"'s meta to the repository alone left the whole suite
+     * green, because no posted fixture had the id-without-address shape *and* was drawn in
+     * that group — review 12 has it and is subtracted into "Needs you", and review 43 has
+     * an address. The case is live in the real binary, where the end-to-end seed's posted
+     * review carries `ABC-244` and no `--ticket-url`.
+     *
+     * The address is taken off review 43 for this test rather than out of the fixtures,
+     * because the test above needs it there: the two assertions want the same row in its
+     * two states.
+     */
+    const source = loadSource()
+    await resetDesk({
+      reviews: source.reviews.map(detail =>
+        detail.review.id === 43
+          ? { ...detail, review: { ...detail.review, ticket_url: null } }
+          : detail),
+    })
+
+    const page = await shown(Inbox)
+    const row = lines(page).find(line => line.row.text().includes('#403'))
+    expect(row, 'the Waiting on the author row for #403').toBeDefined()
+    expect(row!.row.text(), 'the id is named on the row').toContain('ABC-238')
+    expect(
+      row!.out.map(link => link.attributes('href')),
+      'and the pull request is the only link',
+    ).toEqual(['https://github.com/acme/portal/pull/403'])
   })
 
   it('draws no ticket link on a row whose review has an id and no address', async () => {

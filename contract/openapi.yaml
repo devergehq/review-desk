@@ -3960,8 +3960,11 @@ components:
 
         **All five arrays about a review carry the pair** — the seven here less
         `own_prs_without_reviewer`, which is a pull request nobody has reviewed, and
-        `proposed_rules`, which is about a rule. The join is not all the other two arrays do: `in_progress` holds reviews nothing is waiting on the developer for —
-        18 and 19 in the example — and `posted_awaiting_author` holds 14, and each of those
+        `proposed_rules`, which is about a rule.
+
+        The join is not all the other two arrays do: `in_progress` holds reviews nothing is
+        waiting on the developer for — 18 and 19 in the example — and
+        `posted_awaiting_author` holds 14, and each of those
         draws a row of its own. So a row that could not reach its ticket while
         `GET /reviews` linked it was a gap, and this closes it rather than restating it.
 

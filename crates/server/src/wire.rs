@@ -142,8 +142,12 @@ pub fn inbox_posted(posted: &PostedReview) -> Value {
         "review_id": review.id,
         "pull_request": inbox_pr(review),
         // The ticket and its address, for the reason the in-progress item carries them: a
-        // posted review whose author has not answered is in no other array, so it draws
-        // its own row and that row needs to reach its ticket.
+        // posted review whose author has not answered *may* be in no other array, and it
+        // then draws its own row, which needs to reach its ticket. It may equally be joined
+        // onto a needs-you row — review 12 in `getInbox.response.json` is in
+        // `author_replies` and here at once — so "is in no other array" would say what the
+        // `Inbox` schema calls false. The same correction `api.rs` took, which left this
+        // copy behind.
         "ticket_id": review.ticket_id,
         "ticket_url": review.ticket_url,
         "round": review.round,
