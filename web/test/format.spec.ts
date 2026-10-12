@@ -18,6 +18,7 @@ import {
   openForLabel,
   prStateLabel,
   reviewWorkInWords,
+  reviewWorkIsOneThing,
   startedReviewLine,
   sessionLabel,
   severityTally,
@@ -533,6 +534,18 @@ describe('what a review holds, in words', () => {
       .toBe('a brief, 4 findings and a draft')
     /* A nought is not a thing it holds, which is what makes the empty answer mean "no". */
     expect(reviewWorkInWords({ ...nothing, draft: true })).toBe('a draft')
+  })
+
+  it('says "them" about several things and "that" about one', () => {
+    // The sentence this decides is in two places that must not drift: the card, and the
+    // store's refusal — which is what a developer reads when a finding is added between
+    // the page's read and the DELETE.
+    expect(reviewWorkIsOneThing({ ...nothing, brief: true })).toBe(true)
+    expect(reviewWorkIsOneThing({ ...nothing, findings: 1 })).toBe(true)
+    /* Four findings are four things, not one kind of thing. */
+    expect(reviewWorkIsOneThing({ ...nothing, findings: 4 })).toBe(false)
+    expect(reviewWorkIsOneThing({ ...nothing, brief: true, draft: true })).toBe(false)
+    expect(reviewWorkIsOneThing(nothing)).toBe(false)
   })
 
   it('counts the review posted on GitHub, which a review can hold on its own', () => {

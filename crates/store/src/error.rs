@@ -64,11 +64,24 @@ pub enum StoreError {
     NotDismissed { review_id: i64 },
 
     /// A review holds work a delete would lose.
+    ///
+    /// **`lost` is "that" or "them", and it is a field rather than a word in the
+    /// sentence.** "review 7 holds 2 findings, and deleting it would lose that" is what
+    /// the one-word version said, and this message is not only read by the page: the page
+    /// hides the button, so the refusal is what a developer sees on the race the hidden
+    /// button cannot cover — a finding added between the page's read and the `DELETE`.
+    /// `contract/README.md` says the API refuses in the same words the card uses, and
+    /// [`ReviewWork::in_words`] is beside the thing that decides this one so the two
+    /// cannot drift.
     #[error(
-        "review {review_id} holds {holds}, and deleting it would lose that: dismiss it \
+        "review {review_id} holds {holds}, and deleting it would lose {lost}: dismiss it \
          instead, which takes it out of the queue and keeps the record"
     )]
-    ReviewStarted { review_id: i64, holds: String },
+    ReviewStarted {
+        review_id: i64,
+        holds: String,
+        lost: &'static str,
+    },
 
     /// A row was requested, or referenced, that is not there.
     #[error("no {entity} with id {id}")]

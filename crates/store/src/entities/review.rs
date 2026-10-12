@@ -590,10 +590,15 @@ impl Store {
     /// afterwards say why they hid.
     ///
     /// **Dismissing a dismissed review is refused rather than quietly rewritten.** The
-    /// first dismissal is the one the developer made, and a second call would move its time
-    /// and replace its words — so the refusal says when it was dismissed, which is what a
-    /// caller that has lost track needs. Restore it and dismiss it again to change the
-    /// reason; both are the developer's acts and both are on the record.
+    /// first dismissal is the one the developer made, and a second call would move its
+    /// time and replace its words. Restore it and dismiss it again to change the reason;
+    /// both are the developer's acts and both are on the record.
+    ///
+    /// The refusal says that it is dismissed and not *when*: times are integers in this
+    /// crate and the server converts them at its own boundary, so a timestamp in the
+    /// message would reach the developer as `1791780818`. When it happened is on the
+    /// review, which is what the page re-reads — [`StoreError::AlreadyDismissed`] carries
+    /// that argument, and this paragraph used to contradict it.
     ///
     /// **There is no actor argument.** Only the developer dismisses a review: the command
     /// line has no path to this, and the dashboard's API is the only caller.
@@ -685,6 +690,7 @@ impl Store {
             return Err(StoreError::ReviewStarted {
                 review_id: review.id,
                 holds: work.in_words(),
+                lost: work.lost(),
             });
         }
 

@@ -1447,7 +1447,51 @@ UPDATE reviews
 -- index here would be a second structure to keep in step for a table that holds one row per
 -- review of one developer's pull requests.
 ALTER TABLE reviews ADD COLUMN dismissed_at     INTEGER;
-ALTER TABLE reviews ADD COLUMN dismissed_reason TEXT;"#,
+ALTER TABLE reviews ADD COLUMN dismissed_reason TEXT;
+
+-- **And the four ids an empty string would now change the meaning of.**
+--
+-- `set_review_links` reads every optional string through `normalise::optional_fact`,
+-- which is this record's rule and the reason migration 16 repaired `ticket_id`: a
+-- `--session "$SESSION_ID"` from a shell whose variable is unset is the empty string, and
+-- `COALESCE` is only told to leave a column alone by a `NULL`. Released code had no such
+-- check on these four, so the rows are out there.
+--
+-- Normalising the writes is not enough, because this migration changes what an empty
+-- string *means*. A `session_id` of `''` is `is_some()`, so `review_is_claimed` reads the
+-- review as one somebody is working on and its head never moves again — one request
+-- becomes two unstarted reviews, which is the state DEV-945 exists to remove. A
+-- `github_review_id` of `''` makes `ReviewWork::started` true, so the review can never be
+-- deleted. `not_checked` claims the review the same way. Each is a row a developer cannot
+-- get out of, and fixing the writes does not reach them.
+--
+-- Migration 16's own argument, applied to this migration's own columns: the rule has to be
+-- true of the record this code already wrote and not only of writes made from here on. The
+-- characters are spelt out for the reason it gives — SQLite's one-argument `TRIM` takes
+-- spaces and nothing else, and a trailing newline is what a shell substitution produces.
+--
+-- `ledger_id` is repaired beside them although nothing reads it as a flag, because it is
+-- written by the same call that writes `session_id`, and a rule that held for three
+-- columns of four would be the next reader's surprise.
+UPDATE reviews
+   SET session_id = NULLIF(
+         TRIM(session_id, ' ' || char(9) || char(10) || char(11) || char(12) || char(13)),
+         ''
+       ),
+       ledger_id = NULLIF(
+         TRIM(ledger_id, ' ' || char(9) || char(10) || char(11) || char(12) || char(13)),
+         ''
+       ),
+       github_review_id = NULLIF(
+         TRIM(github_review_id,
+              ' ' || char(9) || char(10) || char(11) || char(12) || char(13)),
+         ''
+       ),
+       not_checked = NULLIF(
+         TRIM(not_checked, ' ' || char(9) || char(10) || char(11) || char(12) || char(13)),
+         ''
+       );
+"#,
     },
 ];
 

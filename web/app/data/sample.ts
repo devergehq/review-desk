@@ -43,7 +43,7 @@ import {
   isPosted,
   SEVERITY_LABELS,
 } from '~/utils/houseStyle'
-import { count, reviewWorkInWords } from '~/utils/format'
+import { count, reviewWorkInWords, reviewWorkIsOneThing } from '~/utils/format'
 import type {
   Brief,
   DecideFindingRequest,
@@ -1472,16 +1472,19 @@ function deleteReview(id: number): Review {
   const detail = reviewById(id)
   if (!detail) throw notFound(`review ${id}`)
 
-  const holds = reviewWorkInWords({
+  const held = {
     brief: detail.brief != null,
     findings: detail.findings.length,
     draft: draftById(id) != null,
     posted: detail.review.github_review_id != null,
-  })
+  }
+  const holds = reviewWorkInWords(held)
   if (holds !== '') {
+    /* "lose that" or "lose them", through the helper the binary's own message uses. */
+    const lost = reviewWorkIsOneThing(held) ? 'that' : 'them'
     throw conflict(
-      `Review ${id} holds ${holds}, and deleting it would lose that: dismiss it instead, `
-      + 'which takes it out of the queue and keeps the record.',
+      `Review ${id} holds ${holds}, and deleting it would lose ${lost}: dismiss it `
+      + 'instead, which takes it out of the queue and keeps the record.',
     )
   }
 

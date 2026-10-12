@@ -109,20 +109,10 @@ const claimed = computed(() => {
 /**
  * Whether what it holds is one thing or several, for "lose that" or "lose them".
  *
- * **Things, not kinds of thing.** This tested the rendered sentence for " and ", which
- * is wrong for a single plural item — a review holding only findings reads "2 findings",
- * has no " and ", and the page said "deleting it would lose **that**". Counting the
- * kinds instead is wrong the same way, which is how the first fix for it still said
- * "that" about two findings. Four findings are four things.
+ * Through the one helper the store's refusal has its own half of, so the card and the
+ * message a developer reads when the API refuses cannot say it differently.
  */
-const holdsOneThing = computed(
-  () =>
-    Number(held.value.brief)
-    + held.value.findings
-    + Number(held.value.draft)
-    + Number(held.value.posted)
-    === 1,
-)
+const holdsOneThing = computed(() => reviewWorkIsOneThing(held.value))
 
 async function dismiss(reason: string) {
   working.value = true

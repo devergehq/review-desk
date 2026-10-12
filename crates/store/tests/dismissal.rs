@@ -1351,3 +1351,47 @@ fn an_address_may_follow_the_id_onto_a_request_whose_head_moved() {
         Some("https://linear.app/acme/issue/ABC-402")
     );
 }
+
+#[test]
+fn the_refusal_says_them_about_several_things_and_that_about_one() {
+    // **The message, not only the page.** The card hides the delete, so this sentence is
+    // what a developer reads on the race the hidden button cannot cover — a finding added
+    // between the page's read and the `DELETE` — and `contract/README.md` says the two
+    // refuse in the same words. It said "holds 2 findings, and deleting it would lose
+    // that".
+    let (_dir, store) = temp_store();
+
+    let one = requested(&store, 860, "aaa1111");
+    store
+        .put_brief(
+            one.id,
+            NewBrief {
+                problem: "the problem".to_string(),
+                ..Default::default()
+            },
+        )
+        .expect("a brief, and nothing else");
+    let said = store
+        .delete_review(one.id)
+        .expect_err("refused")
+        .to_string();
+    assert!(
+        said.contains("holds a brief, and deleting it would lose that"),
+        "{said}"
+    );
+
+    let several = requested(&store, 861, "aaa1111");
+    for claim in ["one", "two"] {
+        store
+            .add_finding(several.id, a_finding(claim))
+            .expect("a finding");
+    }
+    let said = store
+        .delete_review(several.id)
+        .expect_err("refused")
+        .to_string();
+    assert!(
+        said.contains("holds 2 findings, and deleting it would lose them"),
+        "{said}"
+    );
+}

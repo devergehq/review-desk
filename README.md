@@ -158,9 +158,14 @@ commit, so the second call hands back the first call's review and spends no roun
 
 **And a push between the request and the session moves the request rather than doubling
 it.** A new head commit on a pull request whose newest round **nobody has picked up**
-moves that round to the new commit. Nobody has picked it up means all six: no brief, no
-findings, no draft, no review posted on GitHub, no session linked, and no step past
-`pending`. `head_moved_from`
+moves that round to the new commit. **Nobody has picked it up** means two things at once:
+the review holds nothing — no brief, no findings, no draft, no review posted on GitHub —
+*and* nobody has begun. Begun is anything a session writes on its way to a brief: a session
+linked, a step past `pending`, a per-file change map, the sources or the ticket's criteria,
+the description lint's results, a round's commits, or a sentence about what it did not
+check. `Store::review_is_claimed` is the list, and a change map on an older commit is the
+reason it is that long — the review would otherwise serve it as the coverage of a commit
+nobody measured. `head_moved_from`
 carries the commit it was of before:
 
 ```sh

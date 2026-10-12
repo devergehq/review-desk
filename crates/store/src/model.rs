@@ -698,6 +698,29 @@ impl ReviewWork {
         self.has_brief || self.findings > 0 || self.has_draft || self.is_posted
     }
 
+    /// Whether it holds one thing or several, for "lose that" or "lose them".
+    ///
+    /// **Things, not kinds of thing.** Four findings are four things, so a review holding
+    /// only those takes "them" — which is the fault the page made twice before this was
+    /// one function: first by testing the rendered sentence for " and ", then by counting
+    /// the kinds.
+    pub fn is_one_thing(&self) -> bool {
+        i64::from(self.has_brief)
+            + self.findings
+            + i64::from(self.has_draft)
+            + i64::from(self.is_posted)
+            == 1
+    }
+
+    /// "that" or "them", for the refusal's own sentence.
+    pub fn lost(&self) -> &'static str {
+        if self.is_one_thing() {
+            "that"
+        } else {
+            "them"
+        }
+    }
+
     /// The four in words, for a refusal that has to say what it is protecting: "a brief,
     /// 4 findings and a draft".
     ///

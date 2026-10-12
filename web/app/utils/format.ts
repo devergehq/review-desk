@@ -115,6 +115,21 @@ export function severityTally(counts: SeverityCounts): string {
 }
 
 /**
+ * Whether what a review holds is one thing or several, for "lose that" or "lose them".
+ *
+ * **Things, not kinds of thing.** Four findings are four things. The page made this
+ * mistake twice before it was one function — first by testing the rendered sentence for
+ * " and ", then by counting the kinds — and the store's own refusal made it a third time,
+ * in the message a developer reads when the race the hidden button cannot cover happens.
+ * `ReviewWork::is_one_thing` is its other half.
+ */
+export function reviewWorkIsOneThing(
+  held: { brief: boolean, findings: number, draft: boolean, posted: boolean },
+): boolean {
+  return Number(held.brief) + held.findings + Number(held.draft) + Number(held.posted) === 1
+}
+
+/**
  * What a review holds of the three things only a session writes, in words.
  *
  * **"a brief, 2 findings and a draft" — and the four are the same four everywhere.**
