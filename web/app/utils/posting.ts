@@ -81,8 +81,13 @@ export interface PostedReview {
  * parsing the id**: nothing is decoded, nothing is assumed about what is inside it, and an
  * id this rule cannot place is still shown to the developer rather than dropped.
  *
- * Null when the record holds no id at all, which is every review until a session has run
- * `review-desk draft posted`.
+ * Null when the record holds no id at all — which is every review until a session has run
+ * `review-desk draft posted` — and null too when `prUrl` will not build an address from
+ * the repository name. That second case is not tidiness: a `repo` of `../..` was storable
+ * until DEV-936, and a browser resolves it to `github.com/pull/1`, so building the address
+ * here rather than asking `prUrl` would have reopened the hole that function exists to
+ * close. This is the fold into `utils/links.ts` that the comment below promised on the
+ * rebase.
  */
 export function postedReview(
   review: Pick<Review, 'repo' | 'pr' | 'github_review_id'>,
@@ -90,13 +95,10 @@ export function postedReview(
   const id = review.github_review_id?.trim()
   if (!id) return null
 
-  /*
-   * **The third place that builds this address**, after `utils/houseStyle.ts` and the
-   * queue's own `prUrl`. Deliberately not lifted into a shared helper here: DEV-936 is
-   * landing `app/utils/links.ts` for exactly that, and a fourth helper racing it would be
-   * the problem rather than the fix. This folds into that file on the rebase.
-   */
-  const pull = `https://github.com/${review.repo}/pull/${review.pr}`
+  /* DEV-936's own, which checks the repository name rather than trusting the column. */
+  const pull = prUrl(review.repo, review.pr)
+  if (pull == null) return null
+
   return /^[0-9]+$/.test(id)
     ? { href: `${pull}#pullrequestreview-${id}`, exact: true }
     : { href: pull, exact: false }

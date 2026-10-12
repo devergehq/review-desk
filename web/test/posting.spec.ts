@@ -7,6 +7,7 @@ import {
   postedReview,
 } from '../app/utils/posting'
 import { secondsSince } from '../app/utils/format'
+import type { RepoName } from '../app/types/desk'
 
 /*
  * The draft page's settings, and the one rule it has about an address it did not invent.
@@ -69,6 +70,19 @@ describe('where the posted review is on GitHub', () => {
 
   it('treats an id of nothing but space as no id at all', () => {
     expect(postedReview({ ...place, github_review_id: '   ' })).toBeNull()
+  })
+
+  it('draws nothing for a repository no address can be built from', () => {
+    /*
+     * **`prUrl`'s rule, borrowed rather than re-stated.** `acme/portal#x` is storable on
+     * a Review Desk released before DEV-936, and `../..` was storable until its own
+     * review — a browser resolves that to `github.com/pull/1`, which is a link whose text
+     * and destination name two different things. No link beats a wrong one.
+     */
+    expect(postedReview({ repo: '../..' as RepoName, pr: 1, github_review_id: '184' }))
+      .toBeNull()
+    expect(postedReview({ repo: 'acme/portal#x' as RepoName, pr: 1, github_review_id: '184' }))
+      .toBeNull()
   })
 
   it('trims an id before it decides, so a stray newline still anchors', () => {

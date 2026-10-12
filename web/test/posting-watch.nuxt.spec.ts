@@ -447,7 +447,18 @@ describe('when the session posts it', () => {
   it('draws no link at all when nothing reported which review it became', async () => {
     const page = await watching(posted({}, { github_review_id: null }))
     expect(page.find('a').exists()).toBe(false)
-    expect(page.text()).toContain('The record holds no GitHub review for this draft')
+    expect(page.text()).toContain('There is no address to draw for this one')
+  })
+
+  it('draws no link for a repository no address can be built from', async () => {
+    /*
+     * `prUrl` refuses a `repo` that is not a repository name, and a review stored before
+     * DEV-936 can hold one. A link whose text and destination name two different things
+     * is worse than no link, and the sentence covers both absences.
+     */
+    const page = await watching(posted({}, { repo: '../..' as Review['repo'] }))
+    expect(page.find('a').exists()).toBe(false)
+    expect(page.text()).toContain('There is no address to draw for this one')
   })
 
   it('says a posting with no sign-off stamp without inventing a span', async () => {

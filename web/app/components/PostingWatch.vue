@@ -537,9 +537,11 @@ const takenBack
     + 'waiting on you until a session writes it afresh.'
 
 const noReviewSentence
-  = 'The record holds no GitHub review for this draft, so there is nothing to link to. '
-    + 'Nothing this API writes can leave it that way — a session reports the id when it '
-    + 'reports the posting — so this is a record something else has written.'
+  = 'There is no address to draw for this one: the record holds no GitHub review for the '
+    + 'draft, or no repository name an address can be built from. Nothing this API writes '
+    + 'can leave it either way — a session reports the id when it reports the posting, and '
+    + 'the store refuses a repository that is not one — so this is a record something else '
+    + 'has written.'
 
 const noAnchorSentence = computed(
   () =>
