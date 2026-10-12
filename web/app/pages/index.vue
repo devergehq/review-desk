@@ -251,11 +251,12 @@ function stepFor(row: Waiting): string {
  *
  * `warn` rather than `go`, because an unlinkable repository name is something to look at.
  *
- * **Computed once per row, here, rather than three times in the template.** `:href`,
- * `:action` and `:action-tone` each needed the answer, and three calls in the markup are
- * three chances for the expressions to drift apart — which is the argument `waiting` above
- * makes for itself, in this file, about a function that was called five times per render.
- * The other groups build their rows in script too.
+ * **Called once per row, from `rows`, not from the template.** `:href`, `:action` and
+ * `:action-tone` each need the answer; three calls in the markup are three evaluations per
+ * render — on every press of a repository chip — and three chances for the expressions to
+ * drift apart. An earlier version of this comment claimed the single evaluation while the
+ * template still made three calls, which fixed the drift and not the count. `rows` maps it
+ * onto each row now, which is where the other groups build theirs.
  */
 function ownPr(item: InboxOwnPrItem) {
   const href = prUrl(item.pull_request.repo, item.pull_request.pr)
@@ -559,10 +560,13 @@ const rows = computed(() => {
     withAgent.value.filter(item => showing(item.pull_request.repo)),
     item => item.in_state_since ?? null,
   )
+  // The link, its label and its tone worked out once per row, here. Three bindings in the
+  // template each needed the answer, and three calls there are three evaluations per render
+  // — on every press of a repository chip — plus three chances for them to drift apart.
   const ownPrs = oldestFirst(
     data.own_prs_without_reviewer.filter(item => showing(item.pull_request.repo)),
     item => item.opened_at ?? null,
-  )
+  ).map(item => ({ ...item, link: ownPr(item) }))
   // Oldest posting first, like every other group, so the caption over the page stays
   // true: the API serves these newest first, which is the opposite.
   const shown = oldestFirst(
@@ -903,9 +907,9 @@ function handledLine(data: Inbox): string {
             :pr="item.pull_request.pr"
             :title="item.pull_request.title ?? 'no title recorded'"
             :meta="`· ${item.pull_request.repo}`"
-            :href="ownPr(item).href"
-            :action="ownPr(item).action"
-            :action-tone="ownPr(item).tone"
+            :href="item.link.href"
+            :action="item.link.action"
+            :action-tone="item.link.tone"
             :age="item.opened_at ? openForLabel(item.opened_at).replace('open ', '') : null"
             age-unknown-because="nothing has told Review Desk when this pull request was opened"
           >

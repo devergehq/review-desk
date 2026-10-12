@@ -1288,13 +1288,18 @@ fn a_first_round_serves_a_timeline_of_one_and_no_commits() {
 
 /// **`RepoName`'s pattern and `normalise::is_repo_name` are held to each other.**
 ///
-/// They were not, and the gap was exactly the kind this file exists to close: DEV-936 taught
-/// the store to refuse a `.` or `..` segment and then wrote the matching pattern into the
-/// contract, and *nothing* exercised it. The pattern could have been inverted — accepting
-/// only the names it means to refuse — and the whole suite would have stayed green, because
-/// no example carries a bad repository and no request body in this file sets one. The
-/// claim "matched against the store's own rule" was a command run by hand once, which is
-/// not a check.
+/// They were not, and the gap has a precise shape — which is worth stating precisely,
+/// because the first version of this comment got it wrong in the direction that flatters
+/// the test. **An inverted pattern would not have survived**: `RepoName` is `$ref`'d by
+/// `Review.repo`, `InboxPr.repo`, `RepoSummary.repo` and `RuleScope.repo`, so every example
+/// carrying `acme/portal` is already a positive test of it, and `validate-examples.mjs`
+/// fails across a dozen files. Measured, by inverting it.
+///
+/// **What the suite could not catch is a pattern that is too loose** — one that drops the
+/// `.`/`..` guard, which is exactly the state before DEV-936 wrote the guard in. Nothing
+/// anywhere carried a bad repository name, so the guard was unexercised in the only
+/// direction it exists for. Measured that way too: revert the pattern to the bare class and
+/// this test fails while everything else stays green.
 ///
 /// **One list, two validators.** The contract's pattern is read out of `openapi.yaml` and the
 /// store's rule is the function the command line goes through, so a change to either without
