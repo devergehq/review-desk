@@ -74,8 +74,9 @@ REVIEW=$(review-desk review open --repo devergehq/review-desk --pr 851 --head c0
 ```
 
 It also takes what the caller knows about the pull request. A fact given is written and
-a fact left out is left as it was, so running it again on a head commit already
-reviewed records what the review did not check without starting a round:
+a fact left out is left as it was — bar one exception, on the ticket, below — so running it
+again on a head commit already reviewed records what the review did not check without
+starting a round:
 
 ```sh
 review-desk review open --repo devergehq/review-desk --pr 851 --head c0ffee1 \
@@ -114,6 +115,13 @@ review-desk review open --repo devergehq/review-desk --pr 851 --head c0ffee1 \
 **On the review, not on the pull request.** A later round is its own review and inherits
 nothing — not the ticket, not the title, not the changed-line count — so a session passes
 what it knows each time it opens one.
+
+**And a `--ticket` that differs from the one on the review clears the address**, unless the
+same call gives a new `--ticket-url`. This is the one exception to "a fact left out is left
+as it was", and it is there because an address belongs to one ticket: kept against a
+different id, the dashboard drew a link whose text and destination named two different
+things. Correct a ticket id and the address goes with it; pass both to move both. There is
+no way to clear an address and keep the id — a blank value reads as absent.
 
 `review find` lists a pull request's rounds, newest first, for an agent that has lost
 an id:

@@ -1293,6 +1293,13 @@ components:
             Sent with no `ticket_id`, and none already on the record, it is refused with
             `invalid_value` naming `ticket_id` — see `TicketUrl`. A refused request opens
             no review and spends no round.
+
+            **A `ticket_id` that differs from the one held clears a stored `ticket_url`**
+            unless the same request gives a new one. That is the single exception to this
+            operation's "a fact you pass is written, a fact you omit is left as it was": an
+            address belongs to one ticket, and kept against a different id a client draws a
+            link whose text and destination name two different things. Pass both to move
+            both. There is no way to clear an address and keep the id.
         changed_lines:
           type: [integer, 'null']
           minimum: 0

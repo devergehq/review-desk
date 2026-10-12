@@ -7,8 +7,9 @@ use review_desk_store::{
     newest_version, Actor, CriterionStatus, Decision, DescriptionLintStatus, DraftSectionKind,
     DraftStatus, FileCheck, FindingDecision, FindingHunk, HunkLine, HunkLineMarker,
     NewAcceptanceCriterion, NewDescriptionLintResult, NewDraft, NewFileChange, NewFinding,
-    NewReviewSource, NewRoundCommit, NitTicketStatus, ReviewLayerName, ReviewLayerState,
-    RoundStatus, Severity, SourceKind, Store, StoreError, Verification, WorkFilter,
+    NewReviewSource, NewRoundCommit, NitTicketStatus, ReviewFacts, ReviewLayerName,
+    ReviewLayerState, RoundStatus, Severity, SourceKind, Store, StoreError, Verification,
+    WorkFilter,
 };
 use tempfile::TempDir;
 
@@ -727,9 +728,11 @@ fn a_ticket_id_left_blank_by_the_old_writer_becomes_absent() {
             "INSERT INTO reviews (id, repo, pr, head_sha, round, ticket_id, created_at)
                  VALUES (1, 'acme/portal', 412, 'abc123', 1, '', 1000),
                         (2, 'acme/portal', 413, 'abc124', 1, '   ', 1000),
-                        (3, 'acme/portal', 414, 'abc125', 1, 'ABC-231', 1000);",
+                        (3, 'acme/portal', 414, 'abc125', 1, 'ABC-231', 1000),
+                        (4, 'acme/portal', 415, 'abc126', 1, 'DEV-860
+', 1000);",
         )
-        .expect("write three reviews under the older schema");
+        .expect("write four reviews under the older schema");
     }
 
     let migrated = Store::open(&path).expect("reopen migrates");
@@ -752,5 +755,43 @@ fn a_ticket_id_left_blank_by_the_old_writer_becomes_absent() {
             .as_deref(),
         Some("ABC-231"),
         "a real id is untouched"
+    );
+
+    // **The padded one, which is the dangerous half.** `--ticket "$(…)"` stored the command
+    // substitution's newline, and a padded id is *non-blank* — so an address records against
+    // it happily, and then a caller re-stating the same ticket has it normalised, compared
+    // unequal to the stored `DEV-860\n`, and the address dropped as stale. Trimming here is
+    // what makes "re-stating the same ticket changes nothing" true of these rows too.
+    assert_eq!(
+        migrated
+            .get_review(4)
+            .expect("the padded one")
+            .ticket_id
+            .as_deref(),
+        Some("DEV-860"),
+        "a padded id is trimmed to what it means"
+    );
+
+    let kept = migrated
+        .set_review_facts(
+            4,
+            &ReviewFacts {
+                ticket_url: Some("https://linear.app/deverge/issue/DEV-860".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("an address, against the id the migration repaired");
+    let again = migrated
+        .set_review_facts(
+            4,
+            &ReviewFacts {
+                ticket_id: Some("DEV-860".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("re-state the same ticket");
+    assert_eq!(
+        again.ticket_url, kept.ticket_url,
+        "re-stating the same ticket keeps the address it belongs to"
     );
 }

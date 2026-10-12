@@ -21,6 +21,12 @@ pub enum ReviewCommand {
     /// without spending a round, so it is also how a finished session records what it
     /// did not check.
     ///
+    /// **One exception: a `--ticket` that differs from the one on the review clears the
+    /// address**, unless the same call gives a new `--ticket-url`. An address belongs to one
+    /// ticket, and keeping it against a different id made the dashboard draw a link whose
+    /// text and destination named two different things. So correct a ticket id and the
+    /// address goes with it; pass both to move both.
+    ///
     /// **`--ticket-url` is the ticket's address, beside the id `--ticket` records.**
     /// Review Desk cannot work one out from the other — the tracker and its workspace are
     /// the session's knowledge, not the record's — so the dashboard draws the id as a link

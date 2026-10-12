@@ -178,7 +178,7 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
       opens elsewhere, because neither is something a reader can see coming.
     -->
     <span
-      v-if="prHref || (ticketHref && ticketId)"
+      v-if="prHref || (ticket && ticketId)"
       class="out"
     >
       <a

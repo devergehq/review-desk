@@ -782,4 +782,23 @@ describe('a queue row', () => {
       ).toEqual(['https://github.com/acme/portal/pull/412'])
     }
   })
+
+  /**
+   * **And a refused address leaves no empty cell behind.**
+   *
+   * The anchor was guarded and the cell around it was not: `v-if` on the `.out` span still
+   * keyed on the raw `ticketHref`, so a row with no `prHref` and a refused address drew the
+   * span with nothing inside it — a 96px column with its padding, and a full-width empty
+   * block above the row's rule at a phone's width. Invisible today only because all four
+   * call sites pass `prUrl(…)`, which is the accidental safety the guard was moved inwards
+   * to remove; the test above could not see it either, because it always passes `prHref`.
+   */
+  it('draws no links cell at all when there is nothing to put in it', async () => {
+    const page = await row({ ticketHref: 'javascript:alert(1)', ticketId: 'ABC-231' })
+    expect(page.find('.out').exists(), 'no empty cell').toBe(false)
+    expect(page.findAll('.out-link')).toHaveLength(0)
+
+    /* And the row itself is untouched — it is still the thing you read and click. */
+    expect(page.find('.row').text()).toContain('Retry failed webhook deliveries')
+  })
 })

@@ -1371,18 +1371,44 @@ ALTER TABLE brief_parts ADD COLUMN one_line TEXT;
 -- be written to by hand and a column is not a promise about every row in it.
 ALTER TABLE reviews ADD COLUMN ticket_url TEXT;
 
--- **And the blank ids the old writer left behind become absent, which is what they mean.**
--- `set_review_facts` wrote `COALESCE(?, ticket_id)` against whatever it was handed, so
--- `review open --ticket ""` from a shell whose variable was unset stored the empty string.
--- Two things follow for such a row, and both are now fixed rather than described: the API
--- serves `"ticket_id": ""`, which the contract's `ForeignId` says cannot happen
--- (`minLength: 1`); and `--ticket-url` alone is refused against it for having no id, which
--- blocks the two-call pattern the README documents until somebody passes `--ticket` again.
+-- **And the ids the old writer stored unnormalised are normalised, which is what they mean.**
+-- `set_review_facts` wrote whatever it was handed, so two kinds of row exist on a released
+-- database: `review open --ticket ""` from a shell whose variable was unset stored the empty
+-- string, and `--ticket "$(…)"` stored `DEV-860` with the command substitution's newline on
+-- it.
 --
--- Trimmed, not just `= ''`: `' '` is the same nothing and is what a quoted argument leaves.
--- This is data this code wrote, so "blank is absent" is now true of the record and not only
--- of writes made from here on.
-UPDATE reviews SET ticket_id = NULL WHERE TRIM(ticket_id) = '';
+-- **Both halves matter, and the padded one is the dangerous half.** An empty id makes the API
+-- serve `"ticket_id": ""`, which the contract's `ForeignId` says cannot happen
+-- (`minLength: 1`), and makes `--ticket-url` alone refused for having no id — blocking the
+-- two-call pattern the README documents. A *padded* id is worse: it is non-blank, so an
+-- address records against it happily, and then `set_review_facts` compares the id a caller
+-- passes (normalised) against the one held (`DEV-860 `), finds them unequal, and drops the
+-- address as stale. Re-stating the **same** ticket destroyed a correct address. Measured
+-- against the binary before this line existed.
+--
+-- `NULLIF(TRIM(…), '')` does both: trimmed to what the id means, and nothing left is no id.
+-- So "an id is trimmed, and blank is absent" is true of the record this code already wrote
+-- and not only of writes made from here on, which is what `ForeignId` claims of it.
+--
+-- **The characters are spelt out because SQLite's `TRIM` takes spaces and nothing else.**
+-- One argument trims `' '` only — not a tab, not a newline — while Rust's `str::trim`, which
+-- every write goes through, takes all whitespace. So a bare `TRIM(ticket_id)` left
+-- `DEV-860\n` exactly as it found it, which is the one row that matters here: a trailing
+-- newline is what `--ticket "$(git …)"` produces. Measured by the test for this migration,
+-- which failed on it. ASCII whitespace is what a shell can put there; Rust's notion is
+-- wider and SQLite cannot express it, and nothing needs it to.
+--
+-- **A database already at 16 does not run this.** Migrations are forward-only and keyed on
+-- version, so a machine that ran an earlier commit of *this branch* is past it. Nothing
+-- released is affected — master is at 15 — and the rows this repairs were written by
+-- released code, so every database the merge reaches gets it. A developer's own database
+-- that followed this branch is the one exception, and re-stating the ticket there fixes the
+-- row by hand.
+UPDATE reviews
+   SET ticket_id = NULLIF(
+         TRIM(ticket_id, ' ' || char(9) || char(10) || char(11) || char(12) || char(13)),
+         ''
+       );
 "#,
     },
 ];

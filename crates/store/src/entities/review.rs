@@ -135,7 +135,9 @@ impl Store {
     /// pull request.
     ///
     /// [`Store::open_review`] and then the facts: a fact given is written, a fact left
-    /// `None` is left as it was. That holds whether the review was created by this call
+    /// `None` is left as it was — with the one exception [`Store::set_review_facts`]
+    /// states, that a new `ticket_id` clears `ticket_url` unless the same call gives a new
+    /// address. That holds whether the review was created by this call
     /// or found already on the record — which is what lets a session that has finished
     /// a review report what it did not check by opening the same head commit again,
     /// rather than needing a command of its own.
@@ -203,6 +205,11 @@ impl Store {
     /// A fact left `None` is left as it was, so one call can set the title without
     /// clearing what was not checked.
     ///
+    /// **One exception, and it is the only one:** a `ticket_id` that differs from the one
+    /// held clears `ticket_url` unless the same call gives a new address. An address belongs
+    /// to one ticket, and keeping it against a different id made the dashboard draw a link
+    /// whose text and destination named two different things. See the block in the body.
+    ///
     /// **A `ticket_url` that is not `https` is refused here**, before anything is
     /// written, with [`StoreError::InvalidValue`]. This is the one gate every caller
     /// passes through — the command line, the local API and the dashboard behind it — and
@@ -222,8 +229,21 @@ impl Store {
         // `--ticket ABC-231 --ticket-url …/ABC-231` — replaced the id and left the address.
         // The header then drew `DEV-860` as a link to `ABC-231`: the link's text and its
         // destination naming two different tickets, silently, which is the exact failure
-        // `prUrl` is *built* rather than stored to avoid. And a blank value reads as absent,
-        // so there was no way to clear it either.
+        // `prUrl` is *built* rather than stored to avoid.
+        //
+        // **Both ids are read through `optional_fact`, which is not belt and braces.** The
+        // left side is normalised and the right is whatever the column holds, and a released
+        // build stored ids unnormalised — `--ticket "$(…)"` kept the newline. So comparing
+        // the two raw found `DEV-860` unequal to `DEV-860 ` and dropped the address for a
+        // caller re-stating the *same* ticket. Migration 16 repairs those rows; this makes
+        // the comparison right whatever a row holds, which is the rule `normalise`'s own
+        // header states: a value normalised differently on two sides of a comparison is the
+        // same bug wearing a different hat.
+        //
+        // **This does not give a session a way to clear an address and keep the id.**
+        // `--ticket-url ""` reads as absent and leaves the column alone, by design, and the
+        // drop below happens only as a side effect of the id changing. Stated because an
+        // earlier version of this comment implied otherwise.
         //
         // **Dropped rather than refused.** Correcting a ticket id is a plausible thing for a
         // session to do and should not need the address to hand; a review with an id and no
@@ -232,7 +252,7 @@ impl Store {
         // tells a reader something untrue.
         let stale_url = ticket_url.is_none()
             && ticket_id.is_some()
-            && ticket_id != held.ticket_id
+            && ticket_id != normalise::optional_fact(held.ticket_id.as_deref())
             && held.ticket_url.is_some();
 
         // **A call with nothing to write writes nothing, and says so by not marking the
