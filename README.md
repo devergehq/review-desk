@@ -139,13 +139,27 @@ review-desk review open --repo acme/portal --pr 777 --head 4f1a9c2 \
 `--ledger` is the dispatcher's own ledger entry, here as well as on `review link` so that
 recording a request is one call rather than two.
 
+**A session says who it is on its first call**, with `--session`, and that does one thing
+more than record it:
+
+```sh
+review-desk review open --repo acme/portal --pr 777 --head 4f1a9c2 \
+  --session allele-ae03f8ce
+```
+
+A review with a session linked is one somebody is at work on, so nothing moves its head
+afterwards — see below. A session that does not pass it is protected from its first
+`layer set` onwards; what is left uncovered is the gap between opening the review and
+writing to it, which is what passing it closes.
+
 **Recording the same request twice records one review.** The record is keyed on the head
 commit, so the second call hands back the first call's review and spends no round;
 `created` in the `--json` answer says which of the two happened.
 
 **And a push between the request and the session moves the request rather than doubling
-it.** A new head commit on a pull request whose newest round nobody has started — no
-brief, no findings, no draft — moves that round to the new commit. `head_moved_from`
+it.** A new head commit on a pull request whose newest round **nobody has picked up**
+moves that round to the new commit. Nobody has picked it up means all five: no brief, no
+findings, no draft, no session linked, and no step past `pending`. `head_moved_from`
 carries the commit it was of before:
 
 ```sh
@@ -155,10 +169,15 @@ review-desk review open --repo acme/portal --pr 777 --head 9d02e71 --json
 ```
 
 Patrick, on DEV-945: "two unstarted reviews for one request is wrong." Both of them would
-be offered by `work list`, and a session could be dispatched for each. A round somebody
-*has* started is untouched by this rule — a new commit on it is the next round, which is
+be offered by `work list`, and a session could be dispatched for each. A round somebody is
+*working on* is untouched by this rule — a new commit on it is the next round, which is
 what rounds are for — and so is a review somebody dismissed: its head moves and it stays
 dismissed, because a push is not the developer changing their mind.
+
+**The two questions are near each other and are not the same one.** What a review *holds*
+— a brief, a finding, a draft — is what a delete is refused for, below. Whether anybody
+has *begun* is what this rule asks, and it is the wider question: a session that has
+linked itself and run the lint holds none of the three and is still at work.
 
 `review find` lists a pull request's rounds, newest first, for an agent that has lost
 an id:
@@ -947,6 +966,14 @@ grows a verb that reads like one, and if `review --help` so much as mentions one
 Both are at the foot of **Understand**, which is where a review starts and the one page
 every review has. A dismissed review says so under the trail on all five of its pages, so
 a reader who arrives by a link learns it before they read the review rather than after.
+
+**A delete asks what the review holds, and nothing else**: no brief, no findings, no
+draft. A session may have been linked to it and may have run the lint — the stray review
+this was built for was written by a build session — and that does not stop the delete,
+because none of it is work the developer would lose. It does stop a `review open` moving
+the review's head, which is the wider question
+[above](#recording-a-review-request-before-any-session-starts); the page says a session
+has the review before it offers the button.
 
 **A dismissal is the whole of the new state**: `dismissed_at` and `dismissed_reason` on the
 review, written together, and migration 16 adds nothing else. The queue's groups, the work
