@@ -303,6 +303,37 @@ test.describe('the solution as a table', () => {
 })
 
 /**
+ * A problem's Before and After lines, open. DEV-939's picture.
+ *
+ * **Nothing in this set showed one.** Every other screenshot of the Understand page has the
+ * problems closed, which is why a line that drew as eight narrow columns went nine days
+ * without appearing in a picture anybody looked at. The detail is where a problem's lines
+ * live, so the detail is open here.
+ *
+ * Both widths, because the names are what break: the longest in the record is 46 characters,
+ * which has room at a laptop's width and has to break at a phone's.
+ */
+test.describe('a problem’s Before and After, after DEV-939', () => {
+  test('the detail open, with its code names, at both widths', async ({ page }) => {
+    for (const [width, suffix] of [[1440, ''], [390, '-390']] as const) {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
+
+      await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
+      await expect(page.locator('h1')).toBeVisible()
+
+      await page.getByRole('button', { name: /A scheduled export read its tenant/ }).click()
+      await expect(page.locator('#problem-1')).toBeVisible()
+      /* The line this is about: six code names, one of them 46 characters. */
+      await expect(
+        page.locator('#problem-1 .lines li').filter({ hasText: 'Six call sites read it' }),
+      ).toHaveCount(1)
+      await shot(page, `dev-939-1-problem-detail${suffix}`)
+    }
+    await page.setViewportSize({ width: 1440, height: 900 })
+  })
+})
+
+/**
  * The draft page's aside, and a drawing opened larger. DEV-928's three changes, in pictures.
  *
  * **Both widths for the panel, because the complaint was about a width.** Eight findings

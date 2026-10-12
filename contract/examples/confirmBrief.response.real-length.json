@@ -314,6 +314,7 @@
       "detail_title": "The request-scoped singleton",
       "detail_before": [
         "`TenantContext::current()` is written by the web middleware on every request and read by the report builder.",
+        "Six call sites read it rather than being handed the tenant: `ReportBuilder::filters()`, `ReportBuilder::bucketNameFor()`, `ScheduledExportJob::buildQueryFromDefinition()`, `ExportMailer::recipientsFor()`, `AuditTrail::actorFor()` and `RedactionList::forTenant()`.",
         "The queue worker keeps the container between jobs, so the slot survives the job that set it.",
         "One incident on INC-411: a nightly export for one tenant was written with another tenant's rows after a retry landed on a warm worker.",
         "A second on INC-418: the bucket name and the row filter came from the slot at different moments, so a file landed in the wrong bucket with the right rows.",

@@ -487,11 +487,19 @@ function sources(data: ReviewDetail) {
                       v-if="problem.detail_before?.length"
                       class="lines"
                     >
+                      <!--
+                        **The line's text is one box.** The `li` is a flex row so the
+                        en-dash sits beside the words, and `TickedText` adds no box of its
+                        own — so without this span every word run and every code chip in
+                        the line would be a flex item of the `li` and the line would draw
+                        as a row of narrow columns. `.line-text` is what makes it a
+                        paragraph again.
+                      -->
                       <li
                         v-for="(line, index) in problem.detail_before"
                         :key="index"
                       >
-                        <TickedText :text="line" />
+                        <span class="line-text"><TickedText :text="line" /></span>
                       </li>
                     </ul>
                     <p
@@ -509,11 +517,12 @@ function sources(data: ReviewDetail) {
                       v-if="problem.detail_after?.length"
                       class="lines"
                     >
+                      <!-- One box for the line's text, as in the Before list above. -->
                       <li
                         v-for="(line, index) in problem.detail_after"
                         :key="index"
                       >
-                        <TickedText :text="line" />
+                        <span class="line-text"><TickedText :text="line" /></span>
                       </li>
                     </ul>
                     <p
@@ -926,7 +935,15 @@ function sources(data: ReviewDetail) {
   min-width: 0;
 }
 
-/* The board's en-dash bullet, drawn rather than read out as a list marker. */
+/*
+ * The board's en-dash bullet, drawn rather than read out as a list marker.
+ *
+ * **A flex row here has exactly two items: the dash and `.line-text`.** This row had one
+ * item per word run and one per code chip instead, which is DEV-939: `TickedText` is
+ * `display: contents` so that it adds no box, and a line holding five code names came out
+ * as eight narrow columns with the names broken mid-word — `url.inte / nded`. Each rule is
+ * right on its own; what was missing was the box between them.
+ */
 .lines li {
   display: flex;
   gap: 10px;
@@ -937,6 +954,36 @@ function sources(data: ReviewDetail) {
   content: '–';
   flex: none;
   color: var(--rd-ink-faint);
+}
+
+/*
+ * The line's words and chips, as one paragraph beside the dash.
+ *
+ * **`min-width: 0` is a guard here, not the thing holding the line inside the column.** A
+ * flex item's automatic minimum is its content, which is the usual way one long token
+ * widens a row past its container — but the chip carries `overflow-wrap: anywhere`, and
+ * that drives its min-content down to a single character, so the automatic minimum never
+ * reaches the column's width. Measured at 1440 and 390 with the 46-character name in the
+ * record: the box comes out the same size either way.
+ *
+ * It is kept because what it guards against is real and lives on the chip rather than
+ * here. A piece drawn in this box without `anywhere` — a path, a URL, a name some later
+ * rule declines to break — would widen the row, and at 390px that is the difference
+ * between a line that wraps and a page that scrolls sideways.
+ */
+/*
+ * **`flex: 1` so the box is the column less the dash for *every* line, not just a long
+ * one.** Shrink-to-fit is the default, and a shrink-to-fit box only reaches the column's
+ * far edge while its content overflows — so on a short line the box would stop where the
+ * words stop. Nothing a reader sees changes either way, because the text is left-aligned
+ * in both; what changes is whether "one box, the width of the column" is something the
+ * stylesheet guarantees or something this particular line happens to produce. The test
+ * below measures the former, so the stylesheet has to mean it. `.says-line` on
+ * Alternatives carries the same pair for the same reason.
+ */
+.line-text {
+  flex: 1;
+  min-width: 0;
 }
 
 /* ------------------------------- Already decided ----------------------------------- */
