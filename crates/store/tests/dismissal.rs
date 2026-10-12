@@ -815,13 +815,26 @@ fn every_query_that_lists_reviews_says_what_it_does_about_dismissed_ones() {
     let mut checked = 0;
     let mut exempted = 0;
 
-    for file in [
-        "src/entities/inbox.rs",
-        "src/entities/work.rs",
-        "src/entities/review.rs",
-        "src/entities/timings.rs",
-    ] {
-        let source = std::fs::read_to_string(root.join(file)).expect("the module's source");
+    // **Every module in the directory, not a list of the four that had one.** The list
+    // was the blind spot this test's own comment says it has twice been caught by:
+    // `round.rs`, `rule.rs` and `house_style.rs` all read `FROM reviews` and were outside
+    // it, so a list of reviews added in any of them would have passed in silence. A
+    // module added tomorrow is walked without anybody remembering to add it.
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(root.join("src/entities"))
+        .expect("the entities directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "rs"))
+        .collect();
+    files.sort();
+    assert!(
+        files.len() >= 15,
+        "only {} modules were found, so this check is walking the wrong directory",
+        files.len()
+    );
+
+    for file in files {
+        let file = file.display().to_string();
+        let source = std::fs::read_to_string(&file).expect("the module's source");
 
         // One block per function: from each `fn name(` to the next. Crude on purpose —
         // the alternative is parsing Rust, and what this needs is only to know which

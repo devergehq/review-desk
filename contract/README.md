@@ -694,10 +694,15 @@ review: "Delete review 13 — acme/portal #777?". Where a review holds a brief, 
 a draft the control is not drawn at all and the card says what it holds; the API refuses it
 in the same words, which is what makes the two agree.
 
-**A dismissed review refuses the four acts that need an agent afterwards** — `confirmBrief`,
-`approveDraft`, `sendBackDraft` and `requestNitTicket`, each a `409` — because each is an
-item in the work list a dismissed review is not in, and performing one would be a sign-off
-nothing will ever act on. Everything that needs nobody after it still works on one.
+**A dismissed review refuses the acts that need an agent afterwards** — `confirmBrief`,
+`approveDraft`, `sendBackDraft`, `ticketRestAndApprove`, and `requestNitTicket` **when it
+is the developer asking** — each a `409`, because each is an item in the work list a
+dismissed review is not in, and performing one would be a sign-off nothing will ever act
+on. Everything that needs nobody after it still works on one.
+
+`requestNitTicket` is the one with two roles and only one of them refuses: a session
+sending a `ticket_id` is reporting a ticket it has **already filed**, and refusing that
+would leave the record never learning which ticket exists in the tracker.
 
 **Neither has a command.** Both are the developer's act from the page — Patrick, 12 October
 2026, DEV-945 — for the reason confirming a brief and approving a draft have no command: a

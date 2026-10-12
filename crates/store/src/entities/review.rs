@@ -96,6 +96,15 @@ impl Store {
     /// the author's next push. DEV-945 puts automatic dismissal out of scope, and
     /// automatic *un*-dismissal is the same decision read backwards.
     ///
+    /// **The cost of that, said out loud:** a dismissed request stays dismissed however
+    /// many commits arrive, because each one moves its head and no round is ever opened
+    /// that would be in play. For "I am not reviewing this pull request" that is the
+    /// point. For a dismissal whose reason was about one commit — "superseded, waiting
+    /// for the rewrite" — the rewrite lands and nothing happens, and the way back is the
+    /// Reviews list's dismissed view. Read as a fault by a review of this branch and kept
+    /// deliberately: the alternative is Review Desk deciding that a push means the
+    /// developer changed their mind.
+    ///
     /// A round that has been started keeps the old behaviour exactly: a new commit on it
     /// is the next round, which is what rounds are for.
     ///
@@ -761,6 +770,11 @@ impl Store {
     /// decision on a finding, writing the draft, the harvest's own writes. Dismissal
     /// takes a review out of the lists; it does not freeze what is on it, which is what
     /// "every record under it is kept" means.
+    /// **It comes after the actor check, in all three files that make both.** This one
+    /// reads the review, so putting it first turned "an agent may not approve a draft"
+    /// into a 404 for a review that is not there and into a dismissal refusal for one
+    /// that is — answering a question about the record to a caller who was not allowed to
+    /// ask it. Who you are is settled before what you asked about.
     pub(crate) fn refuse_if_dismissed(&self, review_id: i64, act: &'static str) -> Result<()> {
         if self.get_review(review_id)?.is_dismissed() {
             return Err(StoreError::DismissedReview { review_id, act });

@@ -24,6 +24,14 @@ const problem = ref('')
 onMounted(() => field.value?.focus())
 
 function confirm() {
+  /*
+   * **Cleared first, because the last complaint is about the last press.** It was set on
+   * a blank confirm and never cleared, so "A reason is required." survived the developer
+   * typing one — and on a box that stays open when the desk itself refuses, the card then
+   * showed that line underneath the real refusal: two contradictory messages about one
+   * field.
+   */
+  problem.value = ''
   if (reason.value.trim().length === 0) {
     problem.value = 'A reason is required.'
     field.value?.focus()

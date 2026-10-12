@@ -180,6 +180,14 @@ be offered by `work list`, and a session could be dispatched for each. A round s
 what rounds are for — and so is a review somebody dismissed: its head moves and it stays
 dismissed, because a push is not the developer changing their mind.
 
+**Which means a dismissed request stays dismissed however many commits arrive.** That is
+right for "I am not reviewing this pull request" and is the whole reason a dismissal is
+not undone by a push — and it is worth knowing that the other reading costs something: a
+review dismissed as "superseded, waiting for the rewrite" does not come back when the
+rewrite lands, because no round is ever opened that would be in play. Bring it back from
+the review's own page when you want it looked at. Review Desk will not decide that for
+you, which is DEV-945's own line about automatic dismissal read in the other direction.
+
 **The two questions are near each other and are not the same one.** What a review *holds*
 — a brief, a finding, a draft — is what a delete is refused for, below. Whether anybody
 has *begun* is what this rule asks, and it is the wider question: a session that has

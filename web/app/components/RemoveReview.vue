@@ -200,8 +200,14 @@ async function remove() {
         page.
       </p>
 
+      <!--
+        **Hidden while anything is open, not only while this one is.** `asking` is a
+        single slot, so offering the other opener beside an open box let a press throw
+        away what the developer had typed in it: "Delete it" with a reason half written
+        unmounted the box and lost the words, silently.
+      -->
       <div
-        v-if="asking !== 'dismiss'"
+        v-if="asking === null"
         class="controls"
       >
         <DeskButton
@@ -249,7 +255,7 @@ async function remove() {
         </p>
 
         <div
-          v-if="asking !== 'delete'"
+          v-if="asking === null"
           class="controls"
         >
           <DeskButton

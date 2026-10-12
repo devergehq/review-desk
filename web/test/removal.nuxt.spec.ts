@@ -266,6 +266,36 @@ describe('dismissing a review from its page', () => {
     expect(page.text()).toContain('Everything on it has been kept')
   })
 
+  it('does not offer a delete that would throw away a half-typed reason', async () => {
+    // `asking` is one slot, so the other opener beside an open box was a press that
+    // unmounted the box and lost what was in it, silently.
+    await withStray()
+    const page = await understand(777)
+    expect(button(page, 'Delete it')).toBeDefined()
+
+    await click(page, 'Dismiss this review')
+    await page.find('#dismiss-reason').setValue('a duplicate of #413')
+    expect(button(page, 'Delete it')).toBeUndefined()
+
+    await click(page, 'Cancel')
+    expect(button(page, 'Delete it')).toBeDefined()
+  })
+
+  it('stops saying a reason is required once one is typed', async () => {
+    // The complaint was set on a blank press and never cleared, so it survived the
+    // developer answering it — and on a refusal, which leaves the box open, the card
+    // showed it under the real message.
+    await resetDesk()
+    const page = await understand(17)
+    await click(page, 'Dismiss this review')
+    await click(page, 'Dismiss it')
+    expect(page.text()).toContain('A reason is required')
+
+    await page.find('#dismiss-reason').setValue('the pull request was closed unmerged')
+    await click(page, 'Dismiss it')
+    expect(page.text()).not.toContain('A reason is required')
+  })
+
   it('offers the undo, and brings it back', async () => {
     const page = await understand(17)
     await click(page, 'Dismiss this review')
