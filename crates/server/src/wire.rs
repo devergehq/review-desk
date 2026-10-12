@@ -1082,9 +1082,8 @@ pub fn parse_pr_link(url: &str) -> Result<PrLink, ApiError> {
 /// **Delegated, because this rule existed twice.** The store had a second, looser copy —
 /// missing the `.`/`..` guard this function has always had — and the store is the gate the
 /// command line passes through. `review_desk_store::is_repo_name` is the one copy now, and
-/// it carries the reason: a dot segment is inert in SQL and is *not* inert in the two paths
-/// this value is read back into, `gh api repos/{repo}/pulls/{pr}` and
-/// `https://github.com/{repo}/pull/{pr}`.
+/// it carries the reason, and the table of the **four** readers that put this value into a
+/// path — a dot segment is inert in SQL and is not inert in any of them.
 pub fn is_repo_name(repo: &str) -> bool {
     review_desk_store::is_repo_name(repo)
 }

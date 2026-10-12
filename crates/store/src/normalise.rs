@@ -76,10 +76,12 @@ pub(crate) fn optional_fact(given: Option<&str>) -> Option<String> {
 
 /// Whether this is a repository name: the contract's `RepoName`, and not a relative path.
 ///
-/// `^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$`, which is what GitHub allows and what the contract
-/// declares — **and not `.` or `..` as either half**, because the pattern alone permits
-/// them: `.` is a legal character in a repository name and the pattern says nothing about
-/// what a segment means.
+/// In the class `[A-Za-z0-9._-]`, which is what GitHub allows, **and neither half exactly
+/// `.` or `..`** — because a character class alone permits them: `.` is a legal character
+/// in a repository name and a class says nothing about what a segment means. Three dots are
+/// a legal name and are accepted; only those two exact segments are not. The contract's
+/// `RepoName` says the same thing in a pattern, and a conformance test holds the two to each
+/// other rather than trusting that they agree.
 ///
 /// **That exclusion is the load-bearing half, and this is the only place it can be made
 /// once.** Every store query binds its parameters, so a dot segment is inert in SQL — but
@@ -101,9 +103,18 @@ pub(crate) fn optional_fact(given: Option<&str>) -> Option<String> {
 /// each of them. It cannot cover a row a *released* build already wrote, though, and nothing
 /// can repair that column: `repo` is identity — half of the review's unique key and the join
 /// to a repository's rules — so rewriting it would merge or split reviews rather than fix
-/// them. The two dashboard readers refuse a second time for that reason (`prUrl` does, and
-/// `ticketUrl` beside it states the argument); the two inside this workspace do not yet, and
-/// that is a gap rather than a decision.
+/// them.
+///
+/// So each reader has to decide for itself what to draw for a name it cannot use, and **one
+/// of the four does**: `utils/links.ts`'s `prUrl` refuses and the header then draws the
+/// repository as text. The other three — `harvest::gh`, `entities::house_style` and the
+/// dashboard's `utils/houseStyle.ts`, which composes the *posted body* — do not, and that is
+/// a gap rather than a decision. `ticketUrl` is not one of the four: it guards `ticket_url`,
+/// not this field. It is worth reading anyway, because it states the argument in as many
+/// words — a column is not a promise about every row in it.
+///
+/// Counted, because two earlier versions of this paragraph got the number wrong in both
+/// directions.
 ///
 /// **One copy, here, because it was two.** `wire::is_repo_name` had this rule and its
 /// reason; DEV-936 then wrote a second, looser one in the store's `validate` — missing

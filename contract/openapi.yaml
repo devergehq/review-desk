@@ -910,21 +910,39 @@ components:
 
     RepoName:
       type: string
-      pattern: '^(?!\.\.?/)(?!.*/\.\.?$)[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$'
+      pattern: '^([A-Za-z0-9_-][A-Za-z0-9._-]*|\.[A-Za-z0-9_-][A-Za-z0-9._-]*|\.\.[A-Za-z0-9._-]+)/([A-Za-z0-9_-][A-Za-z0-9._-]*|\.[A-Za-z0-9_-][A-Za-z0-9._-]*|\.\.[A-Za-z0-9._-]+)$'
       examples: ['acme/portal']
       description: |
         A repository as `owner/repo`. The join key, with the head commit.
 
         **Neither half may be `.` or `..`**, which the character class alone permits — `.`
-        is legal *in* a name, and the class says nothing about what a segment means. Stated
-        here because the store and this server both refuse it, so a schema that called
-        `../..` legal would have promised a request they answer with `invalid_value`.
+        is legal *in* a name, and the class says nothing about what a segment means. Three
+        dots are a legal name and are accepted; only those two exact segments are not.
 
         The exclusion is load-bearing because the value is read back out and put into paths:
         `gh api repos/{repo}/pulls/{pr}`, where `repos/../../pulls/1` is
         `api.github.com/pulls/1`, and `https://github.com/{repo}/pull/{pr}`, which a browser
         resolves to `github.com/pull/1`. In both the value goes somewhere other than the
         repository anybody named.
+
+        **Written without lookahead on purpose.** The three alternatives per half say "in
+        the class, and not exactly `.` or `..`" the long way round, because a `(?!…)` here
+        is outside the subset JSON Schema recommends for `pattern`: every consumer in this
+        repository copes — ajv is JavaScript's own `RegExp` and the Rust validator uses
+        `fancy-regex` — but a client generated from this document against RE2 or Rust's
+        `regex` fails to *compile* the schema rather than ignoring the constraint. A
+        published contract has to be readable by a validator nobody here chose.
+
+        **This governs responses as well as requests**, and the two are not symmetrical. A
+        request carrying `../..` is refused with `invalid_value`. A *row* carrying it can
+        exist — a released Review Desk never checked, and the column cannot be repaired,
+        because `repo` is identity: half of a review's unique key and the join to a
+        repository's rules, so rewriting it would merge or split reviews rather than mend
+        them. `GET /reviews` over such a database therefore serves a body that fails this
+        schema. Said here rather than left for a reader to find: the honest reading is that
+        the pattern describes what this server will accept and what a sound database holds,
+        and a client should treat a repository name it cannot parse as unlinkable rather
+        than as impossible.
 
     ForeignId:
       type: [string, 'null']

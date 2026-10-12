@@ -1286,8 +1286,9 @@ fn a_new_ticket_id_drops_the_address_the_old_one_had() {
 
 /// **A repository name is checked character by character, not just split in two.**
 ///
-/// `RepoName` in the contract is `^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$` and GitHub allows
-/// nothing else, but this only ever checked that both halves were non-empty — so
+/// `RepoName` in the contract is the same rule — in the class, and neither half exactly `.`
+/// nor `..` — and GitHub allows nothing else, but this only ever checked that both halves
+/// were non-empty, so
 /// `acme/portal#x` was stored. Nothing noticed until a header began *building a link* out of
 /// the field: `https://github.com/acme/portal#x/pull/412` is served as the repository page
 /// rather than the pull request, so the link's text and its destination named two different
@@ -1307,9 +1308,10 @@ fn a_repository_name_is_refused_unless_it_is_one() {
         "acme/portal:8080",
         // **The dot segments, which the character class alone permits**: `.` is legal *in*
         // a name, so `^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$` accepts `../..`. Inert in SQL,
-        // because every query binds — and not inert in the two paths this value is read
-        // back into: `gh api repos/../../pulls/1` is `api.github.com/pulls/1`, and a
+        // because every query binds — and not inert in any of the four paths this value is
+        // read back into: `gh api repos/../../pulls/1` is `api.github.com/pulls/1`, and a
         // browser resolves `https://github.com/../../pull/1` to `github.com/pull/1`.
+        // `normalise::is_repo_name` lists all four.
         "../..",
         "./portal",
         "acme/..",

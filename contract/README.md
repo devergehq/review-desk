@@ -268,8 +268,16 @@ ticket: what is served is what the session said it read.
 
 | Link | Where its address comes from |
 |---|---|
-| the pull request | **built** by the client from `review.repo` and `review.pr`. GitHub's address for a pull request is `https://github.com/{repo}/pull/{pr}` and `repo` is `^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$`, so there is nothing to parse and nothing a caller can put in it. No field holds this address, because a stored copy could disagree with the two fields it was built from. |
+| the pull request | **built** by the client from `review.repo` and `review.pr`: `https://github.com/{repo}/pull/{pr}`. No field holds this address, because a stored copy could disagree with the two fields it was built from. |
 | the ticket | **stored**, in `review.ticket_url`, because it cannot be built: `ticket_id` is a `ForeignId` and opaque by rule, and the tracker and its workspace are the calling session's knowledge. Only `https` is accepted, refused at the write with `invalid_value`. |
+
+**A client checks `repo` before it builds that address, and does not take `RepoName` as a
+promise about every row.** The pattern says what this server accepts and what a sound
+database holds; a row written by a Review Desk that predated the pattern can still carry
+something else, and `repo` is identity, so nothing can repair it. A name a client cannot
+parse is **unlinkable, not impossible** — draw it as text. `web/app/utils/links.ts` is that
+rule in the dashboard, and `ticketUrl` beside it makes the same argument for the field it
+owns: a column is not a promise about every row in it.
 
 Both open in a new tab with `rel="noopener noreferrer"`, and both say so to a screen
 reader. The ticket's link draws the **id** as its text and never the address: a link whose

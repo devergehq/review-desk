@@ -4,6 +4,7 @@ import type {
   InboxBriefItem,
   InboxDraftItem,
   InboxInProgressItem,
+  InboxOwnPrItem,
   InboxPostedItem,
   InboxReplyItem,
 } from '~/types/desk'
@@ -219,21 +220,6 @@ function needingYou(data: Inbox): Waiting[] {
  */
 const waiting = computed(() => (inbox.data.value ? needingYou(inbox.data.value) : []))
 
-/*
- * **A row whose only purpose is a link says so when there is no link.** `prUrl` returns
- * null for a `repo` that is not a repository name, and `QueueRow` then draws the row as a
- * `div` rather than an anchor — so this row went on reading "Open on GitHub" in the accent
- * colour, with the "opens in a new tab" hint gone, advertising an action it could not
- * perform. The other three call sites already handled the null: the header draws text and
- * `prHref` is behind a `v-if`. This one is the row *is* the link, so the label has to move
- * with it.
- *
- * It takes a `warn` tone rather than `go`, because an unlinkable repository name is
- * something to look at: a released Review Desk could store one, and nothing can repair the
- * column — `repo` is identity, part of the review's unique key and the join to a
- * repository's rules, so rewriting it would merge or split reviews rather than fix them.
- */
-
 /**
  * Where a row goes: **Understand, whatever the row is waiting for.**
  *
@@ -250,6 +236,34 @@ const waiting = computed(() => (inbox.data.value ? needingYou(inbox.data.value) 
  */
 function stepFor(row: Waiting): string {
   return `/reviews/${row.review_id}/understand`
+}
+
+/**
+ * One of the developer's own pull requests, as its row reads it.
+ *
+ * **A row whose only purpose is a link has to say when there is no link.** `prUrl` returns
+ * null for a `repo` that is not a repository name — a released Review Desk could store
+ * `acme/portal#x`, and nothing can repair that column, because `repo` is identity: half of
+ * a review's unique key and the join to a repository's rules, so rewriting it would merge
+ * or split reviews rather than mend them. `QueueRow` then draws the row as a `div` rather
+ * than an anchor, and it went on reading "Open on GitHub" in the accent colour with the
+ * "opens in a new tab" hint gone: advertising an action it could not perform.
+ *
+ * `warn` rather than `go`, because an unlinkable repository name is something to look at.
+ *
+ * **Computed once per row, here, rather than three times in the template.** `:href`,
+ * `:action` and `:action-tone` each needed the answer, and three calls in the markup are
+ * three chances for the expressions to drift apart — which is the argument `waiting` above
+ * makes for itself, in this file, about a function that was called five times per render.
+ * The other groups build their rows in script too.
+ */
+function ownPr(item: InboxOwnPrItem) {
+  const href = prUrl(item.pull_request.repo, item.pull_request.pr)
+  return {
+    href,
+    action: href ? 'Open on GitHub' : 'no link: this is not a repository name',
+    tone: href ? ('go' as const) : ('warn' as const),
+  }
 }
 
 /** The next thing the developer does about this review, and what to say about it. */
@@ -889,11 +903,9 @@ function handledLine(data: Inbox): string {
             :pr="item.pull_request.pr"
             :title="item.pull_request.title ?? 'no title recorded'"
             :meta="`· ${item.pull_request.repo}`"
-            :href="prUrl(item.pull_request.repo, item.pull_request.pr)"
-            :action="prUrl(item.pull_request.repo, item.pull_request.pr)
-              ? 'Open on GitHub'
-              : 'no link: this is not a repository name'"
-            :action-tone="prUrl(item.pull_request.repo, item.pull_request.pr) ? 'go' : 'warn'"
+            :href="ownPr(item).href"
+            :action="ownPr(item).action"
+            :action-tone="ownPr(item).tone"
             :age="item.opened_at ? openForLabel(item.opened_at).replace('open ', '') : null"
             age-unknown-because="nothing has told Review Desk when this pull request was opened"
           >
