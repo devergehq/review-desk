@@ -818,3 +818,43 @@ fn every_query_that_lists_reviews_says_what_it_does_about_dismissed_ones() {
         );
     }
 }
+
+#[test]
+fn deleting_the_newest_round_makes_the_round_before_it_the_newest_again() {
+    // The other direction of `dismissing_the_newest_round_resurrects_no_earlier_round`,
+    // and the answer is the opposite — correctly. A dismissal leaves the round on the
+    // record, so the round before it stays superseded by something that still exists; a
+    // delete removes it, so the pull request's newest round really is the earlier one
+    // again. Nothing was lost either way: only a round nobody started can be deleted.
+    let (_dir, store) = temp_store();
+    let round_one = store.open_review(REPO, 810, "aaa1111").expect("round 1");
+    store
+        .add_finding(round_one.review.id, a_finding("round one was reviewed"))
+        .expect("a finding");
+    let round_two = store.open_review(REPO, 810, "bbb2222").expect("round 2");
+    assert_eq!(work_ids(&store), vec![round_two.review.id]);
+
+    store
+        .delete_review(round_two.review.id)
+        .expect("round 2 never started, so it can go");
+
+    assert_eq!(
+        store.latest_round(REPO, 810).unwrap(),
+        Some(1),
+        "the pull request is back on round 1"
+    );
+    assert_eq!(
+        work_ids(&store),
+        vec![round_one.review.id],
+        "and round 1 is the live round again"
+    );
+    assert_eq!(
+        store
+            .open_review(REPO, 810, "ccc3333")
+            .unwrap()
+            .review
+            .round,
+        2,
+        "so the next commit is round 2 once more, rather than a round 3 with a gap"
+    );
+}
