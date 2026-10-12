@@ -903,7 +903,17 @@ function sendBackDraft(id: number, note: string): DraftDetail {
 function requestNitTicket(id: number, ticketId: string | null = null): NitTicket {
   const detail = reviewById(id)
   if (!detail) throw notFound(`review ${id}`)
-  refuseIfDismissed(id, 'asking for its held-back findings to be ticketed')
+  /*
+   * **The ask, not the report** — the split the store makes, for its reason: with no
+   * ticket id this is the developer asking for one, which needs an agent a dismissed
+   * review will never be given; with one it is a session saying which ticket it already
+   * filed, and refusing that would lose an id that exists in the tracker. Guarding both
+   * here made this backend refuse where the binary accepts, which is the one thing it
+   * must not do.
+   */
+  if (ticketId == null) {
+    refuseIfDismissed(id, 'asking for its held-back findings to be ticketed')
+  }
 
   const seqs = detail.findings
     .filter(finding => finding.disposition === 'held_back')

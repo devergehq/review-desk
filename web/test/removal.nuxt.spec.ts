@@ -4,7 +4,7 @@ import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { flushPromises, type VueWrapper } from '@vue/test-utils'
 
 import { resetDesk, useReviewDesk } from '../app/composables/useReviewDesk'
-import { loadSource } from '../app/data/sample'
+import { loadSource, sampleBackend } from '../app/data/sample'
 
 import Reviews from '../app/pages/reviews/index.vue'
 import Understand from '../app/pages/reviews/[id]/understand.vue'
@@ -305,6 +305,30 @@ describe('what a dismissed review refuses', () => {
     /* And what needs nobody afterwards still works. */
     const moved = await desk.setFindingDisposition(17, 1, 'held_back', 'a nit')
     expect(moved.ok).toBe(true)
+  })
+
+  it('still takes a session’s report of a ticket it already filed', async () => {
+    // **The ask and the report are two roles of one call**, and only the ask needs an
+    // agent: the ticket exists in the tracker, and refusing the report would leave the
+    // record never knowing which one. The store makes that split and these records have
+    // to make the same one, because "it refuses where the binary refuses" is what lets a
+    // refusal state tested on fixtures mean anything.
+    //
+    // **Reached through the backend rather than the composable**, which is the honest
+    // place for it: `useReviewDesk.requestNitTicket` makes only the developer's ask — it
+    // takes no ticket id — so the report role is the command line's and the API's, and a
+    // test through the composable would be testing an argument nothing passes.
+    await resetDesk()
+    const desk = useReviewDesk()
+    await desk.setFindingDisposition(17, 1, 'held_back', 'a nit')
+    await desk.dismissReview(17, 'the pull request was closed unmerged')
+
+    const records = sampleBackend()
+    const reported = await records.requestNitTicket(17, 'ABC-500')
+    expect(reported.status).toBe('filed')
+    expect(reported.ticket_id).toBe('ABC-500')
+
+    await expect(records.requestNitTicket(17)).rejects.toThrow(/bring it back first/)
   })
 })
 

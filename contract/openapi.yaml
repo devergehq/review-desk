@@ -795,8 +795,13 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           description: |
-            This review holds back no nits, or it is dismissed — a dismissed review is in
-            no agent's work list, so nothing would file the ticket. Bring it back first.
+            This review holds back no nits, or the review is dismissed **and this is the
+            developer asking for a ticket** — a dismissed review is in no agent's work
+            list, so nothing would file one. Bring it back first.
+
+            Sending a `ticket_id` is a session reporting the ticket it has already filed,
+            and that is accepted on a dismissed review: the ticket exists in the tracker,
+            and refusing the report would leave the record never knowing which one it is.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
