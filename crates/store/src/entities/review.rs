@@ -216,6 +216,25 @@ impl Store {
         let ticket_url = check_ticket(facts, held.ticket_id.clone())?;
         let ticket_id = normalise::optional_fact(facts.ticket_id.as_deref());
 
+        // **A new id drops the old address, because an address belongs to one ticket.**
+        // The two columns are written through independent `COALESCE`s, so a session
+        // correcting a mistyped ticket — `--ticket DEV-860` on a review opened with
+        // `--ticket ABC-231 --ticket-url …/ABC-231` — replaced the id and left the address.
+        // The header then drew `DEV-860` as a link to `ABC-231`: the link's text and its
+        // destination naming two different tickets, silently, which is the exact failure
+        // `prUrl` is *built* rather than stored to avoid. And a blank value reads as absent,
+        // so there was no way to clear it either.
+        //
+        // **Dropped rather than refused.** Correcting a ticket id is a plausible thing for a
+        // session to do and should not need the address to hand; a review with an id and no
+        // address draws the id as text, which is a state the whole feature already handles.
+        // Keeping an address nobody said belonged to the new ticket is the one option that
+        // tells a reader something untrue.
+        let stale_url = ticket_url.is_none()
+            && ticket_id.is_some()
+            && ticket_id != held.ticket_id
+            && held.ticket_url.is_some();
+
         // **A call with nothing to write writes nothing, and says so by not marking the
         // review active.** The guard was in `open_review_with` alone, which is one level
         // away from the method that can break the invariant: the `UPDATE` below is a no-op
@@ -235,7 +254,7 @@ impl Store {
             "UPDATE reviews SET
                  title         = COALESCE(?2, title),
                  ticket_id     = COALESCE(?3, ticket_id),
-                 ticket_url    = COALESCE(?4, ticket_url),
+                 ticket_url    = CASE WHEN ?7 THEN NULL ELSE COALESCE(?4, ticket_url) END,
                  changed_lines = COALESCE(?5, changed_lines),
                  not_checked   = COALESCE(?6, not_checked)
              WHERE id = ?1",
@@ -245,7 +264,8 @@ impl Store {
                 ticket_id,
                 ticket_url,
                 facts.changed_lines,
-                facts.not_checked
+                facts.not_checked,
+                stale_url,
             ],
         )?;
 

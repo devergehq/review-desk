@@ -1370,6 +1370,19 @@ ALTER TABLE brief_parts ADD COLUMN one_line TEXT;
 -- The dashboard refuses a non-`https` value a second time at render, because a database can
 -- be written to by hand and a column is not a promise about every row in it.
 ALTER TABLE reviews ADD COLUMN ticket_url TEXT;
+
+-- **And the blank ids the old writer left behind become absent, which is what they mean.**
+-- `set_review_facts` wrote `COALESCE(?, ticket_id)` against whatever it was handed, so
+-- `review open --ticket ""` from a shell whose variable was unset stored the empty string.
+-- Two things follow for such a row, and both are now fixed rather than described: the API
+-- serves `"ticket_id": ""`, which the contract's `ForeignId` says cannot happen
+-- (`minLength: 1`); and `--ticket-url` alone is refused against it for having no id, which
+-- blocks the two-call pattern the README documents until somebody passes `--ticket` again.
+--
+-- Trimmed, not just `= ''`: `' '` is the same nothing and is what a quoted argument leaves.
+-- This is data this code wrote, so "blank is absent" is now true of the record and not only
+-- of writes made from here on.
+UPDATE reviews SET ticket_id = NULL WHERE TRIM(ticket_id) = '';
 "#,
     },
 ];

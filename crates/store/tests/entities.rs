@@ -1216,3 +1216,70 @@ fn one_ticket_covers_every_nit_held_back_from_a_review() {
         other => panic!("expected a refusal, got {other:?}"),
     }
 }
+
+/// **A new ticket id drops the address the old one had.**
+///
+/// The two columns are written through independent `COALESCE`s, so correcting a mistyped
+/// ticket replaced the id and left the address: the header then drew the new id as a link to
+/// the old ticket, the link's text and its destination naming two different things. A blank
+/// value reads as absent, so there was no way to clear it either.
+///
+/// Dropped rather than refused: correcting an id is a plausible act and should not need the
+/// address to hand, and a review with an id and no address draws the id as text — a state
+/// the feature already handles. Keeping an address nobody said belonged to the new ticket is
+/// the one option that tells a reader something untrue.
+#[test]
+fn a_new_ticket_id_drops_the_address_the_old_one_had() {
+    let (_dir, store) = temp_store();
+    let review = seed_review(&store);
+
+    let both = |id: &str, url: Option<&str>| ReviewFacts {
+        ticket_id: Some(id.to_string()),
+        ticket_url: url.map(str::to_string),
+        ..Default::default()
+    };
+
+    store
+        .set_review_facts(
+            review.id,
+            &both("ABC-231", Some("https://linear.app/acme/issue/ABC-231")),
+        )
+        .expect("the ticket and its address");
+
+    let corrected = store
+        .set_review_facts(review.id, &both("DEV-860", None))
+        .expect("correct the id");
+    assert_eq!(corrected.ticket_id.as_deref(), Some("DEV-860"));
+    assert_eq!(
+        corrected.ticket_url, None,
+        "the address belonged to ABC-231, and nothing said it belongs to DEV-860"
+    );
+
+    // The *same* id again keeps the address: nothing changed, so nothing is dropped.
+    store
+        .set_review_facts(
+            review.id,
+            &both("DEV-860", Some("https://linear.app/deverge/issue/DEV-860")),
+        )
+        .expect("the new ticket's own address");
+    let again = store
+        .set_review_facts(review.id, &both("DEV-860", None))
+        .expect("the same id again");
+    assert_eq!(
+        again.ticket_url.as_deref(),
+        Some("https://linear.app/deverge/issue/DEV-860"),
+        "re-stating the id a review already holds changes nothing"
+    );
+
+    // And a call that gives both keeps the one it gave.
+    let moved = store
+        .set_review_facts(
+            review.id,
+            &both("ABC-999", Some("https://linear.app/acme/issue/ABC-999")),
+        )
+        .expect("a new ticket and its own address");
+    assert_eq!(
+        moved.ticket_url.as_deref(),
+        Some("https://linear.app/acme/issue/ABC-999")
+    );
+}

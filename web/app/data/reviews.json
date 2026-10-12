@@ -720,7 +720,7 @@
       "round": 2,
       "title": "Cache the permissions lookup",
       "ticket_id": "ABC-240",
-      "ticket_url": "https://linear.app/acme/issue/ABC-240",
+      "ticket_url": null,
       "changed_lines": 61,
       "session_id": "ses_9a77f103",
       "ledger_id": "ledger-2026-10-08-88",

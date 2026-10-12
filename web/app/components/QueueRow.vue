@@ -58,7 +58,7 @@
  */
 const NuxtLink = resolveComponent('NuxtLink')
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     pr: number
     title: string
@@ -108,6 +108,20 @@ withDefaults(
     ticketId: null,
   },
 )
+
+/**
+ * The ticket's address, refused here rather than by each caller.
+ *
+ * **The rule is that a stored address which is not `https` is never rendered as a link**,
+ * and `contract/README.md`, `app/utils/links.ts` and migration 16's own comment all state
+ * it. It was true of every call site — all four passed `ticketUrl(…)` — and not of this
+ * component, which used what it was given. `ReviewStepPage` already guards internally, so
+ * the two renderers disagreed about where the rule lives, and a fifth row call site passing
+ * `review.ticket_url` straight through would have put a hand-written `javascript:` value in
+ * an `href` with nothing failing. `ticketUrl` is idempotent on an address it has already
+ * accepted, so guarding here costs nothing and makes the rule true by construction.
+ */
+const ticket = computed(() => ticketUrl(props.ticketHref))
 </script>
 
 <template>
@@ -175,9 +189,9 @@ withDefaults(
         rel="noopener noreferrer"
       >GitHub<span class="rd-visually-hidden">: pull request #{{ pr }}, opens in a new tab</span></a>
       <a
-        v-if="ticketHref && ticketId"
+        v-if="ticket && ticketId"
         class="out-link"
-        :href="ticketHref"
+        :href="ticket"
         target="_blank"
         rel="noopener noreferrer"
       >{{ ticketId }}<span class="rd-visually-hidden">, on the tracker, opens in a new tab</span></a>

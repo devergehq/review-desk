@@ -697,3 +697,60 @@ fn a_review_written_before_the_ticket_address_keeps_its_id_and_gains_a_null() {
         "nothing passed an address, and nothing derives one from the id"
     );
 }
+
+/// **A ticket id the old writer left blank becomes absent, which is what it means.**
+///
+/// `set_review_facts` wrote `COALESCE(?, ticket_id)` against whatever it was handed, so
+/// `review open --ticket ""` from a shell whose variable was unset stored the empty string.
+/// Two things followed for such a row: the API served `"ticket_id": ""`, which the
+/// contract's `ForeignId` says cannot happen, and `--ticket-url` alone was refused against
+/// it for having no id — blocking the two-call pattern the README documents.
+///
+/// So migration 16 normalises the data this code wrote, rather than only the writes made
+/// after it. Trimmed, not just `= ''`: `' '` is the same nothing and is what a quoted
+/// argument leaves.
+#[test]
+fn a_ticket_id_left_blank_by_the_old_writer_becomes_absent() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+
+    const FROM: i64 = 15;
+    assert!(newest_version() > FROM, "this test needs migration 16");
+
+    {
+        let old = Store::open_at_version(&path, FROM).expect("open at 15");
+        assert_eq!(old.schema_version().unwrap(), FROM);
+    }
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "INSERT INTO reviews (id, repo, pr, head_sha, round, ticket_id, created_at)
+                 VALUES (1, 'acme/portal', 412, 'abc123', 1, '', 1000),
+                        (2, 'acme/portal', 413, 'abc124', 1, '   ', 1000),
+                        (3, 'acme/portal', 414, 'abc125', 1, 'ABC-231', 1000);",
+        )
+        .expect("write three reviews under the older schema");
+    }
+
+    let migrated = Store::open(&path).expect("reopen migrates");
+
+    assert_eq!(
+        migrated.get_review(1).expect("the empty one").ticket_id,
+        None,
+        "an empty id is no id"
+    );
+    assert_eq!(
+        migrated.get_review(2).expect("the blank one").ticket_id,
+        None,
+        "and so is one that is only whitespace"
+    );
+    assert_eq!(
+        migrated
+            .get_review(3)
+            .expect("the real one")
+            .ticket_id
+            .as_deref(),
+        Some("ABC-231"),
+        "a real id is untouched"
+    );
+}
