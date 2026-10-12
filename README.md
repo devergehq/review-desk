@@ -944,9 +944,9 @@ the built app asks nothing of the network and works on a machine with no interne
 ### After a sign-off
 
 **The draft page keeps itself current between the sign-off and the posting**, because that
-gap is a wait on a system Review Desk does not control. It signed off once and went quiet
-before DEV-932: on 11 October 2026 a sign-off posted 4 min 28 s later, with nothing on
-screen in between to say whether anything would pick it up.
+gap is a wait on a system Review Desk does not control. Before DEV-932 it said one
+sentence and then went quiet: on 11 October 2026 a sign-off posted 4 min 28 s later, with
+nothing on screen in between to say whether anything would pick it up.
 
 While a draft is `approved` and unposted, the page re-reads the review every five seconds —
 stopping on a post, on a send-back, and while the tab is hidden, and reading once the
@@ -962,6 +962,11 @@ Review Desk every twenty seconds while a draft waits on the developer. **Locus o
 number and nothing on the wire carries it**, so it is a named setting of the page,
 `POSTED_WITHIN_SECONDS` in `web/app/utils/posting.ts`, written down beside where it came
 from.
+
+One signed-off draft it does not watch: one whose `body_is_stale`. The hand-over refuses
+that body, so no session will post it however long the page waited, and "the session may
+not be running" would be the wrong diagnosis of a state whose cause is known and whose way
+out is on the page.
 
 **It will not say whether the session is alive.** Allele owns that; `session_alive` is null
 in every response this server writes, and `GET /reviews/{id}` does not carry it at all. How

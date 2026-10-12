@@ -70,13 +70,22 @@ const now = ref(new Date())
  */
 const waiting = computed(() => props.draft.status === 'approved' && !props.bodyIsStale)
 
-/** Whether this page watched the sign-off it is now reporting the end of. */
+/**
+ * Whether the last thing this page saw on this draft was a sign-off.
+ *
+ * **Cleared as well as set**, because it is "the last thing", not "ever". A draft can go
+ * back to `ready` — the session rewrites one that was sent back — and an ordinary
+ * send-back from there is not a sign-off being taken back. It takes a page left open
+ * across both to get there and nothing would crash if it latched, but a flag that only
+ * ever goes one way is a sentence that becomes wrong and stays wrong.
+ */
 const watchedTheSignOff = ref(props.draft.status === 'approved')
 
 watch(
   () => props.draft.status,
   (status) => {
     if (status === 'approved') watchedTheSignOff.value = true
+    else if (status === 'ready' || status === 'drafting') watchedTheSignOff.value = false
   },
 )
 
@@ -277,6 +286,21 @@ const lateSentence = computed(
     + 'picks it up later writes the draft again.',
 )
 
+/**
+ * What there is to say where the record holds no GitHub review for a posted draft.
+ *
+ * **Not reachable through this API, and drawn anyway.** `post_draft` writes `posted_at`
+ * and the review's `github_review_id` in one go — the contract calls them one fact — and
+ * `draft posted` requires the id on the command line, so nothing can write one without
+ * the other. But the field is nullable in the contract, which makes this a state a client
+ * has to be able to render, and the honest rendering says what the record holds rather
+ * than guessing at how it got that way or drawing a link to nowhere.
+ */
+const noReviewSentence
+  = 'The record holds no GitHub review for this draft, so there is nothing to link to. '
+    + 'Nothing this API writes can leave it that way — a session reports the id when it '
+    + 'reports the posting — so this is a record something else has written.'
+
 const noAnchorSentence = computed(
   () =>
     `The session reported the review as ${props.review.github_review_id}, which is not the `
@@ -363,8 +387,7 @@ const noAnchorSentence = computed(
         v-else-if="!postedTo"
         class="rd-meta who"
       >
-        Nothing reported which review on GitHub this became, so there is no link to it. The
-        session records that with the posting, and this one did not.
+        {{ noReviewSentence }}
       </p>
     </template>
   </div>

@@ -298,7 +298,7 @@ describe('when the session posts it', () => {
   it('draws no link at all when nothing reported which review it became', async () => {
     const page = await watching(posted({}, { github_review_id: null }))
     expect(page.find('a').exists()).toBe(false)
-    expect(page.text()).toContain('Nothing reported which review on GitHub this became')
+    expect(page.text()).toContain('The record holds no GitHub review for this draft')
   })
 
   it('says a posting with no sign-off stamp without inventing a span', async () => {
@@ -329,6 +329,21 @@ describe('when the developer takes the sign-off back', () => {
 
     await tick(page, RE_READ_EVERY_SECONDS * 4)
     expect(reads(page)).toBe(1)
+  })
+
+  it('forgets the sign-off once the session has the draft back and ready again', async () => {
+    /*
+     * A page left open across a take-back, a rewrite and an ordinary send-back. The flag
+     * says what this page last saw, not what it ever saw, so the second send-back is not
+     * reported as a sign-off being taken back.
+     */
+    const page = await watching()
+    await page.setProps({ draft: draft({ status: 'sent_back', event: null, approved_at: null }) })
+    expect(announced(page)).toContain('The sign-off is taken back')
+
+    await page.setProps({ draft: draft({ status: 'ready', event: null, approved_at: null }) })
+    await page.setProps({ draft: draft({ status: 'sent_back', event: null, approved_at: null }) })
+    expect(announced(page)).toBe('')
   })
 
   it('says nothing about a sign-off for a draft that never had one', async () => {
