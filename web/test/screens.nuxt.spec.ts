@@ -385,9 +385,15 @@ describe('the queue', () => {
 
   it('links a pull request of the developer’s own out to GitHub rather than writing to it', async () => {
     const page = await shown(Inbox)
+    /*
+     * **Found by what it says, not by being the first GitHub link on the page.** It was
+     * the first until DEV-936 put a "GitHub" link on every row above it, and "the first
+     * one" was never what this test is about: the claim is that *this* row's own
+     * destination is the pull request, which is what its action cell says out loud.
+     */
     const out = page
       .findAll('a')
-      .find(link => link.attributes('href')?.startsWith('https://github.com/'))
+      .find(link => link.text().includes('Open on GitHub'))
     expect(out).toBeDefined()
     expect(out!.attributes('href')).toBe('https://github.com/acme/portal/pull/415')
     expect(out!.attributes('rel')).toContain('noopener')
@@ -468,6 +474,18 @@ describe('the queue', () => {
       screen.findAll('a').some(one => /^Back to /.test(one.text())),
       'and no back link beside it',
     ).toBe(false)
+
+    /*
+     * **And DEV-936's first criterion on step 6**, which names each of the six pages. The
+     * header is `ReviewStepPage`'s and is tested there; each page a spec already mounts
+     * says it for itself rather than inheriting the claim from the component. Review 17
+     * holds a ticket address, so both links are here.
+     */
+    const out = screen.findAll('.where a.header-out').map(one => one.attributes('href'))
+    expect(out).toEqual([
+      'https://github.com/acme/portal/pull/412',
+      'https://linear.app/acme/issue/ABC-231',
+    ])
   })
 
   it('sends the header’s Reviews item to the list, and every row from it to Understand', async () => {
@@ -483,11 +501,251 @@ describe('the queue', () => {
     expect(reviews!.attributes('href')).toBe('/reviews')
 
     const page = await shown(Reviews)
-    const rows = page.findAll('.row')
+    /*
+     * **Scoped to a queue row's wrapper**, not every `.row` on the page. `.row` belongs to
+     * `QueueRow`, `OpenRow`, `DeskTable`, `FlowDiagram` and two pages, and this assertion
+     * reads `href` off every match — so the first non-anchor `.row` to reach this screen
+     * would throw for a reason with nothing to do with the rule being asserted. The same
+     * unscoped-shared-selector shape as the `.line` rename in `QueueRow.vue`, which that
+     * component's comment states as a rule; this one fails loudly rather than passing
+     * wrongly, which is why it is a narrower problem and still worth not having.
+     */
+    const rows = page.findAll('.queue-line .row')
     expect(rows.length).toBeGreaterThan(0)
     for (const row of rows) {
       expect(row.attributes('href')).toMatch(/^\/reviews\/\d+\/understand$/)
     }
+  })
+
+  /* ------------- The two ways out of a row (DEV-936) ------------- */
+
+  /**
+   * The links beside a row, and the row they are beside.
+   *
+   * Found by the row's wrapper rather than by `.row`, because the point of the assertion
+   * below is that they are **not** inside the row. `.queue-line` and not `.line`: two other
+   * components have a `.line`, and this locator is not scoped to one component.
+   */
+  function lines(page: VueWrapper) {
+    return page.findAll('.queue-line').map(line => ({
+      row: line.find('.row'),
+      out: line.findAll('.row-out-link'),
+    }))
+  }
+
+  it('carries a pull request link and a ticket link on a queue row', async () => {
+    const page = await shown(Inbox)
+    /* Review 17 is `acme/portal#412`, ticket ABC-231, and the record holds its address. */
+    const first = lines(page).find(line => line.row.text().includes('#412'))
+    expect(first, 'the needs-you row for #412').toBeDefined()
+
+    const [pull, ticket] = first!.out
+    expect(pull!.attributes('href')).toBe('https://github.com/acme/portal/pull/412')
+    expect(pull!.text()).toContain('GitHub')
+    expect(ticket!.attributes('href')).toBe('https://linear.app/acme/issue/ABC-231')
+    expect(ticket!.text()).toContain('ABC-231')
+
+    for (const link of [pull!, ticket!]) {
+      expect(link.attributes('target')).toBe('_blank')
+      expect(link.attributes('rel')).toBe('noopener noreferrer')
+      expect(link.find('.rd-visually-hidden').text()).toContain('opens in a new tab')
+    }
+  })
+
+  it('keeps the ticket link on a row whose brief has been confirmed', async () => {
+    /*
+     * **The defect this is a regression test for.** The ticket and its address were served
+     * on `briefs_to_confirm` alone, and the queue reads one row per review — so the moment
+     * review 17's brief was confirmed, its row moved to being about the draft, the brief
+     * item went away, and the ticket link went with it. The row was still there, the
+     * address was still on the record, and the Reviews list still showed the link for the
+     * same review. All three arrays that make a row carry the pair now.
+     */
+    const page = await shown(Inbox)
+    const ticketOn = (where: VueWrapper) =>
+      lines(where)
+        .find(line => line.row.text().includes('#412'))
+        ?.out.map(link => link.attributes('href')) ?? []
+
+    expect(ticketOn(page)).toContain('https://linear.app/acme/issue/ABC-231')
+
+    await useReviewDesk().confirmBrief(17)
+    await settle(page)
+
+    /* The row is still here and is now about the draft. */
+    const row = lines(page).find(line => line.row.text().includes('#412'))
+    expect(row!.row.text()).toContain('Draft ready')
+    expect(ticketOn(page)).toEqual([
+      'https://github.com/acme/portal/pull/412',
+      'https://linear.app/acme/issue/ABC-231',
+    ])
+  })
+
+  it('puts a row’s links beside the row’s own link, never inside it', async () => {
+    /*
+     * **The whole criterion, and it holds by construction rather than by a handler.** An
+     * `<a>` inside an `<a>` is not something a browser will draw — the parser closes the
+     * first — and a click handler that stopped the event would be a thing that can be got
+     * wrong and a thing a keyboard can get round. So the assertion is structural: no link
+     * out is a descendant of the link to the review.
+     */
+    for (const page of [await shown(Inbox), await shown(Reviews)]) {
+      const withLinks = lines(page).filter(line => line.out.length > 0)
+      expect(withLinks.length).toBeGreaterThan(0)
+
+      for (const line of withLinks) {
+        for (const link of line.out) {
+          expect(
+            line.row.element.contains(link.element),
+            'a link out is not inside the row',
+          ).toBe(false)
+        }
+        /* And the row still goes to the review, which is what it is for. */
+        expect(line.row.attributes('href') ?? line.row.attributes('to') ?? '')
+          .toMatch(/\/reviews\/\d+\//)
+      }
+    }
+  })
+
+  it('carries the same two links on a Reviews list row', async () => {
+    const page = await shown(Reviews)
+    const first = lines(page).find(line => line.row.text().includes('#412'))
+    expect(first, 'the list row for #412').toBeDefined()
+
+    expect(first!.out.map(link => link.attributes('href'))).toEqual([
+      'https://github.com/acme/portal/pull/412',
+      'https://linear.app/acme/issue/ABC-231',
+    ])
+  })
+
+  it('carries the two links on a row no developer act is waiting on', async () => {
+    /*
+     * **The gap this closed, and the test that did not catch it.** The pair was served only
+     * on the three arrays a needs-you row is built from, so a review in *none* of them — a
+     * session working on it, or an author who has not answered — drew a row with a link to
+     * its pull request and none to its ticket, while the Reviews list linked both for the
+     * same review.
+     *
+     * The first version of this test named review 16, "a session running on it" — and
+     * review 16 has no `running` layer at all. It is in `drafts_to_approve`, so the test
+     * measured a needs-you row that had carried the pair for several commits and would have
+     * passed with both new bindings deleted. Reviews **18** and **19** are the ones with a
+     * running layer, and 43 is the posted one; the fixtures gave all three a null address,
+     * so there was nothing to draw either. Both halves are fixed here: 18 and 43 have
+     * addresses, and the rows asserted are theirs.
+     */
+    const page = await shown(Inbox)
+
+    /* Review 18 is `acme/portal#409`, step 5 running, in no needs-you array. */
+    const agent = lines(page).find(line => line.row.text().includes('#409'))
+    expect(agent, 'the With the agent row for #409').toBeDefined()
+    expect(agent!.row.text()).toContain('Code review')
+    expect(agent!.out.map(link => link.attributes('href'))).toEqual([
+      'https://github.com/acme/portal/pull/409',
+      'https://linear.app/acme/issue/ABC-244',
+    ])
+
+    /* Review 43 is `acme/portal#403`, posted and not yet answered. */
+    const author = lines(page).find(line => line.row.text().includes('#403'))
+    expect(author, 'the Waiting on the author row for #403').toBeDefined()
+    expect(author!.out.map(link => link.attributes('href'))).toEqual([
+      'https://github.com/acme/portal/pull/403',
+      'https://linear.app/acme/issue/ABC-238',
+    ])
+  })
+
+  it('names the ticket on those rows even when it cannot link it', async () => {
+    /*
+     * The other half of the same gap. The contract says of `ticket_url` that null is "a
+     * review with an id and no address, which the row then names on its own line and does
+     * not link" — which was true of the needs-you rows and the Reviews list, and false of
+     * these two: their meta line was the repository alone. So serving them the pair closed
+     * "cannot link its ticket" and left "cannot even name it" open, under text saying
+     * otherwise.
+     */
+    const page = await shown(Inbox)
+
+    /* Review 19 is `acme/billing-api#93`, step 3 running, ticket ABC-246 and no address. */
+    const row = lines(page).find(line => line.row.text().includes('#93'))
+    expect(row, 'the With the agent row for #93').toBeDefined()
+    expect(row!.row.text(), 'the id is named on the row').toContain('ABC-246')
+    expect(
+      row!.out.map(link => link.attributes('href')),
+      'and the pull request is the only link',
+    ).toEqual(['https://github.com/acme/billing-api/pull/93'])
+  })
+
+  it('names the ticket on a posted row that has no address either', async () => {
+    /*
+     * **The same half-gap on the other group, which nothing reached.** Proved by mutation:
+     * reverting "Waiting on the author"'s meta to the repository alone left the whole suite
+     * green, because no posted fixture had the id-without-address shape *and* was drawn in
+     * that group — review 12 has it and is subtracted into "Needs you", and review 43 has
+     * an address. The case is live in the real binary, where the end-to-end seed's posted
+     * review carries `ABC-244` and no `--ticket-url`.
+     *
+     * The address is taken off review 43 for this test rather than out of the fixtures,
+     * because the test above needs it there: the two assertions want the same row in its
+     * two states.
+     */
+    const source = loadSource()
+    await resetDesk({
+      reviews: source.reviews.map(detail =>
+        detail.review.id === 43
+          ? { ...detail, review: { ...detail.review, ticket_url: null } }
+          : detail),
+    })
+
+    const page = await shown(Inbox)
+    const row = lines(page).find(line => line.row.text().includes('#403'))
+    expect(row, 'the Waiting on the author row for #403').toBeDefined()
+    expect(row!.row.text(), 'the id is named on the row').toContain('ABC-238')
+    expect(
+      row!.out.map(link => link.attributes('href')),
+      'and the pull request is the only link',
+    ).toEqual(['https://github.com/acme/portal/pull/403'])
+  })
+
+  it('draws no ticket link on a row whose review has an id and no address', async () => {
+    const page = await shown(Reviews)
+    /* Review 41 is `#514`, ticket ABC-402, and the record holds no address for it. */
+    const row = lines(page).find(line => line.row.text().includes('#514'))
+    expect(row, 'the list row for #514').toBeDefined()
+
+    /* The pull request alone, and the ticket still named on the row's own meta line. */
+    expect(row!.out).toHaveLength(1)
+    expect(row!.out[0]!.attributes('href')).toBe('https://github.com/acme/portal/pull/514')
+    expect(row!.row.text()).toContain('ABC-402')
+  })
+
+  it('does not offer to open a pull request it cannot build a link to', async () => {
+    /*
+     * **A row whose only purpose is a link has to say when there is no link.** `prUrl`
+     * refuses a `repo` that is not a repository name — a released Review Desk could store
+     * `acme/portal#x`, and nothing can repair the column, because `repo` is identity — and
+     * `QueueRow` then draws the row as a `div` rather than an anchor. The row went on saying
+     * "Open on GitHub" in the accent colour with the "opens in a new tab" hint gone:
+     * advertising an action it could not perform.
+     */
+    const source = loadSource()
+    await resetDesk({
+      own_prs: source.own_prs.map((item, at) =>
+        at === 0
+          ? { ...item, pull_request: { ...item.pull_request, repo: 'acme/portal#x' } }
+          : item),
+    })
+
+    const page = await shown(Inbox)
+    const row = lines(page).find(line => line.row.text().includes('acme/portal#x'))
+    expect(row, 'the row for the unlinkable name').toBeDefined()
+    expect(row!.row.element.tagName.toLowerCase(), 'it is not an anchor').toBe('div')
+    expect(row!.row.text()).not.toContain('Open on GitHub')
+    expect(row!.row.text()).toContain('not a repository name')
+
+    /* And a row whose name is fine still offers it. */
+    const fine = lines(page).find(line => line.row.text().includes('Open on GitHub'))
+    expect(fine, 'the other own-pull-request rows are unaffected').toBeDefined()
+    expect(fine!.row.attributes('href')).toMatch(/^https:\/\/github\.com\//)
   })
 
   it('keeps the figures the boards do not draw, rather than dropping them', async () => {

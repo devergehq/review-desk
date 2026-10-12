@@ -9,7 +9,8 @@ use crate::model::{
 };
 use crate::{is_unique_violation, normalise, Store};
 
-pub(super) const COLUMNS: &str = "id, repo, pr, head_sha, round, title, ticket_id, changed_lines, \
+pub(super) const COLUMNS: &str = "id, repo, pr, head_sha, round, title, ticket_id, \
+                       ticket_url, changed_lines, \
                        not_checked, session_id, ledger_id, github_review_id, pr_state, \
                        pr_state_at, harvested_at, nit_ticket_status, nit_ticket_id, \
                        nit_ticket_requested_at, nit_ticket_filed_at, last_activity_at, \
@@ -30,9 +31,10 @@ impl Store {
                 // the first one a session makes. Set here rather than by a second statement so
                 // that a review never exists with its activity unset.
                 "INSERT INTO reviews
-                     (repo, pr, head_sha, round, title, ticket_id, changed_lines,
-                      session_id, ledger_id, github_review_id, last_activity_at, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
+                     (repo, pr, head_sha, round, title, ticket_id, ticket_url,
+                      changed_lines, session_id, ledger_id, github_review_id,
+                      last_activity_at, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)",
                 params![
                     new.repo,
                     new.pr,
@@ -40,6 +42,7 @@ impl Store {
                     new.round,
                     new.title,
                     new.ticket_id,
+                    new.ticket_url,
                     new.changed_lines,
                     new.session_id,
                     new.ledger_id,
@@ -132,7 +135,9 @@ impl Store {
     /// pull request.
     ///
     /// [`Store::open_review`] and then the facts: a fact given is written, a fact left
-    /// `None` is left as it was. That holds whether the review was created by this call
+    /// `None` is left as it was — with the one exception [`Store::set_review_facts`]
+    /// states, that a new `ticket_id` clears `ticket_url` unless the same call gives a new
+    /// address. That holds whether the review was created by this call
     /// or found already on the record — which is what lets a session that has finished
     /// a review report what it did not check by opening the same head commit again,
     /// rather than needing a command of its own.
@@ -150,6 +155,41 @@ impl Store {
         head_sha: &str,
         facts: &ReviewFacts,
     ) -> Result<OpenedReview> {
+        // **The facts are checked before a round is spent.** `open_review` creates the
+        // review, so a fact refused on the second step would leave behind a review the
+        // refused call appears not to have made — and on a head commit nobody had reviewed
+        // yet it would have spent a round number doing it. Checking here keeps
+        // `review open --ticket-url` all-or-nothing.
+        //
+        // The pairing check needs the review the call is about, which may or may not exist:
+        // a session can record the id on one call and the address on a later one, so an
+        // address with no id in *this* call is fine when the record already holds one.
+        // `find_review_by_head` is the same lookup `open_review` does first, and writes
+        // nothing.
+        //
+        // **Normalised before the lookup, through the same helpers `open_review` uses.**
+        // `find_review_by_head` compares under SQLite's binary collation and takes its
+        // arguments as given, so a lookup keyed differently from the insert misses — and a
+        // miss here is not a slow path, it is a refusal. Measured: without this,
+        // `--repo DevergeHQ/Review-Desk --head C0FFEE1 --ticket-url …` was refused for
+        // having no ticket id while the review it names held one, and the same call spelled
+        // in lower case succeeded. One repository spelled two ways is one repository, which
+        // this file's own tests say in as many words.
+        //
+        // **And only when there is an address to check**, which is the common case not
+        // paying for the rare one: every `review open` reaches here, and without the guard
+        // each one ran this lookup and then `open_review`'s own identical lookup on the
+        // next line. The authoritative check is in `set_review_facts` either way.
+        if facts.ticket_url.is_some() {
+            let (looked_up_repo, looked_up_head) =
+                (normalise::repo(repo), normalise::head_sha(head_sha));
+            check_ticket(
+                facts,
+                self.find_review_by_head(&looked_up_repo, pr, &looked_up_head)?
+                    .and_then(|review| review.ticket_id),
+            )?;
+        }
+
         let opened = self.open_review(repo, pr, head_sha)?;
         if facts.is_empty() {
             return Ok(opened);
@@ -159,29 +199,97 @@ impl Store {
         Ok(OpenedReview { review, ..opened })
     }
 
-    /// Record what is known about the pull request: its title, its ticket, how many
-    /// lines it changed and what the review did not look at.
+    /// Record what is known about the pull request: its title, its ticket and that
+    /// ticket's address, how many lines it changed and what the review did not look at.
     ///
     /// A fact left `None` is left as it was, so one call can set the title without
     /// clearing what was not checked.
+    ///
+    /// **One exception, and it is the only one:** a `ticket_id` that differs from the one
+    /// held clears `ticket_url` unless the same call gives a new address. An address belongs
+    /// to one ticket, and keeping it against a different id made the dashboard draw a link
+    /// whose text and destination named two different things. See the block in the body.
+    ///
+    /// **A `ticket_url` that is not `https` is refused here**, before anything is
+    /// written, with [`StoreError::InvalidValue`]. This is the one gate every caller
+    /// passes through — the command line, the local API and the dashboard behind it — and
+    /// the only place the refusal can be made once. The reason is in migration 16: the one
+    /// thing a stored address is for is being drawn as a link, so a `javascript:` or
+    /// `data:` value is the whole of the risk and it never reaches the column.
     pub fn set_review_facts(&self, id: i64, facts: &ReviewFacts) -> Result<Review> {
         // Checked first, so a bad id is NotFound rather than a silent update of
         // nothing.
-        self.get_review(id)?;
+        let held = self.get_review(id)?;
+        let ticket_url = check_ticket(facts, held.ticket_id.clone())?;
+        let ticket_id = normalise::optional_fact(facts.ticket_id.as_deref());
+
+        // **A new id drops the old address, because an address belongs to one ticket.**
+        // The two columns are written through independent `COALESCE`s, so a session
+        // correcting a mistyped ticket — `--ticket DEV-860` on a review opened with
+        // `--ticket ABC-231 --ticket-url …/ABC-231` — replaced the id and left the address.
+        // The header then drew `DEV-860` as a link to `ABC-231`: the link's text and its
+        // destination naming two different tickets, silently, which is the exact failure
+        // `prUrl` is *built* rather than stored to avoid.
+        //
+        // **Both ids are read through `optional_fact`, which is not belt and braces.** The
+        // left side is normalised and the right is whatever the column holds, and a released
+        // build stored ids unnormalised — `--ticket "$(…)"` kept the newline. So comparing
+        // the two raw found `DEV-860` unequal to `DEV-860 ` and dropped the address for a
+        // caller re-stating the *same* ticket. Migration 16 repairs those rows; this makes
+        // the comparison right whatever a row holds, which is the rule `normalise`'s own
+        // header states: a value normalised differently on two sides of a comparison is the
+        // same bug wearing a different hat.
+        //
+        // **This does not give a session a way to clear an address and keep the id.**
+        // `--ticket-url ""` reads as absent and leaves the column alone, by design, and the
+        // drop below happens only as a side effect of the id changing. Stated because an
+        // earlier version of this comment implied otherwise.
+        //
+        // **Dropped rather than refused.** Correcting a ticket id is a plausible thing for a
+        // session to do and should not need the address to hand; a review with an id and no
+        // address draws the id as text, which is a state the whole feature already handles.
+        // Keeping an address nobody said belonged to the new ticket is the one option that
+        // tells a reader something untrue.
+        let stale_url = ticket_url.is_none()
+            && ticket_id.is_some()
+            && ticket_id != normalise::optional_fact(held.ticket_id.as_deref())
+            && held.ticket_url.is_some();
+
+        // **A call with nothing to write writes nothing, and says so by not marking the
+        // review active.** The guard was in `open_review_with` alone, which is one level
+        // away from the method that can break the invariant: the `UPDATE` below is a no-op
+        // when every fact is absent, but `mark_review_active` after it is not, and
+        // `last_activity_at` is what the queue reads for "last written to 4 min ago" and
+        // for whether a session looks alive. The one other caller guards itself today; a
+        // future one would have got the old behaviour back for free.
+        //
+        // **After the checks, not before.** A refused `ticket_url` is still refused even
+        // though it would have written nothing — a caller that passed a `javascript:`
+        // address wants to be told, not quietly told nothing happened.
+        if facts.is_empty() {
+            return Ok(held);
+        }
 
         self.conn.execute(
             "UPDATE reviews SET
                  title         = COALESCE(?2, title),
                  ticket_id     = COALESCE(?3, ticket_id),
-                 changed_lines = COALESCE(?4, changed_lines),
-                 not_checked   = COALESCE(?5, not_checked)
+                 ticket_url    = CASE WHEN ?7 THEN NULL ELSE COALESCE(?4, ticket_url) END,
+                 changed_lines = COALESCE(?5, changed_lines),
+                 not_checked   = COALESCE(?6, not_checked)
              WHERE id = ?1",
             params![
                 id,
-                facts.title,
-                facts.ticket_id,
+                // Every optional string fact through the one rule, so that a blank one is
+                // "say nothing about this" rather than "set it to the empty string" — which
+                // `COALESCE` cannot be told apart from a value. `--title "$T"` with `$T`
+                // unset destroyed a recorded title until this line read it this way.
+                normalise::optional_fact(facts.title.as_deref()),
+                ticket_id,
+                ticket_url,
                 facts.changed_lines,
-                facts.not_checked
+                normalise::optional_fact(facts.not_checked.as_deref()),
+                stale_url,
             ],
         )?;
 
@@ -452,12 +560,25 @@ impl Store {
 fn validate(new: NewReview) -> Result<NewReview> {
     let repo = normalise::repo(&new.repo);
     let repo = repo.as_str();
-    let (owner, name) = repo.split_once('/').unwrap_or(("", ""));
-    if owner.is_empty() || name.is_empty() || name.contains('/') {
+    // **The characters and the segments, through the one copy of that rule.** This checked
+    // only that both halves were non-empty, so `acme/portal#x` was stored — and a header
+    // then built `https://github.com/acme/portal#x/pull/412`, which GitHub serves as the
+    // repository page rather than the pull request: a link whose text and destination name
+    // two different things, which is the defect DEV-936 exists to remove, reached through
+    // the one field nobody thought was free text.
+    //
+    // The first fix for that wrote the character class here and missed `..`, which
+    // `wire::is_repo_name` had refused all along and said why. `normalise::is_repo_name` is
+    // now the only copy, and it carries both the rule and the reason.
+    if !normalise::is_repo_name(repo) {
         return Err(StoreError::InvalidValue {
             field: "repo",
             value: new.repo.clone(),
-            expected: "a repository as owner/repo".to_string(),
+            expected: concat!(
+                "a repository as owner/repo, in letters, digits, dot, underscore and ",
+                "hyphen, and neither half `.` nor `..`",
+            )
+            .to_string(),
         });
     }
 
@@ -485,11 +606,124 @@ fn validate(new: NewReview) -> Result<NewReview> {
         });
     }
 
+    // The same pairing rule, through the same function, so the two writers cannot drift
+    // apart in what they refuse or in what they say about it. A review being created holds
+    // nothing yet, which is what the `None` is.
+    let url = paired(
+        ticket_url(new.ticket_url.as_deref())?,
+        new.ticket_id.as_deref(),
+        None,
+    )?;
+    let id = normalise::optional_fact(new.ticket_id.as_deref());
+
     Ok(NewReview {
         repo: repo.to_string(),
         head_sha: normalise::head_sha(&new.head_sha),
+        ticket_id: id,
+        ticket_url: url,
         ..new
     })
+}
+
+/// The two ticket facts, checked together, and the address as it will be stored.
+///
+/// `held` is the id already on the record — `None` for a review that does not exist yet —
+/// because a session may record the id on one call and the address on a later one.
+fn check_ticket(facts: &ReviewFacts, held: Option<String>) -> Result<Option<String>> {
+    paired(
+        ticket_url(facts.ticket_url.as_deref())?,
+        facts.ticket_id.as_deref(),
+        held.as_deref(),
+    )
+}
+
+/// An address is refused unless a ticket id goes with it, from this call or the record.
+///
+/// **Nothing would ever draw an address with no id.** Both renderers key on the id, which
+/// is the link's *text* — an address drawn as its own text is a link a reader has to parse
+/// rather than read — so a `ticket_url` stored beside a null `ticket_id` is a value that
+/// reaches no screen and exists only in `review show`. A silent no-op, and the kind of
+/// silent that looks like success.
+///
+/// **All three ids are read through [`normalise::optional_fact`], and that is the whole
+/// care this function needs.** Reading any one of them more loosely than the others is
+/// what this check has twice been let through by: first the *passed* id, tested with
+/// `is_none()` while the address was normalised, so `--ticket "" --ticket-url https://…`
+/// passed; then the *held* id, tested the same way, so a review whose stored id was already
+/// `""` — which `--ticket ""` used to write — satisfied the "the record holds one" branch.
+/// One function, one rule, three fields.
+///
+/// **Shared by both writers**, so the two cannot drift apart in what they refuse or in what
+/// they say about it. `create_review` and `set_review_facts` are two ways to the same two
+/// columns.
+fn paired(url: Option<String>, passed: Option<&str>, held: Option<&str>) -> Result<Option<String>> {
+    if url.is_none()
+        || normalise::optional_fact(passed).is_some()
+        || normalise::optional_fact(held).is_some()
+    {
+        return Ok(url);
+    }
+
+    // **`expected` says what would have been accepted, and nothing else.** The contract
+    // defines it that way, and three attempts to smuggle *what happened* through this
+    // refusal all misreported it: a hard-coded `""` in the value slot told a caller who
+    // passed `--ticket "  "` that the field held nothing; a `"<none>"` sentinel asserts the
+    // field holds a value, and `<none>` is a legal opaque `ForeignId`, so it cannot be told
+    // from a caller who passed it; and a trailing "no id was passed" fought the opener
+    // `ticket_id holds ""` in the same sentence.
+    //
+    // `InvalidValue` formats as `{field} holds {value:?}`, which cannot say "this field is
+    // missing" — the right fix is a variant of its own, and that is a contract change
+    // (`ErrorCode`) rather than something to bolt on here. Until then the value is what
+    // arrived and the clause describes only the accepted shape, which is true in every
+    // case: the id absent, the id blank, and a review that does not exist yet.
+    //
+    // **"or already on the review"** is the part that must not be dropped. It was, for one
+    // commit, and it is the only place this refusal tells a caller the id may come from the
+    // record — which is the two-call pattern `review open`'s own help documents: the id when
+    // the review is opened, the address on a later call. A review is one round, so round 2
+    // of a pull request does not inherit round 1's ticket, any more than it inherits its
+    // title.
+    Err(StoreError::InvalidValue {
+        field: "ticket_id",
+        value: passed.unwrap_or_default().to_string(),
+        expected: concat!(
+            "a ticket id to go with the address — passed in this call, or already on the ",
+            "review the address is being set against; an address is drawn as its id, so ",
+            "one with no id reaches no screen",
+        )
+        .to_string(),
+    })
+}
+
+/// A ticket's address on its way into the record: trimmed, and `https` or refused.
+///
+/// **Both writers call this, which is the point.** `create_review` and `set_review_facts`
+/// are two ways to the same column, and a check on one of them is a check on neither —
+/// `review open --ticket-url` reaches the second and `POST /reviews` can reach either.
+///
+/// A value that is nothing but whitespace is `None` rather than an error — that is an
+/// argument nobody filled in, and the field is optional — which is
+/// [`normalise::optional_fact`]'s rule and is read from there rather than repeated. A value
+/// that is *something* and not `https` is a mistake worth naming, because the caller plainly
+/// meant to pass an address and the one they passed cannot be drawn as a link.
+///
+/// **`https://` and nothing else**, lowercase scheme as every tracker emits it. `http` is
+/// refused with the rest: a ticket read over plain HTTP is a ticket read by anyone on the
+/// path, and Review Desk's own rule is that it never fetches a tracker, so there is no
+/// case where the insecure form is the only one available.
+fn ticket_url(given: Option<&str>) -> Result<Option<String>> {
+    let Some(given) = normalise::optional_fact(given) else {
+        return Ok(None);
+    };
+    if !given.starts_with("https://") {
+        return Err(StoreError::InvalidValue {
+            field: "ticket_url",
+            value: given,
+            expected: "the ticket's address, starting https://".to_string(),
+        });
+    }
+    Ok(Some(given))
 }
 
 /// Build a review from a row selecting [`COLUMNS`].
@@ -502,6 +736,7 @@ pub(super) fn row_to_review(row: &Row<'_>) -> rusqlite::Result<Review> {
         round: row.get("round")?,
         title: row.get("title")?,
         ticket_id: row.get("ticket_id")?,
+        ticket_url: row.get("ticket_url")?,
         changed_lines: row.get("changed_lines")?,
         not_checked: row.get("not_checked")?,
         session_id: row.get("session_id")?,

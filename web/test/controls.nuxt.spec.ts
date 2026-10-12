@@ -8,6 +8,7 @@ import DecisionTrack from '../app/components/DecisionTrack.vue'
 import DeskButton from '../app/components/DeskButton.vue'
 import LinkField from '../app/components/LinkField.vue'
 import NotMeasured from '../app/components/NotMeasured.vue'
+import QueueRow from '../app/components/QueueRow.vue'
 import SegmentBar from '../app/components/SegmentBar.vue'
 import SeverityTag from '../app/components/SeverityTag.vue'
 import SignOffButton from '../app/components/SignOffButton.vue'
@@ -725,5 +726,79 @@ describe('text a review session recorded, rather than copy the app wrote', () =>
      */
     const expressions = found.map(({ line }) => /v-html=("[^"]*")/.exec(line)?.[1])
     for (const allowed of Object.keys(ALLOWED)) expect(expressions).toContain(allowed)
+  })
+})
+
+describe('a queue row', () => {
+  const row = (props: Record<string, unknown>) =>
+    mountSuspended(QueueRow, {
+      props: { pr: 412, title: 'Retry failed webhook deliveries', action: 'Read it', ...props },
+    })
+
+  it('links the ticket the record holds an address for', async () => {
+    const page = await row({
+      prHref: 'https://github.com/acme/portal/pull/412',
+      ticketHref: 'https://linear.app/acme/issue/ABC-231',
+      ticketId: 'ABC-231',
+    })
+    const out = page.findAll('.row-out-link')
+    expect(out.map(link => link.attributes('href'))).toEqual([
+      'https://github.com/acme/portal/pull/412',
+      'https://linear.app/acme/issue/ABC-231',
+    ])
+    for (const link of out) {
+      expect(link.attributes('target')).toBe('_blank')
+      expect(link.attributes('rel')).toBe('noopener noreferrer')
+    }
+  })
+
+  /**
+   * **The row refuses a non-`https` address itself**, rather than trusting its caller to.
+   *
+   * The rule — a stored address that is not `https` is never rendered as a link — is stated
+   * in `contract/README.md`, in `app/utils/links.ts` and in migration 16's own comment, and
+   * `ReviewStepPage` enforces it inside the component. This one used what it was handed, so
+   * the rule was true only because all four call sites happened to pass `ticketUrl(…)`: a
+   * fifth passing `review.ticket_url` straight through would have put a hand-written
+   * `javascript:` value in an `href` with nothing failing. Measured by mutation — reverting
+   * the guard left the whole suite green, which is why this test exists.
+   */
+  it('refuses an address that is not https, whatever it is handed', async () => {
+    for (const refused of [
+      'javascript:alert(1)',
+      'http://linear.app/acme/issue/ABC-231',
+      'linear.app/acme/issue/ABC-231',
+    ]) {
+      const page = await row({
+        prHref: 'https://github.com/acme/portal/pull/412',
+        ticketHref: refused,
+        ticketId: 'ABC-231',
+      })
+      const hrefs = page.findAll('a').map(link => link.attributes('href') ?? '')
+      expect(hrefs, `${refused} never reaches an href`).not.toContain(refused)
+      expect(
+        page.findAll('.row-out-link').map(link => link.attributes('href')),
+        'the pull request is the only link left',
+      ).toEqual(['https://github.com/acme/portal/pull/412'])
+    }
+  })
+
+  /**
+   * **And a refused address leaves no empty cell behind.**
+   *
+   * The anchor was guarded and the cell around it was not: `v-if` on the `.row-out` span still
+   * keyed on the raw `ticketHref`, so a row with no `prHref` and a refused address drew the
+   * span with nothing inside it — a 96px column with its padding, and a full-width empty
+   * block above the row's rule at a phone's width. Invisible today only because all four
+   * call sites pass `prUrl(…)`, which is the accidental safety the guard was moved inwards
+   * to remove; the test above could not see it either, because it always passes `prHref`.
+   */
+  it('draws no links cell at all when there is nothing to put in it', async () => {
+    const page = await row({ ticketHref: 'javascript:alert(1)', ticketId: 'ABC-231' })
+    expect(page.find('.row-out').exists(), 'no empty cell').toBe(false)
+    expect(page.findAll('.row-out-link')).toHaveLength(0)
+
+    /* And the row itself is untouched — it is still the thing you read and click. */
+    expect(page.find('.row').text()).toContain('Retry failed webhook deliveries')
   })
 })

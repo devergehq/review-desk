@@ -63,6 +63,11 @@
 //! column that answers "is the session still alive": when anything last wrote to the
 //! review. It was written as 11 and renumbered when DEV-878's own 11 merged first, which
 //! is the rule above being used rather than quoted.
+//!
+//! Version 16 is the one thing a review could not say about its ticket: where the ticket
+//! is. The record has held `ticket_id` since version 1, and nothing can turn `DUC-2045`
+//! into an address — the tracker and its workspace are the session's knowledge, not the
+//! record's — so a header could print the id and not link it.
 
 use rusqlite::Connection;
 
@@ -1335,6 +1340,75 @@ ALTER TABLE review_sources ADD COLUMN note TEXT;
 -- because SQLite cannot add a CHECK to a table that already exists. Stated here so the
 -- absence of a constraint reads as a decision rather than an omission.
 ALTER TABLE brief_parts ADD COLUMN one_line TEXT;
+"#,
+    },
+    Migration {
+        version: 16,
+        name: "ticket-url",
+        sql: r#"
+-- Where the review's ticket is: the address the session was given, beside the id it
+-- already records.
+--
+-- **Review Desk cannot work this out from the id.** `ticket_id` is a `ForeignId` -- opaque,
+-- never parsed -- and turning `DUC-2045` into an address needs the tracker and the
+-- workspace, which the session knows from its dispatch and the record does not. So the
+-- address is given or there is none; nothing here derives it and nothing fetches it.
+--
+-- **Nullable, and that is the honest default**, for migration 13's reason and 15's: every
+-- review already on the record has no address, and a header with the id alone draws it as
+-- text. Backfilling a guess -- a Linear workspace inferred from the id's prefix -- would put
+-- a derived address in a column nothing could afterwards tell from a given one, and it
+-- would be a link to somewhere nobody said.
+--
+-- **`https` only, and refused on the way in rather than on the way out.** The one thing a
+-- stored address is for is being rendered as a link, and a `javascript:` or `data:` value
+-- reaching an `href` is the whole of that risk; refusing it at the write is the only place
+-- it can be refused once. SQLite cannot add a CHECK to a table that already exists, so the
+-- refusal lives in `validate` and `set_review_facts` beside the refusals of a blank
+-- `label` and a blank `one_line`, which is migration 15's reasoning and its precedent.
+-- Stated here so the absence of a constraint reads as a decision rather than an omission.
+-- The dashboard refuses a non-`https` value a second time at render, because a database can
+-- be written to by hand and a column is not a promise about every row in it.
+ALTER TABLE reviews ADD COLUMN ticket_url TEXT;
+
+-- **And the ids the old writer stored unnormalised are normalised, which is what they mean.**
+-- `set_review_facts` wrote whatever it was handed, so two kinds of row exist on a released
+-- database: `review open --ticket ""` from a shell whose variable was unset stored the empty
+-- string, and `--ticket "$(…)"` stored `DEV-860` with the command substitution's newline on
+-- it.
+--
+-- **Both halves matter, and the padded one is the dangerous half.** An empty id makes the API
+-- serve `"ticket_id": ""`, which the contract's `ForeignId` says cannot happen
+-- (`minLength: 1`), and makes `--ticket-url` alone refused for having no id — blocking the
+-- two-call pattern the README documents. A *padded* id is worse: it is non-blank, so an
+-- address records against it happily, and then `set_review_facts` compares the id a caller
+-- passes (normalised) against the one held (`DEV-860 `), finds them unequal, and drops the
+-- address as stale. Re-stating the **same** ticket destroyed a correct address. Measured
+-- against the binary before this line existed.
+--
+-- `NULLIF(TRIM(…), '')` does both: trimmed to what the id means, and nothing left is no id.
+-- So "an id is trimmed, and blank is absent" is true of the record this code already wrote
+-- and not only of writes made from here on, which is what `ForeignId` claims of it.
+--
+-- **The characters are spelt out because SQLite's `TRIM` takes spaces and nothing else.**
+-- One argument trims `' '` only — not a tab, not a newline — while Rust's `str::trim`, which
+-- every write goes through, takes all whitespace. So a bare `TRIM(ticket_id)` left
+-- `DEV-860\n` exactly as it found it, which is the one row that matters here: a trailing
+-- newline is what `--ticket "$(git …)"` produces. Measured by the test for this migration,
+-- which failed on it. ASCII whitespace is what a shell can put there; Rust's notion is
+-- wider and SQLite cannot express it, and nothing needs it to.
+--
+-- **A database already at 16 does not run this.** Migrations are forward-only and keyed on
+-- version, so a machine that ran an earlier commit of *this branch* is past it. Nothing
+-- released is affected — master is at 15 — and the rows this repairs were written by
+-- released code, so every database the merge reaches gets it. A developer's own database
+-- that followed this branch is the one exception, and re-stating the ticket there fixes the
+-- row by hand.
+UPDATE reviews
+   SET ticket_id = NULLIF(
+         TRIM(ticket_id, ' ' || char(9) || char(10) || char(11) || char(12) || char(13)),
+         ''
+       );
 "#,
     },
 ];

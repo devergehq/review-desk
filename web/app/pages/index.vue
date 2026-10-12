@@ -4,6 +4,7 @@ import type {
   InboxBriefItem,
   InboxDraftItem,
   InboxInProgressItem,
+  InboxOwnPrItem,
   InboxPostedItem,
   InboxReplyItem,
 } from '~/types/desk'
@@ -97,6 +98,14 @@ interface Waiting {
   title: string
   round: number | null
   ticket: string | null
+  /**
+   * Where that ticket is, when the record holds an address for it.
+   *
+   * Read from the same inbox item the id is read from — any of the three that make a row —
+   * and `null` for a row whose review has an id and no address, which the row then names
+   * on its own line and does not link.
+   */
+  ticketUrl: string | null
   is_delta: boolean
   brief: InboxBriefItem | null
   draft: InboxDraftItem | null
@@ -142,6 +151,7 @@ function needingYou(data: Inbox): Waiting[] {
       title: pull.title ?? 'no title recorded',
       round: null,
       ticket: null,
+      ticketUrl: null,
       is_delta: false,
       brief: null,
       draft: null,
@@ -153,20 +163,34 @@ function needingYou(data: Inbox): Waiting[] {
     return made
   }
 
+  /*
+   * **The ticket comes off whichever of the three put the row here.** All three carry it —
+   * the contract requires them to — and reading it from `briefs_to_confirm` alone was a
+   * defect with a name: a review whose brief had been confirmed and whose draft was
+   * waiting had a row, a ticket on the record, and no way to reach it, while the Reviews
+   * list showed the link for that same review.
+   */
+  const ticket = (row: Waiting, item: { ticket_id?: string | null, ticket_url?: string | null }) => {
+    row.ticket = item.ticket_id ?? null
+    row.ticketUrl = ticketUrl(item.ticket_url)
+  }
+
   for (const item of data.briefs_to_confirm) {
     const row = slot(item.review_id, item.pull_request)
     row.brief = item
-    row.ticket = item.ticket_id ?? null
+    ticket(row, item)
   }
   for (const item of data.drafts_to_approve) {
     const row = slot(item.review_id, item.pull_request)
     row.draft = item
     row.round = item.round
     row.is_delta = item.is_delta
+    ticket(row, item)
   }
   for (const item of data.author_replies) {
     const row = slot(item.review_id, item.pull_request)
     row.reply = item
+    ticket(row, item)
   }
   /*
    * **Joined, never slotted.** Neither of these makes a row: a posted review and a review
@@ -212,6 +236,35 @@ const waiting = computed(() => (inbox.data.value ? needingYou(inbox.data.value) 
  */
 function stepFor(row: Waiting): string {
   return `/reviews/${row.review_id}/understand`
+}
+
+/**
+ * One of the developer's own pull requests, as its row reads it.
+ *
+ * **A row whose only purpose is a link has to say when there is no link.** `prUrl` returns
+ * null for a `repo` that is not a repository name — a released Review Desk could store
+ * `acme/portal#x`, and nothing can repair that column, because `repo` is identity: half of
+ * a review's unique key and the join to a repository's rules, so rewriting it would merge
+ * or split reviews rather than mend them. `QueueRow` then draws the row as a `div` rather
+ * than an anchor, and it went on reading "Open on GitHub" in the accent colour with the
+ * "opens in a new tab" hint gone: advertising an action it could not perform.
+ *
+ * `warn` rather than `go`, because an unlinkable repository name is something to look at.
+ *
+ * **Called once per row, from `rows`, not from the template.** `:href`, `:action` and
+ * `:action-tone` each need the answer; three calls in the markup are three evaluations per
+ * render — on every press of a repository chip — and three chances for the expressions to
+ * drift apart. An earlier version of this comment claimed the single evaluation while the
+ * template still made three calls, which fixed the drift and not the count. `rows` maps it
+ * onto each row now, which is where the other groups build theirs.
+ */
+function ownPr(item: InboxOwnPrItem) {
+  const href = prUrl(item.pull_request.repo, item.pull_request.pr)
+  return {
+    href,
+    action: href ? 'Open on GitHub' : 'no link: this is not a repository name',
+    tone: href ? ('go' as const) : ('warn' as const),
+  }
 }
 
 /** The next thing the developer does about this review, and what to say about it. */
@@ -284,6 +337,32 @@ function alsoWaiting(row: Waiting): string[] {
   return also
 }
 
+/**
+ * The line under the title for the two groups no developer act is waiting on.
+ *
+ * **It names the ticket, which is what makes the id-without-address case readable.** The
+ * contract says of `ticket_url` that null is "a review with an id and no address, which the
+ * row then names on its own line and does not link" — true of the needs-you rows and the
+ * Reviews list because both put the id on their meta line, and it was *not* true of these
+ * two: their meta was the repository alone, so a review with an id and no address drew no
+ * ticket at all, neither link nor text. Serving the pair to these rows without this left
+ * half the gap open while the text said otherwise.
+ *
+ * **Two call sites, which is what the name says.** "Your pull requests" keeps its literal
+ * repository line: `InboxOwnPrItem` is the one array the contract gives no ticket, because
+ * it is the one with no review — a pull request nobody has reviewed. Passing it through
+ * here read a property its own type does not declare, and the output was identical, so
+ * nothing could have told.
+ */
+function alsoAbout(item: {
+  pull_request: { repo: string }
+  ticket_id: string | null
+}): string {
+  const parts = [`· ${item.pull_request.repo}`]
+  if (item.ticket_id) parts.push(item.ticket_id)
+  return parts.join(' · ')
+}
+
 /** The second line under a review's title: where it is, which round, what changed. */
 function about(row: Waiting): string {
   const parts = [row.repo]
@@ -346,6 +425,13 @@ const drawnAbove = computed(() => {
 
 /**
  * The reviews a session is working on, minus the ones already waiting on the developer.
+ *
+ * **These rows carry the ticket link too, since `GET /inbox` serves it here.** It did not
+ * for a few commits, and the rows were the visible cost: a review that is *only* in this
+ * array — a session working, nothing waiting on the developer — drew a row with a link to
+ * its pull request and none to its ticket, while the Reviews list linked both for the same
+ * review. Nothing in this file could work around it, because the ticket was not in the
+ * answer. It is now.
  *
  * **The same rule, one group earlier.** `reviews_in_progress` asks only whether a layer is
  * `running`, and nothing stops a review being there *and* in one of the needs-you arrays:
@@ -438,6 +524,15 @@ function queueRow(row: Waiting) {
     title: row.title,
     about: about(row),
     detail: [next.detail, ...alsoWaiting(row)].join(' · '),
+    /*
+     * **The two ways out of the review, built here rather than in the template.** The pull
+     * request's address is built from the row's own repository and number; the ticket's is
+     * the one the record holds, or nothing. `prUrl` is a function for a reason its own
+     * comment in `app/utils/links.ts` gives, and this is the call site that reason is about.
+     */
+    prHref: prUrl(row.repo, row.pr),
+    ticketHref: row.ticketUrl,
+    ticketId: row.ticket,
   }
 }
 
@@ -465,10 +560,13 @@ const rows = computed(() => {
     withAgent.value.filter(item => showing(item.pull_request.repo)),
     item => item.in_state_since ?? null,
   )
+  // The link, its label and its tone worked out once per row, here. Three bindings in the
+  // template each needed the answer, and three calls there are three evaluations per render
+  // — on every press of a repository chip — plus three chances for them to drift apart.
   const ownPrs = oldestFirst(
     data.own_prs_without_reviewer.filter(item => showing(item.pull_request.repo)),
     item => item.opened_at ?? null,
-  )
+  ).map(item => ({ ...item, link: ownPr(item) }))
   // Oldest posting first, like every other group, so the caption over the page stays
   // true: the API serves these newest first, which is the opposite.
   const shown = oldestFirst(
@@ -493,21 +591,6 @@ const someTimesMissing = computed(
     || rows.value.ownPrs.some(item => item.opened_at == null)
     || rows.value.withAuthor.some(item => item.posted_at == null),
 )
-
-/**
- * Where a pull request is on GitHub.
- *
- * **Written as a function because `//` cannot go in a component's interpolated attribute.**
- * `vue-tsc` emits a component's props as one line, so the `//` in `https://` starts a
- * JavaScript line comment and everything after it in the template is commented out: every
- * later `item` and `data` became `TS2304: Cannot find name`, seventeen of them. Measured
- * rather than guessed — the same attribute with one slash reports 0 errors and with two
- * reports 17. It works inline on a *native* element, which is why the screen this replaces
- * could write the same URL in an `<a :href>`. The URL built here is identical.
- */
-function prUrl(repo: string, pr: number): string {
-  return `https://github.com/${repo}/pull/${pr}`
-}
 
 /**
  * The line under the headline: what is on the desk that is not waiting on the developer.
@@ -720,6 +803,9 @@ function handledLine(data: Inbox): string {
             action-tone="go"
             :age="row.at ? sinceLabel(row.at) : null"
             :age-unknown-because="row.atUnknown"
+            :pr-href="row.prHref"
+            :ticket-href="row.ticketHref"
+            :ticket-id="row.ticketId"
           >
             <span class="what-title">{{ row.what }}</span>
             <span class="rd-meta what-detail">{{ row.detail }}</span>
@@ -738,12 +824,15 @@ function handledLine(data: Inbox): string {
             :key="item.review_id"
             :pr="item.pull_request.pr"
             :title="item.pull_request.title ?? 'no title recorded'"
-            :meta="`· ${item.pull_request.repo}`"
+            :meta="alsoAbout(item)"
             :to="`/reviews/${item.review_id}/understand`"
             :action="sessionAction(item)"
             :action-tone="item.session_alive === false ? 'warn' : 'quiet'"
             :age="item.in_state_since ? sinceLabel(item.in_state_since) : null"
             age-unknown-because="this review was recorded before Review Desk kept when a step started"
+            :pr-href="prUrl(item.pull_request.repo, item.pull_request.pr)"
+            :ticket-href="ticketUrl(item.ticket_url)"
+            :ticket-id="item.ticket_id"
           >
             <SegmentBar
               :segments="layerSegments(item)"
@@ -784,12 +873,15 @@ function handledLine(data: Inbox): string {
             :key="item.review_id"
             :pr="item.pull_request.pr"
             :title="item.pull_request.title ?? 'no title recorded'"
-            :meta="`· ${item.pull_request.repo}`"
+            :meta="alsoAbout(item)"
             :to="`/reviews/${item.review_id}/understand`"
             action="Read the review"
             action-tone="quiet"
             :age="item.posted_at ? sinceLabel(item.posted_at) : null"
             age-unknown-because="this review's GitHub id was recorded without a draft, so nothing holds when it was posted"
+            :pr-href="prUrl(item.pull_request.repo, item.pull_request.pr)"
+            :ticket-href="ticketUrl(item.ticket_url)"
+            :ticket-id="item.ticket_id"
           >
             <span class="what-title">{{ postedTitle(item) }}</span>
             <!--
@@ -815,9 +907,9 @@ function handledLine(data: Inbox): string {
             :pr="item.pull_request.pr"
             :title="item.pull_request.title ?? 'no title recorded'"
             :meta="`· ${item.pull_request.repo}`"
-            :href="prUrl(item.pull_request.repo, item.pull_request.pr)"
-            action="Open on GitHub"
-            action-tone="go"
+            :href="item.link.href"
+            :action="item.link.action"
+            :action-tone="item.link.tone"
             :age="item.opened_at ? openForLabel(item.opened_at).replace('open ', '') : null"
             age-unknown-because="nothing has told Review Desk when this pull request was opened"
           >

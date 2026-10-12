@@ -267,7 +267,22 @@ describe('the seven layers', () => {
  * hold a reply the harvester never wrote.
  */
 describe('what came back on a posted review', () => {
+  /*
+   * **The required fields are here because the type says they are**, and nothing else
+   * would have caught their absence: `web/test/**` is in none of the four Nuxt tsconfig
+   * projects, so `pnpm typecheck` never reads this file, and an annotation claiming
+   * `InboxPostedItem` may omit two required fields passes every gate. A fixture the server
+   * could not have produced is worse than an untyped one, because the type is what a
+   * reader trusts.
+   */
   const posted = (over: Partial<InboxPostedItem> = {}): InboxPostedItem => ({
+    // **Review 12's own ticket**, which is `ABC-187` with no address, in `getInbox` and
+    // in the web fixtures alike. `ABC-231` is review 17's, and putting it here gave one
+    // review two tickets — the defect the commit that wrote this line was fixing one file
+    // over. It is also the more useful pair: an id with no address is the shape this
+    // group's rows have to name rather than link.
+    ticket_id: 'ABC-187',
+    ticket_url: null,
     review_id: 12,
     pull_request: { repo: 'acme/portal', pr: 398, title: 'Split the export job' },
     round: 1,

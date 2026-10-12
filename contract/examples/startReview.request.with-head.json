@@ -3,5 +3,6 @@
   "head_sha": "3f9c2ab",
   "title": "Retry failed webhook deliveries",
   "ticket_id": "ABC-231",
+  "ticket_url": "https://linear.app/acme/issue/ABC-231",
   "changed_lines": 214
 }

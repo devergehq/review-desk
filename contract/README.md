@@ -128,7 +128,8 @@ Everything else on the five screens is below.
 | "#412" | `briefs_to_confirm[].pull_request.pr` |
 | "Retry failed webhook deliveries" | `briefs_to_confirm[].pull_request.title` |
 | "acme/portal" | `briefs_to_confirm[].pull_request.repo` |
-| "ABC-231" | `briefs_to_confirm[].ticket_id` |
+| "ABC-231" | `ticket_id`, on whichever of the five arrays about a review put the row there |
+| "ABC-231" as a link on the row | `ticket_url` on the same item — the address, when the record has one |
 | "brief ready 6 min ago" | `briefs_to_confirm[].brief_ready_at` — step 2's time, else the brief's own |
 | "nothing else runs until you confirm" | `briefs_to_confirm[].blocks_later_layers` |
 | "Approve a draft · 2" | length of `drafts_to_approve` |
@@ -150,6 +151,7 @@ Everything else on the five screens is below.
 | "You cut this kind of finding from 5 of the last 5 drafts…" | `proposed_rules[].why_proposed` |
 | "In progress · 2" | length of `in_progress` |
 | "Layer 5 of 7 · code review" | `in_progress[].layer_number`, `.layers_total`, `.layer_name` |
+| the ticket on an agent row, named and linked | `in_progress[].ticket_id`, `.ticket_url` — a review here may be in no other array, so it draws its own row |
 | "session alive" | `in_progress[].session_alive` |
 | "running 20 min" | `in_progress[].in_state_since` |
 | "last activity 4 min ago" | `in_progress[].last_activity_at` |
@@ -167,6 +169,8 @@ Everything else on the five screens is below.
 | "Retry failed webhook deliveries" | `review.title` |
 | "acme/portal" | `review.repo` |
 | "ticket ABC-231" | `review.ticket_id` |
+| that id as a link in the header | `review.ticket_url` — the address, when the record has one; the id alone is drawn as text |
+| "acme/portal · #412" as a link in the header | `review.repo` and `review.pr`, built into `https://github.com/{repo}/pull/{pr}` — never taken from a stored string |
 | "round 1" | `review.round` |
 | "head 3f9c2ab" | `review.head_sha` |
 | "214 changed lines" | `review.changed_lines` |
@@ -257,6 +261,30 @@ ticket: what is served is what the session said it read.
 | "F1 , F2" in the Findings column | `coverage.files[].finding_seqs`, `.finding_keys` |
 | the highlighted "resources/admin/** · Not reviewed." row | `coverage.files[].checked: not_reviewed`, with `.how_checked` as the reason |
 | each chip's outcome line — "They built B, in 4 files" | `layers[].detail`, which already carried it |
+
+### The two links in a review's header
+
+**Built, and stored, by two different rules, and the difference is the point.**
+
+| Link | Where its address comes from |
+|---|---|
+| the pull request | **built** by the client from `review.repo` and `review.pr`: `https://github.com/{repo}/pull/{pr}`. No field holds this address, because a stored copy could disagree with the two fields it was built from. |
+| the ticket | **stored**, in `review.ticket_url`, because it cannot be built: `ticket_id` is a `ForeignId` and opaque by rule, and the tracker and its workspace are the calling session's knowledge. Only `https` is accepted, refused at the write with `invalid_value`. |
+
+**A client checks `repo` before it builds that address, and does not take `RepoName` as a
+promise about every row.** The pattern says what this server accepts and what a sound
+database holds; a row written by a Review Desk that predated the pattern can still carry
+something else, and `repo` is identity, so nothing can repair it. A name a client cannot
+parse is **unlinkable, not impossible** — draw it as text. `web/app/utils/links.ts` is that
+rule in the dashboard, and `ticketUrl` beside it makes the same argument for the field it
+owns: a column is not a promise about every row in it.
+
+Both open in a new tab with `rel="noopener noreferrer"`, and both say so to a screen
+reader. The ticket's link draws the **id** as its text and never the address: a link whose
+text is a URL is a link a reader has to parse, and the id is the thing they came for.
+
+A review with `ticket_id` and no `ticket_url` draws the id as text. That is every review
+opened before the field existed, and a client must not treat it as a broken link.
 
 **"A short outcome line per layer" needed no new field.** DEV-875 lists it among what a
 review gains; `layers[].detail` has been exactly that line since DEV-854, is written by

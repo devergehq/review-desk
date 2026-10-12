@@ -910,9 +910,39 @@ components:
 
     RepoName:
       type: string
-      pattern: '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$'
+      pattern: '^([A-Za-z0-9_-][A-Za-z0-9._-]*|\.[A-Za-z0-9_-][A-Za-z0-9._-]*|\.\.[A-Za-z0-9._-]+)/([A-Za-z0-9_-][A-Za-z0-9._-]*|\.[A-Za-z0-9_-][A-Za-z0-9._-]*|\.\.[A-Za-z0-9._-]+)$'
       examples: ['acme/portal']
-      description: A repository as `owner/repo`. The join key, with the head commit.
+      description: |
+        A repository as `owner/repo`. The join key, with the head commit.
+
+        **Neither half may be `.` or `..`**, which the character class alone permits — `.`
+        is legal *in* a name, and the class says nothing about what a segment means. Three
+        dots are a legal name and are accepted; only those two exact segments are not.
+
+        The exclusion is load-bearing because the value is read back out and put into paths:
+        `gh api repos/{repo}/pulls/{pr}`, where `repos/../../pulls/1` is
+        `api.github.com/pulls/1`, and `https://github.com/{repo}/pull/{pr}`, which a browser
+        resolves to `github.com/pull/1`. In both the value goes somewhere other than the
+        repository anybody named.
+
+        **Written without lookahead on purpose.** The three alternatives per half say "in
+        the class, and not exactly `.` or `..`" the long way round, because a `(?!…)` here
+        is outside the subset JSON Schema recommends for `pattern`: every consumer in this
+        repository copes — ajv is JavaScript's own `RegExp` and the Rust validator uses
+        `fancy-regex` — but a client generated from this document against RE2 or Rust's
+        `regex` fails to *compile* the schema rather than ignoring the constraint. A
+        published contract has to be readable by a validator nobody here chose.
+
+        **This governs responses as well as requests**, and the two are not symmetrical. A
+        request carrying `../..` is refused with `invalid_value`. A *row* carrying it can
+        exist — a released Review Desk never checked, and the column cannot be repaired,
+        because `repo` is identity: half of a review's unique key and the join to a
+        repository's rules, so rewriting it would merge or split reviews rather than mend
+        them. `GET /reviews` over such a database therefore serves a body that fails this
+        schema. Said here rather than left for a reader to find: the honest reading is that
+        the pattern describes what this server will accept and what a sound database holds,
+        and a client should treat a repository name it cannot parse as unlinkable rather
+        than as impossible.
 
     ForeignId:
       type: [string, 'null']
@@ -921,6 +951,53 @@ components:
         An identifier owned by another system — an Allele session, a dispatcher ledger
         entry, a GitHub review, a Linear ticket. Opaque: Review Desk stores and returns
         it and never parses it.
+
+        **Two exceptions, and they differ from each other**, both on a ticket id:
+
+        | Where | What happens to `" ABC-231 "` | What happens to `" "` |
+        |---|---|---|
+        | `Review.ticket_id` | stored as `ABC-231` | read as **absent**: a stored id is left alone |
+        | `nit_ticket_id`, through `requestNitTicket` | stored as `ABC-231` | **refused** with `invalid_value` |
+
+        The two are not inconsistent, they are different acts. A review's facts are
+        optional and "left out" has to mean "leave it as it was", or `--ticket ""` from an
+        unset shell variable wipes a recorded id. Asking for a nit ticket, by contrast, is
+        a report that a specific ticket was filed — there is no form of it that reports a
+        filing nobody made, so a blank id there is a mistake rather than a field left out.
+
+        Every other `ForeignId` — `session_id`, `ledger_id`, `github_review_id` — is stored
+        and returned exactly as given.
+
+        A review's ticket is a fact about *that round*. Round 2 of a pull request does not
+        inherit round 1's, any more than it inherits its title or its changed-line count —
+        a caller passes what it knows on each `POST /reviews`.
+
+    TicketUrl:
+      type: [string, 'null']
+      pattern: '^https://'
+      examples: ['https://linear.app/acme/issue/ABC-231']
+      description: |
+        Where a ticket is — the address the calling session was given, beside the opaque
+        `ticket_id` it goes with.
+
+        **Given, never derived, and never fetched.** A `ForeignId` is opaque by rule, and
+        turning `ABC-231` into an address needs the tracker and the workspace, which the
+        session knows from its dispatch and Review Desk does not. So this is an address
+        somebody passed or it is null; Review Desk reads nothing from it and asks the
+        tracker nothing.
+
+        **`https` only, and refused on the way in.** The one thing a stored address is for
+        is being drawn as a link, so a `javascript:` or `data:` value in an `href` is the
+        whole of the risk. A request carrying anything else is refused with
+        `invalid_value`, naming `ticket_url`. `http` is refused with the rest: nothing here
+        reads the address, so there is no case where the insecure form is the only one
+        available.
+
+        **A client draws the ticket's `ticket_id` as the link's text, never the address** —
+        a link whose text is a URL is a link a reader has to parse. Which is why an address
+        with **no id** is refused too, with `invalid_value` naming `ticket_id`: nothing
+        would ever draw it, and a value that reaches no screen is a silent no-op. The id
+        may arrive in the same request or already be on the record.
 
     Severity:
       type: string
@@ -1090,7 +1167,8 @@ components:
     Review:
       type: object
       additionalProperties: false
-      required: [id, repo, pr, head_sha, round, created_at, pr_state, harvested_at]
+      required:
+        [id, repo, pr, head_sha, round, created_at, pr_state, harvested_at, ticket_url]
       description: One review of one pull request at one head commit.
       properties:
         id: { type: integer, format: int64, minimum: 1 }
@@ -1114,7 +1192,47 @@ components:
           description: |
             The pull request's title, as the caller supplied it — or, for a caller that
             supplied none, as `POST /reviews` resolved it from the pull request.
-        ticket_id: { $ref: '#/components/schemas/ForeignId' }
+        ticket_id:
+          allOf:
+            - $ref: '#/components/schemas/ForeignId'
+          description: |
+            The ticket the change is for, opaque.
+
+            **Trimmed on the way in, and a blank one is read as absent**, which is the one
+            exception to `ForeignId`'s round-trip: `" ABC-231 "` is stored and returned as
+            `ABC-231`.
+
+            **Absent means "leave it as it was", not "clear it".** A whitespace-only id —
+            `" "`; the empty string is already refused by `minLength` above — does not null
+            a stored one. The write is `COALESCE(?, ticket_id)`, which only a `NULL` tells
+            to leave the column alone, so reading blank as absent is exactly what stops
+            `--ticket ""` on the command line, where no schema applies, from wiping a
+            recorded `ABC-231`. On a review being created there is nothing to leave, so it
+            simply has no ticket. A request whose only field is a blank id writes nothing at
+            all, and does not even mark the review as written to.
+
+            It exists because this id is checked against `ticket_url` — an address beside a
+            blank id would reach no screen — and a field read one way by a check and another
+            by a writer is what let that fault through twice. The other `ForeignId`s on this
+            object are untouched.
+        ticket_url:
+          allOf:
+            - $ref: '#/components/schemas/TicketUrl'
+          description: |
+            Where that ticket is. **Null is a review nobody passed an address for**, which
+            is every review opened before the field existed — and a client then draws
+            `ticket_id` as text rather than as a link. Nothing derives it from the id.
+
+            **Required, for the reason `pr_state` below is**, and it is the same reason
+            read twice. The convention here has been to leave a new field out of
+            `required`, so that a response written before it existed is missing it rather
+            than wrong. Optional, every check passes while the server, the examples and
+            the dashboard's sample records hold three different answers: the example
+            validator skips a field the example omits, the store's example test walks the
+            example's fields, and the generated type becomes `ticket_url?` so a fixture
+            without it is not a type error. The one thing this field does is decide
+            whether the header draws a link, so a silently absent one is a feature that
+            quietly is not there. Required, all three fail loudly.
         changed_lines:
           type: [integer, 'null']
           minimum: 0
@@ -1194,6 +1312,24 @@ components:
             Resolved by the same read as the head commit when omitted. Pass it to record a
             title of your own, which nothing then overwrites.
         ticket_id: { $ref: '#/components/schemas/ForeignId' }
+        ticket_url:
+          allOf:
+            - $ref: '#/components/schemas/TicketUrl'
+          description: |
+            Where that ticket is. **Not resolved when omitted**, unlike the head commit,
+            the title and the changed-line count: nothing fetches a tracker and GitHub does
+            not know which ticket a pull request is for. Pass it or the review has none.
+
+            Sent with no `ticket_id`, and none already on the record, it is refused with
+            `invalid_value` naming `ticket_id` — see `TicketUrl`. A refused request opens
+            no review and spends no round.
+
+            **A `ticket_id` that differs from the one held clears a stored `ticket_url`**
+            unless the same request gives a new one. That is the single exception to this
+            operation's "a fact you pass is written, a fact you omit is left as it was": an
+            address belongs to one ticket, and kept against a different id a client draws a
+            link whose text and destination name two different things. Pass both to move
+            both. There is no way to clear an address and keep the id.
         changed_lines:
           type: [integer, 'null']
           minimum: 0
@@ -3395,12 +3531,24 @@ components:
     InboxBriefItem:
       type: object
       additionalProperties: false
-      required: [review_id, pull_request, blocks_later_layers]
+      required:
+        [review_id, pull_request, blocks_later_layers, ticket_id, ticket_url]
       description: A brief waiting to be confirmed. Layer 2.
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }
-        ticket_id: { $ref: '#/components/schemas/ForeignId' }
+        ticket_id:
+          allOf:
+            - $ref: '#/components/schemas/ForeignId'
+          description: |
+            The ticket the change is for, opaque.
+        ticket_url:
+          allOf:
+            - $ref: '#/components/schemas/TicketUrl'
+          description: |
+            Where that ticket is, so the queue's row can link it without the review being
+            opened first. Null for a review with an id and no address, which the row then
+            names on its own line and does not link.
         brief_ready_at:
           type: [string, 'null']
           format: date-time
@@ -3417,12 +3565,26 @@ components:
     InboxDraftItem:
       type: object
       additionalProperties: false
-      required: [review_id, pull_request, round, severities, held_back, is_delta]
+      required:
+        [review_id, pull_request, round, severities, held_back, is_delta, ticket_id,
+         ticket_url]
       description: A draft waiting to be approved. Layer 6.
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }
         round: { type: integer, format: int64, minimum: 1 }
+        ticket_id:
+          allOf:
+            - $ref: '#/components/schemas/ForeignId'
+          description: |
+            The ticket the change is for, opaque.
+        ticket_url:
+          allOf:
+            - $ref: '#/components/schemas/TicketUrl'
+          description: |
+            Where that ticket is, so the queue's row can link it without the review being
+            opened first. Null for a review with an id and no address, which the row then
+            names on its own line and does not link.
         severities:
           allOf:
             - $ref: '#/components/schemas/SeverityCounts'
@@ -3469,13 +3631,25 @@ components:
     InboxReplyItem:
       type: object
       additionalProperties: false
-      required: [review_id, pull_request, events]
+      required: [review_id, pull_request, events, ticket_id, ticket_url]
       description: |
         An author has acted on a posted review. Built from outcomes with actor `author`
         or `harvester`.
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }
+        ticket_id:
+          allOf:
+            - $ref: '#/components/schemas/ForeignId'
+          description: |
+            The ticket the change is for, opaque.
+        ticket_url:
+          allOf:
+            - $ref: '#/components/schemas/TicketUrl'
+          description: |
+            Where that ticket is, so the queue's row can link it without the review being
+            opened first. Null for a review with an id and no address, which the row then
+            names on its own line and does not link.
         events:
           type: array
           minItems: 1
@@ -3494,7 +3668,7 @@ components:
       required:
         [review_id, pull_request, round, rounds_on_pr, posted_at, posted_as, pr_state,
          harvested_at, findings, findings_linked, replies, threads_resolved,
-         code_changed_after]
+         code_changed_after, ticket_id, ticket_url]
       description: |
         **A review that was posted, whose pull request has not been merged or closed.**
         The queue's "Waiting on the author", and the group that did not exist until
@@ -3530,6 +3704,17 @@ components:
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }
+        ticket_id:
+          allOf:
+            - $ref: '#/components/schemas/ForeignId'
+          description: The ticket the change is for, opaque.
+        ticket_url:
+          allOf:
+            - $ref: '#/components/schemas/TicketUrl'
+          description: |
+            Where that ticket is, so this row can link it without the review being opened
+            first. Null for a review with an id and no address, which the row then names on
+            its own line and does not link.
         round: { type: integer, format: int64, minimum: 1 }
         rounds_on_pr:
           type: integer
@@ -3686,11 +3871,24 @@ components:
     InboxInProgressItem:
       type: object
       additionalProperties: false
-      required: [review_id, pull_request, layer_number, layer_name, layers_total]
+      required:
+        [review_id, pull_request, layer_number, layer_name, layers_total, ticket_id,
+         ticket_url]
       description: A review a session is still working on.
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }
+        ticket_id:
+          allOf:
+            - $ref: '#/components/schemas/ForeignId'
+          description: The ticket the change is for, opaque.
+        ticket_url:
+          allOf:
+            - $ref: '#/components/schemas/TicketUrl'
+          description: |
+            Where that ticket is, so this row can link it without the review being opened
+            first. Null for a review with an id and no address, which the row then names on
+            its own line and does not link.
         layer_number:
           type: integer
           minimum: 1
@@ -3781,6 +3979,36 @@ components:
         **Seven arrays, five of which are waiting on the developer.** `in_progress` is
         with the agent and `posted_awaiting_author` is with the author, and neither is in
         `totals.items` — see `InboxTotals`.
+
+        **One row per review, built from the three arrays that wait on a developer's act**
+        — `briefs_to_confirm`, `drafts_to_approve` and `author_replies` — with
+        `in_progress` and `posted_awaiting_author` **joined onto** a row one of those three
+        already made. That is DEV-876's rule and it is a requirement on a client, not a
+        convenience: a review in two arrays is one thing to do, not one thing to do twice.
+        The example holds exactly that case — review 12 is in `author_replies` *and* in
+        `posted_awaiting_author`, and is one row.
+
+        **The ticket's id and address are on those three.** So a review waiting on the
+        developer reaches a row carrying the pair whatever of the three put it there. It
+        was on `briefs_to_confirm` alone to begin with, which was a bug: a review whose
+        brief had been confirmed and whose draft was waiting had a row, an address on the
+        record, and no way to reach it — while the Reviews list showed the link for that
+        same review.
+
+        **All five arrays about a review carry the pair** — the seven here less
+        `own_prs_without_reviewer`, which is a pull request nobody has reviewed, and
+        `proposed_rules`, which is about a rule.
+
+        The join is not all the other two arrays do: `in_progress` holds reviews nothing is
+        waiting on the developer for — 18 and 19 in the example — and
+        `posted_awaiting_author` holds 14, and each of those
+        draws a row of its own. So a row that could not reach its ticket while
+        `GET /reviews` linked it was a gap, and this closes it rather than restating it.
+
+        It was open for a few commits, with a reason that has since expired: DEV-933 was
+        changing `InboxInProgressItem`'s shape at the same time, and widening it then would
+        have been two changes to one schema at once. DEV-933 merged, so the reason went with
+        it.
       properties:
         totals: { $ref: '#/components/schemas/InboxTotals' }
         briefs_to_confirm:

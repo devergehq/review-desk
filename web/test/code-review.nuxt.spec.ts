@@ -539,6 +539,19 @@ describe('the code, with the comment on the line', () => {
     expect(page.find('.where').exists()).toBe(true)
   })
 
+  /*
+   * **DEV-936's first criterion, on step 5.** The header is `ReviewStepPage`'s and is
+   * tested there, but the criterion names each page — so each page a spec already mounts
+   * says it for itself rather than inheriting the claim from the component.
+   */
+  it('links the pull request in its header', async () => {
+    const page = await codeReview(REAL)
+    const pull = page.find('.where a.header-out')
+    expect(pull.exists()).toBe(true)
+    expect(pull.attributes('href')).toBe('https://github.com/acme/portal/pull/514')
+    expect(pull.attributes('rel')).toBe('noopener noreferrer')
+  })
+
   it('says the session recorded no code when it recorded none', async () => {
     const page = await codeReview(REAL)
     await openFinding(page, 'F4')

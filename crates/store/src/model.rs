@@ -523,6 +523,12 @@ pub struct Review {
     pub title: Option<String>,
     /// The Linear ticket, opaque.
     pub ticket_id: Option<String>,
+    /// Where that ticket is, as the session was told.
+    ///
+    /// **Given, never derived.** `ticket_id` is opaque and the tracker is the session's
+    /// knowledge, so this is an address somebody passed or it is `None`. Always `https`:
+    /// see [`crate::Store::set_review_facts`], which refuses anything else.
+    pub ticket_url: Option<String>,
     /// Additions plus deletions, as the caller supplied them.
     pub changed_lines: Option<i64>,
     /// What the review did not look at, in the reviewer's own words.
@@ -577,6 +583,8 @@ pub struct NewReview {
     pub title: Option<String>,
     #[serde(default)]
     pub ticket_id: Option<String>,
+    #[serde(default)]
+    pub ticket_url: Option<String>,
     #[serde(default)]
     pub changed_lines: Option<i64>,
     #[serde(default)]
@@ -1322,6 +1330,9 @@ pub struct ReviewFacts {
     pub title: Option<String>,
     #[serde(default)]
     pub ticket_id: Option<String>,
+    /// Where that ticket is. `https` only; anything else is refused.
+    #[serde(default)]
+    pub ticket_url: Option<String>,
     #[serde(default)]
     pub changed_lines: Option<i64>,
     #[serde(default)]
@@ -1331,11 +1342,32 @@ pub struct ReviewFacts {
 impl ReviewFacts {
     /// Whether this would change anything. A call that sets no fact is a mistake worth
     /// naming rather than reporting success for.
+    ///
+    /// **A ticket field that is nothing but whitespace is not a fact**, read through the
+    /// one rule the writers read — [`crate::normalise::optional_fact`] — because this has
+    /// to agree with them about what counts as one. `--ticket-url ""`
+    /// from a shell whose variable was unset is the ordinary way that happens, and the
+    /// store normalises it to "no address" rather than refusing it — so counting it here
+    /// made `open_review_with` skip its early return, write nothing through the COALESCE,
+    /// and still mark the review active. `last_activity_at` is what the queue reads for
+    /// "last written to 4 min ago", so a flag that wrote nothing made a dormant review
+    /// read as freshly touched.
+    ///
+    /// **All four read through the one rule, `title` and `not_checked` included.** They were
+    /// left raw for several commits, on the argument that `--title ""` replacing a recorded
+    /// title is a fault DEV-936 did not introduce. Two things changed that: the prose this
+    /// branch added to the contract says "a fact left out is left as it was", which was then
+    /// true of two fields and false of their two neighbours — an asymmetry a caller trips on
+    /// and nothing explains — and the half-fix left exactly the data loss the ticket pair's
+    /// own fix had just removed, one field over. One rule is both smaller and true.
     pub fn is_empty(&self) -> bool {
-        self.title.is_none()
-            && self.ticket_id.is_none()
+        let nothing =
+            |held: &Option<String>| crate::normalise::optional_fact(held.as_deref()).is_none();
+        nothing(&self.title)
+            && nothing(&self.ticket_id)
+            && nothing(&self.ticket_url)
             && self.changed_lines.is_none()
-            && self.not_checked.is_none()
+            && nothing(&self.not_checked)
     }
 }
 

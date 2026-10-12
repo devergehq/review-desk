@@ -184,7 +184,13 @@ impl Api {
                 Ok(json!({
                     "review_id": review.id,
                     "pull_request": wire::inbox_pr(review),
+                    // The ticket and its address, so the queue's row can link the ticket
+                    // without the review being opened first. On all three arrays that make
+                    // a row — this one, `drafts_to_approve` and `author_replies` — because
+                    // the queue draws one row per review and reads the ticket from
+                    // whichever of the three put it there. See `Inbox`'s own description.
                     "ticket_id": review.ticket_id,
+                    "ticket_url": review.ticket_url,
                     "brief_ready_at": wire::rfc3339_or_null(ready_at),
                     // True when the session is holding at layer 2 for this confirmation,
                     // which is what justifies "nothing else runs until you confirm" on
@@ -214,6 +220,11 @@ impl Api {
                 Ok(json!({
                     "review_id": review.id,
                     "pull_request": wire::inbox_pr(review),
+                    // The same pair the brief item carries, and for the same reason: a
+                    // review whose brief is confirmed and whose draft is waiting reaches
+                    // the queue through this array and no other.
+                    "ticket_id": review.ticket_id,
+                    "ticket_url": review.ticket_url,
                     "round": review.round,
                     "severities": wire::severity_counts(&in_draft),
                     "held_back": held_back,
@@ -265,6 +276,9 @@ impl Api {
                     json!({
                         "review_id": review.id,
                         "pull_request": wire::inbox_pr(review),
+                        // The third array that makes a row, so it carries the pair too.
+                        "ticket_id": review.ticket_id,
+                        "ticket_url": review.ticket_url,
                         "events": events,
                         "replied_at": wire::rfc3339_or_null(replied_at),
                     })
@@ -294,6 +308,14 @@ impl Api {
                 json!({
                     "review_id": at.review.id,
                     "pull_request": wire::inbox_pr(&at.review),
+                    // The ticket and its address, like the three arrays that wait on the
+                    // developer. A review here *may* be in no other array — a session is
+                    // working and nothing is waiting on anyone — and it then draws its own
+                    // row, which is why this array has to carry the pair. It may equally be
+                    // joined onto a needs-you row, which is what the `Inbox` schema
+                    // describes; "can be in no other array" would say the opposite of that.
+                    "ticket_id": at.review.ticket_id,
+                    "ticket_url": at.review.ticket_url,
                     "layer_number": at.layer.number,
                     "layer_name": at.layer.name.as_str(),
                     "layers_total": 7,
@@ -471,6 +493,7 @@ impl Api {
         let stated = ReviewFacts {
             title: request.title,
             ticket_id: request.ticket_id,
+            ticket_url: request.ticket_url,
             changed_lines: request.changed_lines,
             not_checked: None,
         };
@@ -499,6 +522,10 @@ impl Api {
                 .and_then(|read| read.title.clone())
                 .filter(|_| opened.review.title.is_none()),
             ticket_id: None,
+            // Nothing resolves a ticket's address. Review Desk fetches nothing from a
+            // tracker, and GitHub does not know which ticket a pull request is for — so
+            // this is given by the caller or it stays empty, which is migration 16's rule.
+            ticket_url: None,
             changed_lines: resolved
                 .as_ref()
                 .and_then(|read| read.changed_lines)
@@ -1318,6 +1345,10 @@ struct StartReviewRequest {
     title: Option<String>,
     #[serde(default)]
     ticket_id: Option<String>,
+    /// Where that ticket is. `https` or the store refuses the call; nothing here fetches
+    /// it and nothing here derives it from `ticket_id`.
+    #[serde(default)]
+    ticket_url: Option<String>,
     #[serde(default)]
     changed_lines: Option<i64>,
 }

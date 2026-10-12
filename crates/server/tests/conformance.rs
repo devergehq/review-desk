@@ -551,9 +551,16 @@ fn the_contract_says_step_seven_is_never_with_the_agent() {
     // `running` while the pull request is open, which is a quarter-hourly read of GitHub
     // and not a session working — so "in progress" leaves it out, and a contract that
     // still allowed 7 here would let the server regress with nothing to catch it.
+    //
+    // **The ticket pair is on both bodies below, including the one asserted invalid.**
+    // DEV-936 made the two fields required, and a body missing them is invalid for *that*
+    // reason — so without them the refusal below would pass while saying nothing about
+    // step 7, which is the only thing it exists to say.
     let at_the_harvest = json!({
         "review_id": 1,
         "pull_request": { "repo": "acme/portal", "pr": 412 },
+        "ticket_id": "ABC-231",
+        "ticket_url": "https://linear.app/acme/issue/ABC-231",
         "layer_number": 7,
         "layer_name": "harvest",
         "layers_total": 7,
@@ -571,6 +578,8 @@ fn the_contract_says_step_seven_is_never_with_the_agent() {
         &json!({
             "review_id": 1,
             "pull_request": { "repo": "acme/portal", "pr": 412 },
+            "ticket_id": "ABC-231",
+            "ticket_url": "https://linear.app/acme/issue/ABC-231",
             "layer_number": 5,
             "layer_name": "code_review",
             "layers_total": 7,
@@ -1275,4 +1284,75 @@ fn a_first_round_serves_a_timeline_of_one_and_no_commits() {
     assert_eq!(detail["findings"][0]["round_status"], "new");
     assert_eq!(detail["findings"][0]["continues_review_id"], Value::Null);
     assert_eq!(detail["findings"][0]["late"], Value::Null);
+}
+
+/// **`RepoName`'s pattern and `normalise::is_repo_name` are held to each other.**
+///
+/// They were not, and the gap has a precise shape — which is worth stating precisely,
+/// because the first version of this comment got it wrong in the direction that flatters
+/// the test. **An inverted pattern would not have survived**: `RepoName` is `$ref`'d by
+/// `Review.repo`, `InboxPr.repo`, `RepoSummary.repo` and `RuleScope.repo`, so every example
+/// carrying `acme/portal` is already a positive test of it, and `validate-examples.mjs`
+/// fails across a dozen files. Measured, by inverting it.
+///
+/// **What the suite could not catch is a pattern that is too loose** — one that drops the
+/// `.`/`..` guard, which is exactly the state before DEV-936 wrote the guard in. Nothing
+/// anywhere carried a bad repository name, so the guard was unexercised in the only
+/// direction it exists for. Measured that way too: revert the pattern to the bare class and
+/// this test fails while everything else stays green.
+///
+/// **One list, two validators.** The contract's pattern is read out of `openapi.yaml` and the
+/// store's rule is the function the command line goes through, so a change to either without
+/// the other fails here. That matters because the two are enforced in different places: a
+/// request is refused by the server, and `review open` never goes near it.
+#[test]
+fn the_contracts_repository_pattern_is_the_rule_the_store_enforces() {
+    // Three dots is a legal repository name; only `.` and `..` exactly are not. Keeping it
+    // in the accepted list is what stops either side being "tightened" into refusing it.
+    let accepted = [
+        "acme/portal",
+        "devergehq/review-desk.v2_beta-1",
+        "a/b",
+        ".../x",
+        "x/...",
+        "..a/b",
+        "a/b..",
+        ".a/.b",
+        "-/_",
+    ];
+    let refused = [
+        "../..",
+        "./portal",
+        "acme/..",
+        "acme/.",
+        "../portal",
+        "acme/portal#x",
+        "acme/portal?x=1",
+        "acme/port al",
+        "acme/portal/extra",
+        "acme/",
+        "/portal",
+        "acme",
+        "",
+    ];
+
+    for repo in accepted {
+        assert_valid("RepoName", &json!(repo));
+        assert!(
+            review_desk_store::is_repo_name(repo),
+            "the store refuses {repo:?}, which the contract accepts"
+        );
+    }
+
+    for repo in refused {
+        assert_invalid(
+            "RepoName",
+            &json!(repo),
+            "a repository name is in the class, and neither half is `.` or `..`",
+        );
+        assert!(
+            !review_desk_store::is_repo_name(repo),
+            "the store accepts {repo:?}, which the contract refuses"
+        );
+    }
 }

@@ -162,7 +162,13 @@ test.describe('the whole path, on a seeded database', () => {
     await expect(page.getByText('nothing posts until you confirm')).toBeVisible()
     await expect(page.getByText('a draft is ready behind it')).toBeVisible()
     await expect(page.getByText('Read the brief')).toBeVisible()
-    await expect(page.getByText('ABC-231')).toBeVisible()
+    /*
+     * **The ticket is on the row's own line**, named rather than matched loosely: since
+     * DEV-936 the row also carries a *link* to the ticket, so a bare `getByText('ABC-231')`
+     * matches two elements and fails on strictness. Both are wanted and the link is asserted
+     * in its own test; what this line is about is the meta line saying which ticket it is.
+     */
+    await expect(page.getByText('acme/portal · round 1 · ABC-231')).toBeVisible()
 
     /*
      * **And the row opens the review, which starts at Understand** — Patrick on
@@ -1149,8 +1155,32 @@ test.describe('the three step pages of one review', () => {
      * drawn over: the line naming the review, above the trail. Pressing the headline would
      * press the card itself, which overlays it — that overlap is the whole point of the
      * card and is measured in the test above.
+     *
+     * **Beside that line rather than on it.** Since DEV-936 `.where` holds two
+     * `target="_blank"` links and begins with one, and `click()` aims at the box centre —
+     * so whether this gesture pressed inert text or opened a GitHub tab depended on the
+     * title's length and the column's width. It closed the card either way, which is what
+     * makes it the bad kind of fault: a stray popup and a latent flake behind a passing
+     * assertion.
+     *
+     * The margin to the left of the content column, at that line's own height, is outside
+     * the card and outside everything clickable. Checked rather than assumed: a press
+     * whose target turns out to be a link is the failure this is avoiding, so the test
+     * fails on it instead of opening a tab.
      */
-    await page.locator('.where').click()
+    const at = await page.locator('.where').boundingBox()
+    expect(at, 'the line naming the review is drawn').not.toBeNull()
+    const beside = { x: 4, y: at!.y + at!.height / 2 }
+
+    const pressed = await page.evaluate(({ x, y }) => {
+      const found = document.elementFromPoint(x, y)
+      return found
+        ? `${found.tagName.toLowerCase()} ${found.closest('a') ? 'in a link' : 'inert'}`
+        : null
+    }, beside)
+    expect(pressed, 'the point pressed is outside every link').toMatch(/ inert$/)
+
+    await page.mouse.click(beside.x, beside.y)
     await expect(card).toHaveCount(0)
   })
 

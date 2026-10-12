@@ -93,6 +93,7 @@ pub fn review(review: &Review) -> Value {
         "round": review.round,
         "title": review.title,
         "ticket_id": review.ticket_id,
+        "ticket_url": review.ticket_url,
         "changed_lines": review.changed_lines,
         "session_id": review.session_id,
         "ledger_id": review.ledger_id,
@@ -140,6 +141,15 @@ pub fn inbox_posted(posted: &PostedReview) -> Value {
     json!({
         "review_id": review.id,
         "pull_request": inbox_pr(review),
+        // The ticket and its address, for the reason the in-progress item carries them: a
+        // posted review whose author has not answered *may* be in no other array, and it
+        // then draws its own row, which needs to reach its ticket. It may equally be joined
+        // onto a needs-you row — review 12 in `getInbox.response.json` is in
+        // `author_replies` and here at once — so "is in no other array" would say what the
+        // `Inbox` schema calls false. The same correction `api.rs` took, which left this
+        // copy behind.
+        "ticket_id": review.ticket_id,
+        "ticket_url": review.ticket_url,
         "round": review.round,
         // **The same number as `round`, and read here rather than passed in.** The store
         // returns only the newest round of a pull request, so the round this review is on
@@ -1067,29 +1077,15 @@ pub fn parse_pr_link(url: &str) -> Result<PrLink, ApiError> {
     Ok(PrLink { repo, pr })
 }
 
-/// The contract's `RepoName` pattern: `^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$`, and not a
-/// relative path.
+/// The contract's `RepoName` pattern, and not a relative path.
 ///
-/// **The pattern alone permits `../..`**, because `.` is a legal character in a
-/// repository name and the pattern says nothing about what the segments mean. Every store
-/// query binds its parameters, so that is inert where this value goes today — but this
-/// function is also the gate on a value that can reach a `gh` command's path, and
-/// `repos/../../x/pulls/1` is not the repository anybody named. Refused here rather than
-/// left for whoever next passes a repository through to `gh`.
+/// **Delegated, because this rule existed twice.** The store had a second, looser copy —
+/// missing the `.`/`..` guard this function has always had — and the store is the gate the
+/// command line passes through. `review_desk_store::is_repo_name` is the one copy now, and
+/// it carries the reason, and the table of the **four** readers that put this value into a
+/// path — a dot segment is inert in SQL and is not inert in any of them.
 pub fn is_repo_name(repo: &str) -> bool {
-    let Some((owner, name)) = repo.split_once('/') else {
-        return false;
-    };
-    if matches!(owner, "." | "..") || matches!(name, "." | "..") {
-        return false;
-    };
-    let usable = |part: &str| {
-        !part.is_empty()
-            && part
-                .chars()
-                .all(|character| character.is_ascii_alphanumeric() || "._-".contains(character))
-    };
-    usable(owner) && usable(name)
+    review_desk_store::is_repo_name(repo)
 }
 
 /// The contract's `head_sha` pattern: 7 to 40 lower-case hexadecimal characters.

@@ -2,12 +2,13 @@
 
 mod common;
 
-use common::{new_review, temp_store};
+use common::{db_path, new_review, temp_store};
 use review_desk_store::{
-    Actor, BriefOption, Disposition, FindingRef, NewBrief, NewFinding, NewOutcome, NewReview,
-    NewRule, NitTicketStatus, OptionProposer, OutcomeKind, Review, ReviewFacts, RuleScope,
-    RuleStage, Severity, StoreError,
+    Actor, BriefOption, Clock, Disposition, FindingRef, NewBrief, NewFinding, NewOutcome,
+    NewReview, NewRule, NitTicketStatus, OptionProposer, OutcomeKind, Review, ReviewFacts,
+    RuleScope, RuleStage, Severity, Store, StoreError,
 };
+use tempfile::TempDir;
 
 /// A review to hang the other entities off.
 fn seed_review(store: &review_desk_store::Store) -> Review {
@@ -28,6 +29,7 @@ fn a_review_is_created_and_read_back() {
             round: 2,
             title: Some("Record what a review decided".to_string()),
             ticket_id: Some("DEV-850".to_string()),
+            ticket_url: Some("https://linear.app/deverge/issue/DEV-850".to_string()),
             changed_lines: Some(214),
             session_id: Some("allele-session-1".to_string()),
             ledger_id: Some("ledger-9".to_string()),
@@ -599,6 +601,7 @@ fn a_review_carries_the_pull_requests_own_facts() {
             &ReviewFacts {
                 title: Some("Retry failed webhook deliveries".to_string()),
                 ticket_id: Some("ABC-231".to_string()),
+                ticket_url: Some("https://linear.app/acme/issue/ABC-231".to_string()),
                 changed_lines: Some(214),
                 not_checked: None,
             },
@@ -610,6 +613,11 @@ fn a_review_carries_the_pull_requests_own_facts() {
         Some("Retry failed webhook deliveries")
     );
     assert_eq!(with_facts.ticket_id.as_deref(), Some("ABC-231"));
+    assert_eq!(
+        with_facts.ticket_url.as_deref(),
+        Some("https://linear.app/acme/issue/ABC-231"),
+        "the id and its address are two fields, and the second is what a link needs"
+    );
     assert_eq!(with_facts.changed_lines, Some(214));
     assert_eq!(with_facts.not_checked, None);
 
@@ -634,6 +642,374 @@ fn a_review_carries_the_pull_requests_own_facts() {
         later.not_checked.as_deref(),
         Some("the worker's behaviour across a deploy")
     );
+    assert_eq!(
+        later.ticket_url.as_deref(),
+        Some("https://linear.app/acme/issue/ABC-231"),
+        "including the ticket's address"
+    );
+}
+
+/// **A ticket's address that is not `https` never reaches the column.**
+///
+/// The one thing a stored address is for is being drawn as a link, so this is the whole of
+/// the risk: a `javascript:` value in an `href` runs. Refused at the write, which is the
+/// only place it can be refused once — `review open --ticket-url` and `POST /reviews` are
+/// two ways to the same column and both come through here.
+///
+/// `http` is refused with the rest, deliberately. Review Desk never fetches a tracker, so
+/// there is no reading for which the insecure form is the only one available.
+#[test]
+fn a_tickets_address_is_refused_unless_it_is_https() {
+    let (_dir, store) = temp_store();
+    let review = seed_review(&store);
+
+    for refused in [
+        "javascript:alert(1)",
+        "http://linear.app/acme/issue/ABC-231",
+        "data:text/html,<script>alert(1)</script>",
+        "linear.app/acme/issue/ABC-231",
+        "HTTPS://linear.app/acme/issue/ABC-231",
+    ] {
+        match store.set_review_facts(
+            review.id,
+            &ReviewFacts {
+                ticket_url: Some(refused.to_string()),
+                ..Default::default()
+            },
+        ) {
+            Err(StoreError::InvalidValue { field, value, .. }) => {
+                assert_eq!(field, "ticket_url");
+                assert_eq!(value, refused, "the refusal names what was passed");
+            }
+            other => panic!("expected {refused:?} to be refused, got {other:?}"),
+        }
+    }
+
+    assert_eq!(
+        store.get_review(review.id).unwrap().ticket_url,
+        None,
+        "and nothing was written on the way to being refused"
+    );
+}
+
+/// **An address with no id anywhere is refused, because nothing would ever draw it.**
+///
+/// Both renderers key on the id: it is the link's text, and an address drawn as its own
+/// text is a link a reader has to parse rather than read. So a `ticket_url` beside a null
+/// `ticket_id` is a value that reaches no screen — a silent no-op, and the kind of silent
+/// that looks like success.
+///
+/// **The id may arrive in the same call or be already on the record**, which is what lets a
+/// session record the id when it opens the review and the address later.
+#[test]
+fn a_ticket_address_with_no_id_is_refused_because_nothing_would_draw_it() {
+    let (_dir, store) = temp_store();
+    let review = seed_review(&store);
+
+    match store.set_review_facts(
+        review.id,
+        &ReviewFacts {
+            ticket_url: Some("https://linear.app/acme/issue/ABC-231".to_string()),
+            ..Default::default()
+        },
+    ) {
+        Err(StoreError::InvalidValue { field, .. }) => assert_eq!(field, "ticket_id"),
+        other => panic!("expected an address with no id to be refused, got {other:?}"),
+    }
+    assert_eq!(store.get_review(review.id).unwrap().ticket_url, None);
+
+    // The two together are accepted.
+    let both = store
+        .set_review_facts(
+            review.id,
+            &ReviewFacts {
+                ticket_id: Some("ABC-231".to_string()),
+                ticket_url: Some("https://linear.app/acme/issue/ABC-231".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("an id and its address");
+    assert_eq!(both.ticket_id.as_deref(), Some("ABC-231"));
+
+    // And the address alone is accepted once the record holds the id, which is the second
+    // call a session makes when it learns the address after opening the review.
+    let later = store
+        .set_review_facts(
+            review.id,
+            &ReviewFacts {
+                ticket_url: Some("https://linear.app/acme/issue/ABC-999".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("the address, against an id already held");
+    assert_eq!(
+        later.ticket_url.as_deref(),
+        Some("https://linear.app/acme/issue/ABC-999")
+    );
+
+    // **And the id already held is found however the caller spells the repository.**
+    // `open_review_with` looks the review up to decide whether the id is there, and
+    // `find_review_by_head` compares under SQLite's binary collation — so a lookup keyed
+    // differently from the insert misses, and a miss here is a refusal rather than a slow
+    // path. One repository spelled two ways is one repository.
+    let same = store
+        .open_review_with(
+            " DEVERGEHQ/Review-Desk ",
+            12,
+            "DEADBEEF",
+            &ReviewFacts {
+                ticket_url: Some("https://linear.app/acme/issue/ABC-777".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("the address, against an id held under the canonical spelling");
+    assert_eq!(same.review.id, review.id, "and it is the same review");
+    assert_eq!(
+        same.review.ticket_url.as_deref(),
+        Some("https://linear.app/acme/issue/ABC-777")
+    );
+
+    // `create_review` is the one writer that does not go through the same helper, and it
+    // holds the same rule.
+    match store.create_review(NewReview {
+        repo: "acme/portal".to_string(),
+        pr: 999,
+        head_sha: "abc1234".to_string(),
+        round: 1,
+        ticket_url: Some("https://linear.app/acme/issue/ABC-231".to_string()),
+        ..Default::default()
+    }) {
+        Err(StoreError::InvalidValue { field, .. }) => assert_eq!(field, "ticket_id"),
+        other => panic!("expected an address with no id to be refused, got {other:?}"),
+    }
+}
+
+/// **A blank ticket id is absent, not an id — and the pairing check reads it that way.**
+///
+/// Two faults in one shape, both found reviewing the commit that added the check:
+///
+/// 1. `--ticket "" --ticket-url https://…` from a shell whose variable was unset passed
+///    the check and stored the address beside an id of `""`. Both renderers treat `""` as
+///    no id, so the address reached no screen — the silent no-op the check exists to
+///    refuse, let through by reading one of its two fields more loosely than the other.
+/// 2. `--ticket ""` on a review that already held `ABC-231` replaced it with `""`, because
+///    `COALESCE(?3, ticket_id)` is only told "leave it" by a `NULL`. That orphaned an
+///    address that had been drawn a moment before.
+#[test]
+fn a_blank_ticket_id_is_absent_rather_than_an_id() {
+    let (_dir, store) = temp_store();
+    let review = seed_review(&store);
+
+    // A blank id with an address is the pair refused, not accepted.
+    match store.set_review_facts(
+        review.id,
+        &ReviewFacts {
+            ticket_id: Some("  ".to_string()),
+            ticket_url: Some("https://linear.app/acme/issue/ABC-231".to_string()),
+            ..Default::default()
+        },
+    ) {
+        Err(StoreError::InvalidValue { field, .. }) => assert_eq!(field, "ticket_id"),
+        other => panic!("expected a blank id with an address to be refused, got {other:?}"),
+    }
+
+    let set = store
+        .set_review_facts(
+            review.id,
+            &ReviewFacts {
+                // Trimmed on the way in, so a copied id with a trailing newline is the
+                // same id.
+                ticket_id: Some(" ABC-231\n".to_string()),
+                ticket_url: Some("https://linear.app/acme/issue/ABC-231".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("the id and its address");
+    assert_eq!(set.ticket_id.as_deref(), Some("ABC-231"));
+
+    // And a blank id does not replace one already held.
+    let after = store
+        .set_review_facts(
+            review.id,
+            &ReviewFacts {
+                ticket_id: Some(String::new()),
+                ..Default::default()
+            },
+        )
+        .expect("a blank id changes nothing");
+    assert_eq!(
+        after.ticket_id.as_deref(),
+        Some("ABC-231"),
+        "a blank id is a fact left out, and a fact left out is left as it was"
+    );
+    assert_eq!(
+        after.ticket_url.as_deref(),
+        Some("https://linear.app/acme/issue/ABC-231"),
+        "so the address it belongs to is not orphaned"
+    );
+}
+
+/// **A call whose only fact is blank writes nothing — and says nothing happened.**
+///
+/// `last_activity_at` is what the queue reads for "last written to 4 min ago" and for
+/// whether a session looks alive, so a flag that wrote nothing must not move it.
+/// `ReviewFacts::is_empty` counted a blank `ticket_url` as a fact, so `--ticket-url ""`
+/// from an unset variable skipped the early return, wrote nothing through the COALESCE,
+/// and marked the review active anyway.
+#[test]
+fn a_call_whose_only_fact_is_blank_does_not_mark_the_review_active() {
+    // **A clock the test holds, and moved between the write and the check.** With the
+    // system clock this assertion could not fail: `Timestamp` is whole seconds, the whole
+    // test runs inside one, so `last_activity_at` read the same either way and the
+    // behavioural half of this test was inert — which is what reviewing it found. Measured:
+    // with the fix reverted and the `is_empty` assertion removed, the system-clock version
+    // still passed.
+    let dir = TempDir::new().expect("temporary directory");
+    let clock = Clock::fixed(1_760_000_000);
+    let store = Store::open_with_clock(db_path(&dir), clock.clone()).expect("open store");
+
+    let review = store
+        .create_review(new_review("devergehq/review-desk", 12, "deadbeef", 1))
+        .expect("seed review");
+    let before = store.get_review(review.id).unwrap().last_activity_at;
+
+    for blank in [
+        ReviewFacts {
+            ticket_url: Some("   ".to_string()),
+            ..Default::default()
+        },
+        ReviewFacts {
+            ticket_id: Some(String::new()),
+            ..Default::default()
+        },
+    ] {
+        assert!(blank.is_empty(), "a blank ticket field is not a fact");
+
+        // A minute on, so a write would be visible and the assertion can fail.
+        let moved = clock.advance(60);
+        assert_ne!(Some(moved), before, "the clock really did move");
+
+        let opened = store
+            .open_review_with("devergehq/review-desk", 12, "deadbeef", &blank)
+            .expect("reopen with nothing to write");
+        assert_eq!(
+            opened.review.last_activity_at, before,
+            "nothing was written, so nothing says the review was touched"
+        );
+    }
+
+    // **And `set_review_facts` holds the same invariant on its own**, because that is the
+    // method that can break it: the `UPDATE` is a no-op when every fact is absent and the
+    // activity mark after it is not. It was guarded in `open_review_with` alone, one level
+    // away from the code that writes.
+    let direct = clock.advance(60);
+    assert_ne!(Some(direct), before, "the clock moved again");
+    let quiet = store
+        .set_review_facts(
+            review.id,
+            &ReviewFacts {
+                ticket_url: Some(String::new()),
+                ..Default::default()
+            },
+        )
+        .expect("nothing to write");
+    assert_eq!(
+        quiet.last_activity_at, before,
+        "a no-op write does not touch the review's activity"
+    );
+
+    // A refused value is still refused, even though it too would have written nothing: a
+    // caller that passed a `javascript:` address wants to be told.
+    match store.set_review_facts(
+        review.id,
+        &ReviewFacts {
+            ticket_url: Some("javascript:alert(1)".to_string()),
+            ..Default::default()
+        },
+    ) {
+        Err(StoreError::InvalidValue { field, .. }) => assert_eq!(field, "ticket_url"),
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+
+    // And a call that *does* write moves it, so the assertions above are about the blanks
+    // rather than about the writers never marking anything active.
+    let wrote = clock.advance(60);
+    let set = store
+        .open_review_with(
+            "devergehq/review-desk",
+            12,
+            "deadbeef",
+            &ReviewFacts {
+                ticket_id: Some("ABC-231".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("reopen with a fact to write");
+    assert_eq!(set.review.last_activity_at, Some(wrote));
+}
+
+/// An address with nothing in it is an argument nobody filled in, not a mistake.
+///
+/// The field is optional, and `--ticket-url ""` from a shell whose variable was empty is
+/// the ordinary way that happens. It reads as "no address", which is what it is — and it
+/// does not clear an address already held, because a fact left out is left as it was.
+#[test]
+fn a_blank_ticket_address_is_no_address_rather_than_an_error() {
+    let (_dir, store) = temp_store();
+    let review = seed_review(&store);
+    // The id first, because an address with no id anywhere is refused — see
+    // `a_ticket_address_with_no_id_is_refused_because_nothing_would_draw_it` above.
+    store
+        .set_review_facts(
+            review.id,
+            &ReviewFacts {
+                ticket_id: Some("ABC-231".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("the ticket's id");
+
+    let blank = store
+        .set_review_facts(
+            review.id,
+            &ReviewFacts {
+                ticket_url: Some("   ".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("a blank address is accepted as none");
+    assert_eq!(blank.ticket_url, None);
+
+    let set = store
+        .set_review_facts(
+            review.id,
+            &ReviewFacts {
+                // Trimmed on the way in, so a copied-and-pasted address with a trailing
+                // newline is the same address.
+                ticket_url: Some(" https://linear.app/acme/issue/ABC-231\n".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("set the address");
+    assert_eq!(
+        set.ticket_url.as_deref(),
+        Some("https://linear.app/acme/issue/ABC-231")
+    );
+
+    let after = store
+        .set_review_facts(
+            review.id,
+            &ReviewFacts {
+                ticket_url: Some(String::new()),
+                ..Default::default()
+            },
+        )
+        .expect("a blank address changes nothing");
+    assert_eq!(
+        after.ticket_url.as_deref(),
+        Some("https://linear.app/acme/issue/ABC-231"),
+        "a blank address is a fact left out, and a fact left out is left as it was"
+    );
 }
 
 #[test]
@@ -643,6 +1019,7 @@ fn opening_a_review_records_what_the_caller_knows_about_it() {
     let facts = ReviewFacts {
         title: Some("Retry failed webhook deliveries".to_string()),
         ticket_id: Some("ABC-231".to_string()),
+        ticket_url: Some("https://linear.app/acme/issue/ABC-231".to_string()),
         changed_lines: Some(214),
         not_checked: None,
     };
@@ -838,4 +1215,187 @@ fn one_ticket_covers_every_nit_held_back_from_a_review() {
         Err(StoreError::InvalidValue { field, .. }) => assert_eq!(field, "nit_ticket_id"),
         other => panic!("expected a refusal, got {other:?}"),
     }
+}
+
+/// **A new ticket id drops the address the old one had.**
+///
+/// The two columns are written through independent `COALESCE`s, so correcting a mistyped
+/// ticket replaced the id and left the address: the header then drew the new id as a link to
+/// the old ticket, the link's text and its destination naming two different things. A blank
+/// value reads as absent, so there was no way to clear it either.
+///
+/// Dropped rather than refused: correcting an id is a plausible act and should not need the
+/// address to hand, and a review with an id and no address draws the id as text — a state
+/// the feature already handles. Keeping an address nobody said belonged to the new ticket is
+/// the one option that tells a reader something untrue.
+#[test]
+fn a_new_ticket_id_drops_the_address_the_old_one_had() {
+    let (_dir, store) = temp_store();
+    let review = seed_review(&store);
+
+    let both = |id: &str, url: Option<&str>| ReviewFacts {
+        ticket_id: Some(id.to_string()),
+        ticket_url: url.map(str::to_string),
+        ..Default::default()
+    };
+
+    store
+        .set_review_facts(
+            review.id,
+            &both("ABC-231", Some("https://linear.app/acme/issue/ABC-231")),
+        )
+        .expect("the ticket and its address");
+
+    let corrected = store
+        .set_review_facts(review.id, &both("DEV-860", None))
+        .expect("correct the id");
+    assert_eq!(corrected.ticket_id.as_deref(), Some("DEV-860"));
+    assert_eq!(
+        corrected.ticket_url, None,
+        "the address belonged to ABC-231, and nothing said it belongs to DEV-860"
+    );
+
+    // The *same* id again keeps the address: nothing changed, so nothing is dropped.
+    store
+        .set_review_facts(
+            review.id,
+            &both("DEV-860", Some("https://linear.app/deverge/issue/DEV-860")),
+        )
+        .expect("the new ticket's own address");
+    let again = store
+        .set_review_facts(review.id, &both("DEV-860", None))
+        .expect("the same id again");
+    assert_eq!(
+        again.ticket_url.as_deref(),
+        Some("https://linear.app/deverge/issue/DEV-860"),
+        "re-stating the id a review already holds changes nothing"
+    );
+
+    // And a call that gives both keeps the one it gave.
+    let moved = store
+        .set_review_facts(
+            review.id,
+            &both("ABC-999", Some("https://linear.app/acme/issue/ABC-999")),
+        )
+        .expect("a new ticket and its own address");
+    assert_eq!(
+        moved.ticket_url.as_deref(),
+        Some("https://linear.app/acme/issue/ABC-999")
+    );
+}
+
+/// **A repository name is checked character by character, not just split in two.**
+///
+/// `RepoName` in the contract is the same rule — in the class, and neither half exactly `.`
+/// nor `..` — and GitHub allows nothing else, but this only ever checked that both halves
+/// were non-empty, so
+/// `acme/portal#x` was stored. Nothing noticed until a header began *building a link* out of
+/// the field: `https://github.com/acme/portal#x/pull/412` is served as the repository page
+/// rather than the pull request, so the link's text and its destination named two different
+/// things. That is DEV-936's own defect, reached through the one field nobody thought was
+/// free text.
+#[test]
+fn a_repository_name_is_refused_unless_it_is_one() {
+    let (_dir, store) = temp_store();
+
+    for refused in [
+        "acme/portal#x",
+        "acme/portal?x=1",
+        "acme/port al",
+        "acme/portal/extra",
+        "acme/",
+        "/portal",
+        "acme/portal:8080",
+        // **The dot segments, which the character class alone permits**: `.` is legal *in*
+        // a name, so `^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$` accepts `../..`. Inert in SQL,
+        // because every query binds — and not inert in any of the four paths this value is
+        // read back into: `gh api repos/../../pulls/1` is `api.github.com/pulls/1`, and a
+        // browser resolves `https://github.com/../../pull/1` to `github.com/pull/1`.
+        // `normalise::is_repo_name` lists all four.
+        "../..",
+        "./portal",
+        "acme/..",
+        "../portal",
+        "acme/.",
+    ] {
+        match store.create_review(new_review(refused, 1, "abc1234", 1)) {
+            Err(StoreError::InvalidValue { field, .. }) => assert_eq!(field, "repo"),
+            other => panic!("expected {refused:?} to be refused, got {other:?}"),
+        }
+    }
+
+    // And every character GitHub does allow still is.
+    let fine = store
+        .create_review(new_review(
+            "devergehq/review-desk.v2_beta-1",
+            1,
+            "abc1234",
+            1,
+        ))
+        .expect("a real repository name");
+    assert_eq!(fine.repo, "devergehq/review-desk.v2_beta-1");
+}
+
+/// **A blank title is a fact left out, like every other optional string fact.**
+///
+/// `--title "$T"` with `$T` unset wrote the empty string through `COALESCE(?, title)`, which
+/// cannot tell "leave it" from "set it to this" — so it destroyed a recorded title in exactly
+/// the way `--ticket ""` destroyed a recorded id. The ticket pair was read through
+/// `normalise::optional_fact` for several commits while its two neighbours were not, which
+/// left the contract's "a fact left out is left as it was" true of half the fields.
+#[test]
+fn a_blank_title_or_not_checked_leaves_the_recorded_one_alone() {
+    let (_dir, store) = temp_store();
+    let review = seed_review(&store);
+
+    store
+        .set_review_facts(
+            review.id,
+            &ReviewFacts {
+                title: Some("Retry failed webhook deliveries".to_string()),
+                not_checked: Some("the admin screens".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("the title and what was not checked");
+
+    let blank = ReviewFacts {
+        title: Some(String::new()),
+        not_checked: Some("   ".to_string()),
+        ..Default::default()
+    };
+    assert!(blank.is_empty(), "nothing but whitespace is no fact at all");
+
+    let after = store
+        .set_review_facts(review.id, &blank)
+        .expect("a blank call changes nothing");
+    assert_eq!(
+        after.title.as_deref(),
+        Some("Retry failed webhook deliveries")
+    );
+    assert_eq!(after.not_checked.as_deref(), Some("the admin screens"));
+
+    // **And a blank fact riding along with a real one**, which is the case that reaches the
+    // `UPDATE`. The call above is `is_empty`, so `set_review_facts` returns before the
+    // statement runs and the two `optional_fact` calls in its parameters are never executed
+    // — revert them and the assertions above still pass. A mixed call is not empty, so the
+    // statement runs, and only reading the parameters through the rule keeps the title.
+    let mixed = ReviewFacts {
+        title: Some(String::new()),
+        not_checked: Some("  ".to_string()),
+        changed_lines: Some(180),
+        ..Default::default()
+    };
+    assert!(!mixed.is_empty(), "a real fact makes the call a write");
+
+    let wrote = store
+        .set_review_facts(review.id, &mixed)
+        .expect("the changed-line count, and two blanks along with it");
+    assert_eq!(wrote.changed_lines, Some(180), "the real fact is written");
+    assert_eq!(
+        wrote.title.as_deref(),
+        Some("Retry failed webhook deliveries"),
+        "and the blank ones leave what was recorded alone"
+    );
+    assert_eq!(wrote.not_checked.as_deref(), Some("the admin screens"));
 }

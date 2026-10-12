@@ -211,6 +211,7 @@ fn seed(store: &Store) -> Seeded {
             &ReviewFacts {
                 title: Some("Retry failed webhook deliveries".to_string()),
                 ticket_id: Some("ABC-231".to_string()),
+                ticket_url: Some("https://linear.app/acme/issue/ABC-231".to_string()),
                 changed_lines: Some(214),
                 not_checked: Some(
                     "The queue worker's behaviour under a deploy restart was not run.".to_string(),
@@ -746,6 +747,11 @@ fn seed(store: &Store) -> Seeded {
             head_sha: "bbbbbbb".to_string(),
             round: 2,
             title: Some("Cache the permissions lookup".to_string()),
+            // A ticket and its address, because the Inbox's in-progress item serves them
+            // now and the example this is checked against has one. A null here and a value
+            // there is the disagreement this file exists to catch.
+            ticket_id: Some("ABC-244".to_string()),
+            ticket_url: Some("https://linear.app/acme/issue/ABC-244".to_string()),
             ..Default::default()
         })
         .expect("another review");
@@ -778,6 +784,10 @@ fn seed(store: &Store) -> Seeded {
             round: 1,
             title: Some("Remove the legacy importer".to_string()),
             ticket_id: Some("ABC-244".to_string()),
+            // The address too, because the Inbox's brief item serves it and the example
+            // this is checked against has one. A null here and a value there is the
+            // disagreement this file exists to catch.
+            ticket_url: Some("https://linear.app/acme/issue/ABC-244".to_string()),
             ..Default::default()
         })
         .expect("a review waiting on a confirmation");
@@ -810,6 +820,7 @@ fn seed(store: &Store) -> Seeded {
             round: 1,
             title: Some("Hold the queue connection open".to_string()),
             ticket_id: Some("ABC-219".to_string()),
+            ticket_url: None,
             changed_lines: Some(86),
             session_id: Some("ses_41b7c208".to_string()),
             ledger_id: Some("ledger-2026-10-06-401".to_string()),
@@ -881,6 +892,7 @@ fn seed(store: &Store) -> Seeded {
             round: 1,
             title: Some("Split the export job".to_string()),
             ticket_id: Some("ABC-204".to_string()),
+            ticket_url: None,
             changed_lines: Some(512),
             session_id: Some("ses_2a7e9014".to_string()),
             ledger_id: Some("ledger-2026-10-08-398".to_string()),
@@ -1085,6 +1097,7 @@ fn review_document(review: &Review) -> Value {
         "round": review.round,
         "title": review.title,
         "ticket_id": review.ticket_id,
+        "ticket_url": review.ticket_url,
         "changed_lines": review.changed_lines,
         "session_id": review.session_id,
         "ledger_id": review.ledger_id,
@@ -1848,6 +1861,7 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
                 "review_id": review.id,
                 "pull_request": pull_request(review),
                 "ticket_id": review.ticket_id,
+                "ticket_url": review.ticket_url,
                 "brief_ready_at": brief.updated_at,
                 "blocks_later_layers": layer
                     == Some(review_desk_store::ReviewLayerState::WaitingOnYou),
@@ -1876,6 +1890,8 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
             json!({
                 "review_id": review.id,
                 "pull_request": pull_request(review),
+                "ticket_id": review.ticket_id,
+                "ticket_url": review.ticket_url,
                 "round": review.round,
                 "severities": severity_counts(&in_draft),
                 "held_back": store.held_back_findings(review.id).expect("held back").len(),
@@ -1897,6 +1913,8 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
             json!({
                 "review_id": review.id,
                 "pull_request": pull_request(review),
+                "ticket_id": review.ticket_id,
+                "ticket_url": review.ticket_url,
                 "events": outcomes.iter().filter(|outcome| {
                     matches!(outcome.actor, Actor::Author | Actor::Harvester)
                 }).map(|outcome| json!({
@@ -1924,6 +1942,8 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
             json!({
                 "review_id": at.review.id,
                 "pull_request": pull_request(&at.review),
+                "ticket_id": at.review.ticket_id,
+                "ticket_url": at.review.ticket_url,
                 "layer_number": at.layer.number,
                 "layer_name": at.layer.name,
                 "layers_total": ReviewLayerName::COUNT,
@@ -1971,6 +1991,8 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
             json!({
                 "review_id": item.review.id,
                 "pull_request": pull_request(&item.review),
+                "ticket_id": item.review.ticket_id,
+                "ticket_url": item.review.ticket_url,
                 "round": item.review.round,
                 // The group holds only the newest round, so these are one number.
                 "rounds_on_pr": item.review.round,
@@ -2347,6 +2369,7 @@ fn every_response_example_can_be_produced_from_the_store() {
             round: 1,
             title: Some("Record the delivery attempt count".to_string()),
             ticket_id: Some("ABC-247".to_string()),
+            ticket_url: Some("https://linear.app/acme/issue/ABC-247".to_string()),
             changed_lines: Some(64),
             ..Default::default()
         })

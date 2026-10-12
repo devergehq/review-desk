@@ -25,7 +25,8 @@ use crate::{normalise, Store};
 /// The reviews' columns, as `entities::review` selects them, qualified for the joins
 /// below.
 pub(super) const REVIEW_COLUMNS: &str = "v.id, v.repo, v.pr, v.head_sha, v.round, v.title, \
-                              v.ticket_id, v.changed_lines, v.not_checked, v.session_id, \
+                              v.ticket_id, v.ticket_url, v.changed_lines, v.not_checked, \
+                              v.session_id, \
                               v.ledger_id, v.github_review_id, v.pr_state, v.pr_state_at, \
                               v.harvested_at, v.nit_ticket_status, v.nit_ticket_id, \
                               v.nit_ticket_requested_at, v.nit_ticket_filed_at, \
@@ -460,6 +461,7 @@ pub(super) fn row_to_review(row: &Row<'_>) -> rusqlite::Result<Review> {
         round: row.get("round")?,
         title: row.get("title")?,
         ticket_id: row.get("ticket_id")?,
+        ticket_url: row.get("ticket_url")?,
         changed_lines: row.get("changed_lines")?,
         not_checked: row.get("not_checked")?,
         session_id: row.get("session_id")?,

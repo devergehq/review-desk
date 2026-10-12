@@ -74,8 +74,9 @@ REVIEW=$(review-desk review open --repo devergehq/review-desk --pr 851 --head c0
 ```
 
 It also takes what the caller knows about the pull request. A fact given is written and
-a fact left out is left as it was, so running it again on a head commit already
-reviewed records what the review did not check without starting a round:
+a fact left out is left as it was — bar one exception, on the ticket, below — so running it
+again on a head commit already reviewed records what the review did not check without
+starting a round:
 
 ```sh
 review-desk review open --repo devergehq/review-desk --pr 851 --head c0ffee1 \
@@ -84,6 +85,43 @@ review-desk review open --repo devergehq/review-desk --pr 851 --head c0ffee1 \
 review-desk review open --repo devergehq/review-desk --pr 851 --head c0ffee1 \
   --not-checked "the dashboard against the real API; a database at version 1"
 ```
+
+**`--ticket-url` is where that ticket is, beside the id `--ticket` records.** Review Desk
+cannot work one out from the other: a ticket's id is opaque, and the tracker and its
+workspace are the calling session's knowledge, not the record's. Given it, the dashboard's
+header draws the id as a link; without it, as text.
+
+```sh
+review-desk review open --repo devergehq/review-desk --pr 851 --head c0ffee1 \
+  --ticket DEV-860 --ticket-url https://linear.app/deverge/issue/DEV-860
+```
+
+It must start `https://`, and anything else is refused rather than stored — before the
+review is opened, so a refused call spends no round. The one thing a stored address is for
+is being drawn as a link, and that is the whole of the reason: `http` is refused with the
+rest, because Review Desk never fetches a tracker and so never needs the insecure form.
+Nothing is ever read from the address.
+
+**An address with no id is refused too**, because the dashboard draws the **id** as the
+link's text — so an address beside no id reaches no screen, which is worse than a refusal
+because it looks like the flag worked. The id can come from the same call or already be on
+the review, so learning the address afterwards is one more call:
+
+```sh
+review-desk review open --repo devergehq/review-desk --pr 851 --head c0ffee1 \
+  --ticket-url https://linear.app/deverge/issue/DEV-860   # the id is already on it
+```
+
+**On the review, not on the pull request.** A later round is its own review and inherits
+nothing — not the ticket, not the title, not the changed-line count — so a session passes
+what it knows each time it opens one.
+
+**And a `--ticket` that differs from the one on the review clears the address**, unless the
+same call gives a new `--ticket-url`. This is the one exception to "a fact left out is left
+as it was", and it is there because an address belongs to one ticket: kept against a
+different id, the dashboard drew a link whose text and destination named two different
+things. Correct a ticket id and the address goes with it; pass both to move both. There is
+no way to clear an address and keep the id — a blank value reads as absent.
 
 `review find` lists a pull request's rounds, newest first, for an agent that has lost
 an id:

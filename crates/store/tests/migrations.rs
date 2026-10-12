@@ -7,8 +7,9 @@ use review_desk_store::{
     newest_version, Actor, CriterionStatus, Decision, DescriptionLintStatus, DraftSectionKind,
     DraftStatus, FileCheck, FindingDecision, FindingHunk, HunkLine, HunkLineMarker,
     NewAcceptanceCriterion, NewDescriptionLintResult, NewDraft, NewFileChange, NewFinding,
-    NewReviewSource, NewRoundCommit, NitTicketStatus, ReviewLayerName, ReviewLayerState,
-    RoundStatus, Severity, SourceKind, Store, StoreError, Verification, WorkFilter,
+    NewReviewSource, NewRoundCommit, NitTicketStatus, ReviewFacts, ReviewLayerName,
+    ReviewLayerState, RoundStatus, Severity, SourceKind, Store, StoreError, Verification,
+    WorkFilter,
 };
 use tempfile::TempDir;
 
@@ -168,6 +169,10 @@ fn an_older_database_is_migrated_forward_and_keeps_its_rows() {
     // Migration 4's columns on rows that existed before it.
     assert_eq!(review.title, None, "the new columns start empty");
     assert_eq!(review.ticket_id, None);
+    // Migration 16's column, on a review from before it. **Empty, and never guessed from
+    // the id**: nothing can turn a ticket's id into its address, so a backfilled one would
+    // be a link to somewhere nobody said.
+    assert_eq!(review.ticket_url, None);
     assert_eq!(review.changed_lines, None);
     assert_eq!(review.not_checked, None);
     assert_eq!(
@@ -648,5 +653,145 @@ fn a_part_written_before_the_one_line_column_keeps_its_summary_and_gains_a_null(
     assert_eq!(
         parts[0].one_line, None,
         "nothing wrote one, so the page cuts the summary rather than being handed a copy"
+    );
+}
+
+/// A review written before the ticket's address existed keeps its id and gains a null.
+///
+/// **And the null is the answer, not a gap waiting to be filled from the id.** Nothing can
+/// turn `ABC-231` into an address — the tracker and its workspace are the session's
+/// knowledge, not the record's — so a backfill would be a link to somewhere nobody said.
+/// The header draws the id as text for this review, which is migration 16's own rule.
+#[test]
+fn a_review_written_before_the_ticket_address_keeps_its_id_and_gains_a_null() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+
+    const FROM: i64 = 15;
+    assert!(
+        newest_version() > FROM,
+        "this test needs migration 16 to come from"
+    );
+
+    {
+        let old = Store::open_at_version(&path, FROM).expect("open at 15");
+        assert_eq!(old.schema_version().unwrap(), FROM);
+    }
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        // In its own SQL, for the reason the tests above give: today's typed functions
+        // speak the newest schema, which is the one this is testing the absence of.
+        conn.execute_batch(
+            "INSERT INTO reviews (id, repo, pr, head_sha, round, ticket_id, created_at)
+                 VALUES (1, 'acme/portal', 412, 'abc123', 1, 'ABC-231', 1000);",
+        )
+        .expect("write a review under the older schema");
+    }
+
+    let migrated = Store::open(&path).expect("reopen migrates");
+    assert_eq!(migrated.schema_version().unwrap(), newest_version());
+
+    let review = migrated.get_review(1).expect("the review survived");
+    assert_eq!(review.ticket_id.as_deref(), Some("ABC-231"));
+    assert_eq!(
+        review.ticket_url, None,
+        "nothing passed an address, and nothing derives one from the id"
+    );
+}
+
+/// **A ticket id the old writer left blank becomes absent, which is what it means.**
+///
+/// `set_review_facts` wrote `COALESCE(?, ticket_id)` against whatever it was handed, so
+/// `review open --ticket ""` from a shell whose variable was unset stored the empty string.
+/// Two things followed for such a row: the API served `"ticket_id": ""`, which the
+/// contract's `ForeignId` says cannot happen, and `--ticket-url` alone was refused against
+/// it for having no id — blocking the two-call pattern the README documents.
+///
+/// So migration 16 normalises the data this code wrote, rather than only the writes made
+/// after it. Trimmed, not just `= ''`: `' '` is the same nothing and is what a quoted
+/// argument leaves.
+#[test]
+fn a_ticket_id_left_blank_by_the_old_writer_becomes_absent() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+
+    const FROM: i64 = 15;
+    assert!(newest_version() > FROM, "this test needs migration 16");
+
+    {
+        let old = Store::open_at_version(&path, FROM).expect("open at 15");
+        assert_eq!(old.schema_version().unwrap(), FROM);
+    }
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "INSERT INTO reviews (id, repo, pr, head_sha, round, ticket_id, created_at)
+                 VALUES (1, 'acme/portal', 412, 'abc123', 1, '', 1000),
+                        (2, 'acme/portal', 413, 'abc124', 1, '   ', 1000),
+                        (3, 'acme/portal', 414, 'abc125', 1, 'ABC-231', 1000),
+                        (4, 'acme/portal', 415, 'abc126', 1, 'DEV-860
+', 1000);",
+        )
+        .expect("write four reviews under the older schema");
+    }
+
+    let migrated = Store::open(&path).expect("reopen migrates");
+
+    assert_eq!(
+        migrated.get_review(1).expect("the empty one").ticket_id,
+        None,
+        "an empty id is no id"
+    );
+    assert_eq!(
+        migrated.get_review(2).expect("the blank one").ticket_id,
+        None,
+        "and so is one that is only whitespace"
+    );
+    assert_eq!(
+        migrated
+            .get_review(3)
+            .expect("the real one")
+            .ticket_id
+            .as_deref(),
+        Some("ABC-231"),
+        "a real id is untouched"
+    );
+
+    // **The padded one, which is the dangerous half.** `--ticket "$(…)"` stored the command
+    // substitution's newline, and a padded id is *non-blank* — so an address records against
+    // it happily, and then a caller re-stating the same ticket has it normalised, compared
+    // unequal to the stored `DEV-860\n`, and the address dropped as stale. Trimming here is
+    // what makes "re-stating the same ticket changes nothing" true of these rows too.
+    assert_eq!(
+        migrated
+            .get_review(4)
+            .expect("the padded one")
+            .ticket_id
+            .as_deref(),
+        Some("DEV-860"),
+        "a padded id is trimmed to what it means"
+    );
+
+    let kept = migrated
+        .set_review_facts(
+            4,
+            &ReviewFacts {
+                ticket_url: Some("https://linear.app/deverge/issue/DEV-860".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("an address, against the id the migration repaired");
+    let again = migrated
+        .set_review_facts(
+            4,
+            &ReviewFacts {
+                ticket_id: Some("DEV-860".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("re-state the same ticket");
+    assert_eq!(
+        again.ticket_url, kept.ticket_url,
+        "re-stating the same ticket keeps the address it belongs to"
     );
 }

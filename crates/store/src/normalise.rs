@@ -51,6 +51,91 @@ pub(crate) fn optional_commit(sha: Option<&str>) -> Option<String> {
     sha.map(head_sha).filter(|sha| !sha.is_empty())
 }
 
+/// A free-text fact a caller may or may not have filled in: trimmed, and blank is absent.
+///
+/// **Absent, not empty**, which is [`optional_commit`]'s rule for the same reason and is
+/// what the record means by optional: a field left out is left as it was, so a `--ticket
+/// "$TICKET"` from a shell whose variable was unset has to read as "say nothing about the
+/// ticket" rather than as "the ticket is the empty string". `COALESCE(?n, column)` is only
+/// told to leave a column alone by a `NULL`, so an empty string reaching it *replaces* what
+/// was there — which is how `--ticket ""` came to wipe a recorded `ABC-231`.
+///
+/// **Here rather than in each caller, because two copies of this rule is the bug it
+/// prevents.** A review's ticket id and its address are checked against each other, and
+/// for one commit the address was normalised and the id was not: the pair `--ticket ""
+/// --ticket-url https://…` then passed a check written to refuse exactly it. One rule,
+/// read by everything that writes one of these columns and by
+/// [`crate::ReviewFacts::is_empty`], which has to agree with them about what counts as a
+/// fact.
+pub(crate) fn optional_fact(given: Option<&str>) -> Option<String> {
+    given
+        .map(str::trim)
+        .filter(|held| !held.is_empty())
+        .map(str::to_string)
+}
+
+/// Whether this is a repository name: the contract's `RepoName`, and not a relative path.
+///
+/// In the class `[A-Za-z0-9._-]`, which is what GitHub allows, **and neither half exactly
+/// `.` or `..`** — because a character class alone permits them: `.` is a legal character
+/// in a repository name and a class says nothing about what a segment means. Three dots are
+/// a legal name and are accepted; only those two exact segments are not. The contract's
+/// `RepoName` says the same thing in a pattern, and a conformance test holds the two to each
+/// other rather than trusting that they agree.
+///
+/// **That exclusion is the load-bearing half, and this is the only place it can be made
+/// once.** Every store query binds its parameters, so a dot segment is inert in SQL — but
+/// the value is read back out and put into a path by **four** readers, in three crates:
+///
+/// | Reader | Builds |
+/// |---|---|
+/// | `harvest::gh` | `gh api repos/{repo}/pulls/{pr}`, and `compare` and `commits` beside it |
+/// | `entities::house_style` | the pull request and `blob` links the posted draft body carries |
+/// | the dashboard's `utils/links` | `https://github.com/{repo}/pull/{pr}` |
+/// | the dashboard's `utils/houseStyle` | the same two links, composing the body to preview |
+///
+/// `repos/../../pulls/1` is `api.github.com/pulls/1`, and a browser resolves
+/// `https://github.com/../../pull/1` to `github.com/pull/1` — so the value goes somewhere
+/// other than the repository anybody named, and the link's text and its destination
+/// disagree, which is the defect DEV-936 exists to remove.
+///
+/// **Refusing at the write is what covers all four**, which is why this is here and not in
+/// each of them. It cannot cover a row a *released* build already wrote, though, and nothing
+/// can repair that column: `repo` is identity — half of the review's unique key and the join
+/// to a repository's rules — so rewriting it would merge or split reviews rather than fix
+/// them.
+///
+/// So each reader has to decide for itself what to draw for a name it cannot use, and **one
+/// of the four does**: `utils/links.ts`'s `prUrl` refuses and the header then draws the
+/// repository as text. The other three — `harvest::gh`, `entities::house_style` and the
+/// dashboard's `utils/houseStyle.ts`, which composes the *posted body* — do not, and that is
+/// a gap rather than a decision. `ticketUrl` is not one of the four: it guards `ticket_url`,
+/// not this field. It is worth reading anyway, because it states the argument in as many
+/// words — a column is not a promise about every row in it.
+///
+/// Counted, because two earlier versions of this paragraph got the number wrong in both
+/// directions.
+///
+/// **One copy, here, because it was two.** `wire::is_repo_name` had this rule and its
+/// reason; DEV-936 then wrote a second, looser one in the store's `validate` — missing
+/// exactly the dot guard — and the store is the gate `review open` passes through, since the
+/// command line reaches `Store` without going near the server. `wire` delegates to this.
+pub fn is_repo_name(repo: &str) -> bool {
+    let Some((owner, name)) = repo.split_once('/') else {
+        return false;
+    };
+    if matches!(owner, "." | "..") || matches!(name, "." | "..") {
+        return false;
+    }
+    let usable = |part: &str| {
+        !part.is_empty()
+            && part
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || "._-".contains(character))
+    };
+    usable(owner) && usable(name)
+}
+
 /// Whether this is a git object name and not a word.
 ///
 /// **Checked, and not merely trimmed, because these columns are typed rather than

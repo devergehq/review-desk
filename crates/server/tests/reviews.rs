@@ -444,6 +444,7 @@ fn the_facts_a_caller_supplies_are_stored_rather_than_dropped() {
         Some(
             r#"{"pr_url":"https://github.com/acme/portal/pull/412","head_sha":"3f9c2ab",
                 "title":"Retry failed webhook deliveries","ticket_id":"ABC-231",
+                "ticket_url":"https://linear.app/acme/issue/ABC-231",
                 "changed_lines":214}"#,
         ),
     );
@@ -452,6 +453,10 @@ fn the_facts_a_caller_supplies_are_stored_rather_than_dropped() {
     let review = answer.json();
     assert_eq!(review["title"], "Retry failed webhook deliveries");
     assert_eq!(review["ticket_id"], "ABC-231");
+    assert_eq!(
+        review["ticket_url"],
+        "https://linear.app/acme/issue/ABC-231"
+    );
     assert_eq!(review["changed_lines"], 214);
 
     let stored = harness
@@ -464,7 +469,73 @@ fn the_facts_a_caller_supplies_are_stored_rather_than_dropped() {
         Some("Retry failed webhook deliveries")
     );
     assert_eq!(stored.ticket_id.as_deref(), Some("ABC-231"));
+    assert_eq!(
+        stored.ticket_url.as_deref(),
+        Some("https://linear.app/acme/issue/ABC-231")
+    );
     assert_eq!(stored.changed_lines, Some(214));
+}
+
+/// **A ticket address that is not `https` is refused, and no review is opened.**
+///
+/// The local API is the second way to the column the command line writes, so the refusal
+/// has to be the same refusal — it is one check in the store for exactly that reason. The
+/// one thing a stored address is for is being drawn as a link, so a `javascript:` value
+/// reaching an `href` is the whole of the risk.
+#[test]
+fn a_ticket_address_that_is_not_https_is_refused_by_the_api() {
+    let harness = common::start_with_no_github();
+
+    for refused in [
+        "javascript:alert(1)",
+        "http://linear.app/acme/issue/ABC-231",
+        "linear.app/acme/issue/ABC-231",
+    ] {
+        let answer = harness.api(
+            "POST",
+            "/reviews",
+            Some(&format!(
+                r#"{{"pr_url":"https://github.com/acme/portal/pull/412",
+                     "head_sha":"3f9c2ab","ticket_id":"ABC-231","ticket_url":"{refused}"}}"#
+            )),
+        );
+
+        assert_eq!(answer.status, 400, "{}", answer.text());
+        assert_eq!(answer.error_code(), "invalid_value");
+        assert_eq!(answer.json()["field"], "ticket_url");
+    }
+
+    assert!(
+        harness
+            .store
+            .list_reviews("acme/portal", 412)
+            .expect("the rounds of #412")
+            .is_empty(),
+        "a refused address opens no review and spends no round"
+    );
+
+    // **And an address with no id is refused here too**, naming the field that is missing.
+    // The contract says so under `TicketUrl`: a client draws the ticket's id as the link's
+    // text, so an address beside a null id reaches no screen.
+    let answer = harness.api(
+        "POST",
+        "/reviews",
+        Some(
+            r#"{"pr_url":"https://github.com/acme/portal/pull/412","head_sha":"3f9c2ab",
+                "ticket_url":"https://linear.app/acme/issue/ABC-231"}"#,
+        ),
+    );
+    assert_eq!(answer.status, 400, "{}", answer.text());
+    assert_eq!(answer.error_code(), "invalid_value");
+    assert_eq!(answer.json()["field"], "ticket_id");
+    assert!(
+        harness
+            .store
+            .list_reviews("acme/portal", 412)
+            .expect("the rounds of #412")
+            .is_empty(),
+        "and it opens no review either"
+    );
 }
 
 #[test]
