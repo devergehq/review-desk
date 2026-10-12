@@ -56,6 +56,15 @@ const desk = useReviewDesk()
 
 useHead({ title: 'Reviews · Review Desk' })
 
+/**
+ * What the last screen left to say, which is only ever a deleted review's receipt.
+ *
+ * Read once, on mount: the review's own page cannot say what became of it, because by
+ * then it is not there to draw. A reload says nothing, which is right — this is an
+ * acknowledgement, not a state the page holds.
+ */
+const handedOver = ref(takeHandOver())
+
 /** Which repository to show. `ALL_REPOSITORIES` for every one, as the queue words it. */
 const repo = ref(ALL_REPOSITORIES)
 
@@ -211,6 +220,12 @@ function nothingHere(answer: { repo: string | null, dismissed: DismissedReviews 
           <h1 class="rd-display">
             {{ count(data.reviews.length, 'review') }}
           </h1>
+          <DeskNotice
+            v-if="handedOver"
+            tone="plain"
+          >
+            {{ handedOver }}
+          </DeskNotice>
           <!--
             **The line says what this view is, not what the page is.** "Every review the
             record holds" was true of a page with no filter and is the claim

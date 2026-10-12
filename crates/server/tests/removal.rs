@@ -392,3 +392,64 @@ fn every_screen_that_reads_a_review_can_tell_it_is_dismissed() {
         .remove(0);
     assert_eq!(row.review.id, seeded.review_id);
 }
+
+#[test]
+fn a_review_that_is_not_there_is_not_found_whatever_the_body_says() {
+    // **The order the checks run in, asserted.** The handler judged the reason first, so
+    // a dismissal of a review that does not exist answered `invalid_value` about a field
+    // on a review nobody has — and `an_unknown_review_is_not_found_on_every_operation`
+    // could not catch it, because it sends a reason that is valid.
+    let harness = common::start_with_no_github();
+    common::seed(&harness.store);
+
+    let answer = harness.api("POST", "/reviews/9001/dismiss", Some(r#"{"reason":"   "}"#));
+    assert_eq!(answer.status, 404, "{}", answer.text());
+    assert_eq!(answer.error_code(), "not_found");
+}
+
+#[test]
+fn starting_a_review_that_was_dismissed_hands_it_back_saying_so() {
+    // **`POST /reviews` deduplicates**, so pasting the link of a pull request whose review
+    // the developer dismissed hands that review back. The answer has to carry the
+    // dismissal, because nothing else on that screen can tell: the review is in no queue
+    // group, yields no work item and is not in the Reviews list's default view, so a
+    // caller told only "here is your review" would say it was open and started while
+    // nothing at all was going to happen to it.
+    let harness = common::start(common::recorded_github());
+    let started = harness.api(
+        "POST",
+        "/reviews",
+        Some(r#"{"pr_url":"https://github.com/devergehq/locus/pull/64"}"#),
+    );
+    assert_eq!(started.status, 201, "{}", started.text());
+    let review_id = started.json()["id"].as_i64().expect("an id");
+
+    harness
+        .store
+        .dismiss_review(review_id, "the pull request was closed unmerged")
+        .expect("dismiss it");
+
+    let again = harness.api(
+        "POST",
+        "/reviews",
+        Some(r#"{"pr_url":"https://github.com/devergehq/locus/pull/64"}"#),
+    );
+
+    assert_eq!(again.status, 201, "{}", again.text());
+    assert_eq!(
+        again.json()["id"],
+        review_id,
+        "the same review, not a second"
+    );
+    assert!(
+        again.json()["dismissed_at"].is_string(),
+        "and the answer says it is dismissed: {}",
+        again.text()
+    );
+    assert_eq!(
+        again.json()["dismissed_reason"],
+        "the pull request was closed unmerged"
+    );
+    /* And starting it did not quietly bring it back. */
+    assert!(harness.store.get_review(review_id).unwrap().is_dismissed());
+}

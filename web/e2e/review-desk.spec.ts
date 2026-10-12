@@ -3512,11 +3512,15 @@ test.describe('taking a review off the desk', () => {
     await card.getByRole('button', { name: 'Delete it', exact: true }).click()
     await card.getByRole('button', { name: 'Delete it for good' }).click()
 
-    /* It leaves the page it was deleted from, for the list it came from. */
+    /* It leaves the page it was deleted from, for the list it came from — carrying the
+       one sentence an act with no undo gets, which cannot be said where it was done. */
     await expect(page).toHaveURL(/\/reviews$/)
-    await expect(page.getByText('#777')).toHaveCount(0)
+    await expect(page.getByText('is deleted')).toBeVisible()
+    await expect(page.locator('.row').filter({ hasText: '#777' })).toHaveCount(0)
+    /* And no refusal was drawn over the page on the way out. */
+    await expect(page.getByText('Not on the desk')).toHaveCount(0)
     await page.getByRole('radio').filter({ hasText: 'Everything' }).click()
-    await expect(page.getByText('#777')).toHaveCount(0)
+    await expect(page.locator('.row').filter({ hasText: '#777' })).toHaveCount(0)
 
     /* And the record holds nothing of it. */
     const found = cliJson(seededDatabase, [

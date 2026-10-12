@@ -586,6 +586,13 @@ impl Api {
     /// act, and a session that could reach it could take its own review out of the
     /// developer's sight.
     fn dismiss_review(&self, review_id: i64, body: &[u8]) -> Result<(u16, Value), ApiError> {
+        // **The review first, then the body**, which is the order every sibling handler
+        // uses and the one this file's own rule implies: a review that is not there is a
+        // 404, and judging the reason first answered `invalid_value` about a field on a
+        // review nobody has. Found by a review of this branch — the unknown-review test
+        // sends a reason that is valid, so it could not have caught it.
+        self.records.review(review_id)?;
+
         let request: DismissReviewRequest = read_body(body)?;
         let reason = trimmed(Some(request.reason)).ok_or_else(|| {
             ApiError::invalid_value(
@@ -595,9 +602,6 @@ impl Api {
             )
         })?;
 
-        // Checked before the write, which is this file's first rule: a review that is not
-        // there is a 404 rather than a store error about an update of nothing.
-        self.records.review(review_id)?;
         let review = self.records.dismiss_review(review_id, &reason)?;
         Ok((200, wire::review(&review)))
     }

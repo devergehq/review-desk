@@ -106,6 +106,13 @@ function strayReview(): ReviewDetail {
       dismissed_at: null,
       dismissed_reason: null,
     },
+    /* Seven steps, none of them begun — which is what a request nobody picked up is. */
+    layers: first!.layers.map(layer => ({
+      ...layer,
+      state: 'pending' as const,
+      detail: null,
+      runs: [],
+    })),
     brief: null,
     findings: [],
     outcomes: [],
@@ -304,9 +311,50 @@ describe('deleting a review that never started', () => {
     await click(page, 'Delete it for good')
 
     const list = await shown(Reviews)
-    expect(list.text()).not.toContain('#777')
+    /*
+     * The rows, not the whole page: the receipt the delete hands over names the review
+     * it removed, which is the point of it.
+     */
+    expect(list.findAll('.row').map(row => row.text()).join(' ')).not.toContain('#777')
     /* In no view, which is the difference between a delete and a dismissal. */
     await choose(list, 'Everything')
-    expect(list.text()).not.toContain('#777')
+    expect(list.findAll('.row').map(row => row.text()).join(' ')).not.toContain('#777')
+  })
+
+  it('says what went, on the page the developer lands on', async () => {
+    // **The one act with no undo is the one that must not be silent.** The sentence
+    // cannot be said where it was done — that page is about a review that is no longer
+    // there — so it is handed to the list. Read once: a reload says nothing, because it
+    // is a receipt rather than a state.
+    await withStray()
+    const page = await understand(777)
+    await click(page, 'Delete it')
+    await click(page, 'Delete it for good')
+
+    const list = await shown(Reviews)
+    expect(list.text()).toContain('Review 777')
+    expect(list.text()).toContain('is deleted')
+    expect(list.text()).toContain('nothing of it is left')
+
+    const again = await shown(Reviews)
+    expect(again.text()).not.toContain('is deleted')
+  })
+
+  it('says a session has it, rather than that nothing has started', async () => {
+    // The card reads the same two signs the store reads before it refuses to move a
+    // review's head. The delete is still offered — the store asks only about the brief,
+    // the findings and the draft — but the sentence beside it has to be true.
+    const source = loadSource()
+    const claimed = strayReview()
+    claimed.review.session_id = 'allele-ae03f8ce'
+    await resetDesk({ reviews: [...source.reviews, claimed] })
+
+    const page = await understand(777)
+    expect(page.text()).toContain('A session has this review')
+    expect(page.text()).not.toContain('nothing on it but the request')
+    expect(button(page, 'Delete it')).toBeDefined()
+
+    await click(page, 'Delete it')
+    expect(page.text()).toContain('A session is still at work on it')
   })
 })

@@ -52,7 +52,7 @@ import type { DeskBackend, DraftEditToRecord } from '~/data/backend'
 import { asDeskError } from '~/data/fault'
 import { chooseSource, loadBackend, sampleWanted, type DeskSourceName } from '~/data/source'
 import { detectEdits, findingsInBody } from '~/utils/draft'
-import { count } from '~/utils/format'
+import { count, startedReviewLine } from '~/utils/format'
 import type {
   Brief,
   DecideFindingRequest,
@@ -240,6 +240,17 @@ export type WriteResult
 async function write<T>(
   act: (to: DeskBackend) => Promise<T>,
   said: (made: T) => string,
+  /**
+   * Whether to read every open screen again afterwards. True for every write but one.
+   *
+   * **The exception is the write whose subject is gone when it returns.** A refresh after
+   * a delete re-reads `GET /reviews/{id}` for the review that has just been removed, and
+   * the screen that asked for it is still mounted — so it draws "no review with id N. It
+   * may have been opened on another database" over the page, for the half-second before
+   * the navigation. The caller leaves for the Reviews list instead, which reads on mount,
+   * so nothing is left stale by not refreshing here.
+   */
+  refresh = true,
 ): Promise<WriteResult> {
   let made: T
   try {
@@ -249,8 +260,31 @@ async function write<T>(
     return { ok: false, error: asDeskError(thrown) }
   }
 
-  await refreshEverything()
+  if (refresh) await refreshEverything()
   return { ok: true, message: said(made) }
+}
+
+/**
+ * One sentence, left for the next screen to say.
+ *
+ * **For an act whose own screen does not survive it.** Deleting a review takes the
+ * developer to the Reviews list, and the sentence about what went — the only
+ * acknowledgement an irreversible act gets — belongs where they land rather than on a
+ * page that is unmounting. Taken once: a reload or a second visit says nothing, because
+ * it is a receipt and not a state.
+ */
+let handedOver: string | null = null
+
+/** Leave a sentence for the next screen. */
+export function handOver(said: string): void {
+  handedOver = said
+}
+
+/** Take the sentence the last screen left, if there is one. */
+export function takeHandOver(): string | null {
+  const said = handedOver
+  handedOver = null
+  return said
 }
 
 /* ------------------------------ The composable ------------------------------- */
@@ -388,10 +422,10 @@ export function useReviewDesk() {
 
     return write(
       to => to.startReview(trimmed),
-      (review: Review) =>
-        `${review.repo}#${review.pr} is open at the problem brief`
-        + `${review.title == null ? '' : ` — ${review.title}`}. `
-        + 'No findings are written until you confirm it.',
+      // Both answers this can have are one function, in `utils/format.ts`, where the
+      // dismissed one can be read in a test: `POST /reviews` hands back the review
+      // already on the record, and that review may be one the developer dismissed.
+      (review: Review) => startedReviewLine(review),
     )
   }
 
@@ -452,6 +486,13 @@ export function useReviewDesk() {
       (review: Review) =>
         `Review ${review.id} — ${review.repo}#${review.pr} — is deleted. It held no `
         + 'brief, no findings and no draft, and nothing of it is left.',
+      /*
+       * **No refresh**: the review this page is reading is the one that has just gone, so
+       * reading it again answers 404 and draws "not on the desk" over the page for as
+       * long as it takes to leave it. The caller leaves for the Reviews list, which reads
+       * on mount.
+       */
+      false,
     )
   }
 

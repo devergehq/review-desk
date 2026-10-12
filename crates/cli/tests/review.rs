@@ -683,3 +683,77 @@ fn a_ticket_address_with_no_ticket_is_refused() {
     );
     assert_eq!(shown["review"]["round"], 1, "and spent no second round");
 }
+
+#[test]
+fn a_session_that_opens_a_review_with_its_id_is_the_one_working_on_it() {
+    // **One call, two facts, and the second is what protects the first.** A session
+    // passing `--session` records who is working *and* takes the review out of reach of
+    // the head-moving rule — so a dispatcher recording the same request on a newer commit
+    // opens a round of its own rather than moving the commit this session is reviewing.
+    let desk = Desk::new();
+
+    let recorded = desk.json(&[
+        "review",
+        "open",
+        "--repo",
+        "acme/portal",
+        "--pr",
+        "777",
+        "--head",
+        "c0ffee1",
+        "--ledger",
+        "ledger-9f2",
+    ]);
+    assert_eq!(recorded["review"]["session_id"], serde_json::Value::Null);
+
+    // The session is dispatched and opens the review it was given.
+    let opened = desk.json(&[
+        "review",
+        "open",
+        "--repo",
+        "acme/portal",
+        "--pr",
+        "777",
+        "--head",
+        "c0ffee1",
+        "--session",
+        "allele-ae03f8ce",
+    ]);
+    assert_eq!(
+        opened["created"], false,
+        "the request it was dispatched for"
+    );
+    assert_eq!(opened["review"]["session_id"], "allele-ae03f8ce");
+    assert_eq!(
+        opened["review"]["ledger_id"], "ledger-9f2",
+        "and the dispatcher's own id is not cleared by it"
+    );
+
+    // The author pushes, and the dispatcher records the request again.
+    let pushed = desk.json(&[
+        "review",
+        "open",
+        "--repo",
+        "acme/portal",
+        "--pr",
+        "777",
+        "--head",
+        "c0ffee2",
+    ]);
+    assert_eq!(
+        pushed["created"], true,
+        "a round of its own: the session is at work on round 1"
+    );
+    assert_eq!(pushed["review"]["round"], 2);
+    assert_eq!(
+        pushed["head_moved_from"],
+        serde_json::Value::Null,
+        "nothing moved under the session"
+    );
+
+    let still = desk.json(&["review", "find", "--repo", "acme/portal", "--pr", "777"]);
+    assert_eq!(
+        still["reviews"][1]["head_sha"], "c0ffee1",
+        "and the commit it is reviewing is the one it opened: {still}"
+    );
+}

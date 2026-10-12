@@ -54,11 +54,13 @@ pub enum ReviewCommand {
     /// is recorded. Recording the same request twice creates one review: the record is
     /// keyed on the head commit, and `created` says which of the two happened.
     ///
-    /// **A new commit on a request nobody has started moves that request's head** rather
-    /// than starting a second round beside it, and `head_moved_from` in the `--json`
-    /// answer carries the commit it was of before. DEV-945, Patrick: "two unstarted
-    /// reviews for one request is wrong." A round somebody has started is untouched by
-    /// that rule — a new commit on it is the next round, as it has always been.
+    /// **A new commit on a request nobody has picked up moves that request's head**
+    /// rather than starting a second round beside it, and `head_moved_from` in the
+    /// `--json` answer carries the commit it was of before. DEV-945, Patrick: "two
+    /// unstarted reviews for one request is wrong." A round somebody is working on is
+    /// untouched by that rule — a new commit on it is the next round, as it has always
+    /// been — and `--session` is how a session says on its first call that it is the one
+    /// working, before it has written anything a reader could tell that from.
     Open {
         /// The repository, as owner/repo.
         #[arg(long, value_name = "OWNER/REPO")]
@@ -93,6 +95,17 @@ pub enum ReviewCommand {
         /// fail between them.
         #[arg(long = "ledger", value_name = "ID")]
         ledger: Option<String>,
+        /// The Allele session opening it. **A session should pass this on its first
+        /// call.**
+        ///
+        /// The same shape as `--ledger` — a fact about who is calling, recorded in the
+        /// same call rather than by a `review link` afterwards — and it does one thing
+        /// more. A review with a session linked is one somebody is at work on, so no
+        /// later `review open` moves its head: the window between a session opening a
+        /// review and claiming it is the window in which a dispatcher recording the same
+        /// request on a newer commit could move the head out from under it.
+        #[arg(long = "session", value_name = "ID")]
+        session: Option<String>,
     },
 
     /// Store the other systems' ids against a review.
@@ -168,6 +181,7 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
             changed_lines,
             not_checked,
             ledger,
+            session,
         } => {
             let store = Store::open_default()?;
             let opened = store.open_review_with(
@@ -183,19 +197,20 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
                 },
             )?;
 
-            // The ledger id goes on after the facts, through the same call `review link`
-            // makes. A value given is written and an absent one leaves what is there, so
-            // recording the same request twice does not clear a ledger id the first call
-            // set.
-            let review = match ledger {
-                Some(_) => store.set_review_links(
+            // The ids go on after the facts, through the same call `review link` makes.
+            // A value given is written and an absent one leaves what is there, so
+            // recording the same request twice does not clear an id the first call set.
+            let review = if ledger.is_some() || session.is_some() {
+                store.set_review_links(
                     opened.review.id,
                     ReviewLinks {
                         ledger_id: ledger.clone(),
+                        session_id: session.clone(),
                         ..Default::default()
                     },
-                )?,
-                None => opened.review,
+                )?
+            } else {
+                opened.review
             };
 
             let carryable = store.carryable(review.id)?;

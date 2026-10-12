@@ -18,6 +18,7 @@ import {
   openForLabel,
   prStateLabel,
   reviewWorkInWords,
+  startedReviewLine,
   sessionLabel,
   severityTally,
   sinceLabel,
@@ -472,6 +473,41 @@ describe('what came back on a posted review', () => {
   it('does not claim a pull request is open when nothing has looked', () => {
     expect(prStateLabel(null)).toBe('pull request state not established')
     expect(prStateLabel('open')).toBe('pull request open at the last harvest')
+  })
+})
+
+describe('what the queue says when a link becomes a review', () => {
+  it('says it is open at the problem brief', () => {
+    const said = startedReviewLine({
+      repo: 'acme/portal',
+      pr: 412,
+      title: 'Retry failed webhook deliveries',
+      dismissed_at: null,
+    })
+    expect(said).toContain('acme/portal#412 is open at the problem brief')
+    expect(said).toContain('Retry failed webhook deliveries')
+    expect(said).toContain('No findings are written until you confirm it')
+  })
+
+  it('does not say that about a review the developer dismissed', () => {
+    // `POST /reviews` hands back the review already on the record. Dismissed, nothing is
+    // waiting and no session will be dispatched for it, so the one sentence that must not
+    // be said is the one above.
+    const said = startedReviewLine({
+      repo: 'acme/portal',
+      pr: 412,
+      title: 'Retry failed webhook deliveries',
+      dismissed_at: '2026-10-12T09:12:00Z',
+    })
+    expect(said).not.toContain('open at the problem brief')
+    expect(said).toContain('you dismissed it')
+    expect(said).toContain('no session will be started for it')
+    expect(said).toContain('Bring it back')
+  })
+
+  it('leaves out a title the record has none of', () => {
+    const said = startedReviewLine({ repo: 'acme/portal', pr: 777, dismissed_at: null })
+    expect(said).toContain('acme/portal#777 is open at the problem brief.')
   })
 })
 

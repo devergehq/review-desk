@@ -71,6 +71,24 @@ const holdsInWords = computed(() => reviewWorkInWords(held.value))
 /** Whether this review never got past being requested, which is the delete's one case. */
 const neverStarted = computed(() => holdsInWords.value === '')
 
+/**
+ * Whether a session has picked this review up, whatever it has written yet.
+ *
+ * **Not part of what a delete is refused for**, and deliberately: the store asks only
+ * DEV-945's three things, because the stray review this was built for was written by a
+ * build session and may well carry a session id. What it changes is what the card is
+ * allowed to *say*. "Nothing on it but the request" is false about a review a session is
+ * linked to or has reported a step for, and that review's layer rows go with the delete —
+ * so the sentence says so, and the confirmation says it again where it cannot be missed.
+ *
+ * The same two signs the store reads in `review_is_claimed`, which is what decides that
+ * `review open` will not move such a review's head either.
+ */
+const claimed = computed(() =>
+  props.detail.review.session_id != null
+  || props.detail.layers.some(layer => layer.state !== 'pending'),
+)
+
 /** Whether what it holds is one thing or several, for "lose that" or "lose them". */
 const holdsOneThing = computed(() => !holdsInWords.value.includes(' and '))
 
@@ -96,13 +114,17 @@ async function remove() {
   working.value = false
   asking.value = null
   /*
-   * **Away from the page, because the page is about a review that is no longer there.**
-   * Staying would leave the review's own screens reading a 404, which is a worse answer
-   * than the list the developer came from — and the Reviews list is where the sentence
-   * about what went is worth reading. On a refusal nothing moves: the card says what the
-   * review holds and the developer is still looking at it.
+   * **Away from the page, because the page is about a review that is no longer there**,
+   * and the sentence goes with the developer. Staying would leave the review's own
+   * screens reading a 404; leaving without the sentence would make the one act with no
+   * undo the one act with no acknowledgement, which is what `handOver` is for. On a
+   * refusal nothing moves: the card says what the review holds and the developer is
+   * still looking at it.
    */
-  if (result.ok) await navigateTo('/reviews')
+  if (result.ok) {
+    handOver(result.message)
+    await navigateTo('/reviews')
+  }
 }
 </script>
 
@@ -185,10 +207,23 @@ async function remove() {
     -->
     <div class="delete">
       <template v-if="neverStarted">
-        <p class="rd-note rd-measure">
+        <p
+          v-if="!claimed"
+          class="rd-note rd-measure"
+        >
           <strong>This review never started.</strong>
           No brief, no findings, no draft — nothing on it but the request. Deleting it
           removes the row and everything under it, and that cannot be undone.
+        </p>
+        <p
+          v-else
+          class="rd-note rd-measure"
+        >
+          <strong>A session has this review.</strong>
+          It has written no brief, no findings and no draft, so it can still be deleted —
+          but a session is linked to it or has reported a step, and deleting it takes
+          those rows with it while that session is still working. Dismissing it instead
+          takes it out of the queue and leaves the session's own record alone.
         </p>
 
         <div
@@ -208,7 +243,9 @@ async function remove() {
         >
           <p class="rd-note">
             Delete review {{ review.id }} — {{ review.repo }} #{{ review.pr }}? This cannot
-            be undone.
+            be undone.<template v-if="claimed">
+              A session is still at work on it.
+            </template>
           </p>
           <DeskButton
             kind="primary"

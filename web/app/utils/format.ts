@@ -140,6 +140,40 @@ export function reviewWorkInWords(
   return `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`
 }
 
+/**
+ * What the queue says back when a pasted link has been turned into a review.
+ *
+ * **Two sentences, because `POST /reviews` has two answers.** It creates the review, or
+ * it hands back the one already on the record for that pull request — and since DEV-945
+ * the one already there may be a review the developer dismissed, in which case nothing is
+ * waiting, no session will be dispatched for it, and "open at the problem brief" is the
+ * one thing that is not true.
+ *
+ * **Review Desk does not bring it back by itself.** DEV-945 puts automatic dismissal out
+ * of scope, and a link pasted by somebody who may not remember dismissing the review is
+ * not them asking for it back. So the sentence says what is on the desk and where the undo
+ * is.
+ *
+ * Here rather than in the composable so that both answers can be read in a test: the
+ * invented records refuse a pull request already on the desk outright, so the branch
+ * cannot be reached through them.
+ */
+export function startedReviewLine(review: {
+  repo: string
+  pr: number
+  title?: string | null
+  dismissed_at?: string | null
+}): string {
+  if (review.dismissed_at != null) {
+    return `${review.repo}#${review.pr} is already on the desk and you dismissed it, so `
+      + 'nothing is waiting and no session will be started for it. Bring it back from '
+      + 'the review’s own page to pick it up again.'
+  }
+  return `${review.repo}#${review.pr} is open at the problem brief`
+    + `${review.title == null ? '' : ` — ${review.title}`}. `
+    + 'No findings are written until you confirm it.'
+}
+
 const LAYER_LABELS: Record<ReviewLayerName, string> = {
   lint: 'Lint',
   understand: 'Understand',

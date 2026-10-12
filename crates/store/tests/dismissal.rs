@@ -775,48 +775,110 @@ fn what_a_review_holds_is_the_same_question_for_a_delete_and_for_a_moved_head() 
 #[test]
 fn every_query_that_lists_reviews_says_what_it_does_about_dismissed_ones() {
     // **The structural half of "a dismissed review is in front of nobody".** The tests
-    // above check the five queries that exist today; this one is against the sixth,
-    // written next month, whose author does not know there is a clause to paste. A group
-    // that forgot it would put a dismissed review back in the developer's queue and
-    // nothing anywhere would fail.
+    // above check the queries that exist today; this one is against the next one, written
+    // by somebody who does not know there is a clause to paste. A list that forgot it
+    // would put a dismissed review back in the developer's queue and nothing anywhere
+    // would fail.
     //
-    // Written over the source the way `the_work_query_contains_no_write_statement` is, and
-    // for the same reason: "every query carries the clause" is a claim about code, and
+    // Written over the source the way `the_work_query_contains_no_write_statement` is,
+    // and for the same reason: "every list carries the clause" is a claim about code, and
     // code stops being like that one convenience at a time.
     //
-    // The rule is deliberately "says something about it" rather than "excludes them":
-    // `reviews_at_step` is the Reviews list and takes a `DismissedReviews`, so it names
-    // the column instead. What is caught is a query that names neither.
+    // **It walks functions that return a list of reviews**, which is the set the claim is
+    // about. A lookup by id or by head commit must *not* exclude a dismissed review —
+    // every screen that draws one reads it that way — and `latest_round` must count
+    // dismissed rounds or a round number would be reused. Keying on
+    // `Result<Vec<…>>` is what tells those apart from the lists.
+    //
+    // **An exemption is a decision, written here and argued where the query is.** Two
+    // lists keep their dismissed reviews on purpose; each is named below with the reason
+    // in one line, so that adding a third is a visible act rather than a quiet one. This
+    // file's first version scanned two modules by prepared statement and could see
+    // neither of them — a review of this branch found that, which is the second time the
+    // guard's own blind spot has been the finding.
+    const EXEMPT: &[(&str, &str)] = &[
+        (
+            "list_reviews",
+            "one pull request's own rounds, which is history: a hole where round 2 was \
+             would make the round numbers read as a gap in the record",
+        ),
+        (
+            "finished_review_timings",
+            "how long each finished review took; dismissing a review afterwards does not \
+             unmeasure the time it took, and dropping it would bias whatever is computed \
+             from this read",
+        ),
+    ];
+
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    for file in ["src/entities/inbox.rs", "src/entities/work.rs"] {
+    let mut checked = 0;
+    let mut exempted = 0;
+
+    for file in [
+        "src/entities/inbox.rs",
+        "src/entities/work.rs",
+        "src/entities/review.rs",
+        "src/entities/timings.rs",
+    ] {
         let source = std::fs::read_to_string(root.join(file)).expect("the module's source");
 
-        // One chunk per prepared statement: everything from `prepare(` to the `))?;` or
-        // `)?;` that closes it. The constant's own definition is before the first of
-        // them, so it is not mistaken for a query.
-        let statements = source.split("conn.prepare(").skip(1).map(|rest| {
-            let end = rest.find(")?;").unwrap_or(rest.len());
-            &rest[..end]
-        });
+        // One block per function: from each `fn name(` to the next. Crude on purpose —
+        // the alternative is parsing Rust, and what this needs is only to know which
+        // function a statement sits in.
+        let starts: Vec<(usize, String)> = source
+            .match_indices("fn ")
+            .filter_map(|(at, _)| {
+                let rest = &source[at + 3..];
+                let name: String = rest
+                    .chars()
+                    .take_while(|c| c.is_alphanumeric() || *c == '_')
+                    .collect();
+                (!name.is_empty() && rest[name.len()..].starts_with('(')).then_some((at, name))
+            })
+            .collect();
 
-        let mut checked = 0;
-        for statement in statements {
-            if !statement.contains("FROM reviews") {
+        for (index, (at, name)) in starts.iter().enumerate() {
+            let until = starts
+                .get(index + 1)
+                .map_or(source.len(), |(next, _)| *next);
+            let block = &source[*at..until];
+
+            // A list of reviews, which is what the claim is about — not a lookup, not a
+            // scalar, and not the delete.
+            if !block.contains("FROM reviews") || !block.contains("Result<Vec<") {
                 continue;
             }
+
+            if let Some((_, why)) = EXEMPT.iter().find(|(listed, _)| listed == name) {
+                assert!(
+                    !block.contains("{IN_PLAY}"),
+                    "{file}: {name} is listed as keeping its dismissed reviews ({why}), \
+                     and it excludes them. One of the two is out of date."
+                );
+                exempted += 1;
+                continue;
+            }
+
             checked += 1;
             assert!(
-                statement.contains("{IN_PLAY}") || statement.contains("dismissed_at"),
-                "a query in {file} reads the reviews and says nothing about dismissed \
-                 ones. Paste `AND {{IN_PLAY}}` into it, or name `dismissed_at` to say \
-                 what it does instead:\n{statement}"
+                block.contains("{IN_PLAY}") || block.contains("dismissed_at"),
+                "{file}: {name} lists reviews and says nothing about dismissed ones. \
+                 Paste `AND {{IN_PLAY}}` into its query, or name `dismissed_at` to say \
+                 what it does instead — or, if it keeps them on purpose, add it to \
+                 EXEMPT in this test with the reason, and argue it where the query is."
             );
         }
-        assert!(
-            checked > 0,
-            "no query over the reviews was found in {file}, so this check is vacuous"
-        );
     }
+
+    assert!(
+        checked >= 7,
+        "only {checked} lists of reviews were found, so this check is vacuous"
+    );
+    assert_eq!(
+        exempted,
+        EXEMPT.len(),
+        "every exemption must name a function that is still there and still a list"
+    );
 }
 
 #[test]
@@ -971,4 +1033,33 @@ fn a_review_a_session_picked_up_but_wrote_nothing_to_can_still_be_deleted() {
         .delete_review(review.id)
         .expect("it holds no brief, no finding and no draft");
     assert!(store.find_review_by_id(review.id).unwrap().is_none());
+}
+
+#[test]
+fn a_session_that_says_who_it_is_on_the_first_call_is_claimed_at_once() {
+    // `review open --session` is one call, and what it buys is that the review is claimed
+    // before anything else can reach it: the session's own first call is what closes the
+    // window a dispatcher could move the head in.
+    let (_dir, store) = temp_store();
+    let recorded = store.open_review(REPO, 824, "aaa1111").expect("a request");
+
+    // The command line's `--session` is `open_review_with` followed by `set_review_links`
+    // — the same two calls, in one command — so the store's half is this.
+    store
+        .set_review_links(
+            recorded.review.id,
+            ReviewLinks {
+                session_id: Some("allele-ae03f8ce".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("the session says who it is");
+
+    let pushed = store
+        .open_review(REPO, 824, "bbb2222")
+        .expect("the author pushed");
+    assert!(
+        pushed.created,
+        "a round of its own, because somebody is at work on round 1"
+    );
 }

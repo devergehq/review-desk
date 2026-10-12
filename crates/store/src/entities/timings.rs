@@ -75,6 +75,22 @@ impl Store {
         repo: Option<&str>,
     ) -> Result<Vec<(Review, ReviewTimings)>> {
         let repo = repo.map(crate::normalise::repo);
+
+        // **A dismissed review is still listed here, and that is a decision.** Every
+        // other list of reviews in this crate leaves them out — the queue's groups, the
+        // work list, the harvest sweep, the Reviews list's default view — because each of
+        // those is asking what to do next, and a dismissed review is not anybody's next
+        // thing. This one asks how long a review *took*, and dismissing a review
+        // afterwards does not unmeasure the time it took. Leaving it out would quietly
+        // bias whatever statistics are built from this read by dropping real reviews that
+        // really took that long.
+        //
+        // Only a posted review is in this list at all, so the review DEV-945 was raised
+        // from — a request nobody started — was never in it either way.
+        // `every_query_that_lists_reviews_says_what_it_does_about_dismissed_ones` holds
+        // this paragraph to its word: the exemption is written down in that test, beside
+        // the only other one.
+
         // The reviews themselves, not their ids: every caller wants both, and the join is
         // already selecting the rows.
         let mut statement = self.conn.prepare(&format!(

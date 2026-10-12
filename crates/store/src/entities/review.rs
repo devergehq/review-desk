@@ -206,6 +206,15 @@ impl Store {
     /// The case the move is for is untouched: a request the dispatcher recorded and
     /// nothing has been dispatched for has no session, no layer past `pending` and none
     /// of the three.
+    ///
+    /// **What is left is the window before a session claims the review**, and it is
+    /// narrow rather than closed. A session opens the review and then links itself; a
+    /// caller moving the head between those two moments would leave the session holding
+    /// a commit the record no longer names. `review open --session` is the answer and is
+    /// why that argument exists: a session passing its id on its first call claims the
+    /// review in the same call, which leaves a window of one statement rather than of
+    /// however long the session takes to get to `review link`. A session that does not
+    /// pass it is protected from its first layer write onwards.
     fn latest_unstarted_round(&self, repo: &str, pr: i64) -> Result<Option<Review>> {
         let Some(round) = self.latest_round(repo, pr)? else {
             return Ok(None);
@@ -698,6 +707,13 @@ impl Store {
     }
 
     /// Every review of a pull request, oldest round first.
+    ///
+    /// **A dismissed round is listed, and that is a decision.** This is one pull request's
+    /// own history — which commit was reviewed when, and what became of each round — and a
+    /// round the developer dismissed is part of it. `review find` is an agent recovering an
+    /// id, and handing it a list with a hole where round 2 used to be would make the round
+    /// numbers read as a gap in the record. The lists that leave dismissed reviews out are
+    /// the ones asking what to do next.
     pub fn list_reviews(&self, repo: &str, pr: i64) -> Result<Vec<Review>> {
         let mut statement = self.conn.prepare(&format!(
             "SELECT {COLUMNS} FROM reviews
