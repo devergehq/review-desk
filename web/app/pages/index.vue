@@ -370,13 +370,12 @@ const drawnAbove = computed(() => {
 /**
  * The reviews a session is working on, minus the ones already waiting on the developer.
  *
- * **These rows carry no ticket link, and nothing here can give them one.** `GET /inbox`
- * serves the ticket and its address on the three arrays a needs-you row is built from and
- * not on `in_progress` or `posted_awaiting_author` — so a review that is *only* in one of
- * those two draws a row with a link to its pull request and none to its ticket, while the
- * Reviews list links both for the same review. The contract's `Inbox` description states
- * the gap and why it is left. It is not a thing this file can work around: the ticket is
- * not in the answer.
+ * **These rows carry the ticket link too, since `GET /inbox` serves it here.** It did not
+ * for a few commits, and the rows were the visible cost: a review that is *only* in this
+ * array — a session working, nothing waiting on the developer — drew a row with a link to
+ * its pull request and none to its ticket, while the Reviews list linked both for the same
+ * review. Nothing in this file could work around it, because the ticket was not in the
+ * answer. It is now.
  *
  * **The same rule, one group earlier.** `reviews_in_progress` asks only whether a layer is
  * `running`, and nothing stops a review being there *and* in one of the needs-you arrays:
@@ -773,6 +772,8 @@ function handledLine(data: Inbox): string {
             :age="item.in_state_since ? sinceLabel(item.in_state_since) : null"
             age-unknown-because="this review was recorded before Review Desk kept when a step started"
             :pr-href="prUrl(item.pull_request.repo, item.pull_request.pr)"
+            :ticket-href="ticketUrl(item.ticket_url)"
+            :ticket-id="item.ticket_id"
           >
             <SegmentBar
               :segments="layerSegments(item)"
@@ -820,6 +821,8 @@ function handledLine(data: Inbox): string {
             :age="item.posted_at ? sinceLabel(item.posted_at) : null"
             age-unknown-because="this review's GitHub id was recorded without a draft, so nothing holds when it was posted"
             :pr-href="prUrl(item.pull_request.repo, item.pull_request.pr)"
+            :ticket-href="ticketUrl(item.ticket_url)"
+            :ticket-id="item.ticket_id"
           >
             <span class="what-title">{{ postedTitle(item) }}</span>
             <!--

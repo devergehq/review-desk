@@ -3631,7 +3631,7 @@ components:
       required:
         [review_id, pull_request, round, rounds_on_pr, posted_at, posted_as, pr_state,
          harvested_at, findings, findings_linked, replies, threads_resolved,
-         code_changed_after]
+         code_changed_after, ticket_id, ticket_url]
       description: |
         **A review that was posted, whose pull request has not been merged or closed.**
         The queue's "Waiting on the author", and the group that did not exist until
@@ -3667,6 +3667,17 @@ components:
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }
+        ticket_id:
+          allOf:
+            - $ref: '#/components/schemas/ForeignId'
+          description: The ticket the change is for, opaque.
+        ticket_url:
+          allOf:
+            - $ref: '#/components/schemas/TicketUrl'
+          description: |
+            Where that ticket is, so this row can link it without the review being opened
+            first. Null for a review with an id and no address, which the row then names on
+            its own line and does not link.
         round: { type: integer, format: int64, minimum: 1 }
         rounds_on_pr:
           type: integer
@@ -3823,11 +3834,24 @@ components:
     InboxInProgressItem:
       type: object
       additionalProperties: false
-      required: [review_id, pull_request, layer_number, layer_name, layers_total]
+      required:
+        [review_id, pull_request, layer_number, layer_name, layers_total, ticket_id,
+         ticket_url]
       description: A review a session is still working on.
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }
+        ticket_id:
+          allOf:
+            - $ref: '#/components/schemas/ForeignId'
+          description: The ticket the change is for, opaque.
+        ticket_url:
+          allOf:
+            - $ref: '#/components/schemas/TicketUrl'
+          description: |
+            Where that ticket is, so this row can link it without the review being opened
+            first. Null for a review with an id and no address, which the row then names on
+            its own line and does not link.
         layer_number:
           type: integer
           minimum: 1
@@ -3934,14 +3958,17 @@ components:
         record, and no way to reach it — while the Reviews list showed the link for that
         same review.
 
-        **The two joined arrays do not carry the pair, and a review in one of them and in
-        none of the three is therefore a row that cannot link its ticket.** The join is not
-        all those arrays do: `in_progress` holds reviews nothing is waiting on the developer
-        for — 18 and 19 in the example — and `posted_awaiting_author` holds 14, and each of
-        those draws a row of its own. Those rows link a pull request and no ticket, while
-        `GET /reviews` links both for the same review. A gap, stated rather than implied,
-        and left because `InboxInProgressItem`'s shape is being changed by DEV-933 in
-        parallel: widening it here would be two changes to one schema at once.
+        **All seven arrays about a review carry the pair.** The join is not all the other
+        two arrays do: `in_progress` holds reviews nothing is waiting on the developer for —
+        18 and 19 in the example — and `posted_awaiting_author` holds 14, and each of those
+        draws a row of its own. So a row that could not reach its ticket while
+        `GET /reviews` linked it was a gap, and this closes it rather than restating it.
+
+        It was open for a few commits, with a reason that has since expired: DEV-933 was
+        changing `InboxInProgressItem`'s shape at the same time, and widening it then would
+        have been two changes to one schema at once. DEV-933 merged, so the reason went with
+        it. `own_prs_without_reviewer` is the one array with no ticket, and it is the one
+        with no review — it is a pull request nobody has reviewed.
       properties:
         totals: { $ref: '#/components/schemas/InboxTotals' }
         briefs_to_confirm:

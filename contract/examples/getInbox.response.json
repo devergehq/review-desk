@@ -132,6 +132,8 @@
         "pr": 409,
         "title": "Paginate the audit log"
       },
+      "ticket_id": "ABC-244",
+      "ticket_url": "https://linear.app/acme/issue/ABC-244",
       "layer_number": 5,
       "layer_name": "code_review",
       "layers_total": 7,
@@ -147,6 +149,8 @@
         "pr": 93,
         "title": "Move secrets to the vault"
       },
+      "ticket_id": "ABC-246",
+      "ticket_url": null,
       "layer_number": 3,
       "layer_name": "alternatives",
       "layers_total": 7,
@@ -164,6 +168,8 @@
         "pr": 398,
         "title": "Split the export job"
       },
+      "ticket_id": "ABC-187",
+      "ticket_url": null,
       "round": 1,
       "rounds_on_pr": 1,
       "posted_at": "2026-10-08T16:02:00Z",
@@ -183,6 +189,8 @@
         "pr": 401,
         "title": "Hold the queue connection open"
       },
+      "ticket_id": "ABC-238",
+      "ticket_url": null,
       "round": 1,
       "rounds_on_pr": 1,
       "posted_at": "2026-10-07T14:48:00Z",

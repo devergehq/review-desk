@@ -162,11 +162,17 @@ function draftById(id: number): DraftDetail | undefined {
 /**
  * The ticket and its address, for an inbox item that makes a queue row.
  *
- * **On all three of them**, which is what the contract requires and what the queue needs:
- * it draws one row per review, so a review reaches its row through `briefs_to_confirm`,
- * `drafts_to_approve` or `author_replies` depending on what it is waiting for — and a pair
- * served on only one of the three means a review whose brief is confirmed and whose draft
- * is waiting has a ticket on the record and no way to reach it.
+ * **On every array that is about a review**, which is what the contract requires and what
+ * the queue needs: it draws one row per review, so a review reaches its row through
+ * `briefs_to_confirm`, `drafts_to_approve` or `author_replies` depending on what it is
+ * waiting for — and a pair served on only one of those means a review whose brief is
+ * confirmed and whose draft is waiting has a ticket on the record and no way to reach it.
+ *
+ * `in_progress` and `posted_awaiting_author` carry it too, because a review can be in one
+ * of those and in none of the other three: a session is working, or an author has not
+ * answered, and nothing is waiting on the developer. Those rows are drawn from those arrays
+ * directly. `own_prs_without_reviewer` is the one array with no ticket, and it is the one
+ * with no review.
  */
 function ticketOf(detail: ReviewDetail): { ticket_id: string | null, ticket_url: string | null } {
   return {
@@ -427,6 +433,7 @@ function inbox(): Inbox {
     .map(({ detail, running }) => ({
       review_id: detail.review.id,
       pull_request: prOf(detail),
+      ...ticketOf(detail),
       layer_number: running!.number,
       layer_name: running!.name,
       layers_total: LAYERS_TOTAL,
@@ -480,6 +487,7 @@ function inbox(): Inbox {
       return {
         review_id: detail.review.id,
         pull_request: prOf(detail),
+        ...ticketOf(detail),
         round: detail.review.round,
         /* The group holds only the newest round, so these are one number. */
         rounds_on_pr: detail.review.round,

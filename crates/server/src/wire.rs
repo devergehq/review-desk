@@ -141,6 +141,11 @@ pub fn inbox_posted(posted: &PostedReview) -> Value {
     json!({
         "review_id": review.id,
         "pull_request": inbox_pr(review),
+        // The ticket and its address, for the reason the in-progress item carries them: a
+        // posted review whose author has not answered is in no other array, so it draws
+        // its own row and that row needs to reach its ticket.
+        "ticket_id": review.ticket_id,
+        "ticket_url": review.ticket_url,
         "round": review.round,
         // **The same number as `round`, and read here rather than passed in.** The store
         // returns only the newest round of a pull request, so the round this review is on

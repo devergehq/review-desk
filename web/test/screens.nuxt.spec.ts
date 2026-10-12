@@ -618,6 +618,36 @@ describe('the queue', () => {
     ])
   })
 
+  it('carries the two links on a row no developer act is waiting on', async () => {
+    /*
+     * **The gap this closed.** The pair was served only on the three arrays a needs-you row
+     * is built from, so a review that is in *none* of them — a session working on it, or an
+     * author who has not answered — drew a row with a link to its pull request and none to
+     * its ticket, while the Reviews list linked both for the same review. It was left for a
+     * few commits because DEV-933 was changing `InboxInProgressItem`'s shape at the same
+     * time; DEV-933 merged, so the reason went with it.
+     */
+    const page = await shown(Inbox)
+
+    for (const [group, heading] of [
+      ['With the agent', 'With the agent'],
+      ['Waiting on the author', 'Waiting on the author'],
+    ] as const) {
+      expect(page.text(), `the ${group} group is on the page`).toContain(heading)
+    }
+
+    /*
+     * Review 16 is `acme/billing-api#88`, a session running on it and nothing waiting on
+     * the developer — so it is in `in_progress` and in no needs-you array.
+     */
+    const agentRow = lines(page).find(line => line.row.text().includes('#88'))
+    expect(agentRow, 'the row for #88').toBeDefined()
+    expect(agentRow!.out.map(link => link.attributes('href'))).toEqual([
+      'https://github.com/acme/billing-api/pull/88',
+      'https://linear.app/acme/issue/ABC-240',
+    ])
+  })
+
   it('draws no ticket link on a row whose review has an id and no address', async () => {
     const page = await shown(Reviews)
     /* Review 41 is `#514`, ticket ABC-402, and the record holds no address for it. */

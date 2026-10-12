@@ -747,6 +747,11 @@ fn seed(store: &Store) -> Seeded {
             head_sha: "bbbbbbb".to_string(),
             round: 2,
             title: Some("Cache the permissions lookup".to_string()),
+            // A ticket and its address, because the Inbox's in-progress item serves them
+            // now and the example this is checked against has one. A null here and a value
+            // there is the disagreement this file exists to catch.
+            ticket_id: Some("ABC-244".to_string()),
+            ticket_url: Some("https://linear.app/acme/issue/ABC-244".to_string()),
             ..Default::default()
         })
         .expect("another review");
@@ -1937,6 +1942,8 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
             json!({
                 "review_id": at.review.id,
                 "pull_request": pull_request(&at.review),
+                "ticket_id": at.review.ticket_id,
+                "ticket_url": at.review.ticket_url,
                 "layer_number": at.layer.number,
                 "layer_name": at.layer.name,
                 "layers_total": ReviewLayerName::COUNT,
@@ -1984,6 +1991,8 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
             json!({
                 "review_id": item.review.id,
                 "pull_request": pull_request(&item.review),
+                "ticket_id": item.review.ticket_id,
+                "ticket_url": item.review.ticket_url,
                 "round": item.review.round,
                 // The group holds only the newest round, so these are one number.
                 "rounds_on_pr": item.review.round,

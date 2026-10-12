@@ -308,6 +308,12 @@ impl Api {
                 json!({
                     "review_id": at.review.id,
                     "pull_request": wire::inbox_pr(&at.review),
+                    // The ticket and its address, like the three arrays that wait on the
+                    // developer. A review here can be in no other array — a session is
+                    // working and nothing is waiting on anyone — so it draws its own row,
+                    // and a row that could not reach its ticket was a gap this closes.
+                    "ticket_id": at.review.ticket_id,
+                    "ticket_url": at.review.ticket_url,
                     "layer_number": at.layer.number,
                     "layer_name": at.layer.name.as_str(),
                     "layers_total": 7,
