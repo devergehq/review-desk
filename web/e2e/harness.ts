@@ -1378,13 +1378,20 @@ export async function stop(serving: Serving): Promise<void> {
  * from 900 upward — well clear of the 405–519 the seeds use — for the first pull request
  * nothing has reviewed. `review find` is the read that answers it.
  *
- * **What that buys is repeating the block, not repeating the file.** Every review this
+ * **What that buys is repeating the block, not repeating the run.** Every review this
  * makes is left on the shared database, and one of them is marked posted — which is the
  * predicate of `posted_reviews_awaiting_author`, so it becomes a "Waiting on the author"
- * row that the queue assertions earlier in `review-desk.spec.ts` count. Within one run
- * that costs nothing, because this block is last. `--repeat-each` over the whole file
- * would replay those counts against a database that has grown, and they would be right to
- * fail.
+ * row that the queue counts. Two consequences, and the second is the one that bites:
+ *
+ * - `--repeat-each` over the whole of `review-desk.spec.ts` replays the queue assertions
+ *   above this block against a database that has grown, and they would be right to fail.
+ *   Within one run it costs nothing, because the block is last.
+ * - **The two Playwright projects share the database**, so a bare `playwright test` with
+ *   no `--project` runs the acceptance suite and then the screenshots over a desk with
+ *   four reviews on it that were not there, and regenerates committed queue pictures with
+ *   rows nobody added. `pnpm run e2e` and `pnpm run e2e:screenshots` each name a project
+ *   and reseed, which is why they are the documented commands; this is the reason they
+ *   are not interchangeable with running the lot.
  */
 const FIRST_PULL_REQUEST = 900
 const LAST_PULL_REQUEST = FIRST_PULL_REQUEST + 50

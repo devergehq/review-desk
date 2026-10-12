@@ -3303,6 +3303,15 @@ test.describe('the draft page after a sign-off', () => {
     await expect(panel).not.toContainText('Waiting for this review')
     await expect(panel).not.toContainText('may not be running')
 
+    /*
+     * **And the send-back's own notice survived the poll that was running under it.** The
+     * page clears a stale notice when the draft reports posted, and only then: clearing on
+     * any status change raced the write, because a tick landing between a write's refresh
+     * being issued and answered would wipe the notice that write had just set — leaving
+     * the developer who took a sign-off back with no confirmation at all.
+     */
+    await expect(page.getByText('Sent back. The session has the note.')).toBeVisible()
+
     expect(draftRecord(id).draft.status).toBe('sent_back')
     expect(draftRecord(id).draft.event).toBeNull()
   })

@@ -103,6 +103,17 @@ const now = ref(new Date())
 const waiting = computed(() => props.draft.status === 'approved' && !props.bodyIsStale)
 
 /**
+ * Whether this page has watched the status change at all, on the draft in front of it.
+ *
+ * **A live region is for news, and a status this page did not watch arrive is not news.**
+ * One draft page serves every review, so going from a review being waited on to one posted
+ * days ago rewrites the region's text, and a screen reader reads "Posted on GitHub." as
+ * though it had just happened. The region stays empty until this page sees something move,
+ * which is the rule a fresh page load already followed and for the same reason.
+ */
+const sawAChange = ref(false)
+
+/**
  * Whether the last thing this page saw on this draft was a sign-off.
  *
  * **Cleared as well as set**, because it is "the last thing", not "ever". A draft can go
@@ -114,32 +125,48 @@ const waiting = computed(() => props.draft.status === 'approved' && !props.bodyI
 const watchedTheSignOff = ref(props.draft.status === 'approved')
 
 /**
- * **A different review in the same component.** One draft page serves every review, so
- * going from `/reviews/17/draft` to `/reviews/15/draft` changes these props without
- * mounting anything: the router keeps the page and the two resources re-read. Nothing this
+ * What this page last saw on the draft in front of it. Plain, not reactive: it is the
+ * watcher's own memory, read and written in one place.
+ */
+let seen = { review: props.draft.review_id, status: props.draft.status }
+
+/**
+ * **One watcher, keyed on a string, over the two facts that decide what this says.**
+ *
+ * Keyed rather than taken as a tuple: `watch` over a getter returning a fresh array is
+ * never `Object.is`-equal to its last value, and `props.draft` is a new object after every
+ * read — so a tuple watcher ran on all twelve ticks of a minute's waiting and a guard
+ * inside it was the only thing stopping the clock resetting each time. A string changes
+ * when one of the two does and not otherwise.
+ *
+ * **And one watcher rather than two, because a navigation changes both at once.** Split
+ * into a watcher per fact, going from a review being waited on to one posted days ago
+ * fired both, and whichever ran second won — which was the status, so the page announced a
+ * days-old posting as news. The two cases are mutually exclusive and are decided here
+ * together.
+ *
+ * **A different review is not news about this one.** One draft page serves every review,
+ * so the router keeps the page and the resources re-read underneath it. Nothing this
  * remembers was about the review now in front of it, so it starts again — which is also
  * why the clock moves, since the figures below are about the new one.
  */
 watch(
-  () => props.draft.review_id,
+  () => `${props.draft.review_id} ${props.draft.status}`,
   () => {
-    watchedTheSignOff.value = props.draft.status === 'approved'
-    now.value = new Date()
-  },
-)
+    const { review_id: review, status } = props.draft
 
-/*
- * **Two watchers on two scalars, not one on a tuple of them.** A getter returning a fresh
- * array is never `Object.is`-equal to the last one, and `props.draft` is a new object after
- * every read — so a combined watcher ran on all twelve ticks of a minute's waiting, and a
- * guard inside it was the only thing stopping the clock resetting each time. Measured at
- * twelve fires against nought. These fire when their comments say they do.
- */
-watch(
-  () => props.draft.status,
-  (status) => {
-    if (status === 'approved') watchedTheSignOff.value = true
-    else if (status === 'ready' || status === 'drafting') watchedTheSignOff.value = false
+    if (review !== seen.review) {
+      watchedTheSignOff.value = status === 'approved'
+      sawAChange.value = false
+      now.value = new Date()
+    }
+    else {
+      sawAChange.value = true
+      if (status === 'approved') watchedTheSignOff.value = true
+      else if (status === 'ready' || status === 'drafting') watchedTheSignOff.value = false
+    }
+
+    seen = { review, status }
   },
 )
 
@@ -294,6 +321,7 @@ const late = computed(
  * announcing something nobody did.
  */
 const announcement = computed(() => {
+  if (!sawAChange.value) return ''
   if (props.draft.status === 'posted') return 'Posted on GitHub.'
   if (props.draft.status === 'sent_back') {
     /*

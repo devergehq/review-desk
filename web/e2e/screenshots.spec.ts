@@ -536,8 +536,13 @@ test.describe('waiting for the session that posts it', () => {
     await expect(page.locator('.watch')).toContainText('25 sec ago')
     await bothWidths(page, 'dev-932-1-waiting')
 
-    /* Let it run again, so the page's own timer can notice the posting. */
-    await page.clock.resume()
+    /*
+     * **The clock stays stopped, and the posting is still noticed.** Resuming it put a
+     * live five-second tick in the window between the command below and the pin — and a
+     * tick that found the posting would stop the timer, leaving `pauseAt` with nothing due
+     * to fire and the figures wherever that tick had left them. Paused, nothing fires
+     * until the pin asks it to, and the pin's own jump is what wakes the interval.
+     */
     cli(seededDatabase, [
       'draft',
       'posted',

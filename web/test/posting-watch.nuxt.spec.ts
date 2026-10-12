@@ -98,6 +98,24 @@ async function watching(over: Partial<Props> = {}) {
   })
 }
 
+/**
+ * Mounted on a draft waiting for the developer, then signed off — which is how a developer
+ * reaches `approved`, and the only way the live region has anything to announce.
+ *
+ * **A test that mounts straight into `approved` is testing a page load, not a sign-off**,
+ * and a page load deliberately announces nothing: a live region is for news, and a status
+ * this component did not watch arrive is not news. Four assertions here were written
+ * against the shorthand and passed on behaviour the sign-off path does not have.
+ */
+async function signedOff(over: Partial<Props> = {}) {
+  const page = await watching({
+    ...over,
+    draft: draft({ status: 'ready', event: null, approved_at: null }),
+  })
+  await page.setProps({ draft: over.draft ?? draft() })
+  return page
+}
+
 /** How many times it has asked its page to read again. */
 function reads(_page: VueWrapper): number {
   return heard.mock.calls.length
@@ -204,7 +222,7 @@ describe('when nothing has posted it', () => {
   })
 
   it('says the session may not be running once they are', async () => {
-    const page = await watching()
+    const page = await signedOff()
     await tick(page, POSTED_WITHIN_SECONDS)
     expect(page.text()).toContain('may not be running')
     expect(announced(page)).toContain('may not be running')
@@ -273,7 +291,7 @@ describe('when nothing has posted it', () => {
      * being down because *Review Desk* is down, and send the developer to the wrong
      * system.
      */
-    const page = await watching({ recordIsCurrent: false })
+    const page = await signedOff({ recordIsCurrent: false })
     await tick(page, POSTED_WITHIN_SECONDS * 3)
     expect(page.text()).not.toContain('may not be running')
     expect(announced(page)).toBe('Waiting for this review’s session to post it.')
@@ -561,6 +579,23 @@ describe('what a screen reader is told', () => {
     expect(page.findAll('[role="status"], [role="alert"], [aria-live]')).toHaveLength(1)
   })
 
+  it('announces nothing about a draft it did not watch arrive', async () => {
+    /*
+     * A page *loaded* on a draft posted days ago, or navigated to from one being waited
+     * on. The region is in the page and empty: news is what a live region is for, and this
+     * is not news. The figures beside it say what the record holds, for anyone reading.
+     */
+    const page = await watching({
+      draft: draft({ status: 'posted', posted_at: '2026-10-12T10:00:54Z' }),
+    })
+    expect(page.find('[role="status"]').exists()).toBe(true)
+    expect(announced(page)).toBe('')
+    expect(page.text()).toContain('Posted')
+
+    await page.setProps({ draft: draft({ review_id: 15, status: 'approved' }) })
+    expect(announced(page)).toBe('')
+  })
+
   it('is in the page before there is anything to announce', async () => {
     /*
      * A live region added at the same moment as its content is one a screen reader may not
@@ -580,7 +615,7 @@ describe('what a screen reader is told', () => {
      * said the long wait's diagnosis in bold and the paragraph four lines below said it
      * again — twice in one card, in a picture this branch committed.
      */
-    const page = await watching()
+    const page = await signedOff()
     await tick(page, POSTED_WITHIN_SECONDS)
 
     const region = page.find('[role="status"]')
@@ -597,7 +632,7 @@ describe('what a screen reader is told', () => {
   })
 
   it('carries the state and never a figure, so a moving clock is not an interruption', async () => {
-    const page = await watching()
+    const page = await signedOff()
     const first = announced(page)
     expect(first).toBe('Waiting for this review’s session to post it.')
 

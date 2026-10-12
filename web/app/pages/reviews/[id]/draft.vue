@@ -209,13 +209,18 @@ const recordIsCurrent = computed(
  * sentence and the page says two things about one draft — the second of them in the
  * present tense about something that has already happened.
  *
- * The write's own notice survives its own write: `approveDraft` awaits the refresh before
- * `said()` sets it, so the status has already moved by the time the notice is written.
+ * **On `posted` and on nothing else, which is what makes it safe.** Every other status
+ * this page can arrive at is one the developer's own write produced, and that write is
+ * about to set a notice of its own; clearing on *any* change raced it — a poll landing
+ * between a write's refresh being issued and answered would clear the notice the write had
+ * just set, and the developer who took a sign-off back would be told nothing at all.
+ * `posted` is the one transition no act on this page can cause, and the only one that can
+ * strand a notice.
  */
 watch(
   () => detail.data.value?.draft.status,
-  (status, was) => {
-    if (was !== undefined && status !== was) notice.value = null
+  (status) => {
+    if (status === 'posted') notice.value = null
   },
 )
 
