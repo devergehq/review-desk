@@ -91,7 +91,7 @@ jobs:
 
       - name: Keep the build
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: web-static
           path: web/.output/public
