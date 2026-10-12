@@ -3,37 +3,27 @@
     "review_id": 17,
     "seq": 2,
     "key": "F2",
-    "lens": "repetition",
+    "lens": "approach",
     "severity": "should",
-    "file": "config/webhooks.php",
-    "line": 12,
-    "claim": "No way to replay a delivery after the window closes",
-    "evidence": null,
+    "file": null,
+    "line": null,
+    "claim": "No way to replay a delivery after the retry window closes",
+    "evidence": "from the option map \u00b7 ticket acceptance criterion 3",
     "disposition": "suppressed",
     "disposition_reason": "Already covered by the idempotency key rule; not worth a second comment.",
     "github_comment_id": null,
     "rule_id": null,
     "rule_key": null,
-    "hunk": {
-      "file": "config/webhooks.php",
-      "start_line": 12,
-      "lines": [
-        {
-          "marker": "unchanged",
-          "line": 12,
-          "text": "    'backoff' => [30, 120, 600],"
-        }
-      ]
-    },
-    "flagged_line": 12,
+    "hunk": null,
+    "flagged_line": null,
     "inline_comment": null,
-    "why_it_matters": "The two copies will drift, and the one that is wrong will be the one nobody reads.",
-    "proof": "From reading both files. The schedule was not run, so this is read, not run.",
-    "proof_note": "Read, not run: the schedule was not executed.",
-    "verification": "read_not_run",
-    "suggested_fix": "Read the schedule from one place.",
+    "why_it_matters": null,
+    "proof": null,
+    "proof_note": null,
+    "verification": "unknown",
+    "suggested_fix": null,
     "fix_references": [],
-    "created_at": "2026-10-08T11:15:00Z",
+    "created_at": "2026-10-08T11:12:00Z",
     "round_status": "new",
     "round_status_by": null,
     "round_status_checked": null,
@@ -57,7 +47,7 @@
   "draft": {
     "draft": {
       "review_id": 17,
-      "body": "The queue-with-backoff approach fits the ticket: deliveries are stored, retried for 24 hours and visible to the customer. One thing blocks the merge and two should be fixed with it.\n\n### Blocker \u00b7 F1 \u00b7 A retried delivery is sent without an idempotency key\n\nA retry re-sends the same payload with no key, so a customer whose endpoint accepted the first attempt slowly receives the event twice. See `jobs/DeliverWebhook.php:58`.\n\n```mermaid\nflowchart LR\n  A[Attempt 1 times out] --> B[Endpoint still processes it]\n  B --> C[Attempt 2 sends again]\n  C --> D[Two events for one]\n```\n\n<details>\n<summary>Proof: throwaway test, 2 deliveries for 1 event</summary>\n\n```php\n$event = Event::factory()->create();\nHttp::fake(['*' => Http::sequence()->pushStatus(504)->pushStatus(200)]);\nDeliverWebhook::dispatchSync($event);\n$this->artisan('queue:work --once');\n// 2 requests, same payload, no Idempotency-Key header on either\n$this->assertCount(2, Http::recorded());\n```\n\n</details>\n\n### Should \u00b7 F3 \u00b7 The failure test passes with the retry code reverted\n\nI reverted the retry and `tests/WebhookRetryTest.php:31` still passed, so it does not pin the behaviour.\n\n**Not checked:** worker behaviour across a deploy restart; production delivery volumes.\n",
+      "body": "The queue-with-backoff approach fits the ticket: deliveries are stored, retried for 24 hours and visible to the customer. One thing blocks the merge and two should be fixed with it.\n\n### Open \u2014 needs a decision\n\n| | Where | Finding | Status |\n| -- | -- | -- | -- |\n| \ud83d\udd34 Blocker \u00b7 F1 | [`DeliverWebhook.php:58`](https://github.com/acme/portal/blob/3f9c2ab/jobs/DeliverWebhook.php#L58) | A retried delivery is sent without an idempotency key | Open \u00b7 on the code |\n| \ud83d\udfe0 Should \u00b7 F3 | [`WebhookRetryTest.php:31`](https://github.com/acme/portal/blob/3f9c2ab/tests/WebhookRetryTest.php#L31) | The failure test passes with the retry code reverted | Open \u00b7 in the body |\n\n### Should \u00b7 F3 \u00b7 The failure test passes with the retry code reverted\n\nI reverted the retry and `tests/WebhookRetryTest.php:31` still passed, so it does not pin the behaviour.\n\n**Not checked:** worker behaviour across a deploy restart; production delivery volumes.\n",
       "status": "ready",
       "event": null,
       "approved_at": null,
@@ -155,6 +145,19 @@
         "posted": true
       }
     ],
+    "threads": [
+      {
+        "finding_seq": 1,
+        "finding_key": "F1",
+        "severity": "blocker",
+        "title": "A retried delivery is sent without an idempotency key",
+        "path": "jobs/DeliverWebhook.php",
+        "line": 58,
+        "side": "RIGHT",
+        "body": "> [!CAUTION]\n> **Blocker \u00b7 F1** \u2014 A retried delivery is sent without an idempotency key \u00b7 `Open`\n>\n> A retry re-sends the same payload with no key, so a customer whose endpoint accepted the first attempt slowly receives the event twice. See `jobs/DeliverWebhook.php:58`.\n>\n> ```mermaid\n> flowchart LR\n>   A[Attempt 1 times out] --> B[Endpoint still processes it]\n>   B --> C[Attempt 2 sends again]\n>   C --> D[Two events for one]\n> ```\n>\n> <details>\n> <summary>Proof: throwaway test, 2 deliveries for 1 event</summary>\n>\n> ```php\n> $event = Event::factory()->create();\n> Http::fake(['*' => Http::sequence()->pushStatus(504)->pushStatus(200)]);\n> DeliverWebhook::dispatchSync($event);\n> $this->artisan('queue:work --once');\n> // 2 requests, same payload, no Idempotency-Key header on either\n> $this->assertCount(2, Http::recorded());\n> ```\n>\n> </details>\n\n<!-- review-desk:F1 -->"
+      }
+    ],
+    "body_is_stale": false,
     "edits": [
       {
         "finding_seq": 6,
