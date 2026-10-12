@@ -181,6 +181,15 @@ const sinceSignOff = computed(() => secondsSince(props.draft.approved_at, now.va
  *
  * Only while waiting. A posted draft that took three minutes is not late; it is posted, and
  * what it took is a fact about it rather than a warning.
+ *
+ * **It compares a server stamp to a browser clock, and here that is safe.** Everywhere
+ * else that arithmetic can only mis-word a label; this one emits a diagnosis the developer
+ * will act on, so it is worth saying why a skew cannot cause a false accusation. Review
+ * Desk serves from a binary on loopback to a browser on the same machine — one clock, read
+ * twice — and `now()` in the store is `as_secs()`, which truncates down, so the browser's
+ * reading is at most a second ahead of the stamp and never behind it. A build that ever
+ * served this page from another machine would need a reference instant on the wire before
+ * this sentence could be trusted.
  */
 const late = computed(
   () => waiting.value && (sinceSignOff.value ?? 0) >= POSTED_WITHIN_SECONDS,
@@ -199,6 +208,12 @@ const late = computed(
  * Empty while nothing has been signed off, so that the region is in the page before the
  * text is: a live region added at the same moment as its content is one a screen reader
  * may not announce at all.
+ *
+ * **That covers a change, which is all a live region is for.** A page *loaded* on a draft
+ * that is already waiting or already posted draws the region and its sentence in the same
+ * patch and announces nothing, and that is right: the sentence is page content then, read
+ * when the developer reads the panel, and a page that spoke a line at every load would be
+ * announcing something nobody did.
  */
 const announcement = computed(() => {
   if (props.draft.status === 'posted') return 'Posted on GitHub.'

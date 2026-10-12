@@ -1377,6 +1377,14 @@ export async function stop(serving: Serving): Promise<void> {
  * clear of the 405–519 the seeds use — and keeps going until one comes back as a review of
  * its own: round 1, no findings, no draft. That is three facts rather than one because
  * they fail differently; a re-opened review is round 1 too.
+ *
+ * **What that buys is repeating the block, not repeating the file.** Every review this
+ * makes is left on the shared database, and one of them is marked posted — which is the
+ * predicate of `posted_reviews_awaiting_author`, so it becomes a "Waiting on the author"
+ * row that the queue assertions earlier in `review-desk.spec.ts` count. Within one run
+ * that costs nothing, because this block is last. `--repeat-each` over the whole file
+ * would replay those counts against a database that has grown, and they would be right to
+ * fail.
  */
 const FIRST_PULL_REQUEST = 900
 const LAST_PULL_REQUEST = FIRST_PULL_REQUEST + 50

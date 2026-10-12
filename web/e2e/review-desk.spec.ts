@@ -3230,11 +3230,17 @@ test.describe('the draft page after a sign-off', () => {
      * **The shape and the threshold, never the exact second.** `approved_at` is whole
      * seconds — the store's `now()` is `as_secs()`, so it truncates down — and the
      * browser's clock at the moment of the approve is that stamp plus its own sub-second
-     * remainder plus the round trip. `fastForward` jumps 45 seconds from *there*, so the
-     * figure is 45 or 46 depending on where those landed, and `retries: 0` means a test
-     * that named one of them would go red on a meaningful fraction of runs. What is worth
-     * asserting is that the page says how long they have waited and that it is past the
-     * threshold, which is the behaviour rather than the arithmetic.
+     * remainder plus the round trip. `fastForward` adds 45 to *that*, so the figure is 45
+     * or a little more, and a test naming one second of it would go red on a meaningful
+     * fraction of runs with `retries: 0`. What is worth asserting is that the page says
+     * how long they have waited and that it is past the threshold.
+     *
+     * **`clock.install()` does not pause the clock, which was measured rather than read.**
+     * Two reviews of this branch disagreed about it, so: with the clock installed and
+     * nothing else done, three real seconds moved `Date.now()` by 3,004 ms, `fastForward`
+     * moved it by exactly 45,000, and a five-second interval fired **once** across the
+     * jump. So the time the sign-off itself takes is added to the 45 rather than eaten out
+     * of it, and a slow page load makes this assertion safer, not flakier.
      */
     const lateText = await panel.locator('.late').textContent()
     const waited = Number(lateText?.match(/in the (\d+) sec since you signed off/)?.[1])

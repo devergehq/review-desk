@@ -2,7 +2,7 @@ import { resolve } from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
-import { cli, readAddresses, seedReadyDraft } from './harness'
+import { cli, cliJson, readAddresses, seedReadyDraft } from './harness'
 
 /*
  * The screenshots in `docs/screenshots/`, produced rather than taken by hand.
@@ -498,12 +498,44 @@ test.describe('waiting for the session that posts it', () => {
     await page.setViewportSize({ width: 1440, height: 900 })
   }
 
-  /** Sign off in the browser, which is the only place a draft can be signed off. */
+  /**
+   * Sign off in the browser, which is the only place a draft can be signed off.
+   *
+   * The clock is installed first so that `pinAt` below can stop it. `install` on its own
+   * changes nothing a picture would show: measured, three real seconds move it 3,004 ms,
+   * so the page runs as it always does until something asks the clock to move or stop.
+   */
   async function signOff(page: Page, id: number) {
+    await page.clock.install()
     await page.goto(`${seeded}reviews/${id}/draft`)
     await page.locator('select#event').selectOption('request_changes')
     await page.getByRole('button', { name: 'Sign off and post' }).click()
     await expect(page.getByText('Waiting for this review’s session to post it.')).toBeVisible()
+  }
+
+  /**
+   * Stop the browser's clock a stated number of seconds after the sign-off.
+   *
+   * **So that two runs produce the same picture, which is this file's whole claim.** The
+   * panel's figures are in seconds, and `bothWidths` takes the second shot a moment after
+   * the first — so on a live clock the 1440 and the 390 pictures of one state disagreed
+   * with each other, and every regeneration was a diff nobody had asked for. Pinned to the
+   * record's own `approved_at` rather than to a wall clock, because that stamp is what the
+   * figures are measured from.
+   *
+   * It is `pauseAt`, so the jump fires each due timer once and then nothing moves again.
+   */
+  async function pinAt(page: Page, id: number, secondsAfterSignOff: number) {
+    const { draft } = cliJson(seededDatabase, [
+      'draft',
+      'show',
+      '--review',
+      String(id),
+    ]) as unknown as { draft: { approved_at: number | null } }
+    if (draft.approved_at == null) {
+      throw new Error(`review ${id}'s draft is not signed off, so there is nothing to pin to`)
+    }
+    await page.clock.pauseAt(new Date((draft.approved_at + secondsAfterSignOff) * 1000))
   }
 
   test('signed off, and then posted', async ({ page }) => {
@@ -512,8 +544,12 @@ test.describe('waiting for the session that posts it', () => {
       'Carry an idempotency key on a retry',
     )
     await signOff(page, id)
+    await pinAt(page, id, 25)
+    await expect(page.locator('.watch')).toContainText('25 sec ago')
     await bothWidths(page, 'dev-932-1-waiting')
 
+    /* Let it run again, so the page's own timer can notice the posting. */
+    await page.clock.resume()
     cli(seededDatabase, [
       'draft',
       'posted',
@@ -536,12 +572,12 @@ test.describe('waiting for the session that posts it', () => {
       'Skip a schedule whose tenant row has gone',
     )
 
-    /* The browser's clock moved rather than waited out; the page itself runs normally. */
-    await page.clock.install()
+    /* Forty-five seconds after the sign-off, and stopped there. Nothing is waited out. */
     await signOff(page, id)
-    await page.clock.fastForward('45')
+    await pinAt(page, id, 45)
 
     await expect(page.locator('.watch')).toContainText('may not be running')
+    await expect(page.locator('.watch')).toContainText('in the 45 sec since you signed off')
     await bothWidths(page, 'dev-932-2-nothing-posted')
   })
 
@@ -557,6 +593,7 @@ test.describe('waiting for the session that posts it', () => {
     await page.getByRole('button', { name: 'Send back', exact: true }).click()
 
     await expect(page.locator('.watch')).toContainText('The sign-off is taken back')
+    /* Nothing in this state carries a figure, so there is no clock to pin. */
     await bothWidths(page, 'dev-932-4-sent-back')
   })
 })
