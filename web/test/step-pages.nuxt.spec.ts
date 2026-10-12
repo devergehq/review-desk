@@ -132,7 +132,13 @@ describe('the shell every step page sits in', () => {
 
   /* ---------------- The two links out of a review (DEV-936) ---------------- */
 
-  /** The header's links, which are the only `.out` anchors on the page. */
+  /**
+   * The header's links, which are the only `.header-out` anchors on the page.
+   *
+   * The class was `.out` until a review pointed out that `QueueRow` and `SignOffCard` each
+   * had one too — so this comment's claim held only because `SignOffCard` is drawn by no
+   * page yet, and the draft page is a `ReviewStepPage`.
+   */
   const wayOut = (page: VueWrapper) => page.findAll('.where a.header-out')
 
   it('links the repository and the number to the pull request', async () => {
@@ -169,6 +175,38 @@ describe('the shell every step page sits in', () => {
       const [pull] = wayOut(page)
       expect(pull, `${name} carries the link`).toBeDefined()
       expect(pull!.attributes('href'), name).toBe('https://github.com/acme/portal/pull/514')
+    }
+  })
+
+  it('draws the repository as text when it is not a repository name', async () => {
+    /*
+     * **`prUrl` refuses rather than building a link to somewhere else.** Two populations of
+     * rows reach it that the store's check does not: everything released Review Desk wrote,
+     * which never checked the characters, and — until this branch's own review — a `..`
+     * segment. `https://github.com/acme/portal#x/pull/412` is served as the repository page
+     * and `https://github.com/../../pull/1` resolves to `github.com/pull/1`, so in both the
+     * link's text and its destination name two different things.
+     *
+     * The same second refusal `ticketUrl` makes, for the reason it states: a column is not
+     * a promise about every row in it.
+     */
+    for (const repo of ['acme/portal#x', '../..', 'acme/portal/extra', 'acme/..']) {
+      const detail = fixture(STRUCTURED)
+      detail.review = { ...detail.review, repo: repo as typeof detail.review.repo }
+      await withReview(detail)
+
+      const page = await understand(STRUCTURED)
+      const where = page.find('.where')
+      expect(where.text(), `${repo} is still named`).toContain(repo)
+      expect(
+        where.findAll('a').map(one => one.attributes('href') ?? ''),
+        `${repo} is not linked`,
+      ).not.toContain(`https://github.com/${repo}/pull/514`)
+      expect(
+        where.findAll('a.header-out').some(one =>
+          (one.attributes('href') ?? '').startsWith('https://github.com/')),
+        `${repo} draws no GitHub link at all`,
+      ).toBe(false)
     }
   })
 

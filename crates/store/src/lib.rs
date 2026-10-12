@@ -26,7 +26,7 @@ mod entities;
 pub mod error;
 pub mod migrations;
 pub mod model;
-mod normalise;
+pub mod normalise;
 pub mod path;
 
 use std::path::{Path, PathBuf};
@@ -62,6 +62,9 @@ pub use crate::model::{
     RuleScope, RuleStage, RulesSummary, Severity, SignOff, Timestamp, Verification, WorkFilter,
     WorkItem, WorkKind, ACTIVE_RULES_CAP,
 };
+/// Whether a string is a repository name — the one copy of that rule. See
+/// [`normalise::is_repo_name`].
+pub use crate::normalise::is_repo_name;
 pub use crate::path::{default_db_path, resolve_db_path, DB_ENV_VAR};
 
 /// An open Review Desk database, migrated to a known schema version.

@@ -74,6 +74,43 @@ pub(crate) fn optional_fact(given: Option<&str>) -> Option<String> {
         .map(str::to_string)
 }
 
+/// Whether this is a repository name: the contract's `RepoName`, and not a relative path.
+///
+/// `^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$`, which is what GitHub allows and what the contract
+/// declares — **and not `.` or `..` as either half**, because the pattern alone permits
+/// them: `.` is a legal character in a repository name and the pattern says nothing about
+/// what a segment means.
+///
+/// **That exclusion is the load-bearing half, and it is load-bearing in two places.** Every
+/// store query binds its parameters, so a dot segment is inert in SQL — but this value is
+/// read back out and put into two paths by other crates. `harvest` formats
+/// `repos/{repo}/pulls/{pr}` into a `gh api` call, where `repos/../../pulls/1` is
+/// `api.github.com/pulls/1`; and the dashboard builds `https://github.com/{repo}/pull/{pr}`,
+/// which a browser resolves `https://github.com/../../pull/1` to `github.com/pull/1`. In
+/// both the value goes somewhere other than the repository anybody named, and in the second
+/// the link's text and its destination disagree — which is the defect DEV-936 exists to
+/// remove.
+///
+/// **One copy, here, because it was two.** `wire::is_repo_name` had this rule and its
+/// reason; DEV-936 then wrote a second, looser one in the store's `validate` — missing
+/// exactly the dot guard — and the store is the gate `review open` passes through, since the
+/// command line reaches `Store` without going near the server. `wire` delegates to this.
+pub fn is_repo_name(repo: &str) -> bool {
+    let Some((owner, name)) = repo.split_once('/') else {
+        return false;
+    };
+    if matches!(owner, "." | "..") || matches!(name, "." | "..") {
+        return false;
+    }
+    let usable = |part: &str| {
+        !part.is_empty()
+            && part
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || "._-".contains(character))
+    };
+    usable(owner) && usable(name)
+}
+
 /// Whether this is a git object name and not a word.
 ///
 /// **Checked, and not merely trimmed, because these columns are typed rather than

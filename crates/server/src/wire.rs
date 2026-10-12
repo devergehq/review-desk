@@ -1077,29 +1077,16 @@ pub fn parse_pr_link(url: &str) -> Result<PrLink, ApiError> {
     Ok(PrLink { repo, pr })
 }
 
-/// The contract's `RepoName` pattern: `^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$`, and not a
-/// relative path.
+/// The contract's `RepoName` pattern, and not a relative path.
 ///
-/// **The pattern alone permits `../..`**, because `.` is a legal character in a
-/// repository name and the pattern says nothing about what the segments mean. Every store
-/// query binds its parameters, so that is inert where this value goes today — but this
-/// function is also the gate on a value that can reach a `gh` command's path, and
-/// `repos/../../x/pulls/1` is not the repository anybody named. Refused here rather than
-/// left for whoever next passes a repository through to `gh`.
+/// **Delegated, because this rule existed twice.** The store had a second, looser copy —
+/// missing the `.`/`..` guard this function has always had — and the store is the gate the
+/// command line passes through. `review_desk_store::is_repo_name` is the one copy now, and
+/// it carries the reason: a dot segment is inert in SQL and is *not* inert in the two paths
+/// this value is read back into, `gh api repos/{repo}/pulls/{pr}` and
+/// `https://github.com/{repo}/pull/{pr}`.
 pub fn is_repo_name(repo: &str) -> bool {
-    let Some((owner, name)) = repo.split_once('/') else {
-        return false;
-    };
-    if matches!(owner, "." | "..") || matches!(name, "." | "..") {
-        return false;
-    };
-    let usable = |part: &str| {
-        !part.is_empty()
-            && part
-                .chars()
-                .all(|character| character.is_ascii_alphanumeric() || "._-".contains(character))
-    };
-    usable(owner) && usable(name)
+    review_desk_store::is_repo_name(repo)
 }
 
 /// The contract's `head_sha` pattern: 7 to 40 lower-case hexadecimal characters.

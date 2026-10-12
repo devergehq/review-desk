@@ -560,32 +560,23 @@ impl Store {
 fn validate(new: NewReview) -> Result<NewReview> {
     let repo = normalise::repo(&new.repo);
     let repo = repo.as_str();
-    let (owner, name) = repo.split_once('/').unwrap_or(("", ""));
-    // **The characters as well as the shape, which the contract has always declared and
-    // this had never checked.** `RepoName` is `^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$`, and
-    // GitHub allows nothing else in a repository name — but this accepted any two non-empty
-    // halves, so `acme/portal#x` was stored. Nothing noticed until a header started
-    // *building a link* out of the field: `https://github.com/acme/portal#x/pull/412` is
-    // served as the repository page rather than the pull request, so the link's text and
-    // its destination named two different things. That is the failure DEV-936 exists to
-    // remove, reached through the one field nobody thought was free text.
+    // **The characters and the segments, through the one copy of that rule.** This checked
+    // only that both halves were non-empty, so `acme/portal#x` was stored — and a header
+    // then built `https://github.com/acme/portal#x/pull/412`, which GitHub serves as the
+    // repository page rather than the pull request: a link whose text and destination name
+    // two different things, which is the defect DEV-936 exists to remove, reached through
+    // the one field nobody thought was free text.
     //
-    // A `?` or a space gives a 404 instead, and neither is an injection — the scheme and
-    // the host are literals and the attribute is set through the DOM. What is at stake is a
-    // link that goes somewhere other than where it says.
-    let legal = |part: &str| {
-        !part.is_empty()
-            && part
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
-    };
-    if !legal(owner) || !legal(name) {
+    // The first fix for that wrote the character class here and missed `..`, which
+    // `wire::is_repo_name` had refused all along and said why. `normalise::is_repo_name` is
+    // now the only copy, and it carries both the rule and the reason.
+    if !normalise::is_repo_name(repo) {
         return Err(StoreError::InvalidValue {
             field: "repo",
             value: new.repo.clone(),
             expected: concat!(
-                "a repository as owner/repo, in letters, digits, dot, underscore ",
-                "and hyphen",
+                "a repository as owner/repo, in letters, digits, dot, underscore and ",
+                "hyphen, and neither half `.` or `..`",
             )
             .to_string(),
         });

@@ -53,7 +53,13 @@ const props = defineProps<{
   sub?: string | null
 }>()
 
-/** Where this review's pull request is. Built from the record, never read from it. */
+/**
+ * Where this review's pull request is. Built from the record, never read from it.
+ *
+ * `null` for a `repo` that is not a repository name, which `prUrl` refuses rather than
+ * building a link to somewhere else out of — the header then draws the repository and the
+ * number as text, which is what it does for a ticket it cannot link.
+ */
 const pullRequest = computed(() => prUrl(props.detail.review.repo, props.detail.review.pr))
 
 /**
@@ -78,11 +84,15 @@ const ticket = computed(() => ticketUrl(props.detail.review.ticket_url))
       -->
       <p class="rd-rubric where">
         <a
+          v-if="pullRequest"
           class="header-out"
           :href="pullRequest"
           target="_blank"
           rel="noopener noreferrer"
         >{{ detail.review.repo }} · #{{ detail.review.pr }}<span class="rd-visually-hidden">, on GitHub, opens in a new tab</span></a>
+        <template v-else>
+          {{ detail.review.repo }} · #{{ detail.review.pr }}
+        </template>
 
         <template v-if="detail.review.ticket_id">
           ·

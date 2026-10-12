@@ -15,13 +15,26 @@
  */
 
 /**
- * GitHub's address for a pull request.
+ * GitHub's address for a pull request, or `null` when `repo` is not a repository name.
  *
  * **Built from the two fields, never stored.** A stored copy could disagree with the
- * `repo` and `pr` it was built from, and those two are the review's identity — the store
- * normalises them and the contract constrains `repo` to
- * `^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$`. So there is no free text in here and nothing a
- * caller can put in the address.
+ * `repo` and `pr` it was built from, and those two are the review's identity.
+ *
+ * **And checked here, not assumed from the store.** This used to rest its whole case on
+ * the store — "the contract constrains `repo`, so there is nothing a caller can put in the
+ * address" — which `ticketUrl` below refuses to do for its own field, in as many words: a
+ * column is not a promise about every row in it. Two populations prove the point for this
+ * one. Released Review Desk never checked the characters at all, so `acme/portal#x` is
+ * storable today and a header built from it links the *repository page*; and until DEV-936's
+ * own review, `../..` passed too, which a browser resolves to `github.com/pull/1`. Both are
+ * a link whose text and its destination name two different things, which is the defect this
+ * feature exists to remove.
+ *
+ * **A second implementation of one rule, and that is the right number here.** Three copies
+ * in the store was the bug — same layer, same language, one of them looser. This is the
+ * other side of a boundary the store cannot reach: a row already written, read by a renderer
+ * that must not draw it. `normalise::is_repo_name` is the rule; this is the same rule at the
+ * only other place it can be enforced.
  *
  * **Written as a function because `//` cannot go in a component's interpolated
  * attribute.** `vue-tsc` emits a component's props as one line, so the `//` in `https://`
@@ -31,7 +44,13 @@
  * reports 17. It works inline on a *native* element, which is why a header's own `<a>`
  * could write it; it is here so that no caller has to know which case it is in.
  */
-export function prUrl(repo: string, pr: number): string {
+export function prUrl(repo: string, pr: number): string | null {
+  const halves = repo.split('/')
+  if (halves.length !== 2) return null
+  const usable = (part: string) =>
+    part.length > 0 && part !== '.' && part !== '..' && /^[A-Za-z0-9._-]+$/.test(part)
+  if (!halves.every(usable)) return null
+
   return `https://github.com/${repo}/pull/${pr}`
 }
 

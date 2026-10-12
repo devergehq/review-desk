@@ -1305,6 +1305,16 @@ fn a_repository_name_is_refused_unless_it_is_one() {
         "acme/",
         "/portal",
         "acme/portal:8080",
+        // **The dot segments, which the character class alone permits**: `.` is legal *in*
+        // a name, so `^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$` accepts `../..`. Inert in SQL,
+        // because every query binds — and not inert in the two paths this value is read
+        // back into: `gh api repos/../../pulls/1` is `api.github.com/pulls/1`, and a
+        // browser resolves `https://github.com/../../pull/1` to `github.com/pull/1`.
+        "../..",
+        "./portal",
+        "acme/..",
+        "../portal",
+        "acme/.",
     ] {
         match store.create_review(new_review(refused, 1, "abc1234", 1)) {
             Err(StoreError::InvalidValue { field, .. }) => assert_eq!(field, "repo"),
@@ -1362,4 +1372,28 @@ fn a_blank_title_or_not_checked_leaves_the_recorded_one_alone() {
         Some("Retry failed webhook deliveries")
     );
     assert_eq!(after.not_checked.as_deref(), Some("the admin screens"));
+
+    // **And a blank fact riding along with a real one**, which is the case that reaches the
+    // `UPDATE`. The call above is `is_empty`, so `set_review_facts` returns before the
+    // statement runs and the two `optional_fact` calls in its parameters are never executed
+    // — revert them and the assertions above still pass. A mixed call is not empty, so the
+    // statement runs, and only reading the parameters through the rule keeps the title.
+    let mixed = ReviewFacts {
+        title: Some(String::new()),
+        not_checked: Some("  ".to_string()),
+        changed_lines: Some(180),
+        ..Default::default()
+    };
+    assert!(!mixed.is_empty(), "a real fact makes the call a write");
+
+    let wrote = store
+        .set_review_facts(review.id, &mixed)
+        .expect("the changed-line count, and two blanks along with it");
+    assert_eq!(wrote.changed_lines, Some(180), "the real fact is written");
+    assert_eq!(
+        wrote.title.as_deref(),
+        Some("Retry failed webhook deliveries"),
+        "and the blank ones leave what was recorded alone"
+    );
+    assert_eq!(wrote.not_checked.as_deref(), Some("the admin screens"));
 }
