@@ -43,6 +43,8 @@ const REVIEW: Review = {
   created_at: '2026-10-12T09:40:00Z',
   pr_state: 'open',
   harvested_at: null,
+  dismissed_at: null,
+  dismissed_reason: null,
 }
 
 function draft(over: Partial<Draft> = {}): Draft {
@@ -132,6 +134,15 @@ async function visibility(page: VueWrapper, state: 'hidden' | 'visible') {
   Object.defineProperty(document, 'visibilityState', { value: state, configurable: true })
   document.dispatchEvent(new Event('visibilitychange'))
   await page.vm.$nextTick()
+}
+
+/** The review of the draft under test, taken out of play after the sign-off. */
+function dismissed(): Review {
+  return {
+    ...REVIEW,
+    dismissed_at: '2026-10-12T10:01:00Z',
+    dismissed_reason: 'the pull request was closed unmerged',
+  }
 }
 
 /** The one element a screen reader is told about. */
@@ -639,13 +650,33 @@ describe('the states it has nothing to add to', () => {
      * refused outright, so the state that reaches here is one approved and then
      * dismissed.
      */
-    const page = await watching({
-      review: { ...REVIEW, dismissed_at: '2026-10-12T10:01:00Z' },
-    })
+    const page = await watching({ review: dismissed() })
     expect(announced(page)).toBe('')
     await tick(page, POSTED_WITHIN_SECONDS * 2)
-    expect(reads(page)).toBe(0)
     expect(page.text()).not.toContain('may not be running')
+  })
+
+  it('goes on reading one, because that is how the restore reaches the page', async () => {
+    /*
+     * **The one place this parts company with the stale body**, and the reason is where
+     * the way out is: a stale body is cleared by an act on this page, and a dismissal is
+     * undone on the review's own page — another tab, most likely. This panel owns the
+     * only re-read the draft page has, so a page that stopped reading here would never
+     * learn the review came back.
+     */
+    const page = await watching({ review: dismissed() })
+    await tick(page, RE_READ_EVERY_SECONDS * 3)
+    expect(reads(page)).toBe(3)
+  })
+
+  it('waits again on a draft whose review is brought back under it', async () => {
+    const page = await watching({ review: dismissed() })
+    await tick(page, RE_READ_EVERY_SECONDS * 2)
+    expect(page.text()).not.toContain('Signed off')
+
+    await page.setProps({ review: REVIEW })
+    await page.vm.$nextTick()
+    expect(page.text()).toContain('Signed off')
   })
 })
 

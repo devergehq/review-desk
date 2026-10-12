@@ -719,10 +719,12 @@ function startReview(prUrl: string): Review {
 function refuseIfDismissed(id: number, act: string): void {
   const detail = reviewById(id)
   /*
-   * **A review that is not there is not found, not "not dismissed".** Read with `?.`
-   * this passed silently for an unknown id, and in the two callers that ask before any
-   * other lookup that turned the binary's "no review with id N" into "no draft on review
-   * N" — a different refusal about a different thing.
+   * **A review that is not there is not found, not "not dismissed".** Read with `?.` this
+   * passed silently for an unknown id and turned the binary's "no review with id N" into
+   * "no draft on review N" — a different refusal about a different thing. No caller can
+   * reach it that way now, since every one of the five looks the thing up before asking
+   * this, but a guard that is right costs nothing and the ordering is the kind of thing
+   * this file has had wrong twice.
    */
   if (!detail) throw notFound(`review ${id}`)
   if (detail.review.dismissed_at != null) {
@@ -736,8 +738,9 @@ function refuseIfDismissed(id: number, act: string): void {
 function confirmBrief(id: number): Brief {
   const detail = reviewById(id)
   if (!detail) throw notFound(`review ${id}`)
-  refuseIfDismissed(id, 'confirming its brief')
+  /* After the brief is looked for, which is the order the handler asks in. See below. */
   if (!detail.brief) throw conflict(`Review ${id} has no brief to confirm.`)
+  refuseIfDismissed(id, 'confirming its brief')
   if (detail.brief.confirmed) return detail.brief
 
   detail.brief.confirmed = true
@@ -842,13 +845,6 @@ function saveDraft(id: number, body: string, edits: DraftEditToRecord[]): DraftD
 
 /** `POST /reviews/{id}/draft/approve` — approved here, posted by the review session. */
 function approveDraft(id: number, event: ReviewEvent): DraftDetail {
-  /*
-   * **Before the draft is looked for, which is the order the store asks in.** A
-   * dismissed review with no draft row answers `409 dismissed_review` in the binary and
-   * answered `404` here, so a screen's refusal state tested on fixtures was tested
-   * against the wrong code — the one thing this file must not do.
-   */
-  refuseIfDismissed(id, 'approving its draft')
   const detail = draftById(id)
   if (!detail) throw notFound(`draft on review ${id}`)
   if (detail.draft.status !== 'ready') {
@@ -857,6 +853,18 @@ function approveDraft(id: number, event: ReviewEvent): DraftDetail {
       + 'approved.',
     )
   }
+  /*
+   * **Last, which is where the binary refuses it**, and the order is the whole of what
+   * this file is for. The guard is in the *store*'s `approve_draft`, and the handler
+   * reaches it only after `records.review` and `draft_must_be` — so a dismissed review
+   * with no draft row answers `404 review N has no draft`, and one whose draft is
+   * already posted answers `409 this draft is posted …`. Asked first, as this was, both
+   * answered "Review N is dismissed": the same code about a different thing, which is
+   * the one fault a fixture backend can have that costs more than having none. Found by
+   * a review of this branch, in four calls; the fifth, `requestNitTicket`, carries the
+   * same note.
+   */
+  refuseIfDismissed(id, 'approving its draft')
 
   detail.draft.status = 'approved'
   detail.draft.event = event
@@ -883,8 +891,6 @@ function sendBackDraft(id: number, note: string): DraftDetail {
     )
   }
 
-  refuseIfDismissed(id, 'sending its draft back')
-
   const detail = draftById(id)
   if (!detail) throw notFound(`draft on review ${id}`)
   /*
@@ -898,6 +904,8 @@ function sendBackDraft(id: number, note: string): DraftDetail {
       + 'and not yet posted, can be sent back.',
     )
   }
+  /* Last, where the binary refuses it: see `approveDraft`. The note comes first in both. */
+  refuseIfDismissed(id, 'sending its draft back')
 
   detail.draft.status = 'sent_back'
   detail.draft.sent_back_note = trimmed
@@ -1322,8 +1330,6 @@ function decideFinding(
  * changes that ticketed everything it asked for would contradict itself.
  */
 function ticketRestAndApprove(id: number, note: string | null): TicketedAndApproved {
-  /* Before the draft is looked for, as `approveDraft` above and the store both do. */
-  refuseIfDismissed(id, 'ticketing what is left and approving')
   const drafted = draftById(id)
   const owner = reviewById(id)
   if (!drafted || !owner) throw notFound(`draft on review ${id}`)
@@ -1334,6 +1340,8 @@ function ticketRestAndApprove(id: number, note: string | null): TicketedAndAppro
       + 'approved.',
     )
   }
+  /* Last, where the binary refuses it: `draft_must_be` runs before the store's guard. */
+  refuseIfDismissed(id, 'ticketing what is left and approving')
 
   const open = owner.findings.filter(isPosted)
   if (open.length === 0) {

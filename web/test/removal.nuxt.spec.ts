@@ -351,6 +351,36 @@ describe('what a dismissed review refuses', () => {
     expect(moved.ok).toBe(true)
   })
 
+  it('asks in the binary’s order, so the refusal is about the same thing', async () => {
+    /*
+     * **The dismissal is the last question, not the first.** In the binary the guard is
+     * inside the *store*'s write, and the handler reaches it only after the review, the
+     * draft and the draft's status — so a dismissed review with a posted draft answers
+     * "this draft is posted …" and one with no brief answers "has no brief to confirm".
+     * Asked first, as these records did, both answered "is dismissed": the same refusal
+     * code about a different thing, which is the one way a fixture backend can make a
+     * refusal state tested here mean nothing. Found by a review of this branch.
+     */
+    await resetDesk()
+    const desk = useReviewDesk()
+    await desk.dismissReview(12, 'the pull request was closed unmerged')
+    await desk.dismissReview(43, 'superseded by a rewrite')
+
+    const signedOff = await desk.approveDraft(12, 'comment')
+    expect(signedOff.ok).toBe(false)
+    if (!signedOff.ok) {
+      expect(signedOff.error.message).toContain('This draft is posted')
+      expect(signedOff.error.message).not.toContain('dismissed')
+    }
+
+    const confirmed = await desk.confirmBrief(43)
+    expect(confirmed.ok).toBe(false)
+    if (!confirmed.ok) {
+      expect(confirmed.error.message).toContain('no brief to confirm')
+      expect(confirmed.error.message).not.toContain('dismissed')
+    }
+  })
+
   it('still takes a session’s report of a ticket it already filed', async () => {
     // **The ask and the report are two roles of one call**, and only the ask needs an
     // agent: the ticket exists in the tracker, and refusing the report would leave the
