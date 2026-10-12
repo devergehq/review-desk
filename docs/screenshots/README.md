@@ -34,16 +34,17 @@ cd web && pnpm run e2e:screenshots
 is a click, because that is the only way a draft can be signed off; the posting is
 `review-desk draft posted`, which is the command a review session runs; the take-back is
 the control on the page. The waits are moved with Playwright's clock rather than waited
-out — 25 seconds for the first picture and 45 for the second, pinned to the record's own
-`approved_at` so that the 1440 and the 390 shot of one state agree with each other and two
-runs produce the same panel.
+out, and **pinned to the record's own stamps rather than moved by a duration** — 25 seconds
+after `approved_at` for the first picture, 45 for the second, 40 after `posted_at` for the
+third — so the 1440 and the 390 shot of one state agree with each other and two runs put
+the same figures in the panel.
 
-**They are not byte-identical between runs, and the reason is worth naming.** The line
-under the trail carries `waiting_on_you_seconds`, which the *server* measures from the
-draft becoming ready to the developer signing off — real seconds between two commands, so
-it reads "0 sec" on one run and "1 sec" on the next. Nothing in a browser can pin a figure
-the server computed, and the alternative would be moving the database's clock, which is
-what the `dev-890` shots below had to do and is worth it only when the figures are the
+**Two figures in them are still the server's, and no browser clock can pin those.**
+`waiting_on_you_seconds`, on the line under the trail, is measured from the draft becoming
+ready to the developer signing off; "Taken to post", in the third picture, is `posted_at`
+less `approved_at`. Both are real seconds between two commands, so each can land a second
+either way and make a run differ. The alternative is moving the database's clock, which is
+what the `dev-890` shots below had to do and is worth it only where the figures are the
 subject of the picture.
 
 The records in the seeded shots are invented, but they are **real rows in a real SQLite

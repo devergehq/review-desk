@@ -6,6 +6,8 @@ import { expect, test, type Page } from '@playwright/test'
 import {
   cli,
   cliJson,
+  draftStamps,
+  pinClockAt,
   readAddresses,
   seedReadyDraft,
   serversUnderTest,
@@ -3212,9 +3214,13 @@ test.describe('the draft page after a sign-off', () => {
     /*
      * **The browser's clock, moved rather than waited out.** Forty seconds of real waiting
      * is forty seconds on every run of this suite to measure one sentence, and a test that
-     * sleeps past a threshold is a test that goes red when a machine is busy. `clock.install`
-     * leaves the page running normally and `fastForward` is the laptop lid closing: the due
-     * interval fires once, with `Date.now()` on the other side of the threshold.
+     * sleeps past a threshold is a test that goes red when a machine is busy.
+     *
+     * **Pinned to the record's own `approved_at`, not moved by a duration.** `install`
+     * leaves the clock running — measured: three real seconds move `Date.now()` by 3,004
+     * ms — so `fastForward('45')` would land at 45 seconds *plus* however long the sign-off
+     * took, which is 45 until the wording crosses a minute and becomes "1 min". The figure
+     * is exactly 45 here, on any machine, however slow.
      */
     await page.clock.install()
     await signOff(page, id, 'request_changes')
@@ -3222,30 +3228,12 @@ test.describe('the draft page after a sign-off', () => {
     const panel = page.locator('.watch')
     await expect(panel).not.toContainText('may not be running')
 
-    await page.clock.fastForward('45')
+    await pinClockAt(page, draftStamps(seededDatabase, id).approvedAt, 45)
 
     await expect(panel).toContainText('may not be running')
 
-    /*
-     * **The shape and the threshold, never the exact second.** `approved_at` is whole
-     * seconds — the store's `now()` is `as_secs()`, so it truncates down — and the
-     * browser's clock at the moment of the approve is that stamp plus its own sub-second
-     * remainder plus the round trip. `fastForward` adds 45 to *that*, so the figure is 45
-     * or a little more, and a test naming one second of it would go red on a meaningful
-     * fraction of runs with `retries: 0`. What is worth asserting is that the page says
-     * how long they have waited and that it is past the threshold.
-     *
-     * **`clock.install()` does not pause the clock, which was measured rather than read.**
-     * Two reviews of this branch disagreed about it, so: with the clock installed and
-     * nothing else done, three real seconds moved `Date.now()` by 3,004 ms, `fastForward`
-     * moved it by exactly 45,000, and a five-second interval fired **once** across the
-     * jump. So the time the sign-off itself takes is added to the 45 rather than eaten out
-     * of it, and a slow page load makes this assertion safer, not flakier.
-     */
-    const lateText = await panel.locator('.late').textContent()
-    const waited = Number(lateText?.match(/in the (\d+) sec since you signed off/)?.[1])
-    /* 40 is `POSTED_WITHIN_SECONDS`; `test/posting.spec.ts` holds it to two intervals. */
-    expect(waited).toBeGreaterThanOrEqual(40)
+    /* Exactly the figure the clock was pinned to, because it was pinned to the stamp. */
+    await expect(panel).toContainText('in the 45 sec since you signed off')
     /* And the way out. */
     await expect(panel).toContainText('Check the session that was reviewing this')
     await expect(panel).toContainText('take the sign-off back')

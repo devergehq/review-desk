@@ -362,6 +362,7 @@ const noAnchorSentence = computed(
     -->
     <p
       class="said"
+      :class="{ 'said--waiting-to-speak': announcement.length === 0 }"
       role="status"
     >
       {{ announcement }}
@@ -437,22 +438,32 @@ const noAnchorSentence = computed(
 </template>
 
 <style scoped>
+/*
+ * **`contents`, so that a panel with nothing to say is the panel it was.** These rows are
+ * laid out by the card around them — `.panel` is a column with the same 10px gap — and a
+ * box of its own here was one more flex child, which cost a gap on each side: every draft
+ * nobody had signed off gained ten pixels of blank space above the card's last line. Two
+ * reviews called that incidental and it was.
+ */
 .watch {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  display: contents;
 }
 
 /*
- * The live region. No height of its own while it is empty, which is every draft nobody has
- * signed off — and **not** `display: none` there, however tempting: a region out of the
- * accessibility tree until the moment it has something to say is a region a screen reader
- * may never announce.
+ * The live region. **Not `display: none` while it is empty, however tempting**: a region
+ * out of the accessibility tree until the moment it has something to say is a region a
+ * screen reader may never announce. Taken out of the flow instead, which keeps it in the
+ * tree and in the page while costing the layout nothing — `contents` above only works
+ * because of this, since an empty paragraph is a flex child like any other.
  */
 .said {
   margin: 0;
   font-size: 13px;
   font-weight: 500;
+}
+
+.said--waiting-to-speak {
+  position: absolute;
 }
 
 .who,

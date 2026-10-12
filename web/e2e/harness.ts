@@ -10,6 +10,7 @@
  */
 
 import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import type { Page } from '@playwright/test'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -1512,4 +1513,43 @@ export function seedReadyDraft(
   cli(database, ['draft', 'put', '--review', String(reviewId), '--sections', sections])
 
   return { reviewId, pr }
+}
+
+/** The draft's two stamps, as the record holds them: whole seconds, or null. */
+export function draftStamps(
+  database: string,
+  reviewId: number,
+): { approvedAt: number | null, postedAt: number | null } {
+  const { draft } = cliJson(database, [
+    'draft',
+    'show',
+    '--review',
+    String(reviewId),
+  ]) as unknown as { draft: { approved_at: number | null, posted_at: number | null } }
+  return { approvedAt: draft.approved_at, postedAt: draft.posted_at }
+}
+
+/**
+ * Stop the browser's clock a stated number of seconds after a stamp the record holds.
+ *
+ * **Pinned to the record, never to a wall clock.** The draft page words its figures from
+ * `approved_at` and `posted_at`, so a test that moves the browser's clock by a *duration*
+ * is asserting on 45 seconds plus however long the sign-off itself took — which is 45
+ * until the wording crosses a minute and becomes "1 min", and then it is a capture group
+ * that does not match. Pinning to the stamp makes the figure the one the test names, on
+ * any machine, however slow.
+ *
+ * `pauseAt` rather than `fastForward`: the jump fires each due timer once and then nothing
+ * moves again, which is what a picture wants and what an assertion about one figure needs.
+ * The clock must already be installed; `page.clock.resume()` starts it going again.
+ */
+export async function pinClockAt(
+  page: Page,
+  stamp: number | null,
+  secondsAfter: number,
+): Promise<void> {
+  if (stamp == null) {
+    throw new Error('the record holds no stamp to pin the clock to')
+  }
+  await page.clock.pauseAt(new Date((stamp + secondsAfter) * 1000))
 }

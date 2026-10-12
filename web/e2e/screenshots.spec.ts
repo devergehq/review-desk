@@ -2,7 +2,7 @@ import { resolve } from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
-import { cli, cliJson, readAddresses, seedReadyDraft } from './harness'
+import { cli, draftStamps, pinClockAt, readAddresses, seedReadyDraft } from './harness'
 
 /*
  * The screenshots in `docs/screenshots/`, produced rather than taken by hand.
@@ -514,28 +514,15 @@ test.describe('waiting for the session that posts it', () => {
   }
 
   /**
-   * Stop the browser's clock a stated number of seconds after the sign-off.
+   * Stop the clock a stated number of seconds after the sign-off.
    *
    * **So that two runs produce the same picture, which is this file's whole claim.** The
    * panel's figures are in seconds, and `bothWidths` takes the second shot a moment after
-   * the first — so on a live clock the 1440 and the 390 pictures of one state disagreed
-   * with each other, and every regeneration was a diff nobody had asked for. Pinned to the
-   * record's own `approved_at` rather than to a wall clock, because that stamp is what the
-   * figures are measured from.
-   *
-   * It is `pauseAt`, so the jump fires each due timer once and then nothing moves again.
+   * the first — so on a live clock the 1440 and the 390 picture of one state disagreed
+   * with each other, and every regeneration was a diff nobody had asked for.
    */
-  async function pinAt(page: Page, id: number, secondsAfterSignOff: number) {
-    const { draft } = cliJson(seededDatabase, [
-      'draft',
-      'show',
-      '--review',
-      String(id),
-    ]) as unknown as { draft: { approved_at: number | null } }
-    if (draft.approved_at == null) {
-      throw new Error(`review ${id}'s draft is not signed off, so there is nothing to pin to`)
-    }
-    await page.clock.pauseAt(new Date((draft.approved_at + secondsAfterSignOff) * 1000))
+  async function pinAfterSignOff(page: Page, id: number, seconds: number) {
+    await pinClockAt(page, draftStamps(seededDatabase, id).approvedAt, seconds)
   }
 
   test('signed off, and then posted', async ({ page }) => {
@@ -544,7 +531,7 @@ test.describe('waiting for the session that posts it', () => {
       'Carry an idempotency key on a retry',
     )
     await signOff(page, id)
-    await pinAt(page, id, 25)
+    await pinAfterSignOff(page, id, 25)
     await expect(page.locator('.watch')).toContainText('25 sec ago')
     await bothWidths(page, 'dev-932-1-waiting')
 
@@ -559,10 +546,26 @@ test.describe('waiting for the session that posts it', () => {
       '1842003517',
     ])
 
+    /*
+     * **Pinned before the page notices, not after.** `now` moves on a timer tick, a change
+     * of state or a return to the tab, and the timer stops the moment the draft is posted
+     * — so a clock pinned *after* the page had noticed would fire nothing and leave the
+     * figure wherever the last live tick put it. Pinned while the page is still waiting,
+     * the jump fires the running interval once: it re-reads, finds the posting, and words
+     * "Posted" from the pinned clock.
+     *
+     * **Forty, not twelve, and the clock is why.** `pauseAt` refuses to go backwards, and
+     * the clock is already at the sign-off plus the 25 the picture above was pinned to —
+     * so the offset has to clear that from `posted_at`, which the session reports a second
+     * or two after the sign-off. Forty does, with room for a slow command.
+     */
+    await pinClockAt(page, draftStamps(seededDatabase, id).postedAt, 40)
+
     /* Noticed on the page's own timer. Nothing is reloaded to take this picture. */
     await expect(page.locator('.watch')).toContainText('Posted on GitHub.', {
       timeout: 20_000,
     })
+    await expect(page.locator('.watch')).toContainText('40 sec ago')
     await bothWidths(page, 'dev-932-3-posted')
   })
 
@@ -574,7 +577,7 @@ test.describe('waiting for the session that posts it', () => {
 
     /* Forty-five seconds after the sign-off, and stopped there. Nothing is waited out. */
     await signOff(page, id)
-    await pinAt(page, id, 45)
+    await pinAfterSignOff(page, id, 45)
 
     await expect(page.locator('.watch')).toContainText('may not be running')
     await expect(page.locator('.watch')).toContainText('in the 45 sec since you signed off')
