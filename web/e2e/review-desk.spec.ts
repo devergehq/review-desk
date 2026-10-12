@@ -3119,7 +3119,10 @@ test.describe('the draft page after a sign-off', () => {
   }
 
   test('while it waits, the page says what is known and keeps it current', async ({ page }) => {
-    const id = seedReadyDraft(seededDatabase, 428, 'Carry an idempotency key on a retried delivery')
+    const { reviewId: id } = seedReadyDraft(
+      seededDatabase,
+      'Carry an idempotency key on a retried delivery',
+    )
     await signOff(page, id, 'request_changes')
 
     const panel = page.locator('.watch')
@@ -3147,7 +3150,10 @@ test.describe('the draft page after a sign-off', () => {
   })
 
   test('the session posts it, and the page says so without a reload', async ({ page }) => {
-    const id = seedReadyDraft(seededDatabase, 429, 'Record the delivery attempt count inside the transaction')
+    const { reviewId: id, pr } = seedReadyDraft(
+      seededDatabase,
+      'Record the delivery attempt count inside the transaction',
+    )
     await signOff(page, id, 'comment')
 
     /*
@@ -3183,7 +3189,7 @@ test.describe('the draft page after a sign-off', () => {
     const link = panel.getByRole('link', { name: /See the review on GitHub/ })
     await expect(link).toHaveAttribute(
       'href',
-      `https://github.com/acme/portal/pull/429#pullrequestreview-1842003517`,
+      `https://github.com/acme/portal/pull/${pr}#pullrequestreview-1842003517`,
     )
 
     /* The heading and the sentence under it followed, which is the rest of the page. */
@@ -3198,7 +3204,10 @@ test.describe('the draft page after a sign-off', () => {
   test('after forty seconds with no post it says the session may not be running', async ({
     page,
   }) => {
-    const id = seedReadyDraft(seededDatabase, 430, 'Skip a schedule whose tenant row has gone')
+    const { reviewId: id } = seedReadyDraft(
+      seededDatabase,
+      'Skip a schedule whose tenant row has gone',
+    )
 
     /*
      * **The browser's clock, moved rather than waited out.** Forty seconds of real waiting
@@ -3216,7 +3225,21 @@ test.describe('the draft page after a sign-off', () => {
     await page.clock.fastForward('45')
 
     await expect(panel).toContainText('may not be running')
-    await expect(panel).toContainText('in the 45 sec since you signed off')
+
+    /*
+     * **The shape and the threshold, never the exact second.** `approved_at` is whole
+     * seconds — the store's `now()` is `as_secs()`, so it truncates down — and the
+     * browser's clock at the moment of the approve is that stamp plus its own sub-second
+     * remainder plus the round trip. `fastForward` jumps 45 seconds from *there*, so the
+     * figure is 45 or 46 depending on where those landed, and `retries: 0` means a test
+     * that named one of them would go red on a meaningful fraction of runs. What is worth
+     * asserting is that the page says how long they have waited and that it is past the
+     * threshold, which is the behaviour rather than the arithmetic.
+     */
+    const lateText = await panel.locator('.late').textContent()
+    const waited = Number(lateText?.match(/in the (\d+) sec since you signed off/)?.[1])
+    /* 40 is `POSTED_WITHIN_SECONDS`; `test/posting.spec.ts` holds it to two intervals. */
+    expect(waited).toBeGreaterThanOrEqual(40)
     /* And the way out. */
     await expect(panel).toContainText('Check the session that was reviewing this')
     await expect(panel).toContainText('take the sign-off back')
@@ -3252,7 +3275,10 @@ test.describe('the draft page after a sign-off', () => {
   test('taking the sign-off back stops the waiting, while the page is watching', async ({
     page,
   }) => {
-    const id = seedReadyDraft(seededDatabase, 431, 'Name the helper this change deletes')
+    const { reviewId: id } = seedReadyDraft(
+      seededDatabase,
+      'Name the helper this change deletes',
+    )
     await signOff(page, id, 'request_changes')
 
     const panel = page.locator('.watch')

@@ -507,7 +507,10 @@ test.describe('waiting for the session that posts it', () => {
   }
 
   test('signed off, and then posted', async ({ page }) => {
-    const id = seedReadyDraft(seededDatabase, 440, 'Carry an idempotency key on a retry')
+    const { reviewId: id } = seedReadyDraft(
+      seededDatabase,
+      'Carry an idempotency key on a retry',
+    )
     await signOff(page, id)
     await bothWidths(page, 'dev-932-1-waiting')
 
@@ -528,7 +531,10 @@ test.describe('waiting for the session that posts it', () => {
   })
 
   test('signed off, and nothing has posted it', async ({ page }) => {
-    const id = seedReadyDraft(seededDatabase, 441, 'Skip a schedule whose tenant row has gone')
+    const { reviewId: id } = seedReadyDraft(
+      seededDatabase,
+      'Skip a schedule whose tenant row has gone',
+    )
 
     /* The browser's clock moved rather than waited out; the page itself runs normally. */
     await page.clock.install()
@@ -540,7 +546,10 @@ test.describe('waiting for the session that posts it', () => {
   })
 
   test('the sign-off taken back while the page was watching', async ({ page }) => {
-    const id = seedReadyDraft(seededDatabase, 442, 'Name the helper this change deletes')
+    const { reviewId: id } = seedReadyDraft(
+      seededDatabase,
+      'Name the helper this change deletes',
+    )
     await signOff(page, id)
 
     await page.getByRole('button', { name: 'Take back the sign-off and send it back' }).click()

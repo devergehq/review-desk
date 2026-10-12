@@ -441,6 +441,27 @@ describe('a hidden tab', () => {
     expect(reads(page)).toBe(2)
   })
 
+  it('moves the clock on a posted draft too, which no timer is going to', async () => {
+    /*
+     * A figure that has stopped is stale, which this desk accepts. One that has stopped
+     * across an hour the page was *told* about is wrong — and this panel is the only part
+     * of the desk that is told when the tab came back.
+     */
+    vi.setSystemTime(new Date('2026-10-12T10:00:54Z'))
+    const page = await watching({
+      draft: draft({ status: 'posted', posted_at: '2026-10-12T10:00:54Z' }),
+    })
+    expect(page.text()).toContain('just now')
+
+    await visibility(page, 'hidden')
+    await tick(page, 3600)
+    await visibility(page, 'visible')
+
+    expect(page.text()).toContain('1 hr ago')
+    /* And still nothing is being read: a posted draft is not waiting for anything. */
+    expect(reads(page)).toBe(0)
+  })
+
   it('starts no timer at all when it is mounted hidden', async () => {
     Object.defineProperty(document, 'visibilityState', {
       value: 'hidden',

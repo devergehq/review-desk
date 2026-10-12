@@ -52,6 +52,10 @@ const emit = defineEmits<{ refresh: [] }>()
  * says what it said when it was posted rather than counting upwards forever. While the
  * page is waiting it is as fresh as the last read, which is at most
  * {@link RE_READ_EVERY_SECONDS} seconds old.
+ *
+ * The exception is coming back to the tab, where it moves whatever the status — see
+ * `onVisibilityChange`. A figure that has stopped is stale; one that has stopped across an
+ * hour the page was told about is wrong.
  */
 const now = ref(new Date())
 
@@ -136,8 +140,16 @@ function onVisibilityChange(): void {
     stop()
     return
   }
-  if (!waiting.value) return
+  /*
+   * **The clock moves whether or not anything is still being waited for**, and that is the
+   * one place this panel departs from "a time is as fresh as the page". A posted draft
+   * whose figure stops moving is stale, which the desk accepts everywhere; a posted draft
+   * that says "12 sec ago" an hour after you left the tab is *wrong*, and this is the only
+   * part of the desk that is told when you came back. It costs one recompute: no timer
+   * starts for a draft nothing is coming to.
+   */
   now.value = new Date()
+  if (!waiting.value) return
   emit('refresh')
   start()
 }
@@ -223,14 +235,21 @@ const announcement = computed(() => {
  * while a draft waits is whether twenty seconds have passed or fifty. The one thing it is
  * borrowed from `sinceLabel` for is the nought — "0 sec ago" is a reading of a clock, and
  * "just now" is what a person says.
+ *
+ * Null where the record holds no instant, so each caller says in its own words what that
+ * absence is: an unrecorded sign-off and a review nothing has written to are both nulls
+ * and are not the same sentence.
  */
-function ago(seconds: number | null): string | null {
+function agoLabel(at: Instant | null | undefined): string | null {
+  const seconds = secondsSince(at, now.value)
   if (seconds == null) return null
   if (seconds === 0) return 'just now'
   return `${durationLabel(seconds)} ago`
 }
 
-const signedOffLabel = computed(() => ago(sinceSignOff.value) ?? 'at an unrecorded time')
+const signedOffLabel = computed(
+  () => agoLabel(props.draft.approved_at) ?? 'at an unrecorded time',
+)
 
 /**
  * When anything last wrote to this review, or that the record does not say.
@@ -239,11 +258,9 @@ const signedOffLabel = computed(() => ago(sinceSignOff.value) ?? 'at an unrecord
  * answer as a long time ago — so it is words rather than a figure, which is the rule the
  * checks above this panel follow for a count the server cannot answer.
  */
-const lastWrittenLabel = computed(
-  () => ago(secondsSince(props.lastActivityAt, now.value)) ?? 'Not recorded',
-)
+const lastWrittenLabel = computed(() => agoLabel(props.lastActivityAt) ?? 'Not recorded')
 
-const postedLabel = computed(() => ago(secondsSince(props.draft.posted_at, now.value)))
+const postedLabel = computed(() => agoLabel(props.draft.posted_at))
 
 /**
  * How long the session took, from the sign-off to the posting it reported.
@@ -274,14 +291,13 @@ const postedAs = computed(() =>
  * identifier a `<script setup>` never names is not in the template's scope.
  */
 
-const whoPosts = computed(
-  () =>
-    'This review’s own session posts it, not Review Desk — it reads the desk about every '
+/* Two settings and no props, so a constant: there is nothing here for a computed to track. */
+const whoPosts
+  = 'This review’s own session posts it, not Review Desk — it reads the desk about every '
     + `${WATCHER_READS_EVERY_SECONDS} seconds while a draft is waiting, so one that is `
     + `running posts within about ${POSTED_WITHIN_SECONDS} seconds. Whether it is running `
     + 'is not something Review Desk is told; the time above is how long the review has been '
-    + 'silent, which is the nearest thing the record holds.',
-)
+    + 'silent, which is the nearest thing the record holds.'
 
 /**
  * The sentence the long wait adds, which states nothing the paragraph above it already has.

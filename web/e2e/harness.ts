@@ -1363,48 +1363,76 @@ export async function stop(serving: Serving): Promise<void> {
  * It stops at `ready`. Signing off is the developer's act and there is no command for it,
  * which is the boundary the whole of this file is arranged around.
  *
- * **`pr` must be a pull request nothing else on this database has reviewed.** `review open`
- * on a pull request already reviewed at another head starts the *next round* of it, which
+ * **It finds its own pull request number, by asking the record.** Picking one by hand was
+ * wrong twice over. A number the seed already uses opens a *round two* of that review —
+ * `review open` on a pull request reviewed at another head starts the next round, which
  * carries the earlier round's findings forward and moves `rounds_on_pr` on a review some
- * other test is asserting about. That is checked below rather than left to whoever picks
- * the next number: it cost a confusing "finding 6/1 does not exist" to find once.
+ * other test asserts about; the only symptom was "draft section refers to finding 6/1,
+ * which does not exist", naming neither the pull request nor the round. The *same* number
+ * twice hands back the same review and a refused `draft put`, which is what
+ * `--repeat-each` hit.
+ *
+ * A counter in this module does not fix the second one, because the runner reloads the
+ * module between repeats and the counter starts again. So it opens from 900 upward — well
+ * clear of the 405–519 the seeds use — and keeps going until one comes back as a review of
+ * its own: round 1, no findings, no draft. That is three facts rather than one because
+ * they fail differently; a re-opened review is round 1 too.
  */
-export function seedReadyDraft(database: string, pr: number, title: string): number {
-  const directory = scratch()
+const FIRST_PULL_REQUEST = 900
+const LAST_PULL_REQUEST = FIRST_PULL_REQUEST + 50
 
-  const opened = cli(database, [
-    'review',
-    'open',
-    '--repo',
-    'acme/portal',
-    '--pr',
-    String(pr),
-    '--head',
-    'b4d9e01',
-    '--title',
-    title,
-    '--ticket',
-    'ABC-251',
-    '--changed-lines',
-    '64',
-  ])
-  const reviewId = Number(opened.match(/\d+/)?.[0])
-  if (!Number.isInteger(reviewId)) {
-    throw new Error(`review open printed no id: ${opened}`)
-  }
-
-  const review = (
-    cliJson(database, ['review', 'show', '--review', String(reviewId)]) as unknown as {
-      review: { round: number }
+/** Open a review on the first pull request in that range that nothing has reviewed. */
+function openAFreshReview(
+  database: string,
+  title: string,
+): { reviewId: number, pr: number } {
+  for (let pr = FIRST_PULL_REQUEST; pr <= LAST_PULL_REQUEST; pr += 1) {
+    const opened = cli(database, [
+      'review',
+      'open',
+      '--repo',
+      'acme/portal',
+      '--pr',
+      String(pr),
+      '--head',
+      'b4d9e01',
+      '--title',
+      title,
+      '--ticket',
+      'ABC-251',
+      '--changed-lines',
+      '64',
+    ])
+    const reviewId = Number(opened.match(/\d+/)?.[0])
+    if (!Number.isInteger(reviewId)) {
+      throw new Error(`review open printed no id: ${opened}`)
     }
-  ).review
-  if (review.round !== 1) {
-    throw new Error(
-      `acme/portal#${pr} has been reviewed on this database already, so this opened round `
-      + `${review.round} of it rather than a review of its own. Pick a pull request number `
-      + 'no other seed uses.',
-    )
+
+    const shown = cliJson(database, [
+      'review',
+      'show',
+      '--review',
+      String(reviewId),
+    ]) as unknown as { review: { round: number }, findings: unknown[], draft: unknown }
+
+    if (shown.review.round === 1 && shown.findings.length === 0 && shown.draft == null) {
+      return { reviewId, pr }
+    }
   }
+
+  throw new Error(
+    `every pull request from ${FIRST_PULL_REQUEST} to ${LAST_PULL_REQUEST} on this `
+    + 'database is already reviewed. Something is seeding in this range, or a test is '
+    + 'asking for far more reviews than this helper was meant to make.',
+  )
+}
+
+export function seedReadyDraft(
+  database: string,
+  title: string,
+): { reviewId: number, pr: number } {
+  const directory = scratch()
+  const { reviewId, pr } = openAFreshReview(database, title)
 
   const finding = join(directory, 'posting-finding.json')
   writeFileSync(
@@ -1456,5 +1484,5 @@ export function seedReadyDraft(database: string, pr: number, title: string): num
   )
   cli(database, ['draft', 'put', '--review', String(reviewId), '--sections', sections])
 
-  return reviewId
+  return { reviewId, pr }
 }
