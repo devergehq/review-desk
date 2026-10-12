@@ -301,6 +301,23 @@ const late = computed(
 )
 
 /**
+ * The wait passing the threshold is news too, and keying news off the status alone lost it.
+ *
+ * **A page loaded straight into a signed-off draft never sees its status change.** The
+ * poll returns the same review at the same status, the keyed watcher never fires, and
+ * `sawAChange` stays false — so a developer who signed off and then reloaded the tab got
+ * the sentence drawn and never announced. The one sentence on this panel that sends
+ * somebody somewhere, silent for exactly the reader who cannot see it. Worse, the same
+ * page announced the *posting* afterwards, because that does change the status.
+ *
+ * Not `immediate`: a page opened on a draft that was already late is reading a state, not
+ * watching one arrive, and announcing it on load is the thing the gate exists to stop.
+ */
+watch(late, (yes) => {
+  if (yes) sawAChange.value = true
+})
+
+/**
  * The one sentence a screen reader is told as this changes.
  *
  * **It carries no figure, and that is the whole reason the figures are outside the live

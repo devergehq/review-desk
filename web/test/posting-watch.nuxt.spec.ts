@@ -283,6 +283,29 @@ describe('when nothing has posted it', () => {
     expect(page.text()).toContain('may not be running')
   })
 
+  it('announces it on a page that was loaded already signed off', async () => {
+    /*
+     * **No status change ever happens here**, which is a reload of a draft signed off a
+     * moment ago: the poll keeps answering `approved`, so news keyed off the status alone
+     * never arrives and the one sentence that sends somebody somewhere was drawn and never
+     * spoken. The wait passing the threshold is the change.
+     */
+    const page = await watching()
+    expect(announced(page)).toBe('')
+
+    await tick(page, POSTED_WITHIN_SECONDS)
+    expect(announced(page)).toContain('may not be running')
+  })
+
+  it('stays silent about a draft that was already late when the page opened', async () => {
+    /* Reading a state rather than watching one arrive. Announcing that would be the noise
+     * the gate exists to stop. */
+    vi.setSystemTime(new Date('2026-10-12T11:00:00Z'))
+    const page = await watching()
+    expect(page.text()).toContain('may not be running')
+    expect(announced(page)).toBe('')
+  })
+
   it('says nothing of the sort while the page cannot read the record', async () => {
     /*
      * **The worst sentence this page could say.** A failed read leaves the last good
