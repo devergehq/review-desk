@@ -1353,17 +1353,21 @@ impl ReviewFacts {
     /// "last written to 4 min ago", so a flag that wrote nothing made a dormant review
     /// read as freshly touched.
     ///
-    /// **`title` and `not_checked` are deliberately not treated the same way here.** They
-    /// carry the same blank-overwrite behaviour — `--title ""` does replace a recorded
-    /// title with the empty string — and that is a fault, but it is not this change's and
-    /// changing it would change two flags DEV-936 does not touch. Reported rather than
-    /// fixed in passing.
+    /// **All four read through the one rule, `title` and `not_checked` included.** They were
+    /// left raw for several commits, on the argument that `--title ""` replacing a recorded
+    /// title is a fault DEV-936 did not introduce. Two things changed that: the prose this
+    /// branch added to the contract says "a fact left out is left as it was", which was then
+    /// true of two fields and false of their two neighbours — an asymmetry a caller trips on
+    /// and nothing explains — and the half-fix left exactly the data loss the ticket pair's
+    /// own fix had just removed, one field over. One rule is both smaller and true.
     pub fn is_empty(&self) -> bool {
-        self.title.is_none()
-            && crate::normalise::optional_fact(self.ticket_id.as_deref()).is_none()
-            && crate::normalise::optional_fact(self.ticket_url.as_deref()).is_none()
+        let nothing =
+            |held: &Option<String>| crate::normalise::optional_fact(held.as_deref()).is_none();
+        nothing(&self.title)
+            && nothing(&self.ticket_id)
+            && nothing(&self.ticket_url)
             && self.changed_lines.is_none()
-            && self.not_checked.is_none()
+            && nothing(&self.not_checked)
     }
 }
 

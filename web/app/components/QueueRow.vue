@@ -179,18 +179,18 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
     -->
     <span
       v-if="prHref || (ticket && ticketId)"
-      class="out"
+      class="row-out"
     >
       <a
         v-if="prHref"
-        class="out-link"
+        class="row-out-link"
         :href="prHref"
         target="_blank"
         rel="noopener noreferrer"
       >GitHub<span class="rd-visually-hidden">: pull request #{{ pr }}, opens in a new tab</span></a>
       <a
         v-if="ticket && ticketId"
-        class="out-link"
+        class="row-out-link"
         :href="ticket"
         target="_blank"
         rel="noopener noreferrer"
@@ -352,11 +352,17 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
 }
 
 /*
+ * **`row-out`, not `out`.** `ReviewStepPage` calls its header *anchors* `.out` and
+ * `SignOffCard` calls an anchor `.out` too — so this component's *container* sharing the
+ * name made one class mean two different things across three components, which is the rule
+ * the `.line` rename above states: scoped CSS makes sharing safe for styling, and a test
+ * selecting it unscoped then measures whichever one it reaches first.
+ *
  * The two links, stacked at the end of the line and the same width down the page so the
  * column reads as a column. Underlined rather than accent-coloured alone: at 13px beside a
  * row of grey meta text, colour is the cue a reader misses.
  */
-.out {
+.row-out {
   display: flex;
   flex: 0 0 96px;
   flex-direction: column;
@@ -367,11 +373,11 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
 }
 
 /* The same air the needs-you row gives itself, so the two cells line up vertically. */
-.queue-line--emphasis .out {
+.queue-line--emphasis .row-out {
   padding: 16px 0;
 }
 
-.out-link {
+.row-out-link {
   max-width: 100%;
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -408,7 +414,7 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
    * long ticket id beside "GitHub" read as two broken stacks rather than the two words
    * this is meant to be.
    */
-  .out {
+  .row-out {
     flex: 1 1 100%;
     flex-wrap: wrap;
     flex-direction: row;
@@ -416,7 +422,7 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
     padding: 0 0 12px;
   }
 
-  .queue-line--emphasis .out {
+  .queue-line--emphasis .row-out {
     padding: 0 0 16px;
   }
 }

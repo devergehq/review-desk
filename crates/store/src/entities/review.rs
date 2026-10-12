@@ -280,11 +280,15 @@ impl Store {
              WHERE id = ?1",
             params![
                 id,
-                facts.title,
+                // Every optional string fact through the one rule, so that a blank one is
+                // "say nothing about this" rather than "set it to the empty string" — which
+                // `COALESCE` cannot be told apart from a value. `--title "$T"` with `$T`
+                // unset destroyed a recorded title until this line read it this way.
+                normalise::optional_fact(facts.title.as_deref()),
                 ticket_id,
                 ticket_url,
                 facts.changed_lines,
-                facts.not_checked,
+                normalise::optional_fact(facts.not_checked.as_deref()),
                 stale_url,
             ],
         )?;
@@ -557,11 +561,33 @@ fn validate(new: NewReview) -> Result<NewReview> {
     let repo = normalise::repo(&new.repo);
     let repo = repo.as_str();
     let (owner, name) = repo.split_once('/').unwrap_or(("", ""));
-    if owner.is_empty() || name.is_empty() || name.contains('/') {
+    // **The characters as well as the shape, which the contract has always declared and
+    // this had never checked.** `RepoName` is `^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$`, and
+    // GitHub allows nothing else in a repository name — but this accepted any two non-empty
+    // halves, so `acme/portal#x` was stored. Nothing noticed until a header started
+    // *building a link* out of the field: `https://github.com/acme/portal#x/pull/412` is
+    // served as the repository page rather than the pull request, so the link's text and
+    // its destination named two different things. That is the failure DEV-936 exists to
+    // remove, reached through the one field nobody thought was free text.
+    //
+    // A `?` or a space gives a 404 instead, and neither is an injection — the scheme and
+    // the host are literals and the attribute is set through the DOM. What is at stake is a
+    // link that goes somewhere other than where it says.
+    let legal = |part: &str| {
+        !part.is_empty()
+            && part
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+    };
+    if !legal(owner) || !legal(name) {
         return Err(StoreError::InvalidValue {
             field: "repo",
             value: new.repo.clone(),
-            expected: "a repository as owner/repo".to_string(),
+            expected: concat!(
+                "a repository as owner/repo, in letters, digits, dot, underscore ",
+                "and hyphen",
+            )
+            .to_string(),
         });
     }
 

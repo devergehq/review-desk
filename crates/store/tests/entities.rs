@@ -1283,3 +1283,83 @@ fn a_new_ticket_id_drops_the_address_the_old_one_had() {
         Some("https://linear.app/acme/issue/ABC-999")
     );
 }
+
+/// **A repository name is checked character by character, not just split in two.**
+///
+/// `RepoName` in the contract is `^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$` and GitHub allows
+/// nothing else, but this only ever checked that both halves were non-empty — so
+/// `acme/portal#x` was stored. Nothing noticed until a header began *building a link* out of
+/// the field: `https://github.com/acme/portal#x/pull/412` is served as the repository page
+/// rather than the pull request, so the link's text and its destination named two different
+/// things. That is DEV-936's own defect, reached through the one field nobody thought was
+/// free text.
+#[test]
+fn a_repository_name_is_refused_unless_it_is_one() {
+    let (_dir, store) = temp_store();
+
+    for refused in [
+        "acme/portal#x",
+        "acme/portal?x=1",
+        "acme/port al",
+        "acme/portal/extra",
+        "acme/",
+        "/portal",
+        "acme/portal:8080",
+    ] {
+        match store.create_review(new_review(refused, 1, "abc1234", 1)) {
+            Err(StoreError::InvalidValue { field, .. }) => assert_eq!(field, "repo"),
+            other => panic!("expected {refused:?} to be refused, got {other:?}"),
+        }
+    }
+
+    // And every character GitHub does allow still is.
+    let fine = store
+        .create_review(new_review(
+            "devergehq/review-desk.v2_beta-1",
+            1,
+            "abc1234",
+            1,
+        ))
+        .expect("a real repository name");
+    assert_eq!(fine.repo, "devergehq/review-desk.v2_beta-1");
+}
+
+/// **A blank title is a fact left out, like every other optional string fact.**
+///
+/// `--title "$T"` with `$T` unset wrote the empty string through `COALESCE(?, title)`, which
+/// cannot tell "leave it" from "set it to this" — so it destroyed a recorded title in exactly
+/// the way `--ticket ""` destroyed a recorded id. The ticket pair was read through
+/// `normalise::optional_fact` for several commits while its two neighbours were not, which
+/// left the contract's "a fact left out is left as it was" true of half the fields.
+#[test]
+fn a_blank_title_or_not_checked_leaves_the_recorded_one_alone() {
+    let (_dir, store) = temp_store();
+    let review = seed_review(&store);
+
+    store
+        .set_review_facts(
+            review.id,
+            &ReviewFacts {
+                title: Some("Retry failed webhook deliveries".to_string()),
+                not_checked: Some("the admin screens".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("the title and what was not checked");
+
+    let blank = ReviewFacts {
+        title: Some(String::new()),
+        not_checked: Some("   ".to_string()),
+        ..Default::default()
+    };
+    assert!(blank.is_empty(), "nothing but whitespace is no fact at all");
+
+    let after = store
+        .set_review_facts(review.id, &blank)
+        .expect("a blank call changes nothing");
+    assert_eq!(
+        after.title.as_deref(),
+        Some("Retry failed webhook deliveries")
+    );
+    assert_eq!(after.not_checked.as_deref(), Some("the admin screens"));
+}

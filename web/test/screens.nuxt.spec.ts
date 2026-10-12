@@ -481,7 +481,7 @@ describe('the queue', () => {
      * says it for itself rather than inheriting the claim from the component. Review 17
      * holds a ticket address, so both links are here.
      */
-    const out = screen.findAll('.where a.out').map(one => one.attributes('href'))
+    const out = screen.findAll('.where a.header-out').map(one => one.attributes('href'))
     expect(out).toEqual([
       'https://github.com/acme/portal/pull/412',
       'https://linear.app/acme/issue/ABC-231',
@@ -529,7 +529,7 @@ describe('the queue', () => {
   function lines(page: VueWrapper) {
     return page.findAll('.queue-line').map(line => ({
       row: line.find('.row'),
-      out: line.findAll('.out-link'),
+      out: line.findAll('.row-out-link'),
     }))
   }
 

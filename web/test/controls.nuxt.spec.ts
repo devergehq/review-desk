@@ -741,7 +741,7 @@ describe('a queue row', () => {
       ticketHref: 'https://linear.app/acme/issue/ABC-231',
       ticketId: 'ABC-231',
     })
-    const out = page.findAll('.out-link')
+    const out = page.findAll('.row-out-link')
     expect(out.map(link => link.attributes('href'))).toEqual([
       'https://github.com/acme/portal/pull/412',
       'https://linear.app/acme/issue/ABC-231',
@@ -777,7 +777,7 @@ describe('a queue row', () => {
       const hrefs = page.findAll('a').map(link => link.attributes('href') ?? '')
       expect(hrefs, `${refused} never reaches an href`).not.toContain(refused)
       expect(
-        page.findAll('.out-link').map(link => link.attributes('href')),
+        page.findAll('.row-out-link').map(link => link.attributes('href')),
         'the pull request is the only link left',
       ).toEqual(['https://github.com/acme/portal/pull/412'])
     }
@@ -786,7 +786,7 @@ describe('a queue row', () => {
   /**
    * **And a refused address leaves no empty cell behind.**
    *
-   * The anchor was guarded and the cell around it was not: `v-if` on the `.out` span still
+   * The anchor was guarded and the cell around it was not: `v-if` on the `.row-out` span still
    * keyed on the raw `ticketHref`, so a row with no `prHref` and a refused address drew the
    * span with nothing inside it — a 96px column with its padding, and a full-width empty
    * block above the row's rule at a phone's width. Invisible today only because all four
@@ -795,8 +795,8 @@ describe('a queue row', () => {
    */
   it('draws no links cell at all when there is nothing to put in it', async () => {
     const page = await row({ ticketHref: 'javascript:alert(1)', ticketId: 'ABC-231' })
-    expect(page.find('.out').exists(), 'no empty cell').toBe(false)
-    expect(page.findAll('.out-link')).toHaveLength(0)
+    expect(page.find('.row-out').exists(), 'no empty cell').toBe(false)
+    expect(page.findAll('.row-out-link')).toHaveLength(0)
 
     /* And the row itself is untouched — it is still the thing you read and click. */
     expect(page.find('.row').text()).toContain('Retry failed webhook deliveries')

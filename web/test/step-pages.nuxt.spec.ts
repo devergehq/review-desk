@@ -133,7 +133,7 @@ describe('the shell every step page sits in', () => {
   /* ---------------- The two links out of a review (DEV-936) ---------------- */
 
   /** The header's links, which are the only `.out` anchors on the page. */
-  const wayOut = (page: VueWrapper) => page.findAll('.where a.out')
+  const wayOut = (page: VueWrapper) => page.findAll('.where a.header-out')
 
   it('links the repository and the number to the pull request', async () => {
     const page = await understand(STRUCTURED)

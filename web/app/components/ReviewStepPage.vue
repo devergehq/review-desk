@@ -78,7 +78,7 @@ const ticket = computed(() => ticketUrl(props.detail.review.ticket_url))
       -->
       <p class="rd-rubric where">
         <a
-          class="out"
+          class="header-out"
           :href="pullRequest"
           target="_blank"
           rel="noopener noreferrer"
@@ -88,7 +88,7 @@ const ticket = computed(() => ticketUrl(props.detail.review.ticket_url))
           ·
           <a
             v-if="ticket"
-            class="out"
+            class="header-out"
             :href="ticket"
             target="_blank"
             rel="noopener noreferrer"
@@ -163,6 +163,13 @@ const ticket = computed(() => ticketUrl(props.detail.review.ticket_url))
 }
 
 /*
+ * **`header-out`, not `out`.** `SignOffCard` already called an anchor `.out`, and `QueueRow`
+ * called its links container the same — one name for three things, which `QueueRow`'s own
+ * comment explains is a silent measurement bug the moment a test selects it unscoped.
+ * `step-pages.nuxt.spec.ts` asserts these are "the only `.out` anchors on the page", which
+ * was true only because `SignOffCard` is drawn by no page yet; the draft page is a
+ * `ReviewStepPage`, so wiring it in would have made that comment false and the test wrong.
+ *
  * **Underlined, not accent-coloured alone.** This line is 13px, uppercase and letterspaced,
  * and at that size a colour change is the one cue a reader can miss — so the link carries
  * the one cue that survives being small, being grey-on-grey and being printed.
@@ -174,7 +181,7 @@ const ticket = computed(() => ticketUrl(props.detail.review.ticket_url))
  * same name because its meta line is a **flex item**, whose min-content width `break-word`
  * does not reduce — a difference that does not arise here.
  */
-.out {
+.header-out {
   text-decoration: underline;
   text-underline-offset: 2px;
 }

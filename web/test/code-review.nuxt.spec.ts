@@ -546,7 +546,7 @@ describe('the code, with the comment on the line', () => {
    */
   it('links the pull request in its header', async () => {
     const page = await codeReview(REAL)
-    const pull = page.find('.where a.out')
+    const pull = page.find('.where a.header-out')
     expect(pull.exists()).toBe(true)
     expect(pull.attributes('href')).toBe('https://github.com/acme/portal/pull/514')
     expect(pull.attributes('rel')).toBe('noopener noreferrer')
