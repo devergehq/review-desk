@@ -13,8 +13,8 @@ pub(super) const COLUMNS: &str = "id, repo, pr, head_sha, round, title, ticket_i
                        ticket_url, changed_lines, \
                        not_checked, session_id, ledger_id, github_review_id, pr_state, \
                        pr_state_at, harvested_at, nit_ticket_status, nit_ticket_id, \
-                       nit_ticket_requested_at, nit_ticket_filed_at, last_activity_at, \
-                       created_at";
+                       nit_ticket_requested_at, nit_ticket_filed_at, dismissed_at, \
+                       dismissed_reason, last_activity_at, created_at";
 
 impl Store {
     /// Create a review.
@@ -464,6 +464,124 @@ impl Store {
         Ok(())
     }
 
+    /// Dismiss a review, with the developer's reason.
+    ///
+    /// **Hidden and kept.** The review leaves the queue, the work list and the Reviews
+    /// list's default view, and every row under it stays exactly as it was: its findings,
+    /// the dispositions the developer made one at a time, its sign-offs, and the evidence
+    /// the rules in force were built from. Patrick decided this against deleting outright
+    /// on 12 October 2026, for that reason — "a review with findings carries your
+    /// sign-offs and the evidence rules are built from, so deleting it loses something
+    /// real".
+    ///
+    /// **A blank reason is refused**, which is the rules screen's rule for a dismissed
+    /// rule and holds here for the same reason: a review hidden silently is one nobody can
+    /// afterwards say why they hid.
+    ///
+    /// **Dismissing a dismissed review is refused rather than quietly rewritten.** The
+    /// first dismissal is the one the developer made, and a second call would move its time
+    /// and replace its words — so the refusal says when it was dismissed, which is what a
+    /// caller that has lost track needs. Restore it and dismiss it again to change the
+    /// reason; both are the developer's acts and both are on the record.
+    ///
+    /// **There is no actor argument.** Only the developer dismisses a review: the command
+    /// line has no path to this, and the dashboard's API is the only caller.
+    pub fn dismiss_review(&self, id: i64, reason: &str) -> Result<Review> {
+        let reason = reason.trim();
+        if reason.is_empty() {
+            return Err(StoreError::InvalidValue {
+                field: "dismissed_reason",
+                value: String::new(),
+                expected: "why this review is being dismissed".to_string(),
+            });
+        }
+
+        // The read and the write are one step, so two clicks on one button cannot both
+        // pass the already-dismissed check and the second overwrite the first's reason.
+        let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+        let review = self.get_review(id)?;
+        if review.is_dismissed() {
+            return Err(StoreError::AlreadyDismissed {
+                review_id: review.id,
+            });
+        }
+
+        self.conn.execute(
+            "UPDATE reviews SET dismissed_at = ?2, dismissed_reason = ?3 WHERE id = ?1",
+            params![id, self.now(), reason],
+        )?;
+        self.mark_review_active(id)?;
+        tx.commit()?;
+
+        self.get_review(id)
+    }
+
+    /// Bring a dismissed review back.
+    ///
+    /// Both columns are cleared together — a review holding a reason and no time would be
+    /// a review the queries read as in play while the page drew it as dismissed.
+    ///
+    /// **Restoring a review that is not dismissed is refused.** Nothing would change, and
+    /// a success for a request that did nothing is how a screen comes to show a button
+    /// that appears to work.
+    pub fn restore_review(&self, id: i64) -> Result<Review> {
+        let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+        let review = self.get_review(id)?;
+        if !review.is_dismissed() {
+            return Err(StoreError::NotDismissed {
+                review_id: review.id,
+            });
+        }
+
+        self.conn.execute(
+            "UPDATE reviews SET dismissed_at = NULL, dismissed_reason = NULL WHERE id = ?1",
+            params![id],
+        )?;
+        self.mark_review_active(id)?;
+        tx.commit()?;
+
+        self.get_review(id)
+    }
+
+    /// Delete a review that never got past being requested, and everything under it.
+    ///
+    /// **Refused unless the review holds no brief, no finding and no draft** — the three
+    /// things DEV-945 names, asked through [`Store::review_work`], which is the same
+    /// question `open_review` asks before it moves a round's head. The refusal says what
+    /// the review is holding, so the developer reads "a brief and 4 findings" rather than
+    /// "not allowed", and names dismissal as the thing to do instead.
+    ///
+    /// **What goes with it is everything that referenced it.** The row is deleted and
+    /// SQLite's own foreign keys take its layers, its sources, its ticket criteria, its
+    /// per-file change map and its round commits with it — `PRAGMA foreign_keys` is on for
+    /// every connection this crate opens, and `delete_review_takes_every_row_under_it`
+    /// asserts the result rather than trusting the declaration. A rule whose origin was
+    /// this review keeps its statement and loses the origin, which is what
+    /// `ON DELETE SET NULL` is there for; a never-started review has no findings for a rule
+    /// to have come from, so that path is reachable only through a review that was deleted
+    /// after being restored to nothing, and the schema answers it either way.
+    ///
+    /// **It hands back the review it deleted.** A caller that has just removed a row
+    /// cannot read it again, and the dashboard has a line to draw about what went.
+    pub fn delete_review(&self, id: i64) -> Result<Review> {
+        let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+        let review = self.get_review(id)?;
+
+        let work = self.review_work(id)?;
+        if work.started() {
+            return Err(StoreError::ReviewStarted {
+                review_id: review.id,
+                holds: work.in_words(),
+            });
+        }
+
+        self.conn
+            .execute("DELETE FROM reviews WHERE id = ?1", params![id])?;
+        tx.commit()?;
+
+        Ok(review)
+    }
+
     /// Read a review by id. Fails with [`StoreError::NotFound`] if it is not there.
     pub fn get_review(&self, id: i64) -> Result<Review> {
         self.find_review_by_id(id)?.ok_or(StoreError::NotFound {
@@ -614,6 +732,14 @@ impl Store {
     /// looked at. A review whose pull request was merged or closed does not — there is
     /// nothing further to learn, and fetching it again would cost a GitHub call per
     /// run for ever.
+    ///
+    /// **Nor does a dismissed review**, for the same reason read a different way: the
+    /// developer has said they will not act on it again, so a quarter-hourly read of
+    /// GitHub on its behalf is a call nobody is going to use the answer to. This is wider
+    /// than the two places DEV-945 names — the queue and the Reviews list's default view —
+    /// and it is the same sentence: Review Desk stops working on a dismissed review. A
+    /// review restored is read again by the next sweep, because this list is decided from
+    /// the record each time rather than from what the last sweep saw.
     pub fn reviews_to_harvest(&self, repo: Option<&str>) -> Result<Vec<Review>> {
         // Normalised, because the column is. A caller who typed `DevergeHQ/Locus` is
         // naming the repository the record holds as `devergehq/locus`, and an
@@ -625,6 +751,7 @@ impl Store {
         let mut statement = self.conn.prepare(&format!(
             "SELECT {COLUMNS} FROM reviews
              WHERE (pr_state IS NULL OR pr_state = 'open')
+               AND dismissed_at IS NULL
                AND (?1 IS NULL OR repo = ?1)
              ORDER BY id ASC"
         ))?;
@@ -835,6 +962,8 @@ pub(super) fn row_to_review(row: &Row<'_>) -> rusqlite::Result<Review> {
         nit_ticket_id: row.get("nit_ticket_id")?,
         nit_ticket_requested_at: row.get("nit_ticket_requested_at")?,
         nit_ticket_filed_at: row.get("nit_ticket_filed_at")?,
+        dismissed_at: row.get("dismissed_at")?,
+        dismissed_reason: row.get("dismissed_reason")?,
         last_activity_at: row.get("last_activity_at")?,
         created_at: row.get("created_at")?,
     })

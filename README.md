@@ -11,9 +11,9 @@ This repository is at the fourth slice: the store, the commands an agent session
 to record a review, the harvester that reads a posted review's outcomes back from GitHub,
 the dashboard's five screens, the local HTTP server that serves the JSON API and the
 dashboard from one binary, and **the dashboard reading and writing that API**. All
-twenty-one of the contract's operations are answered and nineteen are called — the two the
-dashboard does not call are `GET /timings`, which no screen draws yet, and
-`GET /reviews/{id}/brief/problem-statement`, which a blind pass reads.
+twenty-four of the contract's operations are answered, and the dashboard calls every one
+it has a screen for — the two it does not are `GET /timings`, which no screen draws yet,
+and `GET /reviews/{id}/brief/problem-statement`, which a blind pass reads.
 
 **It has been run end to end.** `web/e2e` records a review through the command line, serves
 it from the binary, and drives a browser through confirming the brief and signing off the
@@ -1250,8 +1250,8 @@ developer installing anything.
 
 ### Which operations are answered
 
-**All twenty-one**, and the dashboard calls nineteen of them. One GET per screen, and
-every write the five screens make.
+**All twenty-four**, and the dashboard calls every one it has a screen for. One GET per
+screen, and every write the five screens make.
 
 | Screen | Reads | Writes |
 | -- | -- | -- |

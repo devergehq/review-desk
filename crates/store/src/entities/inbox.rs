@@ -16,9 +16,9 @@ use rusqlite::{params, Row};
 
 use crate::error::Result;
 use crate::model::{
-    Actor, AuthorResponse, DraftStatus, NitTicket, NitTicketStatus, OutcomeKind, PostedReview,
-    PrState, RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewLayerName, ReviewLayerState,
-    ReviewStep, RuleStage, Timestamp,
+    Actor, AuthorResponse, DismissedReviews, DraftStatus, NitTicket, NitTicketStatus, OutcomeKind,
+    PostedReview, PrState, RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewLayerName,
+    ReviewLayerState, ReviewStep, RuleStage, Timestamp,
 };
 use crate::{normalise, Store};
 
@@ -30,7 +30,21 @@ pub(super) const REVIEW_COLUMNS: &str = "v.id, v.repo, v.pr, v.head_sha, v.round
                               v.ledger_id, v.github_review_id, v.pr_state, v.pr_state_at, \
                               v.harvested_at, v.nit_ticket_status, v.nit_ticket_id, \
                               v.nit_ticket_requested_at, v.nit_ticket_filed_at, \
-                              v.last_activity_at, v.created_at";
+                              v.dismissed_at, v.dismissed_reason, v.last_activity_at, \
+                              v.created_at";
+
+/// **Every query in this module leaves a dismissed review out, and this is the clause that
+/// does it.**
+///
+/// A dismissal is the developer saying they will not act on a review again, so it leaves
+/// the queue — every group on it — as well as the work list and the Reviews list's default
+/// view. Written once and pasted into each query rather than each query spelling it out,
+/// because a group added later that forgot it would put a dismissed review back in front of
+/// the developer and nothing would fail.
+///
+/// [`Store::reviews_at_step`] is the exception and takes a [`DismissedReviews`] instead:
+/// the Reviews list is the page the filter DEV-945 asks for lives on.
+pub(super) const IN_PLAY: &str = "v.dismissed_at IS NULL";
 
 impl Store {
     /// Every review whose brief is written, needs confirming, and has not been
@@ -51,6 +65,7 @@ impl Store {
              JOIN briefs b ON b.review_id = v.id
              WHERE b.confirmed_at IS NULL
                AND b.confirmation_required = 1
+               AND {IN_PLAY}
                AND (?1 IS NULL OR v.repo = ?1)
              ORDER BY v.id DESC"
         ))?;
@@ -73,6 +88,7 @@ impl Store {
             "SELECT {REVIEW_COLUMNS} FROM reviews v
              JOIN drafts d ON d.review_id = v.id
              WHERE d.status = ?1
+               AND {IN_PLAY}
                AND (?2 IS NULL OR v.repo = ?2)
              ORDER BY v.id DESC"
         ))?;
@@ -95,7 +111,8 @@ impl Store {
         let repo = repo.map(normalise::repo);
         let mut statement = self.conn.prepare(&format!(
             "SELECT {REVIEW_COLUMNS} FROM reviews v
-             WHERE (?1 IS NULL OR v.repo = ?1)
+             WHERE {IN_PLAY}
+               AND (?1 IS NULL OR v.repo = ?1)
                AND EXISTS (
                    SELECT 1 FROM outcomes o
                    WHERE o.review_id = v.id
@@ -185,6 +202,7 @@ impl Store {
              FROM reviews v
              LEFT JOIN drafts d ON d.review_id = v.id
              WHERE (d.posted_at IS NOT NULL OR v.github_review_id IS NOT NULL)
+               AND {IN_PLAY}
                AND (v.pr_state IS NULL OR v.pr_state = ?5)
                AND v.round = (
                    SELECT MAX(round) FROM reviews
@@ -225,6 +243,14 @@ impl Store {
     /// The Reviews list: the one place every review is named, whatever became of it, so
     /// that a review which has left the queue is still somewhere a reader can find it.
     ///
+    /// **`dismissed` is the one filter in this module, and the default leaves them out.**
+    /// A dismissed review has been taken out of play by the developer, so the page's
+    /// default view is the reviews in play — [`DismissedReviews::Only`] is the filter
+    /// DEV-945 asks for, and [`DismissedReviews::Included`] is the whole record on one
+    /// page. It is a bound parameter rather than three queries or a clause built by hand:
+    /// `(v.dismissed_at IS NOT NULL) = ?` compares the column's state to the answer the
+    /// caller asked for, and a `None` asks for neither.
+    ///
     /// **Newest first is by id**, which is the order every other query in this module
     /// serves and the order reviews were opened in. Deliberately not by
     /// `last_activity_at`: that is null for every review from before DEV-890, so a sort
@@ -263,8 +289,17 @@ impl Store {
     /// rather than seven reads per review: this is a list of the whole record, and a
     /// read per step per review is what turns it into a page that gets slower the longer
     /// the developer uses Review Desk.
-    pub fn reviews_at_step(&self, repo: Option<&str>) -> Result<Vec<ReviewAtStep>> {
+    pub fn reviews_at_step(
+        &self,
+        repo: Option<&str>,
+        dismissed: DismissedReviews,
+    ) -> Result<Vec<ReviewAtStep>> {
         let repo = repo.map(normalise::repo);
+        let only_dismissed = match dismissed {
+            DismissedReviews::Excluded => Some(false),
+            DismissedReviews::Only => Some(true),
+            DismissedReviews::Included => None,
+        };
         let mut statement = self.conn.prepare(&format!(
             "SELECT {REVIEW_COLUMNS},
                  l.number AS step_number,
@@ -280,18 +315,22 @@ impl Store {
                     WHERE review_id = v.id AND state <> ?1
                 )
              WHERE (?2 IS NULL OR v.repo = ?2)
+               AND (?3 IS NULL OR (v.dismissed_at IS NOT NULL) = ?3)
              ORDER BY v.id DESC"
         ))?;
         let rows = statement
-            .query_map(params![ReviewLayerState::Pending, repo], |row| {
-                Ok((
-                    row_to_review(row)?,
-                    row.get::<_, i64>("rounds_on_pr")?,
-                    row.get::<_, Option<i64>>("step_number")?,
-                    row.get::<_, Option<ReviewLayerState>>("step_state")?,
-                    row.get::<_, Option<String>>("step_detail")?,
-                ))
-            })?
+            .query_map(
+                params![ReviewLayerState::Pending, repo, only_dismissed],
+                |row| {
+                    Ok((
+                        row_to_review(row)?,
+                        row.get::<_, i64>("rounds_on_pr")?,
+                        row.get::<_, Option<i64>>("step_number")?,
+                        row.get::<_, Option<ReviewLayerState>>("step_state")?,
+                        row.get::<_, Option<String>>("step_detail")?,
+                    ))
+                },
+            )?
             .collect::<rusqlite::Result<Vec<_>>>()?;
 
         rows.into_iter()
@@ -343,6 +382,7 @@ impl Store {
              JOIN review_layers l ON l.review_id = v.id
              WHERE l.state = ?1
                AND l.number <> ?3
+               AND {IN_PLAY}
                AND (?2 IS NULL OR v.repo = ?2)
                AND l.number = (
                    SELECT MAX(number) FROM review_layers
@@ -381,13 +421,14 @@ impl Store {
         since: Option<Timestamp>,
     ) -> Result<Vec<NitTicket>> {
         let repo = repo.map(normalise::repo);
-        let mut statement = self.conn.prepare(
-            "SELECT id FROM reviews
-             WHERE nit_ticket_status = ?1
-               AND (?2 IS NULL OR repo = ?2)
-               AND (?3 IS NULL OR nit_ticket_filed_at >= ?3)
-             ORDER BY id DESC",
-        )?;
+        let mut statement = self.conn.prepare(&format!(
+            "SELECT v.id FROM reviews v
+             WHERE v.nit_ticket_status = ?1
+               AND {IN_PLAY}
+               AND (?2 IS NULL OR v.repo = ?2)
+               AND (?3 IS NULL OR v.nit_ticket_filed_at >= ?3)
+             ORDER BY v.id DESC"
+        ))?;
         let ids = statement
             .query_map(params![NitTicketStatus::Filed, repo, since], |row| {
                 row.get::<_, i64>(0)
@@ -425,7 +466,8 @@ impl Store {
              SELECT
                  k.repo AS repo,
                  (SELECT COUNT(*) FROM reviews v
-                  WHERE v.repo = k.repo AND v.github_review_id IS NULL) AS open_reviews,
+                  WHERE v.repo = k.repo AND v.github_review_id IS NULL
+                    AND {IN_PLAY}) AS open_reviews,
                  (SELECT COUNT(*) FROM rules u
                   WHERE u.scope = 'repo' AND u.scope_repo = k.repo
                     AND u.stage IN ({in_force})) AS active_rules
@@ -474,6 +516,8 @@ pub(super) fn row_to_review(row: &Row<'_>) -> rusqlite::Result<Review> {
         nit_ticket_id: row.get("nit_ticket_id")?,
         nit_ticket_requested_at: row.get("nit_ticket_requested_at")?,
         nit_ticket_filed_at: row.get("nit_ticket_filed_at")?,
+        dismissed_at: row.get("dismissed_at")?,
+        dismissed_reason: row.get("dismissed_reason")?,
         last_activity_at: row.get("last_activity_at")?,
         created_at: row.get("created_at")?,
     })

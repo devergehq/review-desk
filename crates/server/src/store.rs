@@ -14,11 +14,12 @@
 use std::sync::{Arc, Mutex};
 
 use review_desk_store::{
-    Actor, Brief, Decision, DecisionMade, Disposition, Draft, DraftSection, DraftThread, Finding,
-    FindingInRound, FullReview, NewDraft, NewOutcome, NitTicket, OpenedReview, PostedReview,
-    ProblemStatement, RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewEvent, ReviewFacts,
-    ReviewLayer, ReviewProvenance, ReviewTimings, RoundCommit, RoundSummary, Rule, RuleCounts,
-    RuleStage, RulesSummary, Store, StoreError, TicketedAndApproved, Timestamp,
+    Actor, Brief, Decision, DecisionMade, DismissedReviews, Disposition, Draft, DraftSection,
+    DraftThread, Finding, FindingInRound, FullReview, NewDraft, NewOutcome, NitTicket,
+    OpenedReview, PostedReview, ProblemStatement, RepoSummary, Review, ReviewAtLayer, ReviewAtStep,
+    ReviewEvent, ReviewFacts, ReviewLayer, ReviewProvenance, ReviewTimings, ReviewWork,
+    RoundCommit, RoundSummary, Rule, RuleCounts, RuleStage, RulesSummary, Store, StoreError,
+    TicketedAndApproved, Timestamp,
 };
 
 use crate::error::{ApiError, Code};
@@ -129,6 +130,39 @@ impl Records {
         self.with(|store| store.review_provenance(id))
     }
 
+    /// Dismiss a review, with the developer's reason. `POST /reviews/{id}/dismiss`.
+    ///
+    /// **The developer's act, and there is no other caller.** Like [`SIGN_OFF_ACTOR`] and
+    /// [`DECIDING_ACTOR`], nothing here chooses whose dismissal to record, because the
+    /// store records no actor for one: the dashboard's API is the only way to dismiss a
+    /// review, and a review session cannot reach it — the command line has no path to this
+    /// and `a_session_cannot_remove_a_review` asserts it has none.
+    pub fn dismiss_review(&self, id: i64, reason: &str) -> Result<Review, ApiError> {
+        self.with(|store| store.dismiss_review(id, reason))
+    }
+
+    /// Bring a dismissed review back. `POST /reviews/{id}/restore`.
+    pub fn restore_review(&self, id: i64) -> Result<Review, ApiError> {
+        self.with(|store| store.restore_review(id))
+    }
+
+    /// Delete a review that never got past being requested, and every row under it.
+    /// `DELETE /reviews/{id}`.
+    ///
+    /// Refused by the store unless the review holds no brief, no finding and no draft, and
+    /// the refusal says what it is holding. The handler does not repeat that judgement:
+    /// two opinions about what "never started" means is how the page comes to offer a
+    /// button the API refuses.
+    pub fn delete_review(&self, id: i64) -> Result<Review, ApiError> {
+        self.with(|store| store.delete_review(id))
+    }
+
+    /// What a review holds of the three things a delete would lose.
+    pub fn review_work(&self, id: i64) -> Result<ReviewWork, ApiError> {
+        self.review(id)?;
+        self.with(|store| store.review_work(id))
+    }
+
     /// The sequence numbers of a review's findings on one path.
     ///
     /// The change map's `finding_seqs`, read from the findings rather than stored against
@@ -186,10 +220,14 @@ impl Records {
         self.with(|store| store.posted_reviews_awaiting_author(None))
     }
 
-    /// Every review on the record, newest first, with the step it has reached.
-    /// `GET /reviews`.
-    pub fn reviews_at_step(&self, repo: Option<&str>) -> Result<Vec<ReviewAtStep>, ApiError> {
-        self.with(|store| store.reviews_at_step(repo))
+    /// Every review on the record, newest first, with the step it has reached, and
+    /// whether the dismissed ones are wanted. `GET /reviews`.
+    pub fn reviews_at_step(
+        &self,
+        repo: Option<&str>,
+        dismissed: DismissedReviews,
+    ) -> Result<Vec<ReviewAtStep>, ApiError> {
+        self.with(|store| store.reviews_at_step(repo, dismissed))
     }
 
     /// Nit tickets filed since a time, for the Inbox's "handled without you".

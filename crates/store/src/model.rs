@@ -553,6 +553,16 @@ pub struct Review {
     pub nit_ticket_id: Option<String>,
     pub nit_ticket_requested_at: Option<Timestamp>,
     pub nit_ticket_filed_at: Option<Timestamp>,
+    /// When the developer dismissed this review, or `None` while it is in play.
+    ///
+    /// A dismissed review is out of the queue, out of the work list and out of the
+    /// Reviews list's default view, and everything under it is kept — see migration 16.
+    pub dismissed_at: Option<Timestamp>,
+    /// Why it was dismissed, in the developer's own words.
+    ///
+    /// Written with `dismissed_at` and never without it: a dismissal with no reason is
+    /// refused, because a review hidden silently is one nobody can later say why they hid.
+    pub dismissed_reason: Option<String>,
     /// When anything last wrote to this review.
     ///
     /// **Every write moves it; no read does.** It is how long a session has been silent,
@@ -569,6 +579,40 @@ impl Review {
     /// so should not be fetched again.
     pub fn is_settled(&self) -> bool {
         self.pr_state.is_some_and(|state| state.is_settled())
+    }
+
+    /// Whether the developer has dismissed this review.
+    pub fn is_dismissed(&self) -> bool {
+        self.dismissed_at.is_some()
+    }
+}
+
+string_enum! {
+    /// Which of the dismissed reviews a list of reviews is being asked for.
+    ///
+    /// **The default is to leave them out, and it is the only safe default.** A caller
+    /// that had never heard of a dismissal — the queue's groups, the work list the
+    /// dispatcher polls — must not be handed a review the developer has taken out of
+    /// play, so the absence of a choice is the exclusion rather than "everything".
+    DismissedReviews as "dismissed" {
+        /// Only the reviews in play. What the Reviews list draws by default.
+        Excluded => "excluded",
+        /// Only the dismissed ones, which is the filter DEV-945 asks for.
+        Only => "only",
+        /// Both, for a reader who wants the whole record on one page.
+        Included => "included",
+    }
+}
+
+// Written out rather than derived, which clippy would rather it were: the derive list
+// belongs to `string_enum!` and that macro takes no default variant, so `#[default]` on
+// `Excluded` would be an attribute with no `#[derive(Default)]` to answer it. Teaching the
+// macro a default for the one set that wants one is a change to every closed set in the
+// crate.
+#[allow(clippy::derivable_impls)]
+impl Default for DismissedReviews {
+    fn default() -> Self {
+        DismissedReviews::Excluded
     }
 }
 

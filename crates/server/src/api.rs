@@ -16,9 +16,9 @@
 //! methods and no write in it.
 
 use review_desk_store::{
-    Actor, Decision, Disposition, DraftSectionKind, DraftStatus, FindingDecision, NewDraft,
-    NewDraftSection, NewOutcome, OutcomeKind, ReviewEvent, ReviewFacts, RuleStage, Severity,
-    DEVELOPER_DECISIONS,
+    Actor, Decision, DismissedReviews, Disposition, DraftSectionKind, DraftStatus, FindingDecision,
+    NewDraft, NewDraftSection, NewOutcome, OutcomeKind, ReviewEvent, ReviewFacts, RuleStage,
+    Severity, DEVELOPER_DECISIONS,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -106,6 +106,9 @@ impl Api {
             Operation::ListReviews => self.reviews(query),
             Operation::StartReview => self.start_review(body),
             Operation::GetReview { review_id } => self.review(review_id),
+            Operation::DismissReview { review_id } => self.dismiss_review(review_id, body),
+            Operation::RestoreReview { review_id } => self.restore_review(review_id),
+            Operation::DeleteReview { review_id } => self.delete_review(review_id),
             Operation::ConfirmBrief { review_id } => self.confirm_brief(review_id),
             Operation::GetProblemStatement { review_id } => self.problem_statement(review_id),
             Operation::SetFindingDisposition { review_id, seq } => {
@@ -420,14 +423,38 @@ impl Api {
             }
         }
 
+        // **The dismissed ones are left out unless they are asked for.** The default is
+        // the exclusion rather than everything, for the reason `DismissedReviews`'s own
+        // doc gives: a caller that has never heard of a dismissal must not be handed a
+        // review the developer took out of play. A value that is not one of the three is
+        // refused by name rather than falling back to the default — a mistyped filter
+        // answering with the default view would read as "there are no dismissed reviews".
+        let dismissed = match query_value(query, "dismissed") {
+            None => DismissedReviews::default(),
+            Some(asked) => asked.parse::<DismissedReviews>().map_err(|_| {
+                ApiError::invalid_value(
+                    "dismissed",
+                    format!("{asked:?} is not a choice about dismissed reviews"),
+                    DismissedReviews::valid_values(),
+                )
+            })?,
+        };
+
         let reviews: Vec<Value> = self
             .records
-            .reviews_at_step(repo.as_deref())?
+            .reviews_at_step(repo.as_deref(), dismissed)?
             .iter()
             .map(wire::review_list_item)
             .collect();
 
-        Ok((200, json!({ "repo": repo, "reviews": reviews })))
+        Ok((
+            200,
+            json!({
+                "repo": repo,
+                "dismissed": dismissed.as_str(),
+                "reviews": reviews,
+            }),
+        ))
     }
 
     /// `GET /repos`: the repositories Review Desk holds a record for.
@@ -540,6 +567,67 @@ impl Api {
         };
 
         Ok((201, wire::review(&review)))
+    }
+
+    /// `POST /reviews/{reviewId}/dismiss`: the developer takes a review out of play.
+    ///
+    /// **Hidden and kept.** The review leaves the queue, the work list and the Reviews
+    /// list's default view, and every row under it stays — which is why this is the answer
+    /// for every review and a delete is the answer only for one that never started.
+    /// Patrick decided both on 12 October 2026.
+    ///
+    /// **A reason is required**, as it is for a dismissed rule and for the same reason: a
+    /// review hidden silently is one nobody can afterwards say why they hid. The refusal
+    /// names the field, so the page can put the message under the box the developer typed
+    /// in.
+    ///
+    /// **This is the only way to dismiss a review.** There is no command for it, the way
+    /// there is no command to confirm a brief or approve a draft: it is the developer's
+    /// act, and a session that could reach it could take its own review out of the
+    /// developer's sight.
+    fn dismiss_review(&self, review_id: i64, body: &[u8]) -> Result<(u16, Value), ApiError> {
+        let request: DismissReviewRequest = read_body(body)?;
+        let reason = trimmed(Some(request.reason)).ok_or_else(|| {
+            ApiError::invalid_value(
+                "reason",
+                "a review dismissed with no reason is one nobody can say why they hid".to_string(),
+                "why this review is being dismissed",
+            )
+        })?;
+
+        // Checked before the write, which is this file's first rule: a review that is not
+        // there is a 404 rather than a store error about an update of nothing.
+        self.records.review(review_id)?;
+        let review = self.records.dismiss_review(review_id, &reason)?;
+        Ok((200, wire::review(&review)))
+    }
+
+    /// `POST /reviews/{reviewId}/restore`: bring a dismissed review back.
+    ///
+    /// The undo half of a dismissal, and the reason a dismissal is the recommended act for
+    /// everything: nothing about it is final. A review that is not dismissed is a `409` —
+    /// nothing would change, and answering 200 for a request that did nothing is how a
+    /// screen comes to show a button that appears to work.
+    fn restore_review(&self, review_id: i64) -> Result<(u16, Value), ApiError> {
+        self.records.review(review_id)?;
+        let review = self.records.restore_review(review_id)?;
+        Ok((200, wire::review(&review)))
+    }
+
+    /// `DELETE /reviews/{reviewId}`: remove a review that never got past being requested.
+    ///
+    /// **Offered only for a review with no brief, no finding and no draft**, and the store
+    /// is the one that judges it — a second opinion here is how the page comes to offer a
+    /// button the API refuses. The refusal is a `409` naming what the review holds, so the
+    /// developer reads "review 7 holds a brief and 4 findings" and is pointed at dismissal
+    /// instead.
+    ///
+    /// **It answers with the review that went.** Nothing can read it again, and the page
+    /// has a line to draw about what was removed.
+    fn delete_review(&self, review_id: i64) -> Result<(u16, Value), ApiError> {
+        self.records.review(review_id)?;
+        let review = self.records.delete_review(review_id)?;
+        Ok((200, wire::review(&review)))
     }
 
     /// `GET /reviews/{reviewId}`: one review whole, as the One review screen shows it.
@@ -1351,6 +1439,13 @@ struct StartReviewRequest {
     ticket_url: Option<String>,
     #[serde(default)]
     changed_lines: Option<i64>,
+}
+
+/// `DismissReviewRequest` from the contract.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DismissReviewRequest {
+    reason: String,
 }
 
 /// `SetFindingDispositionRequest` from the contract.

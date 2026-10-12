@@ -51,8 +51,8 @@ pub use crate::error::{Result, StoreError};
 pub use crate::migrations::newest_version;
 pub use crate::model::{
     now, Actor, AuthorResponse, Brief, BriefOption, Carryable, DecidedBy, Decision, DecisionMade,
-    Disposition, Draft, DraftHandover, DraftLint, DraftSection, DraftSectionKind, DraftStatus,
-    DraftThread, Finding, FindingAnchor, FindingCarry, FindingDecision, FindingHunk,
+    DismissedReviews, Disposition, Draft, DraftHandover, DraftLint, DraftSection, DraftSectionKind,
+    DraftStatus, DraftThread, Finding, FindingAnchor, FindingCarry, FindingDecision, FindingHunk,
     FindingInRound, FindingRef, FullReview, HunkLine, HunkLineMarker, LayerFact, NewBrief,
     NewDraft, NewDraftSection, NewFinding, NewLayerFact, NewOutcome, NewReview, NewRoundCommit,
     NewRule, NitTicket, NitTicketStatus, OpenedReview, Outcome, OutcomeKind, PostedReview, PrState,

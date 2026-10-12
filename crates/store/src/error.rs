@@ -46,6 +46,30 @@ pub enum StoreError {
     )]
     NoDraftSection { review_id: i64, seq: i64 },
 
+    /// A review is already dismissed, so a second dismissal would overwrite the time and
+    /// the words of the one the developer actually made.
+    ///
+    /// **No time in the message.** The store holds times as integers and the server
+    /// converts them at its own boundary, so a timestamp here would reach the developer
+    /// as `1791780818`. When it was dismissed is on the review, which is what the page
+    /// re-reads.
+    #[error(
+        "review {review_id} is already dismissed; restore it first to dismiss it again \
+         with different words"
+    )]
+    AlreadyDismissed { review_id: i64 },
+
+    /// A review that is not dismissed cannot be brought back.
+    #[error("review {review_id} is not dismissed, so there is nothing to bring back")]
+    NotDismissed { review_id: i64 },
+
+    /// A review holds work a delete would lose.
+    #[error(
+        "review {review_id} holds {holds}, and deleting it would lose that: dismiss it \
+         instead, which takes it out of the queue and keeps the record"
+    )]
+    ReviewStarted { review_id: i64, holds: String },
+
     /// A row was requested, or referenced, that is not there.
     #[error("no {entity} with id {id}")]
     NotFound { entity: &'static str, id: String },
@@ -112,6 +136,9 @@ impl StoreError {
             StoreError::DuplicateGithubComment { .. } => "duplicate_github_comment",
             StoreError::DraftStatus { .. } => "draft_status",
             StoreError::NoDraftSection { .. } => "no_draft_section",
+            StoreError::AlreadyDismissed { .. } => "already_dismissed",
+            StoreError::NotDismissed { .. } => "not_dismissed",
+            StoreError::ReviewStarted { .. } => "review_started",
             StoreError::NotFound { .. } => "not_found",
             StoreError::UnknownParent { .. } => "unknown_parent",
             StoreError::InvalidValue { .. } => "invalid_value",
@@ -133,6 +160,9 @@ impl StoreError {
                 | StoreError::DuplicateGithubComment { .. }
                 | StoreError::DraftStatus { .. }
                 | StoreError::NoDraftSection { .. }
+                | StoreError::AlreadyDismissed { .. }
+                | StoreError::NotDismissed { .. }
+                | StoreError::ReviewStarted { .. }
                 | StoreError::NotFound { .. }
                 | StoreError::UnknownParent { .. }
                 | StoreError::InvalidValue { .. }

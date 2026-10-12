@@ -1411,6 +1411,44 @@ UPDATE reviews
        );
 "#,
     },
+    Migration {
+        version: 17,
+        name: "review-dismissal",
+        sql: r#"
+-- When a review was dismissed, and why. Both null for a review in play.
+--
+-- **Hidden and kept, rather than deleted.** Decided by Patrick on 12 October 2026 against
+-- the alternative of deleting outright: a review carries the developer's sign-offs, the
+-- dispositions they made one finding at a time, and the evidence the rules in force were
+-- built from, so a row that goes takes all of that with it. A dismissal takes the review
+-- out of the queue, out of the work list and out of the Reviews list's default view, and
+-- changes nothing underneath it. `review_dismissal_keeps_every_row_under_the_review`
+-- asserts the second half, because "it keeps the record" is the whole argument for
+-- choosing this over a delete and it is the kind of claim a later convenience quietly
+-- breaks.
+--
+-- **The reason is not nullable in practice and is nullable here**, which is migration 13's
+-- shape and for a different argument. Every dismissal this code makes carries one —
+-- `dismiss_review` refuses a blank, the way the rules screen refuses a rule dismissed
+-- without a reason, because a review hidden silently is a review nobody can later say why
+-- they hid. What cannot be done is a CHECK tying the two columns together: SQLite will not
+-- add one to a table that already exists, and a CHECK on this column alone would have to
+-- allow the null that every existing row holds. So the pairing lives in one write and is
+-- stated here rather than enforced by the schema.
+--
+-- **Two columns and no `dismissed_by`.** Only the developer dismisses a review — there is
+-- no command line path to it and the dashboard's API records no actor for it — so a column
+-- holding `developer` in every row would be a field that cannot disagree with itself, which
+-- is the argument `SIGN_OFF_ACTOR` makes in the server for not taking an actor as an
+-- argument.
+--
+-- **And no index.** The Reviews list reads every review it is going to draw, so its scan is
+-- the page's own read either way, and the dismissed-only view is the rarer of the two. An
+-- index here would be a second structure to keep in step for a table that holds one row per
+-- review of one developer's pull requests.
+ALTER TABLE reviews ADD COLUMN dismissed_at     INTEGER;
+ALTER TABLE reviews ADD COLUMN dismissed_reason TEXT;"#,
+    },
 ];
 
 /// The version a freshly created database lands on.

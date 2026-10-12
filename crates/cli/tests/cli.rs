@@ -177,3 +177,53 @@ fn help_and_version_are_not_errors() {
     review_desk().arg("--version").assert().code(0);
     review_desk().args(["db", "--help"]).assert().code(0);
 }
+
+/// **No command removes a review, and that is the decision rather than an omission.**
+///
+/// Patrick, 12 October 2026, on DEV-945: dismissing a review and deleting one are "the
+/// developer's act, from the page, never a session's". The same rule is already why there
+/// is no `brief confirm` and no `draft approve` — a session that could sign off could sign
+/// off its own review — and it matters more here: a session that could dismiss a review
+/// could take its own work out of the developer's sight, and a session that could delete
+/// one could remove the record of it.
+///
+/// Written over the surface rather than against a list of names, because the failure this
+/// guards against is a *new* command, and a test that named only today's would not see it.
+/// Both halves are needed: the verbs are refused, and `--help` offers nothing that reads
+/// like one.
+#[test]
+fn a_session_cannot_remove_a_review_from_the_command_line() {
+    for verb in ["dismiss", "restore", "delete", "remove", "hide", "close"] {
+        review_desk()
+            .args(["review", verb, "--review", "1"])
+            .assert()
+            .code(1)
+            .stderr(predicate::str::contains("unrecognized subcommand"));
+
+        review_desk()
+            .args([verb, "--review", "1"])
+            .assert()
+            .code(1)
+            .stderr(predicate::str::contains("unrecognized subcommand"));
+    }
+
+    // And nothing in the command line's own description of itself offers one. `review
+    // --help` lists every subcommand of the group a removal would most naturally be added
+    // to, so a command added there is caught here even under a name this test did not
+    // think of.
+    let listed = review_desk()
+        .args(["review", "--help"])
+        .assert()
+        .code(0)
+        .get_output()
+        .stdout
+        .clone();
+    let listed = String::from_utf8(listed).expect("help is text");
+    for word in ["dismiss", "restore", "delete", "remove"] {
+        assert!(
+            !listed.contains(word),
+            "`review --help` offers {word:?}, and removing a review is the developer's \
+             act in the dashboard: {listed}"
+        );
+    }
+}

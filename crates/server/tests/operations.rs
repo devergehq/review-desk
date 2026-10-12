@@ -1,4 +1,4 @@
-//! Every one of the contract's twenty-one operations is routed and answers.
+//! Every one of the contract's twenty-four operations is routed and answers.
 //!
 //! This walks `Operation::ALL` rather than listing routes by hand, so an operation added
 //! to the contract and not to the server fails here instead of 404ing in a browser.
@@ -10,10 +10,10 @@ use std::collections::BTreeSet;
 use review_desk_server::route::Operation;
 use serde_json::Value;
 
-/// The twenty-one operations, as `contract/README.md` counts them.
+/// The twenty-four operations, as `contract/README.md` counts them.
 #[test]
-fn the_contract_has_twenty_one_operations() {
-    assert_eq!(Operation::ALL.len(), 21);
+fn the_contract_has_twenty_four_operations() {
+    assert_eq!(Operation::ALL.len(), 24);
 }
 
 /// The contract's own `paths` and this crate's `Operation` name the same set.
@@ -144,6 +144,13 @@ fn an_unknown_review_is_not_found_on_every_operation_that_names_one() {
             Some(r#"{"decision":"cut"}"#),
         ),
         ("POST", "/reviews/9001/draft/ticket-and-approve", Some("{}")),
+        (
+            "POST",
+            "/reviews/9001/dismiss",
+            Some(r#"{"reason":"the pull request was closed unmerged"}"#),
+        ),
+        ("POST", "/reviews/9001/restore", None),
+        ("DELETE", "/reviews/9001", None),
     ];
 
     for (method, path, body) in missing {
@@ -246,6 +253,35 @@ pub fn call(
         .replace("/rules/1/", &format!("/rules/{}/", seeded.rule_id));
     let (method, path) = route.split_once(' ').expect("a method and a path");
 
+    // **Two operations cannot be asked of the seeded review as it stands**, and that is
+    // the record being right rather than the harness being awkward: the seeded review
+    // holds a brief, findings and a draft, so a delete of it is correctly refused, and it
+    // is not dismissed, so a restore of it is correctly refused too. Each is pointed at a
+    // review it can succeed on, so that this test goes on being about whether the
+    // operation is routed and answers.
+    let path = match operation {
+        // A review of its own, with nothing written to it: what the Locus dispatcher
+        // leaves behind when it records a request, and the only thing a delete is for.
+        Operation::DeleteReview { .. } => {
+            let fresh = harness
+                .store
+                .open_review("acme/portal", 777, "4f1a9c2")
+                .expect("a review nobody has started");
+            format!("/reviews/{}", fresh.review.id)
+        }
+        // Dismissed first, through the store, because there is nothing to restore
+        // otherwise. The dismissal itself is exercised by its own operation above.
+        Operation::RestoreReview { .. } => {
+            harness
+                .store
+                .dismiss_review(seeded.review_id, "the pull request was closed unmerged")
+                .expect("dismiss it so there is something to restore");
+            path.to_string()
+        }
+        _ => path.to_string(),
+    };
+    let path = path.as_str();
+
     let body = match operation {
         Operation::StartReview => Some(
             r#"{"pr_url":"https://github.com/acme/portal/pull/500","head_sha":"3f9c2ab"}"#
@@ -266,6 +302,9 @@ pub fn call(
         Operation::PromoteRule { .. } => Some(r#"{"to_stage":"lint"}"#.to_string()),
         Operation::DismissRule { .. } | Operation::RetireRule { .. } => {
             Some(r#"{"reason":"no consequence named"}"#.to_string())
+        }
+        Operation::DismissReview { .. } => {
+            Some(r#"{"reason":"the pull request was closed unmerged"}"#.to_string())
         }
         Operation::DeferRule { .. } => Some(r#"{"days":60}"#.to_string()),
         _ => None,

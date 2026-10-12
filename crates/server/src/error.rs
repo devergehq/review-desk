@@ -148,14 +148,17 @@ impl From<StoreError> for ApiError {
                 ApiError::not_found(message)
             }
             // Every one of these is a statement about the record rather than about the
-            // request: the row is already there, or the draft is not in a state this act
-            // can be performed from. The contract declares 409 for all of them, and the
+            // request: the row is already there, the draft is not in a state this act can
+            // be performed from, or the review holds work a delete would lose. The contract declares 409 for all of them, and the
             // store's own `is_refusal` cannot make the distinction — it lumps state
             // conflicts in with bad input, because exit 1 covers both.
             StoreError::DuplicateReview { .. }
             | StoreError::DuplicateGithubComment { .. }
             | StoreError::DraftStatus { .. }
-            | StoreError::NoDraftSection { .. } => ApiError::conflict(message),
+            | StoreError::NoDraftSection { .. }
+            | StoreError::AlreadyDismissed { .. }
+            | StoreError::NotDismissed { .. }
+            | StoreError::ReviewStarted { .. } => ApiError::conflict(message),
             StoreError::InvalidValue {
                 field, expected, ..
             } => ApiError::invalid_value(*field, message, expected.clone()),

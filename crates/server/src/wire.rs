@@ -101,6 +101,12 @@ pub fn review(review: &Review) -> Value {
         "created_at": rfc3339(review.created_at),
         "pr_state": review.pr_state.map(|state| state.as_str()),
         "harvested_at": rfc3339_or_null(review.harvested_at),
+        // When and why the developer dismissed it, both null while it is in play. On the
+        // review itself rather than on the list item, because every screen that can draw
+        // a review has to be able to say it is dismissed — the page it is dismissed from
+        // reads `GET /reviews/{id}`, and the list reads `GET /reviews`.
+        "dismissed_at": rfc3339_or_null(review.dismissed_at),
+        "dismissed_reason": review.dismissed_reason,
     })
 }
 

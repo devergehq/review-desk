@@ -1,4 +1,4 @@
-//! The contract's twenty-one operations, as a type.
+//! The contract's twenty-four operations, as a type.
 //!
 //! [`Operation::ALL`] is the point of this module: a test walks every operation the
 //! contract declares and asserts that each one is routed and answers, rather than the set
@@ -26,6 +26,9 @@ pub enum Operation {
     ListReviews,
     StartReview,
     GetReview { review_id: i64 },
+    DismissReview { review_id: i64 },
+    RestoreReview { review_id: i64 },
+    DeleteReview { review_id: i64 },
     ConfirmBrief { review_id: i64 },
     GetProblemStatement { review_id: i64 },
     SetFindingDisposition { review_id: i64, seq: i64 },
@@ -52,6 +55,9 @@ impl Operation {
         Operation::ListReviews,
         Operation::StartReview,
         Operation::GetReview { review_id: 1 },
+        Operation::DismissReview { review_id: 1 },
+        Operation::RestoreReview { review_id: 1 },
+        Operation::DeleteReview { review_id: 1 },
         Operation::ConfirmBrief { review_id: 1 },
         Operation::GetProblemStatement { review_id: 1 },
         Operation::SetFindingDisposition {
@@ -84,6 +90,9 @@ impl Operation {
             Operation::ListReviews => "listReviews",
             Operation::StartReview => "startReview",
             Operation::GetReview { .. } => "getReview",
+            Operation::DismissReview { .. } => "dismissReview",
+            Operation::RestoreReview { .. } => "restoreReview",
+            Operation::DeleteReview { .. } => "deleteReview",
             Operation::ConfirmBrief { .. } => "confirmBrief",
             Operation::GetProblemStatement { .. } => "getProblemStatement",
             Operation::SetFindingDisposition { .. } => "setFindingDisposition",
@@ -112,6 +121,13 @@ impl Operation {
             Operation::ListReviews => "GET /reviews".to_string(),
             Operation::StartReview => "POST /reviews".to_string(),
             Operation::GetReview { review_id } => format!("GET /reviews/{review_id}"),
+            Operation::DismissReview { review_id } => {
+                format!("POST /reviews/{review_id}/dismiss")
+            }
+            Operation::RestoreReview { review_id } => {
+                format!("POST /reviews/{review_id}/restore")
+            }
+            Operation::DeleteReview { review_id } => format!("DELETE /reviews/{review_id}"),
             Operation::ConfirmBrief { review_id } => {
                 format!("POST /reviews/{review_id}/brief/confirm")
             }
@@ -195,10 +211,33 @@ pub fn match_route(method: &str, path: &str) -> Target {
             _ => (Target::Operation(Operation::StartReview), false),
         },
 
-        ["reviews", id] => match number(id) {
+        // **Two methods on one path**, as `/reviews` and `/reviews/{id}/draft` already
+        // are: reading a review and deleting one are different operations at the same
+        // address. `DELETE` is the verb for it rather than a `/delete` sub-path, because
+        // the contract's other review paths are all acts the review goes on to have —
+        // confirm, approve, send back — and this one is the review ceasing to exist.
+        ["reviews", id] => match (number(id), method) {
+            (Some(review_id), "GET") => {
+                (Target::Operation(Operation::GetReview { review_id }), true)
+            }
+            (Some(review_id), "DELETE") => (
+                Target::Operation(Operation::DeleteReview { review_id }),
+                true,
+            ),
+            (Some(review_id), _) => (Target::Operation(Operation::GetReview { review_id }), false),
+            (None, _) => (Target::Unknown, true),
+        },
+        ["reviews", id, "dismiss"] => match number(id) {
             Some(review_id) => (
-                Target::Operation(Operation::GetReview { review_id }),
-                method == "GET",
+                Target::Operation(Operation::DismissReview { review_id }),
+                method == "POST",
+            ),
+            None => (Target::Unknown, true),
+        },
+        ["reviews", id, "restore"] => match number(id) {
+            Some(review_id) => (
+                Target::Operation(Operation::RestoreReview { review_id }),
+                method == "POST",
             ),
             None => (Target::Unknown, true),
         },

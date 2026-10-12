@@ -5,7 +5,7 @@ holds no implementation of either.
 
 | File | What it is |
 |---|---|
-| `openapi.yaml` | OpenAPI 3.1 for the local JSON API. 21 operations. |
+| `openapi.yaml` | OpenAPI 3.1 for the local JSON API. 24 operations. |
 | `examples/` | One example response per endpoint, one request body per write, and the error shape. A `.<variant>.` form adds a second shape where one example cannot show an optional field both present and absent. `getReview.response.round-two.json` is the second round of the same pull request as the canonical one. |
 | `validate-examples.mjs` | Checks every example against its schema, and fails when an endpoint has no example. |
 
@@ -36,7 +36,7 @@ touches `contract/`.
 
 **`npm run lint` reports two warnings and exits 0.** Both are `operation-4xx-response`
 against `getInbox` and `listRepos`, which take no input and so have no 4xx to declare. The
-rule is left on because it is doing real work on the other nineteen operations — including
+rule is left on because it is doing real work on the other twenty-two operations — including
 `listReviewTimings`, which takes a repository and therefore declares a 400 like every other
 read that takes one. CI gates on errors, which is what redocly exits non-zero for.
 
