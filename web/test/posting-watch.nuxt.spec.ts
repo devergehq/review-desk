@@ -306,6 +306,26 @@ describe('when nothing has posted it', () => {
     expect(announced(page)).toBe('')
   })
 
+  it('stays silent when a refused read makes an old lateness flap', async () => {
+    /*
+     * **`late` is false while the record cannot be reached**, so on a page opened an hour
+     * after a sign-off one refused poll and one good one take it false and true again —
+     * and a transition on its own cannot tell that from the wait actually passing the
+     * threshold. Announcing the flap would read the accusation out afresh on every
+     * hiccup.
+     */
+    vi.setSystemTime(new Date('2026-10-12T11:00:00Z'))
+    const page = await watching()
+    expect(announced(page)).toBe('')
+
+    await page.setProps({ recordIsCurrent: false })
+    expect(page.text()).not.toContain('may not be running')
+
+    await page.setProps({ recordIsCurrent: true })
+    expect(page.text()).toContain('may not be running')
+    expect(announced(page)).toBe('')
+  })
+
   it('says nothing of the sort while the page cannot read the record', async () => {
     /*
      * **The worst sentence this page could say.** A failed read leaves the last good

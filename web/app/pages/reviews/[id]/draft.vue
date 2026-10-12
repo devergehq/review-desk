@@ -759,10 +759,18 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                         rows="3"
                       />
                       <div class="send-back-actions">
+                        <!--
+                          **Guarded like the button that opened it**, which it did not need
+                          to be until this page started re-reading. The form opens on a
+                          draft that is `approved`, and the status can now move underneath
+                          it: the session posts while the note is being typed, the panel
+                          flips to "Posted", and an enabled Send back over a posted draft
+                          buys the developer a refusal from the server.
+                        -->
                         <button
                           type="button"
                           class="rd-btn rd-btn--primary"
-                          :disabled="working"
+                          :disabled="working || !canSendBack(data)"
                           @click="sendBack"
                         >
                           Send back

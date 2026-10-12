@@ -158,6 +158,7 @@ watch(
     if (review !== seen.review) {
       watchedTheSignOff.value = status === 'approved'
       sawAChange.value = false
+      sawItInTime = waiting.value && props.recordIsCurrent && !late.value
       now.value = new Date()
     }
     else {
@@ -301,6 +302,18 @@ const late = computed(
 )
 
 /**
+ * Whether this page has seen this draft waiting and *not yet* late.
+ *
+ * **Without it, a refused read turns a week-old lateness into news.** `late` is false
+ * while the record cannot be reached, so a page opened on a draft signed off an hour ago
+ * — silent, correctly — has `late` flap false and true again the moment one poll is
+ * refused and the next answers, and the transition alone cannot tell that from the wait
+ * actually passing the threshold. Announcing on the flap would read the accusation out
+ * afresh on every hiccup.
+ */
+let sawItInTime = waiting.value && props.recordIsCurrent && !late.value
+
+/**
  * The wait passing the threshold is news too, and keying news off the status alone lost it.
  *
  * **A page loaded straight into a signed-off draft never sees its status change.** The
@@ -310,11 +323,15 @@ const late = computed(
  * somebody somewhere, silent for exactly the reader who cannot see it. Worse, the same
  * page announced the *posting* afterwards, because that does change the status.
  *
- * Not `immediate`: a page opened on a draft that was already late is reading a state, not
- * watching one arrive, and announcing it on load is the thing the gate exists to stop.
+ * News is the threshold being *crossed* on a draft this page watched be in time for it,
+ * which is why the flag above exists and why this is not `immediate`.
  */
 watch(late, (yes) => {
-  if (yes) sawAChange.value = true
+  if (yes) {
+    if (sawItInTime) sawAChange.value = true
+    return
+  }
+  sawItInTime = waiting.value && props.recordIsCurrent
 })
 
 /**
