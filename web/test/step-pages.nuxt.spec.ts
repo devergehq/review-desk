@@ -2244,41 +2244,57 @@ describe('nothing on these pages is handed to the browser as markup', () => {
   })
 
   /**
-   * **A hidden label that ends in a colon is followed by an explicit space.**
+   * **A hidden label that ends in a colon is followed by an interpolated space.**
    *
    * `rd-visually-hidden` is text in the document, so `<span …>Severity:</span>{{ value }}`
-   * reads `Severity:blocker` — and a *newline* between the two is no better, because Vue's
-   * `whitespace: 'condense'` deletes a whitespace-only text node between two elements. The
-   * separator has to be `&#32;`, which survives it.
+   * reads `Severity:blocker`. A *newline* between the two is no better: Vue's
+   * `whitespace: 'condense'` deletes a whitespace-only text node between two elements.
    *
-   * **This is a scan because the rule was swept by hand twice and missed three sites the
-   * second time.** DEV-958 found it on its own page, fixed `DraftThreads` and
-   * `HeldBackRows` beside it, wrote the rule into a comment — and left `Fixes:`, `Size:`
-   * and `The code review found:` on the Solution page reading as one word. A rule stated in
-   * a comment is a rule somebody has to remember; this one is read off the source.
+   * **And `&#32;` is not the answer either, which is why this rule names the form it
+   * wants.** Compiled with this repository's own `@vue/compiler-dom`, an entity at the end
+   * of a line is merged with the following newline and indentation into one whitespace-only
+   * node and deleted with it — so `</span>&#32;` followed by an element, or by a comment,
+   * emits no text node at all. It happens to work when what follows is on the same line,
+   * which is how four boundaries came to be written the broken way and a first version of
+   * this very scan came to accept them. An interpolation is a text node wherever it is
+   * written.
+   *
+   * **This is a scan because the rule was swept by hand three times.** DEV-958 found it on
+   * its own page, fixed two components beside it, then three more sites on the Solution
+   * page, then the four `&#32;` boundaries that compiled to nothing. A rule in a comment is
+   * a rule somebody has to remember.
    *
    * Only labels ending in a colon, which is the shape that has a value after it. A hidden
    * span that *continues* a visible phrase — "The finding", then " F1 on the code review
    * page" — carries its own leading space and needs nothing here.
    */
-  it('separates a hidden label from the value after it', () => {
-    const offenders = sources.flatMap(file =>
+  const LABEL = /class="rd-visually-hidden"[^>]*>[^<]*:<\/span>/
+  const SEPARATED = /:<\/span>\{\{ ' ' \}\}/
+
+  /** Every line that opens a hidden label ending in a colon and does not separate it. */
+  function runTogether(files: Array<{ name: string, text: string }>): string[] {
+    return files.flatMap(file =>
       file.text
         .split('\n')
-        .filter(line => /class="rd-visually-hidden">[^<]*:<\/span>/.test(line))
-        .filter(line => !/:<\/span>&#32;/.test(line))
+        .filter(line => LABEL.test(line) && !SEPARATED.test(line))
         .map(line => `${file.name}: ${line.trim()}`))
-    expect(offenders).toEqual([])
+  }
+
+  it('separates a hidden label from the value after it', () => {
+    expect(runTogether(sources)).toEqual([])
   })
 
-  it('is a scan that can fail', () => {
-    /*
-     * The same predicate over a line that breaks the rule, so a regex that stopped matching
-     * cannot leave the check above green about nothing.
-     */
-    const broken = '<span class="rd-visually-hidden">Severity:</span>{{ row.severity }}'
-    expect(/class="rd-visually-hidden">[^<]*:<\/span>/.test(broken)).toBe(true)
-    expect(/:<\/span>&#32;/.test(broken)).toBe(false)
+  /**
+   * **And the scan refuses the three forms that do not work**, run through the same
+   * predicate rather than re-tested as regexes against a literal — which is what the
+   * version this replaces did, and why it was green over four broken boundaries.
+   */
+  it.each([
+    ['nothing at all', '<span class="rd-visually-hidden">Severity:</span>{{ row.severity }}'],
+    ['a newline', '<span class="rd-visually-hidden">Severity:</span>'],
+    ['an entity', '<span class="rd-visually-hidden">Severity:</span>&#32;'],
+  ])('reports a label separated by %s', (_what, line) => {
+    expect(runTogether([{ name: 'invented.vue', text: line }])).toHaveLength(1)
   })
 
   it('never lets a pill break across two lines', () => {

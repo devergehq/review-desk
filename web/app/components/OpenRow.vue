@@ -43,16 +43,26 @@ const says = computed(() => (props.open ? 'Fold' : props.opens))
     @click="$emit('toggle')"
   >
     <!--
-      **`&#32;` after each of these, and it is a scan that found them.** Vue's
+      **`{{ ' ' }}` after each of these, and a scan found them.** Vue's
       `whitespace: 'condense'` deletes a whitespace-only text node between two elements, so
-      the newlines here render nothing: the row's accessible name came out as
-      `Open F4, nit, What F4 says is wrong:F4nitWhat F4 says is wrongOpen`, with every
-      boundary closed up. `test/step-pages.nuxt.spec.ts` holds the rule for a hidden label
-      that ends in a colon; the slot's own two boundaries are the same defect and are fixed
-      with it. `what-happened.vue` carries the measurement of all three forms.
+      the newlines here rendered nothing and the row's accessible name came out as
+      `Open F4, nit, What F4 says is wrong:F4nitWhat F4 says is wrongOpen`, every boundary
+      closed up.
+
+      **Two of the three boundaries are this component's**: after the hidden label, and
+      before the "Open" at the end. The ones *between* the cells belong to whoever fills the
+      slot, because this component does not know how many there are — `HeldBackRows` and
+      the step-7 page both separate their own.
+
+      **An interpolated space, not `&#32;`**, and the difference is measured: an entity at
+      the end of a line is merged with the following newline into one whitespace-only node
+      and deleted with it, so a first fix here changed the compiled output not at all. An
+      interpolation is a text node wherever it is written. `what-happened.vue` carries the
+      argument; `test/step-pages.nuxt.spec.ts` and this component's own row test carry the
+      measurement.
     -->
-    <span class="rd-visually-hidden">{{ open ? 'Fold' : 'Open' }} {{ label }}:</span>&#32;
-    <slot />&#32;
+    <span class="rd-visually-hidden">{{ open ? 'Fold' : 'Open' }} {{ label }}:</span>{{ ' ' }}
+    <slot />{{ ' ' }}
     <span class="opens">{{ says }}</span>
   </button>
 </template>

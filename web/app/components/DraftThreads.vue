@@ -95,11 +95,11 @@ const heading = computed(() => count(props.threads.length, 'thread'))
           <span class="key">{{ thread.finding_key }}</span>
           <span class="severity rd-meta">
             <!--
-              `&#32;`, for the reason `what-happened.vue` measures: without it the text
-              reads `Severity:blocker`, and a newline between the label and the value is a
-              whitespace-only node Vue's `whitespace: 'condense'` deletes.
+              `{{ ' ' }}`, for the reason `what-happened.vue` measures: without it the text
+              reads `Severity:blocker`, and neither a newline nor `&#32;` at the end of one
+              survives Vue's `whitespace: 'condense'`.
             -->
-            <span class="rd-visually-hidden">Severity:</span>&#32;{{ thread.severity }}
+            <span class="rd-visually-hidden">Severity:</span>{{ ' ' }}{{ thread.severity }}
           </span>
           <code class="place">{{ thread.path }}:{{ thread.line }}</code>
         </p>

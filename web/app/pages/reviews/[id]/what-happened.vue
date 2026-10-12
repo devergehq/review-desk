@@ -233,23 +233,27 @@ function detailId(seq: number): string {
                   file. The record's own word, lower case as the record holds it.
                 -->
                 <!--
-                  **`&#32;`, outside the clipped box, and it is measured.**
-                  Vue's `whitespace: 'condense'` deletes a whitespace-only text node
-                  between two elements, so a newline — or a second `<span>` around the
-                  value with a newline before it — renders `Severity:blocker`, which is
-                  what a reader of the text then gets.
-                  The entity survives condensing. It sits *after* `</span>` rather than
-                  inside it because `.rd-visually-hidden` is a 1×1 clipped box and a
-                  trailing space at the end of one is the kind of character a renderer is
-                  free to drop; outside, nothing has to be assumed about that.
-                  Three forms were rendered in the repository's Chromium and read rather
-                  than reasoned about: with the space either side of the tag `textContent`
-                  is `Severity: blocker`, without it `Severity:blocker`, and `innerText` is
-                  `Severity:\nblocker` for all three — the clipped box is
-                  `position: absolute`, so a rendered reading breaks the line there anyway.
+                  **`{{ ' ' }}`, outside the clipped box — and it is the third form tried.**
+
+                  `rd-visually-hidden` is text in the document, so a label and its value
+                  with nothing between them read as one word: `Severity:blocker`. A newline
+                  between them is no better, because Vue's `whitespace: 'condense'` deletes
+                  a whitespace-only text node between two elements. `&#32;` looked like the
+                  answer and is one only where nothing follows it on the line: compiled
+                  with the repo's own `@vue/compiler-dom`, `</span>&#32;` followed by a
+                  newline and an element — or a *comment* — emits no text node at all, and
+                  four boundaries in this app were written exactly that way. An
+                  interpolated space is a text node wherever it is written, which is why it
+                  is this one.
+
+                  Outside the clipped box rather than inside it, because
+                  `.rd-visually-hidden` is a 1×1 `overflow: hidden` box and a trailing
+                  space at the end of one is the kind of character a renderer may drop.
+                  Visually it costs nothing: the box is `position: absolute`, so the space
+                  is the first in-flow content of the line and is collapsed away.
                 -->
                 <span class="rd-meta severity">
-                  <span class="rd-visually-hidden">Severity:</span>&#32;{{ row.severity }}
+                  <span class="rd-visually-hidden">Severity:</span>{{ ' ' }}{{ row.severity }}
                 </span>
                 <span class="line">
                   <TickedText :text="row.line" />
@@ -378,10 +382,17 @@ function detailId(seq: number): string {
                 class="silent-row"
                 @toggle="toggle(row.seq)"
               >
-                <span class="cell cell--key rd-mono rd-meta">{{ row.key }}</span>
+                <!--
+                  **A space between the cells as well as inside them.** They are separated
+                  by newlines, which `whitespace: 'condense'` deletes, so the row's text —
+                  which is its accessible name — read `F4Severity: shouldWhat F4 says…`.
+                  Measured by reading a row's `textContent` out of the real binary, after
+                  fixing the label's own boundary and finding the cells still closed up.
+                -->
+                <span class="cell cell--key rd-mono rd-meta">{{ row.key }}</span>{{ ' ' }}
                 <span class="cell cell--severity rd-meta">
-                  <span class="rd-visually-hidden">Severity:</span>&#32;{{ row.severity }}
-                </span>
+                  <span class="rd-visually-hidden">Severity:</span>{{ ' ' }}{{ row.severity }}
+                </span>{{ ' ' }}
                 <span class="cell cell--line">
                   <TickedText
                     :text="row.line"
