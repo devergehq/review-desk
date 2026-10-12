@@ -34,7 +34,7 @@ jobs:
       # toolchain workflows had drifted to checkout@v5/setup-node@v5 on Node 22 here, which
       # meant the contract's tooling ran on a different Node than everything else for no
       # reason anybody had decided. `contract/package.json` now declares both.
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
