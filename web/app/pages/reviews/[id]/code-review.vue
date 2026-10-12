@@ -351,9 +351,29 @@ const foldLabel = computed(() =>
  * are already on the page as the record the controls read.
  */
 function saidByOthers(data: ReviewDetail, finding: Finding) {
-  return data.outcomes.filter(
-    outcome => outcome.finding_seq === finding.seq && outcome.actor !== 'developer',
-  )
+  return data.outcomes
+    .filter(outcome => outcome.finding_seq === finding.seq && outcome.actor !== 'developer')
+    .map((outcome) => {
+      /*
+       * **Worded here, once per outcome, and not in the template.** The block below needs
+       * the sentence, the quote and the time; three calls in the markup would be three
+       * evaluations a render and three chances for them to drift — the measurement is in
+       * `StepTrail`, where a title and a card built from two calls to the same clock could
+       * say "just now" and "1 min ago" about one step.
+       *
+       * **And the detail is never printed.** This block drew `outcome.detail` raw until
+       * DEV-958, which is the same defect as the queue's row and in the same words: a
+       * harvested detail is JSON, so a reply on a finding came out as
+       * `{"body":"…","comment_id":…}` inside the quotation that was meant to carry it.
+       */
+      const said = outcomeSaid(outcome)
+      return {
+        id: outcome.id,
+        sentence: sentence(said.sentence),
+        quote: said.quote,
+        when: outcomeWhen(said, outcome.occurred_at),
+      }
+    })
 }
 
 /** The name of the part a finding sits in, for its row. */
@@ -656,8 +676,8 @@ function coverage(data: ReviewDetail): string | null {
 
                       <!--
                         What the author said about this finding, harvested after posting.
-                        See `saidByOthers`: the screen this page retires was the only thing
-                        drawing these, and step 7 has no page of its own.
+                        See `saidByOthers`: this is the one finding's worth of it, and
+                        the whole of it is on step 7's own page, "What happened".
                       -->
                       <div
                         v-if="saidByOthers(data, finding).length"
@@ -669,12 +689,18 @@ function coverage(data: ReviewDetail): string | null {
                           :key="outcome.id"
                           class="rd-recorded reply"
                         >
-                          <span class="reply-kind">{{ editVerb(outcome.kind) }}</span>
-                          <span class="rd-note">
-                            by the {{ outcome.actor }} · {{ sinceLabel(outcome.occurred_at) }}
-                          </span>
-                          <template v-if="outcome.detail">
-                            <br>{{ outcome.detail }}
+                          <span class="reply-kind">{{ outcome.sentence }}</span>
+                          <span class="rd-note">{{ outcome.when }}</span>
+                          <!--
+                            The author's words, where the outcome carries them, and
+                            interpolated rather than handed to the browser as markup —
+                            which is what lets a reply holding a backtick, a tag or
+                            GitHub's own markdown arrive as the characters that were
+                            typed. The whole of step 7 is a page now; this is the one
+                            finding's worth of it, beside the finding it is about.
+                          -->
+                          <template v-if="outcome.quote">
+                            <br>{{ outcome.quote }}
                           </template>
                         </p>
                       </div>

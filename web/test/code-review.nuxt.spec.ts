@@ -1018,11 +1018,21 @@ describe('what the author said', () => {
    */
   it('shows a harvested reply on the finding it is about', async () => {
     const page = await codeReview(POSTED)
-    const replied = fixture(POSTED).outcomes.find(one => one.actor !== 'developer')!
+    const replied = fixture(POSTED).outcomes.find(one => one.kind === 'replied')!
     await openFinding(page, replied.finding_key)
 
-    expect(page.find('.reply').text()).toContain(replied.detail!.slice(0, 40))
-    expect(page.find('.reply').text()).toContain('by the author')
+    /*
+     * **The author's words, and not the record they were stored in.** The harvester writes
+     * an outcome's detail as JSON, and this block drew it raw until DEV-958 — so a reply
+     * arrived as `{"body":"…","comment_id":…}` inside the quotation meant to carry it.
+     * What is asserted is the body, read out of the fixture's own detail, and that no
+     * brace reaches the page.
+     */
+    const body = JSON.parse(replied.detail!) as { body: string, login: string }
+    expect(page.find('.reply').text()).toContain(body.body)
+    expect(page.find('.reply').text()).toContain(`A reply from ${body.login}`)
+    expect(page.find('.reply').text()).not.toContain('{')
+    expect(page.find('.reply').text()).not.toContain('comment_id')
   })
 
   it('does not replay the developer’s own decisions at them', async () => {

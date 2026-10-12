@@ -1214,7 +1214,7 @@
         "disposition_reason": null,
         "rule_id": null,
         "rule_key": null,
-        "github_comment_id": "IC_kwDOA1",
+        "github_comment_id": "2314990002",
         "created_at": "2026-10-06T12:50:00Z"
       },
       {
@@ -1231,7 +1231,7 @@
         "disposition_reason": null,
         "rule_id": null,
         "rule_key": null,
-        "github_comment_id": "IC_kwDOA2",
+        "github_comment_id": "2314990055",
         "created_at": "2026-10-06T12:50:00Z"
       },
       {
@@ -1271,7 +1271,7 @@
         "kind": "replied",
         "actor": "author",
         "occurred_at": "2026-10-08T09:28:00Z",
-        "detail": "The export is already chunked upstream; splitting it twice would reorder rows."
+        "detail": "{\"comment_id\":2315004502,\"in_reply_to\":2314990055,\"login\":\"dana-okoye\",\"body\":\"The export is already chunked upstream; splitting it twice would reorder rows.\",\"time_basis\":\"github\"}"
       },
       {
         "id": 41,
@@ -1291,7 +1291,7 @@
         "kind": "replied",
         "actor": "author",
         "occurred_at": "2026-10-08T09:44:00Z",
-        "detail": "Moved to a temporary name and renamed on success."
+        "detail": "{\"comment_id\":2315004411,\"in_reply_to\":2314990002,\"login\":\"dana-okoye\",\"body\":\"Moved to a temporary name and renamed on success.\",\"time_basis\":\"github\"}"
       },
       {
         "id": 66,
@@ -1301,7 +1301,7 @@
         "kind": "thread_resolved",
         "actor": "author",
         "occurred_at": "2026-10-08T09:46:00Z",
-        "detail": null
+        "detail": "{\"thread\":2314990002,\"resolved_by\":\"dana-okoye\",\"time_basis\":\"observed\"}"
       },
       {
         "id": 42,
@@ -1311,7 +1311,7 @@
         "kind": "code_changed_after",
         "actor": "harvester",
         "occurred_at": "2026-10-08T09:50:00Z",
-        "detail": "Fixed in a later commit: the file is written to a temporary name and moved."
+        "detail": "{\"file\":\"jobs/ExportTenant.php\",\"line\":40,\"lines_changed\":true,\"file_status\":\"modified\",\"commit\":\"9f3ac21b7d0e4c58a16b2f90d7e4c3518ab6072d\",\"basis\":\"compare 7ab9910...9f3ac21\"}"
       }
     ],
     "finding_severities": {
