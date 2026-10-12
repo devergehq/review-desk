@@ -772,3 +772,49 @@ fn a_brief_with_no_problem_in_it_is_refused() {
     assert!(error.is_refusal());
     assert_eq!(error.code(), "invalid_value");
 }
+
+#[test]
+fn every_lookup_finds_a_repository_however_it_is_spelled() {
+    // **Found on a real repository by the Locus half**: `review find --repo
+    // Trilogy-Care/tc-portal` answered "no reviews" while `review open` and `work list`
+    // found them. The record holds a repository canonically and these four lookups
+    // compared the caller's spelling to it under SQLite's binary collation, so they
+    // missed — and a miss is "there is no such review", not a slow path.
+    //
+    // One test over all four, because the fault is not in any one of them: it is that a
+    // rule the inserts keep was kept by some of the reads.
+    let (_dir, store) = temp_store();
+    let opened = store
+        .open_review("Trilogy-Care/TC-Portal", 9585, "ABC1234")
+        .expect("open");
+    assert_eq!(opened.review.repo, "trilogy-care/tc-portal");
+
+    for spelling in [
+        "Trilogy-Care/tc-portal",
+        "trilogy-care/TC-Portal",
+        " Trilogy-Care/TC-Portal ",
+        "trilogy-care/tc-portal",
+    ] {
+        assert_eq!(
+            store.list_reviews(spelling, 9585).unwrap().len(),
+            1,
+            "list_reviews missed {spelling:?}"
+        );
+        assert!(
+            store.find_review(spelling, 9585, 1).unwrap().is_some(),
+            "find_review missed {spelling:?}"
+        );
+        assert_eq!(
+            store.latest_round(spelling, 9585).unwrap(),
+            Some(1),
+            "latest_round missed {spelling:?}"
+        );
+        assert!(
+            store
+                .find_review_by_head(spelling, 9585, "ABC1234")
+                .unwrap()
+                .is_some(),
+            "find_review_by_head missed {spelling:?}"
+        );
+    }
+}

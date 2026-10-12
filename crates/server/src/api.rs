@@ -412,7 +412,20 @@ impl Api {
     /// mistyped repository with an empty list, which reads as "no reviews there" rather
     /// than "there is no such repository".
     fn reviews(&self, query: &str) -> Result<(u16, Value), ApiError> {
-        let repo = query_value(query, "repo");
+        // **Normalised once, here, so the rows and the echo are about one repository.**
+        // The store keys on the canonical spelling and every list below normalises for
+        // itself, so the rows were always right — but the answer echoed the query, and
+        // the contract says the page's filter reads that field rather than trusting its
+        // own state. `ACME/Portal` came back beside rows all spelled `acme/portal`, which
+        // is the shape of the fault the Locus half found in `review find`: when a lookup
+        // misses, an answer repeating the caller's words shows them nothing.
+        let repo = query_value(query, "repo").map(|repo| {
+            if wire::is_repo_name(&repo) {
+                review_desk_store::normalised_repo(&repo)
+            } else {
+                repo
+            }
+        });
         if let Some(repo) = &repo {
             if !wire::is_repo_name(repo) {
                 return Err(ApiError::invalid_value(
@@ -1187,7 +1200,14 @@ impl Api {
 
     /// `GET /rules`: rules for a repository, by stage, with the week's figures.
     fn rules(&self, query: &str) -> Result<(u16, Value), ApiError> {
-        let repo = query_value(query, "repo");
+        // The repository the store will search, as `reviews` above carries it.
+        let repo = query_value(query, "repo").map(|repo| {
+            if wire::is_repo_name(&repo) {
+                review_desk_store::normalised_repo(&repo)
+            } else {
+                repo
+            }
+        });
         if let Some(repo) = &repo {
             if !wire::is_repo_name(repo) {
                 return Err(ApiError::invalid_value(

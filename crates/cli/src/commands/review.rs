@@ -275,8 +275,21 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
             let mut reviews = store.list_reviews(repo, *pr)?;
             reviews.reverse();
 
+            // **The stored spelling, not the one that was typed.** The record holds a
+            // repository canonically and the lookup now normalises to match — so echoing
+            // the argument back would show `Trilogy-Care/tc-portal` beside rows that are
+            // all `trilogy-care/tc-portal`, which is the shape of the fault this answer
+            // hid: when the lookup missed, the empty answer repeated the caller's own
+            // words and the two spellings never appeared together. Taken from the rows
+            // where there are any, and from the same helper the store keys on where
+            // there are not.
+            let found = match reviews.first() {
+                Some(review) => review.repo.clone(),
+                None => review_desk_store::normalised_repo(repo),
+            };
+
             let plain = if reviews.is_empty() {
-                format!("no reviews of {repo}#{pr}")
+                format!("no reviews of {found}#{pr}")
             } else {
                 reviews
                     .iter()
@@ -286,7 +299,7 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
             };
 
             Ok(Report::new(
-                json!({ "repo": repo, "pr": pr, "reviews": reviews }),
+                json!({ "repo": found, "pr": pr, "reviews": reviews }),
                 plain,
             ))
         }

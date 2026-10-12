@@ -881,3 +881,39 @@ fn the_problem_statement_answers_only_a_get() {
         assert_eq!(answer.error_code(), "bad_request");
     }
 }
+
+#[test]
+fn a_repository_filter_answers_for_the_spelling_the_record_holds() {
+    // The same fault the Locus half found in `review find`, asked of the two reads that
+    // take a repository: the rows were always right, because every list in the store
+    // normalises — what was wrong is that the answer echoed the query, and the contract
+    // says the page's filter reads that field rather than trusting its own state. So
+    // `ACME/Portal` came back beside rows that all say `acme/portal`.
+    let harness = common::start_with_no_github();
+    common::seed(&harness.store);
+
+    let reviews = harness.api("GET", "/reviews?repo=ACME/Portal", None);
+    assert_eq!(reviews.status, 200, "{}", reviews.text());
+    assert_eq!(
+        reviews.json()["repo"],
+        "acme/portal",
+        "the answer carries the repository it searched"
+    );
+    assert!(
+        !reviews.json()["reviews"]
+            .as_array()
+            .expect("reviews")
+            .is_empty(),
+        "and it found them: {}",
+        reviews.text()
+    );
+
+    let rules = harness.api("GET", "/rules?repo=ACME/Portal", None);
+    assert_eq!(rules.status, 200, "{}", rules.text());
+    assert_eq!(rules.json()["repo"], "acme/portal");
+
+    // A repository that is not one is still refused, and says so about what was typed.
+    let refused = harness.api("GET", "/reviews?repo=not-a-repo", None);
+    assert_eq!(refused.status, 400, "{}", refused.text());
+    assert_eq!(refused.error_code(), "invalid_value");
+}

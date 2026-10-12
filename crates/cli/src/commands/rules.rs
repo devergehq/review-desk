@@ -26,13 +26,18 @@ pub fn run(command: &RulesCommand) -> Result<Report> {
             let store = Store::open_default()?;
             let rules = store.rules_for_repo(repo)?;
 
+            // The repository the store searched, not the one that was typed — the same
+            // rule `review find` keeps, and for the same reason: an empty answer that
+            // repeats the caller's own spelling cannot show them a mismatch.
+            let found = review_desk_store::normalised_repo(repo);
+
             let plain = if rules.is_empty() {
-                format!("no rules in force for {repo}")
+                format!("no rules in force for {found}")
             } else {
                 rules.iter().map(rule_line).collect::<Vec<_>>().join("\n")
             };
 
-            Ok(Report::new(json!({ "repo": repo, "rules": rules }), plain))
+            Ok(Report::new(json!({ "repo": found, "rules": rules }), plain))
         }
     }
 }

@@ -67,6 +67,17 @@ pub use crate::model::{
 pub use crate::normalise::is_repo_name;
 pub use crate::path::{default_db_path, resolve_db_path, DB_ENV_VAR};
 
+/// A repository name as the record spells it: trimmed and lower-cased.
+///
+/// **Exported so a surface outside this crate can say the stored form.** Every lookup
+/// keys on this, and `review find` has to be able to name the repository it searched
+/// rather than the argument it was handed — a repository spelled two ways is one
+/// repository, and an answer repeating the caller's own spelling is how that stopped
+/// being visible when a lookup missed.
+pub fn normalised_repo(given: &str) -> String {
+    normalise::repo(given)
+}
+
 /// An open Review Desk database, migrated to a known schema version.
 #[derive(Debug)]
 pub struct Store {

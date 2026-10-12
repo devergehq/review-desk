@@ -262,6 +262,8 @@ impl Store {
     /// however long the session takes to get to `review link`. A session that does not
     /// pass it is protected from its first layer write onwards.
     fn latest_unstarted_round(&self, repo: &str, pr: i64) -> Result<Option<Review>> {
+        // Its callers normalise already; the two lookups below do it again for themselves,
+        // which is the rule this crate keeps rather than an argument about who called whom.
         let Some(round) = self.latest_round(repo, pr)? else {
             return Ok(None);
         };
@@ -803,7 +805,14 @@ impl Store {
     }
 
     /// The review of this repository, pull request and round, if there is one.
+    ///
+    /// Normalised here, as [`Store::open_review`]'s own comment argues for the lookup it
+    /// makes: the column holds the canonical spelling, so a lookup keyed differently from
+    /// the insert misses — and a miss is "there is no such review" rather than a slow
+    /// path. Doing it in each lookup rather than in each caller is what stops the next
+    /// caller forgetting.
     pub fn find_review(&self, repo: &str, pr: i64, round: i64) -> Result<Option<Review>> {
+        let repo = normalise::repo(repo);
         Ok(self
             .conn
             .query_row(
@@ -826,6 +835,10 @@ impl Store {
         pr: i64,
         head_sha: &str,
     ) -> Result<Option<Review>> {
+        // Both halves of the identity, through the helpers the insert uses. `open_review`
+        // normalises before it calls this and says why; a caller that does not is the one
+        // this line is for.
+        let (repo, head_sha) = (normalise::repo(repo), normalise::head_sha(head_sha));
         Ok(self
             .conn
             .query_row(
@@ -843,6 +856,7 @@ impl Store {
     /// The highest round reached on this pull request, or `None` if it has never been
     /// reviewed. The next round is this plus one.
     pub fn latest_round(&self, repo: &str, pr: i64) -> Result<Option<i64>> {
+        let repo = normalise::repo(repo);
         Ok(self
             .conn
             .query_row(
@@ -863,6 +877,12 @@ impl Store {
     /// numbers read as a gap in the record. The lists that leave dismissed reviews out are
     /// the ones asking what to do next.
     pub fn list_reviews(&self, repo: &str, pr: i64) -> Result<Vec<Review>> {
+        // **The one that was wrong, and the Locus half found it on a real repository.**
+        // `review find --repo Trilogy-Care/tc-portal` answered "no reviews" while
+        // `review open` and `work list` found them, because those two normalise and this
+        // did not — and the answer echoed the query back, so the two spellings never
+        // appeared side by side for anybody to notice.
+        let repo = normalise::repo(repo);
         let mut statement = self.conn.prepare(&format!(
             "SELECT {COLUMNS} FROM reviews
              WHERE repo = ?1 AND pr = ?2 ORDER BY round ASC"
