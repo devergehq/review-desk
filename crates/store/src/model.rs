@@ -556,7 +556,7 @@ pub struct Review {
     /// When the developer dismissed this review, or `None` while it is in play.
     ///
     /// A dismissed review is out of the queue, out of the work list and out of the
-    /// Reviews list's default view, and everything under it is kept — see migration 16.
+    /// Reviews list's default view, and everything under it is kept — see migration 17.
     pub dismissed_at: Option<Timestamp>,
     /// Why it was dismissed, in the developer's own words.
     ///

@@ -370,11 +370,21 @@ impl Store {
         if facts.ticket_url.is_some() {
             let (looked_up_repo, looked_up_head) =
                 (normalise::repo(repo), normalise::head_sha(head_sha));
-            check_ticket(
-                facts,
-                self.find_review_by_head(&looked_up_repo, pr, &looked_up_head)?
+            // **The review this call is about is not always the one at this commit.**
+            // Since DEV-945 a head that names no review may be about to be *moved* onto
+            // an unstarted round, and that round is where `set_review_facts` will write —
+            // so looking only by head handed the check `None` and refused an address for
+            // a review that already holds the id. Reproduced by a review of this branch:
+            // record the id on one call, the address on the next after a push, and the
+            // second was refused. Asked in the same order `open_review` resolves it, so
+            // the pre-check and the write cannot disagree about which review they mean.
+            let held = match self.find_review_by_head(&looked_up_repo, pr, &looked_up_head)? {
+                Some(review) => review.ticket_id,
+                None => self
+                    .latest_unstarted_round(&looked_up_repo, pr)?
                     .and_then(|review| review.ticket_id),
-            )?;
+            };
+            check_ticket(facts, held)?;
         }
 
         let opened = self.open_review(repo, pr, head_sha)?;
@@ -657,7 +667,7 @@ impl Store {
     /// **What goes with it is everything that referenced it.** The row is deleted and
     /// SQLite's own foreign keys take its layers, its sources, its ticket criteria, its
     /// per-file change map and its round commits with it — `PRAGMA foreign_keys` is on for
-    /// every connection this crate opens, and `delete_review_takes_every_row_under_it`
+    /// every connection this crate opens, and `deleting_a_review_nobody_started_takes_every_row_under_it`
     /// asserts the result rather than trusting the declaration. A rule whose origin was
     /// this review keeps its statement and loses the origin, which is what
     /// `ON DELETE SET NULL` is there for; a never-started review has no findings for a rule
@@ -778,6 +788,19 @@ impl Store {
     ///
     /// A field left `None` is left as it is, so one call can set the session id without
     /// clearing the GitHub review id.
+    ///
+    /// **All three are read through [`normalise::optional_fact`]**, which is the rule
+    /// every other optional string this record holds is written under and is here for the
+    /// reason that function's own doc gives: `--session "$SESSION_ID"` from a shell whose
+    /// variable is unset is `Some("")`, and `COALESCE` is only told to leave a column
+    /// alone by a `NULL`, so the empty string *replaced* what was there.
+    ///
+    /// Since DEV-945 that is worse than a wiped id. A `session_id` of `""` is
+    /// `is_some()`, so the review reads as one a session has picked up and its head never
+    /// moves again — one request becomes two unstarted reviews, which is the thing the
+    /// issue exists to prevent — and a `github_review_id` of `""` makes
+    /// [`ReviewWork::started`] true, so the review can no longer be deleted. Reproduced
+    /// by a review of this branch, through `review open --session ""`.
     pub fn set_review_links(&self, id: i64, links: ReviewLinks) -> Result<Review> {
         // Make sure the review is there, so a bad id is NotFound rather than a silent
         // update of nothing.
@@ -791,9 +814,9 @@ impl Store {
              WHERE id = ?1",
             params![
                 id,
-                links.session_id,
-                links.ledger_id,
-                links.github_review_id
+                normalise::optional_fact(links.session_id.as_deref()),
+                normalise::optional_fact(links.ledger_id.as_deref()),
+                normalise::optional_fact(links.github_review_id.as_deref())
             ],
         )?;
 

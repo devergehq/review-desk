@@ -80,20 +80,31 @@ const neverStarted = computed(() => holdsInWords.value === '')
 /**
  * Whether a session has picked this review up, whatever it has written yet.
  *
- * **Not part of what a delete is refused for**, and deliberately: the store asks only
- * DEV-945's three things, because the stray review this was built for was written by a
- * build session and may well carry a session id. What it changes is what the card is
- * allowed to *say*. "Nothing on it but the request" is false about a review a session is
- * linked to or has reported a step for, and that review's layer rows go with the delete —
- * so the sentence says so, and the confirmation says it again where it cannot be missed.
+ * **Not part of what a delete is refused for**, and deliberately: the store asks what the
+ * review *holds*, and none of these is work the developer would lose — the stray review
+ * this was built for was written by a build session and may well carry several of them.
+ * What it changes is what the card is allowed to *say*. "Nothing on it but the request"
+ * is false about a review somebody has begun, and the delete takes all of these rows with
+ * it, so the sentence says so and the confirmation says it again.
  *
- * The same two signs the store reads in `review_is_claimed`, which is what decides that
- * `review open` will not move such a review's head either.
+ * **The same signs the store reads in `review_is_claimed`, all of them.** It read two
+ * while the store read eight, which a review of this branch caught: a review holding a
+ * per-file change map, its sources, the ticket's criteria, the description lint's
+ * results, a round's commits or a not-checked sentence was still being described as
+ * having nothing on it but the request. Every one of them is already on this page —
+ * `GET /reviews/{id}` serves the lot — so there is nothing to read twice.
  */
-const claimed = computed(() =>
-  props.detail.review.session_id != null
-  || props.detail.layers.some(layer => layer.state !== 'pending'),
-)
+const claimed = computed(() => {
+  const detail = props.detail
+  return detail.review.session_id != null
+    || detail.not_checked != null
+    || detail.layers.some(layer => layer.state !== 'pending')
+    || (detail.coverage?.files.length ?? 0) > 0
+    || (detail.sources?.length ?? 0) > 0
+    || (detail.criteria?.length ?? 0) > 0
+    || (detail.description_lint?.results.length ?? 0) > 0
+    || (detail.commits_since_previous_round?.length ?? 0) > 0
+})
 
 /**
  * Whether what it holds is one thing or several, for "lose that" or "lose them".

@@ -1422,7 +1422,7 @@ UPDATE reviews
 -- dispositions they made one finding at a time, and the evidence the rules in force were
 -- built from, so a row that goes takes all of that with it. A dismissal takes the review
 -- out of the queue, out of the work list and out of the Reviews list's default view, and
--- changes nothing underneath it. `review_dismissal_keeps_every_row_under_the_review`
+-- changes nothing underneath it. `a_dismissal_keeps_every_row_under_the_review`
 -- asserts the second half, because "it keeps the record" is the whole argument for
 -- choosing this over a delete and it is the kind of claim a later convenience quietly
 -- breaks.

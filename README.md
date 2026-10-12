@@ -980,7 +980,7 @@ the review's head, which is the wider question
 has the review before it offers the button.
 
 **A dismissal is the whole of the new state**: `dismissed_at` and `dismissed_reason` on the
-review, written together, and migration 16 adds nothing else. The queue's groups, the work
+review, written together, and migration 17 adds nothing else. The queue's groups, the work
 list `review-desk work list` serves and the harvest sweep all leave a dismissed review out;
 the Reviews list leaves it out of its default view and has a filter for it.
 

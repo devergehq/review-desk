@@ -1257,3 +1257,97 @@ fn a_review_holding_only_a_change_map_can_still_be_deleted() {
     assert!(!store.review_work(review.id).unwrap().started());
     store.delete_review(review.id).expect("and it can still go");
 }
+
+#[test]
+fn an_id_from_an_unset_shell_variable_does_not_claim_a_review() {
+    // **`--session "$SESSION_ID"` with the variable unset is `Some("")`**, and `COALESCE`
+    // is only told to leave a column alone by a `NULL` — the fault `normalise::
+    // optional_fact` exists for, which `set_review_links` was not reading through. Since
+    // DEV-945 it is worse than a wiped id: an empty session id is `is_some()`, so the
+    // review reads as one somebody has picked up and its head never moves again, which
+    // is the two-unstarted-reviews state the whole rule exists to prevent. Reproduced by
+    // a review of this branch.
+    let (_dir, store) = temp_store();
+    let recorded = store.open_review(REPO, 850, "aaa1111").expect("a request");
+    store
+        .set_review_links(
+            recorded.review.id,
+            ReviewLinks {
+                session_id: Some(String::new()),
+                ledger_id: Some("   ".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("a shell that said nothing");
+
+    let review = store.get_review(recorded.review.id).unwrap();
+    assert_eq!(review.session_id, None, "an empty id is no id");
+    assert_eq!(review.ledger_id, None);
+
+    let again = store
+        .open_review(REPO, 850, "bbb2222")
+        .expect("the author pushed");
+    assert!(!again.created, "still one request, one review");
+    assert_eq!(again.head_moved_from.as_deref(), Some("aaa1111"));
+}
+
+#[test]
+fn an_empty_github_review_id_does_not_make_a_review_posted() {
+    // The same rule on the column `ReviewWork` reads: an empty string is `IS NOT NULL`,
+    // so without normalising it the review would hold "the review it posted on GitHub"
+    // and could never be deleted.
+    let (_dir, store) = temp_store();
+    let review = requested(&store, 851, "aaa1111");
+    store
+        .set_review_links(
+            review.id,
+            ReviewLinks {
+                github_review_id: Some(String::new()),
+                ..Default::default()
+            },
+        )
+        .expect("a shell that said nothing");
+
+    assert!(!store.review_work(review.id).unwrap().started());
+    store.delete_review(review.id).expect("and it can still go");
+}
+
+#[test]
+fn an_address_may_follow_the_id_onto_a_request_whose_head_moved() {
+    // **The pre-check has to ask about the review the write will land on.** It looked the
+    // review up by the new commit, which names nothing when the head is about to move —
+    // so it was handed "this review holds no ticket id" about a review that holds one,
+    // and refused the address. Reproduced by a review of this branch: record the id, let
+    // the author push, record the address.
+    let (_dir, store) = temp_store();
+    store
+        .open_review_with(
+            REPO,
+            852,
+            "aaa1111",
+            &ReviewFacts {
+                ticket_id: Some("ABC-402".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("the id, on the first call");
+
+    let moved = store
+        .open_review_with(
+            REPO,
+            852,
+            "bbb2222",
+            &ReviewFacts {
+                ticket_url: Some("https://linear.app/acme/issue/ABC-402".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("the address, on the next call, after a push");
+
+    assert_eq!(moved.head_moved_from.as_deref(), Some("aaa1111"));
+    assert_eq!(moved.review.ticket_id.as_deref(), Some("ABC-402"));
+    assert_eq!(
+        moved.review.ticket_url.as_deref(),
+        Some("https://linear.app/acme/issue/ABC-402")
+    );
+}

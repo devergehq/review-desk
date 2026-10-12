@@ -106,7 +106,13 @@ function strayReview(): ReviewDetail {
       dismissed_at: null,
       dismissed_reason: null,
     },
-    /* Seven steps, none of them begun — which is what a request nobody picked up is. */
+    /*
+     * **Nothing on it but the request**, which is what the fixture has to be for the
+     * page to say so: seven steps none of them begun, and none of the things a session
+     * writes on its way to a brief. Built by emptying a real one rather than by typing a
+     * `ReviewDetail` out, so a field added to the shape cannot leave this one short of
+     * it — and emptied field by field, because the card reads every one of them.
+     */
     layers: first!.layers.map(layer => ({
       ...layer,
       state: 'pending' as const,
@@ -117,6 +123,12 @@ function strayReview(): ReviewDetail {
     findings: [],
     outcomes: [],
     draft_status: null,
+    not_checked: null,
+    sources: [],
+    criteria: [],
+    description_lint: null,
+    coverage: { source: 'not_recorded' as const, files: [] },
+    commits_since_previous_round: [],
   }
 }
 
@@ -389,6 +401,34 @@ describe('deleting a review that never started', () => {
       .toContain('holds 2 findings, and deleting it would lose them')
     expect(said(await understand(778)))
       .toContain('holds 1 finding, and deleting it would lose that')
+  })
+
+  it('says a session has it for every sign the record reads, not only two', async () => {
+    // The card read `session_id` and the layers while the store reads eight signs, so a
+    // review holding a per-file change map — or its sources, the ticket's criteria, the
+    // description lint, a round's commits, or a not-checked sentence — was still being
+    // described as having nothing on it but the request, with a delete offered that
+    // takes all of those rows with it.
+    const source = loadSource()
+    const mapped = strayReview()
+    mapped.coverage = {
+      source: 'files',
+      files: [{
+        position: 1,
+        path: 'app/Reporting/ColumnPolicy.php',
+        summary: 'the column policy',
+        lines_added: 12,
+        lines_removed: 3,
+        checked: 'read_in_full',
+        how_checked: null,
+        finding_seqs: [],
+      }],
+    }
+    await resetDesk({ reviews: [...source.reviews, mapped] })
+
+    const page = await understand(777)
+    expect(page.text()).toContain('A session has this review')
+    expect(page.text()).not.toContain('nothing on it but the request')
   })
 
   it('says a session has it, rather than that nothing has started', async () => {
