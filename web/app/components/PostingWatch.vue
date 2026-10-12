@@ -187,10 +187,19 @@ const announcement = computed(() => {
     : 'Signed off. Waiting for this review’s session to post it.'
 })
 
-/** "25 sec ago", down to the second, which is the unit a forty-second wait is read in. */
+/**
+ * "25 sec ago", down to the second, which is the unit a forty-second wait is read in.
+ *
+ * `sinceLabel` is the desk's usual wording and says "just now" for anything under a minute,
+ * which is right where a time is read at a glance and useless here: the whole question
+ * while a draft waits is whether twenty seconds have passed or fifty. The one thing it is
+ * borrowed from `sinceLabel` for is the nought — "0 sec ago" is a reading of a clock, and
+ * "just now" is what a person says.
+ */
 function ago(seconds: number | null): string | null {
-  const said = durationLabel(seconds)
-  return said == null ? null : `${said} ago`
+  if (seconds == null) return null
+  if (seconds === 0) return 'just now'
+  return `${durationLabel(seconds)} ago`
 }
 
 const signedOffLabel = computed(() => ago(sinceSignOff.value) ?? 'at an unrecorded time')

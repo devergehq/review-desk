@@ -3087,3 +3087,235 @@ test.describe('the guard is still on', () => {
     expect(framed.policy).toContain('frame-ancestors \'none\'')
   })
 })
+
+/*
+ * **The gap between a sign-off and a posting**, which is DEV-932 and is the one part of
+ * this screen that reports on somebody else.
+ *
+ * Review Desk never posts. The developer signs off in the browser, and a review session
+ * reads the approved draft and runs `review-desk draft posted`. So both halves of this are
+ * real here: the sign-off is a click, the posting is the command an agent session runs, and
+ * what is measured in between is whether the page noticed without being reloaded.
+ *
+ * **Its reviews are its own.** Everything above asserts on the seeded reviews, including
+ * how many of them the queue is waiting on, so these open theirs through the command line
+ * and this block runs last in the file.
+ */
+test.describe('the draft page after a sign-off', () => {
+  /**
+   * A review with a finding and a draft ready for the developer, recorded the way a session
+   * records one.
+   *
+   * `--sections` rather than `--file`: the store composes the body from the blocks, which
+   * is what a session writes since DEV-929 and is what keeps `body_is_stale` false. A draft
+   * written as one block of markdown would be as good for this test and worse as a picture.
+   */
+  function readyDraft(pr: number, title: string): number {
+    const opened = cli(seededDatabase, [
+      'review',
+      'open',
+      '--repo',
+      'acme/portal',
+      '--pr',
+      String(pr),
+      '--head',
+      'b4d9e01',
+      '--title',
+      title,
+      '--ticket',
+      'ABC-251',
+      '--changed-lines',
+      '64',
+    ])
+    const id = Number(opened.match(/\d+/)?.[0])
+    if (!Number.isInteger(id)) throw new Error(`review open printed no id: ${opened}`)
+
+    const finding = resolve('e2e/.posting-finding.json')
+    writeFileSync(
+      finding,
+      JSON.stringify({
+        lens: 'correctness',
+        severity: 'should',
+        claim: 'The attempt count is written outside the transaction',
+        title: 'The attempt count is written outside the transaction',
+        file: 'app/Jobs/DeliverWebhook.php',
+        line: 73,
+        disposition: 'in_draft',
+      }),
+    )
+    cli(seededDatabase, ['finding', 'add', '--review', String(id), '--file', finding])
+    rmSync(finding, { force: true })
+
+    const sections = resolve('e2e/.posting-sections.json')
+    writeFileSync(
+      sections,
+      JSON.stringify([
+        {
+          kind: 'prose',
+          text:
+            '**1 Should — 1 open.** The retry carries a key now, which is the right shape. '
+            + 'One finding, about where the attempt count is written.',
+        },
+        {
+          kind: 'finding',
+          finding_seq: 1,
+          text:
+            'A delivery that fails after the increment leaves the count ahead of what was '
+            + 'actually attempted, and the audit row is written from the count.',
+        },
+      ]),
+    )
+    cli(seededDatabase, ['draft', 'put', '--review', String(id), '--sections', sections])
+    rmSync(sections, { force: true })
+
+    return id
+  }
+
+  /** The draft as the command line reads it, which is how a review session reads it. */
+  function draftRecord(id: number) {
+    return cliJson(seededDatabase, ['draft', 'show', '--review', String(id)]) as unknown as {
+      draft: { status: string, event: string | null }
+    }
+  }
+
+  /** Sign off in the browser, which is the only place a draft can be signed off. */
+  async function signOff(page: Page, id: number, event: string) {
+    await page.goto(`${seeded}reviews/${id}/draft`)
+    await page.locator('select#event').selectOption(event)
+    await page.getByRole('button', { name: 'Sign off and post' }).click()
+    await expect(page.getByText('Waiting for this review’s session to post it.')).toBeVisible()
+  }
+
+  test('while it waits, the page says what is known and keeps it current', async ({ page }) => {
+    const id = readyDraft(418, 'Carry an idempotency key on a retried delivery')
+    await signOff(page, id, 'request_changes')
+
+    const panel = page.locator('.watch')
+
+    /* Who is expected to act, which nothing on this page said before. */
+    await expect(panel).toContainText('This review’s own session posts it')
+    await expect(panel).toContainText('never writes to GitHub')
+    /* And what it cannot say: Allele owns whether a session is running. */
+    await expect(panel).toContainText('not something Review Desk is told')
+    await expect(panel).toContainText('within about 40 seconds')
+
+    /* How long ago the sign-off was, and when anything last wrote to the review. */
+    await expect(panel).toContainText('Signed off')
+    await expect(panel).toContainText('Last written to')
+    await expect(panel).not.toContainText('Not recorded')
+
+    /*
+     * **Current without a reload.** The figure is worded from the browser's clock on every
+     * read, so after three of the page's own intervals it says seconds rather than "just
+     * now" — which is the whole difference from the sentence this screen used to print once.
+     */
+    await expect(panel.getByText(/\d+ sec ago/).first()).toBeVisible({ timeout: 20_000 })
+
+    /* The record is unchanged by any of it: signing off is the only write that happened. */
+    expect(draftRecord(id).draft.status).toBe('approved')
+  })
+
+  test('the session posts it, and the page says so without a reload', async ({ page }) => {
+    const id = readyDraft(419, 'Record the delivery attempt count inside the transaction')
+    await signOff(page, id, 'comment')
+
+    /*
+     * A mark the test can check for afterwards. If the page reloaded, this is gone — so it
+     * is the acceptance criterion "with no reload" rather than a claim about one.
+     */
+    await page.evaluate(() => {
+      ;(window as unknown as { postingWatchStayed?: boolean }).postingWatchStayed = true
+    })
+
+    /*
+     * **The review session's own command, with the GitHub review it became.** Review Desk
+     * posts nothing: this is the one transition that involves GitHub and the session makes
+     * it. A number rather than a node id, because a number is what GitHub builds its own
+     * address for a review from.
+     */
+    cli(seededDatabase, [
+      'draft',
+      'posted',
+      '--review',
+      String(id),
+      '--github-review',
+      '1842003517',
+    ])
+
+    const panel = page.locator('.watch')
+    /* Noticed on the page's own timer, inside two of its intervals. */
+    await expect(panel).toContainText('Posted on GitHub.', { timeout: 20_000 })
+    await expect(panel).toContainText('Posted as')
+    await expect(panel).toContainText('Comment')
+    await expect(panel).toContainText('Taken to post')
+
+    const link = panel.getByRole('link', { name: /See the review on GitHub/ })
+    await expect(link).toHaveAttribute(
+      'href',
+      `https://github.com/acme/portal/pull/419#pullrequestreview-1842003517`,
+    )
+
+    /* The heading and the sentence under it followed, which is the rest of the page. */
+    await expect(page.getByRole('heading', { name: 'Posted.' })).toBeVisible()
+
+    const stayed = await page.evaluate(
+      () => (window as unknown as { postingWatchStayed?: boolean }).postingWatchStayed,
+    )
+    expect(stayed).toBe(true)
+  })
+
+  test('after forty seconds with no post it says the session may not be running', async ({
+    page,
+  }) => {
+    const id = readyDraft(420, 'Skip a schedule whose tenant row has gone')
+
+    /*
+     * **The browser's clock, moved rather than waited out.** Forty seconds of real waiting
+     * is forty seconds on every run of this suite to measure one sentence, and a test that
+     * sleeps past a threshold is a test that goes red when a machine is busy. `clock.install`
+     * leaves the page running normally and `fastForward` is the laptop lid closing: the due
+     * interval fires once, with `Date.now()` on the other side of the threshold.
+     */
+    await page.clock.install()
+    await signOff(page, id, 'request_changes')
+
+    const panel = page.locator('.watch')
+    await expect(panel).not.toContainText('may not be running')
+
+    await page.clock.fastForward('45')
+
+    await expect(panel).toContainText('may not be running')
+    /* Plainly, and with the way out — not an alarm, and nothing is boxed or coloured. */
+    await expect(panel).toContainText('Check the session that was reviewing this')
+    await expect(panel).toContainText('take the sign-off back')
+    await expect(panel.locator('.notice--problem, .notice--blocked')).toHaveCount(0)
+
+    /* And it is still signed off: nothing here cancels anything. */
+    expect(draftRecord(id).draft.status).toBe('approved')
+  })
+
+  test('taking the sign-off back stops the waiting, while the page is watching', async ({
+    page,
+  }) => {
+    const id = readyDraft(421, 'Name the helper this change deletes')
+    await signOff(page, id, 'request_changes')
+
+    const panel = page.locator('.watch')
+    await expect(panel).toContainText('Signed off')
+
+    /*
+     * The one transition out of `approved` that is the developer's, added by DEV-929's
+     * posting half — and the state this page has to handle while it is polling.
+     */
+    await page.getByRole('button', { name: 'Take back the sign-off and send it back' }).click()
+    await page.locator('textarea#send-back-note').fill('Fold F1 into the prose; it has no line')
+    await page.getByRole('button', { name: 'Send back', exact: true }).click()
+
+    await expect(panel).toContainText('The sign-off is taken back')
+    await expect(panel).not.toContainText('Waiting for this review')
+    await expect(panel).not.toContainText('may not be running')
+
+    expect(draftRecord(id).draft.status).toBe('sent_back')
+    expect(draftRecord(id).draft.event).toBeNull()
+  })
+})
