@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import { prUrl, ticketUrl } from '../app/utils/links'
+import { commentUrl, prUrl, ticketUrl } from '../app/utils/links'
 
 /*
- * **The two addresses a review's header and rows link to.**
+ * **The three addresses a review's header and rows link to.**
  *
  * `app/utils/links.ts` says why they differ: the pull request's is *built* from `repo` and
  * `pr`, and the ticket's is *stored*, because nothing can turn an opaque `DUC-2045` into an
@@ -100,5 +100,37 @@ describe('where a review’s ticket is', () => {
     expect(ticketUrl(null)).toBeNull()
     expect(ticketUrl(undefined)).toBeNull()
     expect(ticketUrl('')).toBeNull()
+  })
+})
+
+describe('the comment a finding was posted as', () => {
+  it('is addressed by its numeric id, under the pull request', () => {
+    expect(commentUrl('acme/portal', 398, '2314990002')).toBe(
+      'https://github.com/acme/portal/pull/398#discussion_r2314990002',
+    )
+  })
+
+  /*
+   * **A node id is not an address.** `IC_kwDOA1…` appended to `#discussion_r` is a link
+   * whose text says "the comment" and whose destination is the top of the pull request,
+   * which is the defect `prUrl` refuses to build. The row draws no link instead, and the
+   * page's header already reaches the pull request.
+   */
+  it('is not built from an id that is not GitHub’s numeric comment id', () => {
+    expect(commentUrl('acme/portal', 398, 'IC_kwDOA1')).toBeNull()
+    expect(commentUrl('acme/portal', 398, '2314990002x')).toBeNull()
+    expect(commentUrl('acme/portal', 398, ' 2314990002')).toBeNull()
+  })
+
+  it('is nothing for a finding that was never posted as a comment', () => {
+    expect(commentUrl('acme/portal', 398, null)).toBeNull()
+    expect(commentUrl('acme/portal', 398, undefined)).toBeNull()
+    expect(commentUrl('acme/portal', 398, '')).toBeNull()
+  })
+
+  /* And it refuses whatever `prUrl` refuses, because it is built on it. */
+  it('is nothing where the repository is not a repository name', () => {
+    expect(commentUrl('portal', 398, '2314990002')).toBeNull()
+    expect(commentUrl('../..', 398, '2314990002')).toBeNull()
   })
 })

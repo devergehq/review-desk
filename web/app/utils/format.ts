@@ -201,6 +201,18 @@ export function startedReviewLine(review: {
     + 'No findings are written until you confirm it.'
 }
 
+/**
+ * A layer's name as the screen writes it.
+ *
+ * **Step 7 reads "What happened", and the record still calls it `harvest`.** The two are
+ * different vocabularies and this file is where they are told apart — the same split
+ * `LAYER_DETAILS` below makes for "approved by the developer". The developer read "Harvest"
+ * on the queue's step cell and said "I don't really know what that means": it is the name
+ * of the thing Review Desk does, not the name of what the step holds, and what the step
+ * holds is what a reader is looking for. The contract, the store and `review_desk_harvest`
+ * keep `harvest`, which is right — it is a read of GitHub — and DEV-958's page is "What
+ * happened".
+ */
 const LAYER_LABELS: Record<ReviewLayerName, string> = {
   lint: 'Lint',
   understand: 'Understand',
@@ -208,7 +220,7 @@ const LAYER_LABELS: Record<ReviewLayerName, string> = {
   solution_map: 'Solution map',
   code_review: 'Code review',
   draft: 'Draft',
-  harvest: 'Harvest',
+  harvest: 'What happened',
 }
 
 /** A layer's name as the screen writes it. */

@@ -154,6 +154,10 @@ export type HunkLineMarker = Schema['HunkLineMarker']
 export type FindingVerification = Schema['FindingVerification']
 export type Outcome = Schema['Outcome']
 export type NitTicket = Schema['NitTicket']
+/** One round of a pull request, as the timeline across the round-two page lists it. */
+export type RoundSummary = Schema['RoundSummary']
+/** How a round's findings stand. Zero is a measurement here, not an absence. */
+export type RoundStatusCounts = Schema['RoundStatusCounts']
 export type ReviewDetail = Schema['ReviewDetail']
 
 /* ---- GET /reviews/{id}/draft ---- */

@@ -515,14 +515,18 @@ describe('the shell every step page sits in', () => {
     expect(page.text()).toContain('waiting on you: not recorded')
   })
 
-  it('links the five steps that have somewhere to go, and no others', async () => {
+  it('links the six steps that have somewhere to go, and no others', async () => {
     const page = await understand(STRUCTURED)
     const links = page.findAll('.trail a').map(one => one.attributes('href'))
     /*
-     * **The trail is the only way to four of these.** Every row in the queue opens
+     * **The trail is the only way to five of these.** Every row in the queue opens
      * Understand, so if the trail did not reach the findings and the draft the queue would
-     * lead somewhere a reader could not leave. Steps 1 and 7 have no page, and a link to a
-     * page that does not exist is worse than a label.
+     * lead somewhere a reader could not leave. Step 1 has no page, and a link to a page
+     * that does not exist is worse than a label.
+     *
+     * **Step 7 is a link since DEV-958**, which is the issue that gave it a page: "What
+     * happened" is the whole of what came back on a posted review, and before it the only
+     * trace of a harvest anywhere was a count in the trail's own tooltip.
      */
     expect(links).toEqual([
       `/reviews/${STRUCTURED}/understand`,
@@ -530,12 +534,15 @@ describe('the shell every step page sits in', () => {
       `/reviews/${STRUCTURED}/solution`,
       `/reviews/${STRUCTURED}/code-review`,
       `/reviews/${STRUCTURED}/draft`,
+      `/reviews/${STRUCTURED}/what-happened`,
     ])
-    /* Lint and Harvest are labels. */
+    /* Lint alone is a label. */
     const labels = page.findAll('.trail .face:not(a)').map(one => one.text())
-    for (const step of ['1 Lint', '7 Harvest']) {
-      expect(labels.some(one => one.includes(step)), `${step} should be a label`).toBe(true)
-    }
+    expect(labels.some(one => one.includes('1 Lint')), '1 Lint should be a label').toBe(true)
+    expect(
+      labels.some(one => one.includes('What happened')),
+      '7 What happened should be a link',
+    ).toBe(false)
   })
 
   /*
