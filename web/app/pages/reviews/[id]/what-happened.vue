@@ -89,6 +89,7 @@ const silent = computed(() => page.value?.silent ?? [])
 const rounds = computed(() => page.value?.rounds ?? [])
 const anyObserved = computed(() => page.value?.anyObserved ?? false)
 const anyWithoutComment = computed(() => page.value?.anyWithoutComment ?? false)
+const anyUnaddressable = computed(() => page.value?.anyUnaddressable ?? false)
 
 /** How many findings this review posted: the denominator both section headings count out of. */
 const posted = computed(() => answered.value.length + silent.value.length)
@@ -116,6 +117,18 @@ const showSilent = ref(false)
 
 function toggle(seq: number) {
   open.value = open.value === seq ? null : seq
+}
+
+/**
+ * Fold the quiet half, and let go of whichever row was open inside it.
+ *
+ * Without the second half, folding and unfolding brought back a row already open — the
+ * reader closed the group and found it reopened at the row they had left, which reads as
+ * the control having done nothing.
+ */
+function toggleSilent() {
+  showSilent.value = !showSilent.value
+  if (!showSilent.value) open.value = null
 }
 
 /**
@@ -301,7 +314,7 @@ function detailId(seq: number): string {
             class="rd-btn fold"
             :aria-expanded="showSilent"
             aria-controls="nothing-back"
-            @click="showSilent = !showSilent"
+            @click="toggleSilent()"
           >
             {{ showSilent ? 'Fold' : 'Open' }} the
             {{ silent.length }} findings nothing came back on
@@ -357,10 +370,23 @@ function detailId(seq: number): string {
                     · {{ row.carried }}
                   </template>
                 </p>
+                <!--
+                  **Three sentences, because there are three reasons nothing came back**,
+                  and the row said the third about the second as well — which is false of
+                  it and tells the reader to stop looking. A finding raised in the body
+                  alone has no thread at all; a finding whose comment is recorded under an
+                  id no address can be built from has one, and it is reachable on the pull
+                  request.
+                -->
                 <p class="rd-note">
                   Nothing has come back on {{ row.key }}.
                   <template v-if="row.comment">
                     It was posted as a comment, so a reply would be read.
+                  </template>
+                  <template v-else-if="row.postedAsComment">
+                    It was posted as a comment, so a reply would be read — but the id
+                    recorded for that comment is not one this page can build an address
+                    from, so there is no link to it here.
                   </template>
                   <template v-else>
                     No comment on GitHub is recorded against it, so there is no thread for a
@@ -449,7 +475,7 @@ function detailId(seq: number): string {
           gives rather than of any one finding.
         -->
         <footer
-          v-if="anyObserved || anyWithoutComment"
+          v-if="anyObserved || anyWithoutComment || anyUnaddressable"
           class="notes"
         >
           <p
@@ -464,11 +490,20 @@ function detailId(seq: number): string {
             v-if="anyWithoutComment"
             class="rd-meta"
           >
-            <strong>A finding without a link to GitHub.</strong>
+            <strong>A finding raised in the body alone.</strong>
+            A finding this review did not post as its own comment has no thread, so no
+            reply could be read on it and nothing here is a link to one. The pull request
+            itself is linked at the top of this page.
+          </p>
+          <p
+            v-if="anyUnaddressable"
+            class="rd-meta"
+          >
+            <strong>A comment with no address.</strong>
             A comment is linked where the record holds GitHub's own numeric comment id for
-            it. A finding the review raised in its body alone has no comment to link, and
-            no thread a reply could be read from. The pull request itself is linked at the
-            top of this page.
+            it. One of these findings was posted as a comment under an id of another kind,
+            which names no place on the pull request — so the comment exists and this page
+            does not link it rather than linking somewhere else.
           </p>
         </footer>
       </ReviewStepPage>

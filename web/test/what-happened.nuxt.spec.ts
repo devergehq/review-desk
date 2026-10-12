@@ -360,6 +360,42 @@ describe('the page step 7 never had', () => {
     expect(page.find('h1').text()).toBe('The pull request is still open')
     expect(page.find('.sub').text()).toContain('Last read')
     expect(page.find('.sub').text()).toContain('14 findings were posted')
+    expect(page.find('.sub').text()).toContain('7 of them had something come back')
+    expect(page.find('.sub').text()).toContain('2 with a reply')
+    expect(page.find('.sub').text()).toContain('7 whose code changed')
+  })
+
+  /**
+   * **Replies are counted as replies and code changes as findings**, and the two counts
+   * are not the same shape on purpose.
+   *
+   * The harvester keys a code change on the commit it saw it in, so a finding whose file
+   * three pushes touch holds three rows — counting rows would give a figure about findings
+   * that exceeds the findings it is about, which is why
+   * `Store::posted_reviews_awaiting_author` counts that one `DISTINCT`. A reply is a thing
+   * the author wrote, and two replies on one finding are two things.
+   */
+  it('counts two replies on one finding as two, and three pushes on one as one', async () => {
+    const twice = [
+      ...OUTCOMES,
+      outcome({
+        finding_seq: 1,
+        kind: 'replied',
+        occurred_at: '2026-10-12T08:00:00Z',
+        detail: repliedDetail(1, 'And one more thing.'),
+      }),
+      outcome({
+        finding_seq: 3,
+        kind: 'code_changed_after',
+        actor: 'harvester',
+        occurred_at: '2026-10-12T18:00:00Z',
+        detail: changedDetail(3, true),
+      }),
+    ]
+    await withDense(dense({ outcomes: twice }))
+    const page = await shown(REVIEW)
+    expect(page.find('.sub').text()).toContain('3 with a reply')
+    expect(page.find('.sub').text()).toContain('7 whose code changed')
   })
 })
 
@@ -667,7 +703,63 @@ describe('it describes and does not grade', () => {
 
   it('explains once why some findings have no link to GitHub', async () => {
     const page = await shown(REVIEW)
-    expect(page.find('.notes').text()).toContain('numeric comment id')
+    /* F13 and F14 were raised in the body alone: they have no thread at all. */
+    expect(page.find('.notes').text()).toContain('raised in the body alone')
+    expect(page.find('.notes').text()).not.toContain('A comment with no address')
+  })
+
+  /**
+   * **A comment with no address is not a finding with no comment**, and the row said the
+   * second about the first — which is false of it and tells the reader to stop looking.
+   *
+   * `github_comment_id` is required to be GitHub's numeric `databaseId`, because that is
+   * what the harvester matches a thread by; a node id (`IC_kwDOA1…`) is what every record
+   * written before anyone checked holds, and `app/data/reviews.json` held two.
+   */
+  it('tells a comment with no address apart from a finding with no comment', async () => {
+    const nodeIds = Array.from({ length: 14 }, (_, at) => ({
+      ...finding(at + 1),
+      github_comment_id: `IC_kwDOA${at + 1}`,
+    }))
+    await withDense(dense({ findings: nodeIds }))
+    const page = await shown(REVIEW)
+
+    /* One link, and it is the one to the code review page. The text carries its own
+       visually-hidden tail, which is why this is `startsWith` and not an equality. */
+    const links = page.findAll('.answered-row')[0]!.findAll('a')
+    expect(links).toHaveLength(1)
+    expect(links[0]!.text()).toContain('The finding')
+    expect(links[0]!.attributes('href')).toBe(`/reviews/${REVIEW}/code-review#F1`)
+    expect(page.find('.notes').text()).toContain('A comment with no address')
+    expect(page.find('.notes').text()).not.toContain('raised in the body alone')
+
+    await page.find('.fold').trigger('click')
+    await settle(page)
+    await page.findAll('.silent-row')[0]!.trigger('click')
+    await settle(page)
+    const opened = page.find('.silent-opened').text()
+    expect(opened).toContain('so a reply would be read')
+    expect(opened).not.toContain('no thread for a reply to attach to')
+  })
+
+  /**
+   * Folding the quiet half lets go of whichever row was open inside it. Without that,
+   * unfolding brought one back already open, which reads as the control having done
+   * nothing.
+   */
+  it('lets go of an open row when the group is folded', async () => {
+    const page = await shown(REVIEW)
+    await page.find('.fold').trigger('click')
+    await settle(page)
+    await page.findAll('.silent-row')[0]!.trigger('click')
+    await settle(page)
+    expect(page.findAll('.silent-opened')).toHaveLength(1)
+
+    await page.find('.fold').trigger('click')
+    await settle(page)
+    await page.find('.fold').trigger('click')
+    await settle(page)
+    expect(page.findAll('.silent-opened')).toHaveLength(0)
   })
 
   it('footnotes nothing it has nothing to footnote', async () => {

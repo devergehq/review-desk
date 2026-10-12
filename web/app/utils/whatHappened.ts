@@ -74,6 +74,18 @@ export interface FindingRow {
   finding: string
   /** Where its comment is on GitHub, or null when no address can be built. See `commentUrl`. */
   comment: string | null
+  /**
+   * Whether the record holds a comment for it at all — **a different question from whether
+   * one can be addressed**, and the page says two different things about them.
+   *
+   * A finding the review raised in its body alone has no comment, so there is no thread a
+   * reply could attach to and none could ever be read. A finding whose comment id is stored
+   * but is not GitHub's numeric one — a node id, which is what every record written before
+   * anyone checked holds — *does* have a thread; what it has not got is an address this
+   * page can build. Told apart because the row said the first about both, which is a
+   * sentence that is false of the second and tells the reader to stop looking.
+   */
+  postedAsComment: boolean
   /** What came back, oldest first. Empty for a finding nothing came back on. */
   cameBack: CameBack[]
 }
@@ -105,8 +117,10 @@ export interface WhatHappened {
   rounds: RoundRow[]
   /** Whether any row's time is an observation rather than the act. Footnoted once. */
   anyObserved: boolean
-  /** Whether any posted finding has no comment this page could address. Footnoted once. */
+  /** Whether any posted finding was raised in the body alone. Footnoted once. */
   anyWithoutComment: boolean
+  /** Whether any finding's comment is recorded under an id no address can be built from. */
+  anyUnaddressable: boolean
 }
 
 /** The outcomes on one finding, worded, oldest first. */
@@ -120,10 +134,14 @@ function cameBackOn(outcomes: Outcome[], finding: Finding, now: Date): CameBack[
      * its code changes, so the record's order is the order of the *reads* and a reply
      * written after a resolution would be drawn before it.
      *
-     * `localeCompare` on the stored strings, which are RFC 3339 and sort lexically in
-     * their own order — the same comparison the queue's groups use.
+     * **Parsed, not compared as strings.** `wire::rfc3339` emits UTC with a `Z` and
+     * nothing else, so a lexical sort is chronological *today* — and that is a property of
+     * one formatter rather than of the field, which the contract declares as
+     * `format: date-time`. An offset form (`…T22:02:00+11:00`) is a valid date-time and
+     * sorts into the wrong place lexically, so the comparison does not rest on the
+     * formatter.
      */
-    .sort((one, two) => one.occurred_at.localeCompare(two.occurred_at))
+    .sort((one, two) => Date.parse(one.occurred_at) - Date.parse(two.occurred_at))
     .map((outcome) => {
       const said = outcomeSaid(outcome)
       return {
@@ -162,7 +180,13 @@ function fromOthers(outcomes: Outcome[]): Outcome[] {
 
 /** One posted finding's row, with whatever came back on it. */
 function rowFor(detail: ReviewDetail, finding: Finding, now: Date): FindingRow {
-  const cut = shortenClaim(finding.title ?? finding.claim)
+  /*
+   * Cut only where there is no title. A title is drawn whole however long it runs — the
+   * contract puts no maximum on one and calls a long one a writing fault for the review
+   * linter, which is `HeldBackRows`' rule too — so shortening one here and throwing the
+   * answer away was work that read as though it might be used.
+   */
+  const cut = finding.title == null ? shortenClaim(finding.claim) : null
   const status = roundStatusLabel(finding)
   return {
     seq: finding.seq,
@@ -174,8 +198,8 @@ function rowFor(detail: ReviewDetail, finding: Finding, now: Date): FindingRow {
      * to 56 words on the review this app was measured against, and fourteen of those down
      * one column is the wall of prose the code review page was rebuilt to stop.
      */
-    line: finding.title ?? cut.text,
-    shortened: finding.title == null && cut.shortened,
+    line: finding.title ?? cut!.text,
+    shortened: cut?.shortened ?? false,
     where: whereOf(finding),
     carried: isCarried(finding)
       ? [
@@ -187,6 +211,7 @@ function rowFor(detail: ReviewDetail, finding: Finding, now: Date): FindingRow {
       : null,
     finding: `/reviews/${detail.review.id}/code-review#${finding.key}`,
     comment: commentUrl(detail.review.repo, detail.review.pr, finding.github_comment_id),
+    postedAsComment: finding.github_comment_id != null,
     cameBack: cameBackOn(fromOthers(detail.outcomes), finding, now),
   }
 }
@@ -235,9 +260,13 @@ function subLine(detail: ReviewDetail, answered: FindingRow[], posted: number, n
     : `Last read ${sinceLabel(detail.review.harvested_at, now)}`
 
   const kinds = fromOthers(detail.outcomes)
-  const replies = new Set(
-    kinds.filter(one => one.kind === 'replied').map(one => one.finding_seq),
-  ).size
+  /*
+   * **Replies, counted as replies**, which is what `authorResponseLabel` counts on the
+   * queue and what the issue's "2 replies" means: two things the author wrote. Counting
+   * distinct findings instead would report one for an author who answered the same finding
+   * twice, and the row under it would draw both.
+   */
+  const replies = kinds.filter(one => one.kind === 'replied').length
   /*
    * **Distinct findings, not rows.** The harvester keys a code change on the commit it saw
    * it in, so a finding whose file is touched by three pushes holds three outcomes — and
@@ -303,6 +332,7 @@ export function whatHappened(detail: ReviewDetail, now: Date = new Date()): What
       ? (detail.rounds ?? []).map(summary => roundRow(summary, detail.review.round))
       : [],
     anyObserved: answered.some(row => row.cameBack.some(one => one.observed)),
-    anyWithoutComment: rows.some(row => row.comment == null),
+    anyWithoutComment: rows.some(row => !row.postedAsComment),
+    anyUnaddressable: rows.some(row => row.postedAsComment && row.comment == null),
   }
 }
