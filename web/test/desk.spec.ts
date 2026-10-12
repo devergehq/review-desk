@@ -445,6 +445,29 @@ describe('the draft', () => {
       .not.toContain(INVOICES)
   })
 
+  it('a write moves when the review was last written to, and a read does not', async () => {
+    /*
+     * **The contract's rule, which these records did not follow.** `last_activity_at` moves
+     * on every write and on no read, and the stamp used to sit at whatever the fixture
+     * held — so sample mode read "last written to 4 days ago" one second after a sign-off.
+     * The draft page's `PostingWatch` shows that number while it waits for a session to
+     * post, which makes it the one figure an invented record must not get wrong.
+     */
+    const api = desk()
+    const review = api.review(INVOICES)
+    const before = (await settled(review)).timings.last_activity_at
+    expect(before).not.toBeNull()
+
+    /* A read does not move it. */
+    await review.refresh()
+    expect((await settled(review)).timings.last_activity_at).toBe(before)
+
+    const at = Date.parse(before!)
+    expect((await api.approveDraft(INVOICES, 'request_changes')).ok).toBe(true)
+    const after = (await settled(review)).timings.last_activity_at
+    expect(Date.parse(after!)).toBeGreaterThan(at)
+  })
+
   it('refuses to approve a draft that is not ready, as a conflict', async () => {
     const api = desk()
     await api.approveDraft(INVOICES, 'comment')

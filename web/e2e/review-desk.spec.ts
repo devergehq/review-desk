@@ -3217,9 +3217,32 @@ test.describe('the draft page after a sign-off', () => {
 
     await expect(panel).toContainText('may not be running')
     await expect(panel).toContainText('in the 45 sec since you signed off')
-    /* Plainly, and with the way out — not an alarm, and nothing is boxed or coloured. */
+    /* And the way out. */
     await expect(panel).toContainText('Check the session that was reviewing this')
     await expect(panel).toContainText('take the sign-off back')
+
+    /*
+     * **Plainly, which is measured rather than asserted by the absence of a class.**
+     * Nothing has gone wrong with the record — the draft is signed off and still postable
+     * — and what is in doubt is a session this app cannot see, so the desk does not raise
+     * its voice about something it is guessing at. The warn ink is resolved off the token
+     * rather than written out, so changing `--rd-warn-ink` cannot quietly pass this.
+     */
+    const alarm = await page.evaluate(() => {
+      const probe = document.createElement('span')
+      probe.style.color = getComputedStyle(document.documentElement)
+        .getPropertyValue('--rd-warn-ink')
+      document.body.append(probe)
+      const resolved = getComputedStyle(probe).color
+      probe.remove()
+      return resolved
+    })
+    const said = await panel.locator('.late').evaluate(one => ({
+      color: getComputedStyle(one).color,
+      background: getComputedStyle(one).backgroundColor,
+    }))
+    expect(said.color).not.toBe(alarm)
+    expect(said.background).toBe('rgba(0, 0, 0, 0)')
     await expect(panel.locator('.notice--problem, .notice--blocked')).toHaveCount(0)
 
     /* And it is still signed off: nothing here cancels anything. */
