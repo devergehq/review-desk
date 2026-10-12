@@ -759,6 +759,11 @@ describe('a review whose repository name is not a repository name', () => {
     await withDense({ ...bad, review: { ...bad.review, repo: 'acme/portal#x' } })
     const page = await shown(REVIEW)
     expect(page.find('.notes').text()).toContain('No link to GitHub')
+    /*
+     * And it does not promise links on rows that are not on the screen. That is the same
+     * shape as the sentence above it, which was guarded for the same reason.
+     */
+    expect(page.find('.notes').text()).not.toContain('code review page are unaffected')
   })
 
   /* And the links to each finding's own row are unaffected, which the note says. */
@@ -906,6 +911,32 @@ describe('it describes and does not grade', () => {
     const opened = page.find('.silent-opened').text()
     expect(opened).toContain('so a reply would be read')
     expect(opened).not.toContain('no thread for a reply to attach to')
+  })
+
+  /*
+   * **Another review starts folded, with nothing open.** The component is reused across a
+   * parameter change — the router's own behaviour — and both pieces of state here are
+   * about *this* review's rows, with `open` keyed on a sequence number: a row left open on
+   * one review came back open on the next over whichever finding shared the number.
+   */
+  it('starts folded again when another review is opened', async () => {
+    const second = dense()
+    second.review = { ...second.review, id: REVIEW + 1, pr: 602 }
+    second.findings = second.findings.map(one => ({ ...one, review_id: REVIEW + 1 }))
+    second.outcomes = second.outcomes.map(one => ({ ...one, review_id: REVIEW + 1 }))
+    await resetDesk({ reviews: [...loadSource().reviews, dense(), second] })
+
+    const page = await shown(REVIEW)
+    await page.find('.fold').trigger('click')
+    await settle(page)
+    await page.findAll('.silent-row')[0]!.trigger('click')
+    await settle(page)
+    expect(page.findAll('.silent-opened')).toHaveLength(1)
+
+    await page.vm.$router.push(`/reviews/${REVIEW + 1}/what-happened`)
+    await settle(page)
+    expect(page.findAll('.silent-row')).toHaveLength(0)
+    expect(page.findAll('.silent-opened')).toHaveLength(0)
   })
 
   /**

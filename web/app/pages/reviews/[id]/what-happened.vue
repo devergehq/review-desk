@@ -4,8 +4,8 @@
  *
  * ```
  *  The pull request is still open.
- *  Last read 4 days ago. 14 findings were posted. 9 of them had something came
- *  back: 2 with a reply, 7 whose code changed.
+ *  Last read 4 days ago. 14 findings were posted. 7 of them had something come
+ *  back: 2 replies, 7 whose code changed.
  *
  *  WHAT CAME BACK · 9 of 14 findings
  *  ──────────────────────────────────────────────────────────────────────────────
@@ -134,6 +134,19 @@ function toggleSilent() {
 }
 
 /**
+ * Another review on the same page starts folded, with nothing open.
+ *
+ * **The component is reused across a parameter change**, which is the router's own
+ * behaviour and not a thing to work around — but the two pieces of state here are about
+ * *this* review's rows, and `open` is a sequence number, so a row left open on review 50
+ * came back open on review 51 over whichever finding happened to share the number.
+ */
+watch(reviewId, () => {
+  open.value = null
+  showSilent.value = false
+})
+
+/**
  * The row's name for a screen reader.
  *
  * **`spoken`, not the raw line**, for the reason `HeldBackRows` carries: `OpenRow`'s
@@ -215,15 +228,23 @@ function detailId(seq: number): string {
                   file. The record's own word, lower case as the record holds it.
                 -->
                 <!--
-                  **`&#32;`, and it is measured.** Vue's `whitespace: 'condense'` deletes a
-                  whitespace-only text node between two elements, so a newline — or a
-                  second `<span>` around the value with a newline before it — renders
-                  `Severity:blocker`, which is what a screen reader then reads. The entity
-                  survives condensing; rendering all three forms and reading `textContent`
-                  is how that was settled rather than reasoned about.
+                  **`&#32;`, outside the clipped box, and it is measured.**
+                  Vue's `whitespace: 'condense'` deletes a whitespace-only text node
+                  between two elements, so a newline — or a second `<span>` around the
+                  value with a newline before it — renders `Severity:blocker`, which is
+                  what a reader of the text then gets.
+                  The entity survives condensing. It sits *after* `</span>` rather than
+                  inside it because `.rd-visually-hidden` is a 1×1 clipped box and a
+                  trailing space at the end of one is the kind of character a renderer is
+                  free to drop; outside, nothing has to be assumed about that.
+                  Three forms were rendered in the repository's Chromium and read rather
+                  than reasoned about: with the space either side of the tag `textContent`
+                  is `Severity: blocker`, without it `Severity:blocker`, and `innerText` is
+                  `Severity:\nblocker` for all three — the clipped box is
+                  `position: absolute`, so a rendered reading breaks the line there anyway.
                 -->
                 <span class="rd-meta severity">
-                  <span class="rd-visually-hidden">Severity:&#32;</span>{{ row.severity }}
+                  <span class="rd-visually-hidden">Severity:</span>&#32;{{ row.severity }}
                 </span>
                 <span class="line">
                   <TickedText :text="row.line" />
@@ -354,7 +375,7 @@ function detailId(seq: number): string {
               >
                 <span class="cell cell--key rd-mono rd-meta">{{ row.key }}</span>
                 <span class="cell cell--severity rd-meta">
-                  <span class="rd-visually-hidden">Severity:&#32;</span>{{ row.severity }}
+                  <span class="rd-visually-hidden">Severity:</span>&#32;{{ row.severity }}
                 </span>
                 <span class="cell cell--line">
                   <TickedText
@@ -566,9 +587,18 @@ function detailId(seq: number): string {
             <strong>No link to GitHub.</strong>
             This review's repository is recorded under a name no GitHub address can be
             built from, and every address on this page that leads to GitHub is built on top
-            of the pull request's. The links to each finding's own row on the code review
-            page are unaffected. Nothing is missing from the record; what is missing is
-            somewhere on GitHub to point at.
+            of the pull request's.
+            <!--
+              **And only where there is a row to say it of.** This note is drawn for a
+              review with no posted finding at all — that is what reading it off the
+              review rather than off the rows is for — and promising links on rows that
+              are not on the screen is the same shape as the sentence above it.
+            -->
+            <template v-if="posted > 0">
+              The links to each finding's own row on the code review page are unaffected.
+            </template>
+            Nothing is missing from the record; what is missing is somewhere on GitHub to
+            point at.
           </p>
           <p
             v-if="anyUnaddressable"

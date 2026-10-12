@@ -133,6 +133,14 @@ describe('eight findings held back, which is what the complaint was about', () =
     for (const row of rows) {
       expect(row.find('.cell--key').text()).toMatch(/^F\d+$/)
       expect(row.find('.cell--severity').text()).toMatch(/nit|question/)
+      /*
+       * **And the hidden label is separated from it.** `rd-visually-hidden` is text in the
+       * document, so this read `Severity:nit`: a newline between the label and the value
+       * is a whitespace-only node Vue's `whitespace: 'condense'` deletes. The separator is
+       * `&#32;` — measured in `what-happened.vue`, which carries the three rendered forms.
+       */
+      expect(row.find('.cell--severity').element.textContent)
+        .toMatch(/^Severity: (nit|question)$/)
       expect(row.find('.cell--line').text().length).toBeGreaterThan(0)
     }
     /* Nothing grades a finding beyond the severity word the record holds. */

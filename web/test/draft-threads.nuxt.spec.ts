@@ -132,6 +132,14 @@ describe('the threads the draft hands over', () => {
     })
 
     expect(panel.find('.severity').text()).toContain('blocker')
+    /*
+     * **And the hidden label is separated from it.** `rd-visually-hidden` is text in the
+     * document, so "Severity:" ran straight into the word and the whole thing read
+     * `Severity:blocker`. A newline between the two is a whitespace-only node Vue's
+     * `whitespace: 'condense'` deletes, so the separator is `&#32;` — measured in
+     * `what-happened.vue`, which carries the argument and the three rendered forms.
+     */
+    expect(panel.find('.severity').element.textContent).toBe('Severity: blocker')
     expect(panel.find('.tag').exists()).toBe(false)
   })
 })

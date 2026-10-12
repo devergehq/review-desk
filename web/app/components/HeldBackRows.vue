@@ -145,8 +145,14 @@ const heading = computed(() => count(props.rows.length, 'finding'))
               read out by a screen reader, carries its own severity.
             -->
             <span class="cell cell--severity rd-meta">
-              <span class="rd-visually-hidden">Severity:</span>
-              <span v-if="row.severity">{{ row.severity }}</span>
+              <!--
+                `&#32;`, for the reason `what-happened.vue` measures: the newline that was
+                here is a whitespace-only node between two elements, and Vue's
+                `whitespace: 'condense'` deletes it — so the text read `Severity:nit`.
+              -->
+              <span class="rd-visually-hidden">Severity:</span>&#32;<span
+                v-if="row.severity"
+              >{{ row.severity }}</span>
               <span
                 v-else
                 class="rd-meta"

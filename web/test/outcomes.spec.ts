@@ -550,14 +550,19 @@ describe('no screen reads a stored detail for itself', () => {
   const ROOT = resolve('app')
 
   /**
-   * `app/data` is not walked.
+   * `app/data`, and that exact directory — **not any directory called `data`.**
    *
    * It is the data layer, and carrying a stored field from one side to the other is what
-   * `architecture.spec.ts` says that layer is for — `sample.ts` composes the wire shapes
+   * `architecture.spec.ts` says that layer is for: `sample.ts` composes the wire shapes
    * the server would have sent, `detail` among them. A screen may not read one; the thing
    * that *serves* one has to.
+   *
+   * Matched on the full path because a basename match excludes an `app/components/data/`
+   * or an `app/pages/data/` that nobody wrote yet — which is the shape of hole the walk
+   * above replaced a list of directories to close, reintroduced by accident one line
+   * lower.
    */
-  const NOT_WALKED = ['data']
+  const NOT_WALKED = [resolve('app', 'data')]
 
   /**
    * The three files that may, and why each.
@@ -577,7 +582,7 @@ describe('no screen reads a stored detail for itself', () => {
     return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
       const full = join(dir, entry.name)
       if (entry.isDirectory()) {
-        return NOT_WALKED.includes(entry.name) ? [] : walk(full)
+        return NOT_WALKED.includes(full) ? [] : walk(full)
       }
       return /\.(ts|vue)$/.test(entry.name) ? [full] : []
     })
@@ -606,7 +611,14 @@ describe('no screen reads a stored detail for itself', () => {
     /* The one that was missed: a screen in a directory the old list did not name. */
     expect(found).toContain(join('pages', 'reviews', 'index.vue'))
     expect(found).toContain(join('pages', 'reviews', '[id]', 'what-happened.vue'))
-    expect(found.some(path => path.startsWith('data'))).toBe(false)
+    expect(found.some(path => path.startsWith(`data${sep}`))).toBe(false)
+    /*
+     * And the exclusion is the one directory, not every directory of that name: a file
+     * under an `app/components/data/` would be walked. Asserted on the predicate rather
+     * than by making a directory, because a test that writes into `app/` is a test that
+     * can leave something behind.
+     */
+    expect(NOT_WALKED).toEqual([resolve('app', 'data')])
   })
 
   /** Every reach this scan can see, as `path: line`. Empty is the rule holding. */
