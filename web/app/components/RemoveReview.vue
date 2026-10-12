@@ -54,29 +54,25 @@ const review = computed(() => props.detail.review)
 /**
  * What a session has written to this review: the three things a delete would lose.
  *
- * **The same three the store asks about, in the same words**, because the sentence under
- * the card is the developer's only explanation of why no delete is offered. The findings
- * are counted rather than named: this is a reason, not an index.
+ * **The same three the store asks about, in the same words**, through the one helper the
+ * sample backend's refusal is also built from — the sentence under this card is the
+ * developer's only explanation of why no delete is offered, and it must not read
+ * differently from the refusal it is explaining.
  */
-const holds = computed(() => {
-  const found: string[] = []
-  if (props.detail.brief) found.push('a brief')
-  if (props.detail.findings.length > 0) {
-    found.push(count(props.detail.findings.length, 'finding'))
-  }
-  if (props.detail.draft_status) found.push('a draft')
-  return found
-})
+const held = computed(() => ({
+  brief: props.detail.brief != null,
+  findings: props.detail.findings.length,
+  draft: props.detail.draft_status != null,
+}))
 
 /** "a brief and 4 findings" — the list the refusal and this card both read as one. */
-const holdsInWords = computed(() => {
-  const found = holds.value
-  if (found.length <= 1) return found[0] ?? ''
-  return `${found.slice(0, -1).join(', ')} and ${found.at(-1)}`
-})
+const holdsInWords = computed(() => reviewWorkInWords(held.value))
 
 /** Whether this review never got past being requested, which is the delete's one case. */
-const neverStarted = computed(() => holds.value.length === 0)
+const neverStarted = computed(() => holdsInWords.value === '')
+
+/** Whether what it holds is one thing or several, for "lose that" or "lose them". */
+const holdsOneThing = computed(() => !holdsInWords.value.includes(' and '))
 
 async function dismiss(reason: string) {
   working.value = true
@@ -126,17 +122,17 @@ async function remove() {
       Already dismissed. The card says when and why in the developer's own words — the same
       two facts the Reviews list's dismissed view draws — and offers the undo.
     -->
+    <!--
+      **The state and the reason, and not what a dismissal means.** The notice under the
+      trail says that, on this page and on the review's four others, and three paragraphs
+      saying the same thing on one screen is what the card had before this.
+    -->
     <template v-if="review.dismissed_at">
       <p class="rd-note rd-measure">
         <strong>Dismissed {{ sinceLabel(review.dismissed_at) }}.</strong>
-        It is out of the queue, no session will be started for it, and it is not in the
-        Reviews list's default view. Everything on it has been kept.
-      </p>
-      <p
-        v-if="review.dismissed_reason"
-        class="rd-note rd-measure reason"
-      >
-        Why: {{ review.dismissed_reason }}
+        <template v-if="review.dismissed_reason">
+          Why: {{ review.dismissed_reason }}
+        </template>
       </p>
 
       <div class="controls">
@@ -237,7 +233,7 @@ async function remove() {
       >
         <strong>It cannot be deleted.</strong>
         This review holds {{ holdsInWords }}, and deleting it would lose
-        {{ holds.length === 1 ? 'that' : 'them' }}. Dismissing it takes it out of the queue
+        {{ holdsOneThing ? 'that' : 'them' }}. Dismissing it takes it out of the queue
         and keeps the record.
       </p>
     </div>

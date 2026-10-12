@@ -114,6 +114,32 @@ export function severityTally(counts: SeverityCounts): string {
     .join(', ')
 }
 
+/**
+ * What a review holds of the three things only a session writes, in words.
+ *
+ * **"a brief, 2 findings and a draft" — and the three are the same three everywhere.**
+ * The store refuses a delete unless all three are absent and says this list back when it
+ * refuses; the removal card draws it to explain why no delete is offered; and sample mode
+ * raises the refusal with it so a page tested on fixtures is tested against the same
+ * sentence. Written here once rather than in each of those, because three copies of a
+ * list-of-three grammar is three chances for the page to word the refusal differently from
+ * the refusal.
+ *
+ * Empty when the review holds none of them, which is the review a delete is for. No caller
+ * prints an empty one: the sentence it belongs to is only composed when there is something
+ * to protect.
+ */
+export function reviewWorkInWords(
+  held: { brief: boolean, findings: number, draft: boolean },
+): string {
+  const parts: string[] = []
+  if (held.brief) parts.push('a brief')
+  if (held.findings > 0) parts.push(count(held.findings, 'finding'))
+  if (held.draft) parts.push('a draft')
+  if (parts.length <= 1) return parts[0] ?? ''
+  return `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`
+}
+
 const LAYER_LABELS: Record<ReviewLayerName, string> = {
   lint: 'Lint',
   understand: 'Understand',

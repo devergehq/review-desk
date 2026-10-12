@@ -17,6 +17,7 @@ import {
   layerTone,
   openForLabel,
   prStateLabel,
+  reviewWorkInWords,
   sessionLabel,
   severityTally,
   sinceLabel,
@@ -471,5 +472,20 @@ describe('what came back on a posted review', () => {
   it('does not claim a pull request is open when nothing has looked', () => {
     expect(prStateLabel(null)).toBe('pull request state not established')
     expect(prStateLabel('open')).toBe('pull request open at the last harvest')
+  })
+})
+
+describe('what a review holds, in words', () => {
+  it('is the list the refusal and the removal card both read as one', () => {
+    expect(reviewWorkInWords({ brief: false, findings: 0, draft: false })).toBe('')
+    expect(reviewWorkInWords({ brief: true, findings: 0, draft: false })).toBe('a brief')
+    expect(reviewWorkInWords({ brief: false, findings: 1, draft: false })).toBe('1 finding')
+    expect(reviewWorkInWords({ brief: false, findings: 4, draft: false })).toBe('4 findings')
+    expect(reviewWorkInWords({ brief: true, findings: 4, draft: false }))
+      .toBe('a brief and 4 findings')
+    expect(reviewWorkInWords({ brief: true, findings: 4, draft: true }))
+      .toBe('a brief, 4 findings and a draft')
+    /* A nought is not a thing it holds, which is what makes the empty answer mean "no". */
+    expect(reviewWorkInWords({ brief: false, findings: 0, draft: true })).toBe('a draft')
   })
 })

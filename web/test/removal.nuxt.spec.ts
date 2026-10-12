@@ -139,6 +139,11 @@ describe('the Reviews list’s dismissed filter', () => {
     await choose(page, 'Dismissed')
 
     expect(page.text()).toContain('The reviews you have dismissed')
+    expect(
+      page.findAll('[role="radio"]')
+        .filter(one => one.attributes('aria-checked') === 'true')
+        .map(one => one.text()),
+    ).toContain('Dismissed')
     const rows = page.findAll('.row')
     expect(rows).toHaveLength(1)
     expect(rows[0]!.text()).toContain('Dismissed')
@@ -197,7 +202,7 @@ describe('dismissing a review from its page', () => {
     await field.setValue('the pull request was closed unmerged')
     await click(page, 'Dismiss it')
 
-    expect(page.text()).toContain('is dismissed and out of the queue')
+    expect(page.text()).toContain('acme/portal#412 is dismissed.')
     expect(page.text()).toContain('Dismissed just now')
     expect(page.text()).toContain('the pull request was closed unmerged')
     /* And the page says so at the top as well, not only in the card that did it. */

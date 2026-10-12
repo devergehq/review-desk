@@ -3382,7 +3382,7 @@ test.describe('taking a review off the desk', () => {
       await reason.fill('the pull request was closed unmerged')
       await card.getByRole('button', { name: 'Dismiss it' }).click()
 
-      await expect(card).toContainText('is dismissed and out of the queue')
+      await expect(card).toContainText('acme/portal#412 is dismissed.')
       await expect(card).toContainText('the pull request was closed unmerged')
 
       /* The page says it on every one of the review's pages, not only on this one. */

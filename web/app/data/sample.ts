@@ -43,7 +43,7 @@ import {
   isPosted,
   SEVERITY_LABELS,
 } from '~/utils/houseStyle'
-import { count } from '~/utils/format'
+import { count, reviewWorkInWords } from '~/utils/format'
 import type {
   Brief,
   DecideFindingRequest,
@@ -1464,18 +1464,14 @@ function deleteReview(id: number): Review {
   const detail = reviewById(id)
   if (!detail) throw notFound(`review ${id}`)
 
-  const holds: string[] = []
-  if (detail.brief) holds.push('a brief')
-  if (detail.findings.length === 1) holds.push('1 finding')
-  else if (detail.findings.length > 1) holds.push(`${detail.findings.length} findings`)
-  if (draftById(id)) holds.push('a draft')
-
-  if (holds.length > 0) {
-    const said = holds.length === 1
-      ? holds[0]
-      : `${holds.slice(0, -1).join(', ')} and ${holds.at(-1)}`
+  const holds = reviewWorkInWords({
+    brief: detail.brief != null,
+    findings: detail.findings.length,
+    draft: draftById(id) != null,
+  })
+  if (holds !== '') {
     throw conflict(
-      `Review ${id} holds ${said}, and deleting it would lose that: dismiss it instead, `
+      `Review ${id} holds ${holds}, and deleting it would lose that: dismiss it instead, `
       + 'which takes it out of the queue and keeps the record.',
     )
   }

@@ -421,9 +421,10 @@ export function useReviewDesk() {
 
     return write(
       to => to.dismissReview(id, said),
-      (review: Review) =>
-        `${review.repo}#${review.pr} is dismissed and out of the queue. Everything on it `
-        + 'is kept, and you can bring it back from this page.',
+      // Short, because the page it is read on says what a dismissal means twice over:
+      // once under the trail and once in the card this notice appears in. What the
+      // notice has to add is that it happened.
+      (review: Review) => `${review.repo}#${review.pr} is dismissed.`,
     )
   }
 

@@ -771,3 +771,50 @@ fn what_a_review_holds_is_the_same_question_for_a_delete_and_for_a_moved_head() 
         "and a new commit on it is the next round rather than this round moved"
     );
 }
+
+#[test]
+fn every_query_that_lists_reviews_says_what_it_does_about_dismissed_ones() {
+    // **The structural half of "a dismissed review is in front of nobody".** The tests
+    // above check the five queries that exist today; this one is against the sixth,
+    // written next month, whose author does not know there is a clause to paste. A group
+    // that forgot it would put a dismissed review back in the developer's queue and
+    // nothing anywhere would fail.
+    //
+    // Written over the source the way `the_work_query_contains_no_write_statement` is, and
+    // for the same reason: "every query carries the clause" is a claim about code, and
+    // code stops being like that one convenience at a time.
+    //
+    // The rule is deliberately "says something about it" rather than "excludes them":
+    // `reviews_at_step` is the Reviews list and takes a `DismissedReviews`, so it names
+    // the column instead. What is caught is a query that names neither.
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    for file in ["src/entities/inbox.rs", "src/entities/work.rs"] {
+        let source = std::fs::read_to_string(root.join(file)).expect("the module's source");
+
+        // One chunk per prepared statement: everything from `prepare(` to the `))?;` or
+        // `)?;` that closes it. The constant's own definition is before the first of
+        // them, so it is not mistaken for a query.
+        let statements = source.split("conn.prepare(").skip(1).map(|rest| {
+            let end = rest.find(")?;").unwrap_or(rest.len());
+            &rest[..end]
+        });
+
+        let mut checked = 0;
+        for statement in statements {
+            if !statement.contains("FROM reviews") {
+                continue;
+            }
+            checked += 1;
+            assert!(
+                statement.contains("{IN_PLAY}") || statement.contains("dismissed_at"),
+                "a query in {file} reads the reviews and says nothing about dismissed \
+                 ones. Paste `AND {{IN_PLAY}}` into it, or name `dismissed_at` to say \
+                 what it does instead:\n{statement}"
+            );
+        }
+        assert!(
+            checked > 0,
+            "no query over the reviews was found in {file}, so this check is vacuous"
+        );
+    }
+}
