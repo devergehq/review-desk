@@ -1381,13 +1381,46 @@ export async function stop(serving: Serving): Promise<void> {
 const FIRST_PULL_REQUEST = 900
 const LAST_PULL_REQUEST = FIRST_PULL_REQUEST + 50
 
-/** Open a review on the first pull request in that range that nothing has reviewed. */
+/**
+ * Open a review on the first pull request in that range that nothing has reviewed.
+ *
+ * **The probe writes nothing, and that took a second go.** `review open` writes every fact
+ * it is given and leaves out what it is not, so probing *with* the title rewrote the title
+ * of whatever review was already on that number before rejecting it — a finished test's
+ * record changed underneath it. The probe now gives the three fields that identify the
+ * review and nothing else; the facts are written by the second call, on the number it
+ * settles on, where the same head hands back the same review.
+ */
 function openAFreshReview(
   database: string,
   title: string,
 ): { reviewId: number, pr: number } {
   for (let pr = FIRST_PULL_REQUEST; pr <= LAST_PULL_REQUEST; pr += 1) {
     const opened = cli(database, [
+      'review',
+      'open',
+      '--repo',
+      'acme/portal',
+      '--pr',
+      String(pr),
+      '--head',
+      'b4d9e01',
+    ])
+    const reviewId = Number(opened.match(/\d+/)?.[0])
+    if (!Number.isInteger(reviewId)) {
+      throw new Error(`review open printed no id: ${opened}`)
+    }
+
+    const shown = cliJson(database, [
+      'review',
+      'show',
+      '--review',
+      String(reviewId),
+    ]) as unknown as { review: { round: number }, findings: unknown[], draft: unknown }
+
+    if (shown.review.round !== 1 || shown.findings.length > 0 || shown.draft != null) continue
+
+    cli(database, [
       'review',
       'open',
       '--repo',
@@ -1403,21 +1436,7 @@ function openAFreshReview(
       '--changed-lines',
       '64',
     ])
-    const reviewId = Number(opened.match(/\d+/)?.[0])
-    if (!Number.isInteger(reviewId)) {
-      throw new Error(`review open printed no id: ${opened}`)
-    }
-
-    const shown = cliJson(database, [
-      'review',
-      'show',
-      '--review',
-      String(reviewId),
-    ]) as unknown as { review: { round: number }, findings: unknown[], draft: unknown }
-
-    if (shown.review.round === 1 && shown.findings.length === 0 && shown.draft == null) {
-      return { reviewId, pr }
-    }
+    return { reviewId, pr }
   }
 
   throw new Error(
