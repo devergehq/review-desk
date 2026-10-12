@@ -42,8 +42,17 @@ const says = computed(() => (props.open ? 'Fold' : props.opens))
     :aria-controls="controls"
     @click="$emit('toggle')"
   >
-    <span class="rd-visually-hidden">{{ open ? 'Fold' : 'Open' }} {{ label }}:</span>
-    <slot />
+    <!--
+      **`&#32;` after each of these, and it is a scan that found them.** Vue's
+      `whitespace: 'condense'` deletes a whitespace-only text node between two elements, so
+      the newlines here render nothing: the row's accessible name came out as
+      `Open F4, nit, What F4 says is wrong:F4nitWhat F4 says is wrongOpen`, with every
+      boundary closed up. `test/step-pages.nuxt.spec.ts` holds the rule for a hidden label
+      that ends in a colon; the slot's own two boundaries are the same defect and are fixed
+      with it. `what-happened.vue` carries the measurement of all three forms.
+    -->
+    <span class="rd-visually-hidden">{{ open ? 'Fold' : 'Open' }} {{ label }}:</span>&#32;
+    <slot />&#32;
     <span class="opens">{{ says }}</span>
   </button>
 </template>

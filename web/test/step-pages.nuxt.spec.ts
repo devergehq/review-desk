@@ -2243,6 +2243,44 @@ describe('nothing on these pages is handed to the browser as markup', () => {
     }
   })
 
+  /**
+   * **A hidden label that ends in a colon is followed by an explicit space.**
+   *
+   * `rd-visually-hidden` is text in the document, so `<span …>Severity:</span>{{ value }}`
+   * reads `Severity:blocker` — and a *newline* between the two is no better, because Vue's
+   * `whitespace: 'condense'` deletes a whitespace-only text node between two elements. The
+   * separator has to be `&#32;`, which survives it.
+   *
+   * **This is a scan because the rule was swept by hand twice and missed three sites the
+   * second time.** DEV-958 found it on its own page, fixed `DraftThreads` and
+   * `HeldBackRows` beside it, wrote the rule into a comment — and left `Fixes:`, `Size:`
+   * and `The code review found:` on the Solution page reading as one word. A rule stated in
+   * a comment is a rule somebody has to remember; this one is read off the source.
+   *
+   * Only labels ending in a colon, which is the shape that has a value after it. A hidden
+   * span that *continues* a visible phrase — "The finding", then " F1 on the code review
+   * page" — carries its own leading space and needs nothing here.
+   */
+  it('separates a hidden label from the value after it', () => {
+    const offenders = sources.flatMap(file =>
+      file.text
+        .split('\n')
+        .filter(line => /class="rd-visually-hidden">[^<]*:<\/span>/.test(line))
+        .filter(line => !/:<\/span>&#32;/.test(line))
+        .map(line => `${file.name}: ${line.trim()}`))
+    expect(offenders).toEqual([])
+  })
+
+  it('is a scan that can fail', () => {
+    /*
+     * The same predicate over a line that breaks the rule, so a regex that stopped matching
+     * cannot leave the check above green about nothing.
+     */
+    const broken = '<span class="rd-visually-hidden">Severity:</span>{{ row.severity }}'
+    expect(/class="rd-visually-hidden">[^<]*:<\/span>/.test(broken)).toBe(true)
+    expect(/:<\/span>&#32;/.test(broken)).toBe(false)
+  })
+
   it('never lets a pill break across two lines', () => {
     /*
      * The one defect Patrick flagged on the board, pinned where it is fixed. Three

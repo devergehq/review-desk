@@ -577,13 +577,16 @@ describe('no screen reads a stored detail for itself', () => {
     'app/composables/useReviewDesk.ts',
   ]
 
+  /** Whether the walk steps into a directory. Its own function, so it can be tested. */
+  function excluded(full: string): boolean {
+    return NOT_WALKED.includes(full)
+  }
+
   /** Every source file under `app/`, at any depth, bar the data layer. */
   function walk(dir: string): string[] {
     return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
       const full = join(dir, entry.name)
-      if (entry.isDirectory()) {
-        return NOT_WALKED.includes(full) ? [] : walk(full)
-      }
+      if (entry.isDirectory()) return excluded(full) ? [] : walk(full)
       return /\.(ts|vue)$/.test(entry.name) ? [full] : []
     })
   }
@@ -612,13 +615,20 @@ describe('no screen reads a stored detail for itself', () => {
     expect(found).toContain(join('pages', 'reviews', 'index.vue'))
     expect(found).toContain(join('pages', 'reviews', '[id]', 'what-happened.vue'))
     expect(found.some(path => path.startsWith(`data${sep}`))).toBe(false)
-    /*
-     * And the exclusion is the one directory, not every directory of that name: a file
-     * under an `app/components/data/` would be walked. Asserted on the predicate rather
-     * than by making a directory, because a test that writes into `app/` is a test that
-     * can leave something behind.
-     */
-    expect(NOT_WALKED).toEqual([resolve('app', 'data')])
+  })
+
+  /**
+   * **The exclusion is that one directory, not every directory of that name.**
+   *
+   * Tested through the predicate the walk actually calls, because the alternative is making
+   * an `app/components/data/` on disk — a test that writes into `app/` is a test that can
+   * leave something behind. An earlier version of this restated `NOT_WALKED` instead, which
+   * is an assertion that passes whatever `walk` does with it.
+   */
+  it('steps into a nested directory that happens to be called data', () => {
+    expect(excluded(resolve('app', 'data'))).toBe(true)
+    expect(excluded(resolve('app', 'components', 'data'))).toBe(false)
+    expect(excluded(resolve('app', 'pages', 'data'))).toBe(false)
   })
 
   /** Every reach this scan can see, as `path: line`. Empty is the rule holding. */

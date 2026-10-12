@@ -21,26 +21,33 @@
  *
  * ## The rule, written so it can be checked rather than remembered
  *
- * **A detail that parses as a JSON object is never printed.** [`freeDetail`] is the only
+ * **A detail that parses as a structure is never printed.** [`freeDetail`] is the only
  * route from a stored detail to a screen, and it answers `null` for anything that parses
- * as an object — so the harvester's four shapes, and any shape a later harvester invents,
- * are unprintable by construction. What reaches a reader is composed here out of named
- * fields, or it is a detail a person typed, which is prose and always was: `outcome add
- * --kind rejected --detail "their reason"`, the rejection reason the rule counts.
+ * as an object or an array — so the harvester's three shapes, and any shape a later
+ * harvester invents, are unprintable by construction. What reaches a reader is composed
+ * here out of named fields, or it is a detail a person typed, which is prose and always
+ * was: `outcome add --kind rejected --detail "their reason"`, the rejection reason the
+ * rule counts.
  *
  * That is stronger than wording the three kinds the harvester writes today and trusting
  * the next one to be worded too. A kind added to `OutcomeKind` is a type error in
- * [`SAID`] below; a *field* added to a detail the harvester already writes is simply not
- * drawn, which is the safe direction to fail in.
+ * [`SAID`] below *and* degrades rather than throwing at run time — see [`phraseFor`],
+ * because this bundle is built separately from the server that serves it. A *field* added
+ * to a detail the harvester already writes is simply not drawn, which is the safe
+ * direction to fail in, and `test/outcomes.spec.ts` reads the field names out of
+ * `crates/harvest/src/run.rs` so that adding one fails there.
  *
  * ## The four facts, and why the fourth is here
  *
  * `crates/harvest/src/lib.rs` records four facts and three of them are outcome kinds; the
  * fourth is the pull request's own state, which lands on `Review.pr_state`. All four are
- * worded here, because they are read together — the step-7 page's one line is the fourth
- * and its rows are the other three — and a sentence about a merged pull request written on
- * the page that draws it would be the fourth copy of a phrase this app already has three
- * of.
+ * worded here, because they are read together: the step-7 page's one line is the fourth
+ * and its rows are the other three.
+ *
+ * Two places already word that state and neither suits a headline — `prStateLabel` says
+ * "pull request merged at the last harvest" for a row of the queue, and
+ * `harvest::settled_as` prefixes the step's own detail with `merged, `. [`prEndLabel`]
+ * below is the third and says so, rather than a page composing a fourth inline.
  *
  * ## It describes; it does not grade
  *

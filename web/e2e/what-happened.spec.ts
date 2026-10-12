@@ -470,6 +470,34 @@ test('a row reaches its finding and its comment on GitHub', async ({ page, conte
 })
 
 /**
+ * **A review that is not on the desk reads as not on the desk**, rather than as a blank.
+ *
+ * A new route is a new way to reach a dead end, and this repository has met one: DEV-878
+ * records a step page that answered a refusal with a panel carrying no trail and no way
+ * back, and the trail's own rule is that a link to a page that does not exist is worse than
+ * a label. `DeskState` owns the answer and every step page is inside it, so what this
+ * asserts is that the new page really is — not that the component works, which its own
+ * tests cover.
+ */
+test('a review that is not on the desk says so', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto(`${serving.url}reviews/987654/what-happened`)
+
+  /*
+   * **A notice, not a heading**, which is what this looked at rather than assumed: the
+   * first version of this test asked for a heading named "Not on the desk" and failed over
+   * a page that says exactly that in a `<strong>` inside `DeskState`'s own notice. The
+   * screenshot settled which of the two was wrong.
+   */
+  await expect(page.locator('main')).toContainText('Not on the desk')
+  await expect(page.locator('main')).toContainText('No review with id 987654')
+
+  /* And the two ways out: the header's navigation, and the notice's own retry. */
+  await expect(page.getByRole('link', { name: 'Queue' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible()
+})
+
+/**
  * **The trail's step 7 opens it**, which is the criterion in as many words.
  *
  * From another step's page, because that is how a reader reaches it: every row in the queue

@@ -344,7 +344,13 @@ function inNoPart(data: ReviewDetail, brief: Brief): Finding[] {
                   </span>
 
                   <span class="cell cell--fixes">
-                    <span class="rd-visually-hidden">Fixes:</span>
+                    <!--
+                      `&#32;` after the label, for the reason `what-happened.vue` measures:
+                      a newline between the hidden label and the value is a whitespace-only
+                      node Vue's `whitespace: 'condense'` deletes, so this read
+                      `Fixes:None`.
+                    -->
+                    <span class="rd-visually-hidden">Fixes:</span>&#32;
                     <!--
                       The named tags the flows already use, and no second version of them.
                       A part that fixes none says so in a word: tests and generated types
@@ -365,8 +371,7 @@ function inNoPart(data: ReviewDetail, brief: Brief): Finding[] {
                   </span>
 
                   <span class="cell cell--size">
-                    <span class="rd-visually-hidden">Size:</span>
-                    <span>{{ sizeOf(row.part).files }}</span>
+                    <span class="rd-visually-hidden">Size:</span>&#32;<span>{{ sizeOf(row.part).files }}</span>
                     <!--
                       `unchanged` rather than `+0 −0`. A pair of noughts reads as a part
                       nobody wrote anything in; this is a part the pull request did not
@@ -383,7 +388,7 @@ function inNoPart(data: ReviewDetail, brief: Brief): Finding[] {
                   </span>
 
                   <span class="cell cell--found">
-                    <span class="rd-visually-hidden">The code review found:</span>
+                    <span class="rd-visually-hidden">The code review found:</span>&#32;
                     <template v-if="foundOn(onPart(data, data.brief, row.index)).length">
                       <span
                         v-for="entry in foundOn(onPart(data, data.brief, row.index))"

@@ -7,22 +7,27 @@
  *  Last read 4 days ago. 14 findings were posted. 7 of them had something come
  *  back: 2 replies, 7 whose code changed.
  *
- *  WHAT CAME BACK · 9 of 14 findings
+ *  WHAT CAME BACK · 7 of 14 findings
  *  ──────────────────────────────────────────────────────────────────────────────
- *  F9   blocker   The column policy is skipped entirely…    the finding · GitHub
- *       app/Reporting/ColumnPolicy.php:52 · Carried from round 1 · Still open
- *         A reply from dana-okoye · 2 days ago
+ *  F1   blocker   What F1 says is wrong                     The finding · On GitHub
+ *       app/Reporting/ColumnPolicy.php:47 · Carried from round 1 · Still open
+ *         A reply from dana-okoye. 1 day ago
  *         “I pushed a fix for this one but I want to flag that it is not the fix
  *          you suggested…”
- *         The code at line 52 changed in 65eff63 · 1 day ago
+ *         The thread was resolved by dana-okoye. seen 13 hours ago
+ *         The code at line 47 changed in 65eff61. 5 hours ago
  *  ──────────────────────────────────────────────────────────────────────────────
  *
- *  NOTHING CAME BACK · 5 findings                                       [ Open ]
+ *  NOTHING CAME BACK · the other 7 of 14 findings            [ Open the 7 … ]
  *
  *  THE ROUNDS OF THIS PULL REQUEST
- *  Round 1   14 findings · 2 replies · 1 thread resolved
- *  Round 2   9 findings · 1 reply          4 carried in, 2 still open
+ *  Round 1   11 findings · 3 replies · 2 threads resolved
+ *  Round 2   14 findings · 2 replies · 1 thread resolved   4 carried in, 1 still open
  * ```
+ *
+ * The figures are the fixture's — `test/what-happened.nuxt.spec.ts` and
+ * `e2e/what-happened.spec.ts` assert every one of them — because a sketch that disagrees
+ * with the thing it is a sketch of is worse than none.
  *
  * **Before this page there was nowhere to read what a posted review came to.** The harvest
  * ran every quarter of an hour and wrote its findings into outcomes nothing drew: the round
