@@ -90,6 +90,8 @@ const rounds = computed(() => page.value?.rounds ?? [])
 const anyObserved = computed(() => page.value?.anyObserved ?? false)
 const anyWithoutComment = computed(() => page.value?.anyWithoutComment ?? false)
 const anyUnaddressable = computed(() => page.value?.anyUnaddressable ?? false)
+const noPullRequestAddress = computed(() => page.value?.noPullRequestAddress ?? false)
+const elsewhere = computed(() => page.value?.elsewhere ?? 0)
 
 /** How many findings this review posted: the denominator both section headings count out of. */
 const posted = computed(() => answered.value.length + silent.value.length)
@@ -213,7 +215,8 @@ function detailId(seq: number): string {
                   file. The record's own word, lower case as the record holds it.
                 -->
                 <span class="rd-meta severity">
-                  <span class="rd-visually-hidden">Severity:</span>{{ row.severity }}
+                  <span class="rd-visually-hidden">Severity:</span>
+                  <span>{{ row.severity }}</span>
                 </span>
                 <span class="line">
                   <TickedText :text="row.line" />
@@ -248,8 +251,13 @@ function detailId(seq: number): string {
                 </span>
               </div>
 
+              <!--
+                **Mono only where it is a path.** `whereOf` answers "The pull request
+                itself" for a finding that names no file, and a sentence set in JetBrains
+                Mono reads as a path that happens to have spaces in it.
+              -->
               <p class="rd-meta where">
-                <span class="rd-mono">{{ row.where }}</span>
+                <span :class="{ 'rd-mono': row.inCode }">{{ row.where }}</span>
                 <template v-if="row.carried">
                   · {{ row.carried }}
                 </template>
@@ -339,7 +347,8 @@ function detailId(seq: number): string {
               >
                 <span class="cell cell--key rd-mono rd-meta">{{ row.key }}</span>
                 <span class="cell cell--severity rd-meta">
-                  <span class="rd-visually-hidden">Severity:</span>{{ row.severity }}
+                  <span class="rd-visually-hidden">Severity:</span>
+                  <span>{{ row.severity }}</span>
                 </span>
                 <span class="cell cell--line">
                   <TickedText
@@ -365,7 +374,7 @@ function detailId(seq: number): string {
                 class="silent-opened"
               >
                 <p class="rd-meta where">
-                  <span class="rd-mono">{{ row.where }}</span>
+                  <span :class="{ 'rd-mono': row.inCode }">{{ row.where }}</span>
                   <template v-if="row.carried">
                     · {{ row.carried }}
                   </template>
@@ -383,10 +392,21 @@ function detailId(seq: number): string {
                   <template v-if="row.comment">
                     It was posted as a comment, so a reply would be read.
                   </template>
-                  <template v-else-if="row.postedAsComment">
+                  <template v-else-if="row.postedAsComment && row.addressable">
                     It was posted as a comment, so a reply would be read — but the id
                     recorded for that comment is not one this page can build an address
                     from, so there is no link to it here.
+                  </template>
+                  <!--
+                    **And the repository name can be the thing that failed**, which is
+                    neither the finding's fault nor its comment id's: a released Review
+                    Desk could store a `repo` that `prUrl` refuses, and every comment
+                    address on this page is built on top of the pull request's.
+                  -->
+                  <template v-else-if="row.postedAsComment">
+                    It was posted as a comment, so a reply would be read. There is no link
+                    to it here because this review's repository name is not one a GitHub
+                    address can be built from.
                   </template>
                   <template v-else>
                     No comment on GitHub is recorded against it, so there is no thread for a
@@ -410,6 +430,32 @@ function detailId(seq: number): string {
             </template>
             <span class="end" />
           </div>
+        </DeskSection>
+
+        <!--
+          **What the record holds about findings this page draws no row for.**
+          The harvester writes against any finding of the review — `harvest_code_changes`
+          iterates all of them and asks only for a file — so a held-back nit or a finding
+          carried in as `fixed` can carry an outcome, and this page is about what came back
+          on what was *posted*. Counting those into the figures above would put numbers on
+          screen about rows that are not there; saying nothing would lose a measurement. So
+          they are counted here, and sent to the page that owns the findings.
+        -->
+        <DeskSection
+          v-if="elsewhere > 0"
+          heading="Outcomes on findings this page does not list"
+          :note="`${elsewhere}`"
+        >
+          <p class="rd-note none">
+            The record holds {{ count(elsewhere, 'outcome') }} against findings this review
+            did not post — a nit held back for a ticket, one set aside, or one carried into
+            this round already fixed. They are not counted in the figures above, which are
+            about the findings that were posted.
+            <NuxtLink :to="`/reviews/${reviewId}/code-review`">
+              The code review page
+            </NuxtLink>
+            lists every finding this round holds.
+          </p>
         </DeskSection>
 
         <!-- ------------------------------- The rounds -------------------------------- -->
@@ -475,7 +521,7 @@ function detailId(seq: number): string {
           gives rather than of any one finding.
         -->
         <footer
-          v-if="anyObserved || anyWithoutComment || anyUnaddressable"
+          v-if="anyObserved || anyWithoutComment || anyUnaddressable || noPullRequestAddress"
           class="notes"
         >
           <p
@@ -494,6 +540,15 @@ function detailId(seq: number): string {
             A finding this review did not post as its own comment has no thread, so no
             reply could be read on it and nothing here is a link to one. The pull request
             itself is linked at the top of this page.
+          </p>
+          <p
+            v-if="noPullRequestAddress"
+            class="rd-meta"
+          >
+            <strong>No link to GitHub at all.</strong>
+            This review's repository is recorded under a name no GitHub address can be
+            built from, and every link on this page is built on top of the pull request's.
+            Nothing is missing from the record; what is missing is somewhere to point.
           </p>
           <p
             v-if="anyUnaddressable"

@@ -9,10 +9,12 @@
  *
  * DEV-958 asks for a page that says what happened and stops. So:
  *
- * * **No ordering by anything but time and the record's own order.** The outcomes under a
- *   finding run oldest first, which is the order they happened in; the findings run in the
- *   record's order, which is the order they were raised in. Sorting by "how bad it looks"
- *   would be the page deciding, and the page is not in a position to.
+ * * **No ordering this page invented.** The outcomes under a finding run oldest first,
+ *   which is the order they happened in. The findings run most serious first — the
+ *   review's own grade, which the review made and the code review page already ranks its
+ *   rows by, so a reader arriving from there meets them in the same order. What is not
+ *   done is ordering by what *came back*: a finding whose code changed is not sorted above
+ *   one that was replied to, because which of those matters more is a judgement.
  * * **A severity is the record's own word**, with no tag and no colour. `HeldBackRows`
  *   makes the same decision for the same reason and states it: a coloured severity tells a
  *   reader which of these to be afraid of, which is a judgement about what came back and
@@ -36,6 +38,7 @@
 import type {
   Finding,
   Outcome,
+  OutcomeKind,
   ReviewDetail,
   RoundSummary,
   Severity,
@@ -44,7 +47,7 @@ import type { OutcomeSaid } from './outcomes'
 
 import { shortenClaim } from './draft'
 import { isCarried, mostSeriousFirst, roundStatusLabel, whereOf, willPost } from './findings'
-import { commentUrl } from './links'
+import { commentUrl, prUrl } from './links'
 import { count, sentence, sinceLabel } from './format'
 import { outcomeSaid, outcomeWhen, prEndLabel } from './outcomes'
 
@@ -52,6 +55,8 @@ import { outcomeSaid, outcomeWhen, prEndLabel } from './outcomes'
 export interface CameBack extends OutcomeSaid {
   /** The store's own id, which is what a `v-for` keys on. */
   id: number
+  /** What kind of thing it was. The page draws the sentence; the counts read this. */
+  kind: OutcomeKind
   /** When it happened, or — where GitHub does not say — when it was seen. */
   when: string
 }
@@ -68,6 +73,13 @@ export interface FindingRow {
   shortened: boolean
   /** `path:line`, or the sentence for a finding about the pull request itself. */
   where: string
+  /**
+   * Whether `where` is a path. **It decides whether the row draws it in mono**, and the
+   * two are not interchangeable: `whereOf` answers "The pull request itself" for a finding
+   * that names no file, and a sentence set in JetBrains Mono reads as a path that happens
+   * to have spaces in it.
+   */
+  inCode: boolean
   /** "Carried from round 1 · Still open", or null for a finding raised in this round. */
   carried: string | null
   /** Where this finding is on the code review page. Always drawn: the page always exists. */
@@ -86,6 +98,17 @@ export interface FindingRow {
    * sentence that is false of the second and tells the reader to stop looking.
    */
   postedAsComment: boolean
+  /**
+   * Whether an address could be built for the **pull request** at all.
+   *
+   * False for a review whose `repo` is not a repository name — which a released Review
+   * Desk could store, as `prUrl` says in as many words. Every comment link on the page is
+   * built on top of that address, so when this is false no row has one and the reason is
+   * neither the finding nor its comment id. Without it the page blamed the comment: "the
+   * id recorded for that comment is not one this page can build an address from", over a
+   * record holding a perfectly good numeric id.
+   */
+  addressable: boolean
   /** What came back, oldest first. Empty for a finding nothing came back on. */
   cameBack: CameBack[]
 }
@@ -121,6 +144,20 @@ export interface WhatHappened {
   anyWithoutComment: boolean
   /** Whether any finding's comment is recorded under an id no address can be built from. */
   anyUnaddressable: boolean
+  /** Whether this review's own repository name is one no GitHub address can be built from. */
+  noPullRequestAddress: boolean
+  /**
+   * How many outcomes the record holds against findings this page draws no row for.
+   *
+   * **Not nothing, and not a row either.** The harvester writes against any finding of the
+   * review — `harvest_code_changes` iterates all of them and asks only for a file — so a
+   * held-back nit or a finding carried in as `fixed` can carry one, and this page is about
+   * what came back on what was *posted*. Counting them into the figures put numbers on
+   * screen about rows that were not there; dropping them silently would lose a measurement,
+   * which is this desk's other rule. So they are counted, said, and sent to the page that
+   * owns them.
+   */
+  elsewhere: number
 }
 
 /** The outcomes on one finding, worded, oldest first. */
@@ -159,6 +196,7 @@ function cameBackOn(outcomes: Outcome[], finding: Finding, now: Date): CameBack[
          */
         file: said.file === finding.file ? null : said.file,
         id: outcome.id,
+        kind: outcome.kind,
         sentence: sentence(said.sentence),
         when: outcomeWhen(said, outcome.occurred_at, now),
       }
@@ -201,6 +239,7 @@ function rowFor(detail: ReviewDetail, finding: Finding, now: Date): FindingRow {
     line: finding.title ?? cut!.text,
     shortened: cut?.shortened ?? false,
     where: whereOf(finding),
+    inCode: finding.file != null,
     carried: isCarried(finding)
       ? [
           finding.continues_round == null
@@ -212,6 +251,7 @@ function rowFor(detail: ReviewDetail, finding: Finding, now: Date): FindingRow {
     finding: `/reviews/${detail.review.id}/code-review#${finding.key}`,
     comment: commentUrl(detail.review.repo, detail.review.pr, finding.github_comment_id),
     postedAsComment: finding.github_comment_id != null,
+    addressable: prUrl(detail.review.repo, detail.review.pr) != null,
     cameBack: cameBackOn(fromOthers(detail.outcomes), finding, now),
   }
 }
@@ -254,12 +294,23 @@ function roundRow(summary: RoundSummary, here: number): RoundRow {
  * themselves. Drawing a count of rows that disagreed with the rows under it is the defect
  * this whole issue is about, one level up.
  */
-function subLine(detail: ReviewDetail, answered: FindingRow[], posted: number, now: Date): string {
-  const read = detail.review.harvested_at == null
-    ? null
-    : `Last read ${sinceLabel(detail.review.harvested_at, now)}`
+function subLine(answered: FindingRow[], posted: number, at: string | null, now: Date): string {
+  const read = at == null ? null : `Last read ${sinceLabel(at, now)}`
 
-  const kinds = fromOthers(detail.outcomes)
+  /*
+   * **Counted off the rows, not off the review's outcomes.** The harvester writes an
+   * outcome against any finding of the review — `harvest_code_changes` iterates all of
+   * them and requires only a file; `harvest_thread` requires only a comment id — and this
+   * page draws a row for the *posted* ones. Counting the review's outcomes therefore
+   * reported figures about findings that are not on the screen: ten posted findings, one
+   * of them changed, three held-back nits whose files also changed, and the line read "1
+   * of them had something come back: 3 whose code changed".
+   *
+   * That is the defect this whole issue is about, one level up — and the comment that used
+   * to be here said so while doing it. What the record holds about a finding this page
+   * draws no row for is not lost: `elsewhere` below counts it and the page says so.
+   */
+  const kinds = answered.flatMap(row => row.cameBack)
   /*
    * **Replies, counted as replies**, which is what `authorResponseLabel` counts on the
    * queue and what the issue's "2 replies" means: two things the author wrote. Counting
@@ -274,9 +325,9 @@ function subLine(detail: ReviewDetail, answered: FindingRow[], posted: number, n
    * `Store::posted_reviews_awaiting_author` counts it `DISTINCT` for the same reason and
    * says so.
    */
-  const changed = new Set(
-    kinds.filter(one => one.kind === 'code_changed_after').map(one => one.finding_seq),
-  ).size
+  const changed = answered.filter(
+    row => row.cameBack.some(one => one.kind === 'code_changed_after'),
+  ).length
 
   const how = [
     replies > 0 ? `${replies} with a reply` : null,
@@ -318,9 +369,12 @@ export function whatHappened(detail: ReviewDetail, now: Date = new Date()): What
   const answered = rows.filter(row => row.cameBack.length > 0)
   const silent = rows.filter(row => row.cameBack.length === 0)
 
+  const drawn = new Set(rows.map(row => row.seq))
+
   return {
     headline: prEndLabel(detail.review.pr_state),
-    sub: subLine(detail, answered, rows.length, now),
+    sub: subLine(answered, rows.length, detail.review.harvested_at, now),
+    elsewhere: fromOthers(detail.outcomes).filter(one => !drawn.has(one.finding_seq)).length,
     harvested: detail.review.harvested_at != null,
     answered,
     silent,
@@ -333,6 +387,15 @@ export function whatHappened(detail: ReviewDetail, now: Date = new Date()): What
       : [],
     anyObserved: answered.some(row => row.cameBack.some(one => one.observed)),
     anyWithoutComment: rows.some(row => !row.postedAsComment),
-    anyUnaddressable: rows.some(row => row.postedAsComment && row.comment == null),
+    /*
+     * **Only where the pull request itself can be addressed.** When it cannot, no row has
+     * a comment link and the reason is the repository name rather than any finding's id —
+     * so blaming the id would be the page stating as a fact something the record
+     * contradicts.
+     */
+    anyUnaddressable: rows.some(
+      row => row.postedAsComment && row.comment == null && row.addressable,
+    ),
+    noPullRequestAddress: rows.some(row => !row.addressable),
   }
 }

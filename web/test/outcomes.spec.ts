@@ -540,10 +540,28 @@ describe('no screen reads a stored detail for itself', () => {
    * layer's `detail` is the store's own four words and is drawn on the trail on purpose.
    * What must not happen is an *outcome's* detail reaching a screen without being worded.
    */
-  const SOURCES = ['app/components', 'app/pages', 'app/pages/reviews/[id]', 'app/utils']
+  const SOURCES = [
+    'app/components',
+    'app/composables',
+    'app/layouts',
+    'app/pages',
+    'app/pages/reviews/[id]',
+    'app/utils',
+  ]
 
-  /** `outcomes.ts` is where a detail is read; `draft.ts` hands a summary to it. */
-  const ALLOWED = ['app/utils/outcomes.ts', 'app/utils/draft.ts']
+  /**
+   * The three files that may, and why each.
+   *
+   * `outcomes.ts` is where a detail is read; `draft.ts` hands a summary to it. The
+   * composable copies the field onto the wire shape sample mode serves — the data layer
+   * carrying a record from one side to the other, which is what `architecture.spec.ts`
+   * says that layer is for. `app/data` is not scanned at all for the same reason.
+   */
+  const ALLOWED = [
+    'app/utils/outcomes.ts',
+    'app/utils/draft.ts',
+    'app/composables/useReviewDesk.ts',
+  ]
 
   /* The reach this forbids: an outcome-shaped thing's own stored field, used directly. */
   const REACHING = /\b(outcome|edit|event|came|first|latest)\s*\.\s*(detail|summary)\b/g
@@ -603,5 +621,71 @@ describe('no screen reads a stored detail for itself', () => {
    */
   it('is a scan that can fail', () => {
     expect(reaches([]).join(' ')).toContain('app/utils/outcomes.ts')
+  })
+})
+
+describe('a kind this build has never heard of', () => {
+  /**
+   * **It degrades; it does not throw.** `SAID` and `HEADLINE` are
+   * `Record<OutcomeKind, …>`, which makes a kind added to the contract a type error here —
+   * at compile time, in this repository. That says nothing about run time: the dashboard
+   * is generated and embedded by `cargo build`, so a binary rebuilt with a newer server
+   * and an older `web/.output/public` serves kinds this bundle has no entry for.
+   * `HEADLINE[kind](key)` was then a `TypeError: … is not a function` inside the queue's
+   * `nextAction`, which takes out the whole queue; `SAID[kind]` was `undefined`, and
+   * `sentence(undefined)` throws on `.trim()`. `editVerb` has guarded exactly this all
+   * along, with `VERBS[kind] ?? kind`.
+   */
+  const INVENTED = 'escalated_to_a_human' as OutcomeKind
+
+  it('still has a sentence, from the wire value', () => {
+    expect(outcomeSaid({ kind: INVENTED }).sentence).toBe('escalated to a human')
+    expect(sentence(outcomeSaid({ kind: INVENTED }).sentence)).toBe('Escalated to a human.')
+  })
+
+  it('still has a sentence when it carries a detail', () => {
+    expect(outcomeSaid({ kind: INVENTED, detail: 'by the on-call' }).sentence)
+      .toBe('escalated to a human — by the on-call')
+    expect(outcomeSaid({ kind: INVENTED, detail: REPLIED }).sentence)
+      .toBe('escalated to a human')
+  })
+
+  it('still has a heading for the queue, instead of taking the queue out', () => {
+    expect(cameBackHeadline({ kind: INVENTED, finding_key: 'F7' }))
+      .toBe('Something came back on F7')
+  })
+
+  it('still has a line', () => {
+    expect(outcomeLine({ kind: INVENTED, detail: REPLIED, finding_key: 'F7' }))
+      .toBe('F7 · escalated to a human')
+  })
+})
+
+describe('a code change that does not say whether the lines moved', () => {
+  /**
+   * **An absent `lines_changed` is not a claim that the lines are unchanged.** "but not
+   * line 93" is a positive statement that the line is still what the review read, and a
+   * detail carrying no such field supports none — which is reachable through
+   * `outcome add --kind code_changed_after --detail '{…}'`, the only way these are
+   * recorded on a review no harvest has read, and what `e2e/what-happened.spec.ts` itself
+   * does. Asserting a negative the record does not hold is what "it describes; it does not
+   * grade" forbids.
+   */
+  it('says the file changed, and nothing about the line', () => {
+    const detail = JSON.stringify({
+      file: 'app/Reporting/ColumnPolicy.php',
+      line: 93,
+      file_status: 'modified',
+      commit: '65eff6321a04',
+    })
+    const said = outcomeSaid({ kind: 'code_changed_after', detail }).sentence
+    expect(said).toBe('the file it points at changed in 65eff63')
+    expect(said).not.toContain('but not line')
+  })
+
+  it('still says so where the record does hold the answer', () => {
+    const no = JSON.stringify({ file: 'a.php', line: 93, lines_changed: false, commit: 'abc1234' })
+    expect(outcomeSaid({ kind: 'code_changed_after', detail: no }).sentence)
+      .toBe('the file changed in abc1234, but not line 93')
   })
 })

@@ -406,6 +406,39 @@ describe('what came back', () => {
     await withDense()
   })
 
+  /**
+   * **Most serious first** — the review's own grade, which the code review page already
+   * ranks its rows by, so a reader arriving from there meets them in the same order. What
+   * is not done is ordering by what *came back*: a finding whose code changed is not
+   * sorted above one that was replied to.
+   *
+   * **The findings are raised out of severity order on purpose.** The shared fixture
+   * happens to number them most serious first, so a test over it is green whether the
+   * rows are sorted or left alone — measured, by taking the sort out and watching it stay
+   * green. Here F1 is a nit and F4 is the blocker.
+   */
+  it('draws the rows most serious first, whatever order they were raised in', async () => {
+    const scrambled: Severity[] = ['nit', 'question', 'should', 'blocker']
+    const findings = scrambled.map((severity, at) => ({
+      ...finding(at + 1),
+      severity,
+    }))
+    const outcomes = findings.map(one => outcome({
+      finding_seq: one.seq,
+      kind: 'code_changed_after',
+      actor: 'harvester',
+      occurred_at: `2026-10-12T1${one.seq}:00:00Z`,
+      detail: changedDetail(one.seq, true),
+    }))
+    await withDense(dense({ findings, outcomes }))
+    const page = await shown(REVIEW)
+
+    const rows = page.findAll('.answered-row')
+    expect(rows.map(one => one.find('.key').text())).toEqual(['F4', 'F3', 'F2', 'F1'])
+    expect(rows.map(one => one.find('.severity').text().replace('Severity:', '').trim()))
+      .toEqual(['blocker', 'should', 'question', 'nit'])
+  })
+
   it('draws a row for every posted finding, across both groups', async () => {
     const page = await shown(REVIEW)
     const answered = page.findAll('.answered-row').length
@@ -621,6 +654,101 @@ describe('the states a posted review can be in', () => {
     expect(page.find('.sub').text()).toContain('0 findings were posted')
     expect(page.findAll('.silent-row')).toHaveLength(0)
     expect(page.find('.fold').exists()).toBe(false)
+  })
+})
+
+/* ================= What the page counts, and what it does not ================= */
+
+describe('the figures and the rows count the same findings', () => {
+  /**
+   * **The harvester writes against any finding of the review.** `harvest_code_changes`
+   * iterates all of them and asks only for a file; `harvest_thread` asks only for a
+   * comment id. Neither looks at the disposition. So a nit held back for a ticket, a
+   * finding set aside, or one carried in as `fixed` can carry an outcome — and this page
+   * draws a row for the *posted* ones.
+   *
+   * Counting the review's outcomes therefore reported figures about findings that were not
+   * on the screen: "1 of them had something come back: 3 whose code changed", with one row
+   * under it. That is the defect this whole issue is about, one level up.
+   */
+  function withHeldBack() {
+    const findings = Array.from({ length: 14 }, (_, at) => finding(at + 1))
+    /* Three held back for a ticket, whose files changed in the same push. */
+    for (const seq of [12, 13, 14]) {
+      findings[seq - 1] = { ...findings[seq - 1]!, disposition: 'held_back' }
+    }
+    const outcomes = [
+      ...OUTCOMES.filter(one => one.finding_seq === 1 && one.kind === 'code_changed_after'),
+      ...[12, 13, 14].map(seq => outcome({
+        finding_seq: seq,
+        kind: 'code_changed_after',
+        actor: 'harvester',
+        occurred_at: '2026-10-12T16:00:00Z',
+        detail: changedDetail(seq, true),
+      })),
+    ]
+    return dense({ findings, outcomes })
+  }
+
+  it('counts only the findings it draws a row for', async () => {
+    await withDense(withHeldBack())
+    const page = await shown(REVIEW)
+    expect(page.find('.sub').text()).toContain('11 findings were posted')
+    expect(page.find('.sub').text()).toContain('1 of them had something come back')
+    expect(page.find('.sub').text()).toContain('1 whose code changed')
+    expect(page.findAll('.answered-row')).toHaveLength(1)
+  })
+
+  /*
+   * And what the record holds about the other three is not lost. Counting them into the
+   * figures put numbers on screen about rows that were not there; saying nothing would
+   * lose a measurement, which is this desk's other rule.
+   */
+  it('says what the record holds about findings it draws no row for', async () => {
+    await withDense(withHeldBack())
+    const page = await shown(REVIEW)
+    expect(page.text()).toContain('Outcomes on findings this page does not list')
+    expect(page.text()).toContain('3 outcomes against findings this review did not post')
+  })
+
+  it('says nothing about them where there are none', async () => {
+    await withDense()
+    const page = await shown(REVIEW)
+    expect(page.text()).not.toContain('Outcomes on findings this page does not list')
+  })
+})
+
+describe('a review whose repository name is not a repository name', () => {
+  /**
+   * **A released Review Desk could store one**, which `links.ts` says in as many words —
+   * and every comment address on this page is built on top of the pull request's. So no
+   * row has a link, and the reason is neither the finding nor its comment id. The page
+   * blamed the id: "the id recorded for that comment is not one this page can build an
+   * address from", over a record holding a perfectly good numeric one.
+   */
+  async function withBadRepo() {
+    const bad = dense()
+    await withDense({ ...bad, review: { ...bad.review, repo: 'acme/portal#x' } })
+  }
+
+  it('says the repository is why, and does not blame the comment id', async () => {
+    await withBadRepo()
+    const page = await shown(REVIEW)
+    expect(page.find('.notes').text()).toContain('No link to GitHub at all')
+    expect(page.find('.notes').text()).not.toContain('A comment with no address')
+  })
+
+  it('says it on the row too, where the row has to explain itself', async () => {
+    await withBadRepo()
+    const page = await shown(REVIEW)
+    await page.find('.fold').trigger('click')
+    await settle(page)
+    const row = page.findAll('.silent-row').find(one => one.text().includes('F4'))!
+    await row.trigger('click')
+    await settle(page)
+    const opened = page.find('.silent-opened').text()
+    expect(opened).toContain('repository name is not one a GitHub address can be built from')
+    expect(opened).not.toContain('no thread for a reply to attach to')
   })
 })
 

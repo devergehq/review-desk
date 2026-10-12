@@ -287,10 +287,25 @@ const SAID: Record<OutcomeKind, string> = {
   code_changed_after: 'the code it points at changed afterwards',
 }
 
+/**
+ * The kind's own phrase, **and an answer for a kind this build has never heard of.**
+ *
+ * `SAID` is a `Record<OutcomeKind, string>`, which makes a kind added to the contract a
+ * type error here — at compile time, in this repository. It says nothing about run time:
+ * the dashboard is generated and embedded by `cargo build`, so a binary rebuilt with a
+ * newer server and an older `web/.output/public` serves kinds this bundle has no entry
+ * for, and `SAID[kind]` is then `undefined`. `sentence(undefined)` throws on `.trim()`,
+ * which takes out the whole render rather than one row. `editVerb` guards exactly this,
+ * in as many words, with `VERBS[kind] ?? kind`.
+ */
+function phraseFor(kind: OutcomeKind): string {
+  return SAID[kind] ?? String(kind).replace(/_/g, ' ')
+}
+
 /** Nothing but the kind's own phrase: the answer when a detail holds nothing to compose from. */
 function bare(kind: OutcomeKind): OutcomeSaid {
   return {
-    sentence: SAID[kind],
+    sentence: phraseFor(kind),
     quote: null,
     by: null,
     commit: null,
@@ -395,7 +410,16 @@ function saidOfCodeChange(held: HarvestFacts): OutcomeSaid {
   if (removed) return said(`the file it points at was removed${inCommit}`)
   if (line == null) return said(`the file it points at changed${inCommit}`)
   if (held.lines_changed === true) return said(`the code at line ${line} changed${inCommit}`)
-  return said(`the file changed${inCommit}, but not line ${line}`)
+  /*
+   * **`=== false`, not "anything but true".** "but not line 93" is a positive claim that
+   * the line is still what the review read, and a detail that carries no `lines_changed`
+   * at all supports no such claim — which is reachable through
+   * `outcome add --kind code_changed_after --detail '{…}'`, the only way these are
+   * recorded on a review no harvest has read. Asserting a negative the record does not
+   * hold is exactly what "it describes; it does not grade" forbids.
+   */
+  if (held.lines_changed === false) return said(`the file changed${inCommit}, but not line ${line}`)
+  return said(`the file it points at changed${inCommit}`)
 }
 
 /**
@@ -438,7 +462,7 @@ export function outcomeSaid(outcome: OutcomeLike): OutcomeSaid {
   }
 
   if (prose == null) return bare(outcome.kind)
-  return { ...bare(outcome.kind), sentence: `${SAID[outcome.kind]} — ${prose}` }
+  return { ...bare(outcome.kind), sentence: `${phraseFor(outcome.kind)} — ${prose}` }
 }
 
 /**
@@ -507,9 +531,18 @@ const HEADLINE: Record<OutcomeKind, (key: string) => string> = {
   withdrawn: key => `${key} was withdrawn`,
 }
 
-/** The row's heading for one outcome: who did what, to which finding. */
+/**
+ * The row's heading for one outcome: who did what, to which finding.
+ *
+ * **Falls back rather than throwing**, for the reason `phraseFor` above gives: this is an
+ * index-and-call, so a kind this bundle has no entry for was a
+ * `TypeError: HEADLINE[event.kind] is not a function` inside the queue's `nextAction` —
+ * which takes out the whole queue, where the function this replaced merely returned
+ * nothing for that one row.
+ */
 export function cameBackHeadline(event: { kind: OutcomeKind, finding_key: string }): string {
-  return HEADLINE[event.kind](event.finding_key)
+  const said = HEADLINE[event.kind]
+  return said ? said(event.finding_key) : `Something came back on ${event.finding_key}`
 }
 
 /**
