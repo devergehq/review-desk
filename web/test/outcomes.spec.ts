@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { join, relative, resolve, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -540,28 +540,48 @@ describe('no screen reads a stored detail for itself', () => {
    * layer's `detail` is the store's own four words and is drawn on the trail on purpose.
    * What must not happen is an *outcome's* detail reaching a screen without being worded.
    */
-  const SOURCES = [
-    'app/components',
-    'app/composables',
-    'app/layouts',
-    'app/pages',
-    'app/pages/reviews/[id]',
-    'app/utils',
-  ]
+  /**
+   * **Walked, not listed.** It was a list of directories and `readdirSync` does not
+   * recurse, so `app/pages/reviews/index.vue` — the Reviews list, a screen — sat in the one
+   * directory nobody had thought to name and was never read. A scan whose coverage depends
+   * on somebody remembering to add a directory is the shape of guard this exists to
+   * replace; `architecture.spec.ts` walks `app/` for the same reason.
+   */
+  const ROOT = resolve('app')
+
+  /**
+   * `app/data` is not walked.
+   *
+   * It is the data layer, and carrying a stored field from one side to the other is what
+   * `architecture.spec.ts` says that layer is for — `sample.ts` composes the wire shapes
+   * the server would have sent, `detail` among them. A screen may not read one; the thing
+   * that *serves* one has to.
+   */
+  const NOT_WALKED = ['data']
 
   /**
    * The three files that may, and why each.
    *
    * `outcomes.ts` is where a detail is read; `draft.ts` hands a summary to it. The
-   * composable copies the field onto the wire shape sample mode serves — the data layer
-   * carrying a record from one side to the other, which is what `architecture.spec.ts`
-   * says that layer is for. `app/data` is not scanned at all for the same reason.
+   * composable copies the field onto the wire shape sample mode serves, which is the data
+   * layer's own job.
    */
   const ALLOWED = [
     'app/utils/outcomes.ts',
     'app/utils/draft.ts',
     'app/composables/useReviewDesk.ts',
   ]
+
+  /** Every source file under `app/`, at any depth, bar the data layer. */
+  function walk(dir: string): string[] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) {
+        return NOT_WALKED.includes(entry.name) ? [] : walk(full)
+      }
+      return /\.(ts|vue)$/.test(entry.name) ? [full] : []
+    })
+  }
 
   /* The reach this forbids: an outcome-shaped thing's own stored field, used directly. */
   const REACHING = /\b(outcome|edit|event|came|first|latest)\s*\.\s*(detail|summary)\b/g
@@ -580,35 +600,35 @@ describe('no screen reads a stored detail for itself', () => {
     return /(detail|summary):\s*$/.test(before)
   }
 
-  it('finds the files it is about to check', () => {
-    const found = SOURCES.flatMap(dir =>
-      readdirSync(resolve(dir)).filter(name => /\.(ts|vue)$/.test(name)))
-    expect(found.length).toBeGreaterThan(20)
+  it('finds the files it is about to check, including the ones in nested directories', () => {
+    const found = walk(ROOT).map(path => relative(ROOT, path))
+    expect(found.length).toBeGreaterThan(40)
+    /* The one that was missed: a screen in a directory the old list did not name. */
+    expect(found).toContain(join('pages', 'reviews', 'index.vue'))
+    expect(found).toContain(join('pages', 'reviews', '[id]', 'what-happened.vue'))
+    expect(found.some(path => path.startsWith('data'))).toBe(false)
   })
 
   /** Every reach this scan can see, as `path: line`. Empty is the rule holding. */
   function reaches(over: string[]): string[] {
     const offenders: string[] = []
-    for (const dir of SOURCES) {
-      for (const name of readdirSync(resolve(dir))) {
-        if (!/\.(ts|vue)$/.test(name)) continue
-        const path = `${dir}/${name}`
-        if (over.includes(path)) continue
-        const text = readFileSync(resolve(path), 'utf8')
-        for (const line of text.split('\n')) {
-          /* A comment arguing about the defect is not the defect. */
-          if (/^\s*(\*|\/\/|<!--)/.test(line)) continue
-          for (const hit of line.matchAll(REACHING)) {
-            if (handedOver(line.slice(0, hit.index))) continue
-            offenders.push(`${path}: ${line.trim()}`)
-          }
+    for (const full of walk(ROOT)) {
+      const path = `app/${relative(ROOT, full).split(sep).join('/')}`
+      if (over.includes(path)) continue
+      const text = readFileSync(full, 'utf8')
+      for (const line of text.split('\n')) {
+        /* A comment arguing about the defect is not the defect. */
+        if (/^\s*(\*|\/\/|<!--)/.test(line)) continue
+        for (const hit of line.matchAll(REACHING)) {
+          if (handedOver(line.slice(0, hit.index))) continue
+          offenders.push(`${path}: ${line.trim()}`)
         }
       }
     }
     return offenders
   }
 
-  it('reaches for one only inside the two modules that word it', () => {
+  it('reaches for one only inside the three files that word it', () => {
     expect(reaches(ALLOWED)).toEqual([])
   })
 

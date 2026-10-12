@@ -132,9 +132,9 @@ export interface WhatHappened {
   sub: string
   /** Whether any harvest has read this review at all. */
   harvested: boolean
-  /** The posted findings something came back on, in the record's order. */
+  /** The posted findings something came back on, most serious first. */
   answered: FindingRow[]
-  /** The posted findings nothing came back on. Counted and folded by the page. */
+  /** The posted findings nothing came back on, most serious first. Folded by the page. */
   silent: FindingRow[]
   /** The pull request's rounds, or empty for a response that carries none. */
   rounds: RoundRow[]
@@ -329,8 +329,15 @@ function subLine(answered: FindingRow[], posted: number, at: string | null, now:
     row => row.cameBack.some(one => one.kind === 'code_changed_after'),
   ).length
 
+  /*
+   * **Each figure says what it counts, because the two count different things.** "2 with a
+   * reply" and "7 whose code changed" both read as a count of findings, and only the second
+   * is one — so an author who answered the same finding twice gave "3 with a reply" over
+   * two rows. "2 replies" is what the queue says for the same figure, and it is a count of
+   * replies in the words a reader already meets there.
+   */
   const how = [
-    replies > 0 ? `${replies} with a reply` : null,
+    replies > 0 ? count(replies, 'reply', 'replies') : null,
     changed > 0 ? `${changed} whose code changed` : null,
   ].filter(Boolean).join(', ')
 
@@ -396,6 +403,12 @@ export function whatHappened(detail: ReviewDetail, now: Date = new Date()): What
     anyUnaddressable: rows.some(
       row => row.postedAsComment && row.comment == null && row.addressable,
     ),
-    noPullRequestAddress: rows.some(row => !row.addressable),
+    /*
+     * **Off the review, not off the rows.** It is the same answer on every row — `prUrl`
+     * takes the review's `repo` and `pr` and nothing else — and derived from `rows.some`
+     * it was false for a review with an unusable repository name and no posted finding,
+     * which is the one page where nothing else explains why there is no link.
+     */
+    noPullRequestAddress: prUrl(detail.review.repo, detail.review.pr) == null,
   }
 }

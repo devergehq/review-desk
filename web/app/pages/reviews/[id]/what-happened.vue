@@ -214,9 +214,16 @@ function detailId(seq: number): string {
                   **The severity as a word, in the body ink.** Rule 1 at the top of this
                   file. The record's own word, lower case as the record holds it.
                 -->
+                <!--
+                  **`&#32;`, and it is measured.** Vue's `whitespace: 'condense'` deletes a
+                  whitespace-only text node between two elements, so a newline — or a
+                  second `<span>` around the value with a newline before it — renders
+                  `Severity:blocker`, which is what a screen reader then reads. The entity
+                  survives condensing; rendering all three forms and reading `textContent`
+                  is how that was settled rather than reasoned about.
+                -->
                 <span class="rd-meta severity">
-                  <span class="rd-visually-hidden">Severity:</span>
-                  <span>{{ row.severity }}</span>
+                  <span class="rd-visually-hidden">Severity:&#32;</span>{{ row.severity }}
                 </span>
                 <span class="line">
                   <TickedText :text="row.line" />
@@ -347,8 +354,7 @@ function detailId(seq: number): string {
               >
                 <span class="cell cell--key rd-mono rd-meta">{{ row.key }}</span>
                 <span class="cell cell--severity rd-meta">
-                  <span class="rd-visually-hidden">Severity:</span>
-                  <span>{{ row.severity }}</span>
+                  <span class="rd-visually-hidden">Severity:&#32;</span>{{ row.severity }}
                 </span>
                 <span class="cell cell--line">
                   <TickedText
@@ -542,17 +548,27 @@ function detailId(seq: number): string {
           >
             <strong>A finding raised in the body alone.</strong>
             A finding this review did not post as its own comment has no thread, so no
-            reply could be read on it and nothing here is a link to one. The pull request
-            itself is linked at the top of this page.
+            reply could be read on it and nothing here is a link to one.
+            <!--
+              **And only where there is one to point at.** The note below says when the
+              repository name is one no GitHub address can be built from, and promising a
+              link at the top of the page that is drawn as plain text there would be the
+              page contradicting itself two paragraphs apart.
+            -->
+            <template v-if="!noPullRequestAddress">
+              The pull request itself is linked at the top of this page.
+            </template>
           </p>
           <p
             v-if="noPullRequestAddress"
             class="rd-meta"
           >
-            <strong>No link to GitHub at all.</strong>
+            <strong>No link to GitHub.</strong>
             This review's repository is recorded under a name no GitHub address can be
-            built from, and every link on this page is built on top of the pull request's.
-            Nothing is missing from the record; what is missing is somewhere to point.
+            built from, and every address on this page that leads to GitHub is built on top
+            of the pull request's. The links to each finding's own row on the code review
+            page are unaffected. Nothing is missing from the record; what is missing is
+            somewhere on GitHub to point at.
           </p>
           <p
             v-if="anyUnaddressable"

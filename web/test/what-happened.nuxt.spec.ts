@@ -361,7 +361,7 @@ describe('the page step 7 never had', () => {
     expect(page.find('.sub').text()).toContain('Last read')
     expect(page.find('.sub').text()).toContain('14 findings were posted')
     expect(page.find('.sub').text()).toContain('7 of them had something come back')
-    expect(page.find('.sub').text()).toContain('2 with a reply')
+    expect(page.find('.sub').text()).toContain('2 replies')
     expect(page.find('.sub').text()).toContain('7 whose code changed')
   })
 
@@ -394,7 +394,7 @@ describe('the page step 7 never had', () => {
     ]
     await withDense(dense({ outcomes: twice }))
     const page = await shown(REVIEW)
-    expect(page.find('.sub').text()).toContain('3 with a reply')
+    expect(page.find('.sub').text()).toContain('3 replies')
     expect(page.find('.sub').text()).toContain('7 whose code changed')
   })
 })
@@ -735,8 +735,30 @@ describe('a review whose repository name is not a repository name', () => {
   it('says the repository is why, and does not blame the comment id', async () => {
     await withBadRepo()
     const page = await shown(REVIEW)
-    expect(page.find('.notes').text()).toContain('No link to GitHub at all')
+    expect(page.find('.notes').text()).toContain('No link to GitHub.')
     expect(page.find('.notes').text()).not.toContain('A comment with no address')
+  })
+
+  /*
+   * **It is a fact about the review, so it is read off the review.** Derived from the rows
+   * — `rows.some(row => !row.addressable)` — it was false for a review with an unusable
+   * repository name and no posted finding, which is the one page where nothing else
+   * explains why there is no link.
+   */
+  it('says it on a review with no posted finding at all', async () => {
+    const bad = dense({ findings: [], outcomes: [] })
+    await withDense({ ...bad, review: { ...bad.review, repo: 'acme/portal#x' } })
+    const page = await shown(REVIEW)
+    expect(page.find('.notes').text()).toContain('No link to GitHub')
+  })
+
+  /* And the links to each finding's own row are unaffected, which the note says. */
+  it('does not claim the links to the code review page are gone', async () => {
+    await withBadRepo()
+    const page = await shown(REVIEW)
+    expect(page.find('.notes').text()).toContain('code review page are unaffected')
+    expect(page.findAll('.answered-row')[0]!.find('a').attributes('href'))
+      .toBe(`/reviews/${REVIEW}/code-review#F1`)
   })
 
   it('says it on the row too, where the row has to explain itself', async () => {
@@ -809,8 +831,14 @@ describe('it describes and does not grade', () => {
    */
   it('draws a severity as a word, with no tag', async () => {
     const page = await shown(REVIEW)
-    /* `Severity:` is the visually-hidden label, which is in the text and not on the screen. */
-    expect(page.find('.severity').text()).toBe('Severity:blocker')
+    /*
+     * `Severity:` is the visually-hidden label, which is in the text and not on the
+     * screen — and the space after it is `&#32;`, because Vue's `whitespace: 'condense'`
+     * deletes a whitespace-only text node between two elements. Written as a newline, or
+     * as a second `<span>` around the value, this read `Severity:blocker`, which is what a
+     * screen reader then says. `textContent` rather than `text()`, which trims.
+     */
+    expect(page.find('.severity').element.textContent).toBe('Severity: blocker')
     expect(page.findAll('.tag')).toHaveLength(0)
   })
 

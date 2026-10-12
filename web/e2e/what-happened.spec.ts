@@ -317,6 +317,9 @@ for (const { name, width, height } of WIDTHS) {
 
     /* And the fourteen posted are what the figures are about, not the sixteen recorded. */
     await expect(page.locator('.sub')).toContainText('14 findings were posted')
+    await expect(page.locator('.sub')).toContainText(
+      '7 of them had something come back: 2 replies, 7 whose code changed',
+    )
     await expect(page.locator('main')).toContainText(
       'Outcomes on findings this page does not list',
     )
@@ -327,6 +330,16 @@ for (const { name, width, height } of WIDTHS) {
 
     /* The 108-word reply is drawn whole. */
     await expect(page.locator('.quote').first()).toContainText(LONG_REPLY)
+
+    /*
+     * **The severity's hidden label keeps its space through the real build.** Vue's
+     * `whitespace: 'condense'` deletes a whitespace-only text node between two elements, so
+     * the separator is `&#32;` — and whether an entity survives the compiler, the bundler
+     * and the binary is a question for the thing that serves it rather than for a test
+     * environment's renderer.
+     */
+    expect(await page.locator('.answered-row .severity').first().textContent())
+      .toBe('Severity: blocker')
 
     /* And nothing on the page is wider than the page — the measurement, at both widths. */
     const { scroll, client } = await overflows(page)
