@@ -459,6 +459,15 @@ describe('what came back', () => {
   })
 
   it('quotes the author’s words, whole, however long they run', async () => {
+    /*
+     * **The density the issue asks for, asserted where it is used.** "One reply over 80
+     * words" is a property of this fixture, and a fixture that quietly shrank would leave
+     * the page measured at a length no author writes at. Each suite holds its own copy of
+     * the reply and its own assertion of the length, rather than one shared across
+     * `test/`, `e2e/` and nothing to tell them apart.
+     */
+    expect(LONG_REPLY.trim().split(/\s+/).length).toBeGreaterThan(80)
+
     const page = await shown(REVIEW)
     const quote = page.findAll('.quote').map(one => one.text())
     expect(quote).toHaveLength(2)

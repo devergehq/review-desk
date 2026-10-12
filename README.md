@@ -1155,8 +1155,16 @@ fails a test in TypeScript.
   does not serve it, so the line says that it merged and not when.
 * Where a finding's comment is, when the recorded `github_comment_id` is not GitHub's
   numeric comment id. `#discussion_r<id>` takes that number, and the harvester needs the
-  same one to match a thread — so a record holding another kind of id gets no link and the
-  page's own footnote says why rather than linking somewhere else.
+  same one to match a thread — so a record holding another kind of id gets no link rather
+  than a link somewhere else.
+
+**Three reasons a row has no link to a comment, and the page says which.** They are not the
+same fact and the reader acts on each differently: a finding the review raised in its body
+alone has no thread at all, so no reply could ever be read on it; a finding posted as a
+comment whose id is of another kind has a thread, reachable on the pull request, and no
+address this page can build; and a review whose `repo` is not a repository name — which a
+released Review Desk could store, and which `app/utils/links.ts` refuses to build from — has
+no GitHub address anywhere on the page, which is nothing to do with any finding.
 
 ### After a sign-off
 

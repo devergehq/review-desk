@@ -59,12 +59,13 @@ const SHORT_REPLY = 'Moved to a temporary name and renamed on success.'
  *
  * `header-links.spec.ts` carries the argument for the shape: a hyphen is a line-break
  * opportunity, so a hyphenated token wraps wherever it needs to and never sets a
- * min-content width. An unbroken 44-character class name does, and a finding's row draws
- * one as `path:line` beside a commit id and two links.
+ * min-content width. This is 53 characters whole and 39 in its last segment, with no
+ * hyphen and no underscore in either — so the segment sets one, and a finding's row draws
+ * it as `path:line` beside a commit id and two links.
  */
 const LONG_PATH = 'app/Reporting/ScheduledExportColumnPolicyResolver.php'
 
-/** The fourteen findings' severities, as a review of this size really divides. */
+/** The sixteen findings' severities, as a review of this size really divides. */
 const SEVERITIES = [
   'blocker',
   'should', 'should', 'should', 'should', 'should', 'should',
@@ -328,7 +329,13 @@ for (const { name, width, height } of WIDTHS) {
       'Against findings this review did not post',
     )
 
-    /* The 108-word reply is drawn whole. */
+    /*
+     * The 108-word reply is drawn whole — and the length is asserted here rather than
+     * taken on trust, because "one reply over 80 words" is the acceptance criterion this
+     * seed exists to satisfy and a fixture that quietly shrank would leave the page
+     * measured at a length no author writes at.
+     */
+    expect(LONG_REPLY.trim().split(/\s+/).length).toBeGreaterThan(80)
     await expect(page.locator('.quote').first()).toContainText(LONG_REPLY)
 
     /*
