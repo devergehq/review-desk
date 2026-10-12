@@ -234,13 +234,35 @@ export type Inbox = Schema['Inbox']
 export type ReviewListItem = Schema['ReviewListItem']
 
 /**
- * Which of the dismissed reviews a list of reviews is asked for.
+ * Which reviews a list of reviews is asked for.
  *
- * `excluded` is the Reviews list's default view and what every other read gets: a
- * dismissed review has been taken out of play by the developer, so it is in front of
+ * `in_play` is the Reviews list's default view and what every other read gets: a review
+ * the developer dismissed, or one whose pull request merged or closed, is in front of
  * nobody until this says otherwise.
+ *
+ * **Four positions because there are two ways off the desk**, which DEV-957 asks to be
+ * told apart everywhere a review is listed. It was `DismissedReviews` with `excluded`,
+ * `only` and `included`; a fourth value called `finished` on a filter called `dismissed`
+ * would have been the filter's own name saying the opposite of its value.
  */
-export type DismissedReviews = Schema['DismissedReviews']
+export type ReviewsShown = Schema['ReviewsShown']
+
+/**
+ * How a review left the desk, on a row of the Reviews list.
+ *
+ * Read from the answer rather than worked out by the row: a dismissal is a column on the
+ * review, but whether the pull request is finished is a fact about the pull request read
+ * off whichever round of it a harvest last reached.
+ */
+export type LeftTheDesk = Schema['LeftTheDesk']
+
+/**
+ * Why a draft may not be signed off, or null when it may.
+ *
+ * The screen draws its sentence from this and the API refuses from the same value, so a
+ * page cannot offer a sign-off the API refuses.
+ */
+export type NotForSigning = Schema['NotForSigning']
 
 /** `GET /reviews` serves an object, not an array; this is what is inside it. */
 export type ReviewList

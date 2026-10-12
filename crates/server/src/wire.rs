@@ -199,8 +199,11 @@ pub fn review_list_item(at: &ReviewAtStep) -> Value {
             LeftTheDesk::Dismissed => "dismissed",
             LeftTheDesk::Finished => "finished",
         }),
-        // When the pull request merged or closed, on a finished row only. Null when
-        // GitHub gave no time, and the row then says it merged without naming the day.
+        // Which way it ended and when, on a finished row only. Read off the pull request
+        // rather than off this round's own column, which holds nothing for three of the
+        // four rounds of a merged pull request. Null when GitHub gave no time, and the row
+        // then says it merged without naming the day.
+        "finished_how": at.finished_how.map(|state| state.as_str()),
         "finished_at": rfc3339_or_null(at.finished_at),
     });
 

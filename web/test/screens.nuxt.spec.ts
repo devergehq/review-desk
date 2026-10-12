@@ -171,15 +171,71 @@ describe('the queue', () => {
     expect(row.text()).not.toContain('Read and sign off')
   })
 
-  it('leads with how many reviews need the developer, counting each once', async () => {
+  it('leads with how many pull requests need the developer, counting each once', async () => {
     const page = await shown(Inbox)
     /*
-     * 17 (brief and draft), 15 (draft), 16 (draft), 41 (draft), 12 (the author replied).
-     * Five, and 17 is counted once rather than twice.
+     * **The heading counts the rows it draws, and the assertion is that identity rather
+     * than a number.** DEV-957's comment: "The queue heading counts pull requests, not
+     * rounds" — Patrick's screen read "12 reviews need you" over a list naming #9541
+     * twice, #9585 twice and #9568 at least twice. Taken from the rows, the claim survives
+     * a fixture being added, which is what a literal here does not: this number moved
+     * three times in two issues.
      */
-    expect(page.text()).toContain('5 reviews need you')
+    const drawn = needsYouRows(page)
+    expect(drawn.length, 'the Needs you group has rows').toBeGreaterThan(0)
+    expect(page.text()).toContain(
+      drawn.length === 1 ? '1 pull request needs you' : `${drawn.length} pull requests need you`,
+    )
     expect(page.text()).toContain('2 with the agent')
     expect(page.text()).toContain('2 of your own')
+
+    /*
+     * **And each pull request once**, which is the half the number alone cannot say: five
+     * rows and five pull requests is the same count as five rows and three pull requests.
+     * #412 is the one that earns it — a brief to confirm *and* a draft to approve.
+     */
+    const numbers = drawn.map(row => row.text().match(/#(\d+)/)?.[1])
+    expect(numbers.filter(Boolean)).toHaveLength(drawn.length)
+    expect(new Set(numbers).size, 'no pull request twice').toBe(numbers.length)
+    expect(numbers).toContain('412')
+  })
+
+  it('draws one row for a pull request with two unposted rounds', async () => {
+    /*
+     * **`tc/portal#9541`, which is Patrick's own record from DEV-957's comment**: rounds 1
+     * and 2, both "Draft ready", two rows. Round 1's draft can never be the review that
+     * posts, so the store no longer offers it and one row is left — round 2's, which is
+     * where its link goes.
+     */
+    const page = await shown(Inbox)
+    const rows = needsYouRows(page).filter(row => row.text().includes('#9541'))
+    expect(rows, 'one row for #9541').toHaveLength(1)
+    expect(rows[0]!.text()).toContain('round 2')
+    expect(rows[0]!.find('.row').attributes('href')).toBe('/reviews/61/understand')
+  })
+
+  it('draws one row for a pull request whose posted round was replied to', async () => {
+    /*
+     * **`tc/portal#9585`**, which drew two rows: its posted round 1, where the author had
+     * replied, and its round 2 draft. One row now, numbered for round 2 — and the reply is
+     * still on it, with the round it was left on, because the author answering is a real
+     * thing the developer has to read and the row it is drawn on is numbered differently.
+     */
+    const page = await shown(Inbox)
+    const rows = needsYouRows(page).filter(row => row.text().includes('#9585'))
+    expect(rows, 'one row for #9585').toHaveLength(1)
+    expect(rows[0]!.text()).toContain('round 2')
+    expect(rows[0]!.text()).toContain('the author has replied to round 1')
+  })
+
+  it('draws no row for any round of a merged pull request', async () => {
+    /*
+     * **The four rounds of `tc/portal#9568`**, one posted and three not, on a pull request
+     * that merged on 11 October. Five of the ten drafts in Patrick's "drafts to approve"
+     * were rounds like these, and none of them could ever be posted.
+     */
+    const page = await shown(Inbox)
+    expect(page.text(), 'no group draws a merged pull request').not.toContain('#9568')
   })
 
   it('draws the board’s five groups, and hides a group with nothing in it', async () => {
@@ -331,7 +387,7 @@ describe('the queue', () => {
     await billing.trigger('click')
     await settle(page)
 
-    expect(page.text()).toContain('1 review needs you')
+    expect(page.text()).toContain('1 pull request needs you')
     expect(page.text()).not.toContain('#412')
     expect(page.text()).toContain('#88')
   })
@@ -408,12 +464,17 @@ describe('the queue', () => {
      * Confirmed from the data layer rather than from this screen, which has no control for
      * it — and then the screen re-reads itself, because a write refreshes every open read.
      */
+    const before = needsYouRows(page).length
     await useReviewDesk().confirmBrief(17)
     await settle(page)
 
     expect(page.text()).not.toContain('Problem brief ready')
-    /* Still five rows: #412's next action is now the draft its session had written. */
-    expect(page.text()).toContain('5 reviews need you')
+    /*
+     * **The same rows as before, which is the claim** — #412's next action is now the draft
+     * its session had written, so the row stays and only its words change. Read from before
+     * and after rather than written as a number, for the reason the heading test gives.
+     */
+    expect(needsYouRows(page)).toHaveLength(before)
     const row = page.findAll('.row').find(one => one.text().includes('#412'))!
     expect(row.text()).toContain('Draft ready')
     expect(row.text()).toContain('Read and sign off')
@@ -517,6 +578,20 @@ describe('the queue', () => {
     }
   })
 
+  /**
+   * The rows of the "Needs you" group, and only that group's.
+   *
+   * `page.findAll('.queue-line')` is every row on the screen — needs-you, with the agent,
+   * waiting on the author, and the developer's own pull requests — so a count taken from it
+   * would answer a different question from the heading's. The group's own `DeskSection` is
+   * the scope.
+   */
+  function needsYouRows(page: VueWrapper) {
+    const group = page.findAll('section').find(one => one.text().startsWith('Needs you'))
+    expect(group, 'the Needs you group is on the page').toBeDefined()
+    return group!.findAll('.queue-line')
+  }
+
   /* ------------- The two ways out of a row (DEV-936) ------------- */
 
   /**
@@ -529,7 +604,18 @@ describe('the queue', () => {
   function lines(page: VueWrapper) {
     return page.findAll('.queue-line').map(line => ({
       row: line.find('.row'),
+      /*
+       * **The repository line, which left the anchor in DEV-957.** The links moved into it
+       * — "it belongs inline with the repository and ticket line under the title" — and the
+       * line had to leave `.row` to take them: an anchor inside an anchor is the thing the
+       * component's own note forbids. So a test asking what the row *says* about its
+       * repository, its round or its ticket asks this, and one asking where the row *goes*
+       * asks `row`.
+       */
+      meta: line.find('.row-meta'),
       out: line.findAll('.row-out-link'),
+      /* Everything on the line, for an assertion that does not care which half said it. */
+      text: () => line.text(),
     }))
   }
 
@@ -668,7 +754,7 @@ describe('the queue', () => {
     /* Review 19 is `acme/billing-api#93`, step 3 running, ticket ABC-246 and no address. */
     const row = lines(page).find(line => line.row.text().includes('#93'))
     expect(row, 'the With the agent row for #93').toBeDefined()
-    expect(row!.row.text(), 'the id is named on the row').toContain('ABC-246')
+    expect(row!.meta.text(), 'the id is named on the row').toContain('ABC-246')
     expect(
       row!.out.map(link => link.attributes('href')),
       'and the pull request is the only link',
@@ -699,7 +785,7 @@ describe('the queue', () => {
     const page = await shown(Inbox)
     const row = lines(page).find(line => line.row.text().includes('#403'))
     expect(row, 'the Waiting on the author row for #403').toBeDefined()
-    expect(row!.row.text(), 'the id is named on the row').toContain('ABC-238')
+    expect(row!.meta.text(), 'the id is named on the row').toContain('ABC-238')
     expect(
       row!.out.map(link => link.attributes('href')),
       'and the pull request is the only link',
@@ -715,7 +801,7 @@ describe('the queue', () => {
     /* The pull request alone, and the ticket still named on the row's own meta line. */
     expect(row!.out).toHaveLength(1)
     expect(row!.out[0]!.attributes('href')).toBe('https://github.com/acme/portal/pull/514')
-    expect(row!.row.text()).toContain('ABC-402')
+    expect(row!.meta.text()).toContain('ABC-402')
   })
 
   it('does not offer to open a pull request it cannot build a link to', async () => {
@@ -736,7 +822,7 @@ describe('the queue', () => {
     })
 
     const page = await shown(Inbox)
-    const row = lines(page).find(line => line.row.text().includes('acme/portal#x'))
+    const row = lines(page).find(line => line.text().includes('acme/portal#x'))
     expect(row, 'the row for the unlinkable name').toBeDefined()
     expect(row!.row.element.tagName.toLowerCase(), 'it is not an anchor').toBe('div')
     expect(row!.row.text()).not.toContain('Open on GitHub')

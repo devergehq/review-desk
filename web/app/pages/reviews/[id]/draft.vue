@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { DraftDetail, ReviewEvent } from '~/types/desk'
+import type { DraftDetail, NotForSigning, ReviewEvent } from '~/types/desk'
 import type { WriteResult } from '~/composables/useReviewDesk'
 import type { DeskNotice } from '~/utils/format'
 
@@ -123,6 +123,49 @@ const heldRows = computed(() =>
 
 function decided(data: DraftDetail): boolean {
   return data.draft.status !== 'ready'
+}
+
+/**
+ * Why nothing on this review may be signed off, or null when it may.
+ *
+ * **Served, not worked out here**, which is the point of the field: whether the pull
+ * request has finished is read off whichever round of it a harvest last reached, and this
+ * page holds one review. `review.pr_state` is this round's own column and is null for
+ * three of the four rounds of a merged pull request.
+ *
+ * **Null for a posted draft**, whatever the pull request did. A review that posted did
+ * post; the sentence DEV-957 asks for is about a draft that never will, and "not posted"
+ * over a posted review would be the page contradicting the record. The sign-off is not
+ * offered on a posted draft anyway — `decided` is already true of it — so nothing is
+ * unguarded by this.
+ */
+function notForSigning(data: DraftDetail): NotForSigning | null {
+  if (data.draft.status === 'posted') return null
+  return data.not_for_signing ?? null
+}
+
+/**
+ * The sentence a draft that cannot be signed off carries, in place of the status line.
+ *
+ * Three reasons, three sentences, each naming the thing that happened and what follows
+ * from it. **The merge names the day when the record holds one** and stops after the word
+ * when it does not: GitHub does not always give a time, and a date nobody holds must not
+ * be invented — `dayLabel` returns null and the clause is left out.
+ */
+function notForSigningLine(why: NotForSigning): string {
+  if (why.reason === 'dismissed') {
+    return 'Not posted — you dismissed this review. Bring it back from the Reviews list '
+      + 'if it should be posted after all.'
+  }
+  if (why.reason === 'superseded') {
+    return `Not posted — superseded by round ${why.by_round}. The author pushed past the `
+      + 'commit this was written against, so this draft can never be the review that '
+      + 'posts; round ' + `${why.by_round}` + ' is the one that can.'
+  }
+  const day = dayLabel(why.at ?? null)
+  const when = day ? ` on ${day}` : ''
+  return `Not posted — the pull request ${why.how}${when}. No round of it can be posted `
+    + 'now, so this draft stays as it is on the record.'
 }
 
 /**
@@ -291,6 +334,15 @@ const openFindings = computed(
 
 function statusLine(data: DraftDetail): string {
   const draft = data.draft
+  /*
+   * **First, because it outranks every other thing this line could say.** A draft on a
+   * merged pull request may be `ready`, or signed off and waiting for a session to post
+   * it, and neither sentence is true any more: nothing is going to post it. DEV-957 asks
+   * the page to say so where the status goes, and the sign-off is taken off the screen in
+   * the same breath — see the panel below.
+   */
+  const why = notForSigning(data)
+  if (why) return notForSigningLine(why)
   if (draft.status === 'approved' && data.body_is_stale) {
     /*
      * **The one state the session cannot post**, and the page has to say so: this body was
@@ -640,7 +692,40 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                     </button>
                   </DeskCard>
 
-                  <DeskCard class="panel">
+                  <!--
+                    **No sign-off at all when nothing can post this draft**, which is
+                    DEV-957's "an unposted draft on a finished review says so and cannot be
+                    signed off". Not a disabled button: the panel is the three acts that
+                    each ask a session to do something afterwards — post it, file a ticket
+                    and post it, send it back to be rewritten — and on a merged pull request
+                    there is no session coming for any of them. A greyed-out "Sign off and
+                    post" would still be offering the act, and the API refuses it; the
+                    status line above says what happened instead.
+
+                    The card in its place is not a refusal notice. Nothing was refused and
+                    nothing is wrong: the record simply says what became of the pull request,
+                    and the draft stays on it to be read.
+                  -->
+                  <DeskCard
+                    v-if="notForSigning(data)"
+                    class="panel"
+                  >
+                    <p class="rd-label">
+                      Nothing to sign off
+                    </p>
+                    <p class="rd-note">
+                      {{ notForSigningLine(notForSigning(data)!) }}
+                    </p>
+                    <p class="rd-meta foot">
+                      The draft, the findings and your decisions are all still on the
+                      record. Nothing has been removed.
+                    </p>
+                  </DeskCard>
+
+                  <DeskCard
+                    v-else
+                    class="panel"
+                  >
                     <label
                       class="rd-label"
                       for="event"

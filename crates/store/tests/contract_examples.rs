@@ -1430,6 +1430,7 @@ fn review_list(store: &Store) -> Value {
                         LeftTheDesk::Dismissed => "dismissed",
                         LeftTheDesk::Finished => "finished",
                     }),
+                    "finished_how": at.finished_how.map(|state| state.as_str()),
                     "finished_at": at.finished_at,
                 });
                 // Absent together, for a review nothing has reported on at all: a step
@@ -1950,6 +1951,9 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
                 "pull_request": pull_request(review),
                 "ticket_id": review.ticket_id,
                 "ticket_url": review.ticket_url,
+                // Which round was replied to: the queue draws one row per pull request,
+                // and a reply is on the round that was posted.
+                "round": review.round,
                 "events": outcomes.iter().filter(|outcome| {
                     matches!(outcome.actor, Actor::Author | Actor::Harvester)
                 }).map(|outcome| json!({

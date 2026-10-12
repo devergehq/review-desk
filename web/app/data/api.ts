@@ -36,7 +36,7 @@ import type {
   DeferRuleRequest,
   DeskError,
   DismissReviewRequest,
-  DismissedReviews,
+  ReviewsShown,
   Disposition,
   DraftDetail,
   Finding,
@@ -260,7 +260,7 @@ export function getInbox(): Promise<Inbox> {
  */
 export function listReviews(
   repo: string | null,
-  dismissed: DismissedReviews = 'excluded',
+  show: ReviewsShown = 'in_play',
 ): Promise<ReviewList> {
   const asked = new URLSearchParams()
   if (repo != null) asked.set('repo', repo)
@@ -269,7 +269,7 @@ export function listReviews(
    * one line up: the absence of the parameter *is* "the reviews in play", and saying it
    * twice is one place for the page and the server to disagree.
    */
-  if (dismissed !== 'excluded') asked.set('dismissed', dismissed)
+  if (show !== 'in_play') asked.set('show', show)
   const query = asked.size === 0 ? '' : `?${asked.toString()}`
   return send<ReviewList>('GET', `/reviews${query}`)
 }

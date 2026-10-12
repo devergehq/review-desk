@@ -69,6 +69,7 @@
       },
       "ticket_id": "ABC-187",
       "ticket_url": null,
+      "round": 1,
       "events": [
         {
           "finding_seq": 2,

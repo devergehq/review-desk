@@ -48,7 +48,6 @@ import type {
   Brief,
   DecideFindingRequest,
   DeskSource,
-  DismissedReviews,
   Disposition,
   DraftDetail,
   Finding,
@@ -56,14 +55,18 @@ import type {
   FindingDecisionMade,
   Inbox,
   InboxPr,
+  LeftTheDesk,
   NitTicket,
+  NotForSigning,
   OutcomeKind,
+  PrState,
   RepoName,
   RepoSummary,
   Review,
   ReviewDetail,
   ReviewEvent,
   ReviewList,
+  ReviewsShown,
   RoundStatus,
   Rule,
   RuleStage,
@@ -157,18 +160,124 @@ function reviewById(id: number): ReviewDetail | undefined {
 }
 
 /**
- * The reviews the developer has not taken out of play.
+ * What the pull request a review belongs to was last seen to be.
+ *
+ * **The state is the pull request's and the fixture keeps a copy of it per round**, which
+ * is the record's own shape: only the round a harvest read gets its copy written. So
+ * reading `detail.review.pr_state` answers a question about one round's last reading, and
+ * that was the whole of DEV-957 — Patrick's #9568 has four rounds and one harvest between
+ * them, and the queue held three drafts on a merged pull request for ever.
+ *
+ * The highest-numbered round that holds a state decides it, which is the server's
+ * `pr_state!()` clause and carries its argument: a pull request closed, reopened and
+ * reviewed again holds `closed` on an early round for ever, so "any settled round" would
+ * finish a live pull request. Unlooked-at reads as open.
+ */
+function prStateOf(repo: string, pr: number): PrState | null {
+  return freshestReading(repo, pr)?.review.pr_state ?? null
+}
+
+/** When it reached that state, from the same reading. Null while GitHub gave no time. */
+function prStateAtOf(repo: string, pr: number): string | null {
+  return freshestReading(repo, pr)?.review.pr_state_at ?? null
+}
+
+/**
+ * The round of this pull request whose harvest reading is freshest.
+ *
+ * The highest-numbered round that holds a state: within a sweep the rounds are read in
+ * order, so the highest round's reading is the latest there is, and the two readings can
+ * only disagree in the direction that makes this right — GitHub cannot un-merge a pull
+ * request, and a `closed` that a later round reads as `open` is a reopen.
+ */
+function freshestReading(repo: string, pr: number): ReviewDetail | undefined {
+  return source.reviews
+    .filter(detail => detail.review.repo === repo && detail.review.pr === pr)
+    .filter(detail => detail.review.pr_state != null)
+    .sort((a, b) => b.review.round - a.review.round)
+    .at(0)
+}
+
+/** Whether this review's pull request is finished with: merged or closed. */
+function isFinished(detail: ReviewDetail): boolean {
+  const state = prStateOf(detail.review.repo, detail.review.pr)
+  return state === 'merged' || state === 'closed'
+}
+
+/**
+ * The reviews that are still on the desk.
  *
  * **Every group of the queue is built from this and not from `source.reviews`**, which is
  * what the server's own queries do — one clause, pasted into each of them, so that a group
- * added later cannot quietly put a dismissed review back in front of the developer.
+ * added later cannot quietly put a review back in front of the developer that has left.
  *
- * The round arithmetic and `reviewById` deliberately read every review, dismissed or not:
- * a dismissed round is still a round the pull request reached, and a dismissed review is
- * still a page the developer can open to restore it.
+ * **Two ways of leaving, and the same exclusion**, which is the server's `IN_PLAY` since
+ * DEV-957: the developer dismissed it, or its pull request merged or closed. A dismissal
+ * is somebody's act and a finish is something that happened, and neither is anybody's turn.
+ *
+ * The round arithmetic and `reviewById` deliberately read every review, whatever became of
+ * it: a round that has left is still a round the pull request reached, and the review is
+ * still a page the developer can open.
  */
 function inPlay(): ReviewDetail[] {
-  return source.reviews.filter(detail => detail.review.dismissed_at == null)
+  return source.reviews.filter(detail => !isOffTheDesk(detail))
+}
+
+/** Whether this review has left the desk, either way. The predicate behind `inPlay`. */
+function isOffTheDesk(detail: ReviewDetail): boolean {
+  return detail.review.dismissed_at != null || isFinished(detail)
+}
+
+/**
+ * Whether this is the newest round of its pull request.
+ *
+ * **An unposted round a newer round supersedes can never be the review that posts**, so it
+ * is not work waiting on anybody — DEV-957's comment, where #9541 drew two rows, round 1
+ * and round 2 both "Draft ready". It counts every round, dismissed or finished, which is
+ * the server's `NEWEST_ROUND` and its argument: filtering the arithmetic too would make
+ * round 1 the live round again the moment round 2 was dismissed.
+ */
+function isNewestRound(detail: ReviewDetail): boolean {
+  return newestRoundByPr().get(`${detail.review.repo}#${detail.review.pr}`)
+    === detail.review.round
+}
+
+/** Whether this review's own review is on GitHub: a posted draft, or a recorded id. */
+function isPostedReview(detail: ReviewDetail): boolean {
+  const draft = draftById(detail.review.id)
+  return draft?.draft.posted_at != null || detail.review.github_review_id != null
+}
+
+/**
+ * Why nothing on this review may be signed off, or null when it may.
+ *
+ * **The binary's `not_for_signing`, derived from the same facts in the same order**: the
+ * draft page draws its sentence from this and the refusals below are raised from it, so a
+ * screen tested on fixtures cannot offer a sign-off the record would refuse.
+ *
+ * Dismissed before finished, because a dismissed review that then merges stays dismissed.
+ * Finished before superseded, because once the pull request is over which round is newest
+ * no longer matters. A posted round is never superseded: it did post, and a later round
+ * does not unmake that.
+ */
+function notForSigning(detail: ReviewDetail): NotForSigning | null {
+  if (detail.review.dismissed_at != null) return { reason: 'dismissed' }
+
+  const state = prStateOf(detail.review.repo, detail.review.pr)
+  if (state === 'merged' || state === 'closed') {
+    return {
+      reason: 'finished',
+      how: state,
+      at: prStateAtOf(detail.review.repo, detail.review.pr),
+    }
+  }
+
+  const newest = newestRoundByPr().get(`${detail.review.repo}#${detail.review.pr}`)
+    ?? detail.review.round
+  if (newest > detail.review.round && !isPostedReview(detail)) {
+    return { reason: 'superseded', by_round: newest }
+  }
+  return null
 }
 
 function draftById(id: number): DraftDetail | undefined {
@@ -325,6 +434,12 @@ function inbox(): Inbox {
    * draft back.
    */
   const briefs_to_confirm = inPlay()
+    /*
+     * **And only the newest round**, which is the server's `NEWEST_ROUND` on this group:
+     * confirming the problem of a round whose commit the author has pushed past asks a
+     * session to carry on reviewing a commit nobody is looking at.
+     */
+    .filter(isNewestRound)
     .filter(detail => detail.brief && !detail.brief.confirmed && detail.brief.confirmation_required)
     .map(detail => ({
       review_id: detail.review.id,
@@ -358,7 +473,15 @@ function inbox(): Inbox {
      * dismissed review left under "Drafts to approve" here would be sample mode
      * disagreeing with the binary about a screen this file exists to draw.
      */
-    .filter(pair => pair.owner != null && pair.owner.review.dismissed_at == null)
+    .filter(pair => pair.owner != null && !isOffTheDesk(pair.owner))
+    /*
+     * **And only the newest round.** DEV-957's comment measured it: #9541 drew two rows,
+     * round 1 and round 2 both "Draft ready", and signing round 1 off would have asked a
+     * session to post a review of a commit the author has pushed past. A superseded
+     * *posted* draft is not in this group anyway — its status is `posted`, not `ready` —
+     * so this takes out exactly the rounds that can never post.
+     */
+    .filter(pair => isNewestRound(pair.owner!))
     .map(({ owner }) => ({
       review_id: owner!.review.id,
       pull_request: prOf(owner!),
@@ -390,6 +513,12 @@ function inbox(): Inbox {
       review_id: detail.review.id,
       pull_request: prOf(detail),
       ...ticketOf(detail),
+      /*
+       * **Which round was replied to**, since DEV-957: the queue draws one row per pull
+       * request, and a reply is on the round that was posted — which can be older than the
+       * round the row is numbered for.
+       */
+      round: detail.review.round,
       events: detail.outcomes
         .filter(outcome => outcome.actor !== 'developer')
         .map(outcome => ({
@@ -479,24 +608,20 @@ function inbox(): Inbox {
   /*
    * **Posted, and with the author** — derived the way the server derives it, out of the
    * same fields, so the two cannot come to disagree. Posted is a posted draft *or* a
-   * recorded GitHub review id; open is open or never looked at; and only a pull request's
-   * newest round, because nothing ever moves a superseded round's state again to retract
-   * it. The three counts are nulled on their own source, which is the server's rule and
-   * is copied rather than re-invented: null when a figure would be zero and nothing could
-   * have found one.
+   * recorded GitHub review id, and only a pull request's newest round, because nothing
+   * ever moves a superseded round's state again to retract it. The three counts are
+   * nulled on their own source, which is the server's rule and is copied rather than
+   * re-invented: null when a figure would be zero and nothing could have found one.
    */
-  const newestRound = newestRoundByPr()
-
   const posted_awaiting_author = inPlay()
-    .filter((detail) => {
-      const draft = draftById(detail.review.id)
-      const isPosted
-        = draft?.draft.posted_at != null || detail.review.github_review_id != null
-      const open = detail.review.pr_state == null || detail.review.pr_state === 'open'
-      const newest
-        = newestRound.get(`${detail.review.repo}#${detail.review.pr}`) === detail.review.round
-      return isPosted && open && newest
-    })
+    /*
+     * **`inPlay` is now what says the pull request is not merged**, and this group used to
+     * say it for itself by reading the round's own `pr_state` column. That read one round's
+     * last harvest rather than the pull request, so a pull request merged a week ago whose
+     * newest round nobody had harvested was still "waiting on the author" — with no author
+     * left to wait for. DEV-957.
+     */
+    .filter(detail => isPostedReview(detail) && isNewestRound(detail))
     .map((detail) => {
       const draft = draftById(detail.review.id)
       const harvested = detail.review.harvested_at != null
@@ -588,15 +713,29 @@ function inbox(): Inbox {
  * last step written, because a posted review's step 7 is written as `pending` and that
  * rule would report a harvest that has not begun.
  */
-function reviewList(repo: string | null, dismissed: DismissedReviews): ReviewList {
+function reviewList(repo: string | null, show: ReviewsShown): ReviewList {
   const rounds = newestRoundByPr()
 
+  /*
+   * **How a review left the desk, dismissed before finished.** A review the developer
+   * dismissed and whose pull request later merged says dismissed: the dismissal is an act
+   * somebody took and the merge is something that happened to it, and DEV-957 settles it
+   * that way. The filter below reads this, so the view and the row's own words cannot
+   * disagree about which it is.
+   */
+  const leftTheDesk = (detail: ReviewDetail): LeftTheDesk | null => {
+    if (detail.review.dismissed_at != null) return 'dismissed'
+    if (isFinished(detail)) return 'finished'
+    return null
+  }
+
   const wanted = (detail: ReviewDetail): boolean => {
-    switch (dismissed) {
-      case 'only': return detail.review.dismissed_at != null
-      case 'included': return true
-      /* The default, and the only safe one: a review taken out of play is out of it. */
-      case 'excluded': return detail.review.dismissed_at == null
+    switch (show) {
+      case 'dismissed': return leftTheDesk(detail) === 'dismissed'
+      case 'finished': return leftTheDesk(detail) === 'finished'
+      case 'everything': return true
+      /* The default, and the only safe one: a review off the desk is off it. */
+      case 'in_play': return leftTheDesk(detail) == null
     }
   }
 
@@ -620,10 +759,26 @@ function reviewList(repo: string | null, dismissed: DismissedReviews): ReviewLis
           : {}),
         steps_total: LAYERS_TOTAL,
         last_activity_at: detail.timings.last_activity_at,
+        left_the_desk: leftTheDesk(detail),
+        /*
+         * Which way its pull request ended and when, on a finished row only. A dismissed
+         * row whose pull request also merged does not say it merged, so a word or a date
+         * for it would be a fact with nothing to attach to.
+         *
+         * **From `prStateOf`, not from `detail.review.pr_state`.** That column is this
+         * round's last harvest and holds nothing for three of the four rounds of a merged
+         * pull request, which is the fixture this change is built from.
+         */
+        finished_how: leftTheDesk(detail) === 'finished'
+          ? prStateOf(detail.review.repo, detail.review.pr)
+          : null,
+        finished_at: leftTheDesk(detail) === 'finished'
+          ? prStateAtOf(detail.review.repo, detail.review.pr)
+          : null,
       }
     })
 
-  return { repo: (repo as RepoName | null) ?? null, dismissed, reviews }
+  return { repo: (repo as RepoName | null) ?? null, show, reviews }
 }
 
 /** The Rules screen for one repository, or for all of them. */
@@ -727,10 +882,35 @@ function refuseIfDismissed(id: number, act: string): void {
    * this file has had wrong twice.
    */
   if (!detail) throw notFound(`review ${id}`)
-  if (detail.review.dismissed_at != null) {
+
+  /*
+   * **The three reasons, from the one value the draft page also draws.** DEV-957 adds the
+   * second and third, and the reason generalises exactly: each of these four acts is an
+   * item in `work list`, and a finished or superseded review is in no work list — so
+   * performing one would be the developer signing something off that nothing will ever act
+   * on, with the dashboard telling them "the review session posts it".
+   *
+   * The name is now narrower than what it does, as it is in the store, and is left alone
+   * for the same reason: one guard rather than three.
+   */
+  const why = notForSigning(detail)
+  if (why?.reason === 'dismissed') {
     throw conflict(
       `Review ${id} is dismissed, so no session will be started for it and nothing would `
       + `come of ${act}; bring it back first.`,
+    )
+  }
+  if (why?.reason === 'finished') {
+    throw conflict(
+      `The pull request of review ${id} ${why.how}, so nothing would come of ${act}: no `
+      + `round of a ${why.how} pull request can be posted.`,
+    )
+  }
+  if (why?.reason === 'superseded') {
+    throw conflict(
+      `Review ${id} is round ${detail.review.round}, and round ${why.by_round} of the same `
+      + `pull request is newer, so nothing would come of ${act}: this round was never `
+      + `posted and the newest round is the one that can be.`,
     )
   }
 }
@@ -1329,7 +1509,7 @@ function decideFinding(
   }
   owner.outcomes.push(outcome)
 
-  return { finding, outcome, draft: drafted }
+  return { finding, outcome, draft: standing(drafted) }
 }
 
 /**
@@ -1408,7 +1588,7 @@ function ticketRestAndApprove(id: number, note: string | null): TicketedAndAppro
   owner.draft_status = 'approved'
 
   return {
-    draft: drafted,
+    draft: standing(drafted),
     nit_ticket: owner.nit_ticket,
     ticketed: open.map(finding => finding.seq),
     ticketed_keys: open.map(finding => finding.key),
@@ -1641,6 +1821,24 @@ function wrote<T>(reviewId: number, made: T): T {
 }
 
 /**
+ * A draft document with why it may not be signed off, worked out at the moment it is read.
+ *
+ * **Computed rather than stored, and that is the point.** `not_for_signing` is about the
+ * review's pull request and about which round is newest, so a field written into
+ * `drafts.json` would be a second copy of a fact the reviews beside it already hold — and
+ * it would go stale the moment a fixture gained a round or a harvest. The server computes
+ * it per read for the same reason.
+ *
+ * Wrapped around every operation that answers with a draft **where they are listed**, like
+ * `wrote` above and with the same caveat: a new one has to be wrapped too, and
+ * `test/draft.spec.ts` asserts the field is on each of them.
+ */
+function standing(made: DraftDetail): DraftDetail {
+  const owner = reviewById(made.draft.review_id)
+  return { ...made, not_for_signing: owner ? notForSigning(owner) : null }
+}
+
+/**
  * The twenty-two operations over the records in memory.
  *
  * Every one is `async` so that the composable above cannot tell which backend it has. They
@@ -1653,8 +1851,8 @@ export function sampleBackend(): DeskBackend {
     isSampleData: true,
 
     getInbox: async () => answered(inbox()),
-    listReviews: async (repo, dismissed = 'excluded') =>
-      answered(reviewList(repo, dismissed)),
+    listReviews: async (repo, show = 'in_play') =>
+      answered(reviewList(repo, show)),
     getReview: async (id) => {
       const detail = reviewById(id)
       if (!detail) throw notFound(`review ${id}`)
@@ -1663,7 +1861,7 @@ export function sampleBackend(): DeskBackend {
     getDraft: async (id) => {
       const detail = draftById(id)
       if (!detail) throw notFound(`draft on review ${id}`)
-      return answered(detail)
+      return answered(standing(detail))
     },
     listRules: async repo => answered(rulesPage(repo)),
     listRepos: async (): Promise<RepoSummary[]> =>
@@ -1680,9 +1878,10 @@ export function sampleBackend(): DeskBackend {
       answered(wrote(reviewId, setFindingDisposition(reviewId, seq, disposition, reason))),
     decideFinding: async (reviewId, seq, request) =>
       answered(wrote(reviewId, decideFinding(reviewId, seq, request))),
-    saveDraft: async (id, body, edits) => answered(wrote(id, saveDraft(id, body, edits))),
-    approveDraft: async (id, event) => answered(wrote(id, approveDraft(id, event))),
-    sendBackDraft: async (id, note) => answered(wrote(id, sendBackDraft(id, note))),
+    saveDraft: async (id, body, edits) =>
+      answered(standing(wrote(id, saveDraft(id, body, edits)))),
+    approveDraft: async (id, event) => answered(standing(wrote(id, approveDraft(id, event)))),
+    sendBackDraft: async (id, note) => answered(standing(wrote(id, sendBackDraft(id, note)))),
     ticketRestAndApprove: async (id, note) =>
       answered(wrote(id, ticketRestAndApprove(id, note))),
     requestNitTicket: async (id, ticketId = null) =>

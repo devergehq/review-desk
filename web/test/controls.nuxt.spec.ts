@@ -801,4 +801,67 @@ describe('a queue row', () => {
     /* And the row itself is untouched — it is still the thing you read and click. */
     expect(page.find('.row').text()).toContain('Retry failed webhook deliveries')
   })
+
+  /*
+   * **And no repository line either, when there is nothing for it to say.** The line is
+   * where the links went in DEV-957, so the empty-cell rule above is now a rule about two
+   * elements: a row with no meta and no links draws neither, rather than an empty line
+   * above the row's rule.
+   */
+  it('draws no repository line when there is no meta and no link', async () => {
+    const page = await row({ ticketHref: 'javascript:alert(1)', ticketId: 'ABC-231' })
+    expect(page.find('.row-meta').exists(), 'no empty line').toBe(false)
+  })
+
+  /**
+   * **The links are in the row's repository line, and not in the row's own anchor.**
+   *
+   * Both halves matter and they pull against each other, which is why they are asserted
+   * together. DEV-957: "It belongs inline with the repository and ticket line under the
+   * title" — it had been a column at the row's end, where it "floats top right above the
+   * action". And DEV-936's seventh criterion: pressing one of these must not open the
+   * review, which an anchor inside the row's anchor would do by bubbling. So the *line*
+   * left the anchor and took the links with it.
+   */
+  it('puts the links in the repository line, outside the row’s own link', async () => {
+    const page = await row({
+      to: '/reviews/17/understand',
+      meta: 'acme/portal · round 1',
+      prHref: 'https://github.com/acme/portal/pull/412',
+      ticketHref: 'https://linear.app/acme/issue/ABC-231',
+      ticketId: 'ABC-231',
+    })
+
+    const line = page.find('.row-meta')
+    expect(line.exists(), 'the repository line is drawn').toBe(true)
+    /* The repository, then the two ways out, in reading order on one line. */
+    expect(line.text()).toContain('acme/portal · round 1')
+    expect(line.text()).toContain('GitHub')
+    expect(line.text()).toContain('ABC-231')
+    expect(line.findAll('.row-out-link')).toHaveLength(2)
+
+    /*
+     * **No link out is inside the row's link.** A structural assertion rather than a click,
+     * because it cannot be satisfied by accident; `e2e/header-links.spec.ts` presses them
+     * in a browser.
+     */
+    const anchor = page.find('.row')
+    expect(anchor.element.tagName.toLowerCase(), 'the row is the link to the review').toBe('a')
+    expect(
+      anchor.findAll('.row-out-link'),
+      'no way out is a descendant of the row’s own link',
+    ).toHaveLength(0)
+    expect(anchor.find('.row-meta').exists(), 'nor is the line itself').toBe(false)
+  })
+
+  /*
+   * **And the row still carries what it is about**, which is the half the restructure could
+   * have dropped: the title stayed in the anchor and the meta line left it, so the thing
+   * you click is still the thing you read.
+   */
+  it('keeps the title in the row’s own link', async () => {
+    const page = await row({ to: '/reviews/17/understand', meta: 'acme/portal · round 1' })
+    expect(page.find('.row').text()).toContain('Retry failed webhook deliveries')
+    expect(page.find('.row').text()).toContain('Read it')
+  })
 })

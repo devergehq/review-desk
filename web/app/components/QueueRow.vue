@@ -22,7 +22,7 @@
  * **The whole row is the link**, not a link inside it, so the thing you click is the thing
  * you read. At 390px the cells wrap onto their own lines in the order they are read.
  *
- * ## The two ways out, beside the row rather than inside it
+ * ## The two ways out, in the row's own repository line
  *
  * DEV-936 puts a review's pull request and its ticket on the row, so that either can be
  * opened without opening the review first. They are a **sibling** of the row's own link,
@@ -37,16 +37,26 @@
  * it true by construction; the alternative is a handler that stops the event, which is a
  * thing that can be got wrong and a thing a keyboard gets round.
  *
+ * **So the meta line is what left the anchor, and the links went into it.** DEV-957:
+ * "On most rows it sits alone on a line under the pull request number, and on the #9568
+ * row it floats top right above the action. It belongs inline with the repository and
+ * ticket line under the title." A column of links at the end of the row was the only
+ * place they could go while the whole row was one anchor; moving the *meta* out instead
+ * keeps the links outside the anchor and puts them where they read.
+ *
  * ```
  * ┌─ .queue-line ───────────────────────────────────────────────────────────┐
- * │ ┌─ .row, the link to the review ───────────────────────┐ ┌─ .row-out ─┐ │
- * │ │ #412 │ Retry failed … │ Draft ready │ 4 min │ Read … │ │ GitHub     │ │
- * │ └──────────────────────────────────────────────────────┘ │ ABC-231    │ │
+ * │ ┌─ .row, the link to the review ──────────────────────────────────────┐ │
+ * │ │ #412 │ Retry failed webhook …  │ Draft ready │ 4 min │ Read and si… │ │
+ * │ └─────────────────────────────────────────────────────────────────────┘ │
+ * │ ┌─ .row-meta, outside the anchor ─────────────────────────────────────┐ │
+ * │ │        acme/portal · round 1 · GitHub · ABC-231                     │ │
+ * │ └─────────────────────────────────────────────────────────────────────┘ │
  * └─────────────────────────────────────────────────────────────────────────┘
  * ```
  *
- * The line under a row is on the wrapper now rather than on `.row`, so it runs the width
- * of the row *and* its links instead of stopping short of them.
+ * The line under a row is on the wrapper rather than on `.row`, so it runs the width of
+ * the row *and* its meta line instead of stopping short of them.
  */
 /*
  * **`NuxtLink` resolved to the component, not named as a string.** Measured in the built
@@ -78,7 +88,7 @@ const props = withDefaults(
     /** Needs-you rows set the title in display type and give the row more air. */
     emphasis?: boolean
     /**
-     * Where this row's pull request is, drawn beside the row.
+     * Where this row's pull request is, drawn in the row's repository line.
      *
      * Left off for a row whose own destination is already the pull request — "Your pull
      * requests" is that row, and a second link to where the row goes is noise.
@@ -142,10 +152,6 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
 
       <span class="about">
         <span :class="emphasis ? 'rd-display-row title' : 'title'">{{ title }}</span>
-        <span
-          v-if="meta"
-          class="rd-meta"
-        >{{ meta }}</span>
       </span>
 
       <span class="what">
@@ -174,35 +180,66 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
     </component>
 
     <!--
-      The two ways out, outside the row's own link. Each says where it goes and that it
-      opens elsewhere, because neither is something a reader can see coming.
+      **The repository line, outside the row's own link**, with the two ways out inline in
+      it. The whole line is a sibling of the anchor rather than a cell inside it, which is
+      what lets the links be anchors at all — see the note at the top of this file.
+
+      Drawn at all only when there is something to put in it: a row with no meta, no pull
+      request link and no ticket draws no empty line.
     -->
     <span
-      v-if="prHref || (ticket && ticketId)"
-      class="row-out"
+      v-if="meta || prHref || (ticket && ticketId)"
+      class="row-meta"
     >
-      <a
-        v-if="prHref"
-        class="row-out-link"
-        :href="prHref"
-        target="_blank"
-        rel="noopener noreferrer"
-      >GitHub<span class="rd-visually-hidden">: pull request #{{ pr }}, opens in a new tab</span></a>
-      <a
-        v-if="ticket && ticketId"
-        class="row-out-link"
-        :href="ticket"
-        target="_blank"
-        rel="noopener noreferrer"
-      >{{ ticketId }}<span class="rd-visually-hidden">, on the tracker, opens in a new tab</span></a>
+      <span
+        v-if="meta"
+        class="rd-meta meta-text"
+      >{{ meta }}</span>
+      <!--
+        The separators are `aria-hidden`: they are the line's punctuation, and a screen
+        reader announcing "middle dot" between a repository and a link reads worse than the
+        pause it already gives. The meta text's own dots are inside one string and are read
+        as punctuation; these are elements, and an element gets announced.
+      -->
+      <span
+        v-if="prHref || (ticket && ticketId)"
+        class="row-out"
+      >
+        <template v-if="prHref">
+          <span
+            v-if="meta"
+            class="sep"
+            aria-hidden="true"
+          >·</span>
+          <a
+            class="row-out-link"
+            :href="prHref"
+            target="_blank"
+            rel="noopener noreferrer"
+          >GitHub<span class="rd-visually-hidden">: pull request #{{ pr }}, opens in a new tab</span></a>
+        </template>
+        <template v-if="ticket && ticketId">
+          <span
+            v-if="meta || prHref"
+            class="sep"
+            aria-hidden="true"
+          >·</span>
+          <a
+            class="row-out-link"
+            :href="ticket"
+            target="_blank"
+            rel="noopener noreferrer"
+          >{{ ticketId }}<span class="rd-visually-hidden">, on the tracker, opens in a new tab</span></a>
+        </template>
+      </span>
     </span>
   </div>
 </template>
 
 <style scoped>
 /*
- * **The row and its two links, on one line with one rule under it.** The rule is here and
- * not on `.row` so that it runs under the links as well; before DEV-936 there was nothing
+ * **The row and its repository line, with one rule under both.** The rule is here and not
+ * on `.row` so that it runs under the meta line as well; before DEV-936 there was nothing
  * beside the row for it to stop short of.
  *
  * **`queue-line` rather than `line`**, which is what it was called for one commit — and the
@@ -217,34 +254,40 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
  * the type checker, not the linter, not the end-to-end suite, because the suite would have
  * been green about the wrong element.
  *
- * **`flex-start`, not `center`.** The row's cells and the links both carry the same 12 or
- * 16 pixels of padding so that the two columns begin at the same height; centred, a short
- * links cell floats against the middle of a row whose title has wrapped, and the padding
- * was doing nothing.
+ * **The wrapper owns the row's padding now, and that is the change DEV-957 made.** It was
+ * on `.row` and on `.row-out`, twice, so that a row and the links beside it began at the
+ * same height. There is nothing beside the row any more — the meta line is *under* it — so
+ * one padding on the wrapper is the whole of it, and a row whose meta line is absent keeps
+ * the same height as one that has it.
  */
 .queue-line {
   display: flex;
   flex-wrap: wrap;
-  gap: 0 20px;
+  gap: 4px 20px;
   align-items: flex-start;
+  padding: 12px 0;
   border-bottom: 1px solid var(--rd-line);
 }
 
+/* The needs-you rows carry more air, which is the board's own difference between them. */
+.queue-line--emphasis {
+  padding: 16px 0;
+}
+
+/*
+ * **The full width, so the meta line falls under it rather than beside it.** `1 1 auto`
+ * let the links cell sit at the row's end, which is where DEV-957 found the GitHub link
+ * "floating top right above the action".
+ */
 .row {
   display: flex;
-  flex: 1 1 auto;
+  flex: 1 1 100%;
   flex-wrap: wrap;
   gap: 6px 20px;
   align-items: center;
-  padding: 12px 0;
   min-width: 0;
   color: var(--rd-ink);
   text-decoration: none;
-}
-
-/* The needs-you rows carry more air, which is the board's own difference between them. */
-.row--emphasis {
-  padding: 16px 0;
 }
 
 .row:hover {
@@ -254,10 +297,14 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
 /*
  * A row is a link, so it gets the page's focus ring — but the ring has to go round the
  * whole row rather than round the text, which is what the offset is doing here.
+ *
+ * **Outside the row rather than one pixel in**, since the padding moved to the wrapper: a
+ * negative offset drew the ring over the first and last characters of a row that no longer
+ * has any padding of its own to spare.
  */
 .row:focus-visible {
   outline: 3px solid var(--rd-focus-ring);
-  outline-offset: -1px;
+  outline-offset: 2px;
   border-radius: var(--rd-radius-xs);
 }
 
@@ -299,17 +346,8 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
  * line of their own — and is fixed here because the measurement that found it is here.
  */
 .title,
-.about .rd-meta {
+.row-meta {
   overflow-wrap: anywhere;
-}
-
-/* A quieter row's title is the body face, and its meta sits under it just the same. */
-.row:not(.row--emphasis) .about .rd-meta {
-  display: inline;
-}
-
-.row--emphasis .about .rd-meta {
-  display: block;
 }
 
 .what {
@@ -352,29 +390,49 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
 }
 
 /*
+ * **The repository line, under the title and aligned with it.** The indent is the `#412`
+ * cell's own width plus the row's column gap, so the line begins where the title begins
+ * rather than under the pull request number — which is where DEV-957 found the links,
+ * "alone on a line under the pull request number".
+ *
+ * It wraps, and it has to: it carries the repository, the round, what changed, the ticket
+ * id and two links, and a 46-character repository name is wider than a phone on its own.
+ * `overflow-wrap: anywhere` above is what makes a name with no hyphen in it shrink rather
+ * than push the line past the row's edge — see the note on `.title` for why `anywhere` and
+ * not `break-word`.
+ */
+.row-meta {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  align-items: baseline;
+  min-width: 0;
+  padding-left: 76px;
+}
+
+/*
  * **`row-out`, not `out`.** `ReviewStepPage` calls its header *anchors* `.out` and
  * `SignOffCard` calls an anchor `.out` too — so this component's *container* sharing the
  * name made one class mean two different things across three components, which is the rule
  * the `.line` rename above states: scoped CSS makes sharing safe for styling, and a test
  * selecting it unscoped then measures whichever one it reaches first.
  *
- * The two links, stacked at the end of the line and the same width down the page so the
- * column reads as a column. Underlined rather than accent-coloured alone: at 13px beside a
- * row of grey meta text, colour is the cue a reader misses.
+ * The two links sit inline in the line, in reading order after what the row is about.
+ * Underlined rather than accent-coloured alone: at 13px beside a row of grey meta text,
+ * colour is the cue a reader misses.
  */
 .row-out {
-  display: flex;
-  flex: 0 0 96px;
-  flex-direction: column;
-  gap: 2px;
-  align-items: flex-start;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  align-items: baseline;
+  min-width: 0;
   font-size: 13px;
-  padding: 12px 0;
 }
 
-/* The same air the needs-you row gives itself, so the two cells line up vertically. */
-.queue-line--emphasis .row-out {
-  padding: 16px 0;
+.sep {
+  color: var(--rd-ink-muted);
 }
 
 .row-out-link {
@@ -404,26 +462,13 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
   }
 
   /*
-   * At a phone's width the links are the last line of the row rather than a column at its
-   * end, and they sit side by side there: two stacked lines of one word each is three
-   * lines of furniture under one row.
+   * **No indent at a phone's width.** The `#412` cell is `flex: 0 0 auto` here rather than
+   * a 56-pixel column, so there is nothing for 76 pixels to line up with — and 76 pixels
+   * of a 358-pixel line is a fifth of the width this line needs for a repository name, a
+   * round and two links.
    */
-  /*
-   * **`wrap`, so the row gap can apply.** Without it the two links could not fall onto a
-   * second line — only shrink and break mid-word through `overflow-wrap: anywhere` — so a
-   * long ticket id beside "GitHub" read as two broken stacks rather than the two words
-   * this is meant to be.
-   */
-  .row-out {
-    flex: 1 1 100%;
-    flex-wrap: wrap;
-    flex-direction: row;
-    gap: 4px 12px;
-    padding: 0 0 12px;
-  }
-
-  .queue-line--emphasis .row-out {
-    padding: 0 0 16px;
+  .row-meta {
+    padding-left: 0;
   }
 }
 </style>

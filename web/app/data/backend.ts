@@ -15,7 +15,7 @@
 import type {
   Brief,
   DecideFindingRequest,
-  DismissedReviews,
+  ReviewsShown,
   Disposition,
   DraftDetail,
   Finding,
@@ -48,7 +48,7 @@ export interface DeskBackend {
 
   /* The six reads — one per screen, so no screen joins anything. */
   getInbox: () => Promise<Inbox>
-  listReviews: (repo: string | null, dismissed?: DismissedReviews) => Promise<ReviewList>
+  listReviews: (repo: string | null, show?: ReviewsShown) => Promise<ReviewList>
   getReview: (reviewId: number) => Promise<ReviewDetail>
   getDraft: (reviewId: number) => Promise<DraftDetail>
   listRules: (repo: string | null) => Promise<RulesPage>

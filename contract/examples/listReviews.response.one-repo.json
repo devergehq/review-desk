@@ -31,6 +31,7 @@
       "steps_total": 7,
       "last_activity_at": "2026-10-09T16:40:00Z",
       "left_the_desk": null,
+      "finished_how": null,
       "finished_at": null
     },
     {
@@ -62,6 +63,7 @@
       "steps_total": 7,
       "last_activity_at": "2026-10-09T08:15:00Z",
       "left_the_desk": null,
+      "finished_how": null,
       "finished_at": null
     }
   ]

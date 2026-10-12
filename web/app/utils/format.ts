@@ -554,6 +554,36 @@ export function authorResponseLabel(item: InboxPostedItem): string {
 }
 
 /**
+ * An ISO instant as a day: "11 October 2026".
+ *
+ * **A day rather than an elapsed phrase, which is a deliberate exception on this desk.**
+ * Every other time here is worded as "6 min ago" by `sinceLabel`, because what a reader
+ * wants of a draft waiting or a session running is how long it has been. A merge is not
+ * that: the sentence a finished review's draft page draws — "Not posted — the pull request
+ * merged on 11 October 2026" — is a fact about a day, and "merged 2 days ago" would be a
+ * figure that goes stale while the page is open and reads as news.
+ *
+ * **In the developer's own locale, with no time of day.** The record holds the instant and
+ * the hour is not what the sentence is about. `undefined` as the locale is the browser's,
+ * which is what `Intl` means by it; a fixed locale here would word an Australian
+ * developer's date for somebody else.
+ *
+ * `null` for no instant, so a caller can leave the day out of its sentence rather than
+ * writing "on an unrecorded date" — the pull request merged either way, and the day is
+ * what the record may not hold.
+ */
+export function dayLabel(at: Instant | null | undefined): string | null {
+  if (!at) return null
+  const when = new Date(at)
+  if (Number.isNaN(when.getTime())) return null
+  return when.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+/**
  * What the record knows of a posted pull request's state.
  *
  * `null` is not "open": it is the harvester never having looked, which is every review

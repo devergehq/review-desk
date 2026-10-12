@@ -1927,6 +1927,14 @@ pub struct ReviewAtStep {
     /// a page holding one row cannot compute that at all. DEV-957 asks for the two to be
     /// told apart everywhere a review is listed, and this is what a row reads to do it.
     pub left_the_desk: Option<LeftTheDesk>,
+    /// Which way its pull request ended, for a finished review: merged or closed.
+    ///
+    /// **Read off the pull request and not off this round's own column**, which is the
+    /// correctness of the whole field: three of the four rounds of Patrick's merged #9568
+    /// have no `pr_state` of their own, so a row wording itself from `review.pr_state`
+    /// would say "merged" about a pull request that closed, or say nothing. `None` for a
+    /// review in play and for a dismissed one.
+    pub finished_how: Option<PrState>,
     /// When its pull request merged or closed, for a finished review.
     ///
     /// `None` for a review in play, for a dismissed one, and for a finished one whose

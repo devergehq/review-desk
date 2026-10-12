@@ -56,7 +56,7 @@ import { count, startedReviewLine } from '~/utils/format'
 import type {
   Brief,
   DecideFindingRequest,
-  DismissedReviews,
+  ReviewsShown,
   FindingDecision,
   DeskError,
   Disposition,
@@ -360,7 +360,7 @@ export function useReviewDesk() {
    */
   function reviews(
     repo: Ref<string> | ComputedRef<string>,
-    dismissed?: Ref<DismissedReviews> | ComputedRef<DismissedReviews>,
+    show?: Ref<ReviewsShown> | ComputedRef<ReviewsShown>,
   ): DeskResource<ReviewList> {
     /*
      * Both filters are watched as one, because `following` takes one value: a page with
@@ -370,12 +370,12 @@ export function useReviewDesk() {
      */
     const asked = computed(() => ({
       repo: repo.value,
-      dismissed: dismissed?.value ?? ('excluded' as DismissedReviews),
+      show: show?.value ?? ('in_play' as ReviewsShown),
     }))
     return following(asked, (from, value) =>
       from.listReviews(
         value.repo === ALL_REPOSITORIES ? null : (value.repo as RepoName),
-        value.dismissed,
+        value.show,
       ))
   }
 

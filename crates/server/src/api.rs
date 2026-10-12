@@ -282,6 +282,11 @@ impl Api {
                         // The third array that makes a row, so it carries the pair too.
                         "ticket_id": review.ticket_id,
                         "ticket_url": review.ticket_url,
+                        // **Which round was replied to**, since DEV-957: the queue draws
+                        // one row per pull request, and a reply is on the round that was
+                        // posted — which can be older than the round the row is numbered
+                        // for. Without it the row cannot say which review the reply is on.
+                        "round": review.round,
                         "events": events,
                         "replied_at": wire::rfc3339_or_null(replied_at),
                     })

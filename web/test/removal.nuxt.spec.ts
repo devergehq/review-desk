@@ -146,9 +146,17 @@ describe('the Reviews list’s dismissed filter', () => {
   })
 
   it('leaves a dismissed review out of the default view, and says what the view is', async () => {
+    /*
+     * **`#88`, which is the pull request of the review this block dismisses.** It read
+     * `#9585` and was therefore vacuous: no fixture had that number, so the assertion
+     * passed whether or not the dismissed review was drawn. DEV-957's fixtures gave
+     * `tc/portal#9585` to a review that is in play, and the test failed — which is how the
+     * hole was found. The lesson is the one the queue's own comments keep: an assertion
+     * about a fixture has to name a fixture that exists.
+     */
     const page = await shown(Reviews)
     expect(page.text()).toContain('Every review in play')
-    expect(page.text()).not.toContain('#9585')
+    expect(page.text()).not.toContain('#88')
     const rows = page.findAll('.row').map(row => row.text())
     expect(rows.some(row => row.includes('Dismissed'))).toBe(false)
   })
@@ -176,17 +184,36 @@ describe('the Reviews list’s dismissed filter', () => {
 
     await choose(page, 'Everything')
     expect(page.text()).toContain('whatever became of it')
-    expect(page.findAll('.row')).toHaveLength(inPlay + 1)
+    /*
+     * **The in-play rows, the one dismissed review, and the finished ones.** Counted from
+     * the Finished view rather than written as a number, so a fixture added later moves
+     * all three figures together — the count of finished rows is exactly what DEV-957's
+     * fixtures changed, and a literal here would have to be edited by anybody who adds a
+     * review whose pull request has merged.
+     */
+    const everything = page.findAll('.row').length
+    await choose(page, 'Finished')
+    const finished = page.findAll('.row').length
+    expect(finished, 'the fixtures hold some finished reviews').toBeGreaterThan(0)
+    expect(everything).toBe(inPlay + 1 + finished)
+
+    await choose(page, 'Everything')
     /* And the dismissed row still says so, beside reviews that are in play. */
     expect(page.findAll('.row').filter(row => row.text().includes('Dismissed')))
       .toHaveLength(1)
   })
 
-  it('can reach the dismissed view from a desk whose only review is dismissed', async () => {
+  it('can reach a review off the desk from a desk whose only review has left it', async () => {
     // **The one page that is supposed to find a review whatever became of it**, on the
     // database DEV-945 was raised from: one review, dismissed rather than deleted.
     // `DeskState` draws the empty card *instead of* the default slot, pickers and all, so
-    // the card has to carry the way out or the dismissed review is unreachable.
+    // the card has to carry the way out or the review is unreachable.
+    //
+    // **The button goes to Everything since DEV-957**, and the label with it. There are two
+    // ways off the desk now and the card cannot say which this database's one review took
+    // — the answer it is drawn from is the one that leaves both out — so sending the reader
+    // to Dismissed would be a guess that is wrong half the time, on the one page that is
+    // supposed to be able to find a review whatever became of it.
     const [only] = loadSource().reviews
     await resetDesk({ reviews: [only] })
     await useReviewDesk().dismissReview(only!.review.id, 'a duplicate of #413')
@@ -195,7 +222,7 @@ describe('the Reviews list’s dismissed filter', () => {
     expect(page.text()).toContain('No reviews in play')
     expect(page.text()).not.toContain('This database holds no reviews')
 
-    await click(page, 'Look at the dismissed reviews')
+    await click(page, 'Look at the reviews that have left the desk')
     expect(page.findAll('.row')).toHaveLength(1)
     expect(page.text()).toContain('a duplicate of #413')
     /* And the pickers are back, because the default slot is drawing again. */

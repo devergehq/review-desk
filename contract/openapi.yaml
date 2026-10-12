@@ -1822,7 +1822,8 @@ components:
       type: object
       additionalProperties: false
       required:
-        [review, rounds_on_pr, steps_total, last_activity_at, left_the_desk, finished_at]
+        [review, rounds_on_pr, steps_total, last_activity_at, left_the_desk, finished_how,
+         finished_at]
       description: |
         One row of `GET /reviews`: the review, the step it has reached, whether it has left
         the desk, and when it last moved.
@@ -1922,6 +1923,18 @@ components:
             took and the merge is something that happened to it, and the issue settles it
             that way. The `show` filter agrees, so such a review is under **Dismissed**
             and not under **Finished**.
+        finished_how:
+          oneOf:
+            - $ref: '#/components/schemas/PrState'
+            - type: 'null'
+          description: |
+            Which way the pull request ended, on a row whose `left_the_desk` is `finished`:
+            `merged` or `closed`. Null otherwise, and never `open`.
+
+            **Read off the pull request, not off `review.pr_state`.** That column is this
+            one round's last harvest, and three of the four rounds of a merged pull request
+            hold nothing in it — so a row wording itself from the review would say "merged"
+            about a pull request that closed, or say nothing at all.
         finished_at:
           type: [string, 'null']
           format: date-time
@@ -3980,13 +3993,32 @@ components:
     InboxReplyItem:
       type: object
       additionalProperties: false
-      required: [review_id, pull_request, events, ticket_id, ticket_url]
+      required: [review_id, pull_request, round, events, ticket_id, ticket_url]
       description: |
         An author has acted on a posted review. Built from outcomes with actor `author`
         or `harvester`.
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }
+        round:
+          type: integer
+          format: int64
+          minimum: 1
+          description: |
+            Which round of the pull request the author replied to.
+
+            **Here because the queue draws one row per pull request.** A reply is always on
+            the round that was *posted*, which can be an earlier round than the one the row
+            is numbered for — `tc/portal#9585` had its round 1 posted and replied to while
+            round 2 was still a draft, which is DEV-957's own record. A row saying "the
+            author has replied too" under the number of a different round leaves a reader
+            to work out which review the reply was on; with this it says "replied to
+            round 1".
+
+            `drafts_to_approve` has carried a round since DEV-876 for the same kind of
+            reason. `briefs_to_confirm` has none and needs none: a brief is only ever
+            confirmed on the round the row is about, because an unposted superseded round
+            is in no group at all.
         ticket_id:
           allOf:
             - $ref: '#/components/schemas/ForeignId'

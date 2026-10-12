@@ -17,7 +17,7 @@ use rusqlite::{params, Row};
 use crate::error::Result;
 use crate::model::{
     Actor, AuthorResponse, DraftStatus, LeftTheDesk, NitTicket, NitTicketStatus, OutcomeKind,
-    PostedReview, RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewLayerName,
+    PostedReview, PrState, RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewLayerName,
     ReviewLayerState, ReviewStep, ReviewsShown, RuleStage, Timestamp,
 };
 use crate::{normalise, Store};
@@ -75,6 +75,13 @@ macro_rules! pr_state {
 /// [`PrState::is_settled`] by `the_words_in_the_finished_clause_are_the_settled_states`,
 /// because a state renamed in the enum would leave this compiling and counting nothing.
 pub(super) const FINISHED: &str = concat!(pr_state!(), " IN ('merged', 'closed')");
+
+/// The pull request's state as a selectable expression, for a row that has to word it.
+///
+/// The same `pr_state!()`, named so a `SELECT` can use it: a row saying a review is
+/// finished has to say *which way*, and reading the round's own column would word three of
+/// the four rounds of a merged pull request from a column holding nothing.
+pub(super) const PR_STATE: &str = pr_state!();
 
 /// **Every query in this module leaves out a review that has left the desk, and this is
 /// the clause that does it.** Two ways of leaving, and the same exclusion.
@@ -407,6 +414,7 @@ impl Store {
                  l.state  AS step_state,
                  l.detail AS step_detail,
                  ({FINISHED}) AS is_finished,
+                 {PR_STATE} AS pr_state_now,
                  (SELECT settled.pr_state_at FROM reviews settled
                   WHERE settled.repo = v.repo AND settled.pr = v.pr
                     AND settled.pr_state IS NOT NULL
@@ -441,6 +449,7 @@ impl Store {
                         row.get::<_, Option<ReviewLayerState>>("step_state")?,
                         row.get::<_, Option<String>>("step_detail")?,
                         row.get::<_, bool>("is_finished")?,
+                        row.get::<_, Option<PrState>>("pr_state_now")?,
                         row.get::<_, Option<Timestamp>>("finished_at")?,
                     ))
                 },
@@ -449,7 +458,16 @@ impl Store {
 
         rows.into_iter()
             .map(
-                |(review, rounds_on_pr, number, state, detail, is_finished, finished_at)| {
+                |(
+                    review,
+                    rounds_on_pr,
+                    number,
+                    state,
+                    detail,
+                    is_finished,
+                    pr_state_now,
+                    finished_at,
+                )| {
                     // Both or neither. The join either matched the layer the subquery named,
                     // in which case the row is `NOT NULL` in both columns because the table
                     // is, or it matched nothing at all. A number without a state would be a
@@ -476,17 +494,18 @@ impl Store {
                     } else {
                         None
                     };
+                    // Only on a finished row, both of them. A dismissed review whose
+                    // pull request also merged is a dismissed row, and a day or a word
+                    // for a thing the row does not say happened would be a fact with
+                    // nothing to attach to.
+                    let finished = left_the_desk == Some(LeftTheDesk::Finished);
                     Ok(ReviewAtStep {
                         review,
                         rounds_on_pr,
                         step,
                         left_the_desk,
-                        // Only on a finished row. A dismissed review whose pull request also
-                        // merged is a dismissed row, and a date for a thing the row does not
-                        // say happened would be a fact with nothing to attach to.
-                        finished_at: (left_the_desk == Some(LeftTheDesk::Finished))
-                            .then_some(finished_at)
-                            .flatten(),
+                        finished_how: finished.then_some(pr_state_now).flatten(),
+                        finished_at: finished.then_some(finished_at).flatten(),
                     })
                 },
             )
