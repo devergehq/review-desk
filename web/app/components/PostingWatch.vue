@@ -99,8 +99,21 @@ const now = ref(new Date())
  * wrong diagnosis of a state whose cause is known. The sentence above the sign-off says
  * what it is and offers the only way out, which is an act on this page — and an act on
  * this page re-reads everything anyway.
+ *
+ * **Nor is a dismissed review**, which is the same door read through DEV-945: a dismissed
+ * review is in no agent's work list, so no session is dispatched for it and nothing will
+ * post this draft however long the page watched. Approving a dismissed review is refused
+ * outright, so the state that reaches here is one approved and *then* dismissed — and
+ * without this the page would wait on it and then accuse a session that was never given
+ * the work, which is this file's own worst sentence pointed at the wrong system. The
+ * notice under the trail says the review is dismissed and names the act that changes it.
  */
-const waiting = computed(() => props.draft.status === 'approved' && !props.bodyIsStale)
+const waiting = computed(
+  () =>
+    props.draft.status === 'approved'
+    && !props.bodyIsStale
+    && props.review.dismissed_at == null,
+)
 
 /**
  * Whether this page has watched the status change at all, on the draft in front of it.

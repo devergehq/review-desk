@@ -629,6 +629,24 @@ describe('the states it has nothing to add to', () => {
     expect(reads(page)).toBe(0)
     expect(page.text()).not.toContain('may not be running')
   })
+
+  it('waits on nothing for a signed-off draft whose review was dismissed', async () => {
+    /*
+     * **DEV-945, through the same door as the stale body.** A dismissed review is in no
+     * agent's work list, so no session is dispatched for it and nothing will post this
+     * draft however long the page watched — and the accusation it would eventually make
+     * is about a session that was never given the work. Approving a dismissed review is
+     * refused outright, so the state that reaches here is one approved and then
+     * dismissed.
+     */
+    const page = await watching({
+      review: { ...REVIEW, dismissed_at: '2026-10-12T10:01:00Z' },
+    })
+    expect(announced(page)).toBe('')
+    await tick(page, POSTED_WITHIN_SECONDS * 2)
+    expect(reads(page)).toBe(0)
+    expect(page.text()).not.toContain('may not be running')
+  })
 })
 
 describe('a hidden tab', () => {
