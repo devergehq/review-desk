@@ -626,6 +626,75 @@ describe('the draft preview', () => {
   })
 
   /*
+   * **The one way out of a sign-off, offered where the sign-off was made.** A draft the
+   * hand-over refuses — one approved before the composition changed shape — could not be
+   * posted, rewritten or sent back, which the session building the posting half measured.
+   * The page offers taking the sign-off back, and says why on a draft that is stuck.
+   */
+  it('offers taking the sign-off back on an approved draft, and says why on a stale one', async () => {
+    expect((await useReviewDesk().approveDraft(41, 'request_changes')).ok).toBe(true)
+
+    const page = await open(41)
+    const back = page.findAll('button').find(one =>
+      one.text() === 'Take back the sign-off and send it back')
+    expect(back, 'the button is offered on an approved draft').toBeDefined()
+    expect(back!.attributes('disabled')).toBeUndefined()
+    expect(page.text()).toContain('Signed off. Will be posted as')
+
+    /* And the sign-off goes with it: the record holds no event once it is taken back. */
+    expect((await useReviewDesk().sendBackDraft(41, 'the index is in the old shape')).ok)
+      .toBe(true)
+    const after = await open(41)
+    expect(after.text()).toContain('Sent back.')
+    expect(after.text()).toContain('the index is in the old shape')
+  })
+
+  /*
+   * **The body is an index, and the threads are the rest of what posts.** DEV-929: the
+   * review on tc-portal#9585 went out as 309 lines with no index and two threads because
+   * the posted body *was* the blocks joined. The page's own job did not change — nothing is
+   * posted unread — but what it has to draw did: a finding with a line inside the diff is a
+   * row in the body and a comment on the code.
+   *
+   * Review 41 is the real-length example: twelve posted findings, nine of them anchored.
+   */
+  it('draws the index in the body and the threads beside it', async () => {
+    const page = await open(41)
+    const body = page.find('.preview').text()
+
+    expect(body).toContain('Open — needs a decision')
+    expect(body).toContain('🔴 Blocker · F9')
+    expect(body).toContain('Open · on the code')
+    /* F9 is anchored, so the body indexes it and does not carry its section. */
+    expect(body).not.toContain('Blocker · F9 · The column policy')
+
+    const threads = page.find('.threads')
+    expect(threads.find('.rd-label').text()).toContain('9 threads')
+    expect(threads.findAll('.thread')).toHaveLength(9)
+    expect(threads.text()).toContain('app/Reporting/ColumnPolicy.php:52')
+    /* And the comment as the author will read it, with the severity before a word of it. */
+    expect(threads.text()).toContain('Blocker · F9')
+  })
+
+  /*
+   * **And a draft with nothing to anchor says so.** Review 17's is written as one block of
+   * markdown — the state the per-finding decisions refuse against, seeded deliberately — so
+   * it has no block about any finding, nothing to index and nothing to hang a comment on.
+   * That is a state rather than an absence, and the card says which it is rather than being
+   * left empty.
+   */
+  it('says when no finding has a line inside the diff', async () => {
+    const page = await open(17)
+    const threads = page.find('.threads')
+
+    expect(threads.find('.rd-label').text()).toContain('0 threads')
+    expect(threads.find('.rd-empty').text())
+      .toContain('has a line inside the diff to hang a comment on')
+    /* One prose block, so the body is what the session wrote and carries no index. */
+    expect(page.find('.preview').text()).not.toContain('Open — needs a decision')
+  })
+
+  /*
    * **One line a finding, and the verb once.** DEV-928: the panel printed every toggle as
    * its own line and the verb twice — "Kept F1 · kept", four times over on the review it was
    * raised from. These three were each edited once, so each is one line; the five-edit case

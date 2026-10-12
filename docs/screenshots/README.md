@@ -22,6 +22,9 @@ cd web && pnpm run e2e:screenshots
 | `fresh-4-rules.png` | Rules with nothing learned yet. |
 | `seeded-6-queue-390.png` | The queue at a phone's width, which DEV-876 asks for. Every cell wraps onto its own line in reading order; `e2e/review-desk.spec.ts` asserts that nothing scrolls sideways. |
 | `server-stopped.png` | `review-desk serve` stopped while a page was open: what is wrong, the command that fixes it, and a retry. |
+| `dev-929-1-index.png`, `-390` | **The body as it will post, after DEV-929.** The session's verdict line and `### Problem fit` with its diagram, then an index of all twelve findings — the glyph and the word, the place in the code as a link, and whether the finding is on the code or in the body — then the three sections for the findings the diff cannot anchor. |
+| `dev-929-2-threads.png`, `-390` | The other half of what posts: nine inline threads, each with the line it sits on and the comment as the author will read it. None of them is in the body. |
+| `dev-929-3-nothing-to-anchor.png` | A draft written as one block of markdown: no blocks to index, and nothing to hang a comment on. The card says which it is rather than being empty. |
 
 The records in the seeded shots are invented, but they are **real rows in a real SQLite
 database**, written by `review-desk review open`, `brief put`, `finding add`, `layer set`

@@ -159,9 +159,14 @@ impl Store {
         //
         // **A body given alongside the blocks is checked, not stored.** The one difference
         // forgiven is trailing newlines, which markdown does not distinguish; anything
-        // else means the caller and the record would disagree about what gets posted, and
-        // this is the check that keeps "the assembled draft of a review with no decisions
-        // is what the agent wrote" true of every write rather than of the happy path.
+        // else means the caller and the record would disagree about what gets posted.
+        //
+        // **Since DEV-929 that check refuses a body an agent wrote whole**, and the
+        // refusal says so: the composition adds an index no caller writes and lifts every
+        // anchored finding out of the body into a thread, so the blocks are the only
+        // honest thing to send. What the check still guarantees is the thing it was added
+        // for — one answer to what gets posted — and `house_style.rs` is where the shape
+        // of that answer lives.
         match &new.sections {
             Some(sections) => {
                 composition::write(&tx, review_id, sections)?;
@@ -172,9 +177,13 @@ impl Store {
                     return Err(StoreError::InvalidValue {
                         field: "body",
                         value: "a body the blocks do not compose to".to_string(),
-                        expected: "the body these blocks compose to, or no body at all. \
-                                   The composition is what gets posted, and two answers to \
-                                   what that is would be one too many"
+                        expected: "the blocks alone, and no body. The composition is what \
+                                   gets posted — and since DEV-929 it is composed in the \
+                                   house style's shape, with an index of the findings and \
+                                   each anchored finding lifted out into a thread, so a \
+                                   body written whole differs from it by more than its \
+                                   words. Two answers to what gets posted would be one too \
+                                   many"
                             .to_string(),
                     });
                 }
@@ -327,6 +336,22 @@ impl Store {
     ///
     /// The note is required: a bare rejection teaches the session nothing, and the
     /// whole point of the record is that it can be learned from.
+    ///
+    /// **An approved draft can be sent back too, and that is the one transition out of a
+    /// sign-off.** It took `ready` alone until DEV-929, and the gap was measured rather
+    /// than argued: a draft the hand-over refuses — one approved before the composition
+    /// changed shape — could not be sent back, could not be rewritten, and the only
+    /// transition left was posting the body the refusal existed to stop. The draft was
+    /// terminal, and a stuck review is worse than the thing the refusal prevents.
+    ///
+    /// So a developer who has signed off and changed their mind, for any reason, has
+    /// somewhere to go while nothing is posted. **The sign-off is taken back with it**:
+    /// the event, the time and whose assent it was are cleared, because the record should
+    /// not hold a sign-off that has been withdrawn. The trail keeps what happened — layer 6
+    /// was finished and is in progress again, carrying the note.
+    ///
+    /// **A posted draft is not sent back.** It is on GitHub; what follows a posted review
+    /// is the next round, not an edit of the last one.
     pub fn send_back_draft(&self, review_id: i64, note: &str) -> Result<Draft> {
         let note = note.trim();
         if note.is_empty() {
@@ -341,25 +366,35 @@ impl Store {
         let draft = self.get_draft(review_id)?;
 
         let already_sent_back = match draft.status {
-            DraftStatus::Ready => false,
+            DraftStatus::Ready | DraftStatus::Approved => false,
             DraftStatus::SentBack if draft.sent_back_note.as_deref() == Some(note) => true,
             found => {
                 return Err(StoreError::DraftStatus {
                     review_id,
                     found,
-                    wanted: "only a draft that is ready can be sent back",
+                    wanted: "a draft that is ready, or one approved and not yet posted. A \
+                             posted review is on GitHub, and what follows it is the next \
+                             round rather than an edit of the last one",
                 })
             }
         };
 
         if !already_sent_back {
             let at = self.now();
+            // **The sign-off is cleared with it.** A draft sent back is not approved, and a
+            // record still holding the event, the time and whose assent it was would say
+            // otherwise — to `draft show`, which a session polls, and to anyone reading the
+            // row. What happened is not lost: the trail has layer 6 finished and then in
+            // progress again, carrying the note.
             self.conn.execute(
                 "UPDATE drafts SET
                      status         = ?2,
                      sent_back_note = ?3,
                      sent_back_at   = ?4,
-                     updated_at     = ?4
+                     updated_at     = ?4,
+                     event          = NULL,
+                     approved_at    = NULL,
+                     approved_by    = NULL
                  WHERE review_id = ?1",
                 params![review_id, DraftStatus::SentBack, note, at],
             )?;

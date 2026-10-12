@@ -24,10 +24,11 @@ use std::collections::{BTreeSet, HashMap};
 
 use rusqlite::{params, OptionalExtension, Transaction, TransactionBehavior};
 
+use crate::entities::composition;
 use crate::error::{Result, StoreError};
 use crate::model::{
-    Carryable, Finding, FindingCarry, FindingInRound, NewRoundCommit, Review, RoundCommit,
-    RoundStatus, RoundStatusCounts, RoundSummary,
+    Carryable, Disposition, DraftStatus, Finding, FindingCarry, FindingInRound, NewRoundCommit,
+    Review, RoundCommit, RoundStatus, RoundStatusCounts, RoundSummary,
 };
 use crate::{normalise, Store};
 
@@ -178,17 +179,45 @@ impl Store {
     ///
     /// For a finding raised in this round — which has nothing to carry it from — and for
     /// changing a carried one without naming its earlier round again.
+    /// **The draft is recomposed with it, under the same two rules the disposition has.**
+    /// What a finding posts turns on two columns — `Finding::is_posted` is the disposition
+    /// *and* the round status — and this is the other one: a finding carried into this round
+    /// and then marked fixed stops being posted, so its block stops composing and, since
+    /// DEV-929, its index row and its thread go with it. Until then this wrote the columns
+    /// and left `drafts.body` as it was.
+    ///
+    /// A change that would alter what posts is refused on an **approved** draft, as a
+    /// decision is; on a posted one it is not, because the harvest's whole job is to record
+    /// what the author did after the review went out, and the body is already history.
     pub fn set_finding_round_status(
         &self,
         review_id: i64,
         seq: i64,
         carry: &FindingCarry,
     ) -> Result<Finding> {
+        let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+
         // Checked first, so an unknown finding is NotFound rather than a no-op update.
-        self.get_finding(review_id, seq)?;
+        let finding = self.get_finding(review_id, seq)?;
+
+        let changes_what_posts = finding.is_posted()
+            || (finding.disposition == Disposition::InDraft && carry.status.is_open());
+
+        let draft = self.find_draft(review_id)?;
+        if let Some(draft) = &draft {
+            if changes_what_posts && draft.status == DraftStatus::Approved {
+                return Err(StoreError::DraftStatus {
+                    review_id,
+                    found: draft.status,
+                    wanted: "a draft that is drafting, ready or sent back. This status would \
+                             change what the review posts, and an approved draft is what the \
+                             session posts under the developer's name",
+                });
+            }
+        }
 
         let at = self.now();
-        self.conn.execute(
+        tx.execute(
             "UPDATE findings SET
                  round_status         = ?3,
                  round_status_by      = ?4,
@@ -207,7 +236,12 @@ impl Store {
             ],
         )?;
 
+        if changes_what_posts && draft.is_some_and(|draft| draft.status.is_writable()) {
+            composition::recompose(&tx, review_id, composition::Lint::Clear, self.now())?;
+        }
+
         self.mark_review_active(review_id)?;
+        tx.commit()?;
         self.get_finding(review_id, seq)
     }
 

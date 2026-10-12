@@ -41,6 +41,7 @@ pub use crate::entities::brief_structure::{
 };
 pub use crate::entities::composition::finding_heading;
 pub use crate::entities::decision::{TicketedAndApproved, DEVELOPER_DECISIONS};
+pub use crate::entities::house_style::thread_marker;
 pub use crate::entities::provenance::{
     AcceptanceCriterion, CriterionStatus, DescriptionLintResult, DescriptionLintStatus, FileChange,
     FileCheck, NewAcceptanceCriterion, NewDescriptionLintResult, NewFileChange, NewReviewSource,
@@ -50,15 +51,16 @@ pub use crate::error::{Result, StoreError};
 pub use crate::migrations::newest_version;
 pub use crate::model::{
     now, Actor, AuthorResponse, Brief, BriefOption, Carryable, DecidedBy, Decision, DecisionMade,
-    Disposition, Draft, DraftLint, DraftSection, DraftSectionKind, DraftStatus, Finding,
-    FindingCarry, FindingDecision, FindingHunk, FindingInRound, FindingRef, FullReview, HunkLine,
-    HunkLineMarker, LayerFact, NewBrief, NewDraft, NewDraftSection, NewFinding, NewLayerFact,
-    NewOutcome, NewReview, NewRoundCommit, NewRule, NitTicket, NitTicketStatus, OpenedReview,
-    Outcome, OutcomeKind, PostedReview, PrState, RepoSummary, Review, ReviewAtLayer, ReviewAtStep,
-    ReviewEvent, ReviewFacts, ReviewLayer, ReviewLayerName, ReviewLayerRun, ReviewLayerState,
-    ReviewLinks, ReviewStep, ReviewTimings, RoundCommit, RoundStatus, RoundStatusCounts,
-    RoundSummary, Rule, RuleCounts, RuleException, RuleScope, RuleStage, RulesSummary, Severity,
-    SignOff, Timestamp, Verification, WorkFilter, WorkItem, WorkKind, ACTIVE_RULES_CAP,
+    Disposition, Draft, DraftHandover, DraftLint, DraftSection, DraftSectionKind, DraftStatus,
+    DraftThread, Finding, FindingAnchor, FindingCarry, FindingDecision, FindingHunk,
+    FindingInRound, FindingRef, FullReview, HunkLine, HunkLineMarker, LayerFact, NewBrief,
+    NewDraft, NewDraftSection, NewFinding, NewLayerFact, NewOutcome, NewReview, NewRoundCommit,
+    NewRule, NitTicket, NitTicketStatus, OpenedReview, Outcome, OutcomeKind, PostedReview, PrState,
+    RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewEvent, ReviewFacts, ReviewLayer,
+    ReviewLayerName, ReviewLayerRun, ReviewLayerState, ReviewLinks, ReviewStep, ReviewTimings,
+    RoundCommit, RoundStatus, RoundStatusCounts, RoundSummary, Rule, RuleCounts, RuleException,
+    RuleScope, RuleStage, RulesSummary, Severity, SignOff, Timestamp, Verification, WorkFilter,
+    WorkItem, WorkKind, ACTIVE_RULES_CAP,
 };
 pub use crate::path::{default_db_path, resolve_db_path, DB_ENV_VAR};
 

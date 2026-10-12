@@ -6,9 +6,9 @@
 
 use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior};
 
-use crate::entities::finding_evidence;
+use crate::entities::{composition, finding_evidence};
 use crate::error::{Result, StoreError};
-use crate::model::{Disposition, Finding, NewFinding};
+use crate::model::{Disposition, DraftStatus, Finding, NewFinding};
 use crate::{is_foreign_key_violation, Store};
 
 pub(super) const COLUMNS: &str = "review_id, seq, lens, severity, file, line, claim, title, \
@@ -210,6 +210,24 @@ impl Store {
     }
 
     /// Change a finding's disposition, with the reason it changed.
+    ///
+    /// **The body is recomposed with it.** Moving a finding between the draft, the held-back
+    /// list and the suppressed one changes what the review posts — the finding's block stops
+    /// composing, and since DEV-929 its index row and its thread go with it. Until then this
+    /// wrote the column and left `drafts.body` as it was, so the stored body raised a finding
+    /// the record said was not in the draft; the threads are composed from the record at read
+    /// time, so the two would now disagree with each other as well.
+    ///
+    /// **A move that changes what posts is refused once the draft is signed off, and a move
+    /// that cannot is not.** The refusal is the one a decision earns, and `decision.rs` has
+    /// the argument: an approved draft is what the review session posts, and it does not move
+    /// underneath it. But a held-back nit moved to suppressed after the sign-off changes
+    /// nothing about the body — neither disposition posts — and refusing it would stop the
+    /// developer tidying the list they are not posting. So what is checked is the *effect*:
+    /// the finding posts now, or it would after the move.
+    ///
+    /// A review with no draft is the ordinary case of a session holding a finding back before
+    /// it has written one, and nothing is recomposed there.
     pub fn set_finding_disposition(
         &self,
         review_id: i64,
@@ -217,16 +235,53 @@ impl Store {
         disposition: Disposition,
         reason: Option<String>,
     ) -> Result<Finding> {
-        // Checked first, so an unknown finding is NotFound rather than a no-op update.
-        self.get_finding(review_id, seq)?;
+        let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
 
-        self.conn.execute(
+        // Checked first, so an unknown finding is NotFound rather than a no-op update.
+        let finding = self.get_finding(review_id, seq)?;
+
+        // What posts is the disposition **and** the round status, which is `is_posted`. The
+        // move changes the first of those, so the question is whether either side of it is a
+        // finding the body carries.
+        let changes_what_posts = finding.is_posted()
+            || (disposition == Disposition::InDraft && finding.round_status.is_open());
+
+        let draft = self.find_draft(review_id)?;
+        if let Some(draft) = &draft {
+            // **Approved, and not posted.** What the refusal protects is a body the session
+            // is about to post: once it is on GitHub the body is history, the record is
+            // allowed to move on, and the harvest does exactly that.
+            if changes_what_posts && draft.status == DraftStatus::Approved {
+                return Err(StoreError::DraftStatus {
+                    review_id,
+                    found: draft.status,
+                    wanted: "a draft that is drafting, ready or sent back. This move would \
+                             change what the review posts, and an approved draft is what the \
+                             session posts under the developer's name",
+                });
+            }
+        }
+
+        tx.execute(
             "UPDATE findings SET disposition = ?3, disposition_reason = ?4
              WHERE review_id = ?1 AND seq = ?2",
             params![review_id, seq, disposition, reason],
         )?;
 
+        // **Recomposed when the move changes what posts, and not otherwise.** Two reasons,
+        // and the second is the one that is easy to miss. On an approved draft the move that
+        // reaches here changes nothing about the body, and recomposing would rewrite the
+        // characters the developer signed off for no reason at all. On a draft still being
+        // written, a recompose *clears the lint* — which is right when the body changed and
+        // wrong when it did not: a held-back finding moved to suppressed composes the same
+        // body, and clearing the result would make the record say nobody had checked words
+        // that had just been checked.
+        if changes_what_posts && draft.is_some_and(|draft| draft.status.is_writable()) {
+            composition::recompose(&tx, review_id, composition::Lint::Clear, self.now())?;
+        }
+
         self.mark_review_active(review_id)?;
+        tx.commit()?;
         self.get_finding(review_id, seq)
     }
 

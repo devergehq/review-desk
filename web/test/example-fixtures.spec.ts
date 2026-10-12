@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest'
 import drafts from '../app/data/drafts.json'
 import reviews from '../app/data/reviews.json'
 
+import { composeBody, composeThreads } from '../app/utils/houseStyle'
+
 import type { DraftDetail, ReviewDetail } from '../app/types/desk'
 
 /*
@@ -65,19 +67,27 @@ describe('the invented example and the fixtures', () => {
       const where = `the draft of review ${detail.draft.review_id}`
       expect(Array.isArray(detail.sections), `${where} carries its blocks`).toBe(true)
 
-      const composed = detail.sections
-        .filter(section => section.posted)
-        .map(section =>
-          section.kind === 'prose'
-            ? section.text
-            : section.text === ''
-              ? section.heading
-              : `${section.heading}\n\n${section.text}`)
-        .join('\n\n')
+      /*
+       * **Composed, not joined.** Since DEV-929 the body is the house style's shape — an
+       * index of the posted findings, and each anchored finding lifted out into a thread —
+       * so this asserts that the fixture's body and threads are what its own blocks
+       * compose to, through the same module sample mode serves them with.
+       *
+       * The composition itself is held to the binary's elsewhere: review 41's fixture is
+       * the contract example, and that example's body came out of the store.
+       */
+      const owner = (reviews as unknown as ReviewDetail[])
+        .find(one => one.review.id === detail.draft.review_id)
+      expect(owner, `${where} has its review beside it`).toBeDefined()
+
       expect(
         detail.draft.body,
         `${where} composes to the body it serves`,
-      ).toBe(composed === '' ? '' : `${composed}\n`)
+      ).toBe(composeBody(owner!.review, detail.sections, owner!.findings))
+      expect(
+        detail.threads,
+        `${where} hands over the threads its blocks compose to`,
+      ).toEqual(composeThreads(detail.sections, owner!.findings))
     }
   })
 

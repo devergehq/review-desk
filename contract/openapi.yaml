@@ -301,6 +301,16 @@ paths:
       description: |
         A finding is never deleted. Holding it back or suppressing it records a reason,
         which is what lets a later rule proposal cite it.
+
+        **The draft is recomposed with it**, because what the review posts changes: the
+        finding's block stops composing, and its index row and its inline thread go with it.
+
+        **A move that changes what posts is refused once the draft is approved** — `409`,
+        as a decision is, because an approved draft is what the review session posts under
+        the developer's name and it does not move underneath them. A move that cannot change
+        it is not refused: a held-back finding moved to suppressed after the sign-off alters
+        no character of the body, and the developer is entitled to tidy the list they are
+        not posting.
       requestBody:
         required: true
         content:
@@ -316,6 +326,12 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            The move would change what the review posts and the draft is already approved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '500':
           $ref: '#/components/responses/StoreUnavailable'
 
@@ -544,6 +560,19 @@ paths:
       description: |
         Behind "Send back with a note". Sets the status to `sent_back` and stores the
         note, which is the instruction the session reworks against.
+
+        **A draft that is approved and not yet posted can be sent back too, and doing so
+        takes the sign-off back**: the event, the time and whose assent it was are cleared,
+        because the record should not hold a sign-off that has been withdrawn. It is the
+        one transition out of `approved`, and it is the developer's — nothing here approves
+        or posts anything, and a session still cannot reach either.
+
+        Without it a draft the hand-over refuses had nowhere to go: it could not be sent
+        back, could not be rewritten, and the only transition left was posting the body the
+        refusal existed to stop. Measured by the DEV-929 worker half.
+
+        A **posted** draft is not sent back. It is on GitHub, and what follows it is the
+        next round rather than an edit of the last one.
       requestBody:
         required: true
         content:
@@ -560,7 +589,9 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: The draft is not in a state that can be sent back.
+          description: |
+            The draft is drafting or posted: only one that is ready, or approved and not
+            yet posted, can be sent back.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -2648,6 +2679,92 @@ components:
             `accepted`, `withdrawn` or `ticketed` is not posted as an open finding**, and
             what the round found about it belongs in a block of prose.
 
+    DraftThread:
+      type: object
+      additionalProperties: false
+      required: [finding_seq, finding_key, severity, title, path, line, side, body]
+      description: |
+        One inline thread the draft hands over: a finding with a line inside the diff,
+        composed from its block and ready to post on that line.
+
+        **A finding is either a thread or a section of the body, never both.** It is a
+        thread when the record can anchor it — the finding names a file, it names the line
+        its comment attaches to, it carries a hunk, and that hunk is one `git diff -U3`
+        drew and draws that line. A hunk whose every entry is `unchanged` came from
+        `git show` and is a line the change does not touch, so such a finding keeps its
+        section in the body. Either way it has one row in the body's index, and **that row
+        links to the line, which is the line the thread sits on**.
+
+        **Review Desk posts nothing.** The session puts these in the `comments` array of
+        its one `POST /repos/{owner}/{repo}/pulls/{number}/reviews` call, with the body
+        beside them, which is what keeps the review count at one. They are handed over only
+        on a draft this API reports `approved`.
+      properties:
+        finding_seq:
+          type: integer
+          format: int64
+          minimum: 1
+          description: |
+            The finding, by the number that is its identity across rounds. What
+            `review-desk finding link` needs once GitHub has answered with a comment id.
+        finding_key: { type: string, pattern: '^F[0-9]+$' }
+        severity:
+          allOf:
+            - $ref: '#/components/schemas/Severity'
+          description: |
+            The finding's live severity, which picked the alert the comment sits in:
+            `blocker` takes `[!CAUTION]`, `should` takes `[!WARNING]`, `question` takes
+            `[!NOTE]`, and `nit` takes no alert at all — the lighter shape, because four
+            labels on a one-line nit is why nits read as heavy as blockers.
+        title:
+          type: string
+          minLength: 1
+          description: The heading's title, as the index row carries it too.
+        path:
+          type: string
+          minLength: 1
+          description: |
+            The file the comment is anchored on. **The hunk's file, not the finding's**: the
+            line is numbered from the hunk's own `start_line`, and a finding may point at
+            one file and show the code of another.
+        line:
+          type: integer
+          format: int64
+          minimum: 1
+          description: |
+            The line the comment sits on, **in the new file's numbering** — the right-hand
+            side of the diff.
+        side:
+          type: string
+          const: RIGHT
+          description: |
+            Which side of the diff, and it is always `RIGHT`. A removed line carries no
+            number in this record, so a flagged line is always a line still in the file;
+            where a finding is about a line the change deleted, the line to flag is the one
+            that replaced it, and the comment says the code at fault is gone. Nothing here
+            can ask GitHub for `LEFT` or for the old file's numbering.
+        body:
+          type: string
+          minLength: 1
+          description: |
+            The comment as it will post: the block's text, carried through unaltered inside
+            the alert, under a title line composed from the record. The title line is the
+            severity and the finding's number in bold, an em dash, the title, and where the
+            finding stands as a code span — `Open` or `Still open`.
+
+            **It ends with an HTML comment naming the finding** — `<!-- review-desk:F3 -->`
+            — and that line is load-bearing. GitHub's review call answers with the review
+            and not with the comments it made, so a session has to read them back and match
+            each one to its finding before it can record which comment a finding was posted
+            as; and the obvious key, the path and the line, is not unique, because a Should
+            and a Nit on the same line is ordinary. An HTML comment is invisible on GitHub
+            and comes back verbatim in the comment's `body`.
+
+            The `in diff` / `pre-existing` tag stays where the session wrote it, on the
+            block's first line, because it is prose no part of this record carries. A session
+            that signs its comments appends its own `agent:` marker after the line above;
+            Review Desk composes none.
+
     DraftEdit:
       type: object
       additionalProperties: false
@@ -2690,6 +2807,17 @@ components:
           description: |
             The review body as GitHub-flavoured markdown, posted verbatim. May be empty
             while the status is `drafting`.
+
+            **Composed from the blocks, in the house style's shape.** The session's prose
+            blocks are carried through character for character — the verdict line, the
+            `**Method**` line, `### Problem fit` with its diagram, the folded provenance —
+            and between them sits an index of every posted finding: the glyph and the
+            severity, the place in the code, the title, and where it stands. A finding with
+            a line inside the diff is a row and a `DraftThread`, not a section; a finding
+            with nowhere to anchor is a row and a section. Each row links to the line the
+            finding is about at the head commit reviewed, because a review body resolves no
+            anchor of its own and the thread it would otherwise link to does not exist until
+            the moment of posting.
         status: { $ref: '#/components/schemas/DraftStatus' }
         event:
           oneOf:
@@ -2712,7 +2840,8 @@ components:
     DraftDetail:
       type: object
       additionalProperties: false
-      required: [draft, review, lint, sections, edits, held_back, nit_ticket]
+      required:
+        [draft, review, lint, sections, threads, body_is_stale, edits, held_back, nit_ticket]
       description: Everything the Draft preview screen shows.
       properties:
         draft: { $ref: '#/components/schemas/Draft' }
@@ -2737,6 +2866,37 @@ components:
           description: |
             The blocks the body is composed of, in order — including the ones that do not
             post. Empty on a draft with no body at all.
+        threads:
+          type: array
+          items: { $ref: '#/components/schemas/DraftThread' }
+          description: |
+            The inline threads this draft hands over, most serious first then by number —
+            one per finding with a line inside the diff. Empty when no finding can be
+            anchored, which is a review whose findings are all corrections, all outside the
+            change, or all without a hunk.
+
+            **The body does not carry these.** An anchored finding is a row in the body's
+            index and a comment on the code, so the screen that exists so nothing is posted
+            unread has to draw both. They change together: cutting a finding takes its row
+            and its thread.
+        body_is_stale:
+          type: boolean
+          description: |
+            Whether the stored body is no longer what the draft's blocks compose to — the
+            one state the hand-over cannot serve.
+
+            **False on every draft this API wrote**: each write composes the body from the
+            blocks in the same transaction. What it catches is a draft approved before the
+            composition changed shape, which an upgrade leaves behind and which would post
+            each anchored finding twice, once as a section and once as a comment. The way
+            out is the developer's: take the sign-off back by sending the draft back with a
+            note, and the session writes it again.
+
+            **On a `posted` draft it can read true without anything being wrong.** The body
+            that was posted is the stored one, and the record is allowed to move on after
+            the post — the harvest reads outcomes back and a finding's round status changes
+            with them. What the flag answers is "could this be handed over as it stands",
+            and after the post there is nothing left to hand over.
         edits:
           type: array
           items: { $ref: '#/components/schemas/DraftEdit' }

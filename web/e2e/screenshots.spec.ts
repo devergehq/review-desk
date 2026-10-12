@@ -266,6 +266,44 @@ test.describe('the code review page and the draft', () => {
 })
 
 /*
+ * **What GitHub receives, in two pictures at each width.**
+ *
+ * DEV-929: the review on tc-portal#9585 went out as 309 lines with no index and two threads.
+ * The thing that changed is the shape of what posts, so the pictures are of the two halves
+ * of the preview — the body, where the index now sits under the verdict line and
+ * `### Problem fit`, and the threads, which are not in the body at all.
+ *
+ * The real-length example is twelve posted findings with nine of them anchored, so the index
+ * is at a length a reader has to scan rather than read.
+ */
+test.describe('the posted shape, after DEV-929', () => {
+  test('the index and the threads, at both widths', async ({ page }) => {
+    for (const [width, suffix] of [[1440, ''], [390, '-390']] as const) {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
+
+      await page.goto(`${seeded}reviews/${structuredReviewId}/draft`)
+      await expect(page.locator('h1')).toBeVisible()
+      await expect(page.locator('.preview table')).toBeVisible()
+      await shot(page, `dev-929-1-index${suffix}`)
+
+      /* The threads card, scrolled to, so the picture is of the card and not of the body. */
+      await page.locator('.threads').scrollIntoViewIfNeeded()
+      await shot(page, `dev-929-2-threads${suffix}`)
+    }
+    await page.setViewportSize({ width: 1440, height: 900 })
+
+    /*
+     * And a draft with nothing to anchor, which is a state rather than an absence: the
+     * seeded review's draft is one block of markdown, so it has no block about any finding,
+     * nothing to index and nothing to hang a comment on. The card says which it is.
+     */
+    await page.goto(`${seeded}reviews/${reviewId}/draft`)
+    await expect(page.locator('.threads .rd-empty')).toBeVisible()
+    await shot(page, 'dev-929-3-nothing-to-anchor')
+  })
+})
+
+/*
  * **"What was built" as a table of rows, which is DEV-919.**
  *
  * Three pictures, because the thing that changed is what a reader does with the section

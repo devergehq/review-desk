@@ -11,6 +11,7 @@ pub(crate) mod draft;
 mod finding;
 mod finding_evidence;
 mod harvest;
+pub(crate) mod house_style;
 pub(crate) mod inbox;
 mod layer;
 mod outcome;

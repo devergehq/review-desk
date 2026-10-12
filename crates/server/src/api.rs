@@ -699,11 +699,28 @@ impl Api {
             .map(wire::draft_section)
             .collect();
 
+        // **The threads, beside the body they are not in.** A finding GitHub can anchor is
+        // a row in the body's index and a comment on the code, so the page cannot show what
+        // posts from the body alone — DEV-929. They are composed from the same blocks, so
+        // cutting a finding takes its row and its thread together.
+        let threads: Vec<Value> = self
+            .records
+            .draft_threads(review_id)?
+            .iter()
+            .map(wire::draft_thread)
+            .collect();
+
         Ok(json!({
             "draft": wire::draft(draft),
             "review": wire::review(&review),
             "lint": wire::draft_lint(&draft.lint),
             "sections": sections,
+            "threads": threads,
+            // **The one state the hand-over cannot serve**, so the screen can say why and
+            // offer the way out rather than leaving the developer to find that the session
+            // is stuck. False on every draft this build wrote; true of one approved before
+            // the composition changed shape.
+            "body_is_stale": self.records.draft_body_is_stale(review_id)?,
             "edits": edits,
             "held_back": held_back,
             "nit_ticket": wire::nit_ticket(&ticket),
@@ -846,7 +863,20 @@ impl Api {
         })?;
 
         self.records.review(review_id)?;
-        self.draft_must_be(review_id, DraftStatus::Ready, "sent back")?;
+
+        // **Ready, or approved and not yet posted.** Taking a sign-off back is the one
+        // transition out of `approved`, and without it a draft the hand-over refuses has
+        // nowhere to go — measured by the DEV-929 worker half, which found such a draft
+        // could not be sent back, rewritten or posted. Still the developer's act, through
+        // the same route and with the same note: nothing here approves or posts anything.
+        let draft = self.records.draft(review_id)?;
+        if !matches!(draft.status, DraftStatus::Ready | DraftStatus::Approved) {
+            return Err(ApiError::conflict(format!(
+                "this draft is {} and only a draft that is ready, or one approved and not \
+                 yet posted, can be sent back",
+                draft.status
+            )));
+        }
 
         let sent_back = self.records.send_back_draft(review_id, &note)?;
         Ok((200, self.draft_detail(&sent_back)?))

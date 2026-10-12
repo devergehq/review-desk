@@ -24,7 +24,8 @@ use std::path::PathBuf;
 
 use clap::Subcommand;
 use review_desk_store::{
-    Draft, DraftLint, DraftSectionKind, DraftStatus, NewDraft, NewDraftSection, Store,
+    Draft, DraftHandover, DraftLint, DraftSectionKind, DraftStatus, NewDraft, NewDraftSection,
+    Store,
 };
 use serde_json::json;
 
@@ -93,6 +94,38 @@ pub enum DraftCommand {
     /// command line can move a draft to approved; the developer does that in the
     /// dashboard.
     Show {
+        /// The review's id.
+        #[arg(long, value_name = "ID")]
+        review: i64,
+    },
+
+    /// Print the body and the inline threads to post, for a draft the developer approved.
+    ///
+    /// **This is the one route from Review Desk to a pull request, and it opens only
+    /// after the sign-off.** Refused while the draft is drafting, ready or sent back; the
+    /// store holds that line, not this command. It posts nothing — Review Desk never
+    /// writes to GitHub — and what it prints is what the session posts, in one call.
+    ///
+    /// `body` is the approved body, which is `draft show`'s body: the house style's shape,
+    /// composed from the blocks. `threads` is one entry per finding with a line inside the
+    /// diff, each with the file and the line it sits on, the side — always `RIGHT`, in the
+    /// new file's numbering, because a removed line carries no number in this record — and
+    /// the comment as it will post.
+    ///
+    /// The threads go in the `comments` array of the **same** `pulls/<n>/reviews` call as
+    /// the body, because a thread added afterwards creates a second review. The pipeline is
+    /// `draft handover --review <id> --json | jq '{commit_id: .review.head_sha, event:
+    /// (.draft.event | ascii_upcase), body: .body, comments: [.threads[] | {path, line,
+    /// side, body}]}'` into `gh api repos/OWNER/REPO/pulls/<n>/reviews --input -`.
+    ///
+    /// **Match each comment GitHub gives back by the marker, not by the line.** Every
+    /// composed comment ends with an HTML comment naming the finding — `review-desk:F9` —
+    /// which GitHub does not draw and does return verbatim in the comment's body. The path
+    /// and the line are not a key: a Should and a Nit on one line is ordinary, and pairing
+    /// on them links the wrong comment to the wrong finding with nothing to show for it.
+    /// `threads[].finding_key` is the same string, for the `review-desk finding link` that
+    /// follows.
+    Handover {
         /// The review's id.
         #[arg(long, value_name = "ID")]
         review: i64,
@@ -185,6 +218,33 @@ pub fn run(command: &DraftCommand) -> Result<Report> {
             Ok(Report::new(json!({ "draft": draft }), plain))
         }
 
+        DraftCommand::Handover { review } => {
+            let store = Store::open_default()?;
+            let handover = store.draft_handover(*review)?;
+
+            Ok(Report::new(
+                json!({
+                    // The review's own fields the posting call needs, and not the whole
+                    // record: a hand-over is read by a shell pipeline, and what it names is
+                    // what `gh` is about to be given.
+                    "review": {
+                        "id": handover.review.id,
+                        "repo": handover.review.repo,
+                        "pr": handover.review.pr,
+                        "head_sha": handover.review.head_sha,
+                    },
+                    "draft": {
+                        "status": handover.draft.status,
+                        "event": handover.draft.event,
+                        "approved_at": handover.draft.approved_at,
+                    },
+                    "body": handover.draft.body,
+                    "threads": handover.threads,
+                }),
+                handover_lines(&handover),
+            ))
+        }
+
         DraftCommand::Posted {
             review,
             github_review,
@@ -233,6 +293,42 @@ fn show_lines(draft: &Draft) -> String {
 
     lines.push(String::new());
     lines.push(draft.body.clone());
+    lines.join("\n")
+}
+
+/// The hand-over as a person reads it: where it goes, what sits on which line, then the
+/// body.
+///
+/// The threads first and the body last, for the reason `show_lines` puts the status first:
+/// the body is long, and what a reader is checking here is that each comment is on the line
+/// they expect. The JSON is what a session pipes into `gh`.
+fn handover_lines(handover: &DraftHandover) -> String {
+    let mut lines = vec![format!(
+        "draft of review {} is {}: post on {}#{} at {} as {}",
+        handover.review.id,
+        handover.draft.status,
+        handover.review.repo,
+        handover.review.pr,
+        handover.review.head_sha,
+        handover
+            .draft
+            .event
+            .map(|event| event.to_string())
+            .unwrap_or_else(|| "no event".to_string()),
+    )];
+
+    if handover.threads.is_empty() {
+        lines.push("  no thread: no finding in this draft has a line inside the diff".to_string());
+    }
+    for thread in &handover.threads {
+        lines.push(format!(
+            "  F{} {} on {}:{} ({})",
+            thread.finding_seq, thread.severity, thread.path, thread.line, thread.side
+        ));
+    }
+
+    lines.push(String::new());
+    lines.push(handover.draft.body.clone());
     lines.join("\n")
 }
 

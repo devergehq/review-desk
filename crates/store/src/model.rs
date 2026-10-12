@@ -135,6 +135,39 @@ impl Severity {
             Severity::Question => "Question",
         }
     }
+
+    /// The glyph the house style puts before that word in what posts.
+    ///
+    /// **The one place these four live, and they belong to the posted review rather than
+    /// to a screen.** They are `house-style.md`'s own vocabulary table — 🔴 Blocker,
+    /// 🟠 Should, ⚪ Nit, 🔵 Question — and the same file's "Casing and formatting" rule is
+    /// that the *word* carries the severity. So a glyph is never on its own: the index row
+    /// the posted body carries asks for both, and the pages grade a finding with
+    /// `SeverityTag` and not with this.
+    pub fn glyph(self) -> &'static str {
+        match self {
+            Severity::Blocker => "🔴",
+            Severity::Should => "🟠",
+            Severity::Nit => "⚪",
+            Severity::Question => "🔵",
+        }
+    }
+
+    /// Most serious first: blocker, should, question, nit.
+    ///
+    /// **Question sits above nit**, which is the order the dashboard already sorts by —
+    /// `web/app/utils/findings.ts`'s `SEVERITY_ORDER` — and not the order this enum is
+    /// declared in. A question is something the reviewer could not answer and the author
+    /// can; a nit is something neither of them has to do anything about. The index of the
+    /// posted body is in this order, so a reader meets the review's worst news first.
+    pub fn rank(self) -> u8 {
+        match self {
+            Severity::Blocker => 0,
+            Severity::Should => 1,
+            Severity::Question => 2,
+            Severity::Nit => 3,
+        }
+    }
 }
 
 string_enum! {
@@ -880,6 +913,48 @@ impl FindingHunk {
             .iter()
             .any(|(number, _)| *number == Some(line))
     }
+
+    /// Whether this hunk is one the pull request's diff draws.
+    ///
+    /// **This is where the record answers "is the line inside the diff", and it is a
+    /// reading of what is already stored rather than a field of its own.** The worker's
+    /// brief has three branches and no fourth: a line `git diff -U3` draws is stored with
+    /// its `added`, `removed` and `unchanged` markers; a line the change does not touch is
+    /// read from `git show` and stored with **every** entry `unchanged`; and a finding with
+    /// no file or no line stores no hunk at all. `git diff` never prints a hunk with no
+    /// `+` and no `-` line in it, so a hunk carrying one of those markers came from the
+    /// diff and a hunk carrying none did not.
+    ///
+    /// That is also the safe direction to be wrong in. GitHub refuses a review whose
+    /// comment is anchored outside the diff, and it refuses the whole call — so a hunk
+    /// this reads as not drawn posts its finding as a section in the body, which always
+    /// renders, while the other mistake would lose the review.
+    pub fn drawn_by_the_diff(&self) -> bool {
+        self.lines
+            .iter()
+            .any(|line| line.marker != HunkLineMarker::Unchanged)
+    }
+}
+
+/// Where GitHub can hang this finding's inline comment.
+///
+/// The path is the **hunk's** file rather than the finding's: `flagged_line` is a line of
+/// the hunk, numbered from the hunk's own `start_line`, and a finding is allowed to point
+/// at one file and show the code of another.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FindingAnchor {
+    pub path: String,
+    pub line: i64,
+}
+
+impl FindingAnchor {
+    /// Which side of the diff the comment sits on, and it is always this one.
+    ///
+    /// A removed line carries no number in this record — [`FindingHunk::numbered_lines`] —
+    /// so a flagged line is always a line still in the file, which is GitHub's right-hand
+    /// side. The worker's brief says the same thing from the other end: where a finding is
+    /// about a line the change deleted, the line to flag is the one that replaced it.
+    pub const SIDE: &'static str = "RIGHT";
 }
 
 /// One thing the review found.
@@ -995,6 +1070,33 @@ impl Finding {
     /// [`crate::DraftSection::posted`] is this function read through a block.
     pub fn is_posted(&self) -> bool {
         self.disposition == Disposition::InDraft && self.round_status.is_open()
+    }
+
+    /// Where this finding's inline thread goes, or `None` when there is nowhere to hang
+    /// one.
+    ///
+    /// **Four facts, all of them already on the record, and no new grading of anything.**
+    /// The finding names a file; it names the line its comment attaches to; it carries a
+    /// hunk; and that hunk is one the diff drew — [`FindingHunk::drawn_by_the_diff`] — and
+    /// draws the flagged line. A finding that answers all four posts as a thread on the
+    /// code; a finding that misses any of them keeps its section in the body, which is
+    /// what the house style asks for a finding with nothing in the diff to anchor to.
+    ///
+    /// The file is required even though the hunk carries one of its own, because "a
+    /// finding with no file" is the case the issue names: a correction to the pull
+    /// request's description has no code to sit on, whatever else is stored beside it.
+    pub fn anchor(&self) -> Option<FindingAnchor> {
+        self.file.as_ref()?;
+        let line = self.flagged_line?;
+        let hunk = self.hunk.as_ref()?;
+        if !hunk.drawn_by_the_diff() || !hunk.draws_line(line) {
+            return None;
+        }
+
+        Some(FindingAnchor {
+            path: hunk.file.clone(),
+            line,
+        })
     }
 }
 
@@ -1767,6 +1869,71 @@ impl DraftSection {
     pub fn rewritten(&self) -> bool {
         self.title != self.agent_title || self.text != self.agent_text
     }
+}
+
+/// One inline thread the draft hands over, for the session to post on the code.
+///
+/// **Composed from the finding's block, and derived rather than stored.** The body is the
+/// block's text inside the alert the severity picks; the place is the hunk's file and the
+/// flagged line. Review Desk hands these over and posts nothing: the session puts them in
+/// the `comments` array of the one `pulls/<n>/reviews` call, which is what keeps the review
+/// count at one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftThread {
+    /// The finding this thread is, by its number — the id the index row and the record
+    /// share, and what `review-desk finding link` needs once GitHub has answered.
+    pub finding_seq: i64,
+    /// The same number as the key a person quotes: `F3`.
+    ///
+    /// **Served rather than built by the caller**, because it is also the string the
+    /// comment's own marker carries, and two places that format it are two places it can
+    /// drift. See [`DraftThread::body`].
+    pub finding_key: String,
+    /// The finding's live severity, which picked the alert.
+    pub severity: Severity,
+    /// The heading's title, as the index row carries it too.
+    pub title: String,
+    /// The file the comment is anchored on.
+    ///
+    /// **The hunk's file, not the finding's.** `line` is a line of the hunk, numbered from
+    /// the hunk's own `start_line`, and a finding may point at one file and show the code of
+    /// another.
+    pub path: String,
+    /// The line the comment sits on, in the new file's numbering.
+    pub line: i64,
+    /// Which side of the diff, and it is always `RIGHT` — see [`FindingAnchor::SIDE`].
+    pub side: String,
+    /// The comment as it will post, GitHub-flavoured markdown.
+    ///
+    /// **It ends with `<!-- review-desk:F3 -->`, and that line is load-bearing.** GitHub's
+    /// `pulls/<n>/reviews` call answers with the review and not with the comments it made,
+    /// so a session has to read them back and match each one to its finding before
+    /// `review-desk finding link` can be called — and the obvious key, the path and the
+    /// line, is not unique: a Should and a Nit on the same line is ordinary, and pairing on
+    /// it attaches the wrong comment to the wrong finding with nothing to show for it.
+    /// Measured by the DEV-929 worker half. An HTML comment is invisible on GitHub and
+    /// comes back verbatim in the comment's `body`, so the join is carried by the thing
+    /// being joined.
+    ///
+    /// A session that signs its comments appends its `agent:` marker **after** this line.
+    pub body: String,
+}
+
+/// Everything the review session needs to post the draft the developer signed off.
+///
+/// **One read, because posting is one call.** The house style puts each finding on the line
+/// it concerns and the body is an index of them, and GitHub makes both in a single
+/// `pulls/<n>/reviews` call — a thread added afterwards creates a second review, measured on
+/// DEV-865's acceptance run. So the body and the threads are handed over together or the
+/// session has to guess which it may post.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftHandover {
+    /// The review, for the repository, the pull request and the head commit to post at.
+    pub review: Review,
+    /// The draft, for the body to post and the event the developer chose.
+    pub draft: Draft,
+    /// The threads, most serious first. Empty when no finding can be anchored.
+    pub threads: Vec<DraftThread>,
 }
 
 /// A block to write, in the order given.

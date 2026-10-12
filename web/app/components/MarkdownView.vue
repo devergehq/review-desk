@@ -159,7 +159,20 @@ function render(markdown: string): string {
   color: var(--rd-ink-dim);
 }
 
+/*
+ * **GitHub's own declaration for a table, so the preview is faithful at a phone's width.**
+ *
+ * `.markdown-body table` is `display: block; width: max-content; max-width: 100%; overflow:
+ * auto` — a table GitHub cannot fit is *scrolled*, not reflowed. Copying it does two things
+ * at once: the index the posted body carries is drawn here the way the author will see it,
+ * and a four-column table at 390 pixels scrolls inside its own card instead of taking the
+ * page sideways. DEV-929, where the body gained the index table.
+ */
 .rd-md :deep(table) {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow: auto;
   border-collapse: collapse;
   font-size: 14px;
 }

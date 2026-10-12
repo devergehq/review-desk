@@ -169,6 +169,14 @@ export type Draft = Schema['Draft']
  */
 export type DraftSection = Schema['DraftSection']
 export type DraftSectionKind = Schema['DraftSectionKind']
+/**
+ * One inline thread the draft hands over: a finding with a line inside the diff.
+ *
+ * **Not in the body**, which is the whole reason the page needs these as well. A finding
+ * GitHub can anchor is a row in the body's index and a comment on the code, so a preview
+ * drawn from the body alone would not be showing what posts.
+ */
+export type DraftThread = Schema['DraftThread']
 export type DraftLint = Schema['DraftLint']
 export type DraftEdit = Schema['DraftEdit']
 export type HeldBackFinding = Schema['HeldBackFinding']

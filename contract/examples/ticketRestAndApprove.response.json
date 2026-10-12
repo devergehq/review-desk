@@ -100,6 +100,8 @@
         "posted": true
       }
     ],
+    "threads": [],
+    "body_is_stale": false,
     "edits": [
       {
         "finding_seq": 6,

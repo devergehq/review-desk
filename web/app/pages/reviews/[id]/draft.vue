@@ -125,6 +125,17 @@ function decided(data: DraftDetail): boolean {
   return data.draft.status !== 'ready'
 }
 
+/**
+ * Whether the draft can be sent back: one that is ready, or one signed off and not posted.
+ *
+ * **Not `!decided`**, which is what it was. Taking a sign-off back is the one way out of
+ * `approved`, and it is the developer's — the session has no route to it, as it has none to
+ * approving. A posted review is on GitHub and what follows it is the next round.
+ */
+function canSendBack(data: DraftDetail): boolean {
+  return data.draft.status === 'ready' || data.draft.status === 'approved'
+}
+
 function said(result: WriteResult): boolean {
   notice.value = noticeFor(result)
   return result.ok
@@ -219,6 +230,16 @@ const openFindings = computed(
 
 function statusLine(data: DraftDetail): string {
   const draft = data.draft
+  if (draft.status === 'approved' && data.body_is_stale) {
+    /*
+     * **The one state the session cannot post**, and the page has to say so: this body was
+     * composed in an older shape, so handing it over with the threads would post each
+     * anchored finding twice. The way out is below, and it is the only thing offered.
+     */
+    return 'Signed off, and it cannot be posted: this body was composed before the review '
+      + 'took its present shape, so posting it would carry each finding on the code twice. '
+      + 'Take the sign-off back and send it back; the session writes it again.'
+  }
   if (draft.status === 'approved') {
     return `Signed off. Will be posted as "${eventLabel(draft.event)}" — waiting for the `
       + 'session to post it.'
@@ -300,98 +321,115 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
               </p>
 
               <div class="body">
-                <DeskCard
-                  as="section"
-                  pad="tight"
-                  class="preview"
-                >
-                  <div class="tabs">
-                    <div class="rd-label tabs-label">
-                      Preview
-                    </div>
-                    <div
-                      role="tablist"
-                      aria-label="How to view the draft"
-                      class="tablist"
-                    >
-                      <button
-                        v-for="tab in views"
-                        :key="tab.key"
-                        type="button"
-                        role="tab"
-                        class="rd-btn rd-btn--quiet"
-                        :aria-selected="view === tab.key"
-                        @click="view = tab.key"
+                <!--
+                  **The main column is the two halves of what posts.** The body above, and
+                  the threads below it — a finding with a line inside the diff is a row in
+                  the body's index and a comment on the code, so the preview is only half
+                  the review until both are drawn. The aside is untouched: it is where the
+                  sign-off lives.
+                -->
+                <div class="main">
+                  <DeskCard
+                    as="section"
+                    pad="tight"
+                    class="preview"
+                  >
+                    <div class="tabs">
+                      <div class="rd-label tabs-label">
+                        Preview
+                      </div>
+                      <div
+                        role="tablist"
+                        aria-label="How to view the draft"
+                        class="tablist"
                       >
-                        {{ tab.label }}
-                      </button>
+                        <button
+                          v-for="tab in views"
+                          :key="tab.key"
+                          type="button"
+                          role="tab"
+                          class="rd-btn rd-btn--quiet"
+                          :aria-selected="view === tab.key"
+                          @click="view = tab.key"
+                        >
+                          {{ tab.label }}
+                        </button>
+                      </div>
                     </div>
-                  </div>
 
-                  <div class="pane">
-                    <MarkdownView
-                      v-if="view === 'rendered' && data.draft.body.length > 0"
-                      :source="data.draft.body"
-                    />
+                    <div class="pane">
+                      <MarkdownView
+                        v-if="view === 'rendered' && data.draft.body.length > 0"
+                        :source="data.draft.body"
+                      />
 
-                    <!--
+                      <!--
                 A draft the session has opened and not written into. The body may be empty
                 while the status is `drafting`, which the contract says in as many words, so
                 the screen says what that is rather than drawing an empty page.
               -->
-                    <p
-                      v-else-if="view === 'rendered'"
-                      class="rd-empty"
-                    >
-                      This draft has no body yet. Layer 6 is where a session writes the review, and
-                      it has written nothing — there is nothing here to sign off.
-                    </p>
+                      <p
+                        v-else-if="view === 'rendered'"
+                        class="rd-empty"
+                      >
+                        This draft has no body yet. Layer 6 is where a session writes the review, and
+                        it has written nothing — there is nothing here to sign off.
+                      </p>
 
-                    <pre
-                      v-else-if="view === 'markdown'"
-                      class="source"
-                    >{{ data.draft.body }}</pre>
+                      <pre
+                        v-else-if="view === 'markdown'"
+                        class="source"
+                      >{{ data.draft.body }}</pre>
 
-                    <div
-                      v-else
-                      class="editor"
-                    >
-                      <label
-                        class="rd-visually-hidden"
-                        for="draft-body"
-                      >The draft body in markdown</label>
-                      <textarea
-                        id="draft-body"
-                        v-model="editing"
-                        class="rd-field"
-                        rows="22"
-                        spellcheck="false"
-                      />
-                      <div class="editor-actions">
-                        <button
-                          type="button"
-                          class="rd-btn rd-btn--primary"
-                          :disabled="!dirty || working"
-                          @click="save"
-                        >
-                          {{ working ? 'Saving…' : 'Save the draft' }}
-                        </button>
-                        <button
-                          type="button"
-                          class="rd-btn"
-                          :disabled="!dirty || working"
-                          @click="editing = loadedBody"
-                        >
-                          Discard changes
-                        </button>
-                        <p class="rd-meta editor-help">
-                          An edit is recorded against the finding it changes. Three of the same kind
-                          become a proposed rule.
-                        </p>
+                      <div
+                        v-else
+                        class="editor"
+                      >
+                        <label
+                          class="rd-visually-hidden"
+                          for="draft-body"
+                        >The draft body in markdown</label>
+                        <textarea
+                          id="draft-body"
+                          v-model="editing"
+                          class="rd-field"
+                          rows="22"
+                          spellcheck="false"
+                        />
+                        <div class="editor-actions">
+                          <button
+                            type="button"
+                            class="rd-btn rd-btn--primary"
+                            :disabled="!dirty || working"
+                            @click="save"
+                          >
+                            {{ working ? 'Saving…' : 'Save the draft' }}
+                          </button>
+                          <button
+                            type="button"
+                            class="rd-btn"
+                            :disabled="!dirty || working"
+                            @click="editing = loadedBody"
+                          >
+                            Discard changes
+                          </button>
+                          <p class="rd-meta editor-help">
+                            An edit is recorded against the finding it changes. Three of the same kind
+                            become a proposed rule. <strong>Saving replaces the blocks with
+                              these characters</strong>, so the index stops being composed, the
+                            threads below go with it, and a decision about a finding is refused
+                            afterwards — cut, regrade and rewrite are on the code review page.
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </DeskCard>
+                  </DeskCard>
+
+                  <DraftThreads
+                    :threads="data.threads"
+                    :posted="data.draft.status === 'posted'"
+                  />
+                </div>
 
                 <aside class="aside">
                   <DeskCard class="panel">
@@ -618,14 +656,27 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                       </div>
                     </div>
 
+                    <!--
+                      **The one transition out of a sign-off.** A draft that is approved and
+                      not yet posted can be sent back, which takes the sign-off with it —
+                      and without that a draft the hand-over refuses has nowhere to go at
+                      all: it cannot be posted, cannot be rewritten, and could not be sent
+                      back. Measured by the session building the posting half of DEV-929.
+                      The label says what the button does, because taking back a sign-off is
+                      not the same act as sending back a draft nobody has signed.
+                    -->
                     <template v-if="!sendingBack">
                       <button
                         type="button"
                         class="rd-btn"
-                        :disabled="decided(data) || working"
+                        :disabled="!canSendBack(data) || working"
                         @click="sendingBack = true"
                       >
-                        Send back with a note
+                        {{
+                          data.draft.status === 'approved'
+                            ? 'Take back the sign-off and send it back'
+                            : 'Send back with a note'
+                        }}
                       </button>
                     </template>
                     <div
@@ -726,8 +777,19 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
   align-items: flex-start;
 }
 
-.preview {
+/*
+ * The main column, which is what the preview alone used to be. The flex numbers moved out
+ * here unchanged: the column takes the room, and the aside keeps its own 320px basis.
+ */
+.main {
   flex: 999 1 560px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.preview {
   min-width: 0;
   padding: 0;
 }

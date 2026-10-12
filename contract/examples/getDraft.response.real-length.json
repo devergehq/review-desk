@@ -1,7 +1,7 @@
 {
   "draft": {
     "review_id": 41,
-    "body": "The change does what the ticket asks and the shape is right: the scheduled path builds its own context and the branch is out of `ReportBuilder`. One blocker, and it is the composition of two reasonable-looking decisions rather than either of them.\n\n### Blocker \u00b7 F9 \u00b7 The column policy is skipped entirely when the definition names no columns\n\nTwo decisions compose here. The array cast answers `[]` for a null column, and this early return reads `[]` as \u201cno policy\u201d \u2014 so a definition older than the migration exports every column, including the two its tenant's policy hides. Eleven definitions in staging are in that state with an active schedule.\n\n### Should \u00b7 F1 \u00b7 An empty allowed-columns list means every column, not none\n\n`allowed_columns` arrives here as `[]` for any definition whose column was never written, and every reader downstream treats an empty list as \u201cnothing to narrow\u201d. `ColumnPolicy::for()` already draws the distinction the web path needs; this path could call it.\n\n### Should \u00b7 F3 \u00b7 A schedule whose tenant row has gone is dispatched anyway\n\nA schedule whose tenant row is gone is dispatched and then fails inside `ExportContext::forSchedule` with a null dereference, four frames deep. Filtering the dispatch query on the tenant's existence makes the same failure readable.\n\n### Should \u00b7 F6 \u00b7 The policy is applied after the query is built, so a hidden column is still selected\n\nThe policy narrows rows that are already in memory, so the hidden columns are selected and read before they are dropped. `ReportBuilder::withPolicy()` narrows the `select` instead.\n\n### Should \u00b7 F11 \u00b7 The web path builds its context from the request with no tenant check\n\nThe removed branch called `ReportPolicy::view()` before building the context, and the call went with it. `download()` still authorises; `stream()`, reachable from the signed-URL route added in #496, does not.\n\n### Should \u00b7 F13 \u00b7 A soft-deleted tenant is exported; only a hard-deleted one is skipped\n\nThe guard skips the job and not the schedule: `next_run_at` is advanced before the job runs, so a trashed tenant's schedule is dispatched and skipped every night. Schedule 118 has done that 39 times since September with no audit row to show for it.\n\n### Should \u00b7 F14 \u00b7 The description does not say what happens to an export that is skipped\n\nThree of the change's early returns each decide what an export produces, and none of them appears in the description. Three sentences under \u201cWhat is skipped\u201d would answer the question a reader otherwise has to read the job for.\n\n### Question \u00b7 F5 \u00b7 Two schedules for one tenant at once would write the audit entry twice\n\nCan two schedules for one tenant be due in the same minute? Both would write an audit row keyed on the tenant and the date, and the unique index on that pair was dropped in #502.\n\n### Question \u00b7 F7 \u00b7 Nothing says what happens to a schedule whose definition was deleted\n\nA schedule whose definition has been deleted releases back to the queue and is retried until the attempt limit, then dispatched again the next night. Is deactivating it the intended answer?\n\n### Question \u00b7 F12 \u00b7 Whether the audit entry still fits is not established\n\n`RecordsAnExport` is outside this change, and the scheduled path passes it a system actor with no id. Is `export_audit.actor_id` nullable, and does its consumer read a null actor as a system export?\n\n### Nit \u00b7 F4 \u00b7 The class is named for the direction, not for what it makes\n\nThe two siblings in this namespace are named for what they return. This one is named for the direction of the conversion, so it does not read with them.\n\n### Nit \u00b7 F10 \u00b7 The removed branch leaves a comment describing it\n\nThe branch this comment describes was removed four lines above.\n\n**Not checked.** The reporting front end, which reads the same definitions but was not changed.\n",
+    "body": "**1 Blocker \u00b7 6 Should \u00b7 3 Questions \u00b7 2 Nits \u2014 12 open.** The change does what the ticket asks and the shape is right: the scheduled path builds its own context and the branch is out of `ReportBuilder`. One blocker, and it is the composition of two reasonable-looking decisions rather than either of them.\n\n**Method** \u00b7 read the scheduled path, the column policy and the audit writer at `d41c8e2` \u00b7 ran `php artisan test --filter=Export` \u00b7 **2 suppressed** \u00b7 **1 not verified** \u00b7 **1 area not reviewed** \u2014 detail at the end\n\n### Problem fit\n\nA scheduled export used to build its context from a request that was never there, which is why the branch inside `ReportBuilder` existed at all. Giving the scheduled path a context of its own is the right shape for that. What is new is that the column policy now runs in two places, and the blocker below is where the two disagree.\n\n```mermaid\nflowchart LR\n  A[Schedule due] --> B[Build its own context]\n  B --> C{Columns named?}\n  C -->|named| D[Narrow the select]\n  C -->|none named| E[Every column exported]\n```\n\n### Open \u2014 needs a decision\n\n| | Where | Finding | Status |\n| -- | -- | -- | -- |\n| \ud83d\udd34 Blocker \u00b7 F9 | [`ColumnPolicy.php:52`](https://github.com/acme/portal/blob/d41c8e2/app/Reporting/ColumnPolicy.php#L52) | The column policy is skipped entirely when the definition names no columns | Open \u00b7 on the code |\n| \ud83d\udfe0 Should \u00b7 F1 | [`ExportContext.php:47`](https://github.com/acme/portal/blob/d41c8e2/app/Reporting/ExportContext.php#L47) | An empty allowed-columns list means every column, not none | Open \u00b7 on the code |\n| \ud83d\udfe0 Should \u00b7 F3 | [`DispatchScheduledExports.php:61`](https://github.com/acme/portal/blob/d41c8e2/app/Console/Commands/DispatchScheduledExports.php#L61) | A schedule whose tenant row has gone is dispatched anyway | Open \u00b7 on the code |\n| \ud83d\udfe0 Should \u00b7 F6 | [`ColumnPolicy.php:31`](https://github.com/acme/portal/blob/d41c8e2/app/Reporting/ColumnPolicy.php#L31) | The policy is applied after the query is built, so a hidden column is still selected | Open \u00b7 on the code |\n| \ud83d\udfe0 Should \u00b7 F11 | [`ExportController.php:41`](https://github.com/acme/portal/blob/d41c8e2/app/Http/Controllers/ExportController.php#L41) | The web path builds its context from the request with no tenant check | Open \u00b7 on the code |\n| \ud83d\udfe0 Should \u00b7 F13 | [`RunScheduledExport.php:116`](https://github.com/acme/portal/blob/d41c8e2/app/Jobs/RunScheduledExport.php#L116) | A soft-deleted tenant is exported; only a hard-deleted one is skipped | Open \u00b7 on the code |\n| \ud83d\udfe0 Should \u00b7 F14 | [the pull request](https://github.com/acme/portal/pull/514) | The description does not say what happens to an export that is skipped | Open \u00b7 in the body |\n| \ud83d\udd35 Question \u00b7 F5 | [`ExportPipeline.php:71`](https://github.com/acme/portal/blob/d41c8e2/app/Reporting/ExportPipeline.php#L71) | Two schedules for one tenant at once would write the audit entry twice | Open \u00b7 on the code |\n| \ud83d\udd35 Question \u00b7 F7 | [`RunScheduledExport.php:94`](https://github.com/acme/portal/blob/d41c8e2/app/Jobs/RunScheduledExport.php#L94) | Nothing says what happens to a schedule whose definition was deleted | Open \u00b7 on the code |\n| \ud83d\udd35 Question \u00b7 F12 | [`RecordsAnExport.php:22`](https://github.com/acme/portal/blob/d41c8e2/app/Audit/RecordsAnExport.php#L22) | Whether the audit entry still fits is not established | Open \u00b7 in the body |\n| \u26aa Nit \u00b7 F4 | [`ScheduleToContext.php:18`](https://github.com/acme/portal/blob/d41c8e2/app/Reporting/ScheduleToContext.php#L18) | The class is named for the direction, not for what it makes | Open \u00b7 in the body |\n| \u26aa Nit \u00b7 F10 | [`ReportBuilder.php:28`](https://github.com/acme/portal/blob/d41c8e2/app/Reporting/ReportBuilder.php#L28) | The removed branch leaves a comment describing it | Open \u00b7 on the code |\n\n### Should \u00b7 F14 \u00b7 The description does not say what happens to an export that is skipped\n\nThree of the change's early returns each decide what an export produces, and none of them appears in the description. Three sentences under \u201cWhat is skipped\u201d would answer the question a reader otherwise has to read the job for.\n\n### Question \u00b7 F12 \u00b7 Whether the audit entry still fits is not established\n\n`RecordsAnExport` is outside this change, and the scheduled path passes it a system actor with no id. Is `export_audit.actor_id` nullable, and does its consumer read a null actor as a system export?\n\n### Nit \u00b7 F4 \u00b7 The class is named for the direction, not for what it makes\n\nThe two siblings in this namespace are named for what they return. This one is named for the direction of the conversion, so it does not read with them.\n\n<details><summary>How this review was made \u2014 scope, suppressed findings, what I could not verify</summary>\n\nRead the scheduled path, the column policy, the audit writer and the two controllers at `d41c8e2`; ran the export suite.\n\n**Suppressed (2)** \u00b7 a redaction helper's naming, because the file is replaced by ABC-418 next week \u00b7 a Horizon queue name, which this change does not reach.\n\n**Not verified (1)** \u00b7 that the nightly dispatch really does run two schedules for one tenant in the same minute; the question is F5 and the answer is the author's.\n\n**Not reviewed (1)** \u00b7 the reporting front end, which reads the same definitions but was not changed.\n\n</details>\n",
     "status": "ready",
     "event": null,
     "approved_at": null,
@@ -46,14 +46,28 @@
       "severity": null,
       "heading": null,
       "title": null,
-      "text": "The change does what the ticket asks and the shape is right: the scheduled path builds its own context and the branch is out of `ReportBuilder`. One blocker, and it is the composition of two reasonable-looking decisions rather than either of them.",
+      "text": "**1 Blocker \u00b7 6 Should \u00b7 3 Questions \u00b7 2 Nits \u2014 12 open.** The change does what the ticket asks and the shape is right: the scheduled path builds its own context and the branch is out of `ReportBuilder`. One blocker, and it is the composition of two reasonable-looking decisions rather than either of them.\n\n**Method** \u00b7 read the scheduled path, the column policy and the audit writer at `d41c8e2` \u00b7 ran `php artisan test --filter=Export` \u00b7 **2 suppressed** \u00b7 **1 not verified** \u00b7 **1 area not reviewed** \u2014 detail at the end",
       "agent_title": null,
-      "agent_text": "The change does what the ticket asks and the shape is right: the scheduled path builds its own context and the branch is out of `ReportBuilder`. One blocker, and it is the composition of two reasonable-looking decisions rather than either of them.",
+      "agent_text": "**1 Blocker \u00b7 6 Should \u00b7 3 Questions \u00b7 2 Nits \u2014 12 open.** The change does what the ticket asks and the shape is right: the scheduled path builds its own context and the branch is out of `ReportBuilder`. One blocker, and it is the composition of two reasonable-looking decisions rather than either of them.\n\n**Method** \u00b7 read the scheduled path, the column policy and the audit writer at `d41c8e2` \u00b7 ran `php artisan test --filter=Export` \u00b7 **2 suppressed** \u00b7 **1 not verified** \u00b7 **1 area not reviewed** \u2014 detail at the end",
       "rewritten": false,
       "posted": true
     },
     {
       "position": 2,
+      "kind": "prose",
+      "finding_seq": null,
+      "finding_key": null,
+      "severity": null,
+      "heading": null,
+      "title": null,
+      "text": "### Problem fit\n\nA scheduled export used to build its context from a request that was never there, which is why the branch inside `ReportBuilder` existed at all. Giving the scheduled path a context of its own is the right shape for that. What is new is that the column policy now runs in two places, and the blocker below is where the two disagree.\n\n```mermaid\nflowchart LR\n  A[Schedule due] --> B[Build its own context]\n  B --> C{Columns named?}\n  C -->|named| D[Narrow the select]\n  C -->|none named| E[Every column exported]\n```",
+      "agent_title": null,
+      "agent_text": "### Problem fit\n\nA scheduled export used to build its context from a request that was never there, which is why the branch inside `ReportBuilder` existed at all. Giving the scheduled path a context of its own is the right shape for that. What is new is that the column policy now runs in two places, and the blocker below is where the two disagree.\n\n```mermaid\nflowchart LR\n  A[Schedule due] --> B[Build its own context]\n  B --> C{Columns named?}\n  C -->|named| D[Narrow the select]\n  C -->|none named| E[Every column exported]\n```",
+      "rewritten": false,
+      "posted": true
+    },
+    {
+      "position": 3,
       "kind": "finding",
       "finding_seq": 9,
       "finding_key": "F9",
@@ -67,7 +81,7 @@
       "posted": true
     },
     {
-      "position": 3,
+      "position": 4,
       "kind": "finding",
       "finding_seq": 1,
       "finding_key": "F1",
@@ -81,7 +95,7 @@
       "posted": true
     },
     {
-      "position": 4,
+      "position": 5,
       "kind": "finding",
       "finding_seq": 3,
       "finding_key": "F3",
@@ -95,7 +109,7 @@
       "posted": true
     },
     {
-      "position": 5,
+      "position": 6,
       "kind": "finding",
       "finding_seq": 6,
       "finding_key": "F6",
@@ -109,7 +123,7 @@
       "posted": true
     },
     {
-      "position": 6,
+      "position": 7,
       "kind": "finding",
       "finding_seq": 11,
       "finding_key": "F11",
@@ -123,7 +137,7 @@
       "posted": true
     },
     {
-      "position": 7,
+      "position": 8,
       "kind": "finding",
       "finding_seq": 13,
       "finding_key": "F13",
@@ -137,7 +151,7 @@
       "posted": true
     },
     {
-      "position": 8,
+      "position": 9,
       "kind": "finding",
       "finding_seq": 14,
       "finding_key": "F14",
@@ -151,7 +165,7 @@
       "posted": true
     },
     {
-      "position": 9,
+      "position": 10,
       "kind": "finding",
       "finding_seq": 5,
       "finding_key": "F5",
@@ -165,7 +179,7 @@
       "posted": true
     },
     {
-      "position": 10,
+      "position": 11,
       "kind": "finding",
       "finding_seq": 7,
       "finding_key": "F7",
@@ -179,7 +193,7 @@
       "posted": true
     },
     {
-      "position": 11,
+      "position": 12,
       "kind": "finding",
       "finding_seq": 12,
       "finding_key": "F12",
@@ -193,7 +207,7 @@
       "posted": true
     },
     {
-      "position": 12,
+      "position": 13,
       "kind": "finding",
       "finding_seq": 4,
       "finding_key": "F4",
@@ -207,7 +221,7 @@
       "posted": true
     },
     {
-      "position": 13,
+      "position": 14,
       "kind": "finding",
       "finding_seq": 10,
       "finding_key": "F10",
@@ -221,26 +235,119 @@
       "posted": true
     },
     {
-      "position": 14,
+      "position": 15,
       "kind": "prose",
       "finding_seq": null,
       "finding_key": null,
       "severity": null,
       "heading": null,
       "title": null,
-      "text": "**Not checked.** The reporting front end, which reads the same definitions but was not changed.",
+      "text": "<details><summary>How this review was made \u2014 scope, suppressed findings, what I could not verify</summary>\n\nRead the scheduled path, the column policy, the audit writer and the two controllers at `d41c8e2`; ran the export suite.\n\n**Suppressed (2)** \u00b7 a redaction helper's naming, because the file is replaced by ABC-418 next week \u00b7 a Horizon queue name, which this change does not reach.\n\n**Not verified (1)** \u00b7 that the nightly dispatch really does run two schedules for one tenant in the same minute; the question is F5 and the answer is the author's.\n\n**Not reviewed (1)** \u00b7 the reporting front end, which reads the same definitions but was not changed.\n\n</details>",
       "agent_title": null,
-      "agent_text": "**Not checked.** The reporting front end, which reads the same definitions but was not changed.",
+      "agent_text": "<details><summary>How this review was made \u2014 scope, suppressed findings, what I could not verify</summary>\n\nRead the scheduled path, the column policy, the audit writer and the two controllers at `d41c8e2`; ran the export suite.\n\n**Suppressed (2)** \u00b7 a redaction helper's naming, because the file is replaced by ABC-418 next week \u00b7 a Horizon queue name, which this change does not reach.\n\n**Not verified (1)** \u00b7 that the nightly dispatch really does run two schedules for one tenant in the same minute; the question is F5 and the answer is the author's.\n\n**Not reviewed (1)** \u00b7 the reporting front end, which reads the same definitions but was not changed.\n\n</details>",
       "rewritten": false,
       "posted": true
     }
   ],
+  "threads": [
+    {
+      "finding_seq": 9,
+      "finding_key": "F9",
+      "severity": "blocker",
+      "title": "The column policy is skipped entirely when the definition names no columns",
+      "path": "app/Reporting/ColumnPolicy.php",
+      "line": 52,
+      "side": "RIGHT",
+      "body": "> [!CAUTION]\n> **Blocker \u00b7 F9** \u2014 The column policy is skipped entirely when the definition names no columns \u00b7 `Open`\n>\n> Two decisions compose here. The array cast answers `[]` for a null column, and this early return reads `[]` as \u201cno policy\u201d \u2014 so a definition older than the migration exports every column, including the two its tenant's policy hides. Eleven definitions in staging are in that state with an active schedule.\n\n<!-- review-desk:F9 -->"
+    },
+    {
+      "finding_seq": 1,
+      "finding_key": "F1",
+      "severity": "should",
+      "title": "An empty allowed-columns list means every column, not none",
+      "path": "app/Reporting/ExportContext.php",
+      "line": 47,
+      "side": "RIGHT",
+      "body": "> [!WARNING]\n> **Should \u00b7 F1** \u2014 An empty allowed-columns list means every column, not none \u00b7 `Open`\n>\n> `allowed_columns` arrives here as `[]` for any definition whose column was never written, and every reader downstream treats an empty list as \u201cnothing to narrow\u201d. `ColumnPolicy::for()` already draws the distinction the web path needs; this path could call it.\n\n<!-- review-desk:F1 -->"
+    },
+    {
+      "finding_seq": 3,
+      "finding_key": "F3",
+      "severity": "should",
+      "title": "A schedule whose tenant row has gone is dispatched anyway",
+      "path": "app/Console/Commands/DispatchScheduledExports.php",
+      "line": 61,
+      "side": "RIGHT",
+      "body": "> [!WARNING]\n> **Should \u00b7 F3** \u2014 A schedule whose tenant row has gone is dispatched anyway \u00b7 `Open`\n>\n> A schedule whose tenant row is gone is dispatched and then fails inside `ExportContext::forSchedule` with a null dereference, four frames deep. Filtering the dispatch query on the tenant's existence makes the same failure readable.\n\n<!-- review-desk:F3 -->"
+    },
+    {
+      "finding_seq": 6,
+      "finding_key": "F6",
+      "severity": "should",
+      "title": "The policy is applied after the query is built, so a hidden column is still selected",
+      "path": "app/Reporting/ColumnPolicy.php",
+      "line": 31,
+      "side": "RIGHT",
+      "body": "> [!WARNING]\n> **Should \u00b7 F6** \u2014 The policy is applied after the query is built, so a hidden column is still selected \u00b7 `Open`\n>\n> The policy narrows rows that are already in memory, so the hidden columns are selected and read before they are dropped. `ReportBuilder::withPolicy()` narrows the `select` instead.\n\n<!-- review-desk:F6 -->"
+    },
+    {
+      "finding_seq": 11,
+      "finding_key": "F11",
+      "severity": "should",
+      "title": "The web path builds its context from the request with no tenant check",
+      "path": "app/Http/Controllers/ExportController.php",
+      "line": 41,
+      "side": "RIGHT",
+      "body": "> [!WARNING]\n> **Should \u00b7 F11** \u2014 The web path builds its context from the request with no tenant check \u00b7 `Open`\n>\n> The removed branch called `ReportPolicy::view()` before building the context, and the call went with it. `download()` still authorises; `stream()`, reachable from the signed-URL route added in #496, does not.\n\n<!-- review-desk:F11 -->"
+    },
+    {
+      "finding_seq": 13,
+      "finding_key": "F13",
+      "severity": "should",
+      "title": "A soft-deleted tenant is exported; only a hard-deleted one is skipped",
+      "path": "app/Jobs/RunScheduledExport.php",
+      "line": 116,
+      "side": "RIGHT",
+      "body": "> [!WARNING]\n> **Should \u00b7 F13** \u2014 A soft-deleted tenant is exported; only a hard-deleted one is skipped \u00b7 `Open`\n>\n> The guard skips the job and not the schedule: `next_run_at` is advanced before the job runs, so a trashed tenant's schedule is dispatched and skipped every night. Schedule 118 has done that 39 times since September with no audit row to show for it.\n\n<!-- review-desk:F13 -->"
+    },
+    {
+      "finding_seq": 5,
+      "finding_key": "F5",
+      "severity": "question",
+      "title": "Two schedules for one tenant at once would write the audit entry twice",
+      "path": "app/Reporting/ExportPipeline.php",
+      "line": 71,
+      "side": "RIGHT",
+      "body": "> [!NOTE]\n> **Question \u00b7 F5** \u2014 Two schedules for one tenant at once would write the audit entry twice \u00b7 `Open`\n>\n> Can two schedules for one tenant be due in the same minute? Both would write an audit row keyed on the tenant and the date, and the unique index on that pair was dropped in #502.\n\n<!-- review-desk:F5 -->"
+    },
+    {
+      "finding_seq": 7,
+      "finding_key": "F7",
+      "severity": "question",
+      "title": "Nothing says what happens to a schedule whose definition was deleted",
+      "path": "app/Jobs/RunScheduledExport.php",
+      "line": 94,
+      "side": "RIGHT",
+      "body": "> [!NOTE]\n> **Question \u00b7 F7** \u2014 Nothing says what happens to a schedule whose definition was deleted \u00b7 `Open`\n>\n> A schedule whose definition has been deleted releases back to the queue and is retried until the attempt limit, then dispatched again the next night. Is deactivating it the intended answer?\n\n<!-- review-desk:F7 -->"
+    },
+    {
+      "finding_seq": 10,
+      "finding_key": "F10",
+      "severity": "nit",
+      "title": "The removed branch leaves a comment describing it",
+      "path": "app/Reporting/ReportBuilder.php",
+      "line": 28,
+      "side": "RIGHT",
+      "body": "\u26aa **Nit \u00b7 F10** \u2014 The removed branch leaves a comment describing it \u00b7 `Open`\nThe branch this comment describes was removed four lines above.\n\n<!-- review-desk:F10 -->"
+    }
+  ],
+  "body_is_stale": false,
   "edits": [],
   "held_back": [
     {
       "finding_seq": 2,
       "finding_key": "F2",
-      "claim": "The superseded accessor `TenantContext::tenantForRequest()` is still public with nothing marking it superseded, so the next person who needs a tenant reads the accessor that is still there, reaches for the obvious name, and writes a second call path into the export code this change exists to remove — and because the `@deprecated` annotation is what the static analyser reads, that second caller is found in review by somebody rather than failing the build on the way in.",
+      "claim": "The superseded accessor `TenantContext::tenantForRequest()` is still public with nothing marking it superseded, so the next person who needs a tenant reads the accessor that is still there, reaches for the obvious name, and writes a second call path into the export code this change exists to remove \u2014 and because the `@deprecated` annotation is what the static analyser reads, that second caller is found in review by somebody rather than failing the build on the way in.",
       "severity": "nit"
     }
   ],

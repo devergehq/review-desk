@@ -14,7 +14,7 @@
 use std::sync::{Arc, Mutex};
 
 use review_desk_store::{
-    Actor, Brief, Decision, DecisionMade, Disposition, Draft, DraftSection, Finding,
+    Actor, Brief, Decision, DecisionMade, Disposition, Draft, DraftSection, DraftThread, Finding,
     FindingInRound, FullReview, NewDraft, NewOutcome, NitTicket, OpenedReview, PostedReview,
     ProblemStatement, RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewEvent, ReviewFacts,
     ReviewLayer, ReviewProvenance, ReviewTimings, RoundCommit, RoundSummary, Rule, RuleCounts,
@@ -377,6 +377,16 @@ impl Records {
     /// The blocks the draft body is composed of, in order.
     pub fn draft_sections(&self, review_id: i64) -> Result<Vec<DraftSection>, ApiError> {
         self.with(|store| store.draft_sections(review_id))
+    }
+
+    /// The inline threads the draft hands over, in severity order.
+    pub fn draft_threads(&self, review_id: i64) -> Result<Vec<DraftThread>, ApiError> {
+        self.with(|store| store.draft_threads(review_id))
+    }
+
+    /// Whether the stored body is no longer what the draft's blocks compose to.
+    pub fn draft_body_is_stale(&self, review_id: i64) -> Result<bool, ApiError> {
+        self.with(|store| store.draft_body_is_stale(review_id))
     }
 
     /// Record the developer's decision about one finding, and recompose the draft.

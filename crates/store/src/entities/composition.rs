@@ -10,15 +10,16 @@
 //! | Block | Composes to |
 //! | -- | -- |
 //! | `prose` | its text, exactly as written |
-//! | `finding` | [`finding_heading`], a blank line, then its text — **while the finding is posted** |
+//! | `finding` with nowhere to anchor | [`finding_heading`], a blank line, then its text — **while the finding is posted** |
+//! | `finding` with a line inside the diff | an index row and an inline **thread**, not a section |
 //!
-//! Blocks are joined by a blank line and the body ends in one newline. That is the whole
-//! of the composition, and it is why it can reproduce what an agent writes today: only the
-//! finding heading is composed, and everything the composition does not model is a prose
-//! block carried through character for character.
-//! `crates/store/tests/composition.rs` holds that claim against
-//! `contract/examples/getDraft.response.json`, which is the one record of what an agent
-//! wrote that this repository has.
+//! Blocks are joined by a blank line and the body ends in one newline. **Since DEV-929 the
+//! body is also shaped**: an index of every posted finding sits where the findings begin,
+//! and a finding GitHub can anchor is lifted out of the body into a thread on the line it
+//! concerns. [`super::house_style`] is where that shape and its reasons live. What stays
+//! true here is that a prose block is carried through character for character — which is
+//! what lets a mermaid fence survive — and that a finding's heading is composed from its
+//! live severity rather than stored, so a regrade changes it.
 //!
 //! **The body is stored, not derived.** Every write and every decision recomposes it into
 //! `drafts.body` in the same transaction. Composing it at read time would let a later
@@ -27,6 +28,7 @@
 
 use rusqlite::{params, Connection, Transaction, TransactionBehavior};
 
+use crate::entities::house_style;
 use crate::error::{Result, StoreError};
 use crate::model::{
     Disposition, DraftSection, DraftSectionKind, Finding, NewDraftSection, RoundStatus, Severity,
@@ -178,43 +180,24 @@ pub(crate) fn validate(sections: &[NewDraftSection]) -> Result<()> {
     Ok(())
 }
 
-/// What the review's blocks compose to.
+/// What the review's blocks compose to: the body GitHub receives.
 ///
-/// Joined by a blank line, ending in one newline. A composition with nothing to post is
-/// the empty string rather than a lone newline: a draft at `drafting` may hold no body at
-/// all, and a draft every finding of which was cut is a body of prose or of nothing.
+/// **The blocks are the draft; the shape is the house style's.** Until DEV-929 this was the
+/// posted blocks joined end to end, which is how the review on tc-portal#9585 came out as
+/// 309 lines with no index and two threads. The joining is still here — a prose block is
+/// carried through character for character and a finding block still composes its own
+/// heading — and what sits between them is now an index, with each anchored finding lifted
+/// out of the body and handed over as a thread instead. [`super::house_style`] holds that
+/// shape and the reason for each part of it.
+///
+/// A composition with nothing to post is the empty string rather than a lone newline: a
+/// draft at `drafting` may hold no body at all.
 pub(crate) fn compose(conn: &Connection, review_id: i64) -> Result<String> {
-    let posted: Vec<String> = list(conn, review_id)?.iter().filter_map(composed).collect();
+    let blocks = list(conn, review_id)?;
+    let place = house_style::place(conn, review_id)?;
+    let postings = house_style::postings(conn, review_id)?;
 
-    if posted.is_empty() {
-        return Ok(String::new());
-    }
-    Ok(format!("{}\n", posted.join("\n\n")))
-}
-
-/// One block's contribution to the body, or `None` when it does not post.
-fn composed(section: &DraftSection) -> Option<String> {
-    if !section.posted {
-        return None;
-    }
-
-    match (section.kind, section.finding_seq, &section.title) {
-        (DraftSectionKind::Prose, ..) => Some(section.text.clone()),
-        (DraftSectionKind::Finding, Some(seq), Some(title)) => {
-            let heading = finding_heading(section.severity?, seq, title);
-            if section.text.is_empty() {
-                Some(heading)
-            } else {
-                Some(format!("{heading}\n\n{}", section.text))
-            }
-        }
-        // The schema refuses a finding block with no finding and the foreign key refuses
-        // one naming a finding that is not there, so this arm is unreachable from a
-        // database this build wrote. It drops the block rather than panicking: a body is
-        // posted to GitHub under the developer's name, and half a heading is worse than a
-        // block absent.
-        (DraftSectionKind::Finding, ..) => None,
-    }
+    Ok(house_style::body(&place, &blocks, &postings))
 }
 
 /// Write the body the review's blocks compose to, and return it.
