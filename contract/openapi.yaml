@@ -241,12 +241,19 @@ paths:
       tags: [review]
       summary: Delete a review that never got past being requested
       description: |
-        **Offered only for a review with no brief, no findings and no draft**, and refused
-        for every other review with a message saying what it holds. Decided by Patrick on
-        12 October 2026: a review with findings carries the developer's sign-offs, the
-        dispositions they made one at a time, and the evidence the rules in force were
-        built from, so deleting it loses something real. Dismissal is the answer for
-        everything else, and it keeps all of that.
+        **Offered only for a review that holds nothing**, and refused for every other
+        review with a message saying what it holds. Decided by Patrick on 12 October 2026:
+        a review with findings carries the developer's sign-offs, the dispositions they
+        made one at a time, and the evidence the rules in force were built from, so
+        deleting it loses something real. Dismissal is the answer for everything else, and
+        it keeps all of that.
+
+        **Four things, and a review holding any one of them is refused**: a brief, a
+        finding, a draft, and the review posted on GitHub. The fourth is the one the issue
+        does not name, and it is not a fifth kind of work — it is `github_review_id`, set
+        by `review link --github-review` for a review whose process ran outside Review
+        Desk. Such a review holds none of the other three, and deleting it would remove
+        the record that a review was posted on the pull request at all.
 
         What it is for is a row that should never have existed. The review this was raised
         from is one a build session wrote into the developer's real database by accident:
@@ -272,8 +279,9 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           description: |
-            The review holds a brief, a finding or a draft, so deleting it would lose
-            them. The message names what it holds and points at dismissal.
+            The review holds a brief, a finding, a draft, or the review it posted on
+            GitHub, so deleting it would lose them. The message names what it holds and
+            points at dismissal.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

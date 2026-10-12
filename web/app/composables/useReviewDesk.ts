@@ -287,6 +287,19 @@ export function takeHandOver(): string | null {
   return said
 }
 
+/**
+ * Drop a sentence nobody came to read.
+ *
+ * **Because it is module state and the screen that consumes it may never be reached.** A
+ * delete navigates to the Reviews list, which takes it — but a test that deletes and then
+ * mounts something else, or a switch to the invented records, would leave it armed and
+ * the next Reviews list would say a review from a database it is no longer reading had
+ * been deleted. Called wherever the records change underneath it.
+ */
+function forgetHandOver(): void {
+  handedOver = null
+}
+
 /* ------------------------------ The composable ------------------------------- */
 
 export function useReviewDesk() {
@@ -319,6 +332,7 @@ export function useReviewDesk() {
   function useSampleRecords(): void {
     chooseSource('sample')
     backend = null
+    forgetHandOver()
     try {
       window.location.reload()
     }
@@ -742,6 +756,7 @@ export async function resetDesk(overrides: Record<string, unknown> = {}): Promis
   chooseSource('sample')
   backend = null
   forgetShared()
+  forgetHandOver()
   const { resetSource } = await import('~/data/sample')
   resetSource(overrides)
   await records()

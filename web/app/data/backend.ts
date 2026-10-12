@@ -103,8 +103,9 @@ export interface DeskBackend {
   /**
    * `DELETE /reviews/{id}` — remove a review that never got past being requested.
    *
-   * Refused for a review holding a brief, a finding or a draft, saying which. It answers
-   * with the review that went: nothing can read a row it has just removed.
+   * Refused for a review holding a brief, a finding, a draft or the review it posted on
+   * GitHub, saying which. It answers with the review that went: nothing can read a row it
+   * has just removed.
    */
   deleteReview: (reviewId: number) => Promise<Review>
   promoteRule: (ruleId: number, toStage: RuleStage) => Promise<Rule>

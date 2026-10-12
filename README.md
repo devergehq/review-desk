@@ -158,8 +158,9 @@ commit, so the second call hands back the first call's review and spends no roun
 
 **And a push between the request and the session moves the request rather than doubling
 it.** A new head commit on a pull request whose newest round **nobody has picked up**
-moves that round to the new commit. Nobody has picked it up means all five: no brief, no
-findings, no draft, no session linked, and no step past `pending`. `head_moved_from`
+moves that round to the new commit. Nobody has picked it up means all six: no brief, no
+findings, no draft, no review posted on GitHub, no session linked, and no step past
+`pending`. `head_moved_from`
 carries the commit it was of before:
 
 ```sh
@@ -955,7 +956,7 @@ by accident and nothing could remove it.
 | What happens | the review leaves the queue, the work list and the Reviews list's default view, with a reason | the row and every row under it are gone |
 | Keeps | its findings, your decisions on them, your sign-offs, the evidence its rules were built from | nothing |
 | Undo | yes, "Bring it back" | no |
-| Offered for | every review | a review with no brief, no findings and no draft |
+| Offered for | every review | a review holding nothing: no brief, no findings, no draft, and no review posted on GitHub |
 
 **Both are the developer's act, in the dashboard, and there is no command for either** —
 the sign-off rule above, applied to the same argument: a session that could dismiss a
@@ -968,9 +969,12 @@ every review has. A dismissed review says so under the trail on all five of its 
 a reader who arrives by a link learns it before they read the review rather than after.
 
 **A delete asks what the review holds, and nothing else**: no brief, no findings, no
-draft. A session may have been linked to it and may have run the lint — the stray review
-this was built for was written by a build session — and that does not stop the delete,
-because none of it is work the developer would lose. It does stop a `review open` moving
+draft, and no review posted on GitHub. The fourth is not a fourth kind of work — it is
+`github_review_id`, which `review link --github-review` sets for a review whose process
+ran outside Review Desk, and which holds none of the other three. A session may have been
+linked to the review and may have run the lint — the stray review this was built for was
+written by a build session — and that does not stop the delete, because none of it is
+work the developer would lose. It does stop a `review open` moving
 the review's head, which is the wider question
 [above](#recording-a-review-request-before-any-session-starts); the page says a session
 has the review before it offers the button.

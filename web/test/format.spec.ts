@@ -479,6 +479,7 @@ describe('what came back on a posted review', () => {
 describe('what the queue says when a link becomes a review', () => {
   it('says it is open at the problem brief', () => {
     const said = startedReviewLine({
+      id: 17,
       repo: 'acme/portal',
       pr: 412,
       title: 'Retry failed webhook deliveries',
@@ -494,6 +495,7 @@ describe('what the queue says when a link becomes a review', () => {
     // waiting and no session will be dispatched for it, so the one sentence that must not
     // be said is the one above.
     const said = startedReviewLine({
+      id: 17,
       repo: 'acme/portal',
       pr: 412,
       title: 'Retry failed webhook deliveries',
@@ -503,10 +505,16 @@ describe('what the queue says when a link becomes a review', () => {
     expect(said).toContain('you dismissed it')
     expect(said).toContain('no session will be started for it')
     expect(said).toContain('Bring it back')
+    /*
+     * **And it names the review.** A dismissed review is in neither the queue nor the
+     * Reviews list's default view, so a sentence pointing at "its own page" without the
+     * id is one the developer can read and not act on.
+     */
+    expect(said).toContain('review 17')
   })
 
   it('leaves out a title the record has none of', () => {
-    const said = startedReviewLine({ repo: 'acme/portal', pr: 777, dismissed_at: null })
+    const said = startedReviewLine({ id: 9, repo: 'acme/portal', pr: 777, dismissed_at: null })
     expect(said).toContain('acme/portal#777 is open at the problem brief.')
   })
 })

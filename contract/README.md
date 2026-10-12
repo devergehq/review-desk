@@ -653,7 +653,7 @@ and the screen renders the ones that are present.
 | Reviews | repository picker, "In play" / "Dismissed" / "Everything" | `GET /reviews?repo=&dismissed=` |
 | Understand | "Dismiss this review", with a reason | `POST /reviews/{reviewId}/dismiss` |
 | Understand | "Bring it back" | `POST /reviews/{reviewId}/restore` |
-| Understand | "Delete it" → "Delete it for good" | `DELETE /reviews/{reviewId}`, offered only for a review with no brief, no findings and no draft |
+| Understand | "Delete it" → "Delete it for good" | `DELETE /reviews/{reviewId}`, offered only for a review holding nothing: no brief, no findings, no draft, and no review posted on GitHub |
 
 **"Request review" has no endpoint and should not get one.** It asks GitHub to add a
 reviewer to a pull request — a *write* to another system's record. `POST /reviews` reads

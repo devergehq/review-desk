@@ -620,8 +620,8 @@ impl Api {
 
     /// `DELETE /reviews/{reviewId}`: remove a review that never got past being requested.
     ///
-    /// **Offered only for a review with no brief, no finding and no draft**, and the store
-    /// is the one that judges it — a second opinion here is how the page comes to offer a
+    /// **Offered only for a review that holds nothing** — no brief, no finding, no draft,
+    /// and no review posted on GitHub — and the store is the one that judges it — a second opinion here is how the page comes to offer a
     /// button the API refuses. The refusal is a `409` naming what the review holds, so the
     /// developer reads "review 7 holds a brief and 4 findings" and is pointed at dismissal
     /// instead.

@@ -21,8 +21,8 @@ import type { ReviewDetail } from '~/types/desk'
  *
  * ## Why delete is hidden rather than refused
  *
- * The API refuses it for a review holding a brief, a finding or a draft, and that refusal
- * is what makes the rule real. A button that produced it on every review would be a button
+ * The API refuses it for a review holding a brief, a finding, a draft or the review it
+ * posted on GitHub, and that refusal is what makes the rule real. A button that produced it on every review would be a button
  * whose answer is almost always no — so where the review holds something, the card says
  * what it holds and offers the dismissal instead. **The page decides what to draw; it does
  * not decide the refusal.** The two cannot drift, because what is drawn is read off the

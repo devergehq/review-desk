@@ -622,9 +622,11 @@ impl Store {
 
     /// Delete a review that never got past being requested, and everything under it.
     ///
-    /// **Refused unless the review holds no brief, no finding and no draft** — the three
-    /// things DEV-945 names, asked through [`Store::review_work`], which is the same
-    /// question `open_review` asks before it moves a round's head. The refusal says what
+    /// **Refused unless the review holds nothing** — no brief, no finding, no draft and
+    /// no review posted on GitHub, asked through [`ReviewWork`], which `open_review` also
+    /// asks before it moves a round's head. The first three are the ones DEV-945 names;
+    /// the fourth is a review whose process ran outside Review Desk, which holds none of
+    /// them and is plainly not a row that should never have existed. The refusal says what
     /// the review is holding, so the developer reads "a brief and 4 findings" rather than
     /// "not allowed", and names dismissal as the thing to do instead.
     ///

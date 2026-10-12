@@ -149,8 +149,8 @@ impl Records {
     /// Delete a review that never got past being requested, and every row under it.
     /// `DELETE /reviews/{id}`.
     ///
-    /// Refused by the store unless the review holds no brief, no finding and no draft, and
-    /// the refusal says what it is holding. The handler does not repeat that judgement:
+    /// Refused by the store unless the review holds nothing — no brief, no finding, no
+    /// draft and no review posted on GitHub — and the refusal says what it is holding. The handler does not repeat that judgement:
     /// two opinions about what "never started" means is how the page comes to offer a
     /// button the API refuses.
     pub fn delete_review(&self, id: i64) -> Result<Review, ApiError> {

@@ -164,15 +164,23 @@ export function reviewWorkInWords(
  * cannot be reached through them.
  */
 export function startedReviewLine(review: {
+  id: number
   repo: string
   pr: number
   title?: string | null
   dismissed_at?: string | null
 }): string {
   if (review.dismissed_at != null) {
-    return `${review.repo}#${review.pr} is already on the desk and you dismissed it, so `
-      + 'nothing is waiting and no session will be started for it. Bring it back from '
-      + 'the review’s own page to pick it up again.'
+    /*
+     * **It names the review**, because the developer cannot otherwise find it: a
+     * dismissed review is in neither the queue nor the Reviews list's default view, so
+     * "bring it back from its own page" without an id is a sentence they can read and
+     * not act on. The id is an address — `/reviews/{id}/understand` — and the number is
+     * what the rest of the desk calls a review by.
+     */
+    return `${review.repo}#${review.pr} is already on the desk as review ${review.id}, `
+      + 'and you dismissed it — so nothing is waiting and no session will be started for '
+      + `it. Bring it back on review ${review.id}’s own page to pick it up again.`
   }
   return `${review.repo}#${review.pr} is open at the problem brief`
     + `${review.title == null ? '' : ` — ${review.title}`}. `
