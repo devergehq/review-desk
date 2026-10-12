@@ -1431,9 +1431,13 @@ function answered<T>(value: T): T {
  * page's `PostingWatch` shows while it waits for a session to post, so an invented record
  * that never moved it would have shown the one thing the screen exists to report as a lie.
  *
- * Wrapped around the eight review-scoped writes where they are listed, rather than added
- * inside each of them: the rule is a property of *being a write*, and a rule applied at
- * eight call sites is a rule the ninth write forgets.
+ * Wrapped around the eight review-scoped writes **where they are listed**, rather than
+ * added inside each of them. That does not make the rule structural — a ninth write can
+ * still be added without it — and the claim that it did was wrong when it was written
+ * here. What the list buys is that all eight are one screenful, so the odd one out is
+ * visible; what it costs is that nothing fails when somebody adds the ninth. The Rust side
+ * guards the same rule with a test that walks every write; this side has one test, over
+ * `approveDraft`, in `test/desk.spec.ts`.
  */
 function wrote<T>(reviewId: number, made: T): T {
   const owner = reviewById(reviewId)

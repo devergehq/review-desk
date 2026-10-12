@@ -453,10 +453,10 @@ test.describe('the whole path, on a seeded database', () => {
     await page.getByRole('button', { name: 'Sign off and post' }).click()
 
     await expect(
-      page.getByText(
-        'Signed off. Will be posted as "Request changes" — waiting for the session to post it.',
-      ),
+      page.getByText('Signed off. Will be posted as "Request changes".'),
     ).toBeVisible()
+    /* And the waiting is said once, by the panel, rather than twice on one screen. */
+    await expect(page.getByText('Waiting for this review’s session to post it.')).toBeVisible()
     await expect(
       page.getByText('The review session posts it under your name, with no bot banner.'),
     ).toBeVisible()

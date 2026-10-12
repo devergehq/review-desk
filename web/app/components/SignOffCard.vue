@@ -26,7 +26,17 @@ const props = withDefaults(
     event: ReviewEvent
     /** "2 findings and 2 comments will be posted." The caller counts; this draws. */
     summary?: string | null
-    /** How often the session looks, in seconds, when the record says. */
+    /**
+     * How often the session looks, in seconds, when the record says.
+     *
+     * **Nothing passes this, and DEV-932 decided the other way.** The draft page now says
+     * the number outright — `POSTED_WITHIN_SECONDS` in `app/utils/posting.ts`, two of
+     * Locus's watcher intervals — labelled as the page's own setting rather than as
+     * something the record reports. The ground this prop rests on is unchanged and still
+     * true: nothing reports the schedule. What changed is that "not known here" is useless
+     * to a developer deciding whether to go and look at a session. This card is mounted by
+     * nothing; whoever wires it should take that decision with it, or take the card out.
+     */
     pollSeconds?: number | null
     /** Where the posted review is, once there is one. Read-only: a link out. */
     postedUrl?: string | null

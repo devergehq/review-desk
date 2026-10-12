@@ -85,21 +85,31 @@ const waiting = computed(() => props.draft.status === 'approved' && !props.bodyI
  */
 const watchedTheSignOff = ref(props.draft.status === 'approved')
 
+/**
+ * **A different review in the same component.** One draft page serves every review, so
+ * going from `/reviews/17/draft` to `/reviews/15/draft` changes these props without
+ * mounting anything: the router keeps the page and the two resources re-read. Nothing this
+ * remembers was about the review now in front of it, so it starts again — which is also
+ * why the clock moves, since the figures below are about the new one.
+ */
 watch(
-  () => [props.draft.review_id, props.draft.status] as const,
-  ([review, status], [wasReview]) => {
-    /*
-     * **A different review in the same component.** One draft page serves every review, so
-     * going from `/reviews/17/draft` to `/reviews/15/draft` changes these props without
-     * mounting anything: the router keeps the page and the two resources re-read. Nothing
-     * this remembers was about the review now in front of it, so it starts again — which
-     * is also why the clock moves, since the figures below are about the new one.
-     */
-    if (review !== wasReview) {
-      watchedTheSignOff.value = status === 'approved'
-      now.value = new Date()
-      return
-    }
+  () => props.draft.review_id,
+  () => {
+    watchedTheSignOff.value = props.draft.status === 'approved'
+    now.value = new Date()
+  },
+)
+
+/*
+ * **Two watchers on two scalars, not one on a tuple of them.** A getter returning a fresh
+ * array is never `Object.is`-equal to the last one, and `props.draft` is a new object after
+ * every read — so a combined watcher ran on all twelve ticks of a minute's waiting, and a
+ * guard inside it was the only thing stopping the clock resetting each time. Measured at
+ * twelve fires against nought. These fire when their comments say they do.
+ */
+watch(
+  () => props.draft.status,
+  (status) => {
     if (status === 'approved') watchedTheSignOff.value = true
     else if (status === 'ready' || status === 'drafting') watchedTheSignOff.value = false
   },
@@ -242,28 +252,8 @@ const announcement = computed(() => {
     : 'Waiting for this review’s session to post it.'
 })
 
-/**
- * "25 sec ago", down to the second, which is the unit a forty-second wait is read in.
- *
- * `sinceLabel` is the desk's usual wording and says "just now" for anything under a minute,
- * which is right where a time is read at a glance and useless here: the whole question
- * while a draft waits is whether twenty seconds have passed or fifty. The one thing it is
- * borrowed from `sinceLabel` for is the nought — "0 sec ago" is a reading of a clock, and
- * "just now" is what a person says.
- *
- * Null where the record holds no instant, so each caller says in its own words what that
- * absence is: an unrecorded sign-off and a review nothing has written to are both nulls
- * and are not the same sentence.
- */
-function agoLabel(at: Instant | null | undefined): string | null {
-  const seconds = secondsSince(at, now.value)
-  if (seconds == null) return null
-  if (seconds === 0) return 'just now'
-  return `${durationLabel(seconds)} ago`
-}
-
 const signedOffLabel = computed(
-  () => agoLabel(props.draft.approved_at) ?? 'at an unrecorded time',
+  () => agoLabel(props.draft.approved_at, now.value) ?? 'at an unrecorded time',
 )
 
 /**
@@ -273,9 +263,11 @@ const signedOffLabel = computed(
  * answer as a long time ago — so it is words rather than a figure, which is the rule the
  * checks above this panel follow for a count the server cannot answer.
  */
-const lastWrittenLabel = computed(() => agoLabel(props.lastActivityAt) ?? 'Not recorded')
+const lastWrittenLabel = computed(
+  () => agoLabel(props.lastActivityAt, now.value) ?? 'Not recorded',
+)
 
-const postedLabel = computed(() => agoLabel(props.draft.posted_at))
+const postedLabel = computed(() => agoLabel(props.draft.posted_at, now.value))
 
 /**
  * How long the session took, from the sign-off to the posting it reported.
@@ -362,7 +354,7 @@ const noAnchorSentence = computed(
     -->
     <p
       class="said"
-      :class="{ 'said--waiting-to-speak': announcement.length === 0 }"
+      :class="{ 'rd-visually-hidden': announcement.length === 0 }"
       role="status"
     >
       {{ announcement }}
@@ -452,18 +444,14 @@ const noAnchorSentence = computed(
 /*
  * The live region. **Not `display: none` while it is empty, however tempting**: a region
  * out of the accessibility tree until the moment it has something to say is a region a
- * screen reader may never announce. Taken out of the flow instead, which keeps it in the
- * tree and in the page while costing the layout nothing — `contents` above only works
- * because of this, since an empty paragraph is a flex child like any other.
+ * screen reader may never announce. `rd-visually-hidden` is the desk's own way of saying
+ * that — in the tree, out of the layout — and `contents` above only works because of it,
+ * since an empty paragraph is a flex child like any other.
  */
 .said {
   margin: 0;
   font-size: 13px;
   font-weight: 500;
-}
-
-.said--waiting-to-speak {
-  position: absolute;
 }
 
 .who,

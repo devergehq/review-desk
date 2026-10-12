@@ -258,8 +258,13 @@ function statusLine(data: DraftDetail): string {
       + 'Take the sign-off back and send it back; the session writes it again.'
   }
   if (draft.status === 'approved') {
-    return `Signed off. Will be posted as "${eventLabel(draft.event)}" — waiting for the `
-      + 'session to post it.'
+    /*
+     * **It used to end "— waiting for the session to post it", and the panel says that
+     * now.** `PostingWatch`'s live region carries the waiting, in those words, a few
+     * inches away; this line is the page's one-sentence summary of where the draft stands,
+     * and the clause was the same sentence at two sizes.
+     */
+    return `Signed off. Will be posted as "${eventLabel(draft.event)}".`
   }
   if (draft.status === 'sent_back') return 'Sent back to the session with a note.'
   if (draft.status === 'posted') return 'Posted. Layer 7 reads the author’s replies.'

@@ -49,6 +49,26 @@ export function sinceLabel(at: Instant | null | undefined, now: Date = new Date(
   return `${days} ${days === 1 ? 'day' : 'days'} ago`
 }
 
+/**
+ * "25 sec ago", down to the second — which `sinceLabel` deliberately will not say.
+ *
+ * **Both are right, for different readers.** `sinceLabel` answers "roughly when" and says
+ * "just now" for anything under a minute, which is what a time read at a glance wants. The
+ * draft page's watch is asking whether twenty seconds have gone or fifty, and those are the
+ * same sentence to `sinceLabel`. The one thing borrowed from it is the nought: "0 sec ago"
+ * is a reading of a clock, and "just now" is what a person says.
+ *
+ * Null where the record holds no instant, so each caller says in its own words what that
+ * absence is — an unrecorded sign-off and a review nothing has written to are both nulls
+ * and are not the same sentence.
+ */
+export function agoLabel(at: Instant | null | undefined, now: Date = new Date()): string | null {
+  const seconds = secondsSince(at, now)
+  if (seconds == null) return null
+  if (seconds === 0) return 'just now'
+  return `${durationLabel(seconds)} ago`
+}
+
 /** "open 3 days", for a pull request nobody has picked up. */
 export function openForLabel(at: Instant | null | undefined, now: Date = new Date()): string {
   if (!at) return 'open for an unrecorded time'

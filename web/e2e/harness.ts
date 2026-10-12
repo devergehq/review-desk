@@ -1374,10 +1374,9 @@ export async function stop(serving: Serving): Promise<void> {
  * `--repeat-each` hit.
  *
  * A counter in this module does not fix the second one, because the runner reloads the
- * module between repeats and the counter starts again. So it opens from 900 upward — well
- * clear of the 405–519 the seeds use — and keeps going until one comes back as a review of
- * its own: round 1, no findings, no draft. That is three facts rather than one because
- * they fail differently; a re-opened review is round 1 too.
+ * module between repeats and the counter starts again. So it asks the record instead,
+ * from 900 upward — well clear of the 405–519 the seeds use — for the first pull request
+ * nothing has reviewed. `review find` is the read that answers it.
  *
  * **What that buys is repeating the block, not repeating the file.** Every review this
  * makes is left on the shared database, and one of them is marked posted — which is the
@@ -1393,43 +1392,34 @@ const LAST_PULL_REQUEST = FIRST_PULL_REQUEST + 50
 /**
  * Open a review on the first pull request in that range that nothing has reviewed.
  *
- * **The probe writes nothing, and that took a second go.** `review open` writes every fact
- * it is given and leaves out what it is not, so probing *with* the title rewrote the title
- * of whatever review was already on that number before rejecting it — a finished test's
- * record changed underneath it. The probe now gives the three fields that identify the
- * review and nothing else; the facts are written by the second call, on the number it
- * settles on, where the same head hands back the same review.
+ * **The search is a read, and getting there took three goes.** Probing with `review open`
+ * and the title rewrote the title of whatever review was already on each number it
+ * rejected — a finished test's record changed underneath it. Probing with `review open`
+ * and the three identifying fields alone wrote nothing, but still *opened* a review on
+ * every number it tried and cost two process spawns apiece. `review find` answers the same
+ * question in one spawn and writes nothing at all: a list of that pull request's reviews,
+ * newest round first, and an empty list for one nobody has reviewed.
+ *
+ * Spawns are what this costs — 15.7 ms each, measured over ten runs against a scratch
+ * database — so the difference is small and the write hazard is retired rather than
+ * stepped around.
  */
 function openAFreshReview(
   database: string,
   title: string,
 ): { reviewId: number, pr: number } {
   for (let pr = FIRST_PULL_REQUEST; pr <= LAST_PULL_REQUEST; pr += 1) {
-    const opened = cli(database, [
+    const { reviews } = cliJson(database, [
       'review',
-      'open',
+      'find',
       '--repo',
       'acme/portal',
       '--pr',
       String(pr),
-      '--head',
-      'b4d9e01',
-    ])
-    const reviewId = Number(opened.match(/\d+/)?.[0])
-    if (!Number.isInteger(reviewId)) {
-      throw new Error(`review open printed no id: ${opened}`)
-    }
+    ]) as unknown as { reviews: unknown[] }
+    if (reviews.length > 0) continue
 
-    const shown = cliJson(database, [
-      'review',
-      'show',
-      '--review',
-      String(reviewId),
-    ]) as unknown as { review: { round: number }, findings: unknown[], draft: unknown }
-
-    if (shown.review.round !== 1 || shown.findings.length > 0 || shown.draft != null) continue
-
-    cli(database, [
+    const opened = cli(database, [
       'review',
       'open',
       '--repo',
@@ -1445,6 +1435,10 @@ function openAFreshReview(
       '--changed-lines',
       '64',
     ])
+    const reviewId = Number(opened.match(/\d+/)?.[0])
+    if (!Number.isInteger(reviewId)) {
+      throw new Error(`review open printed no id: ${opened}`)
+    }
     return { reviewId, pr }
   }
 

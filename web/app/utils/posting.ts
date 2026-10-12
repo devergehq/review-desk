@@ -20,6 +20,15 @@ import type { Review } from '~/types/desk'
  * So it is a setting of this page, written down beside where it came from. If Locus
  * changes its watcher, this line is wrong and is the only line that is — which is the
  * whole reason it is a named constant rather than "about half a minute" in a sentence.
+ *
+ * **It reverses what `SignOffCard` decided, and the reversal is deliberate.** That card —
+ * DEV-876's control set, built for this same gap and mounted by nothing — draws the
+ * session's schedule through `NotMeasured` as "not known here", on the ground that nothing
+ * reports it. The ground is the same and still true; what changed is the answer. "Not
+ * known" is honest and useless to a developer deciding whether to go and look at a
+ * session, and a number this page owns — labelled as this page's own, never as the
+ * record's — is the more useful honest answer. Whichever of the two is wired, only one of
+ * them should be, and this one is.
  */
 export const WATCHER_READS_EVERY_SECONDS = 20
 
@@ -81,6 +90,12 @@ export function postedReview(
   const id = review.github_review_id?.trim()
   if (!id) return null
 
+  /*
+   * **The third place that builds this address**, after `utils/houseStyle.ts` and the
+   * queue's own `prUrl`. Deliberately not lifted into a shared helper here: DEV-936 is
+   * landing `app/utils/links.ts` for exactly that, and a fourth helper racing it would be
+   * the problem rather than the fix. This folds into that file on the rebase.
+   */
   const pull = `https://github.com/${review.repo}/pull/${review.pr}`
   return /^[0-9]+$/.test(id)
     ? { href: `${pull}#pullrequestreview-${id}`, exact: true }
