@@ -70,6 +70,8 @@ const SEVERITIES = [
   'should', 'should', 'should', 'should', 'should', 'should',
   'question', 'question', 'question',
   'nit', 'nit', 'nit', 'nit',
+  /* The two held back for a ticket, which are nits as a held-back finding usually is. */
+  'nit', 'nit',
 ]
 
 const FILES = [
@@ -140,7 +142,7 @@ test.beforeAll(async () => {
    * so each is written to the scratch directory and handed over by path, which is what
    * `harness.ts` does for the acceptance seed's own findings.
    */
-  for (let seq = 1; seq <= 14; seq += 1) {
+  for (let seq = 1; seq <= 16; seq += 1) {
     const document = {
       lens: 'correctness',
       severity: SEVERITIES[seq - 1]!,
@@ -149,6 +151,20 @@ test.beforeAll(async () => {
       claim: `What F${seq} says is wrong, written at the length a session really writes a `
         + 'claim at, which is a sentence or two and well past the twelve words a row has '
         + 'room for.',
+      /*
+       * **F15 and F16 are held back for a ticket, and their files change too.** The
+       * harvester writes against any finding of the review — `harvest_code_changes`
+       * iterates all of them and asks only for a file — so a held-back nit carries an
+       * outcome, and this page draws a row only for what was posted. Without them the
+       * section that says what the record holds about the findings it draws no row for
+       * is never drawn in a browser.
+       */
+      ...(seq >= 15
+        ? {
+            disposition: 'held_back',
+            disposition_reason: 'a naming nit; it goes to the ticket with the rest',
+          }
+        : {}),
       /*
        * F4 carries no title, so the page has one row drawing a claim cut to a title's
        * length — and saying that it cut it, which is the rule `HeldBackRows` states.
@@ -200,6 +216,10 @@ test.beforeAll(async () => {
 
     /* And one decision of the developer's own, which this page must not draw. */
     [12, 'cut', 'developer', 'formatting nit', '2026-10-10T08:00:00Z'],
+
+    /* The two held-back findings' files changed in the same push. */
+    [15, 'code_changed_after', 'harvester', changedDetail(15, true), '2026-10-12T16:00:00Z'],
+    [16, 'code_changed_after', 'harvester', changedDetail(16, true), '2026-10-12T16:05:00Z'],
   ]
 
   for (const [finding, kind, by, detail, when] of outcomes) {
@@ -294,6 +314,16 @@ for (const { name, width, height } of WIDTHS) {
     await expect(page.locator('.answered-row')).toHaveCount(7)
     await expect(page.locator('.silent-row')).toHaveCount(0)
     await expect(page.locator('.fold')).toContainText('7 findings nothing came back on')
+
+    /* And the fourteen posted are what the figures are about, not the sixteen recorded. */
+    await expect(page.locator('.sub')).toContainText('14 findings were posted')
+    await expect(page.locator('main')).toContainText(
+      'Outcomes on findings this page does not list',
+    )
+    await expect(page.locator('main')).toContainText('2 outcomes')
+    await expect(page.locator('main')).toContainText(
+      'Against findings this review did not post',
+    )
 
     /* The 108-word reply is drawn whole. */
     await expect(page.locator('.quote').first()).toContainText(LONG_REPLY)

@@ -708,7 +708,8 @@ describe('the figures and the rows count the same findings', () => {
     await withDense(withHeldBack())
     const page = await shown(REVIEW)
     expect(page.text()).toContain('Outcomes on findings this page does not list')
-    expect(page.text()).toContain('3 outcomes against findings this review did not post')
+    expect(page.text()).toContain('3 outcomes')
+    expect(page.text()).toContain('Against findings this review did not post')
   })
 
   it('says nothing about them where there are none', async () => {

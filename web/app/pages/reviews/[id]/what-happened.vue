@@ -444,13 +444,17 @@ function detailId(seq: number): string {
         <DeskSection
           v-if="elsewhere > 0"
           heading="Outcomes on findings this page does not list"
-          :note="`${elsewhere}`"
+          :note="count(elsewhere, 'outcome')"
         >
+          <!--
+            **The number is on the heading and not again here.** `HeldBackRows` carries the
+            measurement: its own heading said "4 nits" over a group heading that said "4
+            nits" too, three lines apart, and a reader met the same three words twice.
+          -->
           <p class="rd-note none">
-            The record holds {{ count(elsewhere, 'outcome') }} against findings this review
-            did not post — a nit held back for a ticket, one set aside, or one carried into
-            this round already fixed. They are not counted in the figures above, which are
-            about the findings that were posted.
+            Against findings this review did not post — a nit held back for a ticket, one
+            set aside, or one carried into this round already fixed. They are not counted
+            in the figures above, which are about the findings that were posted.
             <NuxtLink :to="`/reviews/${reviewId}/code-review`">
               The code review page
             </NuxtLink>
