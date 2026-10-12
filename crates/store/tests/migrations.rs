@@ -859,3 +859,43 @@ fn ids_left_blank_by_the_old_writer_do_not_trap_a_review() {
         "the request moves again rather than opening a second unstarted review"
     );
 }
+
+/// **A title the old writer left blank becomes absent, which is what it means.**
+///
+/// The fifth column written through the loose `COALESCE` path, and the one left out of
+/// migration 17's first sweep because it changes none of that migration's rules. The
+/// argument does not depend on the rules: `POST /reviews` fills a missing title from
+/// GitHub only when the column is null, so a row holding `''` can never be given one, and
+/// `review find` prints a dangling "— " for it for ever.
+#[test]
+fn a_title_left_blank_by_the_old_writer_becomes_absent() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+
+    const FROM: i64 = 16;
+    assert!(newest_version() > FROM, "this test needs migration 17");
+
+    {
+        let old = Store::open_at_version(&path, FROM).expect("open at 16");
+        assert_eq!(old.schema_version().unwrap(), FROM);
+    }
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "INSERT INTO reviews (id, repo, pr, head_sha, round, title, created_at)
+                 VALUES (1, 'acme/portal', 412, 'abc123', 1, '', 1000),
+                        (2, 'acme/portal', 413, 'abc124', 1, '  ', 1000),
+                        (3, 'acme/portal', 414, 'abc125', 1, 'Retry deliveries', 1000);",
+        )
+        .expect("write the rows a released build left");
+    }
+
+    let migrated = Store::open(&path).expect("reopen migrates");
+    assert_eq!(migrated.get_review(1).unwrap().title, None);
+    assert_eq!(migrated.get_review(2).unwrap().title, None);
+    assert_eq!(
+        migrated.get_review(3).unwrap().title.as_deref(),
+        Some("Retry deliveries"),
+        "and a title somebody wrote is left exactly as it was"
+    );
+}

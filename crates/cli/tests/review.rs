@@ -818,3 +818,33 @@ fn review_find_answers_for_the_repository_however_it_was_typed() {
     ]);
     assert_eq!(none, "no reviews of trilogy-care/nothing#9585");
 }
+
+#[test]
+fn review_show_says_a_review_is_dismissed() {
+    // **The only view a person reads**, and the one fact it printed nothing about. A
+    // session handed this id sees an ordinary review and then gets a 409 from `brief
+    // confirm` with no earlier signal. There is no command that dismisses one — that is
+    // the developer's act in the dashboard — so the store writes it here.
+    let desk = Desk::new();
+    let review = open_review(&desk, "acme/portal", "777", "4f1a9c2");
+    desk.store()
+        .dismiss_review(
+            review.parse().expect("an id"),
+            "the pull request was closed unmerged",
+        )
+        .expect("dismiss it");
+
+    let printed = desk.run(&["review", "show", "--review", &review]);
+    assert!(
+        printed.contains("dismissed at"),
+        "the only view a person reads has to say it: {printed}"
+    );
+    assert!(
+        printed.contains("the pull request was closed unmerged"),
+        "and why: {printed}"
+    );
+
+    // And `--json` carried it all along, which is what the dispatcher reads.
+    let shown = desk.json(&["review", "show", "--review", &review]);
+    assert!(shown["review"]["dismissed_at"].is_i64());
+}

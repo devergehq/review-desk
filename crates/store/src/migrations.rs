@@ -1490,6 +1490,16 @@ UPDATE reviews
        not_checked = NULLIF(
          TRIM(not_checked, ' ' || char(9) || char(10) || char(11) || char(12) || char(13)),
          ''
+       ),
+       -- **And the title, which is the fifth column written through that same loose
+       -- path.** It changes no rule of this migration's, so it was left out of the four
+       -- above — and a review of this branch pointed out that the argument does not
+       -- depend on the rule: `POST /reviews` fills a missing title from GitHub only when
+       -- the column `is_none()`, so a legacy row holding `''` can never be given one, and
+       -- `review find` prints a dangling "— " for it for ever. One sweep, five columns.
+       title = NULLIF(
+         TRIM(title, ' ' || char(9) || char(10) || char(11) || char(12) || char(13)),
+         ''
        );
 "#,
     },

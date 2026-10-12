@@ -405,6 +405,20 @@ fn show_lines(full: &FullReview) -> String {
     if let Some(title) = &review.title {
         lines.push(format!("  title: {title}"));
     }
+
+    // **Said before anything else about the review, because it changes what everything
+    // else means.** A dismissed review is in no queue, yields no `work list` item, is not
+    // in the Reviews list's default view, and refuses the four acts that need an agent —
+    // so a session or a developer handed its id, reading the only view a person reads,
+    // has to be told. It was the one fact this printed nothing about: a commit of mine
+    // said it had been fixed here and the edit never landed, which `review show` says
+    // plainly and the commit message did not.
+    if let Some(at) = review.dismissed_at {
+        lines.push(match &review.dismissed_reason {
+            Some(why) => format!("  dismissed at {at}: {why}"),
+            None => format!("  dismissed at {at}"),
+        });
+    }
     for (label, value) in [
         ("ticket", review.ticket_id.clone()),
         // The address beside the id, on its own line. Printed because this is the only

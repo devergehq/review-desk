@@ -373,8 +373,18 @@ impl Store {
         // **The facts are checked before a round is spent.** `open_review` creates the
         // review, so a fact refused on the second step would leave behind a review the
         // refused call appears not to have made — and on a head commit nobody had reviewed
-        // yet it would have spent a round number doing it. Checking here keeps
-        // `review open --ticket-url` all-or-nothing.
+        // yet it would have spent a round number doing it. Checking here is what makes
+        // `review open --ticket-url` all-or-nothing in the ordinary case.
+        //
+        // **It is not a guarantee under contention, and this used to claim it was.** The
+        // check runs outside `open_review`'s write lock, so between it and the insert
+        // another caller can claim the unstarted round this one read a ticket id from;
+        // the insert then opens a fresh round with no id, `set_review_facts` refuses the
+        // unpaired address, and the call fails having spent a round. Two callers racing
+        // on one pull request while one of them passes an address is narrow enough to
+        // state rather than close — closing it means moving the whole of
+        // `open_review`'s round arithmetic behind this check, and that arithmetic is
+        // load-bearing for the reason its own comment gives.
         //
         // The pairing check needs the review the call is about, which may or may not exist:
         // a session can record the id on one call and the address on a later one, so an

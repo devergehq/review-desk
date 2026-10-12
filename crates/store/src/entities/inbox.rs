@@ -426,14 +426,22 @@ impl Store {
         since: Option<Timestamp>,
     ) -> Result<Vec<NitTicket>> {
         let repo = repo.map(normalise::repo);
-        let mut statement = self.conn.prepare(&format!(
+        // **A dismissed review's filed ticket is still listed, and that is a decision
+        // this branch reversed.** The clause went in with the queue's other groups, and a
+        // review of it put the two readings side by side: this is "handled without you",
+        // a log of what happened in the window, and `finished_review_timings` is exempted
+        // on exactly that ground — dismissing a review afterwards does not unmeasure the
+        // time it took, and it does not unfile the ticket either. The groups that drop a
+        // dismissed review are the ones asking what to do next; a figure about the week's
+        // work that shrank when the developer tidied up would be a worse answer than the
+        // one it replaced.
+        let mut statement = self.conn.prepare(
             "SELECT v.id FROM reviews v
              WHERE v.nit_ticket_status = ?1
-               AND {IN_PLAY}
                AND (?2 IS NULL OR v.repo = ?2)
                AND (?3 IS NULL OR v.nit_ticket_filed_at >= ?3)
-             ORDER BY v.id DESC"
-        ))?;
+             ORDER BY v.id DESC",
+        )?;
         let ids = statement
             .query_map(params![NitTicketStatus::Filed, repo, since], |row| {
                 row.get::<_, i64>(0)

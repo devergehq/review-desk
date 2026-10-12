@@ -718,7 +718,14 @@ function startReview(prUrl: string): Review {
  */
 function refuseIfDismissed(id: number, act: string): void {
   const detail = reviewById(id)
-  if (detail?.review.dismissed_at != null) {
+  /*
+   * **A review that is not there is not found, not "not dismissed".** Read with `?.`
+   * this passed silently for an unknown id, and in the two callers that ask before any
+   * other lookup that turned the binary's "no review with id N" into "no draft on review
+   * N" — a different refusal about a different thing.
+   */
+  if (!detail) throw notFound(`review ${id}`)
+  if (detail.review.dismissed_at != null) {
     throw conflict(
       `Review ${id} is dismissed, so no session will be started for it and nothing would `
       + `come of ${act}; bring it back first.`,
@@ -909,23 +916,28 @@ function sendBackDraft(id: number, note: string): DraftDetail {
 function requestNitTicket(id: number, ticketId: string | null = null): NitTicket {
   const detail = reviewById(id)
   if (!detail) throw notFound(`review ${id}`)
-  /*
-   * **The ask, not the report** — the split the store makes, for its reason: with no
-   * ticket id this is the developer asking for one, which needs an agent a dismissed
-   * review will never be given; with one it is a session saying which ticket it already
-   * filed, and refusing that would lose an id that exists in the tracker. Guarding both
-   * here made this backend refuse where the binary accepts, which is the one thing it
-   * must not do.
-   */
-  if (ticketId == null) {
-    refuseIfDismissed(id, 'asking for its held-back findings to be ticketed')
-  }
 
   const seqs = detail.findings
     .filter(finding => finding.disposition === 'held_back')
     .map(finding => finding.seq)
+  /*
+   * **"No nits" before the dismissal, which is the order the server asks in**: its
+   * handler counts the held-back findings itself and only then reaches the store's
+   * guard. Asking the other way round answered "this review is dismissed" where the
+   * binary answers "it holds back no nits" — the same refusal code about a different
+   * thing, which is what this file must never do.
+   */
   if (seqs.length === 0) {
     throw conflict(`Review ${id} holds back no nits, so there is nothing to file.`)
+  }
+  /*
+   * **The ask, not the report** — the split the store makes, for its reason: with no
+   * ticket id this is the developer asking for one, which needs an agent a dismissed
+   * review will never be given; with one it is a session saying which ticket it already
+   * filed, and refusing that would lose an id that exists in the tracker.
+   */
+  if (ticketId == null) {
+    refuseIfDismissed(id, 'asking for its held-back findings to be ticketed')
   }
 
   detail.nit_ticket = {

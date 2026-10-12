@@ -434,7 +434,7 @@ fn a_dismissed_review_is_in_neither_of_the_queues_two_author_groups() {
 }
 
 #[test]
-fn a_dismissed_reviews_filed_nit_ticket_is_not_in_the_queue() {
+fn a_dismissed_reviews_filed_nit_ticket_is_still_counted_as_handled() {
     let (_dir, store) = temp_store();
     let review = requested(&store, 798, "aaa1111");
     store
@@ -456,9 +456,13 @@ fn a_dismissed_reviews_filed_nit_ticket_is_not_in_the_queue() {
     store
         .dismiss_review(review.id, "the pull request was closed unmerged")
         .expect("dismiss it");
-    assert!(
-        store.filed_nit_tickets(None, None).unwrap().is_empty(),
-        "the queue's \"handled without you\" does not count a dismissed review's ticket"
+    assert_eq!(
+        store.filed_nit_tickets(None, None).unwrap().len(),
+        1,
+        "\"handled without you\" is a log of what happened, and dismissing the review \
+         afterwards does not unfile the ticket — the same ground the timings are exempted \
+         on. This asserted the opposite until a review of this branch put the two \
+         readings beside each other."
     );
 }
 
@@ -802,6 +806,11 @@ fn every_query_that_lists_reviews_says_what_it_does_about_dismissed_ones() {
             "list_reviews",
             "one pull request's own rounds, which is history: a hole where round 2 was \
              would make the round numbers read as a gap in the record",
+        ),
+        (
+            "filed_nit_tickets",
+            "the Inbox's \"handled without you\": a log of what happened in the window, \
+             and dismissing a review afterwards does not unfile the ticket it had",
         ),
         (
             "finished_review_timings",
