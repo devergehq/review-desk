@@ -220,7 +220,15 @@ const recordIsCurrent = computed(
 watch(
   () => detail.data.value?.draft.status,
   (status) => {
-    if (status === 'posted') notice.value = null
+    if (status !== 'posted') return
+    notice.value = null
+    /*
+     * **And the open send-back form goes with it.** Its submit is guarded, so pressing it
+     * does nothing — but a textarea asking "What is the session to change?" over a draft
+     * that is already on GitHub, with a dead button and only Cancel as a way out, is the
+     * page leaving a question open that the record has answered.
+     */
+    sendingBack.value = false
   },
 )
 

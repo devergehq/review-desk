@@ -3172,6 +3172,14 @@ test.describe('the draft page after a sign-off', () => {
     })
 
     /*
+     * **With the send-back form open under it**, which is the race the guard on that
+     * form's submit is about: the developer starts typing a note and the session posts
+     * while they type.
+     */
+    await page.getByRole('button', { name: 'Take back the sign-off and send it back' }).click()
+    await page.locator('textarea#send-back-note').fill('Half a note, never sent')
+
+    /*
      * **The review session's own command, with the GitHub review it became.** Review Desk
      * posts nothing: this is the one transition that involves GitHub and the session makes
      * it. A number rather than a node id, because a number is what GitHub builds its own
@@ -3201,6 +3209,13 @@ test.describe('the draft page after a sign-off', () => {
 
     /* The heading and the sentence under it followed, which is the rest of the page. */
     await expect(page.getByRole('heading', { name: 'Posted.' })).toBeVisible()
+
+    /*
+     * And the form closed itself. A textarea asking what the session is to change, over a
+     * draft already on GitHub, with a dead button and only Cancel as a way out, is the
+     * page leaving a question open that the record has answered.
+     */
+    await expect(page.locator('textarea#send-back-note')).toHaveCount(0)
 
     /*
      * **And the sign-off's own notice is gone.** "Signed off. The review session posts it"

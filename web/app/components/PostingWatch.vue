@@ -520,6 +520,22 @@ const lateSentence = computed(
  * has to be able to render, and the honest rendering says what the record holds rather
  * than guessing at how it got that way or drawing a link to nowhere.
  */
+/**
+ * What a sighted reader is told when a sign-off is taken back under them.
+ *
+ * **The state table above said the panel "says" this and the panel did not.** The sentence
+ * existed only in the hidden region, so a screen-reader user was told the sign-off had
+ * gone and everyone else got an empty panel and the status line's "Sent back to the
+ * session with a note." — which cannot tell a withdrawn sign-off from an ordinary
+ * send-back, the one distinction `watchedTheSignOff` exists to draw.
+ *
+ * It adds what the announcement cannot fit rather than repeating it: where the draft is
+ * now, and that nothing is waiting on the developer until a session writes it again.
+ */
+const takenBack
+  = 'The sign-off is taken back and the draft is with the session again. Nothing here is '
+    + 'waiting on you until a session writes it afresh.'
+
 const noReviewSentence
   = 'The record holds no GitHub review for this draft, so there is nothing to link to. '
     + 'Nothing this API writes can leave it that way — a session reports the id when it '
@@ -586,6 +602,12 @@ const noAnchorSentence = computed(
         class="rd-note late"
       >
         {{ lateSentence }}
+      </p>
+    </template>
+
+    <template v-else-if="draft.status === 'sent_back' && watchedTheSignOff">
+      <p class="rd-note">
+        {{ takenBack }}
       </p>
     </template>
 

@@ -474,6 +474,14 @@ describe('when the developer takes the sign-off back', () => {
     })
 
     expect(announced(page)).toContain('The sign-off is taken back')
+    /*
+     * **Drawn as well as announced**, because the status line above cannot tell a
+     * withdrawn sign-off from an ordinary send-back and a sighted reader was getting an
+     * empty panel. It adds where the draft is rather than repeating the announcement.
+     */
+    const seen = page.text().replace(page.find('[role="status"]').text(), '')
+    expect(seen).toContain('the draft is with the session again')
+    expect(seen).toContain('waiting on you until a session writes it afresh')
     expect(page.text()).not.toContain('Waiting for this review')
 
     await tick(page, RE_READ_EVERY_SECONDS * 4)
@@ -517,6 +525,8 @@ describe('when the developer takes the sign-off back', () => {
 
     expect(page.text()).toContain('may not be running')
     expect(announced(page)).toBe('')
+    /* Nor drawn: this page did not watch a sign-off on it, so there is none to take back. */
+    expect(page.text()).not.toContain('the draft is with the session again')
   })
 
   it('remembers nothing about another review’s draft', async () => {
