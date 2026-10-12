@@ -194,8 +194,33 @@ describe('while a signed-off draft is waiting', () => {
   })
 
   it('says the review’s own session posts it, and that Review Desk does not', async () => {
-    const page = await watching()
+    const page = await watching({ review: { ...REVIEW, session_id: 'ses-9' } })
     expect(page.text()).toContain('This review’s own session posts it, not Review Desk')
+  })
+
+  it('names no session for a review whose record names none', async () => {
+    /*
+     * `Review.session_id` is null for any review opened without `review link --session`,
+     * which is most of them. "This review's own session" asserted something the record
+     * does not hold, on the one screen whose whole argument is that it does not do that.
+     */
+    const page = await watching({ review: { ...REVIEW, session_id: null } })
+    expect(page.text()).toContain('this review names none')
+    expect(page.text()).not.toContain('This review’s own session posts it')
+  })
+
+  it('sends nobody to look at a session the record never recorded', async () => {
+    const page = await signedOff({ review: { ...REVIEW, session_id: null } })
+    await tick(page, POSTED_WITHIN_SECONDS)
+    expect(page.text()).toContain('may not be running')
+    expect(page.text()).toContain('nothing here to point you at')
+    expect(page.text()).not.toContain('Check the session that was reviewing this')
+  })
+
+  it('does send them to one the record does name', async () => {
+    const page = await signedOff({ review: { ...REVIEW, session_id: 'ses-9' } })
+    await tick(page, POSTED_WITHIN_SECONDS)
+    expect(page.text()).toContain('Check the session that was reviewing this')
   })
 
   it('says it is not told whether that session is running', async () => {

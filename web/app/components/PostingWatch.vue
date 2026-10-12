@@ -465,13 +465,27 @@ const postedAs = computed(() =>
  * identifier a `<script setup>` never names is not in the template's scope.
  */
 
-/* Two settings and no props, so a constant: there is nothing here for a computed to track. */
-const whoPosts
-  = 'This review’s own session posts it, not Review Desk — it reads the desk about every '
-    + `${WATCHER_READS_EVERY_SECONDS} seconds while a draft is waiting, so one that is `
-    + `running posts within about ${POSTED_WITHIN_SECONDS} seconds. Whether it is running `
-    + 'is not something Review Desk is told; the time above is how long the review has been '
-    + 'silent, which is the nearest thing the record holds.'
+/**
+ * Who posts it, and how soon a running one would.
+ *
+ * **It names a session only where the record names one.** `Review.session_id` is nullable
+ * and is null for any review opened without `review link --session` — so "this review's
+ * own session" was the panel asserting something the record does not hold, on the one
+ * screen whose whole argument is that it says what the record can support. The second
+ * half is the same either way: the interval is Locus's, not this review's.
+ */
+const whoPosts = computed(
+  () =>
+    (props.review.session_id == null
+      ? 'A review session posts this, not Review Desk — and this review names none, so '
+      + 'Review Desk cannot tell you which. One reads the desk about every '
+      : 'This review’s own session posts it, not Review Desk — it reads the desk about '
+        + 'every ')
+      + `${WATCHER_READS_EVERY_SECONDS} seconds while a draft is waiting, so one that is `
+      + `running posts within about ${POSTED_WITHIN_SECONDS} seconds. Whether it is running `
+      + 'is not something Review Desk is told; the time above is how long the review has been '
+      + 'silent, which is the nearest thing the record holds.',
+)
 
 /**
  * Why the two figures above usually read the same, said rather than left to be puzzled at.
@@ -505,21 +519,20 @@ const bothTheSignOff
 const lateSentence = computed(
   () =>
     `Nothing has reported it posted in the ${durationLabel(sinceSignOff.value)} since you `
-    + 'signed off, so the session may not be running. Check the session that was reviewing '
-    + 'this, or take the sign-off back and send the draft back with a note — a session that '
-    + 'picks it up later writes the draft again.',
+    + 'signed off, so the session may not be running. '
+    /*
+     * **It sends the developer to a session only where there is one to send them to.**
+     * The record names a session or it does not, and telling somebody to go and look at
+     * one that was never recorded is the same wrong turn as accusing Locus when Review
+     * Desk is down — a sentence that acts on a fact the record does not hold.
+     */
+    + (props.review.session_id == null
+      ? 'This review names no session, so there is nothing here to point you at: take the '
+      : 'Check the session that was reviewing this, or take the ')
+    + 'sign-off back and send the draft back with a note — a session that picks it up '
+    + 'later writes the draft again.',
 )
 
-/**
- * What there is to say where the record holds no GitHub review for a posted draft.
- *
- * **Not reachable through this API, and drawn anyway.** `post_draft` writes `posted_at`
- * and the review's `github_review_id` in one go — the contract calls them one fact — and
- * `draft posted` requires the id on the command line, so nothing can write one without
- * the other. But the field is nullable in the contract, which makes this a state a client
- * has to be able to render, and the honest rendering says what the record holds rather
- * than guessing at how it got that way or drawing a link to nowhere.
- */
 /**
  * What a sighted reader is told when a sign-off is taken back under them.
  *
@@ -536,6 +549,16 @@ const takenBack
   = 'The sign-off is taken back and the draft is with the session again. Nothing here is '
     + 'waiting on you until a session writes it afresh.'
 
+/**
+ * What there is to say where the record holds no GitHub review for a posted draft.
+ *
+ * **Not reachable through this API, and drawn anyway.** `post_draft` writes `posted_at`
+ * and the review's `github_review_id` in one go — the contract calls them one fact — and
+ * `draft posted` requires the id on the command line, so nothing can write one without
+ * the other. But the field is nullable in the contract, which makes this a state a client
+ * has to be able to render, and the honest rendering says what the record holds rather
+ * than guessing at how it got that way or drawing a link to nowhere.
+ */
 const noReviewSentence
   = 'There is no address to draw for this one: the record holds no GitHub review for the '
     + 'draft, or no repository name an address can be built from. Nothing this API writes '

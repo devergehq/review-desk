@@ -1463,6 +1463,15 @@ export function seedReadyDraft(
   const directory = scratch()
   const { reviewId, pr } = openAFreshReview(database, title)
 
+  /*
+   * **The session that ran it, which a real review has and `review open` does not set.**
+   * `Review.session_id` is nullable and the draft page says different things with and
+   * without it — it will not tell a developer to go and look at a session the record
+   * never recorded. A seed that left it null would have the browser checks asserting the
+   * wording for the rarer case.
+   */
+  cli(database, ['review', 'link', '--review', String(reviewId), '--session', 'ses-dev-932'])
+
   const finding = join(directory, 'posting-finding.json')
   writeFileSync(
     finding,
