@@ -718,6 +718,36 @@ describe('the queue', () => {
     expect(row!.row.text()).toContain('ABC-402')
   })
 
+  it('does not offer to open a pull request it cannot build a link to', async () => {
+    /*
+     * **A row whose only purpose is a link has to say when there is no link.** `prUrl`
+     * refuses a `repo` that is not a repository name — a released Review Desk could store
+     * `acme/portal#x`, and nothing can repair the column, because `repo` is identity — and
+     * `QueueRow` then draws the row as a `div` rather than an anchor. The row went on saying
+     * "Open on GitHub" in the accent colour with the "opens in a new tab" hint gone:
+     * advertising an action it could not perform.
+     */
+    const source = loadSource()
+    await resetDesk({
+      own_prs: source.own_prs.map((item, at) =>
+        at === 0
+          ? { ...item, pull_request: { ...item.pull_request, repo: 'acme/portal#x' } }
+          : item),
+    })
+
+    const page = await shown(Inbox)
+    const row = lines(page).find(line => line.row.text().includes('acme/portal#x'))
+    expect(row, 'the row for the unlinkable name').toBeDefined()
+    expect(row!.row.element.tagName.toLowerCase(), 'it is not an anchor').toBe('div')
+    expect(row!.row.text()).not.toContain('Open on GitHub')
+    expect(row!.row.text()).toContain('not a repository name')
+
+    /* And a row whose name is fine still offers it. */
+    const fine = lines(page).find(line => line.row.text().includes('Open on GitHub'))
+    expect(fine, 'the other own-pull-request rows are unaffected').toBeDefined()
+    expect(fine!.row.attributes('href')).toMatch(/^https:\/\/github\.com\//)
+  })
+
   it('keeps the figures the boards do not draw, rather than dropping them', async () => {
     const page = await shown(Inbox)
     /* `handled_without_you` and a waiting rule proposal both reach the screen. */

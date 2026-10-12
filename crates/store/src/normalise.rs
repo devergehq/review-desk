@@ -81,15 +81,29 @@ pub(crate) fn optional_fact(given: Option<&str>) -> Option<String> {
 /// them: `.` is a legal character in a repository name and the pattern says nothing about
 /// what a segment means.
 ///
-/// **That exclusion is the load-bearing half, and it is load-bearing in two places.** Every
-/// store query binds its parameters, so a dot segment is inert in SQL — but this value is
-/// read back out and put into two paths by other crates. `harvest` formats
-/// `repos/{repo}/pulls/{pr}` into a `gh api` call, where `repos/../../pulls/1` is
-/// `api.github.com/pulls/1`; and the dashboard builds `https://github.com/{repo}/pull/{pr}`,
-/// which a browser resolves `https://github.com/../../pull/1` to `github.com/pull/1`. In
-/// both the value goes somewhere other than the repository anybody named, and in the second
-/// the link's text and its destination disagree — which is the defect DEV-936 exists to
-/// remove.
+/// **That exclusion is the load-bearing half, and this is the only place it can be made
+/// once.** Every store query binds its parameters, so a dot segment is inert in SQL — but
+/// the value is read back out and put into a path by **four** readers, in three crates:
+///
+/// | Reader | Builds |
+/// |---|---|
+/// | `harvest::gh` | `gh api repos/{repo}/pulls/{pr}`, and `compare` and `commits` beside it |
+/// | `entities::house_style` | the pull request and `blob` links the posted draft body carries |
+/// | the dashboard's `utils/links` | `https://github.com/{repo}/pull/{pr}` |
+/// | the dashboard's `utils/houseStyle` | the same two links, composing the body to preview |
+///
+/// `repos/../../pulls/1` is `api.github.com/pulls/1`, and a browser resolves
+/// `https://github.com/../../pull/1` to `github.com/pull/1` — so the value goes somewhere
+/// other than the repository anybody named, and the link's text and its destination
+/// disagree, which is the defect DEV-936 exists to remove.
+///
+/// **Refusing at the write is what covers all four**, which is why this is here and not in
+/// each of them. It cannot cover a row a *released* build already wrote, though, and nothing
+/// can repair that column: `repo` is identity — half of the review's unique key and the join
+/// to a repository's rules — so rewriting it would merge or split reviews rather than fix
+/// them. The two dashboard readers refuse a second time for that reason (`prUrl` does, and
+/// `ticketUrl` beside it states the argument); the two inside this workspace do not yet, and
+/// that is a gap rather than a decision.
 ///
 /// **One copy, here, because it was two.** `wire::is_repo_name` had this rule and its
 /// reason; DEV-936 then wrote a second, looser one in the store's `validate` — missing

@@ -219,6 +219,21 @@ function needingYou(data: Inbox): Waiting[] {
  */
 const waiting = computed(() => (inbox.data.value ? needingYou(inbox.data.value) : []))
 
+/*
+ * **A row whose only purpose is a link says so when there is no link.** `prUrl` returns
+ * null for a `repo` that is not a repository name, and `QueueRow` then draws the row as a
+ * `div` rather than an anchor — so this row went on reading "Open on GitHub" in the accent
+ * colour, with the "opens in a new tab" hint gone, advertising an action it could not
+ * perform. The other three call sites already handled the null: the header draws text and
+ * `prHref` is behind a `v-if`. This one is the row *is* the link, so the label has to move
+ * with it.
+ *
+ * It takes a `warn` tone rather than `go`, because an unlinkable repository name is
+ * something to look at: a released Review Desk could store one, and nothing can repair the
+ * column — `repo` is identity, part of the review's unique key and the join to a
+ * repository's rules, so rewriting it would merge or split reviews rather than fix them.
+ */
+
 /**
  * Where a row goes: **Understand, whatever the row is waiting for.**
  *
@@ -875,8 +890,10 @@ function handledLine(data: Inbox): string {
             :title="item.pull_request.title ?? 'no title recorded'"
             :meta="`· ${item.pull_request.repo}`"
             :href="prUrl(item.pull_request.repo, item.pull_request.pr)"
-            action="Open on GitHub"
-            action-tone="go"
+            :action="prUrl(item.pull_request.repo, item.pull_request.pr)
+              ? 'Open on GitHub'
+              : 'no link: this is not a repository name'"
+            :action-tone="prUrl(item.pull_request.repo, item.pull_request.pr) ? 'go' : 'warn'"
             :age="item.opened_at ? openForLabel(item.opened_at).replace('open ', '') : null"
             age-unknown-because="nothing has told Review Desk when this pull request was opened"
           >

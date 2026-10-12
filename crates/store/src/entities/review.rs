@@ -576,7 +576,7 @@ fn validate(new: NewReview) -> Result<NewReview> {
             value: new.repo.clone(),
             expected: concat!(
                 "a repository as owner/repo, in letters, digits, dot, underscore and ",
-                "hyphen, and neither half `.` or `..`",
+                "hyphen, and neither half `.` nor `..`",
             )
             .to_string(),
         });
