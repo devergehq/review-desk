@@ -6,6 +6,7 @@
   "round": 1,
   "title": null,
   "ticket_id": null,
+  "ticket_url": null,
   "changed_lines": null,
   "session_id": null,
   "ledger_id": null,
