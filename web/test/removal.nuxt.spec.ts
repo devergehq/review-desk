@@ -379,6 +379,20 @@ describe('what a dismissed review refuses', () => {
       expect(confirmed.error.message).toContain('no brief to confirm')
       expect(confirmed.error.message).not.toContain('dismissed')
     }
+
+    /*
+     * **And an id that is no review answers about the review, not about its draft.**
+     * Every one of these handlers starts with `records.review`, which is the 404 the
+     * guard used to draw here by standing first; moving it had the three draft calls
+     * reaching for a draft on a review that does not exist. The same wrong subject, one
+     * entity up — found by the review of the commit that moved it.
+     */
+    const unknown = await desk.approveDraft(999, 'comment')
+    expect(unknown.ok).toBe(false)
+    if (!unknown.ok) {
+      expect(unknown.error.code).toBe('not_found')
+      expect(unknown.error.message).toContain('no review 999')
+    }
   })
 
   it('still takes a session’s report of a ticket it already filed', async () => {

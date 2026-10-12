@@ -845,6 +845,16 @@ function saveDraft(id: number, body: string, edits: DraftEditToRecord[]): DraftD
 
 /** `POST /reviews/{id}/draft/approve` — approved here, posted by the review session. */
 function approveDraft(id: number, event: ReviewEvent): DraftDetail {
+  /*
+   * **The review, then the draft** — the two 404s the handler draws, in its order:
+   * `records.review` answers "no review with id N" and only then does `draft_must_be`
+   * answer "review N has no draft". Reaching for the draft first said the second about
+   * an id that is no review at all, which is the same wrong-subject fault as the guard
+   * below, one entity up. It was covered until this file stopped asking about the
+   * dismissal first, and that is how it was found: by a review of the commit that moved
+   * the guard.
+   */
+  if (!reviewById(id)) throw notFound(`review ${id}`)
   const detail = draftById(id)
   if (!detail) throw notFound(`draft on review ${id}`)
   if (detail.draft.status !== 'ready') {
@@ -891,6 +901,8 @@ function sendBackDraft(id: number, note: string): DraftDetail {
     )
   }
 
+  /* The review, then the draft, as `approveDraft` above and for its reason. */
+  if (!reviewById(id)) throw notFound(`review ${id}`)
   const detail = draftById(id)
   if (!detail) throw notFound(`draft on review ${id}`)
   /*
@@ -1330,9 +1342,11 @@ function decideFinding(
  * changes that ticketed everything it asked for would contradict itself.
  */
 function ticketRestAndApprove(id: number, note: string | null): TicketedAndApproved {
-  const drafted = draftById(id)
+  /* The review, then the draft, as `approveDraft` above and for its reason. */
   const owner = reviewById(id)
-  if (!drafted || !owner) throw notFound(`draft on review ${id}`)
+  if (!owner) throw notFound(`review ${id}`)
+  const drafted = draftById(id)
+  if (!drafted) throw notFound(`draft on review ${id}`)
 
   if (drafted.draft.status !== 'ready') {
     throw conflict(
