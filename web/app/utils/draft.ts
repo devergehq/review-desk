@@ -18,6 +18,7 @@ import type { DraftEdit, Finding, HeldBackFinding, OutcomeKind, Severity } from 
 
 import { SEVERITY_ORDER, whereOf } from './findings'
 import { SEVERITY_WORDS, count, editVerb } from './format'
+import { freeDetail } from './outcomes'
 
 export interface MarkdownBlock {
   kind: 'markdown' | 'mermaid'
@@ -400,6 +401,19 @@ export interface EditLine {
  * harvester is given this panel to show.
  */
 export function editDetail(kind: OutcomeKind | string, summary: string): string | null {
+  /*
+   * **And a summary that is a stored record is not shown at all.** `DraftEdit.summary` is
+   * `Outcome.detail` verbatim — `wire::draft_edit` copies it and falls back to the kind
+   * when there is none — so this panel is a third place an outcome's detail reaches a
+   * screen, after the queue's row and the code review page's "What came back". It is the
+   * least likely of the three to meet one, because a developer's own decision carries
+   * prose; it is reachable all the same through
+   * `outcome add --kind cut --detail '{"…":…}'`, and DEV-958's criterion is that no page
+   * prints a stored detail as JSON rather than that no page the harvester writes to does.
+   * `freeDetail` is the one rule, in the one place that decides it.
+   */
+  if (freeDetail(summary) == null && summary.trim() !== '') return null
+
   const plain = (text: string) => text.trim().toLowerCase().replace(/[^a-z0-9 ]+/g, '')
   const said = plain(summary)
   const word = plain(String(kind))

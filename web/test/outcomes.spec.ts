@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -523,5 +523,85 @@ describe('capitalising a sentence changes no value the record holds', () => {
         expect(said, `${kind} opens with "${said.split(' ')[0]}"`).toMatch(/^[a-z]+([ ,]|$)/)
       }
     }
+  })
+})
+
+describe('no screen reads a stored detail for itself', () => {
+  /**
+   * **The rule, held over the source rather than over three renderings of it.**
+   *
+   * DEV-958 found the same defect in three places at once — the queue's author-reply row,
+   * the code review page's "What came back", and the draft page's edits panel — and each
+   * was one expression reaching for `Outcome.detail` or the `DraftEdit.summary` the server
+   * copies it into. A test per page would have caught the three that existed; this catches
+   * the fourth, in a component somebody writes six months from now.
+   *
+   * Named identifiers rather than the field, because the field name is not the problem: a
+   * layer's `detail` is the store's own four words and is drawn on the trail on purpose.
+   * What must not happen is an *outcome's* detail reaching a screen without being worded.
+   */
+  const SOURCES = ['app/components', 'app/pages', 'app/pages/reviews/[id]', 'app/utils']
+
+  /** `outcomes.ts` is where a detail is read; `draft.ts` hands a summary to it. */
+  const ALLOWED = ['app/utils/outcomes.ts', 'app/utils/draft.ts']
+
+  /* The reach this forbids: an outcome-shaped thing's own stored field, used directly. */
+  const REACHING = /\b(outcome|edit|event|came|first|latest)\s*\.\s*(detail|summary)\b/g
+
+  /**
+   * **Handing one over is allowed; reading it is not** — and the difference is the two
+   * characters before the match.
+   *
+   * `detail: first.detail` is the queue's row passing the stored field *into*
+   * `outcomeLine`, which is the whole fix. `first.detail ?? …` is the defect. An earlier
+   * version of this check exempted any line that mentioned `outcomeLine(` anywhere, which
+   * exempted the defect as well the moment it was written on the same line — measured by
+   * putting the real defect back and watching this stay green.
+   */
+  function handedOver(before: string): boolean {
+    return /(detail|summary):\s*$/.test(before)
+  }
+
+  it('finds the files it is about to check', () => {
+    const found = SOURCES.flatMap(dir =>
+      readdirSync(resolve(dir)).filter(name => /\.(ts|vue)$/.test(name)))
+    expect(found.length).toBeGreaterThan(20)
+  })
+
+  /** Every reach this scan can see, as `path: line`. Empty is the rule holding. */
+  function reaches(over: string[]): string[] {
+    const offenders: string[] = []
+    for (const dir of SOURCES) {
+      for (const name of readdirSync(resolve(dir))) {
+        if (!/\.(ts|vue)$/.test(name)) continue
+        const path = `${dir}/${name}`
+        if (over.includes(path)) continue
+        const text = readFileSync(resolve(path), 'utf8')
+        for (const line of text.split('\n')) {
+          /* A comment arguing about the defect is not the defect. */
+          if (/^\s*(\*|\/\/|<!--)/.test(line)) continue
+          for (const hit of line.matchAll(REACHING)) {
+            if (handedOver(line.slice(0, hit.index))) continue
+            offenders.push(`${path}: ${line.trim()}`)
+          }
+        }
+      }
+    }
+    return offenders
+  }
+
+  it('reaches for one only inside the two modules that word it', () => {
+    expect(reaches(ALLOWED)).toEqual([])
+  })
+
+  /**
+   * **And the scan would see one if it were there.**
+   *
+   * A check that cannot fail is a comment. `outcomes.ts` itself reads a detail — that is
+   * its job — so running the scan with nothing exempted has to report it; if it reports
+   * nothing, the regex has stopped matching and the test above is green about nothing.
+   */
+  it('is a scan that can fail', () => {
+    expect(reaches([]).join(' ')).toContain('app/utils/outcomes.ts')
   })
 })

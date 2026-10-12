@@ -452,3 +452,21 @@ describe('the developer’s edits as one line a finding', () => {
     expect(editLines([])).toEqual([])
   })
 })
+
+describe('an edit’s detail is never a stored record', () => {
+  /*
+   * **The third place an outcome's detail reaches a screen.** `DraftEdit.summary` is
+   * `Outcome.detail` verbatim, so this panel prints one — and DEV-958's criterion is that
+   * no page prints a stored detail as JSON, not that no page the harvester writes to does.
+   * Reachable through `outcome add --kind cut --detail '{"…":…}'`.
+   */
+  it('shows nothing where the summary is a JSON object', () => {
+    expect(editDetail('cut', '{"reason":"formatting","by":"a script"}')).toBeNull()
+    expect(editDetail('regraded', '[1,2]')).toBeNull()
+  })
+
+  it('still shows the prose a developer typed', () => {
+    expect(editDetail('regraded', 'Blocker to Should')).toBe('Blocker to Should')
+    expect(editDetail('cut', 'the second sentence')).toBe('the second sentence')
+  })
+})
