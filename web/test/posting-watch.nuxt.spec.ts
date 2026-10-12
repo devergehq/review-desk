@@ -306,27 +306,62 @@ describe('when nothing has posted it', () => {
     expect(announced(page)).toBe('')
   })
 
-  it('stays silent when a refused read makes an old lateness flap', async () => {
+  it('holds the diagnosis through a refused read rather than taking it back', async () => {
     /*
-     * **`late` is false while the record cannot be reached**, so on a page opened an hour
-     * after a sign-off one refused poll and one good one take it false and true again —
-     * and a transition on its own cannot tell that from the wait actually passing the
-     * threshold. Announcing the flap would read the accusation out afresh on every
-     * hiccup.
+     * **Lateness is a conclusion, not a reading.** Recomputed from the last read it went
+     * false the moment a poll was refused and true when the next answered — so the
+     * sentence carrying "Check the session… or take the sign-off back" vanished and came
+     * back on every hiccup, which is to say it disappeared exactly when something was
+     * wrong. Drawn once and held, nothing retracts it but the draft ceasing to wait.
      */
-    vi.setSystemTime(new Date('2026-10-12T11:00:00Z'))
-    const page = await watching()
-    expect(announced(page)).toBe('')
+    const page = await signedOff()
+    await tick(page, POSTED_WITHIN_SECONDS)
+    expect(page.text()).toContain('may not be running')
 
     await page.setProps({ recordIsCurrent: false })
-    expect(page.text()).not.toContain('may not be running')
+    expect(page.text()).toContain('may not be running')
 
     await page.setProps({ recordIsCurrent: true })
     expect(page.text()).toContain('may not be running')
+  })
+
+  it('does not read the diagnosis out again when a read comes back', async () => {
+    /* A live region that retracts and repeats itself is one a screen reader reads twice. */
+    const page = await signedOff()
+    await tick(page, POSTED_WITHIN_SECONDS)
+    const spoken = announced(page)
+    expect(spoken).toContain('may not be running')
+
+    await page.setProps({ recordIsCurrent: false })
+    expect(announced(page)).toBe(spoken)
+    await page.setProps({ recordIsCurrent: true })
+    expect(announced(page)).toBe(spoken)
+  })
+
+  it('draws no conclusion it could not have reached, on a page opened already late', async () => {
+    vi.setSystemTime(new Date('2026-10-12T11:00:00Z'))
+    const page = await watching()
+    expect(page.text()).toContain('may not be running')
+    /* Shown, because it is true; not announced, because this page did not watch it arrive. */
+    expect(announced(page)).toBe('')
+
+    await page.setProps({ recordIsCurrent: false })
+    await page.setProps({ recordIsCurrent: true })
     expect(announced(page)).toBe('')
   })
 
-  it('says nothing of the sort while the page cannot read the record', async () => {
+  it('never concludes lateness from a record it could not reach', async () => {
+    /*
+     * The server stops ten seconds after the sign-off. The clock walks past forty, but no
+     * read has answered in that time, so there is nothing to conclude it from.
+     */
+    const page = await signedOff()
+    await page.setProps({ recordIsCurrent: false })
+    await tick(page, POSTED_WITHIN_SECONDS * 3)
+    expect(page.text()).not.toContain('may not be running')
+  })
+
+  it('says nothing of the sort before the page has read the record', async () => {
     /*
      * **The worst sentence this page could say.** A failed read leaves the last good
      * answer on screen — `DeskState` draws "Review Desk is not answering" over it — and
@@ -457,6 +492,30 @@ describe('when the developer takes the sign-off back', () => {
 
     await page.setProps({ draft: draft({ status: 'ready', event: null, approved_at: null }) })
     await page.setProps({ draft: draft({ status: 'sent_back', event: null, approved_at: null }) })
+    expect(announced(page)).toBe('')
+  })
+
+  it('announces nothing about a review it clicked through to that was already late', async () => {
+    /*
+     * **The clock is frozen for a draft nobody has signed off**, so a page left open on
+     * one and then clicked through to a review signed off a minute ago has a stale `now`
+     * at the moment the new props land. Judged against it the new draft looks in time,
+     * and the accusation is announced a moment later as though it had just arrived.
+     */
+    const page = await watching({
+      draft: draft({ status: 'ready', event: null, approved_at: null }),
+    })
+    vi.setSystemTime(new Date(START.getTime() + 120_000))
+
+    await page.setProps({
+      draft: draft({
+        review_id: 15,
+        status: 'approved',
+        approved_at: new Date(START.getTime() + 60_000).toISOString(),
+      }),
+    })
+
+    expect(page.text()).toContain('may not be running')
     expect(announced(page)).toBe('')
   })
 

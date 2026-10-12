@@ -156,10 +156,19 @@ watch(
     const { review_id: review, status } = props.draft
 
     if (review !== seen.review) {
+      /*
+       * **The clock first, and `inTime()` rather than `late`.** `now` is frozen for
+       * every status this panel does not wait on, so a page open two minutes on a draft
+       * nobody had signed off and then clicked through to a review signed off sixty
+       * seconds ago judged the new draft against the old review's clock, found it in
+       * time, and announced the accusation a moment later as though it had just arrived.
+       * Moving the clock is half of it; the other half is not asking the held conclusion,
+       * which this flush has not updated yet.
+       */
+      now.value = new Date()
       watchedTheSignOff.value = status === 'approved'
       sawAChange.value = false
-      sawItInTime = waiting.value && props.recordIsCurrent && !late.value
-      now.value = new Date()
+      sawItInTime = inTime()
     }
     else {
       sawAChange.value = true
@@ -294,24 +303,52 @@ const sinceSignOff = computed(() => secondsSince(props.draft.approved_at, now.va
  * a record nobody could reach. A read that is accepted and never answered leaves no
  * refusal to catch, and that one is covered by where the clock is moved — inside
  * `readNow`, after the answer — so when the answers stop, so does the clock.
+ *
+ * **It is a conclusion this page has drawn, not a value recomputed from the last read —
+ * and the difference is four reviews' worth of bugs.** As a computed gated on
+ * `recordIsCurrent` it went false the moment one poll was refused and true again when the
+ * next answered, so the sentence vanished and came back on every hiccup, the live region
+ * retracted the diagnosis and read it out again, and three rounds of flags were added to
+ * stop the flap being mistaken for news. Those flags were patches at the wrong level.
+ *
+ * Drawn once and held: nothing concludes lateness without a read that answered, and
+ * nothing un-concludes it because a later read did not. It is dropped only when the draft
+ * stops waiting, which is the posting or the take-back the whole panel is watching for.
  */
-const late = computed(
-  () => waiting.value
-    && props.recordIsCurrent
-    && (sinceSignOff.value ?? 0) >= POSTED_WITHIN_SECONDS,
+const late = ref(false)
+
+watch(
+  [waiting, sinceSignOff, () => props.recordIsCurrent],
+  ([isWaiting, elapsed, current]) => {
+    if (!isWaiting) {
+      late.value = false
+      return
+    }
+    /* Unreachable: hold what is on screen. Retracting it would be a second guess. */
+    if (!current) return
+    late.value = (elapsed ?? 0) >= POSTED_WITHIN_SECONDS
+  },
+  { immediate: true },
 )
 
 /**
  * Whether this page has seen this draft waiting and *not yet* late.
  *
- * **Without it, a refused read turns a week-old lateness into news.** `late` is false
- * while the record cannot be reached, so a page opened on a draft signed off an hour ago
- * — silent, correctly — has `late` flap false and true again the moment one poll is
- * refused and the next answers, and the transition alone cannot tell that from the wait
- * actually passing the threshold. Announcing on the flap would read the accusation out
- * afresh on every hiccup.
+ * **A page that opened on a draft already late never watched it become late**, so the
+ * threshold crossing is not news there and the region stays quiet. This says whether the
+ * page was there to see it drawn.
+ *
+ * Read from the facts rather than from `late`, which is a held conclusion and lags by a
+ * flush: the watcher that maintains it runs after the one that moves the clock, so asking
+ * `late` the instant a navigation lands gets the answer for the review just left.
  */
-let sawItInTime = waiting.value && props.recordIsCurrent && !late.value
+function inTime(): boolean {
+  return waiting.value
+    && props.recordIsCurrent
+    && (sinceSignOff.value ?? 0) < POSTED_WITHIN_SECONDS
+}
+
+let sawItInTime = inTime()
 
 /**
  * The wait passing the threshold is news too, and keying news off the status alone lost it.
