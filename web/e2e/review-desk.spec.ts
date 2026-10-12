@@ -6,7 +6,10 @@ import { expect, test, type Page } from '@playwright/test'
 import {
   cli,
   cliJson,
+  draftStamps,
+  pinClockAt,
   readAddresses,
+  seedReadyDraft,
   serversUnderTest,
   stillServing,
   STRUCTURED_LONG_NOTE,
@@ -3085,5 +3088,246 @@ test.describe('the guard is still on', () => {
 
     expect(framed.frameOptions).toBe('DENY')
     expect(framed.policy).toContain('frame-ancestors \'none\'')
+  })
+})
+
+/*
+ * **The gap between a sign-off and a posting**, which is DEV-932 and is the one part of
+ * this screen that reports on somebody else.
+ *
+ * Review Desk never posts. The developer signs off in the browser, and a review session
+ * reads the approved draft and runs `review-desk draft posted`. So both halves of this are
+ * real here: the sign-off is a click, the posting is the command an agent session runs, and
+ * what is measured in between is whether the page noticed without being reloaded.
+ *
+ * **Its reviews are its own.** Everything above asserts on the seeded reviews, including
+ * how many of them the queue is waiting on, so these open theirs through the command line
+ * and this block runs last in the file.
+ */
+test.describe('the draft page after a sign-off', () => {
+  /** The draft as the command line reads it, which is how a review session reads it. */
+  function draftRecord(id: number) {
+    return cliJson(seededDatabase, ['draft', 'show', '--review', String(id)]) as unknown as {
+      draft: { status: string, event: string | null }
+    }
+  }
+
+  /** Sign off in the browser, which is the only place a draft can be signed off. */
+  async function signOff(page: Page, id: number, event: string) {
+    await page.goto(`${seeded}reviews/${id}/draft`)
+    await page.locator('select#event').selectOption(event)
+    await page.getByRole('button', { name: 'Sign off and post' }).click()
+    /*
+     * **The status line, which is drawn.** This waited on the live region's sentence, and
+     * the region is `rd-visually-hidden` — a one-pixel clipped box, which `toBeVisible()`
+     * accepts. The whole waiting block could have been deleted and this would have passed.
+     */
+    await expect(page.getByText('— waiting for the session to post it.')).toBeVisible()
+  }
+
+  test('while it waits, the page says what is known and keeps it current', async ({ page }) => {
+    const { reviewId: id } = seedReadyDraft(
+      seededDatabase,
+      'Carry an idempotency key on a retried delivery',
+    )
+    await signOff(page, id, 'request_changes')
+
+    const panel = page.locator('.watch')
+
+    /* Who is expected to act, which nothing on this page said before. */
+    await expect(panel).toContainText('This review’s own session posts it, not Review Desk')
+    /* And what it cannot say: Allele owns whether a session is running. */
+    await expect(panel).toContainText('not something Review Desk is told')
+    await expect(panel).toContainText('within about 40 seconds')
+
+    /* How long ago the sign-off was, and when anything last wrote to the review. */
+    await expect(panel).toContainText('Signed off')
+    await expect(panel).toContainText('Last written to')
+    await expect(panel).not.toContainText('Not recorded')
+
+    /*
+     * **Current without a reload.** The figure is worded from the browser's clock on every
+     * read, so after three of the page's own intervals it says seconds rather than "just
+     * now" — which is the whole difference from the sentence this screen used to print once.
+     */
+    await expect(panel.getByText(/\d+ sec ago/).first()).toBeVisible({ timeout: 20_000 })
+
+    /* The record is unchanged by any of it: signing off is the only write that happened. */
+    expect(draftRecord(id).draft.status).toBe('approved')
+  })
+
+  test('the session posts it, and the page says so without a reload', async ({ page }) => {
+    const { reviewId: id, pr } = seedReadyDraft(
+      seededDatabase,
+      'Record the delivery attempt count inside the transaction',
+    )
+    await signOff(page, id, 'comment')
+
+    /*
+     * A mark the test can check for afterwards. If the page reloaded, this is gone — so it
+     * is the acceptance criterion "with no reload" rather than a claim about one.
+     */
+    await page.evaluate(() => {
+      ;(window as unknown as { postingWatchStayed?: boolean }).postingWatchStayed = true
+    })
+
+    /*
+     * **With the send-back form open under it**, which is the race the guard on that
+     * form's submit is about: the developer starts typing a note and the session posts
+     * while they type.
+     */
+    await page.getByRole('button', { name: 'Take back the sign-off and send it back' }).click()
+    await page.locator('textarea#send-back-note').fill('Half a note, never sent')
+
+    /*
+     * **The review session's own command, with the GitHub review it became.** Review Desk
+     * posts nothing: this is the one transition that involves GitHub and the session makes
+     * it. A number rather than a node id, because a number is what GitHub builds its own
+     * address for a review from.
+     */
+    cli(seededDatabase, [
+      'draft',
+      'posted',
+      '--review',
+      String(id),
+      '--github-review',
+      '1842003517',
+    ])
+
+    const panel = page.locator('.watch')
+    /* Noticed on the page's own timer, inside two of its intervals. */
+    await expect(panel).toContainText('Posted on GitHub.', { timeout: 20_000 })
+    await expect(panel).toContainText('Posted as')
+    await expect(panel).toContainText('Comment')
+    await expect(panel).toContainText('Taken to post')
+
+    const link = panel.getByRole('link', { name: /See the review on GitHub/ })
+    await expect(link).toHaveAttribute(
+      'href',
+      `https://github.com/acme/portal/pull/${pr}#pullrequestreview-1842003517`,
+    )
+
+    /* The heading and the sentence under it followed, which is the rest of the page. */
+    await expect(page.getByRole('heading', { name: 'Posted.' })).toBeVisible()
+
+    /*
+     * And the form closed itself. A textarea asking what the session is to change, over a
+     * draft already on GitHub, with a dead button and only Cancel as a way out, is the
+     * page leaving a question open that the record has answered.
+     */
+    await expect(page.locator('textarea#send-back-note')).toHaveCount(0)
+
+    /*
+     * **And the sign-off's own notice is gone.** "Signed off. The review session posts it"
+     * is what the write said, in the present tense, and it stood until the next write
+     * because nothing on this page used to move underneath it. The panel flips now, so a
+     * notice left in place would have the page saying two things about one draft.
+     */
+    await expect(page.getByText('Signed off. The review session posts it')).toHaveCount(0)
+
+    const stayed = await page.evaluate(
+      () => (window as unknown as { postingWatchStayed?: boolean }).postingWatchStayed,
+    )
+    expect(stayed).toBe(true)
+  })
+
+  test('after forty seconds with no post it says the session may not be running', async ({
+    page,
+  }) => {
+    const { reviewId: id } = seedReadyDraft(
+      seededDatabase,
+      'Skip a schedule whose tenant row has gone',
+    )
+
+    /*
+     * **The browser's clock, moved rather than waited out.** Forty seconds of real waiting
+     * is forty seconds on every run of this suite to measure one sentence, and a test that
+     * sleeps past a threshold is a test that goes red when a machine is busy.
+     *
+     * **Pinned to the record's own `approved_at`, not moved by a duration.** `install`
+     * leaves the clock running — measured: three real seconds move `Date.now()` by 3,004
+     * ms — so `fastForward('45')` would land at 45 seconds *plus* however long the sign-off
+     * took, which is 45 until the wording crosses a minute and becomes "1 min". The figure
+     * is exactly 45 here, on any machine, however slow.
+     */
+    await page.clock.install()
+    await signOff(page, id, 'request_changes')
+
+    const panel = page.locator('.watch')
+    await expect(panel).not.toContainText('may not be running')
+
+    await pinClockAt(page, draftStamps(seededDatabase, id).approvedAt, 45)
+
+    await expect(panel).toContainText('may not be running')
+
+    /* Exactly the figure the clock was pinned to, because it was pinned to the stamp. */
+    await expect(panel).toContainText('in the 45 sec since you signed off')
+    /* And the way out. */
+    await expect(panel).toContainText('Check the session that was reviewing this')
+    await expect(panel).toContainText('take the sign-off back')
+
+    /*
+     * **Plainly, which is measured rather than asserted by the absence of a class.**
+     * Nothing has gone wrong with the record — the draft is signed off and still postable
+     * — and what is in doubt is a session this app cannot see, so the desk does not raise
+     * its voice about something it is guessing at. The warn ink is resolved off the token
+     * rather than written out, so changing `--rd-warn-ink` cannot quietly pass this.
+     */
+    const alarm = await page.evaluate(() => {
+      const probe = document.createElement('span')
+      probe.style.color = getComputedStyle(document.documentElement)
+        .getPropertyValue('--rd-warn-ink')
+      document.body.append(probe)
+      const resolved = getComputedStyle(probe).color
+      probe.remove()
+      return resolved
+    })
+    const said = await panel.locator('.late').evaluate(one => ({
+      color: getComputedStyle(one).color,
+      background: getComputedStyle(one).backgroundColor,
+    }))
+    expect(said.color).not.toBe(alarm)
+    expect(said.background).toBe('rgba(0, 0, 0, 0)')
+    await expect(panel.locator('.notice--problem, .notice--blocked')).toHaveCount(0)
+
+    /* And it is still signed off: nothing here cancels anything. */
+    expect(draftRecord(id).draft.status).toBe('approved')
+  })
+
+  test('taking the sign-off back stops the waiting, while the page is watching', async ({
+    page,
+  }) => {
+    const { reviewId: id } = seedReadyDraft(
+      seededDatabase,
+      'Name the helper this change deletes',
+    )
+    await signOff(page, id, 'request_changes')
+
+    const panel = page.locator('.watch')
+    await expect(panel).toContainText('Signed off')
+
+    /*
+     * The one transition out of `approved` that is the developer's, added by DEV-929's
+     * posting half — and the state this page has to handle while it is polling.
+     */
+    await page.getByRole('button', { name: 'Take back the sign-off and send it back' }).click()
+    await page.locator('textarea#send-back-note').fill('Fold F1 into the prose; it has no line')
+    await page.getByRole('button', { name: 'Send back', exact: true }).click()
+
+    await expect(panel).toContainText('The sign-off is taken back')
+    await expect(panel).not.toContainText('Waiting for this review')
+    await expect(panel).not.toContainText('may not be running')
+
+    /*
+     * **And the send-back's own notice survived the poll that was running under it.** The
+     * page clears a stale notice when the draft reports posted, and only then: clearing on
+     * any status change raced the write, because a tick landing between a write's refresh
+     * being issued and answered would wipe the notice that write had just set — leaving
+     * the developer who took a sign-off back with no confirmation at all.
+     */
+    await expect(page.getByText('Sent back. The session has the note.')).toBeVisible()
+
+    expect(draftRecord(id).draft.status).toBe('sent_back')
+    expect(draftRecord(id).draft.event).toBeNull()
   })
 })

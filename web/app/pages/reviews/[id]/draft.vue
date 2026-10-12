@@ -171,6 +171,67 @@ async function sendBack() {
   /* A refused send-back keeps the note: the developer wrote it, and it is not wrong. */
 }
 
+/**
+ * Read the review and its draft again, which is what `PostingWatch` asks for on its timer.
+ *
+ * **Both, because the two facts the waiting state needs are on different documents.** The
+ * draft carries the status, the chosen event, the two stamps and — through its own
+ * `review` — the GitHub review id; `last_activity_at` is on `ReviewTimings`, which only
+ * `GET /reviews/{id}` serves. The contract's shape is one GET per screen, and this screen
+ * was already making both of them.
+ *
+ * A read that fails leaves the last good answer on screen with a notice over it, which is
+ * what `resource()` and `DeskState` do everywhere — and the next tick tries again, so a
+ * server restarted while a draft waits recovers without the developer pressing anything.
+ */
+async function reread() {
+  await Promise.all([detail.refresh(), review.refresh()])
+}
+
+/**
+ * Whether the page's last read of this review answered.
+ *
+ * `PostingWatch` needs it for one sentence — the one that says the session may not be
+ * running — because a failed read leaves the last good answer on screen and the clock
+ * keeps moving over it. A server that stopped after the sign-off would otherwise have the
+ * page accusing the session, under a notice saying Review Desk is not answering.
+ */
+const recordIsCurrent = computed(
+  () => detail.error.value == null && review.error.value == null,
+)
+
+/**
+ * A notice says what a write did, and stops being true when the record moves on.
+ *
+ * **Nothing on this page could go stale under a notice until now.** The page read once, so
+ * "Signed off. The review session posts it; Review Desk does not." stood until the next
+ * write. It re-reads on a timer now, so the panel flips to "Posted" underneath that
+ * sentence and the page says two things about one draft — the second of them in the
+ * present tense about something that has already happened.
+ *
+ * **On `posted` and on nothing else, which is what makes it safe.** Every other status
+ * this page can arrive at is one the developer's own write produced, and that write is
+ * about to set a notice of its own; clearing on *any* change raced it — a poll landing
+ * between a write's refresh being issued and answered would clear the notice the write had
+ * just set, and the developer who took a sign-off back would be told nothing at all.
+ * `posted` is the one transition no act on this page can cause, and the only one that can
+ * strand a notice.
+ */
+watch(
+  () => detail.data.value?.draft.status,
+  (status) => {
+    if (status !== 'posted') return
+    notice.value = null
+    /*
+     * **And the open send-back form goes with it.** Its submit is guarded, so pressing it
+     * does nothing — but a textarea asking "What is the session to change?" over a draft
+     * that is already on GitHub, with a dead button and only Cancel as a way out, is the
+     * page leaving a question open that the record has answered.
+     */
+    sendingBack.value = false
+  },
+)
+
 async function fileTicket() {
   const data = detail.data.value
   if (!data) return
@@ -241,6 +302,18 @@ function statusLine(data: DraftDetail): string {
       + 'Take the sign-off back and send it back; the session writes it again.'
   }
   if (draft.status === 'approved') {
+    /*
+     * **The clause came off and went back on, and the round trip is the lesson.** It was
+     * cut because `PostingWatch`'s live region said the same words a few inches away — and
+     * then the region was made `rd-visually-hidden`, which is right for an announcer and
+     * took the only visible statement of the waiting with it. For a few commits a
+     * developer reloading a draft signed off four minutes ago was told what it would post
+     * as and never that anything was being waited for.
+     *
+     * Three end-to-end assertions should have caught that and did not: they ask
+     * `toBeVisible()` of the region, and Playwright calls a one-pixel clipped element
+     * visible. They assert on this line now.
+     */
     return `Signed off. Will be posted as "${eventLabel(draft.event)}" — waiting for the `
       + 'session to post it.'
   }
@@ -694,10 +767,18 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                         rows="3"
                       />
                       <div class="send-back-actions">
+                        <!--
+                          **Guarded like the button that opened it**, which it did not need
+                          to be until this page started re-reading. The form opens on a
+                          draft that is `approved`, and the status can now move underneath
+                          it: the session posts while the note is being typed, the panel
+                          flips to "Posted", and an enabled Send back over a posted draft
+                          buys the developer a refusal from the server.
+                        -->
                         <button
                           type="button"
                           class="rd-btn rd-btn--primary"
-                          :disabled="working"
+                          :disabled="working || !canSendBack(data)"
                           @click="sendBack"
                         >
                           Send back
@@ -723,6 +804,21 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                     >
                       {{ notice.text }}
                     </DeskNotice>
+                    <!--
+                      **What happens after the press, kept current.** Everything above this
+                      is the developer's to do; this is the only part of the panel that
+                      reports on somebody else, so it is the only part that has to re-read
+                      the record — DEV-932, where a sign-off went 4 min 28 s with nothing
+                      on screen. It asks this page to read again; it writes nothing.
+                    -->
+                    <PostingWatch
+                      :draft="data.draft"
+                      :review="data.review"
+                      :last-activity-at="review.data.value?.timings.last_activity_at"
+                      :body-is-stale="data.body_is_stale"
+                      :record-is-current="recordIsCurrent"
+                      :reread="reread"
+                    />
                     <p class="rd-meta foot">
                       The review session posts it under your name, with no bot banner.
                     </p>

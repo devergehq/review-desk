@@ -1423,6 +1423,29 @@ function answered<T>(value: T): T {
 }
 
 /**
+ * Note that a review has just been written to, and hand back what the write made.
+ *
+ * **`last_activity_at` moves on every write and on no read**, which the contract states and
+ * these records did not do: the stamp sat at whatever the fixture held, so sample mode read
+ * "last written to 4 days ago" one second after a sign-off. That is the number the draft
+ * page's `PostingWatch` shows while it waits for a session to post, so an invented record
+ * that never moved it would have shown the one thing the screen exists to report as a lie.
+ *
+ * Wrapped around the eight review-scoped writes **where they are listed**, rather than
+ * added inside each of them. That does not make the rule structural — a ninth write can
+ * still be added without it — and the claim that it did was wrong when it was written
+ * here. What the list buys is that all eight are one screenful, so the odd one out is
+ * visible; what it costs is that nothing fails when somebody adds the ninth. The Rust side
+ * guards the same rule with a test that walks every write; this side has one test, over
+ * `approveDraft`, in `test/desk.spec.ts`.
+ */
+function wrote<T>(reviewId: number, made: T): T {
+  const owner = reviewById(reviewId)
+  if (owner) owner.timings.last_activity_at = nowIso()
+  return made
+}
+
+/**
  * The nineteen operations over the records in memory.
  *
  * Every one is `async` so that the composable above cannot tell which backend it has. They
@@ -1456,16 +1479,18 @@ export function sampleBackend(): DeskBackend {
       }))),
 
     startReview: async link => answered(startReview(link)),
-    confirmBrief: async id => answered(confirmBrief(id)),
+    confirmBrief: async id => answered(wrote(id, confirmBrief(id))),
     setFindingDisposition: async (reviewId, seq, disposition, reason) =>
-      answered(setFindingDisposition(reviewId, seq, disposition, reason)),
+      answered(wrote(reviewId, setFindingDisposition(reviewId, seq, disposition, reason))),
     decideFinding: async (reviewId, seq, request) =>
-      answered(decideFinding(reviewId, seq, request)),
-    saveDraft: async (id, body, edits) => answered(saveDraft(id, body, edits)),
-    approveDraft: async (id, event) => answered(approveDraft(id, event)),
-    sendBackDraft: async (id, note) => answered(sendBackDraft(id, note)),
-    ticketRestAndApprove: async (id, note) => answered(ticketRestAndApprove(id, note)),
-    requestNitTicket: async (id, ticketId = null) => answered(requestNitTicket(id, ticketId)),
+      answered(wrote(reviewId, decideFinding(reviewId, seq, request))),
+    saveDraft: async (id, body, edits) => answered(wrote(id, saveDraft(id, body, edits))),
+    approveDraft: async (id, event) => answered(wrote(id, approveDraft(id, event))),
+    sendBackDraft: async (id, note) => answered(wrote(id, sendBackDraft(id, note))),
+    ticketRestAndApprove: async (id, note) =>
+      answered(wrote(id, ticketRestAndApprove(id, note))),
+    requestNitTicket: async (id, ticketId = null) =>
+      answered(wrote(id, requestNitTicket(id, ticketId))),
     promoteRule: async (id, toStage) => answered(promoteRule(id, toStage)),
     dismissRule: async (id, reason) => answered(retireWithReason(id, reason, 'dismissed')),
     retireRule: async (id, reason) => answered(retireWithReason(id, reason, 'retired')),

@@ -2,7 +2,7 @@ import { resolve } from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
-import { readAddresses } from './harness'
+import { cli, draftStamps, pinClockAt, readAddresses, seedReadyDraft } from './harness'
 
 /*
  * The screenshots in `docs/screenshots/`, produced rather than taken by hand.
@@ -21,8 +21,15 @@ import { readAddresses } from './harness'
 
 const addresses = readAddresses()
 
-const { seeded, empty, reviewId, waivedReviewId, structuredReviewId, heldBackReviewId }
-  = addresses
+const {
+  seeded,
+  seededDatabase,
+  empty,
+  reviewId,
+  waivedReviewId,
+  structuredReviewId,
+  heldBackReviewId,
+} = addresses
 
 const INTO = resolve('../docs/screenshots')
 
@@ -464,5 +471,138 @@ test.describe('the server stopped', () => {
     await expect(page.getByText('Review Desk is not answering')).toBeVisible()
 
     await shot(page, 'server-stopped')
+  })
+})
+
+/*
+ * **The four states of the gap between a sign-off and a posting**, which is DEV-932, at the
+ * width of a laptop and at the width of a phone.
+ *
+ * Each one is reached the way the real thing reaches it. The sign-off is a click, because
+ * that is the only way a draft can be signed off; the posting is `review-desk draft posted`,
+ * which is the command a review session runs; the take-back is a click on the control
+ * DEV-929 added. Nothing here writes a status into a database to get a picture of it.
+ *
+ * `body_is_stale` is not among them and cannot be: `draft put` with no blocks stores the
+ * whole body as one prose block, so the composition always matches what is stored and the
+ * command line cannot reach that state. `web/test/posting-watch.nuxt.spec.ts` is where it
+ * is measured.
+ */
+test.describe('waiting for the session that posts it', () => {
+  /** Both widths of one state, so a state is never pictured at one width only. */
+  async function bothWidths(page: Page, name: string) {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await shot(page, name)
+    await page.setViewportSize({ width: 390, height: 844 })
+    await shot(page, `${name}-390`)
+    await page.setViewportSize({ width: 1440, height: 900 })
+  }
+
+  /**
+   * Sign off in the browser, which is the only place a draft can be signed off.
+   *
+   * The clock is installed first so that `pinAt` below can stop it. `install` on its own
+   * changes nothing a picture would show: measured, three real seconds move it 3,004 ms,
+   * so the page runs as it always does until something asks the clock to move or stop.
+   */
+  async function signOff(page: Page, id: number) {
+    await page.clock.install()
+    await page.goto(`${seeded}reviews/${id}/draft`)
+    await page.locator('select#event').selectOption('request_changes')
+    await page.getByRole('button', { name: 'Sign off and post' }).click()
+    /* The status line, which is drawn; the live region is hidden and always was 1px. */
+    await expect(page.getByText('— waiting for the session to post it.')).toBeVisible()
+  }
+
+  /**
+   * Stop the clock a stated number of seconds after the sign-off.
+   *
+   * **So that two runs produce the same picture, which is this file's whole claim.** The
+   * panel's figures are in seconds, and `bothWidths` takes the second shot a moment after
+   * the first — so on a live clock the 1440 and the 390 picture of one state disagreed
+   * with each other, and every regeneration was a diff nobody had asked for.
+   */
+  async function pinAfterSignOff(page: Page, id: number, seconds: number) {
+    await pinClockAt(page, draftStamps(seededDatabase, id).approvedAt, seconds)
+  }
+
+  test('signed off, and then posted', async ({ page }) => {
+    const { reviewId: id } = seedReadyDraft(
+      seededDatabase,
+      'Carry an idempotency key on a retry',
+    )
+    await signOff(page, id)
+    await pinAfterSignOff(page, id, 25)
+    await expect(page.locator('.watch')).toContainText('25 sec ago')
+    await bothWidths(page, 'dev-932-1-waiting')
+
+    /*
+     * **The clock stays stopped, and the posting is still noticed.** Resuming it put a
+     * live five-second tick in the window between the command below and the pin — and a
+     * tick that found the posting would stop the timer, leaving `pauseAt` with nothing due
+     * to fire and the figures wherever that tick had left them. Paused, nothing fires
+     * until the pin asks it to, and the pin's own jump is what wakes the interval.
+     */
+    cli(seededDatabase, [
+      'draft',
+      'posted',
+      '--review',
+      String(id),
+      '--github-review',
+      '1842003517',
+    ])
+
+    /*
+     * **Pinned before the page notices, not after.** `now` moves on a timer tick, a change
+     * of state or a return to the tab, and the timer stops the moment the draft is posted
+     * — so a clock pinned *after* the page had noticed would fire nothing and leave the
+     * figure wherever the last live tick put it. Pinned while the page is still waiting,
+     * the jump fires the running interval once: it re-reads, finds the posting, and words
+     * "Posted" from the pinned clock.
+     *
+     * **Forty, not twelve, and the clock is why.** `pauseAt` refuses to go backwards, and
+     * the clock is already at the sign-off plus the 25 the picture above was pinned to —
+     * so the offset has to clear that from `posted_at`, which the session reports a second
+     * or two after the sign-off. Forty does, with room for a slow command.
+     */
+    await pinClockAt(page, draftStamps(seededDatabase, id).postedAt, 40)
+
+    /* Noticed on the page's own timer. Nothing is reloaded to take this picture. */
+    await expect(page.locator('.watch')).toContainText('Posted on GitHub.', {
+      timeout: 20_000,
+    })
+    await expect(page.locator('.watch')).toContainText('40 sec ago')
+    await bothWidths(page, 'dev-932-3-posted')
+  })
+
+  test('signed off, and nothing has posted it', async ({ page }) => {
+    const { reviewId: id } = seedReadyDraft(
+      seededDatabase,
+      'Skip a schedule whose tenant row has gone',
+    )
+
+    /* Forty-five seconds after the sign-off, and stopped there. Nothing is waited out. */
+    await signOff(page, id)
+    await pinAfterSignOff(page, id, 45)
+
+    await expect(page.locator('.watch')).toContainText('may not be running')
+    await expect(page.locator('.watch')).toContainText('in the 45 sec since you signed off')
+    await bothWidths(page, 'dev-932-2-nothing-posted')
+  })
+
+  test('the sign-off taken back while the page was watching', async ({ page }) => {
+    const { reviewId: id } = seedReadyDraft(
+      seededDatabase,
+      'Name the helper this change deletes',
+    )
+    await signOff(page, id)
+
+    await page.getByRole('button', { name: 'Take back the sign-off and send it back' }).click()
+    await page.locator('textarea#send-back-note').fill('Fold F1 into the prose; it has no line')
+    await page.getByRole('button', { name: 'Send back', exact: true }).click()
+
+    await expect(page.locator('.watch')).toContainText('The sign-off is taken back')
+    /* Nothing in this state carries a figure, so there is no clock to pin. */
+    await bothWidths(page, 'dev-932-4-sent-back')
   })
 })

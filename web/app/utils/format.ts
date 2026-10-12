@@ -19,10 +19,27 @@ import type {
   SeverityCounts,
 } from '~/types/desk'
 
+/**
+ * Whole seconds from an instant until `now`, or null when there is no instant.
+ *
+ * **The arithmetic a time on this desk is worded from**, written once. `sinceLabel` and
+ * `forLabel` below each held a copy, and the draft page's watch needs the number itself —
+ * it is timed against `POSTED_WITHIN_SECONDS`, which is a count of seconds and not a
+ * phrase — so a third copy would have been one more place for "never in the future" to be
+ * forgotten.
+ *
+ * Never negative. A browser clock a second behind the server's must not read as the
+ * future: "signed off in 1 sec" is a prediction, and the desk does not predict.
+ */
+export function secondsSince(at: Instant | null | undefined, now: Date): number | null {
+  if (!at) return null
+  return Math.max(0, Math.floor((now.getTime() - new Date(at).getTime()) / 1000))
+}
+
 /** An ISO instant as "6 min ago". Never "in 0 min"; the desk does not predict. */
 export function sinceLabel(at: Instant | null | undefined, now: Date = new Date()): string {
-  if (!at) return 'at an unrecorded time'
-  const seconds = Math.max(0, Math.floor((now.getTime() - new Date(at).getTime()) / 1000))
+  const seconds = secondsSince(at, now)
+  if (seconds == null) return 'at an unrecorded time'
   if (seconds < 60) return 'just now'
   const minutes = Math.floor(seconds / 60)
   if (minutes < 60) return `${minutes} min ago`
@@ -30,6 +47,26 @@ export function sinceLabel(at: Instant | null | undefined, now: Date = new Date(
   if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`
   const days = Math.floor(hours / 24)
   return `${days} ${days === 1 ? 'day' : 'days'} ago`
+}
+
+/**
+ * "25 sec ago", down to the second — which `sinceLabel` deliberately will not say.
+ *
+ * **Both are right, for different readers.** `sinceLabel` answers "roughly when" and says
+ * "just now" for anything under a minute, which is what a time read at a glance wants. The
+ * draft page's watch is asking whether twenty seconds have gone or fifty, and those are the
+ * same sentence to `sinceLabel`. The one thing borrowed from it is the nought: "0 sec ago"
+ * is a reading of a clock, and "just now" is what a person says.
+ *
+ * Null where the record holds no instant, so each caller says in its own words what that
+ * absence is — an unrecorded sign-off and a review nothing has written to are both nulls
+ * and are not the same sentence.
+ */
+export function agoLabel(at: Instant | null | undefined, now: Date = new Date()): string | null {
+  const seconds = secondsSince(at, now)
+  if (seconds == null) return null
+  if (seconds === 0) return 'just now'
+  return `${durationLabel(seconds)} ago`
 }
 
 /** "open 3 days", for a pull request nobody has picked up. */
@@ -188,9 +225,7 @@ export function stepDurationLabel(layer: {
  * past. This is for the places that are about the span: "Code review · 20 min".
  */
 export function forLabel(at: Instant | null | undefined, now: Date = new Date()): string | null {
-  if (!at) return null
-  const seconds = Math.max(0, Math.floor((now.getTime() - new Date(at).getTime()) / 1000))
-  return durationLabel(seconds)
+  return durationLabel(secondsSince(at, now))
 }
 
 /**

@@ -10,6 +10,7 @@
  */
 
 import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import type { Page } from '@playwright/test'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -1345,4 +1346,220 @@ export async function stop(serving: Serving): Promise<void> {
   serving.process.kill('SIGTERM')
   await Promise.race([ended, new Promise(wait => setTimeout(wait, 5_000))])
   if (serving.process.exitCode == null) serving.process.kill('SIGKILL')
+}
+
+/**
+ * A review with one finding and a draft ready for the developer, opened on the fly.
+ *
+ * **Not part of `seed()`, and that is the point.** Everything the acceptance suite asserts
+ * on the seeded database includes how many reviews the queue is waiting on, so a review
+ * added to the seed to test one screen changes the assertions and the pictures of four
+ * others. The two callers — the draft page's sign-off block and its screenshots — open
+ * their own and name their own pull request numbers.
+ *
+ * **`--sections` rather than `--file`.** The store composes the body from the blocks, which
+ * is what a session writes since DEV-929 and is what keeps `body_is_stale` false; a draft
+ * written as one block of markdown would do as well for the test and worse as a picture.
+ *
+ * It stops at `ready`. Signing off is the developer's act and there is no command for it,
+ * which is the boundary the whole of this file is arranged around.
+ *
+ * **It finds its own pull request number, by asking the record.** Picking one by hand was
+ * wrong twice over. A number the seed already uses opens a *round two* of that review —
+ * `review open` on a pull request reviewed at another head starts the next round, which
+ * carries the earlier round's findings forward and moves `rounds_on_pr` on a review some
+ * other test asserts about; the only symptom was "draft section refers to finding 6/1,
+ * which does not exist", naming neither the pull request nor the round. The *same* number
+ * twice hands back the same review and a refused `draft put`, which is what
+ * `--repeat-each` hit.
+ *
+ * A counter in this module does not fix the second one, because the runner reloads the
+ * module between repeats and the counter starts again. So it asks the record instead,
+ * from 900 upward — well clear of the 405–519 the seeds use — for the first pull request
+ * nothing has reviewed. `review find` is the read that answers it.
+ *
+ * **What that buys is repeating the block, not repeating the run.** Every review this
+ * makes is left on the shared database, and one of them is marked posted — which is the
+ * predicate of `posted_reviews_awaiting_author`, so it becomes a "Waiting on the author"
+ * row that the queue counts. Two consequences, and the second is the one that bites:
+ *
+ * - `--repeat-each` over the whole of `review-desk.spec.ts` replays the queue assertions
+ *   above this block against a database that has grown, and they would be right to fail.
+ *   Within one run it costs nothing, because the block is last.
+ * - **The two Playwright projects share the database**, so a bare `playwright test` with
+ *   no `--project` runs the acceptance suite and then the screenshots over a desk with
+ *   four reviews on it that were not there, and regenerates committed queue pictures with
+ *   rows nobody added. `pnpm run e2e` and `pnpm run e2e:screenshots` each name a project
+ *   and reseed, which is why they are the documented commands; this is the reason they
+ *   are not interchangeable with running the lot.
+ */
+const FIRST_PULL_REQUEST = 900
+const LAST_PULL_REQUEST = FIRST_PULL_REQUEST + 50
+
+/**
+ * Open a review on the first pull request in that range that nothing has reviewed.
+ *
+ * **The search is a read, and getting there took three goes.** Probing with `review open`
+ * and the title rewrote the title of whatever review was already on each number it
+ * rejected — a finished test's record changed underneath it. Probing with `review open`
+ * and the three identifying fields alone wrote nothing, but still *opened* a review on
+ * every number it tried and cost two process spawns apiece. `review find` answers the same
+ * question in one spawn and writes nothing at all: a list of that pull request's reviews,
+ * newest round first, and an empty list for one nobody has reviewed.
+ *
+ * Spawns are what this costs — 15.7 ms each, measured over ten runs against a scratch
+ * database — so the difference is small and the write hazard is retired rather than
+ * stepped around.
+ */
+function openAFreshReview(
+  database: string,
+  title: string,
+): { reviewId: number, pr: number } {
+  for (let pr = FIRST_PULL_REQUEST; pr <= LAST_PULL_REQUEST; pr += 1) {
+    const { reviews } = cliJson(database, [
+      'review',
+      'find',
+      '--repo',
+      'acme/portal',
+      '--pr',
+      String(pr),
+    ]) as unknown as { reviews: unknown[] }
+    if (reviews.length > 0) continue
+
+    const opened = cli(database, [
+      'review',
+      'open',
+      '--repo',
+      'acme/portal',
+      '--pr',
+      String(pr),
+      '--head',
+      'b4d9e01',
+      '--title',
+      title,
+      '--ticket',
+      'ABC-251',
+      '--changed-lines',
+      '64',
+    ])
+    const reviewId = Number(opened.match(/\d+/)?.[0])
+    if (!Number.isInteger(reviewId)) {
+      throw new Error(`review open printed no id: ${opened}`)
+    }
+    return { reviewId, pr }
+  }
+
+  throw new Error(
+    `every pull request from ${FIRST_PULL_REQUEST} to ${LAST_PULL_REQUEST} on this `
+    + 'database is already reviewed. Something is seeding in this range, or a test is '
+    + 'asking for far more reviews than this helper was meant to make.',
+  )
+}
+
+export function seedReadyDraft(
+  database: string,
+  title: string,
+): { reviewId: number, pr: number } {
+  const directory = scratch()
+  const { reviewId, pr } = openAFreshReview(database, title)
+
+  /*
+   * **The session that ran it, which a real review has and `review open` does not set.**
+   * `Review.session_id` is nullable and the draft page says different things with and
+   * without it — it will not tell a developer to go and look at a session the record
+   * never recorded. A seed that left it null would have the browser checks asserting the
+   * wording for the rarer case.
+   */
+  cli(database, ['review', 'link', '--review', String(reviewId), '--session', 'ses-dev-932'])
+
+  const finding = join(directory, 'posting-finding.json')
+  writeFileSync(
+    finding,
+    JSON.stringify({
+      lens: 'correctness',
+      severity: 'should',
+      claim: 'The attempt count is written outside the transaction',
+      title: 'The attempt count is written outside the transaction',
+      file: 'app/Jobs/DeliverWebhook.php',
+      line: 73,
+      disposition: 'in_draft',
+    }),
+  )
+  /*
+   * The number the store gave it, not a 1. A block about a finding that is not there is
+   * refused, and the refusal names a sequence number rather than the reason — so reading
+   * it back is a line here instead of a puzzle wherever this is called from.
+   */
+  const seq = (
+    cliJson(database, [
+      'finding',
+      'add',
+      '--review',
+      String(reviewId),
+      '--file',
+      finding,
+    ]) as unknown as { finding: { seq: number } }
+  ).finding.seq
+
+  const sections = join(directory, 'posting-sections.json')
+  writeFileSync(
+    sections,
+    JSON.stringify([
+      {
+        kind: 'prose',
+        text:
+          '**1 Should — 1 open.** The retry carries a key now, which is the right shape. '
+          + 'One finding, about where the attempt count is written.',
+      },
+      {
+        kind: 'finding',
+        finding_seq: seq,
+        text:
+          'A delivery that fails after the increment leaves the count ahead of what was '
+          + 'actually attempted, and the audit row is written from the count.',
+      },
+    ]),
+  )
+  cli(database, ['draft', 'put', '--review', String(reviewId), '--sections', sections])
+
+  return { reviewId, pr }
+}
+
+/** The draft's two stamps, as the record holds them: whole seconds, or null. */
+export function draftStamps(
+  database: string,
+  reviewId: number,
+): { approvedAt: number | null, postedAt: number | null } {
+  const { draft } = cliJson(database, [
+    'draft',
+    'show',
+    '--review',
+    String(reviewId),
+  ]) as unknown as { draft: { approved_at: number | null, posted_at: number | null } }
+  return { approvedAt: draft.approved_at, postedAt: draft.posted_at }
+}
+
+/**
+ * Stop the browser's clock a stated number of seconds after a stamp the record holds.
+ *
+ * **Pinned to the record, never to a wall clock.** The draft page words its figures from
+ * `approved_at` and `posted_at`, so a test that moves the browser's clock by a *duration*
+ * is asserting on 45 seconds plus however long the sign-off itself took — which is 45
+ * until the wording crosses a minute and becomes "1 min", and then it is a capture group
+ * that does not match. Pinning to the stamp makes the figure the one the test names, on
+ * any machine, however slow.
+ *
+ * `pauseAt` rather than `fastForward`: the jump fires each due timer once and then nothing
+ * moves again, which is what a picture wants and what an assertion about one figure needs.
+ * The clock must already be installed; `page.clock.resume()` starts it going again.
+ */
+export async function pinClockAt(
+  page: Page,
+  stamp: number | null,
+  secondsAfter: number,
+): Promise<void> {
+  if (stamp == null) {
+    throw new Error('the record holds no stamp to pin the clock to')
+  }
+  await page.clock.pauseAt(new Date((stamp + secondsAfter) * 1000))
 }

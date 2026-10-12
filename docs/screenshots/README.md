@@ -25,6 +25,27 @@ cd web && pnpm run e2e:screenshots
 | `dev-929-1-index.png`, `-390` | **The body as it will post, after DEV-929.** The session's verdict line and `### Problem fit` with its diagram, then an index of all twelve findings — the glyph and the word, the place in the code as a link, and whether the finding is on the code or in the body — then the three sections for the findings the diff cannot anchor. |
 | `dev-929-2-threads.png`, `-390` | The other half of what posts: nine inline threads, each with the line it sits on and the comment as the author will read it. None of them is in the body. |
 | `dev-929-3-nothing-to-anchor.png` | A draft written as one block of markdown: no blocks to index, and nothing to hang a comment on. The card says which it is rather than being empty. |
+| `dev-932-1-waiting.png`, `-390` | **The gap a sign-off opens, after DEV-932.** Signed off and waiting: how long ago, when anything last wrote to the review, that the review's own session is what posts it, and that whether that session is running is not something Review Desk is told. |
+| `dev-932-2-nothing-posted.png`, `-390` | Forty seconds on, with nothing reported. It says the session may not be running and what to do about it — a plain sentence in the body ink, not a boxed warning, because nothing has gone wrong with the record and what is in doubt is a session this app cannot see. |
+| `dev-932-3-posted.png`, `-390` | The session posted it, and the page said so without a reload: when, as which event, how long it took, and a link to the review on GitHub. |
+| `dev-932-4-sent-back.png`, `-390` | The developer took the sign-off back while the page was watching. The waiting words are gone and the draft is with the session again. |
+
+**The four `dev-932` states are reached the way the real thing reaches them.** The sign-off
+is a click, because that is the only way a draft can be signed off; the posting is
+`review-desk draft posted`, which is the command a review session runs; the take-back is
+the control on the page. The waits are moved with Playwright's clock rather than waited
+out, and **pinned to the record's own stamps rather than moved by a duration** — 25 seconds
+after `approved_at` for the first picture, 45 for the second, 40 after `posted_at` for the
+third — so the 1440 and the 390 shot of one state agree with each other and two runs put
+the same figures in the panel.
+
+**Two figures in them are still the server's, and no browser clock can pin those.**
+`waiting_on_you_seconds`, on the line under the trail, is measured from the draft becoming
+ready to the developer signing off; "Taken to post", in the third picture, is `posted_at`
+less `approved_at`. Both are real seconds between two commands, so each can land a second
+either way and make a run differ. The alternative is moving the database's clock, which is
+what the `dev-890` shots below had to do and is worth it only where the figures are the
+subject of the picture.
 
 The records in the seeded shots are invented, but they are **real rows in a real SQLite
 database**, written by `review-desk review open`, `brief put`, `finding add`, `layer set`
