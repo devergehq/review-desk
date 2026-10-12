@@ -201,10 +201,13 @@ async function remove() {
       </p>
 
       <!--
-        **Hidden while anything is open, not only while this one is.** `asking` is a
-        single slot, so offering the other opener beside an open box let a press throw
-        away what the developer had typed in it: "Delete it" with a reason half written
-        unmounted the box and lost the words, silently.
+        **One slot, three states, and each branch names the state it is for.**
+        `asking === null` is the opener; `asking === 'dismiss'` is this box. Hiding the
+        opener while *anything* is open is right — a press beside an open box threw away
+        a half-typed reason — but the `v-else` that went with it was not: it showed this
+        box whenever the slot was full, including while the delete was being confirmed,
+        and `ReasonPrompt` autofocuses, so Enter dismissed the review instead of
+        confirming the delete. Two states cannot share one `v-else`.
       -->
       <div
         v-if="asking === null"
@@ -218,7 +221,7 @@ async function remove() {
         </DeskButton>
       </div>
       <ReasonPrompt
-        v-else
+        v-else-if="asking === 'dismiss'"
         id="dismiss-reason"
         label="Why are you dismissing this review?"
         action="Dismiss it"
@@ -266,7 +269,7 @@ async function remove() {
           </DeskButton>
         </div>
         <div
-          v-else
+          v-else-if="asking === 'delete'"
           class="controls confirm"
         >
           <p class="rd-note">

@@ -835,9 +835,15 @@ function saveDraft(id: number, body: string, edits: DraftEditToRecord[]): DraftD
 
 /** `POST /reviews/{id}/draft/approve` — approved here, posted by the review session. */
 function approveDraft(id: number, event: ReviewEvent): DraftDetail {
+  /*
+   * **Before the draft is looked for, which is the order the store asks in.** A
+   * dismissed review with no draft row answers `409 dismissed_review` in the binary and
+   * answered `404` here, so a screen's refusal state tested on fixtures was tested
+   * against the wrong code — the one thing this file must not do.
+   */
+  refuseIfDismissed(id, 'approving its draft')
   const detail = draftById(id)
   if (!detail) throw notFound(`draft on review ${id}`)
-  refuseIfDismissed(id, 'approving its draft')
   if (detail.draft.status !== 'ready') {
     throw conflict(
       `This draft is ${detail.draft.status} and only a draft that is ready can be `
@@ -1304,10 +1310,11 @@ function decideFinding(
  * changes that ticketed everything it asked for would contradict itself.
  */
 function ticketRestAndApprove(id: number, note: string | null): TicketedAndApproved {
+  /* Before the draft is looked for, as `approveDraft` above and the store both do. */
+  refuseIfDismissed(id, 'ticketing what is left and approving')
   const drafted = draftById(id)
   const owner = reviewById(id)
   if (!drafted || !owner) throw notFound(`draft on review ${id}`)
-  refuseIfDismissed(id, 'ticketing what is left and approving')
 
   if (drafted.draft.status !== 'ready') {
     throw conflict(

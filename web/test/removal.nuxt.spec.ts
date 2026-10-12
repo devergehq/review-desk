@@ -266,19 +266,33 @@ describe('dismissing a review from its page', () => {
     expect(page.text()).toContain('Everything on it has been kept')
   })
 
-  it('does not offer a delete that would throw away a half-typed reason', async () => {
-    // `asking` is one slot, so the other opener beside an open box was a press that
-    // unmounted the box and lost what was in it, silently.
+  it('shows one control at a time, whichever was opened', async () => {
+    // **Asserted on the whole set of buttons, not on one label.** The first version of
+    // this test asked whether "Delete it" was gone and passed while the card was showing
+    // the delete *confirmation* — a different label — so it was green about the wrong
+    // element. `asking` is one slot and each branch has to name the state it draws:
+    // sharing a `v-else` put a live "Delete it for good" beside the reason box, and
+    // `ReasonPrompt` autofocuses, so Enter dismissed the review instead.
+    const card = (page: VueWrapper) =>
+      page.find('#remove-review').findAll('button').map(one => one.text())
+
     await withStray()
     const page = await understand(777)
-    expect(button(page, 'Delete it')).toBeDefined()
+    expect(card(page)).toEqual(['Dismiss this review', 'Delete it'])
 
     await click(page, 'Dismiss this review')
     await page.find('#dismiss-reason').setValue('a duplicate of #413')
-    expect(button(page, 'Delete it')).toBeUndefined()
+    expect(card(page)).toEqual(['Dismiss it', 'Cancel'])
 
     await click(page, 'Cancel')
-    expect(button(page, 'Delete it')).toBeDefined()
+    expect(card(page)).toEqual(['Dismiss this review', 'Delete it'])
+
+    await click(page, 'Delete it')
+    expect(card(page)).toEqual(['Delete it for good', 'Keep it'])
+    expect(page.find('#dismiss-reason').exists()).toBe(false)
+
+    await click(page, 'Keep it')
+    expect(card(page)).toEqual(['Dismiss this review', 'Delete it'])
   })
 
   it('stops saying a reason is required once one is typed', async () => {
