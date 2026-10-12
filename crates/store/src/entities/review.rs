@@ -151,8 +151,18 @@ impl Store {
         // the round the first moved and moves it again.
         if let Some(unstarted) = self.latest_unstarted_round(&repo, pr)? {
             let moved_from = unstarted.head_sha.clone();
+            // **The line count goes with the commit it was counted on.** It is additions
+            // plus deletions of the change as it stood, and `POST /reviews` says in its
+            // own comment that it is what the draft's word budget is computed from — so a
+            // figure measured on the commit this review has just stopped being of is a
+            // wrong answer rather than an old one. Cleared rather than recomputed,
+            // because the store reads no GitHub: the next caller that knows writes it,
+            // and `POST /reviews` fills it from the read it makes anyway.
+            //
+            // The title is left alone. It is a fact about the pull request rather than
+            // about the commit, and a caller that has a newer one passes it.
             self.conn.execute(
-                "UPDATE reviews SET head_sha = ?2 WHERE id = ?1",
+                "UPDATE reviews SET head_sha = ?2, changed_lines = NULL WHERE id = ?1",
                 params![unstarted.id, head_sha],
             )?;
             self.mark_review_active(unstarted.id)?;
@@ -207,6 +217,16 @@ impl Store {
     /// nothing has been dispatched for has no session, no layer past `pending` and none
     /// of the three.
     ///
+    /// **A commit the pull request has moved past moves the head too, and that is right
+    /// rather than a gap.** A session dispatched for commit A opens the review with A
+    /// while the dispatcher has already recorded B; the review becomes one of A, which is
+    /// what that session is actually reviewing, and the dispatcher's next poll finds a
+    /// review somebody has claimed and opens round 2 for B. The head is the commit the
+    /// review is *of*, not the pull request's newest — which is true of every review ever
+    /// posted. What the rule refuses to do is let two unstarted reviews exist; it does
+    /// not try to decide which of two commits is newer, and it could not: the store reads
+    /// no git.
+    ///
     /// **What is left is the window before a session claims the review**, and it is
     /// narrow rather than closed. A session opens the review and then links itself; a
     /// caller moving the head between those two moments would leave the session holding
@@ -250,20 +270,25 @@ impl Store {
 
     /// What this review holds of the three things only a session writes.
     ///
-    /// One read of three counts rather than three reads, because both callers need all
-    /// three: `open_review` to decide whether a round may move, and `delete_review` to
-    /// decide whether it may go and to say what it is protecting if it may not.
+    /// One read rather than four, because both callers need all of them: `open_review` to
+    /// decide whether a round may move, and `delete_review` to decide whether it may go
+    /// and to say what it is protecting if it may not.
     pub fn review_work(&self, id: i64) -> Result<ReviewWork> {
         Ok(self.conn.query_row(
             "SELECT EXISTS (SELECT 1 FROM briefs WHERE review_id = ?1) AS has_brief,
                     (SELECT COUNT(*) FROM findings WHERE review_id = ?1) AS findings,
-                    EXISTS (SELECT 1 FROM drafts WHERE review_id = ?1) AS has_draft",
+                    EXISTS (SELECT 1 FROM drafts WHERE review_id = ?1) AS has_draft,
+                    EXISTS (
+                        SELECT 1 FROM reviews
+                        WHERE id = ?1 AND github_review_id IS NOT NULL
+                    ) AS is_posted",
             params![id],
             |row| {
                 Ok(ReviewWork {
                     has_brief: row.get("has_brief")?,
                     findings: row.get("findings")?,
                     has_draft: row.get("has_draft")?,
+                    is_posted: row.get("is_posted")?,
                 })
             },
         )?)

@@ -1476,6 +1476,7 @@ function deleteReview(id: number): Review {
     brief: detail.brief != null,
     findings: detail.findings.length,
     draft: draftById(id) != null,
+    posted: detail.review.github_review_id != null,
   })
   if (holds !== '') {
     throw conflict(

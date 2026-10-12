@@ -210,6 +210,21 @@ function nothingHere(answer: { repo: string | null, dismissed: DismissedReviews 
 
 <template>
   <div class="reviews">
+    <!--
+      **Above the state, not inside it.** The sentence a delete hands over was drawn in
+      the default slot, and `DeskState` draws the *empty* slot instead of that one — so
+      deleting the last review in play, which is precisely the database DEV-945 was
+      raised from, dropped the only acknowledgement the one irreversible act gets. Here
+      it is on the page whichever slot is drawn.
+    -->
+    <DeskNotice
+      v-if="handedOver"
+      tone="plain"
+      class="handed-over"
+    >
+      {{ handedOver }}
+    </DeskNotice>
+
     <DeskState
       :resource="reviews"
       :is-empty="isEmpty"
@@ -220,12 +235,7 @@ function nothingHere(answer: { repo: string | null, dismissed: DismissedReviews 
           <h1 class="rd-display">
             {{ count(data.reviews.length, 'review') }}
           </h1>
-          <DeskNotice
-            v-if="handedOver"
-            tone="plain"
-          >
-            {{ handedOver }}
-          </DeskNotice>
+
           <!--
             **The line says what this view is, not what the page is.** "Every review the
             record holds" was true of a page with no filter and is the claim
@@ -378,6 +388,10 @@ function nothingHere(answer: { repo: string | null, dismissed: DismissedReviews 
 }
 
 .top {
+  max-width: 44rem;
+}
+
+.handed-over {
   max-width: 44rem;
 }
 

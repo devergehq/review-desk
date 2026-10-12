@@ -349,6 +349,14 @@ fn found_line(review: &Review) -> String {
         "{} round {} head {}",
         review.id, review.round, review.head_sha
     );
+    // **A dismissed round is marked rather than left out.** This list is a pull request's
+    // own history, and a hole where round 2 was would make the round numbers read as a
+    // gap in the record — `Store::list_reviews` carries that argument. So the word is on
+    // the line instead, because an agent recovering an id has to know that the round it
+    // finds is one the developer has taken out of play.
+    if review.is_dismissed() {
+        line.push_str(" (dismissed)");
+    }
     if let Some(title) = &review.title {
         line.push_str(&format!(" — {title}"));
     }

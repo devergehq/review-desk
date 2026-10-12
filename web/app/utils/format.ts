@@ -117,7 +117,7 @@ export function severityTally(counts: SeverityCounts): string {
 /**
  * What a review holds of the three things only a session writes, in words.
  *
- * **"a brief, 2 findings and a draft" — and the three are the same three everywhere.**
+ * **"a brief, 2 findings and a draft" — and the four are the same four everywhere.**
  * The store refuses a delete unless all three are absent and says this list back when it
  * refuses; the removal card draws it to explain why no delete is offered; and sample mode
  * raises the refusal with it so a page tested on fixtures is tested against the same
@@ -130,12 +130,17 @@ export function severityTally(counts: SeverityCounts): string {
  * to protect.
  */
 export function reviewWorkInWords(
-  held: { brief: boolean, findings: number, draft: boolean },
+  held: { brief: boolean, findings: number, draft: boolean, posted: boolean },
 ): string {
   const parts: string[] = []
   if (held.brief) parts.push('a brief')
   if (held.findings > 0) parts.push(count(held.findings, 'finding'))
   if (held.draft) parts.push('a draft')
+  /*
+   * The fourth, which a review can hold with none of the others: `review link
+   * --github-review` records a review whose process ran outside Review Desk.
+   */
+  if (held.posted) parts.push('the review it posted on GitHub')
   if (parts.length <= 1) return parts[0] ?? ''
   return `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`
 }

@@ -13,8 +13,8 @@ mod common;
 use common::{new_review, temp_store};
 use review_desk_store::{
     Actor, DismissedReviews, Disposition, DraftStatus, FileCheck, FindingRef, NewBrief, NewDraft,
-    NewFileChange, NewFinding, NewOutcome, NewReviewSource, OutcomeKind, Review, ReviewLayerState,
-    ReviewLinks, Severity, SourceKind, Store, WorkFilter,
+    NewFileChange, NewFinding, NewOutcome, NewReviewSource, OutcomeKind, Review, ReviewFacts,
+    ReviewLayerState, ReviewLinks, Severity, SourceKind, Store, WorkFilter,
 };
 
 const REPO: &str = "acme/portal";
@@ -1062,4 +1062,113 @@ fn a_session_that_says_who_it_is_on_the_first_call_is_claimed_at_once() {
         pushed.created,
         "a round of its own, because somebody is at work on round 1"
     );
+}
+
+#[test]
+fn a_review_posted_outside_review_desk_is_not_a_review_that_never_started() {
+    // **The hole a review of this branch found.** `review link --github-review` is the
+    // one way the command line can post a review, and a review posted that way holds no
+    // brief, no finding and no draft — the process ran outside Review Desk, which
+    // `posted_reviews_awaiting_author` admits by name and the Reviews list draws as
+    // "posted". Counting only the three would have let a delete remove the record that a
+    // review was posted on that pull request at all, which is the opposite of the row
+    // that should never have existed.
+    let (_dir, store) = temp_store();
+    let review = requested(&store, 830, "aaa1111");
+    store
+        .set_review_links(
+            review.id,
+            ReviewLinks {
+                github_review_id: Some("PRR_kwDOseeded".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("posted, the one way the command line can post one");
+
+    let work = store.review_work(review.id).unwrap();
+    assert!(work.started());
+    assert_eq!(work.in_words(), "the review it posted on GitHub");
+
+    let error = store
+        .delete_review(review.id)
+        .expect_err("deleting it would lose the record that it was posted");
+    assert_eq!(error.code(), "review_started");
+    assert!(error.to_string().contains("posted on GitHub"), "{error}");
+
+    // And its head does not move either: the commit a posted review is of is the commit
+    // that was reviewed.
+    let pushed = store
+        .open_review(REPO, 830, "bbb2222")
+        .expect("the author pushed");
+    assert!(pushed.created, "a round of its own");
+    assert_eq!(
+        store.get_review(review.id).unwrap().head_sha,
+        "aaa1111",
+        "and the posted round still names the commit it was posted on"
+    );
+}
+
+#[test]
+fn a_harvest_having_looked_is_not_work_a_delete_would_lose() {
+    // The other half of the same question, and the answer is the opposite. The harvest
+    // sweep reads every review whose pull request is open — including one nobody has
+    // started — and marks it read, so a `harvested_at` says Review Desk looked at GitHub
+    // rather than that anybody did anything. The stray review this issue was raised from
+    // will have been swept.
+    let (_dir, store) = temp_store();
+    let review = requested(&store, 831, "aaa1111");
+    store
+        .mark_review_harvested(review.id, 1_791_000_000)
+        .expect("the sweep looked at it");
+
+    assert!(!store.review_work(review.id).unwrap().started());
+    store.delete_review(review.id).expect("and it can still go");
+}
+
+#[test]
+fn a_moved_head_takes_the_line_count_with_it() {
+    // The figure is additions plus deletions of the change as it stood, and the draft's
+    // word budget is computed from it — so a count measured on the commit this review
+    // has just stopped being of is a wrong answer rather than an old one.
+    let (_dir, store) = temp_store();
+    store
+        .open_review_with(
+            REPO,
+            832,
+            "aaa1111",
+            &ReviewFacts {
+                title: Some("Give a scheduled export its own context".to_string()),
+                changed_lines: Some(50),
+                ..Default::default()
+            },
+        )
+        .expect("a request, with what the dispatcher knew");
+
+    let moved = store
+        .open_review(REPO, 832, "bbb2222")
+        .expect("the author pushed");
+
+    assert_eq!(
+        moved.review.changed_lines, None,
+        "the count went with the commit"
+    );
+    assert_eq!(
+        moved.review.title.as_deref(),
+        Some("Give a scheduled export its own context"),
+        "the title is about the pull request, not the commit, so it stays"
+    );
+
+    // And the next caller that knows writes it.
+    let told = store
+        .open_review_with(
+            REPO,
+            832,
+            "bbb2222",
+            &ReviewFacts {
+                changed_lines: Some(3_000),
+                ..Default::default()
+            },
+        )
+        .expect("recorded again, with the new count");
+    assert_eq!(told.review.changed_lines, Some(3_000));
 }

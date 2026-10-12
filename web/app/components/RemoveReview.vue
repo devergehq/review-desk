@@ -54,15 +54,21 @@ const review = computed(() => props.detail.review)
 /**
  * What a session has written to this review: the three things a delete would lose.
  *
- * **The same three the store asks about, in the same words**, through the one helper the
+ * **The same four the store asks about, in the same words**, through the one helper the
  * sample backend's refusal is also built from — the sentence under this card is the
  * developer's only explanation of why no delete is offered, and it must not read
  * differently from the refusal it is explaining.
+ *
+ * The fourth is the review posted on GitHub, which a review can hold with none of the
+ * other three: `review link --github-review` is a review whose process ran outside
+ * Review Desk, and the Reviews list draws it as posted. Without it the card told the
+ * developer such a review had "nothing on it but the request".
  */
 const held = computed(() => ({
   brief: props.detail.brief != null,
   findings: props.detail.findings.length,
   draft: props.detail.draft_status != null,
+  posted: props.detail.review.github_review_id != null,
 }))
 
 /** "a brief and 4 findings" — the list the refusal and this card both read as one. */

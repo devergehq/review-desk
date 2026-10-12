@@ -658,34 +658,48 @@ pub struct OpenedReview {
     pub head_moved_from: Option<String>,
 }
 
-/// What a review holds of the three things only a session writes: the brief, the
-/// findings and the draft.
+/// What a review holds that somebody would lose: the brief, the findings, the draft, and
+/// the review posted on GitHub.
 ///
-/// **One answer to one question, asked in three places.** "Has anybody started this
-/// review?" decides whether [`Store::open_review`] moves a round's head rather than
-/// starting a new one, whether [`Store::delete_review`] is allowed at all, and what the
-/// refusal says when it is not. Three separate judgements would be three chances for
-/// `open_review` to treat a review as unstarted that `delete_review` treats as started.
+/// **One answer to one question, asked in three places.** "Does this review hold
+/// anything?" decides whether [`Store::delete_review`] is allowed at all, what the
+/// refusal says when it is not, and — with one further question beside it — whether
+/// [`Store::open_review`] may move a round's head. Separate judgements would be separate
+/// chances for the page to offer a delete the API refuses.
 ///
-/// **The layers are deliberately not counted.** A session that wrote layer 1 and died
-/// left a running step and nothing else, and DEV-945 names the three things that make a
-/// review worth keeping: "no brief, no findings and no draft". A layer row is a note
-/// about what a session was doing, not work the developer would lose.
+/// **The fourth is `github_review_id`, and leaving it out was a hole.** DEV-945 names
+/// three things, and three is right for a review that has only ever been written through
+/// Review Desk. A review posted with `review link --github-review` holds none of them —
+/// the process ran outside, which `posted_reviews_awaiting_author` admits by name and the
+/// Reviews list draws as "posted" — so a delete would have removed the record that a
+/// review was posted on that pull request at all, which is the opposite of "a row that
+/// should never have existed". Found by a review of this branch.
+///
+/// **`harvested_at` is not a fifth**, and that is not an oversight: the harvest sweep
+/// reads every review whose pull request is open, including one nobody has started, and
+/// marks it read. A stamp saying Review Desk looked at GitHub is not work the developer
+/// would lose.
+///
+/// **The layers are deliberately not counted either.** A session that wrote layer 1 and
+/// died left a running step and nothing else, and a layer row is a note about what a
+/// session was doing rather than something a delete would lose. It *does* stop a head
+/// moving — see [`Store::latest_unstarted_round`], which is the question beside this one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReviewWork {
     pub has_brief: bool,
     pub findings: i64,
     pub has_draft: bool,
+    pub is_posted: bool,
 }
 
 impl ReviewWork {
-    /// Whether a session has written any of the three.
+    /// Whether the review holds any of the four.
     pub fn started(&self) -> bool {
-        self.has_brief || self.findings > 0 || self.has_draft
+        self.has_brief || self.findings > 0 || self.has_draft || self.is_posted
     }
 
-    /// The three in words, for a refusal that has to say what it is protecting: "a
-    /// brief, 4 findings and a draft".
+    /// The four in words, for a refusal that has to say what it is protecting: "a brief,
+    /// 4 findings and a draft".
     ///
     /// Empty when nothing is there, which no caller prints: a refusal is only ever
     /// composed when [`ReviewWork::started`] is true.
@@ -701,6 +715,9 @@ impl ReviewWork {
         }
         if self.has_draft {
             held.push("a draft".to_string());
+        }
+        if self.is_posted {
+            held.push("the review it posted on GitHub".to_string());
         }
         match held.as_slice() {
             [] => String::new(),

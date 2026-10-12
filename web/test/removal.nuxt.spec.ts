@@ -321,6 +321,21 @@ describe('deleting a review that never started', () => {
     expect(list.findAll('.row').map(row => row.text()).join(' ')).not.toContain('#777')
   })
 
+  it('says what went even when the deleted review was the last one in play', async () => {
+    // **The database DEV-945 was raised from**: one review, and it is the stray. The
+    // receipt was drawn inside the default slot, and `DeskState` draws the empty card
+    // instead of that slot — so the one act with no undo lost its only acknowledgement
+    // in exactly the case the feature is for.
+    await resetDesk({ reviews: [strayReview()], drafts: [] })
+    const page = await understand(777)
+    await click(page, 'Delete it')
+    await click(page, 'Delete it for good')
+
+    const list = await shown(Reviews)
+    expect(list.text()).toContain('No reviews in play')
+    expect(list.text()).toContain('is deleted')
+  })
+
   it('says what went, on the page the developer lands on', async () => {
     // **The one act with no undo is the one that must not be silent.** The sentence
     // cannot be said where it was done — that page is about a review that is no longer
@@ -338,6 +353,22 @@ describe('deleting a review that never started', () => {
 
     const again = await shown(Reviews)
     expect(again.text()).not.toContain('is deleted')
+  })
+
+  it('is not offered for a review posted outside Review Desk', async () => {
+    // A review whose GitHub id was recorded by `review link` holds no brief, no findings
+    // and no draft, and the Reviews list draws it as posted. The card told the developer
+    // it had "nothing on it but the request".
+    const source = loadSource()
+    const posted = strayReview()
+    posted.review.github_review_id = 'PRR_kwDOseeded'
+    await resetDesk({ reviews: [...source.reviews, posted] })
+
+    const page = await understand(777)
+    expect(page.text()).toContain('It cannot be deleted')
+    expect(page.text()).toContain('the review it posted on GitHub')
+    expect(page.text()).not.toContain('nothing on it but the request')
+    expect(button(page, 'Delete it')).toBeUndefined()
   })
 
   it('says a session has it, rather than that nothing has started', async () => {

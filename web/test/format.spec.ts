@@ -512,16 +512,28 @@ describe('what the queue says when a link becomes a review', () => {
 })
 
 describe('what a review holds, in words', () => {
+  const nothing = { brief: false, findings: 0, draft: false, posted: false }
+
   it('is the list the refusal and the removal card both read as one', () => {
-    expect(reviewWorkInWords({ brief: false, findings: 0, draft: false })).toBe('')
-    expect(reviewWorkInWords({ brief: true, findings: 0, draft: false })).toBe('a brief')
-    expect(reviewWorkInWords({ brief: false, findings: 1, draft: false })).toBe('1 finding')
-    expect(reviewWorkInWords({ brief: false, findings: 4, draft: false })).toBe('4 findings')
-    expect(reviewWorkInWords({ brief: true, findings: 4, draft: false }))
+    expect(reviewWorkInWords(nothing)).toBe('')
+    expect(reviewWorkInWords({ ...nothing, brief: true })).toBe('a brief')
+    expect(reviewWorkInWords({ ...nothing, findings: 1 })).toBe('1 finding')
+    expect(reviewWorkInWords({ ...nothing, findings: 4 })).toBe('4 findings')
+    expect(reviewWorkInWords({ ...nothing, brief: true, findings: 4 }))
       .toBe('a brief and 4 findings')
-    expect(reviewWorkInWords({ brief: true, findings: 4, draft: true }))
+    expect(reviewWorkInWords({ brief: true, findings: 4, draft: true, posted: false }))
       .toBe('a brief, 4 findings and a draft')
     /* A nought is not a thing it holds, which is what makes the empty answer mean "no". */
-    expect(reviewWorkInWords({ brief: false, findings: 0, draft: true })).toBe('a draft')
+    expect(reviewWorkInWords({ ...nothing, draft: true })).toBe('a draft')
+  })
+
+  it('counts the review posted on GitHub, which a review can hold on its own', () => {
+    // `review link --github-review` records a review whose process ran outside Review
+    // Desk: no brief, no findings, no draft, and plainly not a row that should never
+    // have existed. The card said "nothing on it but the request" about one.
+    expect(reviewWorkInWords({ ...nothing, posted: true }))
+      .toBe('the review it posted on GitHub')
+    expect(reviewWorkInWords({ brief: true, findings: 2, draft: true, posted: true }))
+      .toBe('a brief, 2 findings, a draft and the review it posted on GitHub')
   })
 })

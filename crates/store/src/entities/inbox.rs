@@ -42,8 +42,13 @@ pub(super) const REVIEW_COLUMNS: &str = "v.id, v.repo, v.pr, v.head_sha, v.round
 /// because a group added later that forgot it would put a dismissed review back in front of
 /// the developer and nothing would fail.
 ///
-/// [`Store::reviews_at_step`] is the exception and takes a [`DismissedReviews`] instead:
-/// the Reviews list is the page the filter DEV-945 asks for lives on.
+/// **Two queries here do something else, and both say so.** [`Store::reviews_at_step`]
+/// takes a [`DismissedReviews`] instead, because the Reviews list is the page the filter
+/// DEV-945 asks for lives on. And [`Store::list_repos`] applies the clause to the count
+/// it draws but *not* to the set of repositories it lists: a repository whose only review
+/// is dismissed has to stay in the picker, or the dismissed view could not be reached for
+/// it. `every_query_that_lists_reviews_says_what_it_does_about_dismissed_ones` is what
+/// holds the rest to the rule.
 pub(super) const IN_PLAY: &str = "v.dismissed_at IS NULL";
 
 impl Store {
