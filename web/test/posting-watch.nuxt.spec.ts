@@ -65,6 +65,7 @@ interface Props {
   review: Review
   lastActivityAt: Instant | null | undefined
   bodyIsStale: boolean
+  recordIsCurrent: boolean
 }
 
 function props(over: Partial<Props> = {}): Props {
@@ -73,6 +74,7 @@ function props(over: Partial<Props> = {}): Props {
     review: REVIEW,
     lastActivityAt: SIGNED_OFF_AT,
     bodyIsStale: false,
+    recordIsCurrent: true,
     ...over,
   }
 }
@@ -234,6 +236,30 @@ describe('when nothing has posted it', () => {
      * Repeated a line below as what this one has exceeded, it was one number stated twice.
      */
     expect(page.text().match(/40 seconds/g) ?? []).toHaveLength(1)
+  })
+
+  it('says nothing of the sort while the page cannot read the record', async () => {
+    /*
+     * **The worst sentence this page could say.** A failed read leaves the last good
+     * answer on screen — `DeskState` draws "Review Desk is not answering" over it — and
+     * the clock keeps moving, so without this the panel would accuse the review session of
+     * being down because *Review Desk* is down, and send the developer to the wrong
+     * system.
+     */
+    const page = await watching({ recordIsCurrent: false })
+    await tick(page, POSTED_WITHIN_SECONDS * 3)
+    expect(page.text()).not.toContain('may not be running')
+    expect(announced(page)).toBe('Waiting for this review’s session to post it.')
+
+    /* And it says it the moment the record is current again and still unposted. */
+    await page.setProps({ recordIsCurrent: true })
+    expect(page.text()).toContain('may not be running')
+  })
+
+  it('keeps reading while it cannot read, because that is how it recovers', async () => {
+    const page = await watching({ recordIsCurrent: false })
+    await tick(page, RE_READ_EVERY_SECONDS * 3)
+    expect(reads(page)).toBe(3)
   })
 
   it('keeps reading, because the draft is still signed off and still postable', async () => {
@@ -518,6 +544,28 @@ describe('what a screen reader is told', () => {
     })
     expect(page.find('[role="status"]').exists()).toBe(true)
     expect(announced(page)).toBe('')
+  })
+
+  it('is announced and never printed, so the late state is not said twice', async () => {
+    /*
+     * The region is the only part of this panel a sighted reader does not see. Drawn, it
+     * said the long wait's diagnosis in bold and the paragraph four lines below said it
+     * again — twice in one card, in a picture this branch committed.
+     */
+    const page = await watching()
+    await tick(page, POSTED_WITHIN_SECONDS)
+
+    const region = page.find('[role="status"]')
+    expect(region.classes()).toContain('rd-visually-hidden')
+    expect(region.text()).toContain('may not be running')
+
+    /*
+     * The phrase is in the page twice and that is right — once for the ear, once for the
+     * eye. What must not happen twice is the *seen* one, so the region's own words come
+     * out before the count.
+     */
+    const seen = page.text().replace(region.text(), '')
+    expect(seen.split('may not be running')).toHaveLength(2)
   })
 
   it('carries the state and never a figure, so a moving clock is not an interruption', async () => {

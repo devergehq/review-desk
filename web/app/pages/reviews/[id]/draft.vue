@@ -188,6 +188,37 @@ async function reread() {
   await Promise.all([detail.refresh(), review.refresh()])
 }
 
+/**
+ * Whether the page's last read of this review answered.
+ *
+ * `PostingWatch` needs it for one sentence — the one that says the session may not be
+ * running — because a failed read leaves the last good answer on screen and the clock
+ * keeps moving over it. A server that stopped after the sign-off would otherwise have the
+ * page accusing the session, under a notice saying Review Desk is not answering.
+ */
+const recordIsCurrent = computed(
+  () => detail.error.value == null && review.error.value == null,
+)
+
+/**
+ * A notice says what a write did, and stops being true when the record moves on.
+ *
+ * **Nothing on this page could go stale under a notice until now.** The page read once, so
+ * "Signed off. The review session posts it; Review Desk does not." stood until the next
+ * write. It re-reads on a timer now, so the panel flips to "Posted" underneath that
+ * sentence and the page says two things about one draft — the second of them in the
+ * present tense about something that has already happened.
+ *
+ * The write's own notice survives its own write: `approveDraft` awaits the refresh before
+ * `said()` sets it, so the status has already moved by the time the notice is written.
+ */
+watch(
+  () => detail.data.value?.draft.status,
+  (status, was) => {
+    if (was !== undefined && status !== was) notice.value = null
+  },
+)
+
 async function fileTicket() {
   const data = detail.data.value
   if (!data) return
@@ -757,6 +788,7 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                       :review="data.review"
                       :last-activity-at="review.data.value?.timings.last_activity_at"
                       :body-is-stale="data.body_is_stale"
+                      :record-is-current="recordIsCurrent"
                       @refresh="reread"
                     />
                     <p class="rd-meta foot">

@@ -3197,6 +3197,14 @@ test.describe('the draft page after a sign-off', () => {
     /* The heading and the sentence under it followed, which is the rest of the page. */
     await expect(page.getByRole('heading', { name: 'Posted.' })).toBeVisible()
 
+    /*
+     * **And the sign-off's own notice is gone.** "Signed off. The review session posts it"
+     * is what the write said, in the present tense, and it stood until the next write
+     * because nothing on this page used to move underneath it. The panel flips now, so a
+     * notice left in place would have the page saying two things about one draft.
+     */
+    await expect(page.getByText('Signed off. The review session posts it')).toHaveCount(0)
+
     const stayed = await page.evaluate(
       () => (window as unknown as { postingWatchStayed?: boolean }).postingWatchStayed,
     )

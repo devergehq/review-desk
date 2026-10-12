@@ -39,6 +39,19 @@ const props = defineProps<{
   lastActivityAt: Instant | null | undefined
   /** `DraftDetail.body_is_stale`: the one signed-off state no session can post. */
   bodyIsStale: boolean
+  /**
+   * Whether the page's last read of this review answered.
+   *
+   * **Only one sentence here depends on it, and it is the one that sends somebody
+   * somewhere.** A failed read leaves the last good answer on screen — `resource()` keeps
+   * it and `DeskState` draws the refusal over the top — so the props still say `approved`
+   * however long the server has been gone, and the clock keeps moving. Without this the
+   * page would say "nothing has reported it posted in the 4 min since you signed off, so
+   * the session may not be running" about a session that is posting away happily, while
+   * the thing it cannot reach is its own server two lines above. Review Desk accusing
+   * Locus of being down because Review Desk is down is the worst sentence on the page.
+   */
+  recordIsCurrent: boolean
 }>()
 
 /** Read the review and its draft again. The page owns the reads; this only asks. */
@@ -200,9 +213,21 @@ const sinceSignOff = computed(() => secondsSince(props.draft.approved_at, now.va
  * reading is at most a second ahead of the stamp and never behind it. A build that ever
  * served this page from another machine would need a reference instant on the wire before
  * this sentence could be trusted.
+ *
+ * **And it needs the record to be current, not merely old.** `recordIsCurrent` is the
+ * other half: a clock that keeps moving over a record that has stopped arriving is the
+ * same false accusation by a different route.
+ *
+ * One window is left, and it is bounded: coming back to a tab hidden across the posting
+ * moves the clock before the read it asks for has answered, so the accusation can render
+ * for one round trip. On loopback that is milliseconds and the read closes it. Closing it
+ * properly would mean holding the clock back until a read lands, which costs the thing
+ * that return was for — being current the moment you look.
  */
 const late = computed(
-  () => waiting.value && (sinceSignOff.value ?? 0) >= POSTED_WITHIN_SECONDS,
+  () => waiting.value
+    && props.recordIsCurrent
+    && (sinceSignOff.value ?? 0) >= POSTED_WITHIN_SECONDS,
 )
 
 /**
@@ -351,10 +376,16 @@ const noAnchorSentence = computed(
       empty, so that it is in the page before there is anything to announce. `role="status"`
       is polite and moves nothing: the developer who pressed the button keeps the focus they
       had, which is what makes this readable rather than an interruption.
+
+      **Always hidden, too, because announcing and printing are different jobs.** Drawn, it
+      said the long wait's diagnosis in bold and the paragraph four lines below said it
+      again — "nothing has reported it posted … may not be running", twice in one card, in
+      a picture this branch committed. What a sighted reader needs is here already: the
+      heading, the figures and the sentence under them. What a screen reader needs is to be
+      told when that changed, which is all this is now.
     -->
     <p
-      class="said"
-      :class="{ 'rd-visually-hidden': announcement.length === 0 }"
+      class="rd-visually-hidden"
       role="status"
     >
       {{ announcement }}
@@ -439,19 +470,6 @@ const noAnchorSentence = computed(
  */
 .watch {
   display: contents;
-}
-
-/*
- * The live region. **Not `display: none` while it is empty, however tempting**: a region
- * out of the accessibility tree until the moment it has something to say is a region a
- * screen reader may never announce. `rd-visually-hidden` is the desk's own way of saying
- * that — in the tree, out of the layout — and `contents` above only works because of it,
- * since an empty paragraph is a flex child like any other.
- */
-.said {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 500;
 }
 
 .who,
