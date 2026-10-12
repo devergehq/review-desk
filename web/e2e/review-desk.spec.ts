@@ -49,6 +49,7 @@ const {
   structuredReviewId,
   heldBackReviewId,
   postedReviewId,
+  requestedReviewId,
 } = addresses
 
 /**
@@ -3329,5 +3330,192 @@ test.describe('the draft page after a sign-off', () => {
 
     expect(draftRecord(id).draft.status).toBe('sent_back')
     expect(draftRecord(id).draft.event).toBeNull()
+  })
+})
+
+/** Nothing on the page is wider than the page, which is the failure a screenshot hides. */
+async function fitsSideways(page: Page, what: string): Promise<void> {
+  const sideways = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }))
+  expect(
+    sideways.scrollWidth,
+    `${what} is ${sideways.scrollWidth}px wide in ${sideways.clientWidth}px`,
+  ).toBeLessThanOrEqual(sideways.clientWidth + 1)
+}
+
+test.describe('taking a review off the desk', () => {
+  /**
+   * **DEV-945, through the browser.** The record's rules are held by
+   * `crates/store/tests/dismissal.rs` and the API's by `crates/server/tests/removal.rs`;
+   * what only a browser can show is that the developer can actually do it — the reason box
+   * is a real field, the delete asks twice, and a dismissed review then says so on its own
+   * page and on the list.
+   *
+   * **The dismissal is undone in a `finally`**, because this suite is serial over one
+   * database and every other test in it reads the queue: a review left dismissed would
+   * take a row off screens that nothing else in this file touches. The delete has no undo,
+   * which is why it is performed on the one review seeded for it and nothing else uses
+   * that review.
+   */
+  test('a review is dismissed with a reason, says so, and is brought back', async ({ page }) => {
+    try {
+      await page.goto(`${seeded}reviews/${reviewId}/understand`)
+
+      const card = page.locator('#remove-review')
+      await expect(card).toContainText('Take this review off the desk')
+      await expect(card).toContainText('Dismissing it hides it and keeps it')
+
+      /* No delete for this one: it holds a brief, findings and a draft. */
+      await expect(card).toContainText('It cannot be deleted')
+      await expect(card.getByRole('button', { name: 'Delete it' })).toHaveCount(0)
+
+      await card.getByRole('button', { name: 'Dismiss this review' }).click()
+      const reason = page.getByLabel('Why are you dismissing this review?')
+      await expect(reason).toBeVisible()
+
+      /* A blank reason is refused by the control, before anything is sent. */
+      await card.getByRole('button', { name: 'Dismiss it' }).click()
+      await expect(card).toContainText('A reason is required')
+
+      await reason.fill('the pull request was closed unmerged')
+      await card.getByRole('button', { name: 'Dismiss it' }).click()
+
+      await expect(card).toContainText('is dismissed and out of the queue')
+      await expect(card).toContainText('the pull request was closed unmerged')
+
+      /* The page says it on every one of the review's pages, not only on this one. */
+      await page.goto(`${seeded}reviews/${reviewId}/code-review`)
+      await expect(page.getByText('This review is dismissed')).toBeVisible()
+
+      /* It is out of the queue, and the row it had there is gone. */
+      await page.goto(seeded)
+      await expect(page.getByText('Retry failed webhook deliveries')).toHaveCount(0)
+
+      /* Out of the Reviews list's default view, and in its dismissed one with why. */
+      await page.goto(`${seeded}reviews`)
+      await expect(page.getByText('Retry failed webhook deliveries')).toHaveCount(0)
+      await page.getByRole('radio').filter({ hasText: 'Dismissed' }).click()
+      const row = page.locator('.row').filter({ hasText: 'Retry failed webhook' })
+      await expect(row).toHaveCount(1)
+      await expect(row).toContainText('Dismissed')
+      await expect(row).toContainText('the pull request was closed unmerged')
+
+      /* And no session is offered it, which is what the work list is for. */
+      const work = cliJson(seededDatabase, ['work', 'list']) as unknown as {
+        work: Array<{ review_id: number }>
+      }
+      expect(work.work.map(item => item.review_id)).not.toContain(reviewId)
+    }
+    finally {
+      /*
+       * **The card is waited for before the button is looked for.** `count()` does not
+       * wait: the page's first read is a request, so asking straight after a `goto`
+       * answers zero and the restore is skipped silently — which left the review dismissed
+       * for every test after this one, and the width test below failed on a page with no
+       * dismiss button. Waiting for the card's own heading settles the read, and only then
+       * is the undo's absence an answer about the review rather than about the timing.
+       */
+      await page.goto(`${seeded}reviews/${reviewId}/understand`)
+      const card = page.locator('#remove-review')
+      await expect(card).toContainText('Take this review off the desk')
+      const undo = card.getByRole('button', { name: 'Bring it back' })
+      if (await undo.count()) {
+        await undo.click()
+        await expect(card).toContainText('is back in the queue')
+      }
+    }
+  })
+
+  /*
+   * **Measured at a laptop's width and at a phone's**, which is this repository's rule for
+   * anything a developer presses. The card holds a text field and three buttons in a row,
+   * which is the shape that overflows a 390-pixel screen if it is written as one line.
+   */
+  for (const [what, width, height] of [
+    ['a laptop', 1440, 900],
+    ['a phone', 390, 844],
+  ] as Array<[string, number, number]>) {
+    test(`the removal card fits ${what} at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height })
+
+      /*
+       * **Both of the card's open states, on the one review that has both.** The request
+       * nobody started can be dismissed *and* deleted, so the reason box with its field
+       * and two buttons and the delete's question with its two answers are both reachable
+       * without this test depending on what another one left behind.
+       */
+      await page.goto(`${seeded}reviews/${requestedReviewId}/understand`)
+      const card = page.locator('#remove-review')
+      await expect(card).toContainText('Take this review off the desk')
+
+      await card.getByRole('button', { name: 'Delete it', exact: true }).click()
+      await expect(card).toContainText('cannot be undone')
+      await fitsSideways(page, `the delete confirmation at ${width}px`)
+      for (const name of ['Delete it for good', 'Keep it']) {
+        const box = await card.getByRole('button', { name, exact: true }).boundingBox()
+        expect(box, `${name} at ${width}px has no box`).not.toBeNull()
+        expect(
+          box!.height,
+          `${name} at ${width}px is ${box!.height}px tall`,
+        ).toBeGreaterThanOrEqual(CONTROL_MIN)
+      }
+      await card.getByRole('button', { name: 'Keep it' }).click()
+
+      await card.getByRole('button', { name: 'Dismiss this review' }).click()
+      await expect(page.getByLabel('Why are you dismissing this review?')).toBeVisible()
+      await fitsSideways(page, `the reason box at ${width}px`)
+      for (const name of ['Dismiss it', 'Cancel']) {
+        const box = await card.getByRole('button', { name, exact: true }).boundingBox()
+        expect(box, `${name} at ${width}px has no box`).not.toBeNull()
+        expect(
+          box!.height,
+          `${name} at ${width}px is ${box!.height}px tall`,
+        ).toBeGreaterThanOrEqual(CONTROL_MIN)
+      }
+      /* Nothing is left open behind this test, and nothing was written by it. */
+      await card.getByRole('button', { name: 'Cancel' }).click()
+    })
+  }
+  test('a review that never started is deleted, after asking twice', async ({ page }) => {
+    await page.goto(`${seeded}reviews/${requestedReviewId}/understand`)
+
+    /* Nothing has been written about it, which is the page this review has. */
+    await expect(page.getByText('Nothing has been written about this problem yet')).toBeVisible()
+
+    const card = page.locator('#remove-review')
+    await expect(card).toContainText('This review never started')
+
+    await card.getByRole('button', { name: 'Delete it', exact: true }).click()
+    await expect(card).toContainText(`Delete review ${requestedReviewId}`)
+    await expect(card).toContainText('acme/portal #777')
+
+    /* Keeping it is a real way out. */
+    await card.getByRole('button', { name: 'Keep it' }).click()
+    await expect(card).not.toContainText(`Delete review ${requestedReviewId}`)
+    expect(
+      cliJson(seededDatabase, ['review', 'find', '--repo', 'acme/portal', '--pr', '777']),
+    ).toHaveProperty('reviews')
+
+    await card.getByRole('button', { name: 'Delete it', exact: true }).click()
+    await card.getByRole('button', { name: 'Delete it for good' }).click()
+
+    /* It leaves the page it was deleted from, for the list it came from. */
+    await expect(page).toHaveURL(/\/reviews$/)
+    await expect(page.getByText('#777')).toHaveCount(0)
+    await page.getByRole('radio').filter({ hasText: 'Everything' }).click()
+    await expect(page.getByText('#777')).toHaveCount(0)
+
+    /* And the record holds nothing of it. */
+    const found = cliJson(seededDatabase, [
+      'review',
+      'find',
+      '--repo',
+      'acme/portal',
+      '--pr',
+      '777',
+    ]) as unknown as { reviews: unknown[] }
+    expect(found.reviews).toHaveLength(0)
   })
 })

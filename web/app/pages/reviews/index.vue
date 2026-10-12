@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ReviewListItem } from '~/types/desk'
+import type { DismissedReviews, ReviewListItem } from '~/types/desk'
 
 /**
  * The Reviews list: **every review the record holds, whatever became of it.**
@@ -31,6 +31,19 @@ import type { ReviewListItem } from '~/types/desk'
  * step it has *left* when the state is `done`, so a posted review would read "Draft" and
  * tell a reader it still needs signing off — while the queue says it is with the author.
  *
+ * ## The dismissed reviews are here, and not in the default view
+ *
+ * A review the developer has dismissed is out of the queue and out of this page's default
+ * view — DEV-945 — and this is the one page that can still find it. The second picker is
+ * what asks for them, and it has three positions rather than two so that the page's own
+ * promise still holds: "every review the record holds, whatever became of it" is
+ * **Everything**, and the default is the narrower claim it makes in the line under the
+ * heading.
+ *
+ * Each dismissed row says when and why, under the title, because a reader of this view is
+ * asking exactly that. The reason is the developer's own words, so it is drawn as text —
+ * not through `TickedText`, which is for prose a session wrote.
+ *
  * ## Where the record has no answer
  *
  * A review nothing has reported on is "Not started", in words: the record holds seven
@@ -45,7 +58,26 @@ useHead({ title: 'Reviews · Review Desk' })
 
 /** Which repository to show. `ALL_REPOSITORIES` for every one, as the queue words it. */
 const repo = ref(ALL_REPOSITORIES)
-const reviews = desk.reviews(repo)
+
+/**
+ * Which of the dismissed reviews to show. The contract's three positions, as they are
+ * sent: the page holds the API's own word for the filter rather than a word of its own,
+ * so there is nothing to translate and nothing to disagree about.
+ */
+const dismissed = ref<DismissedReviews>('excluded')
+
+const dismissedTabs: Array<{ value: DismissedReviews, label: string }> = [
+  { value: 'excluded', label: 'In play' },
+  { value: 'only', label: 'Dismissed' },
+  { value: 'included', label: 'Everything' },
+]
+
+/**
+ * The read follows both pickers, server-side, as the repository picker already did: a
+ * dismissed view filtered in the page would be the page deciding what a dismissal is,
+ * and the record is where that is decided.
+ */
+const reviews = desk.reviews(repo, dismissed)
 
 /**
  * The repositories to pick from, read the way the Rules screen reads them.
@@ -99,6 +131,16 @@ function about(row: ReviewListItem): string {
   return parts.join(' · ')
 }
 
+/** What this view holds, said in the line under the heading. */
+const VIEW_LINES: Record<DismissedReviews, string> = {
+  excluded: 'Every review in play. The ones you have dismissed are under Dismissed.',
+  only: 'The reviews you have dismissed, each with when and why.',
+  included: 'Every review the record holds, whatever became of it — the dismissed ones '
+    + 'among them.',
+}
+
+const viewLine = computed(() => VIEW_LINES[dismissed.value])
+
 /** Whether any row has no activity time, which the caption then says. */
 const someTimesMissing = computed(
   () => (reviews.data.value?.reviews ?? []).some(row => row.last_activity_at == null),
@@ -116,8 +158,33 @@ const someTimesMissing = computed(
  * filter is component state and never reaches the URL, so there was not even an address to
  * edit.
  */
-function isEmpty(answer: { repo: string | null, reviews: ReviewListItem[] }): boolean {
-  return answer.repo == null && answer.reviews.length === 0
+function isEmpty(answer: {
+  repo: string | null
+  dismissed: DismissedReviews
+  reviews: ReviewListItem[]
+}): boolean {
+  return answer.repo == null
+    && answer.dismissed === 'excluded'
+    && answer.reviews.length === 0
+}
+
+/**
+ * What an empty answer means, when it is not an empty database.
+ *
+ * **Three ways to ask for nothing, and three different things to say.** A repository with
+ * no reviews is not a database with none — that is the fault the comment above records —
+ * and "no review has been dismissed" is not either of them. One sentence for each, said
+ * inside the default slot so the pickers stay on the page to get back out with.
+ */
+function nothingHere(answer: { repo: string | null, dismissed: DismissedReviews }): string {
+  const where = answer.repo == null ? '' : ` on ${answer.repo}`
+  const lines: Record<DismissedReviews, string> = {
+    only: `No review${where} has been dismissed. A review you dismiss leaves the queue `
+      + 'and turns up here.',
+    included: `No review${where} yet.`,
+    excluded: `No review${where} is in play. Any you have dismissed are under Dismissed.`,
+  }
+  return lines[answer.dismissed]
 }
 </script>
 
@@ -133,9 +200,16 @@ function isEmpty(answer: { repo: string | null, reviews: ReviewListItem[] }): bo
           <h1 class="rd-display">
             {{ count(data.reviews.length, 'review') }}
           </h1>
+          <!--
+            **The line says what this view is, not what the page is.** "Every review the
+            record holds" was true of a page with no filter and is the claim
+            **Everything** makes; the default view leaves the dismissed ones out, and a
+            heading that went on claiming all of them would be the page contradicting its
+            own picker.
+          -->
           <p class="rd-meta aside-line">
-            Every review the record holds, whatever became of it. How long one took is on
-            its own page.
+            {{ viewLine }}
+            How long one took is on its own page.
           </p>
         </div>
 
@@ -145,6 +219,11 @@ function isEmpty(answer: { repo: string | null, reviews: ReviewListItem[] }): bo
             label="Which repository to show"
             :options="repoTabs"
             :disabled="repos.pending.value && !repos.loaded.value"
+          />
+          <DecisionTrack
+            v-model="dismissed"
+            label="Which reviews to show"
+            :options="dismissedTabs"
           />
           <!--
             **The sort, said out loud**, the way the queue says "Oldest first". Newest
@@ -167,8 +246,10 @@ function isEmpty(answer: { repo: string | null, reviews: ReviewListItem[] }): bo
           v-if="data.reviews.length === 0"
           class="rd-empty"
         >
-          No review on {{ data.repo }} yet. Every other repository's are under
-          <strong>All repositories</strong>.
+          {{ nothingHere(data) }}
+          <template v-if="data.repo != null">
+            Every other repository's are under <strong>All repositories</strong>.
+          </template>
         </p>
 
         <DeskSection
@@ -201,6 +282,22 @@ function isEmpty(answer: { repo: string | null, reviews: ReviewListItem[] }): bo
               v-if="row.step_number != null"
               class="rd-meta step-of"
             >step {{ row.step_number }} of {{ row.steps_total }}</span>
+            <!--
+              **When and why, on the row**, which is what DEV-945 asks the dismissed view
+              for. On its own line because the reason is the developer's sentence and has
+              no length limit — the step line above it is two or three words.
+
+              Drawn on every view rather than only on the dismissed one: under
+              **Everything** a dismissed review sits beside reviews in play, and a row
+              that did not say so would be the one row on the page that reads as something
+              it is not.
+            -->
+            <span
+              v-if="row.review.dismissed_at"
+              class="rd-meta dismissed"
+            >Dismissed {{ sinceLabel(row.review.dismissed_at) }}<template
+              v-if="row.review.dismissed_reason"
+            > — {{ row.review.dismissed_reason }}</template></span>
           </QueueRow>
         </DeskSection>
       </template>
@@ -269,6 +366,18 @@ function isEmpty(answer: { repo: string | null, reviews: ReviewListItem[] }): bo
 .step-of {
   display: block;
   flex: 1 1 100%;
+}
+
+/*
+ * The dismissal takes the row's whole width and wraps, because the reason is a sentence
+ * somebody typed rather than a label. Its own colour, so the row reads as a review that
+ * has left the desk without the words having to say it twice.
+ */
+.dismissed {
+  display: block;
+  flex: 1 1 100%;
+  overflow-wrap: break-word;
+  color: var(--rd-warn-ink);
 }
 
 .fresh {

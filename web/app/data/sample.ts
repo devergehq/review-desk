@@ -1,5 +1,5 @@
 /*
- * Sample mode: invented records, in memory, behind the same nineteen operations.
+ * Sample mode: invented records, in memory, behind the same twenty-two operations.
  *
  * **This is the only file in `web/` that names a fixture**, and nothing imports it unless
  * `source.ts` decides to — which a production build has already decided not to, so none of
@@ -48,6 +48,7 @@ import type {
   Brief,
   DecideFindingRequest,
   DeskSource,
+  DismissedReviews,
   Disposition,
   DraftDetail,
   Finding,
@@ -153,6 +154,21 @@ function conflict(message: string): DeskRequestError {
 
 function reviewById(id: number): ReviewDetail | undefined {
   return source.reviews.find(item => item.review.id === id)
+}
+
+/**
+ * The reviews the developer has not taken out of play.
+ *
+ * **Every group of the queue is built from this and not from `source.reviews`**, which is
+ * what the server's own queries do — one clause, pasted into each of them, so that a group
+ * added later cannot quietly put a dismissed review back in front of the developer.
+ *
+ * The round arithmetic and `reviewById` deliberately read every review, dismissed or not:
+ * a dismissed round is still a round the pull request reached, and a dismissed review is
+ * still a page the developer can open to restore it.
+ */
+function inPlay(): ReviewDetail[] {
+  return source.reviews.filter(detail => detail.review.dismissed_at == null)
 }
 
 function draftById(id: number): DraftDetail | undefined {
@@ -308,7 +324,7 @@ function inbox(): Inbox {
    * still on the One review screen, where the developer can read it and still send the
    * draft back.
    */
-  const briefs_to_confirm = source.reviews
+  const briefs_to_confirm = inPlay()
     .filter(detail => detail.brief && !detail.brief.confirmed && detail.brief.confirmation_required)
     .map(detail => ({
       review_id: detail.review.id,
@@ -361,7 +377,7 @@ function inbox(): Inbox {
       draft_ready_at: owner!.timings.draft_ready_at,
     }))
 
-  const author_replies = source.reviews
+  const author_replies = inPlay()
     .map(detail => ({
       review_id: detail.review.id,
       pull_request: prOf(detail),
@@ -419,7 +435,7 @@ function inbox(): Inbox {
    * server's rule is written out anyway rather than left to the order a list arrives in,
    * which nothing fixes.
    */
-  const in_progress = source.reviews
+  const in_progress = inPlay()
     .map(detail => ({
       detail,
       running: detail.layers
@@ -463,7 +479,7 @@ function inbox(): Inbox {
    */
   const newestRound = newestRoundByPr()
 
-  const posted_awaiting_author = source.reviews
+  const posted_awaiting_author = inPlay()
     .filter((detail) => {
       const draft = draftById(detail.review.id)
       const isPosted
@@ -564,11 +580,20 @@ function inbox(): Inbox {
  * last step written, because a posted review's step 7 is written as `pending` and that
  * rule would report a harvest that has not begun.
  */
-function reviewList(repo: string | null): ReviewList {
+function reviewList(repo: string | null, dismissed: DismissedReviews): ReviewList {
   const rounds = newestRoundByPr()
 
+  const wanted = (detail: ReviewDetail): boolean => {
+    switch (dismissed) {
+      case 'only': return detail.review.dismissed_at != null
+      case 'included': return true
+      /* The default, and the only safe one: a review taken out of play is out of it. */
+      case 'excluded': return detail.review.dismissed_at == null
+    }
+  }
+
   const reviews = source.reviews
-    .filter(detail => repo == null || detail.review.repo === repo)
+    .filter(detail => (repo == null || detail.review.repo === repo) && wanted(detail))
     .slice()
     .sort((a, b) => b.review.id - a.review.id)
     .map((detail) => {
@@ -590,7 +615,7 @@ function reviewList(repo: string | null): ReviewList {
       }
     })
 
-  return { repo: (repo as RepoName | null) ?? null, reviews }
+  return { repo: (repo as RepoName | null) ?? null, dismissed, reviews }
 }
 
 /** The Rules screen for one repository, or for all of them. */
@@ -1382,6 +1407,84 @@ function retireWithReason(id: number, reason: string, what: string): Rule {
   return rule
 }
 
+/**
+ * `POST /reviews/{id}/dismiss` — take a review out of play, with a reason.
+ *
+ * Refused exactly where the binary refuses: a blank reason is `invalid_value` naming
+ * `reason`, and a review already dismissed is `conflict`. A screen's refusal state tested
+ * on fixtures is then one that works against the record.
+ */
+function dismissReview(id: number, reason: string): Review {
+  const detail = reviewById(id)
+  if (!detail) throw notFound(`review ${id}`)
+
+  const trimmed = reason.trim()
+  if (trimmed.length === 0) {
+    throw invalidValue(
+      'reason',
+      'A review dismissed with no reason is one nobody can say why they hid.',
+      'why this review is being dismissed',
+    )
+  }
+  if (detail.review.dismissed_at != null) {
+    throw conflict(
+      `Review ${id} is already dismissed. Restore it first to dismiss it again with `
+      + 'different words.',
+    )
+  }
+
+  detail.review.dismissed_at = new Date().toISOString().replace(/\.\d+Z$/, 'Z')
+  detail.review.dismissed_reason = trimmed
+  return detail.review
+}
+
+/** `POST /reviews/{id}/restore` — bring a dismissed review back. */
+function restoreReview(id: number): Review {
+  const detail = reviewById(id)
+  if (!detail) throw notFound(`review ${id}`)
+  if (detail.review.dismissed_at == null) {
+    throw conflict(`Review ${id} is not dismissed, so there is nothing to bring back.`)
+  }
+
+  /* Both together: a reason with no time reads as in play to every query. */
+  detail.review.dismissed_at = null
+  detail.review.dismissed_reason = null
+  return detail.review
+}
+
+/**
+ * `DELETE /reviews/{id}` — remove a review that never got past being requested.
+ *
+ * **The same three things the store asks about**, and in the same words, because the
+ * refusal is what the developer reads: no brief, no finding, no draft. A fourth thing
+ * checked here and not there — or a different sentence — is how a page comes to offer a
+ * button the binary refuses.
+ */
+function deleteReview(id: number): Review {
+  const detail = reviewById(id)
+  if (!detail) throw notFound(`review ${id}`)
+
+  const holds: string[] = []
+  if (detail.brief) holds.push('a brief')
+  if (detail.findings.length === 1) holds.push('1 finding')
+  else if (detail.findings.length > 1) holds.push(`${detail.findings.length} findings`)
+  if (draftById(id)) holds.push('a draft')
+
+  if (holds.length > 0) {
+    const said = holds.length === 1
+      ? holds[0]
+      : `${holds.slice(0, -1).join(', ')} and ${holds.at(-1)}`
+    throw conflict(
+      `Review ${id} holds ${said}, and deleting it would lose that: dismiss it instead, `
+      + 'which takes it out of the queue and keeps the record.',
+    )
+  }
+
+  const went = detail.review
+  source.reviews.splice(source.reviews.indexOf(detail), 1)
+  return went
+}
+
 /** `POST /rules/{id}/defer` — keep it, and ask again later. */
 function deferRule(id: number, days: number): Rule {
   if (!Number.isInteger(days) || days < 1 || days > 365) {
@@ -1446,7 +1549,7 @@ function wrote<T>(reviewId: number, made: T): T {
 }
 
 /**
- * The nineteen operations over the records in memory.
+ * The twenty-two operations over the records in memory.
  *
  * Every one is `async` so that the composable above cannot tell which backend it has. They
  * resolve immediately — there is nothing to wait for — which means a loading state is not
@@ -1458,7 +1561,8 @@ export function sampleBackend(): DeskBackend {
     isSampleData: true,
 
     getInbox: async () => answered(inbox()),
-    listReviews: async repo => answered(reviewList(repo)),
+    listReviews: async (repo, dismissed = 'excluded') =>
+      answered(reviewList(repo, dismissed)),
     getReview: async (id) => {
       const detail = reviewById(id)
       if (!detail) throw notFound(`review ${id}`)
@@ -1491,6 +1595,16 @@ export function sampleBackend(): DeskBackend {
       answered(wrote(id, ticketRestAndApprove(id, note))),
     requestNitTicket: async (id, ticketId = null) =>
       answered(wrote(id, requestNitTicket(id, ticketId))),
+    /*
+     * **Dismissing and restoring are writes to the review and move the stamp**, which is
+     * what the store does: both call `mark_review_active`, and its own comment argues
+     * for it against the reading that a developer's act is not a session's. Deleting is
+     * not wrapped: the review is gone, so there is nothing left to stamp — `wrote` would
+     * look up a row it has just removed and quietly do nothing.
+     */
+    dismissReview: async (id, reason) => answered(wrote(id, dismissReview(id, reason))),
+    restoreReview: async id => answered(wrote(id, restoreReview(id))),
+    deleteReview: async id => answered(deleteReview(id)),
     promoteRule: async (id, toStage) => answered(promoteRule(id, toStage)),
     dismissRule: async (id, reason) => answered(retireWithReason(id, reason, 'dismissed')),
     retireRule: async (id, reason) => answered(retireWithReason(id, reason, 'retired')),

@@ -1,5 +1,5 @@
 /*
- * What a source of records can do: the contract's nineteen operations, and nothing else.
+ * What a source of records can do: the contract's twenty-two operations, and nothing else.
  *
  * Two things implement it — `api.ts`, which calls the Rust server, and `sample.ts`, which
  * patches invented records in memory. **The point of writing it down is that the composable
@@ -15,6 +15,7 @@
 import type {
   Brief,
   DecideFindingRequest,
+  DismissedReviews,
   Disposition,
   DraftDetail,
   Finding,
@@ -47,13 +48,13 @@ export interface DeskBackend {
 
   /* The six reads — one per screen, so no screen joins anything. */
   getInbox: () => Promise<Inbox>
-  listReviews: (repo: string | null) => Promise<ReviewList>
+  listReviews: (repo: string | null, dismissed?: DismissedReviews) => Promise<ReviewList>
   getReview: (reviewId: number) => Promise<ReviewDetail>
   getDraft: (reviewId: number) => Promise<DraftDetail>
   listRules: (repo: string | null) => Promise<RulesPage>
   listRepos: () => Promise<RepoSummary[]>
 
-  /* The thirteen writes. */
+  /* The sixteen writes. */
   startReview: (prUrl: string) => Promise<Review>
   confirmBrief: (reviewId: number) => Promise<Brief>
   setFindingDisposition: (
@@ -89,6 +90,23 @@ export interface DeskBackend {
     note: string | null,
   ) => Promise<TicketedAndApproved>
   requestNitTicket: (reviewId: number, ticketId?: string | null) => Promise<NitTicket>
+  /**
+   * `POST …/dismiss` — the developer takes a review out of play, with a reason.
+   *
+   * **The developer's act, and there is no other way to make it.** No command dismisses a
+   * review, restores one or deletes one — DEV-945, and the same rule that leaves confirming
+   * a brief and approving a draft to this interface alone.
+   */
+  dismissReview: (reviewId: number, reason: string) => Promise<Review>
+  /** `POST …/restore` — bring a dismissed review back. The undo a dismissal has. */
+  restoreReview: (reviewId: number) => Promise<Review>
+  /**
+   * `DELETE /reviews/{id}` — remove a review that never got past being requested.
+   *
+   * Refused for a review holding a brief, a finding or a draft, saying which. It answers
+   * with the review that went: nothing can read a row it has just removed.
+   */
+  deleteReview: (reviewId: number) => Promise<Review>
   promoteRule: (ruleId: number, toStage: RuleStage) => Promise<Rule>
   dismissRule: (ruleId: number, reason: string) => Promise<Rule>
   retireRule: (ruleId: number, reason: string) => Promise<Rule>

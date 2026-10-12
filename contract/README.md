@@ -78,7 +78,8 @@ Each screen is one GET. The dashboard does no joining.
 | Screen | Reads | Writes |
 |---|---|---|
 | Inbox | `GET /inbox` | `POST /reviews` |
-| One review | `GET /reviews/{reviewId}` | `POST /reviews/{reviewId}/brief/confirm`, `PATCH /reviews/{reviewId}/findings/{seq}`, `POST /reviews/{reviewId}/findings/{seq}/decide` |
+| Reviews | `GET /reviews?repo=&dismissed=` | — |
+| One review | `GET /reviews/{reviewId}` | `POST /reviews/{reviewId}/brief/confirm`, `PATCH /reviews/{reviewId}/findings/{seq}`, `POST /reviews/{reviewId}/findings/{seq}/decide`, `POST …/dismiss`, `POST …/restore`, `DELETE /reviews/{reviewId}` |
 | — not a screen | `GET /reviews/{reviewId}/brief/problem-statement` | — |
 | — not a screen | `GET /timings` | — |
 | Draft preview | `GET /reviews/{reviewId}/draft` | `PUT …/draft`, `POST …/findings/{seq}/decide`, `POST …/draft/approve`, `POST …/draft/ticket-and-approve`, `POST …/draft/send-back`, `POST …/held-back/ticket` |
@@ -649,6 +650,10 @@ and the screen renders the ones that are present.
 | Rules | "Dismiss" | `POST /rules/{ruleId}/dismiss` |
 | Rules | "Retire" | `POST /rules/{ruleId}/retire` |
 | Rules | "Keep 60 more days" | `POST /rules/{ruleId}/defer` |
+| Reviews | repository picker, "In play" / "Dismissed" / "Everything" | `GET /reviews?repo=&dismissed=` |
+| Understand | "Dismiss this review", with a reason | `POST /reviews/{reviewId}/dismiss` |
+| Understand | "Bring it back" | `POST /reviews/{reviewId}/restore` |
+| Understand | "Delete it" → "Delete it for good" | `DELETE /reviews/{reviewId}`, offered only for a review with no brief, no findings and no draft |
 
 **"Request review" has no endpoint and should not get one.** It asks GitHub to add a
 reviewer to a pull request — a *write* to another system's record. `POST /reviews` reads
@@ -680,6 +685,20 @@ ticket can add that line. This is the same class of thing as "Request review" ab
 recorded rather than quietly dropped. What the endpoint does record is everything else:
 the open findings held back and marked `ticketed` by the developer, the one nit ticket
 asked for, and the draft approved as `approve`.
+
+**Dismissing a review asks twice, and deleting one asks twice differently.** A dismissal
+asks for a reason — the API refuses it without one, as it refuses a dismissed rule without
+one — and is undone by "Bring it back" beside it. A delete cannot be undone by anything, so
+it is the one act on this desk that asks for a second press, and the second press names the
+review: "Delete review 13 — acme/portal #777?". Where a review holds a brief, a finding or
+a draft the control is not drawn at all and the card says what it holds; the API refuses it
+in the same words, which is what makes the two agree.
+
+**Neither has a command.** Both are the developer's act from the page — Patrick, 12 October
+2026, DEV-945 — for the reason confirming a brief and approving a draft have no command: a
+session that could dismiss a review could take its own work out of the developer's sight,
+and one that could delete a review could remove the record of it.
+`crates/cli/tests/cli.rs` asserts the command line offers no such verb.
 
 **Two writes this contract defines have no control on the mockups**: confirming a brief
 and changing a finding's disposition. DEV-854 requires both, and DEV-855's acceptance

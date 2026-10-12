@@ -925,6 +925,43 @@ set on the first write, the reason is required, and `work list` marks it `waived
 `crates/cli` or `crates/harvest` so much as names those two functions, and it also
 checks that they still exist, so renaming them cannot quietly retire the rule.
 
+## Taking a review off the desk
+
+**A review is dismissed, and only one that never started is deleted.** Decided by Patrick
+on 12 October 2026, in DEV-945, after a build session wrote a review into his own database
+by accident and nothing could remove it.
+
+| | Dismiss | Delete |
+| -- | -- | -- |
+| What happens | the review leaves the queue, the work list and the Reviews list's default view, with a reason | the row and every row under it are gone |
+| Keeps | its findings, your decisions on them, your sign-offs, the evidence its rules were built from | nothing |
+| Undo | yes, "Bring it back" | no |
+| Offered for | every review | a review with no brief, no findings and no draft |
+
+**Both are the developer's act, in the dashboard, and there is no command for either** —
+the sign-off rule above, applied to the same argument: a session that could dismiss a
+review could take its own work out of the developer's sight, and one that could delete a
+review could remove the record of it. `crates/cli/tests/cli.rs` fails if the command line
+grows a verb that reads like one, and if `review --help` so much as mentions one.
+
+Both are at the foot of **Understand**, which is where a review starts and the one page
+every review has. A dismissed review says so under the trail on all five of its pages, so
+a reader who arrives by a link learns it before they read the review rather than after.
+
+**A dismissal is the whole of the new state**: `dismissed_at` and `dismissed_reason` on the
+review, written together, and migration 16 adds nothing else. The queue's groups, the work
+list `review-desk work list` serves and the harvest sweep all leave a dismissed review out;
+the Reviews list leaves it out of its default view and has a filter for it.
+
+```sh
+# A dismissed review is offered to no agent, which is how no session is dispatched for one.
+review-desk work list --json
+```
+
+**And a review that was dismissed is still read by `review open`**, which is what the
+dispatcher calls to record a request: the answer carries `dismissed_at`, so a dispatcher
+that sees a request on GitHub can record it and then decline to start a session for it.
+
 ## Where the database lives
 
 `~/.review-desk/review-desk.db` by default, overridden by the `REVIEW_DESK_DB`
@@ -1256,8 +1293,8 @@ screen, and every write the five screens make.
 | Screen | Reads | Writes |
 | -- | -- | -- |
 | Queue | `GET /inbox` | `POST /reviews` |
-| Reviews | `GET /reviews?repo=` | — |
-| One review | `GET /reviews/{id}` | `POST …/brief/confirm`, `PATCH …/findings/{seq}` |
+| Reviews | `GET /reviews?repo=&dismissed=` | — |
+| One review | `GET /reviews/{id}` | `POST …/brief/confirm`, `PATCH …/findings/{seq}`, `POST …/dismiss`, `POST …/restore`, `DELETE /reviews/{id}` |
 | Draft preview | `GET /reviews/{id}/draft` — the body as it will post, the blocks it is composed of, and the inline threads with the line each sits on | `PUT …/draft`, `POST …/draft/approve`, `POST …/draft/send-back`, `POST …/held-back/ticket` |
 | Rules | `GET /rules?repo=`, `GET /repos` | `POST /rules/{id}/promote`, `/dismiss`, `/retire`, `/defer` |
 

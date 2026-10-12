@@ -12,7 +12,7 @@
  *   rules(repo)      GET /rules?repo=
  *   repos()          GET /repos
  *
- * and the writes mirror its thirteen writes, one function each. Which records they reach
+ * and the writes mirror its sixteen writes, one function each. Which records they reach
  * — the Rust server, or invented ones in memory — is `app/data/source.ts`'s decision, and
  * nothing above this file can tell.
  *
@@ -56,6 +56,7 @@ import { count } from '~/utils/format'
 import type {
   Brief,
   DecideFindingRequest,
+  DismissedReviews,
   FindingDecision,
   DeskError,
   Disposition,
@@ -309,9 +310,25 @@ export function useReviewDesk() {
    * picker is a new read rather than a filter over a list the dashboard already holds, so
    * the picker cannot come to disagree with the server about what "this repository" means.
    */
-  function reviews(repo: Ref<string> | ComputedRef<string>): DeskResource<ReviewList> {
-    return following(repo, (from, value) =>
-      from.listReviews(value === ALL_REPOSITORIES ? null : (value as RepoName)))
+  function reviews(
+    repo: Ref<string> | ComputedRef<string>,
+    dismissed?: Ref<DismissedReviews> | ComputedRef<DismissedReviews>,
+  ): DeskResource<ReviewList> {
+    /*
+     * Both filters are watched as one, because `following` takes one value: a page with
+     * two pickers over one read has to re-read when either moves, and two resources over
+     * the one document can answer differently while one of them is in flight — which is
+     * the argument `shared` above makes for the Inbox.
+     */
+    const asked = computed(() => ({
+      repo: repo.value,
+      dismissed: dismissed?.value ?? ('excluded' as DismissedReviews),
+    }))
+    return following(asked, (from, value) =>
+      from.listReviews(
+        value.repo === ALL_REPOSITORIES ? null : (value.repo as RepoName),
+        value.dismissed,
+      ))
   }
 
   /** `GET /reviews/{id}` — one review whole, as the One review screen shows it. */
@@ -375,6 +392,65 @@ export function useReviewDesk() {
         `${review.repo}#${review.pr} is open at the problem brief`
         + `${review.title == null ? '' : ` — ${review.title}`}. `
         + 'No findings are written until you confirm it.',
+    )
+  }
+
+  /**
+   * `POST /reviews/{id}/dismiss` — the developer takes a review out of play.
+   *
+   * **The reason is checked here as well as at the API**, and that is not a second
+   * opinion: the API's refusal is what makes the rule real, and this is what spares the
+   * developer a round trip to be told what the form could have told them. The wording is
+   * the API's own, so the two cannot say different things about the same blank box.
+   */
+  async function dismissReview(id: number, reason: string): Promise<WriteResult> {
+    const said = reason.trim()
+    if (said.length === 0) {
+      return {
+        ok: false,
+        error: {
+          code: 'invalid_value',
+          message: 'Say why first. A review dismissed with no reason is one nobody can '
+            + 'say why they hid.',
+          field: 'reason',
+          expected: 'why this review is being dismissed',
+          status: null,
+        },
+      }
+    }
+
+    return write(
+      to => to.dismissReview(id, said),
+      (review: Review) =>
+        `${review.repo}#${review.pr} is dismissed and out of the queue. Everything on it `
+        + 'is kept, and you can bring it back from this page.',
+    )
+  }
+
+  /** `POST /reviews/{id}/restore` — bring a dismissed review back. */
+  async function restoreReview(id: number): Promise<WriteResult> {
+    return write(
+      to => to.restoreReview(id),
+      (review: Review) =>
+        `${review.repo}#${review.pr} is back in the queue, exactly as it was.`,
+    )
+  }
+
+  /**
+   * `DELETE /reviews/{id}` — remove a review that never got past being requested.
+   *
+   * **Nothing is checked here.** The store decides whether a review has been started and
+   * says what it holds when it has, and a second judgement in the page is how a button
+   * comes to be offered for a review the API refuses. What the page does with the answer
+   * is hide the button when the review holds anything — which is a different thing from
+   * deciding the refusal.
+   */
+  async function deleteReview(id: number): Promise<WriteResult> {
+    return write(
+      to => to.deleteReview(id),
+      (review: Review) =>
+        `Review ${review.id} — ${review.repo}#${review.pr} — is deleted. It held no `
+        + 'brief, no findings and no draft, and nothing of it is left.',
     )
   }
 
@@ -550,6 +626,9 @@ export function useReviewDesk() {
     repos,
     rules,
     startReview,
+    dismissReview,
+    restoreReview,
+    deleteReview,
     confirmBrief,
     setFindingDisposition,
     decideFinding,
