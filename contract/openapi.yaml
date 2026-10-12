@@ -1240,8 +1240,11 @@ components:
             line and opens these on a card anchored to the step.
 
             Empty for a step that recorded none, and a step with none draws no card and
-            no control for one. Not required here, for the reason `runs` is not: a
-            response written before DEV-917 is missing it rather than wrong.
+            no control for one — except step 7 while it is `running`, which draws a card
+            for `updated_at`, the moment the step was last written. That is when a harvest
+            last read the review, whoever wrote it. Not required here, for the reason
+            `runs` is not: a response written before DEV-917 is missing it rather than
+            wrong.
 
     LayerFact:
       type: object
@@ -1450,14 +1453,28 @@ components:
         still needs signing off while the queue says it is with the author. "Draft,
         approved by you" says the same record and misleads nobody.
 
-        **Nothing in the harvest path writes step 7**, which is a gap in the record rather
-        than in this operation. `draft posted` writes the harvest step as `pending` and
-        `review-desk harvest` writes no step at all, so a harvest that ran leaves the step
-        it ran as untouched. A *session* may still write it — `review-desk layer set`
-        writes any step to any state, and the example beside this schema carries a review
-        whose step 7 is `done` — so a client must handle `harvest` here. What this document
-        will not do is derive one from `Review.harvested_at`: that would be inventing a
-        step state, which is the session's to write.
+        **A harvest writes step 7 for a review it was posted on, so that review reports
+        it.** `draft posted` writes the step `pending`, and from DEV-933 `review-desk
+        harvest` writes what it found there: `running` while the pull request is open,
+        `done` once it has merged or closed. A client must draw `harvest` here.
+
+        **A `harvested_at` does not by itself mean step 7, and the example beside this
+        schema is such a record.** Two ways a review holds the stamp without the step.
+        One: it was read before DEV-933, when nothing in the harvest path wrote a step, so
+        a harvested review reported whatever step a session had written — which for the
+        example's review 12, posted and read back, is `draft`.
+
+        Two: the harvest reads every review whose pull request is open, including one
+        still being drafted, and writes the step only where the record holds a
+        `github_review_id` — a step saying a feedback loop is running on a review nobody
+        posted would be a lie.
+
+        So a client draws the step the record holds and infers nothing from the stamp.
+
+        A *session* may write it too — `review-desk layer set` writes any step to any
+        state, and the example beside this schema carries a review whose step 7 is `done`.
+        What this document will not do is derive one from `Review.harvested_at`: a derived
+        state is an invented one, and the two are written together anyway.
       properties:
         review: { $ref: '#/components/schemas/Review' }
         rounds_on_pr:
@@ -3514,8 +3531,23 @@ components:
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }
-        layer_number: { type: integer, minimum: 1, maximum: 7 }
-        layer_name: { $ref: '#/components/schemas/ReviewLayerName' }
+        layer_number:
+          type: integer
+          minimum: 1
+          maximum: 6
+          description: |
+            **Six, not seven: step 7 is never "with the agent".** A harvest sets it
+            `running` for as long as the pull request stays open (DEV-933), which is a
+            quarter-hourly read of GitHub rather than anybody working — so a posted review
+            would otherwise sit in this group for weeks, and one whose author had replied
+            would appear in two groups of the same Inbox.
+        layer_name:
+          allOf:
+            - $ref: '#/components/schemas/ReviewLayerName'
+            - not: { const: harvest }
+          description: >-
+            The step the session is at. Any of the seven but `harvest`, for the reason
+            `layer_number` gives.
         layers_total:
           type: integer
           const: 7

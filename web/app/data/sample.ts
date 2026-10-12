@@ -364,17 +364,41 @@ function inbox(): Inbox {
     }))
 
   /*
-   * **Any review with a running layer, which is what the server asks.**
+   * **Any review with a running layer but the harvest, which is what the server asks.**
    * `Store::reviews_in_progress` has no draft-status condition — a layer `running` is the
-   * whole of it — and this carried `draft_status === 'drafting'`, so the one shape the
-   * queue's cross-group deduplication exists for was unreachable here: a posted review
-   * whose harvest step is running, in `author_replies` and `in_progress` at once. The
-   * behaviour shipped untested because the records could not express the state.
+   * whole of it — and this carried `draft_status === 'drafting'`, which hid the shape the
+   * queue's cross-group deduplication exists for.
    *
-   * Review 12 is now that shape, and the queue draws it once.
+   * **Step 7 is excluded, as the server excludes it** since DEV-933: a harvest sets that
+   * step `running` for as long as the pull request stays open, which is a quarter-hourly
+   * read of GitHub rather than a session at work, so every posted review would otherwise
+   * sit under "with the agent" for weeks. The contract says the same — an
+   * `InboxInProgressItem` may not carry layer 7 — so sample mode without this line serves
+   * a shape the real server cannot and the contract refuses.
+   *
+   * Review 12 is still in both groups, and by the step that can put it there: its
+   * harvest step no longer counts, and a session has gone back to its code review to work
+   * the author's replies — which is the next thing that happens in this loop, and the
+   * case the deduplication is for. Its step 7 carries what `record_harvest_step` would
+   * write for its outcomes.
+   *
+   * **The highest-numbered of them, not the first.** `reviews_in_progress` reports
+   * `MAX(number)` — a session that left an earlier step running is further on than that
+   * step suggests — and this read the first match until the review of this change. No
+   * fixture has two non-harvest steps running, so nothing here tells the two apart; the
+   * server's rule is written out anyway rather than left to the order a list arrives in,
+   * which nothing fixes.
    */
   const in_progress = source.reviews
-    .map(detail => ({ detail, running: detail.layers.find(item => item.state === 'running') }))
+    .map(detail => ({
+      detail,
+      running: detail.layers
+        .filter(item => item.state === 'running' && item.name !== 'harvest')
+        .reduce<typeof detail.layers[number] | undefined>(
+          (furthest, item) => (furthest == null || item.number > furthest.number ? item : furthest),
+          undefined,
+        ),
+    }))
     .filter(pair => pair.running != null)
     .map(({ detail, running }) => ({
       review_id: detail.review.id,

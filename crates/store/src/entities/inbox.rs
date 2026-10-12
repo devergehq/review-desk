@@ -240,16 +240,23 @@ impl Store {
     /// still needs signing off while the queue says it is with the author. "Draft,
     /// approved by you" says the same record and misleads nobody.
     ///
-    /// **Nothing in the harvest path writes step 7**, which is a gap in the record rather
-    /// than in this query. `post_draft` writes the harvest step as `pending` and
-    /// `review_desk_harvest` writes no step at all, so a harvest that ran leaves the step
-    /// it ran as untouched — and a review that has been harvested reports step 6.
+    /// **A harvest writes step 7 for a review it was posted on, and that review reports
+    /// it.** `post_draft` writes the step `pending`, and since DEV-933
+    /// `record_harvest_step` writes what the harvest found: `running` while the pull
+    /// request is open, `done` once it has settled.
     ///
-    /// A *session* may still write it: `set_review_layer` takes any step and any state,
-    /// and the seed behind `contract/examples/listReviews.response.json` writes step 7
-    /// `done`. So this query does report `Harvest` when the record holds it. What it will
-    /// not do is derive one from `harvested_at`, which would be inventing a step state —
-    /// DEV-864 settled that as the session's to write.
+    /// **A `harvested_at` does not by itself mean step 7.** A review read before DEV-933
+    /// holds the stamp and no step — which is every harvested review until that change,
+    /// and is what `contract/examples/listReviews.response.json` still shows. And the
+    /// sweep reads every review whose pull request is open, including one still being
+    /// drafted, where `record_harvest_step` answers `None` rather than claim a loop
+    /// nobody has started. Either way the step reported is the one the record holds.
+    ///
+    /// A *session* may write it too: `set_review_layer` takes any step and any state, and
+    /// the seed behind `contract/examples/listReviews.response.json` writes step 7 `done`.
+    /// What this query will not do is derive one from `harvested_at`, which would be
+    /// inventing a step state — DEV-864 settled that as the writer's to state, and
+    /// `record_harvest_step` states it.
     ///
     /// One statement. The step comes off a `LEFT JOIN` to the layer the subquery picks,
     /// rather than seven reads per review: this is a list of the whole record, and a
@@ -317,9 +324,16 @@ impl Store {
     /// progress — it is the developer's turn, and those reviews are what the other
     /// groups are made of, so counting them here would show every waiting review twice.
     ///
-    /// The layer reported is the highest-numbered running one: a session that left an
-    /// earlier layer running is further on than that layer suggests, and the screen's
-    /// "Layer 5 of 7" should say how far it got.
+    /// **Step 7 is not a session's work, and is left out.** A harvest sets it `running`
+    /// for as long as the pull request stays open (DEV-933), which is a quarter-hourly
+    /// read of GitHub rather than anybody working — so counting it would put every posted
+    /// review under "With the agent · nothing for you to do" for weeks, and a review whose
+    /// author had replied would be listed twice on one page, which is the double-listing
+    /// the paragraph above exists to prevent.
+    ///
+    /// The layer reported is the highest-numbered running one *of the six*: a session that
+    /// left an earlier layer running is further on than that layer suggests, and the
+    /// screen's "Layer 5 of 7" should say how far it got.
     pub fn reviews_in_progress(&self, repo: Option<&str>) -> Result<Vec<ReviewAtLayer>> {
         let repo = repo.map(normalise::repo);
         let mut statement = self.conn.prepare(&format!(
@@ -327,17 +341,23 @@ impl Store {
              FROM reviews v
              JOIN review_layers l ON l.review_id = v.id
              WHERE l.state = ?1
+               AND l.number <> ?3
                AND (?2 IS NULL OR v.repo = ?2)
                AND l.number = (
                    SELECT MAX(number) FROM review_layers
-                   WHERE review_id = v.id AND state = ?1
+                   WHERE review_id = v.id AND state = ?1 AND number <> ?3
                )
              ORDER BY v.id DESC"
         ))?;
         let rows = statement
-            .query_map(params![ReviewLayerState::Running, repo], |row| {
-                Ok((row_to_review(row)?, row.get::<_, i64>("number")?))
-            })?
+            .query_map(
+                params![
+                    ReviewLayerState::Running,
+                    repo,
+                    ReviewLayerName::Harvest.number()
+                ],
+                |row| Ok((row_to_review(row)?, row.get::<_, i64>("number")?)),
+            )?
             .collect::<rusqlite::Result<Vec<_>>>()?;
 
         rows.into_iter()

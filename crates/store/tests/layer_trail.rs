@@ -424,3 +424,34 @@ fn reporting_a_draft_posted_twice_does_not_un_harvest_layer_seven() {
     assert_eq!(state, ReviewLayerState::Done, "the harvest still happened");
     assert_eq!(detail.as_deref(), Some("3 outcomes harvested"));
 }
+
+#[test]
+fn reporting_a_draft_posted_twice_does_not_un_harvest_a_running_layer_seven() {
+    // The sibling test above covers a *finished* harvest, which is the state a harvest
+    // writes once the pull request has settled. Until DEV-933 the guard asked for `done`
+    // alone — so a harvest of an open pull request, which writes `running`, was thrown
+    // back to `pending` by the next retry and the page went back to saying it was waiting
+    // for a harvest four harvests had already run.
+    let (_dir, store) = temp_store();
+    let review = with_ready_draft(&store);
+    store
+        .approve_draft(review.id, ReviewEvent::Comment, Actor::Developer)
+        .expect("approved");
+    store
+        .post_draft(review.id, "gh-review-3312")
+        .expect("posted");
+
+    store
+        .record_harvest_step(review.id)
+        .expect("the harvester runs")
+        .expect("a posted review has a harvest step");
+    assert_eq!(layer(&store, review.id, 7).0, ReviewLayerState::Running);
+
+    store
+        .post_draft(review.id, "gh-review-3312")
+        .expect("the same report again changes nothing");
+
+    let (state, detail) = layer(&store, review.id, 7);
+    assert_eq!(state, ReviewLayerState::Running, "the harvest still ran");
+    assert_eq!(detail.as_deref(), Some("nothing back yet"));
+}

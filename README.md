@@ -224,7 +224,11 @@ A fact is `label=value`, split on the first `=` alone, so a value may contain ot
 **Giving none leaves the facts as they were**, because this is also the command a session
 calls to report progress and would otherwise clear them by saying nothing about them;
 giving any replaces the whole list, and `--clear-facts` empties it. A step with no facts
-draws no card and no control for one.
+draws no card and no control for one — except step 7 while it is `running`, which draws a
+card for when it was last written. That is the harvest's read time in practice, and this
+command is the other way in: `layer set --layer 7 --state running --clear-facts` is a step
+whose card says only when you wrote it. Without `--clear-facts` whatever the last harvest
+recorded stays, by the rule above, and the card shows those counts beside the new time.
 
 The states are `pending`, `running`, `done`, `waiting_on_you`, `failed` and `skipped`.
 This is stored rather than worked out from the rest of the record, for two reasons:
@@ -240,8 +244,11 @@ them and a trail that disagreed with the record would be worse than one that lag
 Confirming a brief finishes layer 2; writing a brief that needs no confirmation finishes it
 too, carrying the reason. Approving a draft finishes layer 6, and sending one back puts it
 back to `running` with the developer's note. Marking a draft posted leaves layer 7
-`pending` — posting makes a harvest possible, it is not the harvest. A session writes
-everything else.
+`pending` — posting makes a harvest possible, it is not the harvest.
+
+**Layer 7 is then the harvest's**, which is [below](#what-a-harvest-leaves-on-step-7): a
+harvest records what it read there, and until DEV-933 nothing did, so a posted review said
+it was waiting for a harvest however many had run. A session writes everything else.
 
 `finding add` adds one finding and prints its sequence number within the review — the id
 a person quotes. `lens`, `severity` and `claim` are required; the disposition defaults to
@@ -668,6 +675,58 @@ harvests of one reply may not.
 A missing `gh` and a logged-out `gh` are both exit 2, with a message and a `code` saying
 which it was — they are Review Desk unable to run, not a request refused.
 
+### What a harvest leaves on step 7
+
+**A harvest records what it found on step 7 of the review's trail.** Only `draft posted`
+wrote that step until DEV-933, and it writes `pending` with "posted, waiting for the
+harvest" — so a review read back every quarter of an hour went on saying it was waiting.
+
+| What the record holds after a harvest | Step 7 |
+| -- | -- |
+| The pull request is open and nothing has come back | `running`, "nothing back yet" |
+| The pull request is open and something has | `running`, the strongest fact as the detail |
+| The pull request merged or closed | `done`, prefixed `merged, ` or `closed, ` |
+
+The counts go beside it as the step's facts — `Pull request`, then `Replies`,
+`Threads resolved` and `Code changed since` — with a count of nothing left out rather than
+written as a nought. `Pull request` is always there, saying `open` until it says `merged`
+or `closed`. The detail keeps to four words and the facts to five,
+as every other step does.
+
+Three things are worth saying about it:
+
+* **The counts are read from the record, not from what the run just wrote.** Running a
+  harvest twice records nothing twice, so a step built from the run's own writes would say
+  "2 replies" once and "nothing back yet" for ever after. Read from the record, the step
+  agrees with the outcomes the review page lists beside it.
+* **A second harvest that found nothing new moves only the time it read.** The state has
+  not changed, so nothing is appended to the layer's own record — which is what keeps one
+  pass one pass rather than ninety-six of no length a day.
+* **A review nothing has posted has no step 7 to move.** A sweep covers every review whose
+  pull request is open, including one whose draft is still being written; `running` on that
+  would put two steps of the trail in progress at once.
+
+The time it read is the layer row's `updated_at`, not a date written into a fact: every
+other time this record holds is an instant the screen words — and **the screen words this
+one**. While step 7 is `running` the card beside the step says "read 3 min ago", where a
+finished step says how long it took, and the step's line carries it in its `title`. Once
+the step is `done` the pull request has settled and nothing will read it again, so there is
+no read time to say.
+
+**It is not on the step's line, and that was measured rather than argued.** A step's column
+holds 154 pixels of text at 1440 and 175 at 390; the four-word detail fills it exactly, and
+every way of writing both on one line ran 186 to 239 pixels — so whichever went first, the
+other was cut. The line keeps what the four-word rule protects, and the card takes the
+read time — and the trail opens one for a step with facts **or** a read time, so step 7
+has a card from the moment a harvest reads it. A harvest records `Pull request` every time
+anyway, because an open pull request is why the step is still running and it is the pair a
+settled step answers with `merged` or `closed`.
+
+DEV-933's own table asked for "read 3 min ago" *in the detail*. It is not stored, and that
+is the one place this slice departs from the issue: a detail is a frozen string, so a
+relative time written into one is wrong fifteen minutes later — and the harvest runs every
+fifteen minutes.
+
 
 ## Sign-off
 
@@ -694,7 +753,10 @@ agent or the harvester signed something off.
 **A sign-off writes its layer row in the same transaction.** Confirming finishes layer 2,
 approving finishes layer 6, sending back puts layer 6 in progress carrying the note, and
 marking a draft posted leaves layer 7 `pending` — waiting for a harvest nobody has run —
-rather than claiming the outcomes have been read back from GitHub. Two writes that can
+rather than claiming the outcomes have been read back from GitHub. **A harvest that has
+already read the review keeps layer 7**: reporting the same GitHub review twice is a
+supported call, and layer 7 is the one layer whose true state can be past what posting
+writes. Two writes that can
 disagree are two writes that eventually will, and that is not hypothetical: DEV-862 shipped
 a screen reading "2 Understand · waiting on you" under a brief the developer had just
 confirmed.

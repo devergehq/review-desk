@@ -542,7 +542,9 @@ fn a_step_serves_its_facts_and_a_source_its_state_and_note() {
     assert_eq!(
         served["layers"][6]["facts"],
         Value::Array(Vec::new()),
-        "a step that recorded none serves an empty list, and the page draws no card"
+        "a step that recorded none serves an empty list. This one is step 7, which is \
+         `pending` in this seed — a running step 7 draws a card for its read time even \
+         with no facts, so the empty list is the claim here and the card is not"
     );
 
     let sources = served["sources"].as_array().expect("the sources");

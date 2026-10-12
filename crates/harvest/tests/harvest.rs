@@ -12,7 +12,8 @@ use std::path::PathBuf;
 use review_desk_harvest::recorded::Recorded;
 use review_desk_harvest::{harvest, GitHub, Selection};
 use review_desk_store::{
-    Disposition, Finding, NewFinding, Outcome, OutcomeKind, PrState, Review, Severity, Store,
+    Disposition, Finding, NewFinding, Outcome, OutcomeKind, PrState, Review, ReviewLayerState,
+    Severity, Store,
 };
 use tempfile::TempDir;
 
@@ -39,6 +40,18 @@ fn recording() -> Recorded {
     Recorded::from_dir(fixtures())
 }
 
+/// The recording with the pull request still open, for the step 7 the harvest writes
+/// while it is. See `tests/fixtures/README.md`: an open response for a pull request that
+/// merged in September cannot be captured, so this one is derived from the capture.
+fn still_open() -> Recorded {
+    Recorded::from_dir(fixtures()).with("pull_request", fixtures().join("pull_request-open.json"))
+}
+
+/// Step 7 of a review, as the record holds it.
+fn step_seven(store: &Store, review_id: i64) -> review_desk_store::ReviewLayer {
+    store.get_review_layer(review_id, 7).expect("step 7")
+}
+
 /// A review of `devergehq/locus#64` at the reviewed commit, with five findings:
 ///
 /// | Finding | Where | Linked comment |
@@ -58,6 +71,10 @@ fn a_posted_review() -> (TempDir, Store, Review) {
             pr: 64,
             head_sha: REVIEWED_HEAD.to_string(),
             round: 1,
+            // Posted, which is what makes step 7 this review's: a sweep covers every
+            // review whose pull request is open, and one whose draft is still being
+            // written has no harvest step to move.
+            github_review_id: Some("PRR_kwDOA1".to_string()),
             ..Default::default()
         })
         .unwrap();
@@ -601,4 +618,190 @@ fn a_range_longer_than_github_will_list_is_refused_rather_than_truncated() {
     let said = error.to_string();
     assert!(said.contains("312"), "it says how many there are: {said}");
     assert!(said.contains("--base"), "and the way out: {said}");
+}
+
+// -- what the harvest leaves on step 7 (DEV-933) -------------------------------------
+
+#[test]
+fn a_harvest_of_an_open_pull_request_puts_step_seven_at_running_with_what_came_back() {
+    let (_dir, store, review) = a_posted_review();
+
+    let report = harvest(&store, &still_open(), Selection::everything()).unwrap();
+
+    let said = report.reviews[0]
+        .step_seven
+        .as_ref()
+        .expect("a posted review's step 7");
+    assert_eq!(said.state, ReviewLayerState::Running);
+    assert_eq!(
+        said.detail.as_deref(),
+        Some("3 replies back"),
+        "the strongest fact on the line the trail draws"
+    );
+
+    let step = step_seven(&store, review.id);
+    assert_eq!(step.state, ReviewLayerState::Running);
+    assert_eq!(step.detail.as_deref(), Some("3 replies back"));
+    assert!(
+        step.updated_at.is_some(),
+        "and the step records when the harvest read it"
+    );
+
+    let facts: Vec<(&str, &str)> = step
+        .facts
+        .iter()
+        .map(|fact| (fact.label.as_str(), fact.value.as_str()))
+        .collect();
+    assert_eq!(
+        facts,
+        vec![
+            ("Pull request", "open"),
+            ("Replies", "3"),
+            ("Threads resolved", "3"),
+            ("Code changed since", "3 findings"),
+        ],
+        "each count a fact of its own, as the other steps record theirs"
+    );
+}
+
+#[test]
+fn a_harvest_of_a_review_with_nothing_back_says_so_rather_than_waiting_for_itself() {
+    // A review posted at the commit the pull request is still at, with no finding linked
+    // to a comment: there is no thread to read and nothing to compare, so the harvest
+    // reads the pull request and finds nothing.
+    let dir = TempDir::new().unwrap();
+    let store = Store::open(dir.path().join("review-desk.db")).unwrap();
+    let review = store
+        .create_review(review_desk_store::NewReview {
+            repo: "devergehq/locus".to_string(),
+            pr: 64,
+            head_sha: CURRENT_HEAD.to_string(),
+            round: 1,
+            github_review_id: Some("PRR_kwDOA1".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+    add(&store, review.id, Some(PY), Some(873), None);
+    store
+        .set_review_layer(
+            review.id,
+            7,
+            review_desk_store::ReviewLayerState::Pending,
+            Some("posted, waiting for the harvest"),
+        )
+        .unwrap();
+
+    harvest(&store, &still_open(), Selection::everything()).unwrap();
+
+    let step = step_seven(&store, review.id);
+    assert_eq!(step.state, ReviewLayerState::Running);
+    assert_eq!(
+        step.detail.as_deref(),
+        Some("nothing back yet"),
+        "a harvest has read this review, so it no longer says it is waiting for one"
+    );
+    assert_eq!(
+        step.facts
+            .iter()
+            .map(|fact| (fact.label.as_str(), fact.value.as_str()))
+            .collect::<Vec<_>>(),
+        vec![("Pull request", "open")],
+        "where the pull request stands, which is what gives a harvested step its card"
+    );
+}
+
+#[test]
+fn a_harvest_of_a_merged_pull_request_finishes_step_seven() {
+    let (_dir, store, review) = a_posted_review();
+
+    // The recording as captured: the pull request merged on 30 September 2026.
+    harvest(&store, &recording(), Selection::everything()).unwrap();
+
+    let step = step_seven(&store, review.id);
+    assert_eq!(
+        step.state,
+        ReviewLayerState::Done,
+        "the pull request has settled, so the harvest has nothing further to read"
+    );
+    assert_eq!(step.detail.as_deref(), Some("merged, 3 replies back"));
+    assert_eq!(
+        step.facts.first().map(|fact| fact.label.as_str()),
+        Some("Pull request"),
+        "and how it ended is the first thing on the card"
+    );
+    assert_eq!(step.facts[0].value, "merged");
+}
+
+#[test]
+fn a_second_harvest_of_the_same_responses_only_moves_the_time_step_seven_was_read() {
+    let (_dir, store, review) = a_posted_review();
+
+    harvest(&store, &still_open(), Selection::everything()).unwrap();
+    let after_first = step_seven(&store, review.id);
+
+    harvest(&store, &still_open(), Selection::everything()).unwrap();
+    let after_second = step_seven(&store, review.id);
+
+    assert_eq!(after_second.detail, after_first.detail);
+    assert_eq!(after_second.facts, after_first.facts);
+    assert_eq!(
+        after_second.runs.len(),
+        1,
+        "one pass, still open: a quarter-hourly harvest must not report ninety-six \
+         passes a day: {:?}",
+        after_second.runs
+    );
+    assert!(after_second.updated_at >= after_first.updated_at);
+}
+
+#[test]
+fn a_harvest_of_a_review_nothing_has_posted_leaves_step_seven_alone() {
+    let dir = TempDir::new().unwrap();
+    let store = Store::open(dir.path().join("review-desk.db")).unwrap();
+    let review = store
+        .create_review(review_desk_store::NewReview {
+            repo: "devergehq/locus".to_string(),
+            pr: 64,
+            head_sha: REVIEWED_HEAD.to_string(),
+            round: 1,
+            // Nothing posted: no GitHub review id.
+            ..Default::default()
+        })
+        .unwrap();
+    add(
+        &store,
+        review.id,
+        Some(PY),
+        Some(873),
+        Some(BLOCKER_COMMENT),
+    );
+
+    let report = harvest(&store, &still_open(), Selection::everything()).unwrap();
+
+    assert!(
+        report.reviews[0].step_seven.is_none(),
+        "the run says nothing about a step that is not this review's yet"
+    );
+    assert!(
+        store.find_review_layer(review.id, 7).unwrap().is_none(),
+        "and nothing was written for it: two steps of the trail in progress at once \
+         would claim a feedback loop nobody had started"
+    );
+    assert_eq!(
+        report.reviews[0].replies_recorded, 1,
+        "the rest of the harvest ran as it always does"
+    );
+}
+
+#[test]
+fn the_run_says_what_it_left_step_seven_saying() {
+    let (_dir, store, _review) = a_posted_review();
+
+    let report = harvest(&store, &still_open(), Selection::everything()).unwrap();
+
+    let line = report.lines().join("\n");
+    assert!(
+        line.contains("step 7 running: 3 replies back"),
+        "the dispatcher runs this on a timer and its line is all a person sees: {line}"
+    );
 }

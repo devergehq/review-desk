@@ -598,7 +598,9 @@ pub fn review_layer(layer: &ReviewLayer) -> Value {
         "seconds": layer.seconds(),
         // **What the step came to, as pairs rather than as a sentence.** `detail` is one
         // line and the trail draws it on one line; these are what the card beside the
-        // step holds. Empty for a step that recorded none, which draws no card at all.
+        // step holds. Empty for a step that recorded none, which draws no card at all —
+        // unless it is step 7 and `running`, whose card holds `updated_at` worded as when
+        // the harvest last read the review.
         "facts": layer.facts.iter().map(layer_fact).collect::<Vec<_>>(),
     })
 }

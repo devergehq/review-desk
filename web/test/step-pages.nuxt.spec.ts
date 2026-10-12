@@ -94,7 +94,8 @@ async function openCard(page: VueWrapper, number: number) {
   if (!step) throw new Error(`the trail has no step ${number}`)
   const control = step.find('.outcome')
   if (control.element.tagName !== 'BUTTON') {
-    throw new Error(`step ${number} recorded no facts, so it has no card`)
+    throw new Error(`step ${number} has nothing behind it — no facts, no read time — so \
+it draws no card`)
   }
   await control.trigger('click')
   await settle(page)
@@ -307,7 +308,7 @@ describe('the shell every step page sits in', () => {
     expect(page.find('.floating').exists()).toBe(false)
   })
 
-  it('draws no card and no control on a step that recorded no facts', async () => {
+  it('draws no card and no control on a step with nothing behind it', async () => {
     const page = await understand(STRUCTURED)
     const steps = page.findAll('.steps li')
 

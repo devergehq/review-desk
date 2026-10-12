@@ -7,6 +7,7 @@
 //! 3. Whether a linked finding's thread is resolved.
 //! 4. Whether the file a finding points at changed after the commit the review read,
 //!    and whether the finding's own lines changed with it.
+//! 5. What all of that came to, onto step 7 of the review's trail.
 //!
 //! **Running it twice records nothing twice.** Every row written carries the id of the
 //! GitHub fact it came from, and a unique index on that refuses the second write. The
@@ -18,8 +19,8 @@ use serde::Serialize;
 use serde_json::json;
 
 use review_desk_store::{
-    now, Actor, Finding, FindingRef, NewOutcome, OutcomeKind, PrState, Review, Store, StoreError,
-    Timestamp,
+    now, Actor, Finding, FindingRef, NewOutcome, OutcomeKind, PrState, Review, ReviewLayer,
+    ReviewLayerState, Store, StoreError, Timestamp,
 };
 
 use crate::error::{HarvestError, Result};
@@ -75,6 +76,36 @@ pub struct ReviewReport {
     /// Outcomes GitHub reported that were already in the record. On a second harvest
     /// of the same responses, this is where every one of them lands.
     pub already_recorded: usize,
+    /// What the run left step 7 of the review saying.
+    ///
+    /// `None` for a review nothing has posted: step 7 is the harvest of a posted review,
+    /// and a sweep covers every review whose pull request is open — including one whose
+    /// draft is still being written.
+    pub step_seven: Option<StepSeven>,
+}
+
+/// What a harvest left on step 7 of a review's trail.
+///
+/// The state and the one line the trail draws, which is what a person running the command
+/// wants to see; the facts behind it are on the record and on the card beside the step.
+#[derive(Debug, Clone, Serialize)]
+pub struct StepSeven {
+    pub state: ReviewLayerState,
+    pub detail: Option<String>,
+    /// How many facts the step now carries. The pairs themselves are read from the
+    /// record — `review show` serves them — rather than repeated in every harvest's
+    /// report.
+    pub facts: usize,
+}
+
+impl From<ReviewLayer> for StepSeven {
+    fn from(layer: ReviewLayer) -> Self {
+        Self {
+            state: layer.state,
+            detail: layer.detail,
+            facts: layer.facts.len(),
+        }
+    }
 }
 
 impl Report {
@@ -162,6 +193,7 @@ impl Report {
                     review.findings_without_comment,
                     review.findings,
                 ) + settled
+                    + &step_seven_line(review.step_seven.as_ref())
             })
             .collect()
     }
@@ -240,6 +272,7 @@ fn harvest_one(store: &Store, github: &dyn GitHub, review: &Review) -> Result<Re
         threads_resolved_recorded: 0,
         code_changed_recorded: 0,
         already_recorded: 0,
+        step_seven: None,
     };
 
     if !linked.is_empty() {
@@ -263,6 +296,13 @@ fn harvest_one(store: &Store, github: &dyn GitHub, review: &Review) -> Result<Re
     harvest_code_changes(store, github, review, &pull_request, &findings, &mut report)?;
 
     store.mark_review_harvested(review.id, now())?;
+
+    // **Last, because it reports what the rest of this function wrote.** The step's
+    // counts are read back out of the record rather than taken from the counters above:
+    // running a harvest twice records nothing twice, so a step built from this run's own
+    // writes would say "2 replies" once and "nothing back yet" for ever after.
+    report.step_seven = store.record_harvest_step(review.id)?.map(StepSeven::from);
+
     Ok(report)
 }
 
@@ -468,6 +508,25 @@ fn count(written: bool, recorded: &mut usize, already: &mut usize) {
         *recorded += 1;
     } else {
         *already += 1;
+    }
+}
+
+/// What this review's line says about step 7.
+///
+/// **A review nothing has posted says nothing**, rather than "step 7: not written" — the
+/// step is not that review's yet, and a line per review saying so would be noise on every
+/// sweep.
+fn step_seven_line(step: Option<&StepSeven>) -> String {
+    match step {
+        Some(step) => format!(
+            "; step 7 {}{}",
+            step.state,
+            step.detail
+                .as_deref()
+                .map(|detail| format!(": {detail}"))
+                .unwrap_or_default()
+        ),
+        None => String::new(),
     }
 }
 

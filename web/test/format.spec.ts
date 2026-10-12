@@ -12,6 +12,8 @@ import {
   forLabel,
   layerDetail,
   layerLabel,
+  harvestReadLabel,
+  layerOutcome,
   layerTone,
   openForLabel,
   prStateLabel,
@@ -205,6 +207,50 @@ describe('the seven layers', () => {
     expect(layerTone('failed')).toBe('failed')
   })
 
+  /*
+   * DEV-933: a harvest writes step 7, and the question the step exists to answer is
+   * whether anything is still looking. The words are the store's; when it was last read
+   * is worded here from the layer row's `updated_at`, because a relative time stored in a
+   * detail is wrong fifteen minutes later and the harvest runs every fifteen minutes.
+   *
+   * It is a label of its own rather than part of the step's line, and that was measured:
+   * a step's column holds 154 pixels of text and the two together run 186 to 239. The
+   * line keeps the detail; this goes on the card and in the line's `title`.
+   */
+  describe('when a harvest last read the review', () => {
+    const at = '2026-10-11T09:00:00Z'
+    const read = (minutes: number) => new Date(Date.parse(at) + minutes * 60_000)
+    const watching = { name: 'harvest' as const, state: 'running' as const, updated_at: at }
+
+    it('says how long ago, in the desk\'s own words', () => {
+      expect(harvestReadLabel(watching, read(3))).toBe('read 3 min ago')
+      expect(harvestReadLabel(watching, read(0))).toBe('read just now')
+      expect(harvestReadLabel(watching, read(90))).toBe('read 1 hour ago')
+    })
+
+    it('says nothing once the pull request has settled', () => {
+      // Nothing will read it again — a settled pull request is not fetched — so a read
+      // time here would be a fossil growing older beside a fact that is finished.
+      expect(harvestReadLabel({ ...watching, state: 'done' }, read(3))).toBeNull()
+    })
+
+    it('says nothing for a review no harvest has read', () => {
+      expect(harvestReadLabel({ ...watching, state: 'pending' }, read(3))).toBeNull()
+      expect(harvestReadLabel({ ...watching, updated_at: null }, read(3))).toBeNull()
+    })
+
+    it('says nothing about any other step', () => {
+      expect(harvestReadLabel({ ...watching, name: 'code_review' }, read(3))).toBeNull()
+    })
+
+    it('leaves the step\'s own line to the store\'s words', () => {
+      expect(layerOutcome({ state: 'running', detail: 'nothing back yet' }))
+        .toBe('nothing back yet')
+      expect(layerOutcome({ state: 'done', detail: 'merged, 2 replies back' }))
+        .toBe('merged, 2 replies back')
+    })
+  })
+
   it('names an outcome as a verb about the developer', () => {
     expect(editVerb('cut')).toBe('Cut')
     expect(editVerb('rewritten')).toBe('Rewrote')
@@ -365,6 +411,46 @@ describe('what came back on a posted review', () => {
     /* And a review nothing has reported on is not step 1 pending. */
     expect(stepLabel(row({ step_number: null, step_name: null, step_state: null })))
       .toBe('Not started')
+  })
+
+  /*
+   * DEV-933: a harvested review reports step 7, and the row says when the harvest last
+   * read it — from `review.harvested_at`, the harvester's own stamp, which is the exact
+   * answer to that question and is written by the same call that writes the step.
+   */
+  it('says when the harvest last read a review it is still watching', () => {
+    const at = '2026-10-12T09:00:00Z'
+    const row = (over: Record<string, unknown>) => ({
+      review: { id: 12, harvested_at: at },
+      rounds_on_pr: 1,
+      step_number: 7,
+      step_name: 'harvest',
+      step_state: 'running',
+      step_detail: 'nothing back yet',
+      steps_total: 7,
+      last_activity_at: null,
+      ...over,
+    } as unknown as ReviewListItem)
+    const later = (minutes: number) => new Date(Date.parse(at) + minutes * 60_000)
+
+    expect(stepLabel(row({}), later(3)))
+      .toBe('Harvest · nothing back yet · read 3 min ago')
+
+    /* Settled: how it ended, and no read time — nothing will read it again. */
+    expect(stepLabel(
+      row({ step_state: 'done', step_detail: 'merged, 2 replies back' }),
+      later(3),
+    )).toBe('Harvest · merged, 2 replies back')
+
+    /* And posted, with no harvest yet: what posting wrote, and no invented time. */
+    expect(stepLabel(
+      row({
+        review: { id: 12, harvested_at: null },
+        step_state: 'pending',
+        step_detail: 'posted, waiting for the harvest',
+      }),
+      later(3),
+    )).toBe('Harvest · posted, waiting for the harvest')
   })
 
   it('does not claim a pull request is open when nothing has looked', () => {

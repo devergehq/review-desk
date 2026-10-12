@@ -445,10 +445,13 @@ impl Store {
         // *past* what this writes. Written unconditionally, a retry a week later would
         // move a harvested layer 7 back to `pending` and throw away the harvester's own
         // detail. Nothing else here can regress, because no state is past `done`.
-        let harvested = self
-            .find_review_layer(review_id, ReviewLayerName::Harvest.number())?
-            .is_some_and(|layer| layer.state == ReviewLayerState::Done);
-        if !harvested {
+        //
+        // **Any state past `pending`, not only `done`.** This asked for `done` alone until
+        // DEV-933, which is the state a harvest writes once the pull request has settled —
+        // so a harvest of an open pull request, which writes `running`, was thrown back to
+        // `pending` by the next retry and the page said "posted, waiting for the harvest"
+        // about a review four harvests had read.
+        if !self.harvest_step_has_moved(review_id)? {
             self.set_review_layer(
                 review_id,
                 ReviewLayerName::Harvest.number(),

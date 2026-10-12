@@ -9,6 +9,11 @@
 //! | A finding's thread was resolved | An outcome of kind `thread_resolved` |
 //! | The file a finding points at changed later | An outcome of kind `code_changed_after` |
 //!
+//! **What it found goes on step 7 of the review's trail**, which is DEV-933: `running`
+//! while the pull request is open, `done` once it has merged or closed, and the counts as
+//! the step's facts. Until then only "posted" wrote that step, so a review harvested every
+//! quarter of an hour went on saying it was waiting for a harvest.
+//!
 //! **The harvester does not decide what a reply meant.** Reading a reply as an
 //! acceptance or a rejection needs judgement; this crate is deterministic, so it stores
 //! the reply as written and leaves the reading to a person or an agent.
@@ -45,4 +50,4 @@ pub use crate::github::{
     ChangedFile, Commit, CommitFiles, Comparison, GitHub, PullRequest, Reply, ReviewThread,
 };
 pub use crate::rounds::commits_between;
-pub use crate::run::{harvest, Report, ReviewReport, Selection};
+pub use crate::run::{harvest, Report, ReviewReport, Selection, StepSeven};

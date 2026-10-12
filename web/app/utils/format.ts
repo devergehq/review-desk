@@ -233,6 +233,45 @@ export function layerOutcome(layer: {
   return layerDetail(layer.detail) || LAYER_OUTCOMES[layer.state]
 }
 
+/**
+ * When a harvest last read this review — "read 3 min ago" — or null.
+ *
+ * **DEV-933, and a fact of its own rather than part of the line above.** The step's words
+ * and the moment they were written answer different questions: what came back, and
+ * whether anything is still looking. The developer who asked what the harvest step was
+ * for was asking the second.
+ *
+ * **It is not on the step's line, and that was measured rather than argued.** A step's
+ * column is 154 pixels of text at 1440 and 175 at 390; the detail alone fits exactly,
+ * and every way of putting both on one line ran 186 to 239 pixels — so whichever went
+ * first, the other was cut. The detail is what the store's four-word rule protects, so
+ * the line keeps it and this goes where the trail already puts what will not fit: the
+ * card beside the step, and the line's `title`.
+ *
+ * **Worded here and never stored.** A detail is a frozen string: "read 3 min ago" written
+ * into one is a lie fifteen minutes later, and the harvest runs every fifteen minutes.
+ * The record keeps the instant — the layer row's `updated_at` — and this says it in words
+ * when the page renders. Not on a clock: like `sinceLabel` everywhere else on the desk it
+ * is as fresh as the page, so a tab left open all afternoon still says what it said when
+ * it loaded.
+ *
+ * **Only while the step is `running`.** That means the pull request is open and still
+ * being watched, so "when was it last looked at" is live. Once it is `done` the pull
+ * request has merged or closed and nothing will read it again; "read 2 months ago" beside
+ * "merged, 3 replies back" would be a fossil.
+ */
+export function harvestReadLabel(
+  layer: {
+    name?: ReviewLayerName
+    state: ReviewLayerState
+    updated_at?: Instant | null
+  },
+  now: Date = new Date(),
+): string | null {
+  if (layer.name !== 'harvest' || layer.state !== 'running' || !layer.updated_at) return null
+  return `read ${sinceLabel(layer.updated_at, now)}`
+}
+
 /** Which of the three ways a layer pill is drawn. */
 export function layerTone(state: ReviewLayerState): 'done' | 'current' | 'pending' | 'failed' {
   if (state === 'done') return 'done'
@@ -424,19 +463,42 @@ export function prStateLabel(state: PrState | null | undefined): string {
  * holds seven pending steps, which is a thing it knows rather than a thing it has not
  * measured.
  *
- * **A posted review usually reports step 6**, because nothing in the harvest path writes
- * step 7 — the posting writes it `pending` and the harvester writes no step. A session
- * that records it is reported as `harvest` like any other step; there is no special case
- * here, and there must not be one that derives a step from a harvest time.
+ * **A review harvested after it was posted reports step 7, and the row says when it was
+ * last read.** Until DEV-933 nothing in the harvest path wrote a step, so a posted review
+ * reported step 6 and this said so. Now the harvest writes `running` while the pull
+ * request is open and `done` once it has settled, and the state word never reaches the
+ * row: `layerOutcome` prefers the step's own note, and a harvest always writes one —
+ * "nothing back yet", "2 replies back", "merged, 2 replies back".
+ *
+ * **A `harvested_at` alone does not make it step 7.** A review read before DEV-933 holds
+ * the stamp and no step, and the sweep reads reviews still being drafted, where the step
+ * is not written at all. Either way the row draws the step the record holds and infers
+ * nothing from the stamp — and says no read time, because this says it only for a step 7
+ * that is running.
+ *
+ * **The read time comes from `review.harvested_at`**, the harvester's own stamp, rather
+ * than from the step's `updated_at` as the trail's does — this row holds the review and
+ * not the layer, and `harvested_at` is the more exact answer to the question anyway. The
+ * two are written microseconds apart by the same harvest. A row has the width for it,
+ * which the trail's 154-pixel column does not; that argument is in `harvestReadLabel`.
+ *
+ * A *session* may write step 7 too, and is reported like any other step. What there must
+ * not be is a step derived from a harvest time.
  */
-export function stepLabel(row: ReviewListItem): string {
+export function stepLabel(row: ReviewListItem, now: Date = new Date()): string {
   if (row.step_number == null || row.step_name == null || row.step_state == null) {
     return 'Not started'
   }
-  return `${layerLabel(row.step_name)} · ${layerOutcome({
+  const said = `${layerLabel(row.step_name)} · ${layerOutcome({
     state: row.step_state,
     detail: row.step_detail,
   })}`
+  const read = harvestReadLabel({
+    name: row.step_name,
+    state: row.step_state,
+    updated_at: row.review.harvested_at,
+  }, now)
+  return read ? `${said} · ${read}` : said
 }
 
 /**

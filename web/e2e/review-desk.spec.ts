@@ -10,6 +10,7 @@ import {
   serversUnderTest,
   stillServing,
   STRUCTURED_LONG_NOTE,
+  STRUCTURED_STEP_SEVEN_DETAIL,
 } from './harness'
 
 /*
@@ -941,102 +942,107 @@ test.describe('the three step pages of one review', () => {
     await expect(page.locator('.trail').getByRole('link', { name: /7 Harvest/ })).toHaveCount(0)
   })
 
-  /**
-   * **A step's detail is one line, whatever its length, and the page's headline does not
-   * move.**
-   *
-   * DEV-917's first two acceptance criteria, measured where they can be: both are layout,
-   * and the unit tests run in jsdom, which computes none. So this reads the rendered height
-   * of step 2's line — the 34-word note the invented example carries — at a laptop's width
-   * and at a phone's, and then rewrites that step with a three-word detail through the
-   * command line and checks the headline is in exactly the same place.
-   *
-   * The record is put back at the end, because every other test in this file reads the same
-   * database.
+  /*
+   * **Step 2's note, written and put back.** Outside the test and restored in a hook for
+   * the reason the harvest step's writer below gives: a `finally` does not run when
+   * Playwright abandons a test at its timeout, and this test measures two viewports. One
+   * timeout would leave step 2 reading "Three short words" on the database every later
+   * test and the screenshots project share.
    */
-  test('a long step detail is one line at both widths, and moves the headline nowhere', async ({ page }) => {
+  const setStepTwoDetail = (detail: string) =>
+    cli(seededDatabase, [
+      'layer',
+      'set',
+      '--review',
+      String(structuredReviewId),
+      '--layer',
+      '2',
+      '--state',
+      'done',
+      '--detail',
+      detail,
+    ])
+
+  test.describe('a long step detail', () => {
+    test.afterEach(() => {
+      setStepTwoDetail(STRUCTURED_LONG_NOTE)
+    })
+
+    /**
+     * **A step's detail is one line, whatever its length, and the page's headline does not
+     * move.**
+     *
+     * DEV-917's first two acceptance criteria, measured where they can be: both are layout,
+     * and the unit tests run in jsdom, which computes none. So this reads the rendered height
+     * of step 2's line — the 34-word note the invented example carries — at a laptop's width
+     * and at a phone's, and then rewrites that step with a three-word detail through the
+     * command line and checks the headline is in exactly the same place.
+     */
+    test('is one line at both widths, and moves the headline nowhere', async ({ page }) => {
     /** The step's line and the page's headline, as the browser lays them out. */
-    const measure = async () => {
-      await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
-      await expect(page.locator('h1')).toBeVisible()
-      await page.waitForLoadState('networkidle')
-      const step = page.locator('.steps li').nth(1)
-      await expect(step).toContainText('2 Understand')
-      return {
-        line: await step.locator('.outcome').evaluate((element) => {
-          const style = getComputedStyle(element)
-          return {
-            height: element.getBoundingClientRect().height,
-            lineHeight: Number.parseFloat(style.lineHeight)
-              || Number.parseFloat(style.fontSize) * 1.2,
-            scrollWidth: element.scrollWidth,
-            clientWidth: element.clientWidth,
-            whiteSpace: style.whiteSpace,
-            textOverflow: style.textOverflow,
-          }
-        }),
-        headline: await page.locator('h1').evaluate(
-          element => Math.round(element.getBoundingClientRect().top + window.scrollY),
-        ),
+      const measure = async () => {
+        await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
+        await expect(page.locator('h1')).toBeVisible()
+        await page.waitForLoadState('networkidle')
+        const step = page.locator('.steps li').nth(1)
+        await expect(step).toContainText('2 Understand')
+        return {
+          line: await step.locator('.outcome').evaluate((element) => {
+            const style = getComputedStyle(element)
+            return {
+              height: element.getBoundingClientRect().height,
+              lineHeight: Number.parseFloat(style.lineHeight)
+                || Number.parseFloat(style.fontSize) * 1.2,
+              scrollWidth: element.scrollWidth,
+              clientWidth: element.clientWidth,
+              whiteSpace: style.whiteSpace,
+              textOverflow: style.textOverflow,
+            }
+          }),
+          headline: await page.locator('h1').evaluate(
+            element => Math.round(element.getBoundingClientRect().top + window.scrollY),
+          ),
+        }
       }
-    }
 
-    /* The 34-word detail, at a laptop's width and at a phone's. */
-    for (const width of [1440, 390]) {
-      await page.setViewportSize({ width, height: 900 })
-      const { line } = await measure()
+      /* The 34-word detail, at a laptop's width and at a phone's. */
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: 900 })
+        const { line } = await measure()
 
-      /*
+        /*
        * **One line of text, overflowing rather than wrapping.** The element is 44px tall
        * because it is also the control that opens the card, so what is measured is the
        * text: `nowrap`, an ellipsis, and more text than there is room for — without that
        * last part this test would pass against a short detail and prove nothing.
        */
-      expect(line.whiteSpace, `at ${width}px the line is ${line.whiteSpace}`).toBe('nowrap')
-      expect(line.textOverflow).toBe('ellipsis')
-      expect(
-        line.scrollWidth,
-        `at ${width}px the detail is ${line.scrollWidth}px of text in ${line.clientWidth}px`,
-      ).toBeGreaterThan(line.clientWidth)
-      expect(
-        line.height,
-        `at ${width}px the line is drawn ${line.height}px tall at a ${line.lineHeight}px line`,
-      ).toBeLessThan(line.lineHeight * 2 + CONTROL_MIN)
-    }
+        expect(line.whiteSpace, `at ${width}px the line is ${line.whiteSpace}`).toBe('nowrap')
+        expect(line.textOverflow).toBe('ellipsis')
+        expect(
+          line.scrollWidth,
+          `at ${width}px the detail is ${line.scrollWidth}px of text in ${line.clientWidth}px`,
+        ).toBeGreaterThan(line.clientWidth)
+        expect(
+          line.height,
+          `at ${width}px the line is drawn ${line.height}px tall at a ${line.lineHeight}px line`,
+        ).toBeLessThan(line.lineHeight * 2 + CONTROL_MIN)
+      }
 
-    /*
+      /*
      * **And the headline sits where it would with a three-word detail.** Written through
      * the command line, which is the only way a step's detail is ever written, and put back
      * afterwards because every other test here reads the same database.
      */
-    await page.setViewportSize({ width: 1440, height: 900 })
-    const withThirtyFour = (await measure()).headline
+      await page.setViewportSize({ width: 1440, height: 900 })
+      const withThirtyFour = (await measure()).headline
 
-    const setDetail = (detail: string) =>
-      cli(seededDatabase, [
-        'layer',
-        'set',
-        '--review',
-        String(structuredReviewId),
-        '--layer',
-        '2',
-        '--state',
-        'done',
-        '--detail',
-        detail,
-      ])
-
-    setDetail('Three short words')
-    try {
+      setStepTwoDetail('Three short words')
       const withThree = (await measure()).headline
       expect(
         withThree,
         `the headline is at ${withThirtyFour}px with 34 words and ${withThree}px with three`,
       ).toBe(withThirtyFour)
-    }
-    finally {
-      setDetail(STRUCTURED_LONG_NOTE)
-    }
+    })
   })
 
   /**
@@ -1127,12 +1133,14 @@ test.describe('the three step pages of one review', () => {
   })
 
   /**
-   * **A step that recorded no facts has no card and no control for one.**
+   * **A step with nothing behind it has no card and no control for one.**
    *
-   * Steps 4 and 7 of the seeded review recorded none, which is most steps of most reviews
-   * and every step of every review recorded before DEV-917.
+   * Steps 4 and 7 of the seeded review have none, which is most steps of most reviews and
+   * every step of every review recorded before DEV-917. Step 7 counts here because the
+   * seed leaves it `pending`: a read time is written only while it is `running`, and it is
+   * the one step that can draw a card without facts.
    */
-  test('a step with no facts draws no control', async ({ page }) => {
+  test('a step with nothing behind it draws no control', async ({ page }) => {
     await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
     await expect(page.locator('h1')).toBeVisible()
 
@@ -1142,6 +1150,172 @@ test.describe('the three step pages of one review', () => {
       await expect(step.locator('button')).toHaveCount(0)
     }
     await expect(page.locator('.trail button')).toHaveCount(5)
+  })
+
+  /*
+   * **The write and the putting back, outside the test.**
+   *
+   * `--clear-facts` is a flag and `--fact` takes a pair, so the caller passes whichever
+   * whole arguments it means rather than a list this helper has to guess at.
+   *
+   * **Put back in an `afterEach`, not in a `finally`.** Found by the review of the fix
+   * commit: a `finally` does not run when Playwright abandons a test at its 60-second
+   * timeout, and this one does two viewport passes with two reloads and three full-page
+   * measurements. One timeout would then leave step 7 harvested on the database every
+   * later test and the screenshots project share — the test above would count six trail
+   * controls instead of five, and nine committed screenshots would regenerate with a
+   * harvested step 7. A hook runs either way.
+   */
+  const setStepSeven = (state: string, detail: string, aboutTheFacts: string[]) =>
+    cli(seededDatabase, [
+      'layer',
+      'set',
+      '--review',
+      String(structuredReviewId),
+      '--layer',
+      '7',
+      '--state',
+      state,
+      '--detail',
+      detail,
+      ...aboutTheFacts,
+    ])
+
+  /**
+   * **A harvested step 7 is drawn on the trail, and nothing on the page moves.**
+   *
+   * DEV-933's sixth acceptance criterion, in a browser because that is the only thing that
+   * computes a layout. Until DEV-933 step 7 only ever said "posted, waiting for the
+   * harvest" — nothing in `crates/harvest` wrote a layer — so the state measured here is
+   * one the trail had never been drawn with: a step at `running`, carrying facts, in the
+   * group that repeats each round.
+   *
+   * **Written through the command line**, which is how every step of this seed is written,
+   * with the words and the pairs `Store::record_harvest_step` produces — pinned in
+   * `crates/store/tests/harvest.rs` and in the harvester's own tests against the recording.
+   */
+  test.describe('a harvested step 7', () => {
+    /* Exactly what `seedStructured` wrote, word for word, whatever the test did or how it
+       ended. */
+    test.afterEach(() => {
+      setStepSeven('pending', STRUCTURED_STEP_SEVEN_DETAIL, ['--clear-facts'])
+    })
+
+    test('draws on the trail and moves nothing', async ({ page }) => {
+      const understand = `${seeded}reviews/${structuredReviewId}/understand`
+
+      /* Every element with a box on this page, by where it is. */
+      const positions = () => page.evaluate(() =>
+        [...document.querySelectorAll('h1, h2, .steps li, section, .totals, .pair, .key')]
+          .map((element) => {
+            const box = element.getBoundingClientRect()
+            return `${element.tagName}.${element.className}@${Math.round(box.top + window.scrollY)}x${Math.round(box.left)}`
+          }))
+
+      for (const [label, width, height] of [
+        ['a laptop', 1440, 900],
+        ['a phone', 390, 844],
+      ] as const) {
+        await page.setViewportSize({ width, height })
+
+        /* What the trail looks like for a review no harvest has read. */
+        setStepSeven('pending', 'posted, waiting for the harvest', ['--clear-facts'])
+        await page.goto(understand)
+        await expect(page.locator('h1')).toBeVisible()
+        await page.waitForLoadState('networkidle')
+        const step = page.locator('.steps li').nth(6)
+        await expect(step).toContainText('7 Harvest')
+        await expect(step.locator('.outcome')).toHaveText('posted, waiting for the harvest')
+        await expect(step.locator('button')).toHaveCount(0)
+        const before = await positions()
+        const tall = await page.evaluate(() => document.documentElement.scrollHeight)
+
+        /* And what a harvest of an open pull request leaves there. */
+        setStepSeven('running', '3 replies back', [
+          '--fact',
+          'Pull request=open',
+          '--fact',
+          'Replies=3',
+          '--fact',
+          'Threads resolved=3',
+          '--fact',
+          'Code changed since=3 findings',
+        ])
+        await page.reload()
+        await expect(page.locator('h1')).toBeVisible()
+        await page.waitForLoadState('networkidle')
+        /*
+           **The line is the store's four words and nothing else, and it fits.** That is
+           what the four-word rule buys and what measuring this column settled: the two
+           facts together run 186 to 239 pixels in 154, so the read time is on the card
+           and in the title instead. The word "running" reaches the page nowhere.
+        */
+        await expect(step.locator('.outcome')).toHaveText(/^3 replies back/)
+        await expect(step.locator('.outcome')).not.toHaveText(/running/)
+        await expect(step.locator('.outcome')).toHaveAttribute(
+          'title',
+          '3 replies back — read just now',
+        )
+        const line = await step.locator('.outcome').evaluate(element => ({
+          scroll: element.scrollWidth,
+          client: element.clientWidth,
+        }))
+        expect(
+          line.scroll,
+          `at ${label} the step's own words are ${line.scroll}px in ${line.client}px, so `
+          + 'the reader does not see what the harvest found',
+        ).toBeLessThanOrEqual(line.client)
+
+        expect(await positions(), `nothing moved at ${label}`).toEqual(before)
+        expect(
+          await page.evaluate(() => document.documentElement.scrollHeight),
+          `and the page did not grow at ${label}`,
+        ).toBe(tall)
+
+        /*
+         * The counts are on the card, which is the only new thing on the trail: a step
+         * that recorded facts draws its line as the control that opens one.
+         */
+        await step.locator('.outcome').click()
+        const card = page.locator('.floating')
+        await expect(card).toBeVisible()
+        await expect(card).toContainText('Replies')
+        await expect(card).toContainText('Threads resolved')
+        await expect(card).toContainText('Code changed since')
+        await expect(card).toContainText('3 findings')
+        /* And the read time, where a finished step shows how long it took. */
+        await expect(card.locator('.card-took')).toHaveText('read just now')
+        await page.keyboard.press('Escape')
+
+        /*
+           **A step 7 with no facts still says when it was read, and reachably.** A
+           harvest records a fact every time, so this is the hand-written case, which
+           `layer set --clear-facts` is how to reach — without it the facts written above
+           would stay, by the rule that giving none keeps them. Without a card the answer
+           would live only in a `title`, which a keyboard cannot reach and a phone does
+           not draw.
+        */
+        setStepSeven('running', 'nothing back yet', ['--clear-facts'])
+        await page.reload()
+        await expect(page.locator('h1')).toBeVisible()
+        await page.waitForLoadState('networkidle')
+        await expect(step.locator('.outcome')).toHaveText(/^nothing back yet/)
+        /* Under a pointer as well as a click: the card is drawn on `opens`, and so is
+           the hover that opens it. The review of the commit that broadened one and not
+           the other is why this line is here. */
+        await step.hover()
+        await expect(page.locator('.floating .card-took')).toHaveText('read just now')
+        await page.mouse.move(0, 0)
+        await expect(page.locator('.floating')).toHaveCount(0)
+
+        await step.locator('.outcome').click()
+        await expect(page.locator('.floating .card-took')).toHaveText('read just now')
+        await expect(page.locator('.floating .facts')).toHaveCount(0)
+        expect(await positions(), `and that card moved nothing at ${label}`).toEqual(before)
+        await page.keyboard.press('Escape')
+        expect(await positions(), `the card moved nothing either at ${label}`).toEqual(before)
+      }
+    })
   })
 
   /**
@@ -2487,6 +2661,97 @@ test.describe('the list of every review', () => {
           ).toBeGreaterThanOrEqual(44)
         }
       }
+    })
+  }
+})
+
+test.describe('a harvested review, on the queue and in the list', () => {
+  /**
+   * **DEV-933's last two checks, and both are about a state that did not exist before
+   * it.** A harvest writes step 7: `running` while the pull request is open, `done` once
+   * it has settled. The queue groups on a running step and the list prints the furthest
+   * started one, so both screens had to be looked at with a review in that state.
+   *
+   * The seed's posted review is the one used, written through `layer set` with the words
+   * and the pairs `record_harvest_step` produces, and put back in a hook — a `finally`
+   * does not run when Playwright abandons a test at its timeout, and every other test
+   * here reads the same database.
+   */
+  const setStepSeven = (state: string, detail: string, aboutTheFacts: string[]) =>
+    cli(seededDatabase, [
+      'layer',
+      'set',
+      '--review',
+      String(postedReviewId),
+      '--layer',
+      '7',
+      '--state',
+      state,
+      '--detail',
+      detail,
+      ...aboutTheFacts,
+    ])
+
+  test.afterEach(() => {
+    setStepSeven('pending', 'posted, waiting for the harvest', ['--clear-facts'])
+  })
+
+  test('is on the queue exactly once, and never with the agent', async ({ page }) => {
+    setStepSeven('running', 'nothing back yet', ['--fact', 'Pull request=open'])
+    await page.goto(seeded)
+    await expect(page.locator('.row').first()).toBeVisible()
+    await page.waitForLoadState('networkidle')
+
+    /*
+     * **Once across the whole page**, which is the claim: the three groups a posted
+     * review can fall into are "Needs you", "With the agent" and "Waiting on the author",
+     * and a review drawn in two of them is a developer counting the same work twice.
+     */
+    const rows = page.locator('.row').filter({ hasText: 'Record the delivery attempt' })
+    await expect(rows).toHaveCount(1)
+
+    /*
+     * **And no "With the agent" group at all**, which is the load-bearing half: nothing
+     * else in this seed has a step running, so that section exists only if step 7 leaked
+     * into it — and the row above proves the review is on the page, so its absence here
+     * is the exclusion working rather than the review having gone missing. Taking the
+     * exclusion out of `reviews_in_progress` fails this line.
+     *
+     * `getByLabel` for the bar, not `getByText`: "Layer 7 of 7" is a `SegmentBar`'s
+     * `aria-label` and never text, so a text matcher there could not fail. **Nor could
+     * the first `getByLabel` I wrote**, anchored at the seven — the label carries the
+     * step's name after it, "Layer 7 of 7, harvest", so the pattern matched nothing on
+     * any page. Found by the review of the commit that was fixing the same mistake.
+     *
+     * It names step 7 rather than any bar, which is what this test is about. Both lines
+     * rest on nothing else in this seed having a step running; a seed that adds one has
+     * to revisit them together.
+     */
+    await expect(page.getByText('With the agent')).toHaveCount(0)
+    await expect(page.getByLabel(/^Layer 7 of 7, /)).toHaveCount(0)
+    await expect(page.getByText('a session is on step 7 of 7')).toHaveCount(0)
+  })
+
+  for (const [what, state, detail, facts] of [
+    ['running', 'running', 'nothing back yet', ['--fact', 'Pull request=open']],
+    ['done', 'done', 'merged, 2 replies back', ['--fact', 'Pull request=merged', '--fact', 'Replies=2']],
+  ] as const) {
+    test(`the list reads sensibly for step 7 ${what}`, async ({ page }) => {
+      setStepSeven(state, detail, [...facts])
+      await page.goto(`${seeded}reviews`)
+      await expect(page.getByRole('heading', { name: /\d+ reviews?$/ })).toBeVisible()
+      await page.waitForLoadState('networkidle')
+
+      const row = page.locator('.row').filter({ hasText: 'Record the delivery attempt' })
+      await expect(row).toHaveCount(1)
+      /*
+       * The step, its own words, and the number of seven — never the bare state word,
+       * which on step 7 means "the pull request is open and still being watched" and
+       * would read as a harvest executing for as long as a pull request stays open.
+       */
+      await expect(row).toContainText(`Harvest · ${detail}`)
+      await expect(row).toContainText('step 7 of 7')
+      await expect(row).not.toContainText('· running')
     })
   }
 })
