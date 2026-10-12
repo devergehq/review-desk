@@ -1500,7 +1500,15 @@ function deleteReview(id: number): Review {
   const held = {
     brief: detail.brief != null,
     findings: detail.findings.length,
-    draft: draftById(id) != null,
+    /*
+     * **`draft_status`, which is what the card reads and what the server derives this
+     * from.** Asking `draftById` instead was a second way to answer one question, and
+     * the fixtures already disagreed with it: reviews 18 and 19 carry a `draft_status`
+     * with no entry in `drafts.json`, so a review like them holding no brief would have
+     * had the card offer a delete that this function refused — the drift both files say
+     * must not happen.
+     */
+    draft: detail.draft_status != null,
     posted: detail.review.github_review_id != null,
   }
   const holds = reviewWorkInWords(held)

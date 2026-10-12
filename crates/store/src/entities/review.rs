@@ -110,6 +110,23 @@ impl Store {
         // then start a round for a commit already reviewed.
         let (repo, head_sha) = (normalise::repo(repo), normalise::head_sha(head_sha));
 
+        // **Refused here, because one of the two paths below does not reach `validate`.**
+        // Creating a round goes through `create_review`, which has refused a blank head
+        // since the first slice; *moving* one is an `UPDATE` of this column and went
+        // nowhere near it. So `review open --head "$HEAD"` from a shell whose variable is
+        // unset wiped the commit the review was of — on a request nobody had started,
+        // which is exactly the row this feature is built for — and left a `head_sha` the
+        // contract's own pattern refuses, so `GET /reviews` then served a body failing
+        // its schema. Driven against the binary by a review of this branch. The same
+        // class as `--ticket ""`, which this branch repairs twice elsewhere.
+        if head_sha.is_empty() {
+            return Err(StoreError::InvalidValue {
+                field: "head_sha",
+                value: String::new(),
+                expected: "the head commit being reviewed".to_string(),
+            });
+        }
+
         // Looked for before any lock is taken. Reopening a commit already reviewed is
         // the common call — every session's first one — and putting it behind the write
         // lock would make every reopen queue behind every writer. Worse, losing that
@@ -514,7 +531,17 @@ impl Store {
             });
         }
 
-        self.refuse_if_dismissed(id, "asking for its held-back findings to be ticketed")?;
+        // **The ask, not the report.** With no ticket id this is the developer asking for
+        // one, which is an item in the work list a dismissed review is not in — so it
+        // would be asking for something nothing will do. With a ticket id it is a session
+        // saying which ticket it *already filed*, and refusing that would lose the id:
+        // the ticket exists in the tracker and the record would never learn which one,
+        // with the status stuck at `requested` for ever. Caught by a review of this
+        // branch; the guard had covered both roles of one function.
+        if ticket_id.is_none() {
+            self.refuse_if_dismissed(id, "asking for its held-back findings to be ticketed")?;
+        }
+
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
         let review = self.get_review(id)?;
 
@@ -627,6 +654,17 @@ impl Store {
             "UPDATE reviews SET dismissed_at = ?2, dismissed_reason = ?3 WHERE id = ?1",
             params![id, self.now(), reason],
         )?;
+        // **It moves the activity time, as every write that belongs to a review does.**
+        //
+        // Read twice as a fault and left twice, so the reasoning is here. The queue draws
+        // this column as how long a *session* has been silent, and a dismissal is the
+        // developer's act — so a review abandoned three days ago, dismissed and later
+        // restored, reads "just now". That is true, and it is true of confirming a brief
+        // and of approving a draft in exactly the same way: every developer act in this
+        // crate marks the review active. Exempting this one would make the dismissal the
+        // single write that does not, which is a worse record than the imprecision it
+        // would fix. What the column needs is to stop standing in for two questions, and
+        // that is a change to what the queue reads rather than to this line.
         self.mark_review_active(id)?;
         tx.commit()?;
 

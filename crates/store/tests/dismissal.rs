@@ -13,8 +13,9 @@ mod common;
 use common::{new_review, temp_store};
 use review_desk_store::{
     Actor, DismissedReviews, Disposition, DraftStatus, FileCheck, FindingRef, NewBrief, NewDraft,
-    NewFileChange, NewFinding, NewOutcome, NewReviewSource, OutcomeKind, Review, ReviewEvent,
-    ReviewFacts, ReviewLayerState, ReviewLinks, Severity, SourceKind, Store, WorkFilter,
+    NewFileChange, NewFinding, NewOutcome, NewReviewSource, NitTicketStatus, OutcomeKind, Review,
+    ReviewEvent, ReviewFacts, ReviewLayerState, ReviewLinks, Severity, SourceKind, Store,
+    WorkFilter,
 };
 
 const REPO: &str = "acme/portal";
@@ -1518,5 +1519,72 @@ fn linking_nothing_does_not_move_the_last_activity_time() {
         store.get_review(review.id).unwrap().last_activity_at,
         before,
         "a call with nothing to write writes nothing, the activity time included"
+    );
+}
+
+#[test]
+fn a_blank_head_commit_is_refused_rather_than_wiping_the_one_on_the_record() {
+    // **The move is an `UPDATE` and went nowhere near `validate`**, which has refused a
+    // blank head since the first slice. So `review open --head "$HEAD"` from a shell
+    // whose variable is unset wiped the commit the review was of — on a request nobody
+    // had started, which is the row this whole feature is built for — and left a
+    // `head_sha` the contract's own pattern refuses. Driven against the binary by a
+    // review of this branch.
+    let (_dir, store) = temp_store();
+    let recorded = store.open_review(REPO, 880, "4f1a9c2").expect("a request");
+
+    for blank in ["", "   "] {
+        let error = store
+            .open_review(REPO, 880, blank)
+            .expect_err("a blank head is not a commit");
+        assert!(error.is_refusal());
+        assert_eq!(error.code(), "invalid_value");
+    }
+
+    assert_eq!(
+        store.get_review(recorded.review.id).unwrap().head_sha,
+        "4f1a9c2",
+        "and the commit the review is of is still there"
+    );
+}
+
+#[test]
+fn a_session_may_report_the_ticket_it_filed_for_a_dismissed_review() {
+    // **The ask and the report are two roles of one function**, and only the ask needs an
+    // agent afterwards. Refusing the report would lose the id: the ticket exists in the
+    // tracker, and the record would never learn which one.
+    let (_dir, store) = temp_store();
+    let review = requested(&store, 881, "aaa1111");
+    store
+        .add_finding(review.id, a_finding("a nit"))
+        .expect("a finding");
+    store
+        .set_finding_disposition(
+            review.id,
+            1,
+            Disposition::HeldBack,
+            Some("a nit".to_string()),
+        )
+        .expect("held back");
+    store
+        .request_nit_ticket(review.id, None)
+        .expect("the developer asked for one");
+    store
+        .dismiss_review(review.id, "the pull request was closed unmerged")
+        .expect("and then dismissed the review");
+
+    let filed = store
+        .request_nit_ticket(review.id, Some("ABC-500"))
+        .expect("the session says which ticket it filed");
+    assert_eq!(filed.ticket_id.as_deref(), Some("ABC-500"));
+    assert_eq!(filed.status, NitTicketStatus::Filed);
+
+    // And the developer's own ask is still refused on it.
+    assert_eq!(
+        store
+            .request_nit_ticket(review.id, None)
+            .expect_err("nothing would file a second one")
+            .code(),
+        "dismissed_review"
     );
 }
