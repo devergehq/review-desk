@@ -442,7 +442,22 @@ impl Api {
         // review the developer took out of play. A value that is not one of the three is
         // refused by name rather than falling back to the default — a mistyped filter
         // answering with the default view would read as "there are no dismissed reviews".
+        // **An empty value is a value.** `query_value` drops one, so `?dismissed=` arrived
+        // as "nothing was asked" and answered with the default view — which is what this
+        // paragraph says must not happen, for a client that serialises its filters
+        // whether or not they are set: the page reads its view line off this field, so it
+        // would have said "Every review in play" under a picker set to Dismissed.
+        let asked_blank = query
+            .split('&')
+            .any(|pair| pair == "dismissed=" || pair == "dismissed");
         let dismissed = match query_value(query, "dismissed") {
+            None if asked_blank => {
+                return Err(ApiError::invalid_value(
+                    "dismissed",
+                    "\"\" is not a choice about dismissed reviews".to_string(),
+                    DismissedReviews::valid_values(),
+                ))
+            }
             None => DismissedReviews::default(),
             Some(asked) => asked.parse::<DismissedReviews>().map_err(|_| {
                 ApiError::invalid_value(
@@ -633,11 +648,11 @@ impl Api {
 
     /// `DELETE /reviews/{reviewId}`: remove a review that never got past being requested.
     ///
-    /// **Offered only for a review that holds nothing** — no brief, no finding, no draft,
-    /// and no review posted on GitHub — and the store is the one that judges it — a second opinion here is how the page comes to offer a
-    /// button the API refuses. The refusal is a `409` naming what the review holds, so the
-    /// developer reads "review 7 holds a brief and 4 findings" and is pointed at dismissal
-    /// instead.
+    /// **Offered only for a review that holds nothing** — no brief, no finding, no
+    /// draft, and no review posted on GitHub — and the store is the one that judges it.
+    /// A second opinion here is how the page comes to offer a button the API refuses.
+    /// The refusal is a `409` naming what the review holds, so the developer reads
+    /// "review 7 holds a brief and 4 findings" and is pointed at dismissal instead.
     ///
     /// **It answers with the review that went.** Nothing can read it again, and the page
     /// has a line to draw about what was removed.

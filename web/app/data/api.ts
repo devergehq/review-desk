@@ -451,8 +451,8 @@ export function restoreReview(reviewId: number): Promise<Review> {
  * `DELETE /reviews/{id}` — remove a review that never got past being requested.
  *
  * Refused with `conflict` for a review holding a brief, a finding, a draft or the review
- * it posted on GitHub, and the message says which. It answers with the review that went, which is the only copy left
- * of it.
+ * it posted on GitHub, and the message says which. It answers with the review that
+ * went, which is the only copy left of it.
  */
 export function deleteReview(reviewId: number): Promise<Review> {
   return send<Review>('DELETE', `/reviews/${reviewId}`)
