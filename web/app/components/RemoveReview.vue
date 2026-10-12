@@ -95,8 +95,23 @@ const claimed = computed(() =>
   || props.detail.layers.some(layer => layer.state !== 'pending'),
 )
 
-/** Whether what it holds is one thing or several, for "lose that" or "lose them". */
-const holdsOneThing = computed(() => !holdsInWords.value.includes(' and '))
+/**
+ * Whether what it holds is one thing or several, for "lose that" or "lose them".
+ *
+ * **Things, not kinds of thing.** This tested the rendered sentence for " and ", which
+ * is wrong for a single plural item — a review holding only findings reads "2 findings",
+ * has no " and ", and the page said "deleting it would lose **that**". Counting the
+ * kinds instead is wrong the same way, which is how the first fix for it still said
+ * "that" about two findings. Four findings are four things.
+ */
+const holdsOneThing = computed(
+  () =>
+    Number(held.value.brief)
+    + held.value.findings
+    + Number(held.value.draft)
+    + Number(held.value.posted)
+    === 1,
+)
 
 async function dismiss(reason: string) {
   working.value = true

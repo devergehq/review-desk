@@ -250,19 +250,43 @@ impl Store {
 
     /// Whether a session has picked this review up, whatever it has written yet.
     ///
-    /// Two signs, and either is enough. A session linked to the review — written by
-    /// `review link --session`, which is how a session says it is the one working — and a
-    /// layer moved off `pending`, which is how it says what it is doing. A request
-    /// recorded by the dispatcher has neither: `review open` writes no layer, and the
-    /// ledger id it may carry is the dispatcher's own entry rather than a session.
+    /// **Anything a session writes about the commit counts, and the point is the ones
+    /// that are not work a delete would lose.** A session linked by
+    /// `review link --session`; a layer moved off `pending`; what the review did not look
+    /// at; and the three things `provenance` and `round commits` record — the per-file
+    /// change map, the sources and criteria its understanding came from, the description
+    /// lint's results, the commits since the previous round. Every one of them is a
+    /// session at work, and none of them makes [`ReviewWork::started`] true.
+    ///
+    /// **That gap was the hole.** `changed_lines` is cleared when a head moves because a
+    /// count measured on one commit is a wrong answer about another — and a per-file
+    /// change map and a round's commit list are the same kind of measurement, served by
+    /// `GET /reviews/{id}` as the review's coverage and as the commits in this round.
+    /// Found by a review of this branch, which traced a session on the old flow writing
+    /// them before it ever called `review link --session`.
+    ///
+    /// They are *claimed* rather than *held*: a delete still removes a review carrying
+    /// only these, because none of them is work the developer would lose — which is what
+    /// `deleting_a_review_nobody_started_takes_every_row_under_it` seeds and asserts.
+    ///
+    /// A request recorded by the dispatcher has none of them: `review open` writes no
+    /// layer and no provenance, and the ledger id it may carry is the dispatcher's own
+    /// entry rather than a session.
     fn review_is_claimed(&self, review: &Review) -> Result<bool> {
-        if review.session_id.is_some() {
+        if review.session_id.is_some() || review.not_checked.is_some() {
             return Ok(true);
         }
         Ok(self.conn.query_row(
             "SELECT EXISTS (
-                 SELECT 1 FROM review_layers WHERE review_id = ?1 AND state <> ?2
-             )",
+                     SELECT 1 FROM review_layers WHERE review_id = ?1 AND state <> ?2
+                 )
+                 OR EXISTS (SELECT 1 FROM review_files WHERE review_id = ?1)
+                 OR EXISTS (SELECT 1 FROM review_sources WHERE review_id = ?1)
+                 OR EXISTS (SELECT 1 FROM review_criteria WHERE review_id = ?1)
+                 OR EXISTS (
+                     SELECT 1 FROM description_lint_results WHERE review_id = ?1
+                 )
+                 OR EXISTS (SELECT 1 FROM round_commits WHERE review_id = ?1)",
             params![review.id, ReviewLayerState::Pending],
             |row| row.get(0),
         )?)

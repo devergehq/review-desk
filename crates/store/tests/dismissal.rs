@@ -1172,3 +1172,88 @@ fn a_moved_head_takes_the_line_count_with_it() {
         .expect("recorded again, with the new count");
     assert_eq!(told.review.changed_lines, Some(3_000));
 }
+
+#[test]
+fn a_change_map_or_a_commit_list_is_a_session_at_work_too() {
+    // **The hole the fifth review pass found.** `provenance changes` and `round commits`
+    // need nothing but the review row — no brief, no finding, no draft, no session id,
+    // no layer past `pending` — so a session on the old flow that recorded them before
+    // linking itself had none of the signs. The head would move under it, and the review
+    // would then serve a per-file change map computed on one commit as the coverage of
+    // another. `changed_lines` is cleared on a move for exactly that reason; these are
+    // the same kind of measurement and there is no clearing them, because they are what
+    // the session is building.
+    let (_dir, store) = temp_store();
+    let mapped = store.open_review(REPO, 840, "aaa1111").expect("a request");
+    store
+        .put_file_changes(
+            mapped.review.id,
+            vec![NewFileChange {
+                path: "app/Reporting/ColumnPolicy.php".to_string(),
+                summary: "the column policy".to_string(),
+                lines_added: 12,
+                lines_removed: 3,
+                checked: FileCheck::ReadInFull,
+                how_checked: None,
+            }],
+        )
+        .expect("a session mapped the change");
+
+    let pushed = store
+        .open_review(REPO, 840, "bbb2222")
+        .expect("the author pushed");
+    assert!(pushed.created, "a round of its own");
+    assert_eq!(
+        store.get_review(mapped.review.id).unwrap().head_sha,
+        "aaa1111",
+        "the change map still describes the commit it was made on"
+    );
+
+    // And a session that recorded what it did not look at is at work as well.
+    let noted = store
+        .open_review_with(
+            REPO,
+            841,
+            "aaa1111",
+            &ReviewFacts {
+                not_checked: Some("the dashboard against the real API".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("a request, with what a session did not check");
+    assert!(
+        store
+            .open_review(REPO, 841, "bbb2222")
+            .expect("the author pushed")
+            .created
+    );
+    assert_eq!(
+        store.get_review(noted.review.id).unwrap().head_sha,
+        "aaa1111"
+    );
+}
+
+#[test]
+fn a_review_holding_only_a_change_map_can_still_be_deleted() {
+    // The other half, and the reason `claimed` and `held` are two questions: a per-file
+    // change map stops a head moving and is not work a delete would lose. The stray
+    // review this issue was raised from may carry provenance from the session that wrote
+    // it by accident.
+    let (_dir, store) = temp_store();
+    let review = requested(&store, 842, "aaa1111");
+    store
+        .put_review_sources(
+            review.id,
+            vec![NewReviewSource {
+                kind: SourceKind::Description,
+                label: "The pull request description".to_string(),
+                link: None,
+                status: None,
+                note: None,
+            }],
+        )
+        .expect("a source");
+
+    assert!(!store.review_work(review.id).unwrap().started());
+    store.delete_review(review.id).expect("and it can still go");
+}

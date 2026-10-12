@@ -371,6 +371,26 @@ describe('deleting a review that never started', () => {
     expect(button(page, 'Delete it')).toBeUndefined()
   })
 
+  it('says "them" about several findings and "that" about one thing', async () => {
+    // The plural was read off the rendered sentence by testing for " and ", so a review
+    // holding only findings — which needs no brief — said "holds 2 findings, and
+    // deleting it would lose that".
+    const source = loadSource()
+    const two = strayReview()
+    two.findings = source.reviews[0]!.findings.slice(0, 2)
+    const one = { ...strayReview(), review: { ...strayReview().review, id: 778, pr: 778 } }
+    one.findings = source.reviews[0]!.findings.slice(0, 1)
+    await resetDesk({ reviews: [two, one] })
+
+    /* Whitespace collapsed: the sentence is wrapped across lines in the template. */
+    const said = (page: VueWrapper) => page.text().replace(/\s+/g, ' ')
+
+    expect(said(await understand(777)))
+      .toContain('holds 2 findings, and deleting it would lose them')
+    expect(said(await understand(778)))
+      .toContain('holds 1 finding, and deleting it would lose that')
+  })
+
   it('says a session has it, rather than that nothing has started', async () => {
     // The card reads the same two signs the store reads before it refuses to move a
     // review's head. The delete is still offered — the store asks only about the brief,

@@ -762,8 +762,16 @@ export async function resetDesk(overrides: Record<string, unknown> = {}): Promis
   await records()
 }
 
-/** Which records to read. Used by the development toggle and by the tests. */
+/**
+ * Which records to read. Used by the development toggle and by the tests.
+ *
+ * **It drops a handed-over sentence too**, which is the invariant `forgetHandOver` states
+ * and the one path where it does real work: `useSampleRecords` reloads the window and
+ * `resetDesk` rebuilds everything, so module state goes with them either way. This one
+ * changes the records underneath and leaves the page standing.
+ */
 export function useDeskSource(source: DeskSourceName | null): void {
+  forgetHandOver()
   chooseSource(source)
   backend = null
   forgetShared()
