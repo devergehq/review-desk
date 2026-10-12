@@ -207,7 +207,14 @@ function sources(data: ReviewDetail) {
         step="understand"
         headline="Nothing has been written about this problem yet."
         sub="Step 2 is where a session writes what the change is solving. It has not written one, so there is nothing to confirm and nothing after it can run."
-      />
+      >
+        <!--
+          **The one page a never-started review has**, and so the one place it can be taken
+          off the desk. This is the shape of the review DEV-945 was raised from: a request
+          recorded and never picked up, with nothing under it to lose.
+        -->
+        <RemoveReview :detail="data" />
+      </ReviewStepPage>
 
       <!--
         A brief written before any of this. **It still shows**, which is an acceptance
@@ -263,6 +270,8 @@ function sources(data: ReviewDetail) {
             <TickedText :text="data.brief.provenance" />
           </p>
         </DeskSection>
+
+        <RemoveReview :detail="data" />
       </ReviewStepPage>
 
       <!-- The structured brief: the page board A5 draws. -->
@@ -782,6 +791,14 @@ function sources(data: ReviewDetail) {
             <TickedText :text="data.brief.problem" />
           </p>
         </DeskCard>
+
+        <!--
+          **Last on the page, and that is the whole of its placement argument.** Dismissing
+          a review is not a step of reading one, so it sits below everything that is —
+          under the record the page is a reading of, where a developer who has decided
+          arrives and a developer who is reading never does.
+        -->
+        <RemoveReview :detail="data" />
       </ReviewStepPage>
     </template>
   </DeskState>

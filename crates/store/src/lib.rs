@@ -51,21 +51,32 @@ pub use crate::error::{Result, StoreError};
 pub use crate::migrations::newest_version;
 pub use crate::model::{
     now, Actor, AuthorResponse, Brief, BriefOption, Carryable, DecidedBy, Decision, DecisionMade,
-    Disposition, Draft, DraftHandover, DraftLint, DraftSection, DraftSectionKind, DraftStatus,
-    DraftThread, Finding, FindingAnchor, FindingCarry, FindingDecision, FindingHunk,
+    DismissedReviews, Disposition, Draft, DraftHandover, DraftLint, DraftSection, DraftSectionKind,
+    DraftStatus, DraftThread, Finding, FindingAnchor, FindingCarry, FindingDecision, FindingHunk,
     FindingInRound, FindingRef, FullReview, HunkLine, HunkLineMarker, LayerFact, NewBrief,
     NewDraft, NewDraftSection, NewFinding, NewLayerFact, NewOutcome, NewReview, NewRoundCommit,
     NewRule, NitTicket, NitTicketStatus, OpenedReview, Outcome, OutcomeKind, PostedReview, PrState,
     RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewEvent, ReviewFacts, ReviewLayer,
     ReviewLayerName, ReviewLayerRun, ReviewLayerState, ReviewLinks, ReviewStep, ReviewTimings,
-    RoundCommit, RoundStatus, RoundStatusCounts, RoundSummary, Rule, RuleCounts, RuleException,
-    RuleScope, RuleStage, RulesSummary, Severity, SignOff, Timestamp, Verification, WorkFilter,
-    WorkItem, WorkKind, ACTIVE_RULES_CAP,
+    ReviewWork, RoundCommit, RoundStatus, RoundStatusCounts, RoundSummary, Rule, RuleCounts,
+    RuleException, RuleScope, RuleStage, RulesSummary, Severity, SignOff, Timestamp, Verification,
+    WorkFilter, WorkItem, WorkKind, ACTIVE_RULES_CAP,
 };
 /// Whether a string is a repository name — the one copy of that rule. See
 /// [`normalise::is_repo_name`].
 pub use crate::normalise::is_repo_name;
 pub use crate::path::{default_db_path, resolve_db_path, DB_ENV_VAR};
+
+/// A repository name as the record spells it: trimmed and lower-cased.
+///
+/// **Exported so a surface outside this crate can say the stored form.** Every lookup
+/// keys on this, and `review find` has to be able to name the repository it searched
+/// rather than the argument it was handed — a repository spelled two ways is one
+/// repository, and an answer repeating the caller's own spelling is how that stopped
+/// being visible when a lookup missed.
+pub fn normalised_repo(given: &str) -> String {
+    normalise::repo(given)
+}
 
 /// An open Review Desk database, migrated to a known schema version.
 #[derive(Debug)]

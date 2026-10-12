@@ -141,7 +141,7 @@ export async function loadBackend(): Promise<DeskBackend> {
    * transport losing requests, not anything about chunk ordering. It is kept for the reason
    * above and not as a fix.
    *
-   * Named one by one rather than spread from the module. Nineteen lines buys a compile error
+   * Named one by one rather than spread from the module. Twenty-two lines buy a compile error
    * when an operation is added to `api.ts` and not to `DeskBackend`, or named differently in
    * the two — which a spread would have accepted silently, leaving sample mode and the API
    * with different surfaces.
@@ -157,6 +157,9 @@ export async function loadBackend(): Promise<DeskBackend> {
     listRules: api.listRules,
     listRepos: api.listRepos,
     startReview: api.startReview,
+    dismissReview: api.dismissReview,
+    restoreReview: api.restoreReview,
+    deleteReview: api.deleteReview,
     confirmBrief: api.confirmBrief,
     setFindingDisposition: api.setFindingDisposition,
     decideFinding: api.decideFinding,

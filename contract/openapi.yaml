@@ -116,6 +116,21 @@ paths:
           required: false
           description: One repository, as `owner/repo`. Omit it for every repository.
           schema: { $ref: '#/components/schemas/RepoName' }
+        - name: dismissed
+          in: query
+          required: false
+          description: |
+            Which of the dismissed reviews to include. **Omitting it leaves them out**,
+            which is the page's default view and the only safe default: a caller that has
+            never heard of a dismissal must not be handed a review the developer has taken
+            out of play.
+
+            `only` is the filter DEV-945 asks for — the dismissed reviews on their own,
+            each saying when and why — and `included` is the whole record on one page. A
+            value that is none of the three is refused by name rather than falling back to
+            the default, because a mistyped filter answering with the default view would
+            read as "there are no dismissed reviews".
+          schema: { $ref: '#/components/schemas/DismissedReviews' }
       responses:
         '200':
           description: Every review, newest first.
@@ -124,8 +139,14 @@ paths:
               schema:
                 type: object
                 additionalProperties: false
-                required: [repo, reviews]
+                required: [repo, dismissed, reviews]
                 properties:
+                  dismissed:
+                    $ref: '#/components/schemas/DismissedReviews'
+                    description: |
+                      The choice this answer was composed for, echoed back as `repo` is,
+                      so the page's filter reads what it was given rather than trusting
+                      its own state.
                   repo:
                     oneOf:
                       - $ref: '#/components/schemas/RepoName'
@@ -215,6 +236,142 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/StoreUnavailable'
+    delete:
+      operationId: deleteReview
+      tags: [review]
+      summary: Delete a review that never got past being requested
+      description: |
+        **Offered only for a review that holds nothing**, and refused for every other
+        review with a message saying what it holds. Decided by Patrick on 12 October 2026:
+        a review with findings carries the developer's sign-offs, the dispositions they
+        made one at a time, and the evidence the rules in force were built from, so
+        deleting it loses something real. Dismissal is the answer for everything else, and
+        it keeps all of that.
+
+        **Four things, and a review holding any one of them is refused**: a brief, a
+        finding, a draft, and the review posted on GitHub. The fourth is the one the issue
+        does not name, and it is not a fifth kind of work — it is `github_review_id`, set
+        by `review link --github-review` for a review whose process ran outside Review
+        Desk. Such a review holds none of the other three, and deleting it would remove
+        the record that a review was posted on the pull request at all.
+
+        What it is for is a row that should never have existed. The review this was raised
+        from is one a build session wrote into the developer's real database by accident:
+        `acme/portal #777`, never started, nothing under it, nothing to keep.
+
+        **The review and every row that referenced it go**: its seven layer rows, the
+        sources and ticket criteria its understanding was recorded from, its per-file
+        change map, its description-lint results and its round commits. A rule that came
+        from this review keeps its statement and loses the origin.
+
+        **There is no command line path to this**, as there is none to confirming a brief
+        or approving a draft. It is the developer's act, and a session that could reach it
+        could delete the record of its own review.
+      responses:
+        '200':
+          description: |
+            The review as it was, which is the only copy left of it. A caller cannot read
+            a row it has just removed, and the page has a line to draw about what went.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Review' }
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            The review holds a brief, a finding, a draft, or the review it posted on
+            GitHub, so deleting it would lose them. The message names what it holds and
+            points at dismissal.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
+  /reviews/{reviewId}/dismiss:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+    post:
+      operationId: dismissReview
+      tags: [review]
+      summary: Take a review out of play, with a reason
+      description: |
+        **Hidden and kept.** The review leaves the queue, leaves the work list an agent
+        reads — so no session is dispatched for it — and leaves the Reviews list's default
+        view. Everything under it stays: its findings, their dispositions, its sign-offs,
+        and the evidence the rules in force were built from.
+
+        What it is for is a review the developer will not act on: a pull request closed
+        unmerged, a duplicate, or a review request they decline. Decided by Patrick on
+        12 October 2026 as the answer for every review, with `DELETE` kept for one that
+        never started.
+
+        **A reason is required**, as it is for a dismissed rule and for the same reason: a
+        review hidden silently is one nobody can afterwards say why they hid. It is shown
+        beside the review in the Reviews list's dismissed view.
+
+        **Dismissing a dismissed review is refused** rather than quietly rewritten — the
+        first dismissal is the one the developer made, and a second call would move its
+        time and replace its words. Restore it and dismiss it again to change the reason.
+
+        It is undone by `POST /reviews/{reviewId}/restore`, and that is the whole argument
+        for preferring it to a delete: nothing about it is final.
+
+        **There is no command line path to this.** The developer's act, in the dashboard,
+        and nowhere else.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DismissReviewRequest' }
+      responses:
+        '200':
+          description: The dismissed review, carrying when and why.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Review' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The review is already dismissed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
+  /reviews/{reviewId}/restore:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+    post:
+      operationId: restoreReview
+      tags: [review]
+      summary: Bring a dismissed review back
+      description: |
+        Clears the dismissal, and the review returns to the queue, the work list and the
+        Reviews list's default view in whatever state it was in. Nothing under it changed
+        while it was dismissed, so there is nothing to restore but the review itself.
+
+        A review that is not dismissed is refused rather than answered: nothing would
+        change, and a success for a request that did nothing is how a screen comes to show
+        a button that appears to work.
+      responses:
+        '200':
+          description: The review, no longer dismissed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Review' }
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The review is not dismissed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
 
   /reviews/{reviewId}/brief/confirm:
     parameters:
@@ -236,7 +393,10 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: The review has no brief to confirm.
+          description: |
+            The review has no brief to confirm, or it is dismissed — a dismissed review is
+            in no agent's work list, so confirming its brief would ask for a layer nothing
+            will carry on past. Bring it back first.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -486,7 +646,10 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: The draft is not in a state that can be approved.
+          description: |
+            The draft is not in a state that can be approved, or the review is dismissed —
+            a dismissed review is in no agent's work list, so nothing would post it. Bring
+            it back first.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -543,7 +706,10 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: The draft is not in a state that can be approved.
+          description: |
+            The draft is not in a state that can be approved, or the review is dismissed —
+            a dismissed review is in no agent's work list, so nothing would post it. Bring
+            it back first.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -591,7 +757,8 @@ paths:
         '409':
           description: |
             The draft is drafting or posted: only one that is ready, or approved and not
-            yet posted, can be sent back.
+            yet posted, can be sent back. Or the review is dismissed — a dismissed review
+            is in no agent's work list, so nothing would revise it. Bring it back first.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -627,7 +794,14 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: This review holds back no nits.
+          description: |
+            This review holds back no nits, or the review is dismissed **and this is the
+            developer asking for a ticket** — a dismissed review is in no agent's work
+            list, so nothing would file one. Bring it back first.
+
+            Sending a `ticket_id` is a session reporting the ticket it has already filed,
+            and that is accepted on a dismissed review: the ticket exists in the tracker,
+            and refusing the report would leave the record never knowing which one it is.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -1168,7 +1342,8 @@ components:
       type: object
       additionalProperties: false
       required:
-        [id, repo, pr, head_sha, round, created_at, pr_state, harvested_at, ticket_url]
+        [id, repo, pr, head_sha, round, created_at, pr_state, harvested_at, ticket_url,
+         dismissed_at, dismissed_reason]
       description: One review of one pull request at one head commit.
       properties:
         id: { type: integer, format: int64, minimum: 1 }
@@ -1283,6 +1458,31 @@ components:
             closed — and this document does not serve it, because no screen draws it.
             A field with no reader is the kind that goes stale unnoticed; the store
             keeps it and `review-desk review show` prints it.
+
+        # -- the dismissal (DEV-945) -------------------------------------------------
+        #
+        # On the review rather than on the list item, because every screen that can draw
+        # a review has to be able to say it is dismissed: the page it is dismissed from
+        # reads `GET /reviews/{reviewId}`, and the list reads `GET /reviews`.
+        #
+        # **Both required**, for the argument `pr_state` makes above: a field left out of
+        # `required` passes every check while the server, the examples and the dashboard's
+        # sample records hold three different answers about it, because the example
+        # validator skips what an example omits and the generated type becomes optional.
+        dismissed_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When the developer dismissed this review, or null while it is in play. A
+            dismissed review is out of the queue, out of the work list an agent reads and
+            out of the Reviews list's default view, and everything under it is kept.
+        dismissed_reason:
+          type: [string, 'null']
+          minLength: 1
+          description: |
+            Why it was dismissed, in the developer's own words. Null exactly when
+            `dismissed_at` is null: a dismissal with no reason is refused, because a
+            review hidden silently is one nobody can afterwards say why they hid.
 
     StartReviewRequest:
       type: object
@@ -3471,6 +3671,27 @@ components:
       required: [to_stage]
       properties:
         to_stage: { $ref: '#/components/schemas/RuleStage' }
+
+    DismissedReviews:
+      type: string
+      enum: [excluded, only, included]
+      default: excluded
+      description: |
+        Which of the dismissed reviews a list of reviews is being asked for: the ones in
+        play only, the dismissed ones only, or both.
+
+    DismissReviewRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          description: |
+            Why this review is being taken out of play — a pull request closed unmerged, a
+            duplicate, a request declined. Shown beside the review in the Reviews list's
+            dismissed view, so it is written for a reader who has forgotten the review.
 
     RuleReasonRequest:
       type: object

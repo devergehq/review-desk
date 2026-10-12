@@ -17,6 +17,9 @@ import {
   layerTone,
   openForLabel,
   prStateLabel,
+  reviewWorkInWords,
+  reviewWorkIsOneThing,
+  startedReviewLine,
   sessionLabel,
   severityTally,
   sinceLabel,
@@ -471,5 +474,87 @@ describe('what came back on a posted review', () => {
   it('does not claim a pull request is open when nothing has looked', () => {
     expect(prStateLabel(null)).toBe('pull request state not established')
     expect(prStateLabel('open')).toBe('pull request open at the last harvest')
+  })
+})
+
+describe('what the queue says when a link becomes a review', () => {
+  it('says it is open at the problem brief', () => {
+    const said = startedReviewLine({
+      id: 17,
+      repo: 'acme/portal',
+      pr: 412,
+      title: 'Retry failed webhook deliveries',
+      dismissed_at: null,
+    })
+    expect(said).toContain('acme/portal#412 is open at the problem brief')
+    expect(said).toContain('Retry failed webhook deliveries')
+    expect(said).toContain('No findings are written until you confirm it')
+  })
+
+  it('does not say that about a review the developer dismissed', () => {
+    // `POST /reviews` hands back the review already on the record. Dismissed, nothing is
+    // waiting and no session will be dispatched for it, so the one sentence that must not
+    // be said is the one above.
+    const said = startedReviewLine({
+      id: 17,
+      repo: 'acme/portal',
+      pr: 412,
+      title: 'Retry failed webhook deliveries',
+      dismissed_at: '2026-10-12T09:12:00Z',
+    })
+    expect(said).not.toContain('open at the problem brief')
+    expect(said).toContain('you dismissed it')
+    expect(said).toContain('no session will be started for it')
+    expect(said).toContain('Bring it back')
+    /*
+     * **And it names the review.** A dismissed review is in neither the queue nor the
+     * Reviews list's default view, so a sentence pointing at "its own page" without the
+     * id is one the developer can read and not act on.
+     */
+    expect(said).toContain('review 17')
+  })
+
+  it('leaves out a title the record has none of', () => {
+    const said = startedReviewLine({ id: 9, repo: 'acme/portal', pr: 777, dismissed_at: null })
+    expect(said).toContain('acme/portal#777 is open at the problem brief.')
+  })
+})
+
+describe('what a review holds, in words', () => {
+  const nothing = { brief: false, findings: 0, draft: false, posted: false }
+
+  it('is the list the refusal and the removal card both read as one', () => {
+    expect(reviewWorkInWords(nothing)).toBe('')
+    expect(reviewWorkInWords({ ...nothing, brief: true })).toBe('a brief')
+    expect(reviewWorkInWords({ ...nothing, findings: 1 })).toBe('1 finding')
+    expect(reviewWorkInWords({ ...nothing, findings: 4 })).toBe('4 findings')
+    expect(reviewWorkInWords({ ...nothing, brief: true, findings: 4 }))
+      .toBe('a brief and 4 findings')
+    expect(reviewWorkInWords({ brief: true, findings: 4, draft: true, posted: false }))
+      .toBe('a brief, 4 findings and a draft')
+    /* A nought is not a thing it holds, which is what makes the empty answer mean "no". */
+    expect(reviewWorkInWords({ ...nothing, draft: true })).toBe('a draft')
+  })
+
+  it('says "them" about several things and "that" about one', () => {
+    // The sentence this decides is in two places that must not drift: the card, and the
+    // store's refusal — which is what a developer reads when a finding is added between
+    // the page's read and the DELETE.
+    expect(reviewWorkIsOneThing({ ...nothing, brief: true })).toBe(true)
+    expect(reviewWorkIsOneThing({ ...nothing, findings: 1 })).toBe(true)
+    /* Four findings are four things, not one kind of thing. */
+    expect(reviewWorkIsOneThing({ ...nothing, findings: 4 })).toBe(false)
+    expect(reviewWorkIsOneThing({ ...nothing, brief: true, draft: true })).toBe(false)
+    expect(reviewWorkIsOneThing(nothing)).toBe(false)
+  })
+
+  it('counts the review posted on GitHub, which a review can hold on its own', () => {
+    // `review link --github-review` records a review whose process ran outside Review
+    // Desk: no brief, no findings, no draft, and plainly not a row that should never
+    // have existed. The card said "nothing on it but the request" about one.
+    expect(reviewWorkInWords({ ...nothing, posted: true }))
+      .toBe('the review it posted on GitHub')
+    expect(reviewWorkInWords({ brief: true, findings: 2, draft: true, posted: true }))
+      .toBe('a brief, 2 findings, a draft and the review it posted on GitHub')
   })
 })

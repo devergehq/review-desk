@@ -114,6 +114,94 @@ export function severityTally(counts: SeverityCounts): string {
     .join(', ')
 }
 
+/**
+ * Whether what a review holds is one thing or several, for "lose that" or "lose them".
+ *
+ * **Things, not kinds of thing.** Four findings are four things. The page made this
+ * mistake twice before it was one function — first by testing the rendered sentence for
+ * " and ", then by counting the kinds — and the store's own refusal made it a third time,
+ * in the message a developer reads when the race the hidden button cannot cover happens.
+ * `ReviewWork::is_one_thing` is its other half.
+ */
+export function reviewWorkIsOneThing(
+  held: { brief: boolean, findings: number, draft: boolean, posted: boolean },
+): boolean {
+  return Number(held.brief) + held.findings + Number(held.draft) + Number(held.posted) === 1
+}
+
+/**
+ * What a review holds of the three things only a session writes, in words.
+ *
+ * **"a brief, 2 findings and a draft" — and the four are the same four everywhere.**
+ * The store refuses a delete unless all three are absent and says this list back when it
+ * refuses; the removal card draws it to explain why no delete is offered; and sample mode
+ * raises the refusal with it so a page tested on fixtures is tested against the same
+ * sentence. Written here once rather than in each of those, because three copies of a
+ * list-of-three grammar is three chances for the page to word the refusal differently from
+ * the refusal.
+ *
+ * Empty when the review holds none of them, which is the review a delete is for. No caller
+ * prints an empty one: the sentence it belongs to is only composed when there is something
+ * to protect.
+ */
+export function reviewWorkInWords(
+  held: { brief: boolean, findings: number, draft: boolean, posted: boolean },
+): string {
+  const parts: string[] = []
+  if (held.brief) parts.push('a brief')
+  if (held.findings > 0) parts.push(count(held.findings, 'finding'))
+  if (held.draft) parts.push('a draft')
+  /*
+   * The fourth, which a review can hold with none of the others: `review link
+   * --github-review` records a review whose process ran outside Review Desk.
+   */
+  if (held.posted) parts.push('the review it posted on GitHub')
+  if (parts.length <= 1) return parts[0] ?? ''
+  return `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`
+}
+
+/**
+ * What the queue says back when a pasted link has been turned into a review.
+ *
+ * **Two sentences, because `POST /reviews` has two answers.** It creates the review, or
+ * it hands back the one already on the record for that pull request — and since DEV-945
+ * the one already there may be a review the developer dismissed, in which case nothing is
+ * waiting, no session will be dispatched for it, and "open at the problem brief" is the
+ * one thing that is not true.
+ *
+ * **Review Desk does not bring it back by itself.** DEV-945 puts automatic dismissal out
+ * of scope, and a link pasted by somebody who may not remember dismissing the review is
+ * not them asking for it back. So the sentence says what is on the desk and where the undo
+ * is.
+ *
+ * Here rather than in the composable so that both answers can be read in a test: the
+ * invented records refuse a pull request already on the desk outright, so the branch
+ * cannot be reached through them.
+ */
+export function startedReviewLine(review: {
+  id: number
+  repo: string
+  pr: number
+  title?: string | null
+  dismissed_at?: string | null
+}): string {
+  if (review.dismissed_at != null) {
+    /*
+     * **It names the review**, because the developer cannot otherwise find it: a
+     * dismissed review is in neither the queue nor the Reviews list's default view, so
+     * "bring it back from its own page" without an id is a sentence they can read and
+     * not act on. The id is an address — `/reviews/{id}/understand` — and the number is
+     * what the rest of the desk calls a review by.
+     */
+    return `${review.repo}#${review.pr} is already on the desk as review ${review.id}, `
+      + 'and you dismissed it — so nothing is waiting and no session will be started for '
+      + `it. Bring it back on review ${review.id}’s own page to pick it up again.`
+  }
+  return `${review.repo}#${review.pr} is open at the problem brief`
+    + `${review.title == null ? '' : ` — ${review.title}`}. `
+    + 'No findings are written until you confirm it.'
+}
+
 const LAYER_LABELS: Record<ReviewLayerName, string> = {
   lint: 'Lint',
   understand: 'Understand',

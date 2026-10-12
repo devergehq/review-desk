@@ -154,6 +154,15 @@ export interface Addresses {
    * screen, which is the complaint the issue quotes.
    */
   postedReviewId: number
+  /**
+   * A sixth review: a review request, recorded and never started.
+   *
+   * No title, no brief, no finding, no draft — `acme/portal #777`, which is the shape of
+   * the stray review DEV-945 was raised from. It is in no group of the queue, so it moves
+   * none of this suite's counts, and it is the only review the dashboard offers a delete
+   * for.
+   */
+  requestedReviewId: number
 }
 
 /** The addresses, as the setup wrote them. */
@@ -625,6 +634,7 @@ export function seed(
   structuredReviewId: number
   heldBackReviewId: number
   postedReviewId: number
+  requestedReviewId: number
 } {
   const database = join(directory, 'seeded.db')
 
@@ -869,6 +879,7 @@ Ran the job twice against a local endpoint that 500s once, and counted the deliv
     structuredReviewId: seedStructured(directory, database),
     heldBackReviewId: seedHeldBack(directory, database),
     postedReviewId: seedPosted(directory, database),
+    requestedReviewId: seedRequested(database),
   }
 }
 
@@ -1200,6 +1211,39 @@ function seedHeldBack(directory: string, database: string): number {
     ])
   }
 
+  return reviewId
+}
+
+/**
+ * A sixth review: a review **request**, recorded and never started.
+ *
+ * `review open` and nothing else — no title, no brief, no finding, no draft — which is
+ * what the Locus dispatcher leaves behind when it records a review request on sight, and
+ * the shape of the stray review DEV-945 was raised from: `acme/portal #777`, written into
+ * the developer's own database by a build session that nobody asked.
+ *
+ * **It is in nobody's queue**, so it changes none of the counts this suite asserts: there
+ * is no brief to confirm, no draft to approve and no outcome, and the groups the queue
+ * draws are the developer's rather than an agent's. It is on the Reviews list, where every
+ * review is, and it is the only review a delete is offered for.
+ */
+function seedRequested(database: string): number {
+  const opened = cli(database, [
+    'review',
+    'open',
+    '--repo',
+    'acme/portal',
+    '--pr',
+    '777',
+    '--head',
+    '4f1a9c2',
+    '--ledger',
+    'ledger-2026-10-12-777',
+  ])
+  const reviewId = Number(opened.match(/\d+/)?.[0])
+  if (!Number.isInteger(reviewId)) {
+    throw new Error(`review open printed no id: ${opened}`)
+  }
   return reviewId
 }
 

@@ -553,6 +553,16 @@ pub struct Review {
     pub nit_ticket_id: Option<String>,
     pub nit_ticket_requested_at: Option<Timestamp>,
     pub nit_ticket_filed_at: Option<Timestamp>,
+    /// When the developer dismissed this review, or `None` while it is in play.
+    ///
+    /// A dismissed review is out of the queue, out of the work list and out of the
+    /// Reviews list's default view, and everything under it is kept — see migration 17.
+    pub dismissed_at: Option<Timestamp>,
+    /// Why it was dismissed, in the developer's own words.
+    ///
+    /// Written with `dismissed_at` and never without it: a dismissal with no reason is
+    /// refused, because a review hidden silently is one nobody can later say why they hid.
+    pub dismissed_reason: Option<String>,
     /// When anything last wrote to this review.
     ///
     /// **Every write moves it; no read does.** It is how long a session has been silent,
@@ -569,6 +579,40 @@ impl Review {
     /// so should not be fetched again.
     pub fn is_settled(&self) -> bool {
         self.pr_state.is_some_and(|state| state.is_settled())
+    }
+
+    /// Whether the developer has dismissed this review.
+    pub fn is_dismissed(&self) -> bool {
+        self.dismissed_at.is_some()
+    }
+}
+
+string_enum! {
+    /// Which of the dismissed reviews a list of reviews is being asked for.
+    ///
+    /// **The default is to leave them out, and it is the only safe default.** A caller
+    /// that had never heard of a dismissal — the queue's groups, the work list the
+    /// dispatcher polls — must not be handed a review the developer has taken out of
+    /// play, so the absence of a choice is the exclusion rather than "everything".
+    DismissedReviews as "dismissed" {
+        /// Only the reviews in play. What the Reviews list draws by default.
+        Excluded => "excluded",
+        /// Only the dismissed ones, which is the filter DEV-945 asks for.
+        Only => "only",
+        /// Both, for a reader who wants the whole record on one page.
+        Included => "included",
+    }
+}
+
+// Written out rather than derived, which clippy would rather it were: the derive list
+// belongs to `string_enum!` and that macro takes no default variant, so `#[default]` on
+// `Excluded` would be an attribute with no `#[derive(Default)]` to answer it. Teaching the
+// macro a default for the one set that wants one is a change to every closed set in the
+// crate.
+#[allow(clippy::derivable_impls)]
+impl Default for DismissedReviews {
+    fn default() -> Self {
+        DismissedReviews::Excluded
     }
 }
 
@@ -595,7 +639,8 @@ pub struct NewReview {
     pub github_review_id: Option<String>,
 }
 
-/// A review opened for a head commit: the one that was already there, or a new round.
+/// A review opened for a head commit: the one that was already there, the one whose head
+/// moved to it, or a new round.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OpenedReview {
     pub review: Review,
@@ -603,6 +648,106 @@ pub struct OpenedReview {
     /// A caller that needs to know which happened should not have to read the round and
     /// guess.
     pub created: bool,
+    /// The commit this review used to be of, when this call moved it to the one asked
+    /// for; `None` when the head did not move.
+    ///
+    /// Only an unstarted round's head moves — see [`Store::open_review`] — so a caller
+    /// seeing this knows the review it has been handed is the request it recorded
+    /// before, now pointing at a newer commit, rather than a round somebody reviewed.
+    #[serde(default)]
+    pub head_moved_from: Option<String>,
+}
+
+/// What a review holds that somebody would lose: the brief, the findings, the draft, and
+/// the review posted on GitHub.
+///
+/// **One answer to one question, asked in three places.** "Does this review hold
+/// anything?" decides whether [`Store::delete_review`] is allowed at all, what the
+/// refusal says when it is not, and — with one further question beside it — whether
+/// [`Store::open_review`] may move a round's head. Separate judgements would be separate
+/// chances for the page to offer a delete the API refuses.
+///
+/// **The fourth is `github_review_id`, and leaving it out was a hole.** DEV-945 names
+/// three things, and three is right for a review that has only ever been written through
+/// Review Desk. A review posted with `review link --github-review` holds none of them —
+/// the process ran outside, which `posted_reviews_awaiting_author` admits by name and the
+/// Reviews list draws as "posted" — so a delete would have removed the record that a
+/// review was posted on that pull request at all, which is the opposite of "a row that
+/// should never have existed". Found by a review of this branch.
+///
+/// **`harvested_at` is not a fifth**, and that is not an oversight: the harvest sweep
+/// reads every review whose pull request is open, including one nobody has started, and
+/// marks it read. A stamp saying Review Desk looked at GitHub is not work the developer
+/// would lose.
+///
+/// **The layers are deliberately not counted either.** A session that wrote layer 1 and
+/// died left a running step and nothing else, and a layer row is a note about what a
+/// session was doing rather than something a delete would lose. It *does* stop a head
+/// moving — see [`Store::latest_unstarted_round`], which is the question beside this one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReviewWork {
+    pub has_brief: bool,
+    pub findings: i64,
+    pub has_draft: bool,
+    pub is_posted: bool,
+}
+
+impl ReviewWork {
+    /// Whether the review holds any of the four.
+    pub fn started(&self) -> bool {
+        self.has_brief || self.findings > 0 || self.has_draft || self.is_posted
+    }
+
+    /// Whether it holds one thing or several, for "lose that" or "lose them".
+    ///
+    /// **Things, not kinds of thing.** Four findings are four things, so a review holding
+    /// only those takes "them" — which is the fault the page made twice before this was
+    /// one function: first by testing the rendered sentence for " and ", then by counting
+    /// the kinds.
+    pub fn is_one_thing(&self) -> bool {
+        i64::from(self.has_brief)
+            + self.findings
+            + i64::from(self.has_draft)
+            + i64::from(self.is_posted)
+            == 1
+    }
+
+    /// "that" or "them", for the refusal's own sentence.
+    pub fn lost(&self) -> &'static str {
+        if self.is_one_thing() {
+            "that"
+        } else {
+            "them"
+        }
+    }
+
+    /// The four in words, for a refusal that has to say what it is protecting: "a brief,
+    /// 4 findings and a draft".
+    ///
+    /// Empty when nothing is there, which no caller prints: a refusal is only ever
+    /// composed when [`ReviewWork::started`] is true.
+    pub fn in_words(&self) -> String {
+        let mut held: Vec<String> = Vec::new();
+        if self.has_brief {
+            held.push("a brief".to_string());
+        }
+        if self.findings == 1 {
+            held.push("1 finding".to_string());
+        } else if self.findings > 1 {
+            held.push(format!("{} findings", self.findings));
+        }
+        if self.has_draft {
+            held.push("a draft".to_string());
+        }
+        if self.is_posted {
+            held.push("the review it posted on GitHub".to_string());
+        }
+        match held.as_slice() {
+            [] => String::new(),
+            [one] => one.clone(),
+            [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+        }
+    }
 }
 
 /// The ids of the other systems' records for a review. A field left `None` is left

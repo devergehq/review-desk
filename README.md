@@ -11,9 +11,9 @@ This repository is at the fourth slice: the store, the commands an agent session
 to record a review, the harvester that reads a posted review's outcomes back from GitHub,
 the dashboard's five screens, the local HTTP server that serves the JSON API and the
 dashboard from one binary, and **the dashboard reading and writing that API**. All
-twenty-one of the contract's operations are answered and nineteen are called — the two the
-dashboard does not call are `GET /timings`, which no screen draws yet, and
-`GET /reviews/{id}/brief/problem-statement`, which a blind pass reads.
+twenty-four of the contract's operations are answered, and the dashboard calls every one
+it has a screen for — the two it does not are `GET /timings`, which no screen draws yet,
+and `GET /reviews/{id}/brief/problem-statement`, which a blind pass reads.
 
 **It has been run end to end.** `web/e2e` records a review through the command line, serves
 it from the binary, and drives a browser through confirming the brief and signing off the
@@ -67,7 +67,7 @@ review-desk db version   # the schema version, creating the database if absent
 
 `review open` prints the review's id and nothing else, so a shell caller can keep it in a
 variable. A head commit already reviewed is handed back; a new head commit on a pull
-request reviewed before starts the next round.
+request **somebody has reviewed** starts the next round.
 
 ```sh
 REVIEW=$(review-desk review open --repo devergehq/review-desk --pr 851 --head c0ffee1)
@@ -122,6 +122,76 @@ as it was", and it is there because an address belongs to one ticket: kept again
 different id, the dashboard drew a link whose text and destination named two different
 things. Correct a ticket id and the address goes with it; pass both to move both. There is
 no way to clear an address and keep the id — a blank value reads as absent.
+
+#### Recording a review request, before any session starts
+
+**This is the command the Locus dispatcher calls the moment GitHub shows it a review
+request**, and it is `review open` rather than a command of its own, because a review with
+no brief is exactly a request: `work list` reports it as `review_requested`, which is the
+dispatcher's own cue to start a session for it.
+
+```sh
+review-desk review open --repo acme/portal --pr 777 --head 4f1a9c2 \
+  --title "Give a scheduled export its own context" --ticket ABC-402 \
+  --ledger ledger-9f2 --json
+```
+
+`--ledger` is the dispatcher's own ledger entry, here as well as on `review link` so that
+recording a request is one call rather than two.
+
+**A session says who it is on its first call**, with `--session`, and that does one thing
+more than record it:
+
+```sh
+review-desk review open --repo acme/portal --pr 777 --head 4f1a9c2 \
+  --session allele-ae03f8ce
+```
+
+A review with a session linked is one somebody is at work on, so nothing moves its head
+afterwards — see below. A session that does not pass it is protected from its first
+`layer set` onwards; what is left uncovered is the gap between opening the review and
+writing to it, which is what passing it closes.
+
+**Recording the same request twice records one review.** The record is keyed on the head
+commit, so the second call hands back the first call's review and spends no round;
+`created` in the `--json` answer says which of the two happened.
+
+**And a push between the request and the session moves the request rather than doubling
+it.** A new head commit on a pull request whose newest round **nobody has picked up**
+moves that round to the new commit. **Nobody has picked it up** means two things at once:
+the review holds nothing — no brief, no findings, no draft, no review posted on GitHub —
+*and* nobody has begun. Begun is anything a session writes on its way to a brief: a session
+linked, a step past `pending`, a per-file change map, the sources or the ticket's criteria,
+the description lint's results, a round's commits, or a sentence about what it did not
+check. `Store::review_is_claimed` is the list, and a change map on an older commit is the
+reason it is that long — the review would otherwise serve it as the coverage of a commit
+nobody measured. `head_moved_from`
+carries the commit it was of before:
+
+```sh
+review-desk review open --repo acme/portal --pr 777 --head 9d02e71 --json
+# {"review":{"id":13,"head_sha":"9d02e71","round":1,…},
+#  "created":false,"head_moved_from":"4f1a9c2","carryable":null}
+```
+
+Patrick, on DEV-945: "two unstarted reviews for one request is wrong." Both of them would
+be offered by `work list`, and a session could be dispatched for each. A round somebody is
+*working on* is untouched by this rule — a new commit on it is the next round, which is
+what rounds are for — and so is a review somebody dismissed: its head moves and it stays
+dismissed, because a push is not the developer changing their mind.
+
+**Which means a dismissed request stays dismissed however many commits arrive.** That is
+right for "I am not reviewing this pull request" and is the whole reason a dismissal is
+not undone by a push — and it is worth knowing that the other reading costs something: a
+review dismissed as "superseded, waiting for the rewrite" does not come back when the
+rewrite lands, because no round is ever opened that would be in play. Bring it back from
+the review's own page when you want it looked at. Review Desk will not decide that for
+you, which is DEV-945's own line about automatic dismissal read in the other direction.
+
+**The two questions are near each other and are not the same one.** What a review *holds*
+— a brief, a finding, a draft — is what a delete is refused for, below. Whether anybody
+has *begun* is what this rule asks, and it is the wider question: a session that has
+linked itself and run the lint holds none of the three and is still at work.
 
 `review find` lists a pull request's rounds, newest first, for an agent that has lost
 an id:
@@ -888,6 +958,66 @@ set on the first write, the reason is required, and `work list` marks it `waived
 `crates/cli` or `crates/harvest` so much as names those two functions, and it also
 checks that they still exist, so renaming them cannot quietly retire the rule.
 
+## Taking a review off the desk
+
+**A review is dismissed, and only one that never started is deleted.** Decided by Patrick
+on 12 October 2026, in DEV-945, after a build session wrote a review into his own database
+by accident and nothing could remove it.
+
+| | Dismiss | Delete |
+| -- | -- | -- |
+| What happens | the review leaves the queue, the work list and the Reviews list's default view, with a reason | the row and every row under it are gone |
+| Keeps | its findings, your decisions on them, your sign-offs, the evidence its rules were built from | nothing |
+| Undo | yes, "Bring it back" | no |
+| Offered for | every review | a review holding nothing: no brief, no findings, no draft, and no review posted on GitHub |
+
+**Both are the developer's act, in the dashboard, and there is no command for either** —
+the sign-off rule above, applied to the same argument: a session that could dismiss a
+review could take its own work out of the developer's sight, and one that could delete a
+review could remove the record of it. `crates/cli/tests/cli.rs` fails if the command line
+grows a verb that reads like one, and if `review --help` so much as mentions one.
+
+Both are at the foot of **Understand**, which is where a review starts and the one page
+every review has. A dismissed review says so under the trail on all five of its pages, so
+a reader who arrives by a link learns it before they read the review rather than after.
+
+**A delete asks what the review holds, and nothing else**: no brief, no findings, no
+draft, and no review posted on GitHub. The fourth is not a fourth kind of work — it is
+`github_review_id`, which `review link --github-review` sets for a review whose process
+ran outside Review Desk, and which holds none of the other three. A session may have been
+linked to the review and may have run the lint — the stray review this was built for was
+written by a build session — and that does not stop the delete, because none of it is
+work the developer would lose. It does stop a `review open` moving
+the review's head, which is the wider question
+[above](#recording-a-review-request-before-any-session-starts); the page says a session
+has the review before it offers the button.
+
+**A dismissal is the whole of the new state**: `dismissed_at` and `dismissed_reason` on the
+review, written together, and migration 17 adds nothing else. The queue's groups, the work
+list `review-desk work list` serves and the harvest sweep all leave a dismissed review out;
+the Reviews list leaves it out of its default view and has a filter for it.
+
+```sh
+# A dismissed review is offered to no agent, which is how no session is dispatched for one.
+review-desk work list --json
+```
+
+**And the acts that need an agent afterwards are refused on it.** Confirming its brief,
+approving or sending back its draft, and asking for its held-back findings to be ticketed
+are each an item in that list, so performing one on a dismissed review would be signing
+off something nothing will ever act on — while the dashboard says the review session posts
+it. Each answers `409` naming the dismissal and saying to bring it back first.
+
+**It is not a lock on the record.** Everything that changes a review without needing an
+agent still works on a dismissed one: a finding's disposition, a decision on a finding,
+a session writing the draft, the harvest's own writes. Dismissal takes a review out of
+the lists; it does not freeze what is on it, which is what "every record under it is
+kept" means.
+
+**And a review that was dismissed is still read by `review open`**, which is what the
+dispatcher calls to record a request: the answer carries `dismissed_at`, so a dispatcher
+that sees a request on GitHub can record it and then decline to start a session for it.
+
 ## Where the database lives
 
 `~/.review-desk/review-desk.db` by default, overridden by the `REVIEW_DESK_DB`
@@ -1213,14 +1343,14 @@ developer installing anything.
 
 ### Which operations are answered
 
-**All twenty-one**, and the dashboard calls nineteen of them. One GET per screen, and
-every write the five screens make.
+**All twenty-four**, and the dashboard calls every one it has a screen for. One GET per
+screen, and every write the five screens make.
 
 | Screen | Reads | Writes |
 | -- | -- | -- |
 | Queue | `GET /inbox` | `POST /reviews` |
-| Reviews | `GET /reviews?repo=` | — |
-| One review | `GET /reviews/{id}` | `POST …/brief/confirm`, `PATCH …/findings/{seq}` |
+| Reviews | `GET /reviews?repo=&dismissed=` | — |
+| One review | `GET /reviews/{id}` | `POST …/brief/confirm`, `PATCH …/findings/{seq}`, `POST …/dismiss`, `POST …/restore`, `DELETE /reviews/{id}` |
 | Draft preview | `GET /reviews/{id}/draft` — the body as it will post, the blocks it is composed of, and the inline threads with the line each sits on | `PUT …/draft`, `POST …/draft/approve`, `POST …/draft/send-back`, `POST …/held-back/ticket` |
 | Rules | `GET /rules?repo=`, `GET /repos` | `POST /rules/{id}/promote`, `/dismiss`, `/retire`, `/defer` |
 

@@ -12,7 +12,7 @@
  *   rules(repo)      GET /rules?repo=
  *   repos()          GET /repos
  *
- * and the writes mirror its thirteen writes, one function each. Which records they reach
+ * and the writes mirror its sixteen writes, one function each. Which records they reach
  * — the Rust server, or invented ones in memory — is `app/data/source.ts`'s decision, and
  * nothing above this file can tell.
  *
@@ -52,10 +52,11 @@ import type { DeskBackend, DraftEditToRecord } from '~/data/backend'
 import { asDeskError } from '~/data/fault'
 import { chooseSource, loadBackend, sampleWanted, type DeskSourceName } from '~/data/source'
 import { detectEdits, findingsInBody } from '~/utils/draft'
-import { count } from '~/utils/format'
+import { count, startedReviewLine } from '~/utils/format'
 import type {
   Brief,
   DecideFindingRequest,
+  DismissedReviews,
   FindingDecision,
   DeskError,
   Disposition,
@@ -239,6 +240,17 @@ export type WriteResult
 async function write<T>(
   act: (to: DeskBackend) => Promise<T>,
   said: (made: T) => string,
+  /**
+   * Whether to read every open screen again afterwards. True for every write but one.
+   *
+   * **The exception is the write whose subject is gone when it returns.** A refresh after
+   * a delete re-reads `GET /reviews/{id}` for the review that has just been removed, and
+   * the screen that asked for it is still mounted — so it draws "no review with id N. It
+   * may have been opened on another database" over the page, for the half-second before
+   * the navigation. The caller leaves for the Reviews list instead, which reads on mount,
+   * so nothing is left stale by not refreshing here.
+   */
+  refresh = true,
 ): Promise<WriteResult> {
   let made: T
   try {
@@ -248,8 +260,44 @@ async function write<T>(
     return { ok: false, error: asDeskError(thrown) }
   }
 
-  await refreshEverything()
+  if (refresh) await refreshEverything()
   return { ok: true, message: said(made) }
+}
+
+/**
+ * One sentence, left for the next screen to say.
+ *
+ * **For an act whose own screen does not survive it.** Deleting a review takes the
+ * developer to the Reviews list, and the sentence about what went — the only
+ * acknowledgement an irreversible act gets — belongs where they land rather than on a
+ * page that is unmounting. Taken once: a reload or a second visit says nothing, because
+ * it is a receipt and not a state.
+ */
+let handedOver: string | null = null
+
+/** Leave a sentence for the next screen. */
+export function handOver(said: string): void {
+  handedOver = said
+}
+
+/** Take the sentence the last screen left, if there is one. */
+export function takeHandOver(): string | null {
+  const said = handedOver
+  handedOver = null
+  return said
+}
+
+/**
+ * Drop a sentence nobody came to read.
+ *
+ * **Because it is module state and the screen that consumes it may never be reached.** A
+ * delete navigates to the Reviews list, which takes it — but a test that deletes and then
+ * mounts something else, or a switch to the invented records, would leave it armed and
+ * the next Reviews list would say a review from a database it is no longer reading had
+ * been deleted. Called wherever the records change underneath it.
+ */
+function forgetHandOver(): void {
+  handedOver = null
 }
 
 /* ------------------------------ The composable ------------------------------- */
@@ -284,6 +332,7 @@ export function useReviewDesk() {
   function useSampleRecords(): void {
     chooseSource('sample')
     backend = null
+    forgetHandOver()
     try {
       window.location.reload()
     }
@@ -309,9 +358,25 @@ export function useReviewDesk() {
    * picker is a new read rather than a filter over a list the dashboard already holds, so
    * the picker cannot come to disagree with the server about what "this repository" means.
    */
-  function reviews(repo: Ref<string> | ComputedRef<string>): DeskResource<ReviewList> {
-    return following(repo, (from, value) =>
-      from.listReviews(value === ALL_REPOSITORIES ? null : (value as RepoName)))
+  function reviews(
+    repo: Ref<string> | ComputedRef<string>,
+    dismissed?: Ref<DismissedReviews> | ComputedRef<DismissedReviews>,
+  ): DeskResource<ReviewList> {
+    /*
+     * Both filters are watched as one, because `following` takes one value: a page with
+     * two pickers over one read has to re-read when either moves, and two resources over
+     * the one document can answer differently while one of them is in flight — which is
+     * the argument `shared` above makes for the Inbox.
+     */
+    const asked = computed(() => ({
+      repo: repo.value,
+      dismissed: dismissed?.value ?? ('excluded' as DismissedReviews),
+    }))
+    return following(asked, (from, value) =>
+      from.listReviews(
+        value.repo === ALL_REPOSITORIES ? null : (value.repo as RepoName),
+        value.dismissed,
+      ))
   }
 
   /** `GET /reviews/{id}` — one review whole, as the One review screen shows it. */
@@ -371,11 +436,89 @@ export function useReviewDesk() {
 
     return write(
       to => to.startReview(trimmed),
-      (review: Review) =>
-        `${review.repo}#${review.pr} is open at the problem brief`
-        + `${review.title == null ? '' : ` — ${review.title}`}. `
-        + 'No findings are written until you confirm it.',
+      // Both answers this can have are one function, in `utils/format.ts`, where the
+      // dismissed one can be read in a test: `POST /reviews` hands back the review
+      // already on the record, and that review may be one the developer dismissed.
+      (review: Review) => startedReviewLine(review),
     )
+  }
+
+  /**
+   * `POST /reviews/{id}/dismiss` — the developer takes a review out of play.
+   *
+   * **The reason is checked here as well as at the API**, and that is not a second
+   * opinion: the API's refusal is what makes the rule real, and this is what spares the
+   * developer a round trip to be told what the form could have told them. The wording is
+   * the API's own, so the two cannot say different things about the same blank box.
+   */
+  async function dismissReview(id: number, reason: string): Promise<WriteResult> {
+    const said = reason.trim()
+    if (said.length === 0) {
+      return {
+        ok: false,
+        error: {
+          code: 'invalid_value',
+          message: 'Say why first. A review dismissed with no reason is one nobody can '
+            + 'say why they hid.',
+          field: 'reason',
+          expected: 'why this review is being dismissed',
+          status: null,
+        },
+      }
+    }
+
+    return write(
+      to => to.dismissReview(id, said),
+      // Short, because the page it is read on says what a dismissal means twice over:
+      // once under the trail and once in the card this notice appears in. What the
+      // notice has to add is that it happened.
+      (review: Review) => `${review.repo}#${review.pr} is dismissed.`,
+    )
+  }
+
+  /** `POST /reviews/{id}/restore` — bring a dismissed review back. */
+  async function restoreReview(id: number): Promise<WriteResult> {
+    return write(
+      to => to.restoreReview(id),
+      (review: Review) =>
+        `${review.repo}#${review.pr} is back in the queue, exactly as it was.`,
+    )
+  }
+
+  /**
+   * `DELETE /reviews/{id}` — remove a review that never got past being requested.
+   *
+   * **Nothing is checked here.** The store decides whether a review has been started and
+   * says what it holds when it has, and a second judgement in the page is how a button
+   * comes to be offered for a review the API refuses. What the page does with the answer
+   * is hide the button when the review holds anything — which is a different thing from
+   * deciding the refusal.
+   */
+  async function deleteReview(id: number): Promise<WriteResult> {
+    const result = await write(
+      to => to.deleteReview(id),
+      (review: Review) =>
+        `Review ${review.id} — ${review.repo}#${review.pr} — is deleted. It held no `
+        + 'brief, no findings and no draft, and nothing of it is left.',
+      /*
+       * **No refresh**: the review this page is reading is the one that has just gone, so
+       * reading it again answers 404 and draws "not on the desk" over the page for as
+       * long as it takes to leave it. The caller leaves for the Reviews list, which reads
+       * on mount.
+       */
+      false,
+    )
+
+    /*
+     * **A refusal does read again**, and it is the one write where that matters. The
+     * card hides the delete by reading the review's own four facts, so the only way to
+     * be refused is for one of them to have changed since the page read it — a finding
+     * written between the read and the `DELETE`. Without this the refusal is drawn
+     * directly under "This review never started. No brief, no findings, no draft", with
+     * the button still offered, until the developer reloads.
+     */
+    if (!result.ok) await refreshEverything()
+    return result
   }
 
   /** `POST /reviews/{id}/brief/confirm` — layer 2, and the gate on everything after it. */
@@ -550,6 +693,9 @@ export function useReviewDesk() {
     repos,
     rules,
     startReview,
+    dismissReview,
+    restoreReview,
+    deleteReview,
     confirmBrief,
     setFindingDisposition,
     decideFinding,
@@ -621,13 +767,22 @@ export async function resetDesk(overrides: Record<string, unknown> = {}): Promis
   chooseSource('sample')
   backend = null
   forgetShared()
+  forgetHandOver()
   const { resetSource } = await import('~/data/sample')
   resetSource(overrides)
   await records()
 }
 
-/** Which records to read. Used by the development toggle and by the tests. */
+/**
+ * Which records to read. Used by the development toggle and by the tests.
+ *
+ * **It drops a handed-over sentence too**, which is the invariant `forgetHandOver` states
+ * and the one path where it does real work: `useSampleRecords` reloads the window and
+ * `resetDesk` rebuilds everything, so module state goes with them either way. This one
+ * changes the records underneath and leaves the page standing.
+ */
 export function useDeskSource(source: DeskSourceName | null): void {
+  forgetHandOver()
   chooseSource(source)
   backend = null
   forgetShared()

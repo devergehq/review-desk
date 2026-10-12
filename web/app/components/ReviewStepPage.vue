@@ -143,6 +143,31 @@ const ticket = computed(() => ticketUrl(props.detail.review.ticket_url))
       </p>
     </header>
 
+    <!--
+      **A dismissed review says so on every one of its pages**, and says it under the trail
+      rather than in the card at the foot that undoes it. A developer arriving from the
+      Reviews list's dismissed view, or from a link, is reading a review that is in nobody's
+      queue and that no session will be started for; finding that out by scrolling to the
+      bottom is finding it out too late.
+
+      It links to the card rather than carrying the button. One place undoes a dismissal,
+      which is the same card that makes one, so the two cannot come to say different things
+      about the same review — and this notice is then on all five step pages without any of
+      them gaining a write.
+    -->
+    <DeskNotice
+      v-if="detail.review.dismissed_at"
+      tone="problem"
+    >
+      <strong>This review is dismissed.</strong>
+      It is out of the queue, no session will be started for it, and it is not in the
+      Reviews list's default view. Everything on it has been kept.
+      <NuxtLink :to="`/reviews/${detail.review.id}/understand#remove-review`">
+        Bring it back
+      </NuxtLink>
+      on Understand.
+    </DeskNotice>
+
     <slot />
   </div>
 </template>

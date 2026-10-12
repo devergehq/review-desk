@@ -99,8 +99,37 @@ const now = ref(new Date())
  * wrong diagnosis of a state whose cause is known. The sentence above the sign-off says
  * what it is and offers the only way out, which is an act on this page — and an act on
  * this page re-reads everything anyway.
+ *
+ * **A dismissed review is not waited on either, and it is still read** — which is why
+ * this predicate stops here and `waiting` goes on. See both below.
  */
-const waiting = computed(() => props.draft.status === 'approved' && !props.bodyIsStale)
+const keepsReading = computed(
+  () => props.draft.status === 'approved' && !props.bodyIsStale,
+)
+
+/**
+ * Whether this page is waiting for a session to post this draft — what it *says*, as
+ * against what it reads.
+ *
+ * **A dismissed review is the same door as a stale body read through DEV-945**: it is in
+ * no agent's work list, so no session is dispatched for it and nothing will post this
+ * draft however long the page watched. Approving a dismissed review is refused outright,
+ * so the state that reaches here is one approved and *then* dismissed — and without this
+ * the page would wait on it and then accuse a session that was never given the work,
+ * which is this file's own worst sentence pointed at the wrong system. The notice under
+ * the trail says the review is dismissed and names the act that changes it.
+ *
+ * **But the timer follows `keepsReading`, not this, and that is the difference between
+ * the two exceptions: where the way out is.** A stale body is cleared by an act on this
+ * page, which re-reads everything anyway. A dismissal is undone on the review's own page
+ * — in another tab, as likely as not — and `reread` has no other caller on the draft
+ * page. A first cut of this gated the reading on `waiting` too, so a dismissal stopped
+ * the only reads there are: sign off in one tab, dismiss and bring back in another, and
+ * the first tab sat blank over a signed-off, postable draft until somebody reloaded it.
+ * Reading on costs one request every {@link RE_READ_EVERY_SECONDS} seconds and is how
+ * the restore arrives.
+ */
+const waiting = computed(() => keepsReading.value && props.review.dismissed_at == null)
 
 /**
  * Whether this page has watched the status change at all, on the draft in front of it.
@@ -195,7 +224,7 @@ function start(): void {
    * — and a tab left open overnight on a signed-off draft should not be reading a database
    * nobody is looking at.
    */
-  if (timer != null || !waiting.value || document.visibilityState === 'hidden') return
+  if (timer != null || !keepsReading.value || document.visibilityState === 'hidden') return
   timer = setInterval(() => void readNow(), RE_READ_EVERY_SECONDS * 1000)
 }
 
@@ -252,7 +281,7 @@ function onVisibilityChange(): void {
    * figures on return are drawn from what the record says and not from what it said ten
    * minutes ago.
    */
-  if (!waiting.value) {
+  if (!keepsReading.value) {
     now.value = new Date()
     return
   }
@@ -260,11 +289,17 @@ function onVisibilityChange(): void {
   start()
 }
 
-watch(waiting, (yes) => {
-  /*
-   * The clock is moved on every change of state, not only by the timer: the draft has just
-   * become posted or come back, and the figures about to be drawn are about this moment.
-   */
+/*
+ * The clock is moved on every change of state, not only by the timer: the draft has just
+ * become posted, come back, or been taken out of play, and the figures about to be drawn
+ * are about this moment.
+ */
+watch(waiting, () => {
+  now.value = new Date()
+})
+
+/* And the timer follows what is read rather than what is said — see `waiting`. */
+watch(keepsReading, (yes) => {
   now.value = new Date()
   if (yes) start()
   else stop()

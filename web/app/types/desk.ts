@@ -102,6 +102,7 @@ export type SendBackDraftRequest = Schema['SendBackDraftRequest']
 export type RequestNitTicketRequest = Schema['RequestNitTicketRequest']
 export type PromoteRuleRequest = Schema['PromoteRuleRequest']
 export type RuleReasonRequest = Schema['RuleReasonRequest']
+export type DismissReviewRequest = Schema['DismissReviewRequest']
 export type DeferRuleRequest = Schema['DeferRuleRequest']
 
 /* ---- GET /reviews/{id} ---- */
@@ -231,6 +232,15 @@ export type Inbox = Schema['Inbox']
  * reported on. The page draws that in words — "not started" — rather than as a 1.
  */
 export type ReviewListItem = Schema['ReviewListItem']
+
+/**
+ * Which of the dismissed reviews a list of reviews is asked for.
+ *
+ * `excluded` is the Reviews list's default view and what every other read gets: a
+ * dismissed review has been taken out of play by the developer, so it is in front of
+ * nobody until this says otherwise.
+ */
+export type DismissedReviews = Schema['DismissedReviews']
 
 /** `GET /reviews` serves an object, not an array; this is what is inside it. */
 export type ReviewList

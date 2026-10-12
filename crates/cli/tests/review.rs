@@ -10,7 +10,7 @@
 
 mod common;
 
-use common::{open_review, Desk};
+use common::{open_review, start_review, Desk};
 use review_desk_store::Actor;
 use serde_json::json;
 
@@ -228,6 +228,10 @@ fn a_new_head_commit_opens_the_next_round() {
         "--head",
         "c0ffee1",
     ]);
+    // Round one is reviewed, which is what makes the next commit a round: a commit on a
+    // round nobody has started moves that round instead, and the test below is that.
+    start_review(&desk, &round_one["review"]["id"].to_string());
+
     let round_two = desk.json(&[
         "review",
         "open",
@@ -242,6 +246,7 @@ fn a_new_head_commit_opens_the_next_round() {
     assert_eq!(round_one["review"]["round"], 1);
     assert_eq!(round_two["review"]["round"], 2);
     assert_eq!(round_two["created"], true);
+    assert_eq!(round_two["head_moved_from"], serde_json::Value::Null);
     assert_ne!(round_one["review"]["id"], round_two["review"]["id"]);
 
     // And the earlier commit is still handed back rather than opening a round three.
@@ -257,6 +262,87 @@ fn a_new_head_commit_opens_the_next_round() {
     ]);
     assert_eq!(reopened["created"], false);
     assert_eq!(reopened["review"]["id"], round_one["review"]["id"]);
+}
+
+#[test]
+fn recording_a_review_request_twice_is_one_review_even_when_the_commit_moved() {
+    // **The Locus dispatcher's call, made twice.** It records a review request the moment
+    // GitHub shows it one, before any session runs; the author pushes; it records the same
+    // request again with the commit now in front of it. One request is one review —
+    // Patrick, 12 October 2026, DEV-945 — so the round moves rather than a second
+    // unstarted review opening beside it, and `work list` goes on offering one item.
+    let desk = Desk::new();
+
+    let recorded = desk.json(&[
+        "review",
+        "open",
+        "--repo",
+        "acme/portal",
+        "--pr",
+        "777",
+        "--head",
+        "c0ffee1",
+        "--title",
+        "Give a scheduled export its own context",
+        "--ticket",
+        "ABC-402",
+        "--ledger",
+        "ledger-9f2",
+    ]);
+    assert_eq!(recorded["created"], true);
+    assert_eq!(recorded["review"]["ledger_id"], "ledger-9f2");
+
+    let again = desk.json(&[
+        "review",
+        "open",
+        "--repo",
+        "acme/portal",
+        "--pr",
+        "777",
+        "--head",
+        "c0ffee2",
+    ]);
+
+    assert_eq!(again["created"], false, "not a second review");
+    assert_eq!(again["review"]["id"], recorded["review"]["id"]);
+    assert_eq!(again["review"]["round"], 1, "no round was spent");
+    assert_eq!(again["review"]["head_sha"], "c0ffee2");
+    assert_eq!(
+        again["head_moved_from"], "c0ffee1",
+        "the answer says which commit it was of before"
+    );
+    assert_eq!(
+        again["review"]["title"], "Give a scheduled export its own context",
+        "what the first call recorded is still there"
+    );
+    assert_eq!(again["review"]["ticket_id"], "ABC-402");
+    assert_eq!(
+        again["review"]["ledger_id"], "ledger-9f2",
+        "a call that gives no ledger id clears none"
+    );
+
+    let found = desk.json(&["review", "find", "--repo", "acme/portal", "--pr", "777"]);
+    assert_eq!(
+        found["reviews"].as_array().expect("reviews").len(),
+        1,
+        "one request, one review"
+    );
+}
+
+#[test]
+fn a_request_still_prints_its_id_and_nothing_else() {
+    // `ID=$(review-desk review open ...)` is the whole of what a shell caller does, and a
+    // moved head must not add a word to that line.
+    let desk = Desk::new();
+
+    let first = open_review(&desk, "acme/portal", "778", "c0ffee1");
+    let moved = open_review(&desk, "acme/portal", "778", "c0ffee2");
+
+    assert_eq!(first, moved, "the same review, printed the same way");
+    assert!(
+        moved.parse::<i64>().is_ok(),
+        "the id alone, and nothing else: {moved}"
+    );
 }
 
 #[test]
@@ -596,4 +682,169 @@ fn a_ticket_address_with_no_ticket_is_refused() {
         "https://linear.app/acme/issue/ABC-231"
     );
     assert_eq!(shown["review"]["round"], 1, "and spent no second round");
+}
+
+#[test]
+fn a_session_that_opens_a_review_with_its_id_is_the_one_working_on_it() {
+    // **One call, two facts, and the second is what protects the first.** A session
+    // passing `--session` records who is working *and* takes the review out of reach of
+    // the head-moving rule — so a dispatcher recording the same request on a newer commit
+    // opens a round of its own rather than moving the commit this session is reviewing.
+    let desk = Desk::new();
+
+    let recorded = desk.json(&[
+        "review",
+        "open",
+        "--repo",
+        "acme/portal",
+        "--pr",
+        "777",
+        "--head",
+        "c0ffee1",
+        "--ledger",
+        "ledger-9f2",
+    ]);
+    assert_eq!(recorded["review"]["session_id"], serde_json::Value::Null);
+
+    // The session is dispatched and opens the review it was given.
+    let opened = desk.json(&[
+        "review",
+        "open",
+        "--repo",
+        "acme/portal",
+        "--pr",
+        "777",
+        "--head",
+        "c0ffee1",
+        "--session",
+        "allele-ae03f8ce",
+    ]);
+    assert_eq!(
+        opened["created"], false,
+        "the request it was dispatched for"
+    );
+    assert_eq!(opened["review"]["session_id"], "allele-ae03f8ce");
+    assert_eq!(
+        opened["review"]["ledger_id"], "ledger-9f2",
+        "and the dispatcher's own id is not cleared by it"
+    );
+
+    // The author pushes, and the dispatcher records the request again.
+    let pushed = desk.json(&[
+        "review",
+        "open",
+        "--repo",
+        "acme/portal",
+        "--pr",
+        "777",
+        "--head",
+        "c0ffee2",
+    ]);
+    assert_eq!(
+        pushed["created"], true,
+        "a round of its own: the session is at work on round 1"
+    );
+    assert_eq!(pushed["review"]["round"], 2);
+    assert_eq!(
+        pushed["head_moved_from"],
+        serde_json::Value::Null,
+        "nothing moved under the session"
+    );
+
+    let still = desk.json(&["review", "find", "--repo", "acme/portal", "--pr", "777"]);
+    assert_eq!(
+        still["reviews"][1]["head_sha"], "c0ffee1",
+        "and the commit it is reviewing is the one it opened: {still}"
+    );
+}
+
+#[test]
+fn review_find_answers_for_the_repository_however_it_was_typed() {
+    // **The Locus half found this against `Trilogy-Care/tc-portal`.** `review open` and
+    // `work list` normalise the slug and found the rows; `review find` did not and said
+    // "no reviews" — and its answer echoed the argument back, so the stored spelling and
+    // the typed one never appeared together for anybody to notice.
+    let desk = Desk::new();
+    desk.run(&[
+        "review",
+        "open",
+        "--repo",
+        "Trilogy-Care/TC-Portal",
+        "--pr",
+        "9585",
+        "--head",
+        "abc1234",
+        "--title",
+        "A review",
+    ]);
+
+    let found = desk.json(&[
+        "review",
+        "find",
+        "--repo",
+        "Trilogy-Care/tc-portal",
+        "--pr",
+        "9585",
+    ]);
+    assert_eq!(
+        found["reviews"].as_array().expect("reviews").len(),
+        1,
+        "the repository is the same repository however it is spelled: {found}"
+    );
+    assert_eq!(
+        found["repo"], "trilogy-care/tc-portal",
+        "and the answer carries the spelling the record holds"
+    );
+
+    let plain = desk.run(&[
+        "review",
+        "find",
+        "--repo",
+        "TRILOGY-CARE/TC-PORTAL",
+        "--pr",
+        "9585",
+    ]);
+    assert!(plain.starts_with("1 round 1 head abc1234"), "{plain}");
+
+    // And an empty answer names what was searched rather than what was typed, which is
+    // the half that hid the fault.
+    let none = desk.run(&[
+        "review",
+        "find",
+        "--repo",
+        "Trilogy-Care/Nothing",
+        "--pr",
+        "9585",
+    ]);
+    assert_eq!(none, "no reviews of trilogy-care/nothing#9585");
+}
+
+#[test]
+fn review_show_says_a_review_is_dismissed() {
+    // **The only view a person reads**, and the one fact it printed nothing about. A
+    // session handed this id sees an ordinary review and then gets a 409 from `brief
+    // confirm` with no earlier signal. There is no command that dismisses one — that is
+    // the developer's act in the dashboard — so the store writes it here.
+    let desk = Desk::new();
+    let review = open_review(&desk, "acme/portal", "777", "4f1a9c2");
+    desk.store()
+        .dismiss_review(
+            review.parse().expect("an id"),
+            "the pull request was closed unmerged",
+        )
+        .expect("dismiss it");
+
+    let printed = desk.run(&["review", "show", "--review", &review]);
+    assert!(
+        printed.contains("dismissed at"),
+        "the only view a person reads has to say it: {printed}"
+    );
+    assert!(
+        printed.contains("the pull request was closed unmerged"),
+        "and why: {printed}"
+    );
+
+    // And `--json` carried it all along, which is what the dispatcher reads.
+    let shown = desk.json(&["review", "show", "--review", &review]);
+    assert!(shown["review"]["dismissed_at"].is_i64());
 }

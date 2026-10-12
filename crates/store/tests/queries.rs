@@ -410,12 +410,21 @@ fn opening_a_head_commit_already_reviewed_returns_it_rather_than_starting_a_roun
 }
 
 #[test]
-fn opening_a_new_head_commit_starts_the_next_round() {
+fn opening_a_new_head_commit_on_a_started_round_starts_the_next_round() {
+    // **The round has to have been started, and that is the whole of what changed in
+    // DEV-945.** A new commit on a round somebody reviewed is the next round, which is
+    // what rounds are for; a new commit on a round nobody has started moves that round,
+    // which is the test below. One finding is enough to make it started — `ReviewWork`
+    // asks for a brief, a finding or a draft.
     let (_dir, store) = temp_store();
 
     let round_one = store
         .open_review("devergehq/review-desk", 21, "aaa111")
         .expect("round one");
+    store
+        .add_finding(round_one.review.id, a_finding("reviewed", Severity::Nit))
+        .expect("a finding, so round one has been started");
+
     let round_two = store
         .open_review("devergehq/review-desk", 21, "bbb222")
         .expect("round two");
@@ -423,7 +432,167 @@ fn opening_a_new_head_commit_starts_the_next_round() {
     assert_eq!(round_one.review.round, 1);
     assert_eq!(round_two.review.round, 2);
     assert!(round_two.created);
+    assert_eq!(round_two.head_moved_from, None);
     assert_ne!(round_one.review.id, round_two.review.id);
+}
+
+#[test]
+fn a_new_head_commit_on_a_request_nobody_started_moves_it_rather_than_starting_a_round() {
+    // The request the Locus dispatcher recorded, on a pull request the author pushed to
+    // before any session ran. Two unstarted reviews for one request is wrong — Patrick,
+    // 12 October 2026 — because `work list` offers both and a session can be dispatched
+    // for each.
+    let (_dir, store) = temp_store();
+
+    let recorded = store
+        .open_review(REPO, 777, "aaa111")
+        .expect("record the request");
+    let again = store
+        .open_review(REPO, 777, "bbb222")
+        .expect("record it again, on the commit now in front of us");
+
+    assert!(!again.created, "the request is not a second review");
+    assert_eq!(again.review.id, recorded.review.id);
+    assert_eq!(again.review.round, 1, "no round was spent");
+    assert_eq!(again.review.head_sha, "bbb222", "the head moved");
+    assert_eq!(
+        again.head_moved_from.as_deref(),
+        Some("aaa111"),
+        "the answer says which commit it was of before"
+    );
+    assert_eq!(
+        store.latest_round(REPO, 777).unwrap(),
+        Some(1),
+        "one request, one review"
+    );
+}
+
+#[test]
+fn a_moved_head_is_a_write_and_moves_the_last_activity_time() {
+    let (_dir, store) = temp_store();
+
+    let recorded = store.open_review(REPO, 778, "aaa111").expect("record");
+    let before = recorded.review.last_activity_at;
+
+    let moved = store.open_review(REPO, 778, "bbb222").expect("move it");
+
+    assert!(
+        moved.review.last_activity_at >= before,
+        "moving a request's head is a write to it"
+    );
+}
+
+#[test]
+fn the_commit_a_request_moved_to_is_the_commit_it_is_found_by() {
+    // The move is only safe if the record is still keyed consistently afterwards: a
+    // session that opens the commit the request was moved to must be handed the request,
+    // and the commit it moved *from* must no longer name anything.
+    let (_dir, store) = temp_store();
+
+    let recorded = store.open_review(REPO, 779, "aaa111").expect("record");
+    store.open_review(REPO, 779, "bbb222").expect("move it");
+
+    let found = store
+        .find_review_by_head(REPO, 779, "bbb222")
+        .expect("read")
+        .expect("the request, at the commit it moved to");
+    assert_eq!(found.id, recorded.review.id);
+    assert_eq!(
+        store
+            .find_review_by_head(REPO, 779, "aaa111")
+            .expect("read"),
+        None,
+        "the commit it moved from names nothing"
+    );
+}
+
+#[test]
+fn only_the_newest_round_moves() {
+    // Round 1 was reviewed, round 2 is the request nobody has started. A third commit
+    // moves round 2 and leaves round 1 exactly where it is.
+    let (_dir, store) = temp_store();
+
+    let round_one = store.open_review(REPO, 780, "aaa111").expect("round one");
+    store
+        .add_finding(round_one.review.id, a_finding("reviewed", Severity::Nit))
+        .expect("round one was reviewed");
+    let round_two = store.open_review(REPO, 780, "bbb222").expect("round two");
+
+    let moved = store
+        .open_review(REPO, 780, "ccc333")
+        .expect("a third commit");
+
+    assert_eq!(moved.review.id, round_two.review.id);
+    assert_eq!(moved.review.round, 2);
+    assert_eq!(
+        store.find_review(REPO, 780, 1).unwrap().unwrap().head_sha,
+        "aaa111",
+        "the round that was reviewed did not move"
+    );
+}
+
+#[test]
+fn a_review_with_a_brief_has_been_started() {
+    let (_dir, store) = temp_store();
+    let review = store.open_review(REPO, 781, "aaa111").expect("open");
+
+    assert!(
+        !store.review_work(review.review.id).unwrap().started(),
+        "nothing has been written to it"
+    );
+
+    store
+        .put_brief(
+            review.review.id,
+            NewBrief {
+                problem: "the problem".to_string(),
+                ..Default::default()
+            },
+        )
+        .expect("a brief");
+
+    let work = store.review_work(review.review.id).unwrap();
+    assert!(work.started());
+    assert_eq!(work.in_words(), "a brief");
+    assert_eq!(
+        store.open_review(REPO, 781, "bbb222").unwrap().review.round,
+        2,
+        "a brief alone is enough to make a new commit the next round"
+    );
+}
+
+#[test]
+fn what_a_review_holds_is_said_in_words() {
+    // The words a refused delete is composed from. Written here rather than only through
+    // the refusal, because the list-of-three grammar — "a brief, 2 findings and a draft"
+    // — is what a reader of that refusal actually sees.
+    let (_dir, store) = temp_store();
+    let review = store.open_review(REPO, 782, "aaa111").expect("open");
+    let id = review.review.id;
+
+    store
+        .add_finding(id, a_finding("one", Severity::Nit))
+        .expect("a finding");
+    assert_eq!(store.review_work(id).unwrap().in_words(), "1 finding");
+
+    store
+        .add_finding(id, a_finding("two", Severity::Nit))
+        .expect("a second finding");
+    assert_eq!(store.review_work(id).unwrap().in_words(), "2 findings");
+
+    store
+        .put_brief(
+            id,
+            NewBrief {
+                problem: "the problem".to_string(),
+                ..Default::default()
+            },
+        )
+        .expect("a brief");
+    assert_eq!(
+        store.review_work(id).unwrap().in_words(),
+        "a brief and 2 findings"
+    );
 }
 
 #[test]
@@ -431,11 +600,17 @@ fn an_earlier_head_commit_is_still_returned_once_later_rounds_exist() {
     // The whole point of keying on the head commit: a session that reopens the commit
     // it reviewed two rounds ago must be handed that round back, not handed a round
     // three it never asked for.
+    //
+    // Round one carries a finding so that round two is a round rather than round one
+    // moved — DEV-945's rule, which the two tests above cover.
     let (_dir, store) = temp_store();
 
     let first = store
         .open_review("devergehq/review-desk", 21, "aaa111")
         .expect("round one");
+    store
+        .add_finding(first.review.id, a_finding("reviewed", Severity::Nit))
+        .expect("round one was reviewed");
     store
         .open_review("devergehq/review-desk", 21, "bbb222")
         .expect("round two");
@@ -596,4 +771,50 @@ fn a_brief_with_no_problem_in_it_is_refused() {
 
     assert!(error.is_refusal());
     assert_eq!(error.code(), "invalid_value");
+}
+
+#[test]
+fn every_lookup_finds_a_repository_however_it_is_spelled() {
+    // **Found on a real repository by the Locus half**: `review find --repo
+    // Trilogy-Care/tc-portal` answered "no reviews" while `review open` and `work list`
+    // found them. The record holds a repository canonically and these four lookups
+    // compared the caller's spelling to it under SQLite's binary collation, so they
+    // missed — and a miss is "there is no such review", not a slow path.
+    //
+    // One test over all four, because the fault is not in any one of them: it is that a
+    // rule the inserts keep was kept by some of the reads.
+    let (_dir, store) = temp_store();
+    let opened = store
+        .open_review("Trilogy-Care/TC-Portal", 9585, "ABC1234")
+        .expect("open");
+    assert_eq!(opened.review.repo, "trilogy-care/tc-portal");
+
+    for spelling in [
+        "Trilogy-Care/tc-portal",
+        "trilogy-care/TC-Portal",
+        " Trilogy-Care/TC-Portal ",
+        "trilogy-care/tc-portal",
+    ] {
+        assert_eq!(
+            store.list_reviews(spelling, 9585).unwrap().len(),
+            1,
+            "list_reviews missed {spelling:?}"
+        );
+        assert!(
+            store.find_review(spelling, 9585, 1).unwrap().is_some(),
+            "find_review missed {spelling:?}"
+        );
+        assert_eq!(
+            store.latest_round(spelling, 9585).unwrap(),
+            Some(1),
+            "latest_round missed {spelling:?}"
+        );
+        assert!(
+            store
+                .find_review_by_head(spelling, 9585, "ABC1234")
+                .unwrap()
+                .is_some(),
+            "find_review_by_head missed {spelling:?}"
+        );
+    }
 }

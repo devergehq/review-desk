@@ -1411,6 +1411,98 @@ UPDATE reviews
        );
 "#,
     },
+    Migration {
+        version: 17,
+        name: "review-dismissal",
+        sql: r#"
+-- When a review was dismissed, and why. Both null for a review in play.
+--
+-- **Hidden and kept, rather than deleted.** Decided by Patrick on 12 October 2026 against
+-- the alternative of deleting outright: a review carries the developer's sign-offs, the
+-- dispositions they made one finding at a time, and the evidence the rules in force were
+-- built from, so a row that goes takes all of that with it. A dismissal takes the review
+-- out of the queue, out of the work list and out of the Reviews list's default view, and
+-- changes nothing underneath it. `a_dismissal_keeps_every_row_under_the_review`
+-- asserts the second half, because "it keeps the record" is the whole argument for
+-- choosing this over a delete and it is the kind of claim a later convenience quietly
+-- breaks.
+--
+-- **The reason is not nullable in practice and is nullable here**, which is migration 13's
+-- shape and for a different argument. Every dismissal this code makes carries one —
+-- `dismiss_review` refuses a blank, the way the rules screen refuses a rule dismissed
+-- without a reason, because a review hidden silently is a review nobody can later say why
+-- they hid. What cannot be done is a CHECK tying the two columns together: SQLite will not
+-- add one to a table that already exists, and a CHECK on this column alone would have to
+-- allow the null that every existing row holds. So the pairing lives in one write and is
+-- stated here rather than enforced by the schema.
+--
+-- **Two columns and no `dismissed_by`.** Only the developer dismisses a review — there is
+-- no command line path to it and the dashboard's API records no actor for it — so a column
+-- holding `developer` in every row would be a field that cannot disagree with itself, which
+-- is the argument `SIGN_OFF_ACTOR` makes in the server for not taking an actor as an
+-- argument.
+--
+-- **And no index.** The Reviews list reads every review it is going to draw, so its scan is
+-- the page's own read either way, and the dismissed-only view is the rarer of the two. An
+-- index here would be a second structure to keep in step for a table that holds one row per
+-- review of one developer's pull requests.
+ALTER TABLE reviews ADD COLUMN dismissed_at     INTEGER;
+ALTER TABLE reviews ADD COLUMN dismissed_reason TEXT;
+
+-- **And the four ids an empty string would now change the meaning of.**
+--
+-- `set_review_links` reads every optional string through `normalise::optional_fact`,
+-- which is this record's rule and the reason migration 16 repaired `ticket_id`: a
+-- `--session "$SESSION_ID"` from a shell whose variable is unset is the empty string, and
+-- `COALESCE` is only told to leave a column alone by a `NULL`. Released code had no such
+-- check on these four, so the rows are out there.
+--
+-- Normalising the writes is not enough, because this migration changes what an empty
+-- string *means*. A `session_id` of `''` is `is_some()`, so `review_is_claimed` reads the
+-- review as one somebody is working on and its head never moves again — one request
+-- becomes two unstarted reviews, which is the state DEV-945 exists to remove. A
+-- `github_review_id` of `''` makes `ReviewWork::started` true, so the review can never be
+-- deleted. `not_checked` claims the review the same way. Each is a row a developer cannot
+-- get out of, and fixing the writes does not reach them.
+--
+-- Migration 16's own argument, applied to this migration's own columns: the rule has to be
+-- true of the record this code already wrote and not only of writes made from here on. The
+-- characters are spelt out for the reason it gives — SQLite's one-argument `TRIM` takes
+-- spaces and nothing else, and a trailing newline is what a shell substitution produces.
+--
+-- `ledger_id` is repaired beside them although nothing reads it as a flag, because it is
+-- written by the same call that writes `session_id`, and a rule that held for three
+-- columns of four would be the next reader's surprise.
+UPDATE reviews
+   SET session_id = NULLIF(
+         TRIM(session_id, ' ' || char(9) || char(10) || char(11) || char(12) || char(13)),
+         ''
+       ),
+       ledger_id = NULLIF(
+         TRIM(ledger_id, ' ' || char(9) || char(10) || char(11) || char(12) || char(13)),
+         ''
+       ),
+       github_review_id = NULLIF(
+         TRIM(github_review_id,
+              ' ' || char(9) || char(10) || char(11) || char(12) || char(13)),
+         ''
+       ),
+       not_checked = NULLIF(
+         TRIM(not_checked, ' ' || char(9) || char(10) || char(11) || char(12) || char(13)),
+         ''
+       ),
+       -- **And the title, which is the fifth column written through that same loose
+       -- path.** It changes no rule of this migration's, so it was left out of the four
+       -- above — and a review of this branch pointed out that the argument does not
+       -- depend on the rule: `POST /reviews` fills a missing title from GitHub only when
+       -- the column `is_none()`, so a legacy row holding `''` can never be given one, and
+       -- `review find` prints a dangling "— " for it for ever. One sweep, five columns.
+       title = NULLIF(
+         TRIM(title, ' ' || char(9) || char(10) || char(11) || char(12) || char(13)),
+         ''
+       );
+"#,
+    },
 ];
 
 /// The version a freshly created database lands on.

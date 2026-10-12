@@ -294,6 +294,7 @@ impl Store {
     /// retried call is safe; approving at any other status is refused.
     pub fn approve_draft(&self, review_id: i64, event: ReviewEvent, by: Actor) -> Result<Draft> {
         only_the_developer(by, "approve a draft")?;
+        self.refuse_if_dismissed(review_id, "approving its draft")?;
 
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
         let draft = self.get_draft(review_id)?;
@@ -362,6 +363,7 @@ impl Store {
             });
         }
 
+        self.refuse_if_dismissed(review_id, "sending its draft back")?;
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
         let draft = self.get_draft(review_id)?;
 

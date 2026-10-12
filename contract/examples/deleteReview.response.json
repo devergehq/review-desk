@@ -1,0 +1,19 @@
+{
+  "id": 13,
+  "repo": "acme/portal",
+  "pr": 777,
+  "head_sha": "4f1a9c2",
+  "round": 1,
+  "title": null,
+  "ticket_id": null,
+  "ticket_url": null,
+  "changed_lines": null,
+  "session_id": null,
+  "ledger_id": null,
+  "github_review_id": null,
+  "created_at": "2026-10-11T23:14:00Z",
+  "pr_state": null,
+  "harvested_at": null,
+  "dismissed_at": null,
+  "dismissed_reason": null
+}

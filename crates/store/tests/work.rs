@@ -358,6 +358,28 @@ fn a_round_superseded_by_a_new_head_commit_is_listed_by_nothing() {
         Some(WorkKind::ReviewRequested)
     );
 
+    // **A finding, so that round 1 has been started.** Since DEV-945 a new commit on a
+    // round nobody has started moves that round rather than superseding it, so without
+    // this there would be no round 2 to supersede anything. A finding and no brief leaves
+    // the kind exactly where it was, which is what this test needs round 1 to be.
+    store
+        .add_finding(
+            first.review.id,
+            review_desk_store::NewFinding {
+                lens: "correctness".to_string(),
+                severity: review_desk_store::Severity::Nit,
+                claim: "round 1 was reviewed".to_string(),
+                disposition: review_desk_store::Disposition::InDraft,
+                ..Default::default()
+            },
+        )
+        .expect("a finding");
+    assert_eq!(
+        kind_for(&store, first.review.id),
+        Some(WorkKind::ReviewRequested),
+        "a finding alone does not change what an agent is to do"
+    );
+
     let second = store
         .open_review("acme/portal", 500, "2222bbb")
         .expect("round 2");

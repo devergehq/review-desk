@@ -46,7 +46,7 @@
 
 use rusqlite::{params, Row};
 
-use crate::entities::inbox::{row_to_review, REVIEW_COLUMNS};
+use crate::entities::inbox::{row_to_review, IN_PLAY, REVIEW_COLUMNS};
 use crate::error::Result;
 use crate::model::{
     DraftStatus, NitTicketStatus, Review, SignOff, Timestamp, WorkFilter, WorkItem, WorkKind,
@@ -65,6 +65,18 @@ impl Store {
     /// new head commit would otherwise keep asking for an agent for ever — nothing moves
     /// its state again, so nothing could retract it — and oldest-first would pin that
     /// dead round at the head of the queue in front of live work.
+    ///
+    /// **A dismissed review yields no item, which is how no session is dispatched for
+    /// one.** DEV-945: the developer dismisses a review they will not act on, and this is
+    /// the list a dispatcher reads, so the exclusion here is the whole mechanism — an
+    /// item for a dismissed review would be a session started on a review nobody wants.
+    ///
+    /// **Dismissing the newest round does not bring an earlier one back.** The round
+    /// subquery counts every round, dismissed or not, so the newest round of a pull
+    /// request is the newest round whatever became of it. Filtering it out of that
+    /// subquery as well would make round 1 — superseded, with nothing that can move its
+    /// state — the live round again the moment round 2 was dismissed, which is exactly the
+    /// dead item at the head of the queue that the paragraph above exists to prevent.
     pub fn work_list(&self, filter: &WorkFilter) -> Result<Vec<WorkItem>> {
         // Normalised through the same helper the insert uses. A caller who typed
         // `Acme/Portal` is naming the repository the record holds as `acme/portal`, and an
@@ -89,6 +101,7 @@ impl Store {
                      SELECT MAX(round) FROM reviews
                      WHERE repo = v.repo AND pr = v.pr
                    )
+               AND {IN_PLAY}
                AND (?1 IS NULL OR v.id = ?1)
                AND (?2 IS NULL OR v.repo = ?2)"
         ))?;

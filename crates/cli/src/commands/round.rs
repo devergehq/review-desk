@@ -95,14 +95,20 @@ pub fn run(command: &RoundCommand) -> Result<Report> {
             let store = Store::open_default()?;
             let rounds = store.rounds(repo, *pr)?;
 
+            // The repository the store searched, as `review find` and `rules list` carry
+            // it. This was the one read the sweep for that missed, which a review of the
+            // sweep found: the rows were right and the heading named a repository the
+            // rows did not.
+            let found = review_desk_store::normalised_repo(repo);
+
             let plain = if rounds.is_empty() {
-                format!("no reviews of {repo}#{pr}")
+                format!("no reviews of {found}#{pr}")
             } else {
                 rounds.iter().map(round_line).collect::<Vec<_>>().join("\n")
             };
 
             Ok(Report::new(
-                json!({ "repo": repo, "pr": pr, "rounds": rounds }),
+                json!({ "repo": found, "pr": pr, "rounds": rounds }),
                 plain,
             ))
         }

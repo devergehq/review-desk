@@ -220,6 +220,7 @@ const defer = (id: number) => act(() => desk.deferRule(id, 60))
                   :id="`dismiss-${rule.id}`"
                   label="Why is this not a rule?"
                   action="Dismiss the proposal"
+                  :working="working"
                   @confirm="reason => dismiss(rule.id, reason)"
                   @cancel="asking = null"
                 />
@@ -279,6 +280,7 @@ const defer = (id: number) => act(() => desk.deferRule(id, 60))
                   :id="`retire-${rule.id}`"
                   label="Why is it being retired?"
                   action="Retire the rule"
+                  :working="working"
                   @confirm="reason => retire(rule.id, reason)"
                   @cancel="asking = null"
                 />

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ReviewListItem } from '~/types/desk'
+import type { DismissedReviews, ReviewListItem } from '~/types/desk'
 
 /**
  * The Reviews list: **every review the record holds, whatever became of it.**
@@ -31,6 +31,19 @@ import type { ReviewListItem } from '~/types/desk'
  * step it has *left* when the state is `done`, so a posted review would read "Draft" and
  * tell a reader it still needs signing off — while the queue says it is with the author.
  *
+ * ## The dismissed reviews are here, and not in the default view
+ *
+ * A review the developer has dismissed is out of the queue and out of this page's default
+ * view — DEV-945 — and this is the one page that can still find it. The second picker is
+ * what asks for them, and it has three positions rather than two so that the page's own
+ * promise still holds: "every review the record holds, whatever became of it" is
+ * **Everything**, and the default is the narrower claim it makes in the line under the
+ * heading.
+ *
+ * Each dismissed row says when and why, under the title, because a reader of this view is
+ * asking exactly that. The reason is the developer's own words, so it is drawn as text —
+ * not through `TickedText`, which is for prose a session wrote.
+ *
  * ## Where the record has no answer
  *
  * A review nothing has reported on is "Not started", in words: the record holds seven
@@ -43,9 +56,37 @@ const desk = useReviewDesk()
 
 useHead({ title: 'Reviews · Review Desk' })
 
+/**
+ * What the last screen left to say, which is only ever a deleted review's receipt.
+ *
+ * Read once, on mount: the review's own page cannot say what became of it, because by
+ * then it is not there to draw. A reload says nothing, which is right — this is an
+ * acknowledgement, not a state the page holds.
+ */
+const handedOver = ref(takeHandOver())
+
 /** Which repository to show. `ALL_REPOSITORIES` for every one, as the queue words it. */
 const repo = ref(ALL_REPOSITORIES)
-const reviews = desk.reviews(repo)
+
+/**
+ * Which of the dismissed reviews to show. The contract's three positions, as they are
+ * sent: the page holds the API's own word for the filter rather than a word of its own,
+ * so there is nothing to translate and nothing to disagree about.
+ */
+const dismissed = ref<DismissedReviews>('excluded')
+
+const dismissedTabs: Array<{ value: DismissedReviews, label: string }> = [
+  { value: 'excluded', label: 'In play' },
+  { value: 'only', label: 'Dismissed' },
+  { value: 'included', label: 'Everything' },
+]
+
+/**
+ * The read follows both pickers, server-side, as the repository picker already did: a
+ * dismissed view filtered in the page would be the page deciding what a dismissal is,
+ * and the record is where that is decided.
+ */
+const reviews = desk.reviews(repo, dismissed)
 
 /**
  * The repositories to pick from, read the way the Rules screen reads them.
@@ -99,6 +140,27 @@ function about(row: ReviewListItem): string {
   return parts.join(' · ')
 }
 
+/** What this view holds, said in the line under the heading. */
+const VIEW_LINES: Record<DismissedReviews, string> = {
+  excluded: 'Every review in play. The ones you have dismissed are under Dismissed.',
+  only: 'The reviews you have dismissed, each with when and why.',
+  included: 'Every review the record holds, whatever became of it — the dismissed ones '
+    + 'among them.',
+}
+
+/**
+ * What this view holds, read off **the answer** rather than off the picker.
+ *
+ * `data.dismissed` is in the response for this reason — the contract's own words are that
+ * the page's filter reads what it was given rather than trusting its own state. Read off
+ * the ref, the line changes the instant the picker moves while the rows underneath are
+ * still the previous view's for as long as the read is in flight, which is one sentence
+ * describing another view's rows.
+ */
+function viewLine(answer: { dismissed: DismissedReviews }): string {
+  return VIEW_LINES[answer.dismissed]
+}
+
 /** Whether any row has no activity time, which the caption then says. */
 const someTimesMissing = computed(
   () => (reviews.data.value?.reviews ?? []).some(row => row.last_activity_at == null),
@@ -116,13 +178,53 @@ const someTimesMissing = computed(
  * filter is component state and never reaches the URL, so there was not even an address to
  * edit.
  */
-function isEmpty(answer: { repo: string | null, reviews: ReviewListItem[] }): boolean {
-  return answer.repo == null && answer.reviews.length === 0
+function isEmpty(answer: {
+  repo: string | null
+  dismissed: DismissedReviews
+  reviews: ReviewListItem[]
+}): boolean {
+  return answer.repo == null
+    && answer.dismissed === 'excluded'
+    && answer.reviews.length === 0
+}
+
+/**
+ * What an empty answer means, when it is not an empty database.
+ *
+ * **Three ways to ask for nothing, and three different things to say.** A repository with
+ * no reviews is not a database with none — that is the fault the comment above records —
+ * and "no review has been dismissed" is not either of them. One sentence for each, said
+ * inside the default slot so the pickers stay on the page to get back out with.
+ */
+function nothingHere(answer: { repo: string | null, dismissed: DismissedReviews }): string {
+  const where = answer.repo == null ? '' : ` on ${answer.repo}`
+  const lines: Record<DismissedReviews, string> = {
+    only: `No review${where} has been dismissed. A review you dismiss leaves the queue `
+      + 'and turns up here.',
+    included: `No review${where} yet.`,
+    excluded: `No review${where} is in play. Any you have dismissed are under Dismissed.`,
+  }
+  return lines[answer.dismissed]
 }
 </script>
 
 <template>
   <div class="reviews">
+    <!--
+      **Above the state, not inside it.** The sentence a delete hands over was drawn in
+      the default slot, and `DeskState` draws the *empty* slot instead of that one — so
+      deleting the last review in play, which is precisely the database DEV-945 was
+      raised from, dropped the only acknowledgement the one irreversible act gets. Here
+      it is on the page whichever slot is drawn.
+    -->
+    <DeskNotice
+      v-if="handedOver"
+      tone="plain"
+      class="handed-over"
+    >
+      {{ handedOver }}
+    </DeskNotice>
+
     <DeskState
       :resource="reviews"
       :is-empty="isEmpty"
@@ -133,9 +235,17 @@ function isEmpty(answer: { repo: string | null, reviews: ReviewListItem[] }): bo
           <h1 class="rd-display">
             {{ count(data.reviews.length, 'review') }}
           </h1>
+
+          <!--
+            **The line says what this view is, not what the page is.** "Every review the
+            record holds" was true of a page with no filter and is the claim
+            **Everything** makes; the default view leaves the dismissed ones out, and a
+            heading that went on claiming all of them would be the page contradicting its
+            own picker.
+          -->
           <p class="rd-meta aside-line">
-            Every review the record holds, whatever became of it. How long one took is on
-            its own page.
+            {{ viewLine(data) }}
+            How long one took is on its own page.
           </p>
         </div>
 
@@ -145,6 +255,11 @@ function isEmpty(answer: { repo: string | null, reviews: ReviewListItem[] }): bo
             label="Which repository to show"
             :options="repoTabs"
             :disabled="repos.pending.value && !repos.loaded.value"
+          />
+          <DecisionTrack
+            v-model="dismissed"
+            label="Which reviews to show"
+            :options="dismissedTabs"
           />
           <!--
             **The sort, said out loud**, the way the queue says "Oldest first". Newest
@@ -167,8 +282,10 @@ function isEmpty(answer: { repo: string | null, reviews: ReviewListItem[] }): bo
           v-if="data.reviews.length === 0"
           class="rd-empty"
         >
-          No review on {{ data.repo }} yet. Every other repository's are under
-          <strong>All repositories</strong>.
+          {{ nothingHere(data) }}
+          <template v-if="data.repo != null">
+            Every other repository's are under <strong>All repositories</strong>.
+          </template>
         </p>
 
         <DeskSection
@@ -201,13 +318,37 @@ function isEmpty(answer: { repo: string | null, reviews: ReviewListItem[] }): bo
               v-if="row.step_number != null"
               class="rd-meta step-of"
             >step {{ row.step_number }} of {{ row.steps_total }}</span>
+            <!--
+              **When and why, on the row**, which is what DEV-945 asks the dismissed view
+              for. On its own line because the reason is the developer's sentence and has
+              no length limit — the step line above it is two or three words.
+
+              Drawn on every view rather than only on the dismissed one: under
+              **Everything** a dismissed review sits beside reviews in play, and a row
+              that did not say so would be the one row on the page that reads as something
+              it is not.
+            -->
+            <span
+              v-if="row.review.dismissed_at"
+              class="rd-meta dismissed"
+            >Dismissed {{ sinceLabel(row.review.dismissed_at) }}<template
+              v-if="row.review.dismissed_reason"
+            > — {{ row.review.dismissed_reason }}</template></span>
           </QueueRow>
         </DeskSection>
       </template>
 
       <!--
-        A database with nothing in it. It reads as new rather than broken, and it points at
+        Nothing in the default view. It reads as new rather than broken, and it points at
         the queue, which is where a review is started.
+
+        **And it carries the one control that is otherwise not on the page.** `DeskState`
+        draws this slot *instead of* the default one, pickers and all, so a database whose
+        only review is a dismissed one said "no reviews" with no way to reach the view
+        that holds it — on the one page that is supposed to be able to find a review
+        whatever became of it. The card cannot say for certain which of the two states it
+        is in, because the answer it is drawn from is the one that leaves dismissed
+        reviews out; what it can do is offer the look, which is what this button is.
       -->
       <template #empty>
         <DeskCard
@@ -215,17 +356,23 @@ function isEmpty(answer: { repo: string | null, reviews: ReviewListItem[] }): bo
           class="fresh"
         >
           <h1 class="rd-display">
-            No reviews yet
+            No reviews in play
           </h1>
           <p class="rd-note rd-measure">
-            This database holds no reviews. One turns up here as soon as an agent session
-            records it, and stays here afterwards — including once it has been posted,
-            which is what this page is for.
+            No review is waiting, running or finished here. One turns up as soon as an
+            agent session records it, and stays afterwards — including once it has been
+            posted, which is what this page is for.
           </p>
           <p class="rd-note rd-measure">
             To start one, paste a pull request link on the
             <NuxtLink to="/">queue</NuxtLink>.
           </p>
+          <DeskButton
+            kind="secondary"
+            @click="dismissed = 'only'"
+          >
+            Look at the dismissed reviews
+          </DeskButton>
         </DeskCard>
       </template>
     </DeskState>
@@ -241,6 +388,10 @@ function isEmpty(answer: { repo: string | null, reviews: ReviewListItem[] }): bo
 }
 
 .top {
+  max-width: 44rem;
+}
+
+.handed-over {
   max-width: 44rem;
 }
 
@@ -271,9 +422,22 @@ function isEmpty(answer: { repo: string | null, reviews: ReviewListItem[] }): bo
   flex: 1 1 100%;
 }
 
+/*
+ * The dismissal takes the row's whole width and wraps, because the reason is a sentence
+ * somebody typed rather than a label. Its own colour, so the row reads as a review that
+ * has left the desk without the words having to say it twice.
+ */
+.dismissed {
+  display: block;
+  flex: 1 1 100%;
+  overflow-wrap: break-word;
+  color: var(--rd-warn-ink);
+}
+
 .fresh {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 12px;
   padding: 32px;
 }

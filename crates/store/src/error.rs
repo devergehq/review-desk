@@ -46,6 +46,50 @@ pub enum StoreError {
     )]
     NoDraftSection { review_id: i64, seq: i64 },
 
+    /// A review is already dismissed, so a second dismissal would overwrite the time and
+    /// the words of the one the developer actually made.
+    ///
+    /// **No time in the message.** The store holds times as integers and the server
+    /// converts them at its own boundary, so a timestamp here would reach the developer
+    /// as `1791780818`. When it was dismissed is on the review, which is what the page
+    /// re-reads.
+    #[error(
+        "review {review_id} is already dismissed; restore it first to dismiss it again \
+         with different words"
+    )]
+    AlreadyDismissed { review_id: i64 },
+
+    /// An act that needs an agent afterwards was asked for on a dismissed review.
+    #[error(
+        "review {review_id} is dismissed, so no session will be started for it and \
+         nothing would come of {act}; bring it back first"
+    )]
+    DismissedReview { review_id: i64, act: &'static str },
+
+    /// A review that is not dismissed cannot be brought back.
+    #[error("review {review_id} is not dismissed, so there is nothing to bring back")]
+    NotDismissed { review_id: i64 },
+
+    /// A review holds work a delete would lose.
+    ///
+    /// **`lost` is "that" or "them", and it is a field rather than a word in the
+    /// sentence.** "review 7 holds 2 findings, and deleting it would lose that" is what
+    /// the one-word version said, and this message is not only read by the page: the page
+    /// hides the button, so the refusal is what a developer sees on the race the hidden
+    /// button cannot cover — a finding added between the page's read and the `DELETE`.
+    /// `contract/README.md` says the API refuses in the same words the card uses, and
+    /// [`ReviewWork::in_words`] is beside the thing that decides this one so the two
+    /// cannot drift.
+    #[error(
+        "review {review_id} holds {holds}, and deleting it would lose {lost}: dismiss it \
+         instead, which takes it out of the queue and keeps the record"
+    )]
+    ReviewStarted {
+        review_id: i64,
+        holds: String,
+        lost: &'static str,
+    },
+
     /// A row was requested, or referenced, that is not there.
     #[error("no {entity} with id {id}")]
     NotFound { entity: &'static str, id: String },
@@ -112,6 +156,10 @@ impl StoreError {
             StoreError::DuplicateGithubComment { .. } => "duplicate_github_comment",
             StoreError::DraftStatus { .. } => "draft_status",
             StoreError::NoDraftSection { .. } => "no_draft_section",
+            StoreError::AlreadyDismissed { .. } => "already_dismissed",
+            StoreError::DismissedReview { .. } => "dismissed_review",
+            StoreError::NotDismissed { .. } => "not_dismissed",
+            StoreError::ReviewStarted { .. } => "review_started",
             StoreError::NotFound { .. } => "not_found",
             StoreError::UnknownParent { .. } => "unknown_parent",
             StoreError::InvalidValue { .. } => "invalid_value",
@@ -133,6 +181,10 @@ impl StoreError {
                 | StoreError::DuplicateGithubComment { .. }
                 | StoreError::DraftStatus { .. }
                 | StoreError::NoDraftSection { .. }
+                | StoreError::AlreadyDismissed { .. }
+                | StoreError::DismissedReview { .. }
+                | StoreError::NotDismissed { .. }
+                | StoreError::ReviewStarted { .. }
                 | StoreError::NotFound { .. }
                 | StoreError::UnknownParent { .. }
                 | StoreError::InvalidValue { .. }

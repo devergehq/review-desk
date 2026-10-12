@@ -5,7 +5,7 @@ holds no implementation of either.
 
 | File | What it is |
 |---|---|
-| `openapi.yaml` | OpenAPI 3.1 for the local JSON API. 21 operations. |
+| `openapi.yaml` | OpenAPI 3.1 for the local JSON API. 24 operations. |
 | `examples/` | One example response per endpoint, one request body per write, and the error shape. A `.<variant>.` form adds a second shape where one example cannot show an optional field both present and absent. `getReview.response.round-two.json` is the second round of the same pull request as the canonical one. |
 | `validate-examples.mjs` | Checks every example against its schema, and fails when an endpoint has no example. |
 
@@ -36,7 +36,7 @@ touches `contract/`.
 
 **`npm run lint` reports two warnings and exits 0.** Both are `operation-4xx-response`
 against `getInbox` and `listRepos`, which take no input and so have no 4xx to declare. The
-rule is left on because it is doing real work on the other nineteen operations — including
+rule is left on because it is doing real work on the other twenty-two operations — including
 `listReviewTimings`, which takes a repository and therefore declares a 400 like every other
 read that takes one. CI gates on errors, which is what redocly exits non-zero for.
 
@@ -78,7 +78,8 @@ Each screen is one GET. The dashboard does no joining.
 | Screen | Reads | Writes |
 |---|---|---|
 | Inbox | `GET /inbox` | `POST /reviews` |
-| One review | `GET /reviews/{reviewId}` | `POST /reviews/{reviewId}/brief/confirm`, `PATCH /reviews/{reviewId}/findings/{seq}`, `POST /reviews/{reviewId}/findings/{seq}/decide` |
+| Reviews | `GET /reviews?repo=&dismissed=` | — |
+| One review | `GET /reviews/{reviewId}` | `POST /reviews/{reviewId}/brief/confirm`, `PATCH /reviews/{reviewId}/findings/{seq}`, `POST /reviews/{reviewId}/findings/{seq}/decide`, `POST …/dismiss`, `POST …/restore`, `DELETE /reviews/{reviewId}` |
 | — not a screen | `GET /reviews/{reviewId}/brief/problem-statement` | — |
 | — not a screen | `GET /timings` | — |
 | Draft preview | `GET /reviews/{reviewId}/draft` | `PUT …/draft`, `POST …/findings/{seq}/decide`, `POST …/draft/approve`, `POST …/draft/ticket-and-approve`, `POST …/draft/send-back`, `POST …/held-back/ticket` |
@@ -649,6 +650,10 @@ and the screen renders the ones that are present.
 | Rules | "Dismiss" | `POST /rules/{ruleId}/dismiss` |
 | Rules | "Retire" | `POST /rules/{ruleId}/retire` |
 | Rules | "Keep 60 more days" | `POST /rules/{ruleId}/defer` |
+| Reviews | repository picker, "In play" / "Dismissed" / "Everything" | `GET /reviews?repo=&dismissed=` |
+| Understand | "Dismiss this review", with a reason | `POST /reviews/{reviewId}/dismiss` |
+| Understand | "Bring it back" | `POST /reviews/{reviewId}/restore` |
+| Understand | "Delete it" → "Delete it for good" | `DELETE /reviews/{reviewId}`, offered only for a review holding nothing: no brief, no findings, no draft, and no review posted on GitHub |
 
 **"Request review" has no endpoint and should not get one.** It asks GitHub to add a
 reviewer to a pull request — a *write* to another system's record. `POST /reviews` reads
@@ -680,6 +685,30 @@ ticket can add that line. This is the same class of thing as "Request review" ab
 recorded rather than quietly dropped. What the endpoint does record is everything else:
 the open findings held back and marked `ticketed` by the developer, the one nit ticket
 asked for, and the draft approved as `approve`.
+
+**Dismissing a review asks twice, and deleting one asks twice differently.** A dismissal
+asks for a reason — the API refuses it without one, as it refuses a dismissed rule without
+one — and is undone by "Bring it back" beside it. A delete cannot be undone by anything, so
+it is the one act on this desk that asks for a second press, and the second press names the
+review: "Delete review 13 — acme/portal #777?". Where a review holds a brief, a finding or
+a draft the control is not drawn at all and the card says what it holds; the API refuses it
+in the same words, which is what makes the two agree.
+
+**A dismissed review refuses the acts that need an agent afterwards** — `confirmBrief`,
+`approveDraft`, `sendBackDraft`, `ticketRestAndApprove`, and `requestNitTicket` **when it
+is the developer asking** — each a `409`, because each is an item in the work list a
+dismissed review is not in, and performing one would be a sign-off nothing will ever act
+on. Everything that needs nobody after it still works on one.
+
+`requestNitTicket` is the one with two roles and only one of them refuses: a session
+sending a `ticket_id` is reporting a ticket it has **already filed**, and refusing that
+would leave the record never learning which ticket exists in the tracker.
+
+**Neither has a command.** Both are the developer's act from the page — Patrick, 12 October
+2026, DEV-945 — for the reason confirming a brief and approving a draft have no command: a
+session that could dismiss a review could take its own work out of the developer's sight,
+and one that could delete a review could remove the record of it.
+`crates/cli/tests/cli.rs` asserts the command line offers no such verb.
 
 **Two writes this contract defines have no control on the mockups**: confirming a brief
 and changing a finding's disposition. DEV-854 requires both, and DEV-855's acceptance

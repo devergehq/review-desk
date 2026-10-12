@@ -1,10 +1,10 @@
 /*
- * The contract's nineteen operations, as nineteen functions.
+ * The contract's twenty-two operations, as twenty-two functions.
  *
  * **This file and `sample.ts` are the only two places in `web/` that produce records**, and
  * this is the only one that makes an HTTP request. `test/architecture.spec.ts` holds that.
  *
- * Six reads and thirteen writes, named after the `operationId` in `contract/openapi.yaml`,
+ * Six reads and sixteen writes, named after the `operationId` in `contract/openapi.yaml`,
  * at the paths its `servers` entry gives. Nothing here joins anything: each screen is one
  * GET, which is the contract's own rule and the reason the dashboard needs no client-side
  * model of the record.
@@ -35,6 +35,8 @@ import type {
   DecideFindingRequest,
   DeferRuleRequest,
   DeskError,
+  DismissReviewRequest,
+  DismissedReviews,
   Disposition,
   DraftDetail,
   Finding,
@@ -256,8 +258,19 @@ export function getInbox(): Promise<Inbox> {
  * picker's "All repositories" is the absence of the parameter, and saying it twice is one
  * place for the two to disagree.
  */
-export function listReviews(repo: string | null): Promise<ReviewList> {
-  const query = repo == null ? '' : `?repo=${encodeURIComponent(repo)}`
+export function listReviews(
+  repo: string | null,
+  dismissed: DismissedReviews = 'excluded',
+): Promise<ReviewList> {
+  const asked = new URLSearchParams()
+  if (repo != null) asked.set('repo', repo)
+  /*
+   * Sent only when it is not the default, which is the same rule the repository follows
+   * one line up: the absence of the parameter *is* "the reviews in play", and saying it
+   * twice is one place for the page and the server to disagree.
+   */
+  if (dismissed !== 'excluded') asked.set('dismissed', dismissed)
+  const query = asked.size === 0 ? '' : `?${asked.toString()}`
   return send<ReviewList>('GET', `/reviews${query}`)
 }
 
@@ -412,6 +425,37 @@ export function requestNitTicket(
 ): Promise<NitTicket> {
   const request: RequestNitTicketRequest = { ticket_id: ticketId }
   return send<NitTicket>('POST', `/reviews/${reviewId}/held-back/ticket`, request)
+}
+
+/**
+ * `POST /reviews/{id}/dismiss` — take a review out of play, with a reason.
+ *
+ * Hidden and kept: the review leaves the queue, the work list an agent reads and the
+ * Reviews list's default view, and everything under it stays. The reason is required, as
+ * it is for a dismissed rule — a review hidden silently is one nobody can afterwards say
+ * why they hid — and it is what the dismissed view draws beside it.
+ *
+ * Refused with `conflict` when the review is already dismissed.
+ */
+export function dismissReview(reviewId: number, reason: string): Promise<Review> {
+  const request: DismissReviewRequest = { reason }
+  return send<Review>('POST', `/reviews/${reviewId}/dismiss`, request)
+}
+
+/** `POST /reviews/{id}/restore` — bring a dismissed review back. */
+export function restoreReview(reviewId: number): Promise<Review> {
+  return send<Review>('POST', `/reviews/${reviewId}/restore`)
+}
+
+/**
+ * `DELETE /reviews/{id}` — remove a review that never got past being requested.
+ *
+ * Refused with `conflict` for a review holding a brief, a finding, a draft or the review
+ * it posted on GitHub, and the message says which. It answers with the review that
+ * went, which is the only copy left of it.
+ */
+export function deleteReview(reviewId: number): Promise<Review> {
+  return send<Review>('DELETE', `/reviews/${reviewId}`)
 }
 
 /** `POST /rules/{id}/promote` — the developer promotes; the app never promotes itself. */

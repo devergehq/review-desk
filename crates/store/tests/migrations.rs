@@ -795,3 +795,107 @@ fn a_ticket_id_left_blank_by_the_old_writer_becomes_absent() {
         "re-stating the same ticket keeps the address it belongs to"
     );
 }
+
+/// **The four ids an empty string would now trap a review with.**
+///
+/// Released code wrote them with no non-blank check — `review link --session "$UNSET"`
+/// stores `''` — and migration 17 changes what that empty string means. A `session_id` of
+/// `''` is `is_some()`, so `review_is_claimed` reads the review as one somebody is working
+/// on and its head never moves again; a `github_review_id` of `''` makes
+/// `ReviewWork::started` true, so the review can never be deleted; `not_checked` claims it
+/// the same way. Each is a row a developer cannot get out of, and normalising the writes
+/// does not reach it.
+///
+/// Migration 16's argument for repairing `ticket_id`, applied to its own columns.
+#[test]
+fn ids_left_blank_by_the_old_writer_do_not_trap_a_review() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+
+    const FROM: i64 = 16;
+    assert!(newest_version() > FROM, "this test needs migration 17");
+
+    {
+        let old = Store::open_at_version(&path, FROM).expect("open at 16");
+        assert_eq!(old.schema_version().unwrap(), FROM);
+    }
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        // Spaces, a tab and a trailing newline: what a shell substitution leaves behind,
+        // and what SQLite's one-argument `TRIM` would not have taken.
+        conn.execute_batch(
+            "INSERT INTO reviews
+                 (id, repo, pr, head_sha, round, session_id, ledger_id,
+                  github_review_id, not_checked, created_at)
+             VALUES (1, 'acme/portal', 777, 'abc123', 1, '', '  ', '', '', 1000),
+                    (2, 'acme/portal', 778, 'abc124', 1, '\t', '', '
+', '   ', 1000);",
+        )
+        .expect("write the rows a released build left");
+    }
+
+    let migrated = Store::open(&path).expect("reopen migrates");
+    assert_eq!(migrated.schema_version().unwrap(), newest_version());
+
+    for id in [1, 2] {
+        let review = migrated.get_review(id).expect("the review survived");
+        assert_eq!(review.session_id, None, "review {id}: an empty id is no id");
+        assert_eq!(review.ledger_id, None, "review {id}");
+        assert_eq!(review.github_review_id, None, "review {id}");
+        assert_eq!(review.not_checked, None, "review {id}");
+
+        // And the two things the empty strings were trapping it out of.
+        assert!(
+            !migrated.review_work(id).expect("what it holds").started(),
+            "review {id} holds nothing, so it can be deleted"
+        );
+    }
+
+    let moved = migrated
+        .open_review("acme/portal", 777, "def456")
+        .expect("the author pushed");
+    assert!(
+        !moved.created && moved.head_moved_from.as_deref() == Some("abc123"),
+        "the request moves again rather than opening a second unstarted review"
+    );
+}
+
+/// **A title the old writer left blank becomes absent, which is what it means.**
+///
+/// The fifth column written through the loose `COALESCE` path, and the one left out of
+/// migration 17's first sweep because it changes none of that migration's rules. The
+/// argument does not depend on the rules: `POST /reviews` fills a missing title from
+/// GitHub only when the column is null, so a row holding `''` can never be given one, and
+/// `review find` prints a dangling "— " for it for ever.
+#[test]
+fn a_title_left_blank_by_the_old_writer_becomes_absent() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+
+    const FROM: i64 = 16;
+    assert!(newest_version() > FROM, "this test needs migration 17");
+
+    {
+        let old = Store::open_at_version(&path, FROM).expect("open at 16");
+        assert_eq!(old.schema_version().unwrap(), FROM);
+    }
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "INSERT INTO reviews (id, repo, pr, head_sha, round, title, created_at)
+                 VALUES (1, 'acme/portal', 412, 'abc123', 1, '', 1000),
+                        (2, 'acme/portal', 413, 'abc124', 1, '  ', 1000),
+                        (3, 'acme/portal', 414, 'abc125', 1, 'Retry deliveries', 1000);",
+        )
+        .expect("write the rows a released build left");
+    }
+
+    let migrated = Store::open(&path).expect("reopen migrates");
+    assert_eq!(migrated.get_review(1).unwrap().title, None);
+    assert_eq!(migrated.get_review(2).unwrap().title, None);
+    assert_eq!(
+        migrated.get_review(3).unwrap().title.as_deref(),
+        Some("Retry deliveries"),
+        "and a title somebody wrote is left exactly as it was"
+    );
+}

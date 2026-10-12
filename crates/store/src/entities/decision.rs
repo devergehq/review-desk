@@ -301,6 +301,7 @@ impl Store {
         by: Actor,
     ) -> Result<TicketedAndApproved> {
         only_the_developer(by, "approve a draft")?;
+        self.refuse_if_dismissed(review_id, "ticketing what is left and approving")?;
 
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
         let draft = self.get_draft(review_id)?;

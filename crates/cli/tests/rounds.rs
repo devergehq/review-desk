@@ -13,7 +13,7 @@ mod common;
 
 use std::path::Path;
 
-use common::{open_review, Desk};
+use common::{open_review, start_review, Desk};
 use tempfile::TempDir;
 
 /// A `gh` that answers the two reads `round commits` makes, and refuses anything else.
@@ -378,6 +378,9 @@ fn round_commits_records_what_changed_since_the_previous_round() {
 
     let first = open_review(&desk, "acme/portal", "412", "3f9c2ab");
     assert!(!first.is_empty());
+    // Round 1 is reviewed, so the second commit is round 2 rather than round 1 moved to
+    // it: DEV-945's rule for a request nobody has started.
+    start_review(&desk, &first);
     let second = open_review(&desk, "acme/portal", "412", "9d02e71");
 
     let output = desk
@@ -495,4 +498,34 @@ fn round_list_on_a_pull_request_nobody_has_reviewed_says_so() {
     let desk = Desk::new();
     let line = desk.run(&["round", "list", "--repo", "acme/portal", "--pr", "999"]);
     assert_eq!(line, "no reviews of acme/portal#999");
+}
+
+#[test]
+fn round_list_answers_for_the_repository_however_it_was_typed() {
+    // The read the slug sweep missed, found by a review of the sweep: the rows were right
+    // and the heading named a repository the rows did not.
+    let desk = Desk::new();
+    let review = open_review(&desk, "Trilogy-Care/TC-Portal", "9585", "abc1234");
+    assert!(!review.is_empty());
+
+    let listed = desk.json(&[
+        "round",
+        "list",
+        "--repo",
+        "Trilogy-Care/tc-portal",
+        "--pr",
+        "9585",
+    ]);
+    assert_eq!(listed["repo"], "trilogy-care/tc-portal");
+    assert_eq!(listed["rounds"].as_array().expect("rounds").len(), 1);
+
+    let none = desk.run(&[
+        "round",
+        "list",
+        "--repo",
+        "Trilogy-Care/Nothing",
+        "--pr",
+        "1",
+    ]);
+    assert_eq!(none, "no reviews of trilogy-care/nothing#1");
 }

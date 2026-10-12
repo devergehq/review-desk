@@ -31,13 +31,13 @@ use review_desk_store::{
     finding_heading, now, Actor, BlindPassState, Brief, BriefBlindPass, BriefDisagreement,
     BriefFlowBox, BriefFlowRow, BriefOpenChoice, BriefOption, BriefOptionVerdict, BriefPart,
     BriefPartFile, BriefProblem, BriefSupportTable, CriterionStatus, Decision,
-    DescriptionLintStatus, Disposition, Draft, DraftLint, DraftSection, FileCheck, Finding,
-    FindingDecision, FindingHunk, FindingRef, HunkLine, HunkLineMarker, NewAcceptanceCriterion,
-    NewBrief, NewDescriptionLintResult, NewDraft, NewFileChange, NewFinding, NewOutcome, NewReview,
-    NewReviewSource, NewRule, NitTicket, OptionProposer, Outcome, OutcomeKind, ProblemStatement,
-    ProblemVerdict, Review, ReviewEvent, ReviewFacts, ReviewLayer, ReviewLayerName, ReviewLayerRun,
-    ReviewProvenance, ReviewTimings, Rule, RuleScope, RuleStage, Severity, SourceKind, Store,
-    Verification,
+    DescriptionLintStatus, DismissedReviews, Disposition, Draft, DraftLint, DraftSection,
+    FileCheck, Finding, FindingDecision, FindingHunk, FindingRef, HunkLine, HunkLineMarker,
+    NewAcceptanceCriterion, NewBrief, NewDescriptionLintResult, NewDraft, NewFileChange,
+    NewFinding, NewOutcome, NewReview, NewReviewSource, NewRule, NitTicket, OptionProposer,
+    Outcome, OutcomeKind, ProblemStatement, ProblemVerdict, Review, ReviewEvent, ReviewFacts,
+    ReviewLayer, ReviewLayerName, ReviewLayerRun, ReviewProvenance, ReviewTimings, Rule, RuleScope,
+    RuleStage, Severity, SourceKind, Store, Verification,
 };
 use serde_json::{json, Map, Value};
 
@@ -1105,6 +1105,8 @@ fn review_document(review: &Review) -> Value {
         "created_at": review.created_at,
         "pr_state": review.pr_state.map(|state| state.as_str()),
         "harvested_at": review.harvested_at,
+        "dismissed_at": review.dismissed_at,
+        "dismissed_reason": review.dismissed_reason,
     })
 }
 
@@ -1405,11 +1407,14 @@ fn review_timing_rows(store: &Store) -> Value {
 
 /// `GET /reviews`: every review, newest first, with the step it has reached.
 fn review_list(store: &Store) -> Value {
+    let dismissed = DismissedReviews::default();
     json!({
         // The repository asked about, echoed back. `None` here, for every repository.
         "repo": Value::Null,
+        // The choice this answer was composed for, echoed back the same way.
+        "dismissed": dismissed.as_str(),
         "reviews": store
-            .reviews_at_step(None)
+            .reviews_at_step(None, dismissed)
             .expect("every review")
             .iter()
             .map(|at| {
@@ -2424,8 +2429,39 @@ fn every_response_example_can_be_produced_from_the_store() {
         }),
     );
 
+    // **The three removals come last, and deliberately**: the first two write to the
+    // seeded review and the third deletes a review outright, so anything above them
+    // would be checking a record they had moved. Each is the document the server answers
+    // with, which for all three is the review itself.
+    fields += check(
+        "dismissReview",
+        &review_document(
+            &store
+                .dismiss_review(
+                    review,
+                    "the pull request was closed unmerged, so there is nothing left to act on",
+                )
+                .expect("dismiss the review"),
+        ),
+    );
+    fields += check(
+        "restoreReview",
+        &review_document(&store.restore_review(review).expect("restore it")),
+    );
+    // A review of its own, with nothing written to it — which is the only review a delete
+    // is offered for, and is the shape of the stray review DEV-945 was raised from.
+    let stray = store
+        .open_review("acme/portal", 777, "4f1a9c2")
+        .expect("a review nobody started")
+        .review
+        .id;
+    fields += check(
+        "deleteReview",
+        &review_document(&store.delete_review(stray).expect("delete it")),
+    );
+
     // Said out loud, so that a refactor which quietly stops checking most of the
-    // contract fails here rather than passing. The twenty-one examples carry well over
+    // contract fails here rather than passing. The twenty-four examples carry well over
     // three hundred leaf fields between them.
     assert!(
         fields >= 300,
@@ -2459,6 +2495,9 @@ fn every_response_example_is_checked() {
         "sendBackDraft",
         "decideFinding",
         "ticketRestAndApprove",
+        "dismissReview",
+        "restoreReview",
+        "deleteReview",
     ]
     .into_iter()
     .collect();
