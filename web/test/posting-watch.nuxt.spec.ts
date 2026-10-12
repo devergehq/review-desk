@@ -346,6 +346,24 @@ describe('when the developer takes the sign-off back', () => {
     expect(announced(page)).toBe('')
   })
 
+  it('remembers nothing about another review’s draft', async () => {
+    /*
+     * One page serves every review, so a draft-to-draft navigation changes these props
+     * without mounting anything. A sign-off watched on review 17 is not a sign-off on 15.
+     */
+    const page = await watching()
+    await page.setProps({
+      draft: draft({
+        review_id: 15,
+        status: 'sent_back',
+        event: null,
+        approved_at: null,
+        sent_back_note: 'Cut F2',
+      }),
+    })
+    expect(announced(page)).toBe('')
+  })
+
   it('says nothing about a sign-off for a draft that never had one', async () => {
     /*
      * An ordinary send-back, from `ready`. The record cannot tell it from a take-back

@@ -82,8 +82,20 @@ const waiting = computed(() => props.draft.status === 'approved' && !props.bodyI
 const watchedTheSignOff = ref(props.draft.status === 'approved')
 
 watch(
-  () => props.draft.status,
-  (status) => {
+  () => [props.draft.review_id, props.draft.status] as const,
+  ([review, status], [wasReview]) => {
+    /*
+     * **A different review in the same component.** One draft page serves every review, so
+     * going from `/reviews/17/draft` to `/reviews/15/draft` changes these props without
+     * mounting anything: the router keeps the page and the two resources re-read. Nothing
+     * this remembers was about the review now in front of it, so it starts again — which
+     * is also why the clock moves, since the figures below are about the new one.
+     */
+    if (review !== wasReview) {
+      watchedTheSignOff.value = status === 'approved'
+      now.value = new Date()
+      return
+    }
     if (status === 'approved') watchedTheSignOff.value = true
     else if (status === 'ready' || status === 'drafting') watchedTheSignOff.value = false
   },
