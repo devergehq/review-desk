@@ -858,3 +858,117 @@ fn deleting_the_newest_round_makes_the_round_before_it_the_newest_again() {
         "so the next commit is round 2 once more, rather than a round 3 with a gap"
     );
 }
+
+#[test]
+fn a_request_a_session_has_picked_up_does_not_move_under_it() {
+    // **The window between a session being dispatched and its brief.** It links itself
+    // and starts a layer long before it writes a brief, a finding or a draft — so a
+    // dispatcher polling in that moment would otherwise move the head under a session
+    // that had already read the commit it was moved off, and the brief it then wrote
+    // would be of one commit on a review the record said was of another.
+    let (_dir, store) = temp_store();
+
+    let linked = store.open_review(REPO, 820, "aaa1111").expect("a request");
+    store
+        .set_review_links(
+            linked.review.id,
+            ReviewLinks {
+                session_id: Some("allele-ae03f8ce".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("a session picked it up");
+
+    let next = store
+        .open_review(REPO, 820, "bbb2222")
+        .expect("the author pushed");
+    assert!(next.created, "the push is a round of its own");
+    assert_eq!(next.review.round, 2);
+    assert_eq!(next.head_moved_from, None);
+    assert_eq!(
+        store.get_review(linked.review.id).unwrap().head_sha,
+        "aaa1111",
+        "and the running session's review is still of the commit it read"
+    );
+}
+
+#[test]
+fn a_request_whose_lint_has_run_does_not_move_under_it_either() {
+    // The other sign of a session at work, for a session that writes its layers before it
+    // links itself: a layer moved off `pending`.
+    let (_dir, store) = temp_store();
+
+    let started = store.open_review(REPO, 821, "aaa1111").expect("a request");
+    store
+        .set_review_layer(
+            started.review.id,
+            1,
+            ReviewLayerState::Done,
+            Some("the lint passed"),
+        )
+        .expect("layer 1 ran");
+
+    let next = store
+        .open_review(REPO, 821, "bbb2222")
+        .expect("the author pushed");
+    assert!(next.created);
+    assert_eq!(next.review.round, 2);
+}
+
+#[test]
+fn a_request_nobody_has_picked_up_still_moves() {
+    // The case the rule is for, asserted beside the two it is not: the dispatcher's own
+    // row, with a ledger id and nothing else, moves to the commit now in front of it.
+    let (_dir, store) = temp_store();
+
+    let recorded = store.open_review(REPO, 822, "aaa1111").expect("a request");
+    store
+        .set_review_links(
+            recorded.review.id,
+            ReviewLinks {
+                ledger_id: Some("ledger-9f2".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("the dispatcher's own entry, which is not a session");
+
+    let again = store
+        .open_review(REPO, 822, "bbb2222")
+        .expect("recorded again");
+    assert!(!again.created, "one request, one review");
+    assert_eq!(again.head_moved_from.as_deref(), Some("aaa1111"));
+    assert_eq!(again.review.ledger_id.as_deref(), Some("ledger-9f2"));
+}
+
+#[test]
+fn a_review_a_session_picked_up_but_wrote_nothing_to_can_still_be_deleted() {
+    // **The two questions are not the same question**, and this is the half that proves
+    // it: `delete_review` asks what the review holds — DEV-945's three things — and a
+    // session id is not one of them. The stray review this issue was raised from was
+    // written by a build session, so it may well carry one, and refusing to delete it for
+    // that reason would refuse the one case the delete exists for.
+    let (_dir, store) = temp_store();
+    let review = requested(&store, 823, "aaa1111");
+    store
+        .set_review_links(
+            review.id,
+            ReviewLinks {
+                session_id: Some("allele-ae03f8ce".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("a session had it");
+    store
+        .set_review_layer(
+            review.id,
+            1,
+            ReviewLayerState::Done,
+            Some("the lint passed"),
+        )
+        .expect("and ran the lint");
+
+    store
+        .delete_review(review.id)
+        .expect("it holds no brief, no finding and no draft");
+    assert!(store.find_review_by_id(review.id).unwrap().is_none());
+}

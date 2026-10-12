@@ -2961,8 +2961,19 @@ test.describe('a database with nothing in it', () => {
       .getByRole('link', { name: 'Reviews' })
       .click()
     await expect(page).toHaveURL(`${empty}reviews`)
-    await expect(page.getByRole('heading', { name: 'No reviews yet' })).toBeVisible()
-    await expect(page.getByText('This database holds no reviews')).toBeVisible()
+    /*
+     * **"No reviews in play", not "this database holds no reviews"** — which is the
+     * stronger claim and one this page cannot make, because the answer it is drawn from
+     * is the one that leaves dismissed reviews out. DEV-945. The card offers the look
+     * instead, and that control is the only way to the dismissed view when this card is
+     * drawn: it replaces the default slot, pickers and all.
+     */
+    await expect(page.getByRole('heading', { name: 'No reviews in play' })).toBeVisible()
+    await expect(page.getByText('No review is waiting, running or finished here'))
+      .toBeVisible()
+    await page.getByRole('button', { name: 'Look at the dismissed reviews' }).click()
+    await expect(page.getByText('No review has been dismissed')).toBeVisible()
+    await expect(page.getByRole('radio').filter({ hasText: 'In play' })).toHaveCount(1)
 
     await page.goto(`${empty}rules`)
     await expect(page.getByRole('heading', { name: 'No rules yet' })).toBeVisible()

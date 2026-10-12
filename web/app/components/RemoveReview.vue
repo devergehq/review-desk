@@ -172,6 +172,7 @@ async function remove() {
         id="dismiss-reason"
         label="Why are you dismissing this review?"
         action="Dismiss it"
+        :working="working"
         @confirm="dismiss"
         @cancel="asking = null"
       />

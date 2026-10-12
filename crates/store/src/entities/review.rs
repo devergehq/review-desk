@@ -5,7 +5,7 @@ use rusqlite::{params, Connection, OptionalExtension, Row, Transaction, Transact
 use crate::error::{Result, StoreError};
 use crate::model::{
     Disposition, NewReview, NitTicket, NitTicketStatus, OpenedReview, PrState, Review, ReviewFacts,
-    ReviewLinks, ReviewWork, Timestamp,
+    ReviewLayerState, ReviewLinks, ReviewWork, Timestamp,
 };
 use crate::{is_unique_violation, normalise, Store};
 
@@ -84,6 +84,11 @@ impl Store {
     /// The round that moved comes back with `created: false` and
     /// [`OpenedReview::head_moved_from`] set, so a caller can say which of the three
     /// things happened without comparing commits itself.
+    ///
+    /// **A round a session has picked up does not move either**, whatever it has written
+    /// yet: a linked session or a layer past `pending` is somebody at work, and moving the
+    /// head under them would put a brief computed from one commit on a review the record
+    /// says is of another. [`Store::latest_unstarted_round`] carries that argument.
     ///
     /// **A dismissed round's head moves too, and it stays dismissed.** It is still one
     /// request, and the developer has said they do not want it reviewed; starting a fresh
@@ -177,12 +182,30 @@ impl Store {
         })
     }
 
-    /// The newest round of this pull request, when no session has started it.
+    /// The newest round of this pull request, when it is a request nobody has picked up.
     ///
-    /// `None` when the pull request has no review at all, and `None` when its newest
-    /// round holds a brief, a finding or a draft. Only the newest round is asked about:
-    /// an older unstarted round was superseded by a commit somebody did review, and
-    /// moving *that* one would move a round out from under the history it sits in.
+    /// `None` when the pull request has no review at all, and `None` when its newest round
+    /// is being worked on. Only the newest round is asked about: an older unstarted round
+    /// was superseded by a commit somebody did review, and moving *that* one would move a
+    /// round out from under the history it sits in.
+    ///
+    /// **Two questions, and they are deliberately not the same one.** [`ReviewWork`] asks
+    /// what a review *holds* — a brief, a finding, a draft — and that is the question
+    /// `delete_review` asks, because those are the three things DEV-945 says a delete
+    /// would lose. This asks the narrower thing: has anybody *begun*? A session that has
+    /// been dispatched links itself with `review link --session` and moves a layer off
+    /// `pending` long before it writes a brief, and between those two moments a review
+    /// holds none of the three.
+    ///
+    /// Without the second half, a dispatcher polling while that session worked would move
+    /// the head under it: the session would then write a brief, findings and anchors all
+    /// computed from the commit it read into a review the record says is of a newer one.
+    /// Before DEV-945 that push opened a round of its own and left the running round
+    /// alone, so the narrower question is what keeps that true.
+    ///
+    /// The case the move is for is untouched: a request the dispatcher recorded and
+    /// nothing has been dispatched for has no session, no layer past `pending` and none
+    /// of the three.
     fn latest_unstarted_round(&self, repo: &str, pr: i64) -> Result<Option<Review>> {
         let Some(round) = self.latest_round(repo, pr)? else {
             return Ok(None);
@@ -190,10 +213,30 @@ impl Store {
         let Some(review) = self.find_review(repo, pr, round)? else {
             return Ok(None);
         };
-        if self.review_work(review.id)?.started() {
+        if self.review_work(review.id)?.started() || self.review_is_claimed(&review)? {
             return Ok(None);
         }
         Ok(Some(review))
+    }
+
+    /// Whether a session has picked this review up, whatever it has written yet.
+    ///
+    /// Two signs, and either is enough. A session linked to the review — written by
+    /// `review link --session`, which is how a session says it is the one working — and a
+    /// layer moved off `pending`, which is how it says what it is doing. A request
+    /// recorded by the dispatcher has neither: `review open` writes no layer, and the
+    /// ledger id it may carry is the dispatcher's own entry rather than a session.
+    fn review_is_claimed(&self, review: &Review) -> Result<bool> {
+        if review.session_id.is_some() {
+            return Ok(true);
+        }
+        Ok(self.conn.query_row(
+            "SELECT EXISTS (
+                 SELECT 1 FROM review_layers WHERE review_id = ?1 AND state <> ?2
+             )",
+            params![review.id, ReviewLayerState::Pending],
+            |row| row.get(0),
+        )?)
     }
 
     /// What this review holds of the three things only a session writes.

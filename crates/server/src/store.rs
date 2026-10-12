@@ -17,8 +17,8 @@ use review_desk_store::{
     Actor, Brief, Decision, DecisionMade, DismissedReviews, Disposition, Draft, DraftSection,
     DraftThread, Finding, FindingInRound, FullReview, NewDraft, NewOutcome, NitTicket,
     OpenedReview, PostedReview, ProblemStatement, RepoSummary, Review, ReviewAtLayer, ReviewAtStep,
-    ReviewEvent, ReviewFacts, ReviewLayer, ReviewProvenance, ReviewTimings, ReviewWork,
-    RoundCommit, RoundSummary, Rule, RuleCounts, RuleStage, RulesSummary, Store, StoreError,
+    ReviewEvent, ReviewFacts, ReviewLayer, ReviewProvenance, ReviewTimings, RoundCommit,
+    RoundSummary, Rule, RuleCounts, RuleStage, RulesSummary, Store, StoreError,
     TicketedAndApproved, Timestamp,
 };
 
@@ -155,12 +155,6 @@ impl Records {
     /// button the API refuses.
     pub fn delete_review(&self, id: i64) -> Result<Review, ApiError> {
         self.with(|store| store.delete_review(id))
-    }
-
-    /// What a review holds of the three things a delete would lose.
-    pub fn review_work(&self, id: i64) -> Result<ReviewWork, ApiError> {
-        self.review(id)?;
-        self.with(|store| store.review_work(id))
     }
 
     /// The sequence numbers of a review's findings on one path.

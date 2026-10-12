@@ -576,39 +576,6 @@ function seedStructured(directory: string, database: string): number {
  * pull-request state is unknown and its three figures are unmeasured, which is the half of
  * the group's rule that says a nought is not an absence.
  */
-/**
- * A sixth review: a review **request**, recorded and never started.
- *
- * `review open` and nothing else — no title, no brief, no finding, no draft — which is
- * what the Locus dispatcher leaves behind when it records a review request on sight, and
- * the shape of the stray review DEV-945 was raised from: `acme/portal #777`, written into
- * the developer's own database by a build session that nobody asked.
- *
- * **It is in nobody's queue**, so it changes none of the counts this suite asserts: there
- * is no brief to confirm, no draft to approve and no outcome, and the groups the queue
- * draws are the developer's rather than an agent's. It is on the Reviews list, where every
- * review is, and it is the only review a delete is offered for.
- */
-function seedRequested(database: string): number {
-  const opened = cli(database, [
-    'review',
-    'open',
-    '--repo',
-    'acme/portal',
-    '--pr',
-    '777',
-    '--head',
-    '4f1a9c2',
-    '--ledger',
-    'ledger-2026-10-12-777',
-  ])
-  const reviewId = Number(opened.match(/\d+/)?.[0])
-  if (!Number.isInteger(reviewId)) {
-    throw new Error(`review open printed no id: ${opened}`)
-  }
-  return reviewId
-}
-
 function seedPosted(directory: string, database: string): number {
   const opened = cli(database, [
     'review',
@@ -1244,6 +1211,39 @@ function seedHeldBack(directory: string, database: string): number {
     ])
   }
 
+  return reviewId
+}
+
+/**
+ * A sixth review: a review **request**, recorded and never started.
+ *
+ * `review open` and nothing else — no title, no brief, no finding, no draft — which is
+ * what the Locus dispatcher leaves behind when it records a review request on sight, and
+ * the shape of the stray review DEV-945 was raised from: `acme/portal #777`, written into
+ * the developer's own database by a build session that nobody asked.
+ *
+ * **It is in nobody's queue**, so it changes none of the counts this suite asserts: there
+ * is no brief to confirm, no draft to approve and no outcome, and the groups the queue
+ * draws are the developer's rather than an agent's. It is on the Reviews list, where every
+ * review is, and it is the only review a delete is offered for.
+ */
+function seedRequested(database: string): number {
+  const opened = cli(database, [
+    'review',
+    'open',
+    '--repo',
+    'acme/portal',
+    '--pr',
+    '777',
+    '--head',
+    '4f1a9c2',
+    '--ledger',
+    'ledger-2026-10-12-777',
+  ])
+  const reviewId = Number(opened.match(/\d+/)?.[0])
+  if (!Number.isInteger(reviewId)) {
+    throw new Error(`review open printed no id: ${opened}`)
+  }
   return reviewId
 }
 

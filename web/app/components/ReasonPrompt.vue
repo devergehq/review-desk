@@ -4,7 +4,17 @@
  * a retirement without a reason, because a rule dismissed silently is proposed again next
  * week with no memory of having been told no — so the screen has to collect one.
  */
-defineProps<{ id: string, label: string, action: string }>()
+/*
+ * `working` is the write being in flight, and it is what stops a second press. Without it
+ * two presses — or two Enters, which is easier — send the act twice, and on an act the
+ * record refuses to repeat the second answer is a refusal shown over a first that
+ * succeeded. The same split `DeskButton` makes: the pointer's states are CSS, and a write
+ * in flight is a fact about the record and so a prop.
+ */
+withDefaults(
+  defineProps<{ id: string, label: string, action: string, working?: boolean }>(),
+  { working: false },
+)
 const emit = defineEmits<{ confirm: [reason: string], cancel: [] }>()
 
 const reason = ref('')
@@ -37,12 +47,14 @@ function confirm() {
         class="rd-field"
         type="text"
         :aria-describedby="problem ? `${id}-problem` : undefined"
+        :disabled="working"
         @keyup.enter="confirm"
         @keyup.escape="emit('cancel')"
       >
       <button
         type="button"
         class="rd-btn rd-btn--primary"
+        :disabled="working"
         @click="confirm"
       >
         {{ action }}
@@ -50,6 +62,7 @@ function confirm() {
       <button
         type="button"
         class="rd-btn"
+        :disabled="working"
         @click="emit('cancel')"
       >
         Cancel

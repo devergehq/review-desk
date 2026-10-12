@@ -139,7 +139,18 @@ const VIEW_LINES: Record<DismissedReviews, string> = {
     + 'among them.',
 }
 
-const viewLine = computed(() => VIEW_LINES[dismissed.value])
+/**
+ * What this view holds, read off **the answer** rather than off the picker.
+ *
+ * `data.dismissed` is in the response for this reason — the contract's own words are that
+ * the page's filter reads what it was given rather than trusting its own state. Read off
+ * the ref, the line changes the instant the picker moves while the rows underneath are
+ * still the previous view's for as long as the read is in flight, which is one sentence
+ * describing another view's rows.
+ */
+function viewLine(answer: { dismissed: DismissedReviews }): string {
+  return VIEW_LINES[answer.dismissed]
+}
 
 /** Whether any row has no activity time, which the caption then says. */
 const someTimesMissing = computed(
@@ -208,7 +219,7 @@ function nothingHere(answer: { repo: string | null, dismissed: DismissedReviews 
             own picker.
           -->
           <p class="rd-meta aside-line">
-            {{ viewLine }}
+            {{ viewLine(data) }}
             How long one took is on its own page.
           </p>
         </div>
@@ -303,8 +314,16 @@ function nothingHere(answer: { repo: string | null, dismissed: DismissedReviews 
       </template>
 
       <!--
-        A database with nothing in it. It reads as new rather than broken, and it points at
+        Nothing in the default view. It reads as new rather than broken, and it points at
         the queue, which is where a review is started.
+
+        **And it carries the one control that is otherwise not on the page.** `DeskState`
+        draws this slot *instead of* the default one, pickers and all, so a database whose
+        only review is a dismissed one said "no reviews" with no way to reach the view
+        that holds it — on the one page that is supposed to be able to find a review
+        whatever became of it. The card cannot say for certain which of the two states it
+        is in, because the answer it is drawn from is the one that leaves dismissed
+        reviews out; what it can do is offer the look, which is what this button is.
       -->
       <template #empty>
         <DeskCard
@@ -312,17 +331,23 @@ function nothingHere(answer: { repo: string | null, dismissed: DismissedReviews 
           class="fresh"
         >
           <h1 class="rd-display">
-            No reviews yet
+            No reviews in play
           </h1>
           <p class="rd-note rd-measure">
-            This database holds no reviews. One turns up here as soon as an agent session
-            records it, and stays here afterwards — including once it has been posted,
-            which is what this page is for.
+            No review is waiting, running or finished here. One turns up as soon as an
+            agent session records it, and stays afterwards — including once it has been
+            posted, which is what this page is for.
           </p>
           <p class="rd-note rd-measure">
             To start one, paste a pull request link on the
             <NuxtLink to="/">queue</NuxtLink>.
           </p>
+          <DeskButton
+            kind="secondary"
+            @click="dismissed = 'only'"
+          >
+            Look at the dismissed reviews
+          </DeskButton>
         </DeskCard>
       </template>
     </DeskState>
@@ -383,6 +408,7 @@ function nothingHere(answer: { repo: string | null, dismissed: DismissedReviews 
 .fresh {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 12px;
   padding: 32px;
 }

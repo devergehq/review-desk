@@ -350,7 +350,15 @@ function inbox(): Inbox {
   const drafts_to_approve = source.drafts
     .filter(detail => detail.draft.status === 'ready')
     .map(detail => ({ detail, owner: reviewById(detail.draft.review_id) }))
-    .filter(pair => pair.owner != null)
+    /*
+     * **And the owner is a review in play**, which the other four groups get from
+     * `inPlay()` and this one has to say for itself: it is built from the drafts rather
+     * than from the reviews, so the filter those four share never reaches it. The server's
+     * `reviews_with_draft_status` carries `AND {IN_PLAY}` for this same group, and a
+     * dismissed review left under "Drafts to approve" here would be sample mode
+     * disagreeing with the binary about a screen this file exists to draw.
+     */
+    .filter(pair => pair.owner != null && pair.owner.review.dismissed_at == null)
     .map(({ owner }) => ({
       review_id: owner!.review.id,
       pull_request: prOf(owner!),

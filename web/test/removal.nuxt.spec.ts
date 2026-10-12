@@ -163,6 +163,26 @@ describe('the Reviews list’s dismissed filter', () => {
       .toHaveLength(1)
   })
 
+  it('can reach the dismissed view from a desk whose only review is dismissed', async () => {
+    // **The one page that is supposed to find a review whatever became of it**, on the
+    // database DEV-945 was raised from: one review, dismissed rather than deleted.
+    // `DeskState` draws the empty card *instead of* the default slot, pickers and all, so
+    // the card has to carry the way out or the dismissed review is unreachable.
+    const [only] = loadSource().reviews
+    await resetDesk({ reviews: [only] })
+    await useReviewDesk().dismissReview(only!.review.id, 'a duplicate of #413')
+
+    const page = await shown(Reviews)
+    expect(page.text()).toContain('No reviews in play')
+    expect(page.text()).not.toContain('This database holds no reviews')
+
+    await click(page, 'Look at the dismissed reviews')
+    expect(page.findAll('.row')).toHaveLength(1)
+    expect(page.text()).toContain('a duplicate of #413')
+    /* And the pickers are back, because the default slot is drawing again. */
+    expect(page.findAll('[role="radio"]').map(one => one.text())).toContain('In play')
+  })
+
   it('says no review has been dismissed rather than that the database is empty', async () => {
     // The fault this is against: `isEmpty` claimed the whole database was empty whenever
     // an answer held no rows, so asking for the dismissed reviews on a desk with none took
@@ -192,6 +212,23 @@ describe('dismissing a review from its page', () => {
     await click(page, 'Dismiss it')
     expect(page.text()).toContain('A reason is required')
     expect(page.text()).not.toContain('is dismissed and out of the queue')
+  })
+
+  it('cannot be sent twice by two presses', async () => {
+    // The second press would lose the store's already-dismissed race and show a refusal
+    // over a dismissal that had in fact succeeded.
+    const page = await understand(17)
+    await click(page, 'Dismiss this review')
+    await page.find('#dismiss-reason').setValue('the pull request was closed unmerged')
+
+    const confirm = page.findAll('button').find(one => one.text() === 'Dismiss it')!
+    await confirm.trigger('click')
+    /* Mid-flight: the control is refusing further presses. */
+    expect(page.find('#dismiss-reason').attributes('disabled')).toBeDefined()
+    await settle(page)
+
+    expect(page.text()).toContain('acme/portal#412 is dismissed.')
+    expect(page.text()).not.toContain('already dismissed')
   })
 
   it('dismisses it with the reason, and the page says what that means', async () => {
