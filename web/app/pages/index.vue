@@ -307,6 +307,26 @@ function alsoWaiting(row: Waiting): string[] {
   return also
 }
 
+/**
+ * The line under the title for the two groups no developer act is waiting on.
+ *
+ * **It names the ticket, which is what makes the id-without-address case readable.** The
+ * contract says of `ticket_url` that null is "a review with an id and no address, which the
+ * row then names on its own line and does not link" — true of the needs-you rows and the
+ * Reviews list because both put the id on their meta line, and it was *not* true of these
+ * two: their meta was the repository alone, so a review with an id and no address drew no
+ * ticket at all, neither link nor text. Serving the pair to these rows without this left
+ * half the gap open while the text said otherwise.
+ */
+function alsoAbout(item: {
+  pull_request: { repo: string }
+  ticket_id?: string | null
+}): string {
+  const parts = [`· ${item.pull_request.repo}`]
+  if (item.ticket_id) parts.push(item.ticket_id)
+  return parts.join(' · ')
+}
+
 /** The second line under a review's title: where it is, which round, what changed. */
 function about(row: Waiting): string {
   const parts = [row.repo]
@@ -765,7 +785,7 @@ function handledLine(data: Inbox): string {
             :key="item.review_id"
             :pr="item.pull_request.pr"
             :title="item.pull_request.title ?? 'no title recorded'"
-            :meta="`· ${item.pull_request.repo}`"
+            :meta="alsoAbout(item)"
             :to="`/reviews/${item.review_id}/understand`"
             :action="sessionAction(item)"
             :action-tone="item.session_alive === false ? 'warn' : 'quiet'"
@@ -814,7 +834,7 @@ function handledLine(data: Inbox): string {
             :key="item.review_id"
             :pr="item.pull_request.pr"
             :title="item.pull_request.title ?? 'no title recorded'"
-            :meta="`· ${item.pull_request.repo}`"
+            :meta="alsoAbout(item)"
             :to="`/reviews/${item.review_id}/understand`"
             action="Read the review"
             action-tone="quiet"
@@ -847,7 +867,7 @@ function handledLine(data: Inbox): string {
             :key="`${item.pull_request.repo}-${item.pull_request.pr}`"
             :pr="item.pull_request.pr"
             :title="item.pull_request.title ?? 'no title recorded'"
-            :meta="`· ${item.pull_request.repo}`"
+            :meta="alsoAbout(item)"
             :href="prUrl(item.pull_request.repo, item.pull_request.pr)"
             action="Open on GitHub"
             action-tone="go"

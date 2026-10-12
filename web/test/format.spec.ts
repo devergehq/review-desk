@@ -267,7 +267,17 @@ describe('the seven layers', () => {
  * hold a reply the harvester never wrote.
  */
 describe('what came back on a posted review', () => {
+  /*
+   * **The required fields are here because the type says they are**, and nothing else
+   * would have caught their absence: `web/test/**` is in none of the four Nuxt tsconfig
+   * projects, so `pnpm typecheck` never reads this file, and an annotation claiming
+   * `InboxPostedItem` may omit two required fields passes every gate. A fixture the server
+   * could not have produced is worse than an untyped one, because the type is what a
+   * reader trusts.
+   */
   const posted = (over: Partial<InboxPostedItem> = {}): InboxPostedItem => ({
+    ticket_id: 'ABC-231',
+    ticket_url: 'https://linear.app/acme/issue/ABC-231',
     review_id: 12,
     pull_request: { repo: 'acme/portal', pr: 398, title: 'Split the export job' },
     round: 1,

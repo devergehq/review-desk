@@ -128,7 +128,7 @@ Everything else on the five screens is below.
 | "#412" | `briefs_to_confirm[].pull_request.pr` |
 | "Retry failed webhook deliveries" | `briefs_to_confirm[].pull_request.title` |
 | "acme/portal" | `briefs_to_confirm[].pull_request.repo` |
-| "ABC-231" | `ticket_id` on whichever of `briefs_to_confirm`, `drafts_to_approve` and `author_replies` put the row there |
+| "ABC-231" | `ticket_id`, on whichever of the five arrays about a review put the row there |
 | "ABC-231" as a link on the row | `ticket_url` on the same item — the address, when the record has one |
 | "brief ready 6 min ago" | `briefs_to_confirm[].brief_ready_at` — step 2's time, else the brief's own |
 | "nothing else runs until you confirm" | `briefs_to_confirm[].blocks_later_layers` |
@@ -151,6 +151,7 @@ Everything else on the five screens is below.
 | "You cut this kind of finding from 5 of the last 5 drafts…" | `proposed_rules[].why_proposed` |
 | "In progress · 2" | length of `in_progress` |
 | "Layer 5 of 7 · code review" | `in_progress[].layer_number`, `.layers_total`, `.layer_name` |
+| the ticket on an agent row, named and linked | `in_progress[].ticket_id`, `.ticket_url` — a review here may be in no other array, so it draws its own row |
 | "session alive" | `in_progress[].session_alive` |
 | "running 20 min" | `in_progress[].in_state_since` |
 | "last activity 4 min ago" | `in_progress[].last_activity_at` |

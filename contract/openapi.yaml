@@ -3958,8 +3958,9 @@ components:
         record, and no way to reach it — while the Reviews list showed the link for that
         same review.
 
-        **All seven arrays about a review carry the pair.** The join is not all the other
-        two arrays do: `in_progress` holds reviews nothing is waiting on the developer for —
+        **All five arrays about a review carry the pair** — the seven here less
+        `own_prs_without_reviewer`, which is a pull request nobody has reviewed, and
+        `proposed_rules`, which is about a rule. The join is not all the other two arrays do: `in_progress` holds reviews nothing is waiting on the developer for —
         18 and 19 in the example — and `posted_awaiting_author` holds 14, and each of those
         draws a row of its own. So a row that could not reach its ticket while
         `GET /reviews` linked it was a gap, and this closes it rather than restating it.
@@ -3967,8 +3968,7 @@ components:
         It was open for a few commits, with a reason that has since expired: DEV-933 was
         changing `InboxInProgressItem`'s shape at the same time, and widening it then would
         have been two changes to one schema at once. DEV-933 merged, so the reason went with
-        it. `own_prs_without_reviewer` is the one array with no ticket, and it is the one
-        with no review — it is a pull request nobody has reviewed.
+        it.
       properties:
         totals: { $ref: '#/components/schemas/InboxTotals' }
         briefs_to_confirm:

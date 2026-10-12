@@ -309,9 +309,11 @@ impl Api {
                     "review_id": at.review.id,
                     "pull_request": wire::inbox_pr(&at.review),
                     // The ticket and its address, like the three arrays that wait on the
-                    // developer. A review here can be in no other array — a session is
-                    // working and nothing is waiting on anyone — so it draws its own row,
-                    // and a row that could not reach its ticket was a gap this closes.
+                    // developer. A review here *may* be in no other array — a session is
+                    // working and nothing is waiting on anyone — and it then draws its own
+                    // row, which is why this array has to carry the pair. It may equally be
+                    // joined onto a needs-you row, which is what the `Inbox` schema
+                    // describes; "can be in no other array" would say the opposite of that.
                     "ticket_id": at.review.ticket_id,
                     "ticket_url": at.review.ticket_url,
                     "layer_number": at.layer.number,

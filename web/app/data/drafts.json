@@ -739,7 +739,7 @@
       "round": 1,
       "title": "Write the delivery log to one place",
       "ticket_id": "ABC-238",
-      "ticket_url": null,
+      "ticket_url": "https://linear.app/acme/issue/ABC-238",
       "changed_lines": 148,
       "session_id": "ses_6d02b8f1",
       "ledger_id": "ledger-2026-10-10-403",

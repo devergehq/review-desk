@@ -620,32 +620,59 @@ describe('the queue', () => {
 
   it('carries the two links on a row no developer act is waiting on', async () => {
     /*
-     * **The gap this closed.** The pair was served only on the three arrays a needs-you row
-     * is built from, so a review that is in *none* of them — a session working on it, or an
-     * author who has not answered — drew a row with a link to its pull request and none to
-     * its ticket, while the Reviews list linked both for the same review. It was left for a
-     * few commits because DEV-933 was changing `InboxInProgressItem`'s shape at the same
-     * time; DEV-933 merged, so the reason went with it.
+     * **The gap this closed, and the test that did not catch it.** The pair was served only
+     * on the three arrays a needs-you row is built from, so a review in *none* of them — a
+     * session working on it, or an author who has not answered — drew a row with a link to
+     * its pull request and none to its ticket, while the Reviews list linked both for the
+     * same review.
+     *
+     * The first version of this test named review 16, "a session running on it" — and
+     * review 16 has no `running` layer at all. It is in `drafts_to_approve`, so the test
+     * measured a needs-you row that had carried the pair for several commits and would have
+     * passed with both new bindings deleted. Reviews **18** and **19** are the ones with a
+     * running layer, and 43 is the posted one; the fixtures gave all three a null address,
+     * so there was nothing to draw either. Both halves are fixed here: 18 and 43 have
+     * addresses, and the rows asserted are theirs.
      */
     const page = await shown(Inbox)
 
-    for (const [group, heading] of [
-      ['With the agent', 'With the agent'],
-      ['Waiting on the author', 'Waiting on the author'],
-    ] as const) {
-      expect(page.text(), `the ${group} group is on the page`).toContain(heading)
-    }
-
-    /*
-     * Review 16 is `acme/billing-api#88`, a session running on it and nothing waiting on
-     * the developer — so it is in `in_progress` and in no needs-you array.
-     */
-    const agentRow = lines(page).find(line => line.row.text().includes('#88'))
-    expect(agentRow, 'the row for #88').toBeDefined()
-    expect(agentRow!.out.map(link => link.attributes('href'))).toEqual([
-      'https://github.com/acme/billing-api/pull/88',
-      'https://linear.app/acme/issue/ABC-240',
+    /* Review 18 is `acme/portal#409`, step 5 running, in no needs-you array. */
+    const agent = lines(page).find(line => line.row.text().includes('#409'))
+    expect(agent, 'the With the agent row for #409').toBeDefined()
+    expect(agent!.row.text()).toContain('Code review')
+    expect(agent!.out.map(link => link.attributes('href'))).toEqual([
+      'https://github.com/acme/portal/pull/409',
+      'https://linear.app/acme/issue/ABC-244',
     ])
+
+    /* Review 43 is `acme/portal#403`, posted and not yet answered. */
+    const author = lines(page).find(line => line.row.text().includes('#403'))
+    expect(author, 'the Waiting on the author row for #403').toBeDefined()
+    expect(author!.out.map(link => link.attributes('href'))).toEqual([
+      'https://github.com/acme/portal/pull/403',
+      'https://linear.app/acme/issue/ABC-238',
+    ])
+  })
+
+  it('names the ticket on those rows even when it cannot link it', async () => {
+    /*
+     * The other half of the same gap. The contract says of `ticket_url` that null is "a
+     * review with an id and no address, which the row then names on its own line and does
+     * not link" — which was true of the needs-you rows and the Reviews list, and false of
+     * these two: their meta line was the repository alone. So serving them the pair closed
+     * "cannot link its ticket" and left "cannot even name it" open, under text saying
+     * otherwise.
+     */
+    const page = await shown(Inbox)
+
+    /* Review 19 is `acme/billing-api#93`, step 3 running, ticket ABC-246 and no address. */
+    const row = lines(page).find(line => line.row.text().includes('#93'))
+    expect(row, 'the row for #93').toBeDefined()
+    expect(row!.row.text(), 'the id is named on the row').toContain('ABC-246')
+    expect(
+      row!.out.map(link => link.attributes('href')),
+      'and the pull request is the only link',
+    ).toEqual(['https://github.com/acme/billing-api/pull/93'])
   })
 
   it('draws no ticket link on a row whose review has an id and no address', async () => {
