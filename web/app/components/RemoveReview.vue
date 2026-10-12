@@ -119,13 +119,12 @@ async function remove() {
     </h2>
 
     <!--
-      Already dismissed. The card says when and why in the developer's own words — the same
-      two facts the Reviews list's dismissed view draws — and offers the undo.
-    -->
-    <!--
-      **The state and the reason, and not what a dismissal means.** The notice under the
-      trail says that, on this page and on the review's four others, and three paragraphs
-      saying the same thing on one screen is what the card had before this.
+      Already dismissed: when and why, in the developer's own words — the same two facts
+      the Reviews list's dismissed view draws — and the undo.
+
+      **And not what a dismissal means.** The notice under the trail says that, on this
+      page and on the review's four others; three paragraphs saying it on one screen is
+      what this card had before.
     -->
     <template v-if="review.dismissed_at">
       <p class="rd-note rd-measure">
