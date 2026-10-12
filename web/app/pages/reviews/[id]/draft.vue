@@ -171,6 +171,23 @@ async function sendBack() {
   /* A refused send-back keeps the note: the developer wrote it, and it is not wrong. */
 }
 
+/**
+ * Read the review and its draft again, which is what `PostingWatch` asks for on its timer.
+ *
+ * **Both, because the two facts the waiting state needs are on different documents.** The
+ * draft carries the status, the chosen event, the two stamps and — through its own
+ * `review` — the GitHub review id; `last_activity_at` is on `ReviewTimings`, which only
+ * `GET /reviews/{id}` serves. The contract's shape is one GET per screen, and this screen
+ * was already making both of them.
+ *
+ * A read that fails leaves the last good answer on screen with a notice over it, which is
+ * what `resource()` and `DeskState` do everywhere — and the next tick tries again, so a
+ * server restarted while a draft waits recovers without the developer pressing anything.
+ */
+async function reread() {
+  await Promise.all([detail.refresh(), review.refresh()])
+}
+
 async function fileTicket() {
   const data = detail.data.value
   if (!data) return
@@ -723,6 +740,20 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                     >
                       {{ notice.text }}
                     </DeskNotice>
+                    <!--
+                      **What happens after the press, kept current.** Everything above this
+                      is the developer's to do; this is the only part of the panel that
+                      reports on somebody else, so it is the only part that has to re-read
+                      the record — DEV-932, where a sign-off went 4 min 28 s with nothing
+                      on screen. It asks this page to read again; it writes nothing.
+                    -->
+                    <PostingWatch
+                      :draft="data.draft"
+                      :review="data.review"
+                      :last-activity-at="review.data.value?.timings.last_activity_at"
+                      :body-is-stale="data.body_is_stale"
+                      @refresh="reread"
+                    />
                     <p class="rd-meta foot">
                       The review session posts it under your name, with no bot banner.
                     </p>

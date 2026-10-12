@@ -19,10 +19,27 @@ import type {
   SeverityCounts,
 } from '~/types/desk'
 
+/**
+ * Whole seconds from an instant until `now`, or null when there is no instant.
+ *
+ * **The arithmetic a time on this desk is worded from**, written once. `sinceLabel` and
+ * `forLabel` below each held a copy, and the draft page's watch needs the number itself —
+ * it is timed against `POSTED_WITHIN_SECONDS`, which is a count of seconds and not a
+ * phrase — so a third copy would have been one more place for "never in the future" to be
+ * forgotten.
+ *
+ * Never negative. A browser clock a second behind the server's must not read as the
+ * future: "signed off in 1 sec" is a prediction, and the desk does not predict.
+ */
+export function secondsSince(at: Instant | null | undefined, now: Date): number | null {
+  if (!at) return null
+  return Math.max(0, Math.floor((now.getTime() - new Date(at).getTime()) / 1000))
+}
+
 /** An ISO instant as "6 min ago". Never "in 0 min"; the desk does not predict. */
 export function sinceLabel(at: Instant | null | undefined, now: Date = new Date()): string {
-  if (!at) return 'at an unrecorded time'
-  const seconds = Math.max(0, Math.floor((now.getTime() - new Date(at).getTime()) / 1000))
+  const seconds = secondsSince(at, now)
+  if (seconds == null) return 'at an unrecorded time'
   if (seconds < 60) return 'just now'
   const minutes = Math.floor(seconds / 60)
   if (minutes < 60) return `${minutes} min ago`
@@ -188,9 +205,7 @@ export function stepDurationLabel(layer: {
  * past. This is for the places that are about the span: "Code review · 20 min".
  */
 export function forLabel(at: Instant | null | undefined, now: Date = new Date()): string | null {
-  if (!at) return null
-  const seconds = Math.max(0, Math.floor((now.getTime() - new Date(at).getTime()) / 1000))
-  return durationLabel(seconds)
+  return durationLabel(secondsSince(at, now))
 }
 
 /**
