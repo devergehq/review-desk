@@ -19,6 +19,7 @@
     "dismissed_at": null,
     "dismissed_reason": null
   },
+  "not_for_signing": null,
   "layers": [
     {
       "number": 1,

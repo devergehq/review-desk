@@ -1642,6 +1642,12 @@ fn review_detail(store: &Store, review_id: i64) -> Value {
     let full = store.full_review(review_id).expect("the whole review");
     let mut document = Map::new();
     document.insert("review".to_string(), review_document(&full.review));
+    // Why nothing on it may be signed off, or null. The One review screen offers the
+    // brief's confirmation, which is one of the four acts a review off the desk refuses.
+    document.insert(
+        "not_for_signing".to_string(),
+        not_for_signing_document(store.not_for_signing(review_id).expect("the standing")),
+    );
     document.insert(
         "layers".to_string(),
         Value::Array(full.layers.iter().map(layer_document).collect()),

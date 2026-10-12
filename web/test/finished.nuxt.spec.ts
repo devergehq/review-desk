@@ -3,10 +3,11 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { flushPromises, type VueWrapper } from '@vue/test-utils'
 
-import { resetDesk } from '../app/composables/useReviewDesk'
+import { resetDesk, useReviewDesk } from '../app/composables/useReviewDesk'
 
 import Draft from '../app/pages/reviews/[id]/draft.vue'
 import Reviews from '../app/pages/reviews/index.vue'
+import Understand from '../app/pages/reviews/[id]/understand.vue'
 
 /*
  * **A review whose pull request merged or closed, on the screens.**
@@ -140,6 +141,38 @@ describe('the Reviews list’s Finished view', () => {
   })
 })
 
+describe('the brief of a review that cannot be posted', () => {
+  /*
+   * **Confirming a brief is a sign-off too**, and it is one of the four acts the store
+   * refuses on a review that has left the desk. The card went on offering the button after
+   * that guard was widened — the one failure the issue's own invariant exists to prevent,
+   * and the reason `GET /reviews/{id}` carries `not_for_signing` beside the draft page's.
+   */
+  it('offers no confirmation, and says why instead', async () => {
+    const page = await shown(Understand, {
+      route: `/reviews/${MERGED.unposted[0]}/understand`,
+    })
+    expect(page.findAll('button').map(one => one.text()))
+      .not.toContain('Confirm the problem')
+    expect(page.text()).toContain('Nothing to confirm')
+    expect(page.text()).toContain('The pull request merged on')
+  })
+
+  it('refuses it in the API too, with the same reason', async () => {
+    const refused = await useReviewDesk().confirmBrief(MERGED.unposted[0]!)
+    expect(refused.ok).toBe(false)
+    expect(refused.error?.code).toBe('conflict')
+    expect(refused.error?.message).toContain('merged')
+  })
+
+  it('still offers it on a review that is in play', async () => {
+    /* Review 17's brief is unconfirmed and its pull request is open. */
+    const page = await shown(Understand, { route: '/reviews/17/understand' })
+    expect(page.findAll('button').map(one => one.text())).toContain('Confirm the problem')
+    expect(page.text()).not.toContain('Nothing to confirm')
+  })
+})
+
 describe('the draft page of a review that cannot be posted', () => {
   it('says the pull request merged, and on which day', async () => {
     const page = await draftOf(MERGED.unposted[0]!)
@@ -204,6 +237,35 @@ describe('the draft page of a review that cannot be posted', () => {
     const page = await draftOf(MERGED.unposted[0]!)
     expect(page.text()).toContain('the pull request merged')
     expect(page.text()).not.toContain('superseded by round')
+  })
+
+  it('refuses the sign-off itself, with the same reason the page draws', async () => {
+    /*
+     * **The page offers no button, so this is the race the hidden button cannot cover**: a
+     * pull request that merges between the page's read and the press. Sample mode raises
+     * the refusals the binary raises — that is what makes a refusal state tested here one
+     * that works against the record — so the reason is asserted, not only the code.
+     */
+    const desk = useReviewDesk()
+
+    const merged = await desk.approveDraft(MERGED.unposted[0]!, 'comment')
+    expect(merged.ok).toBe(false)
+    expect(merged.error?.code).toBe('conflict')
+    expect(merged.error?.message).toContain('merged')
+
+    const superseded = await desk.approveDraft(60, 'comment')
+    expect(superseded.ok).toBe(false)
+    expect(superseded.error?.code).toBe('conflict')
+    expect(superseded.error?.message).toContain('round 2')
+
+    /* And sending it back is refused the same way: it also asks a session to act. */
+    const sentBack = await desk.sendBackDraft(MERGED.unposted[0]!, 'raise the retry finding')
+    expect(sentBack.ok).toBe(false)
+    expect(sentBack.error?.message).toContain('merged')
+
+    /* The round that can post is refused nothing. */
+    const live = await desk.approveDraft(61, 'comment')
+    expect(live.ok, JSON.stringify(live.error)).toBe(true)
   })
 
   it('reads as posted rather than as not posted on the round that did post', async () => {

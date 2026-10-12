@@ -214,13 +214,27 @@ function needingYou(data: Inbox): Waiting[] {
   }
 
   /*
-   * **The ticket comes off whichever of the three put the row here.** All three carry it —
-   * the contract requires them to — and reading it from `briefs_to_confirm` alone was a
+   * **The ticket comes off whichever of the three put the row here** — all three carry it,
+   * the contract requires them to, and reading it from `briefs_to_confirm` alone was a
    * defect with a name: a review whose brief had been confirmed and whose draft was
    * waiting had a row, a ticket on the record, and no way to reach it, while the Reviews
    * list showed the link for that same review.
+   *
+   * **But only from an item about the round this row *is*.** Once a row is one pull
+   * request, two of its rounds can both be in the answer — `#9585`'s posted round 1 and its
+   * round 2 draft — and the loops run in a fixed order, so the last one to touch the row
+   * was deciding its ticket whatever round it was about. The two rounds of a pull request
+   * usually carry the same ticket and the fault was invisible for that reason alone; where
+   * they differ, the row drew round 1's ticket under round 2's number and linked a reader
+   * to the wrong one.
    */
-  const ticket = (row: Waiting, item: { ticket_id?: string | null, ticket_url?: string | null }) => {
+  const ticket = (
+    row: Waiting,
+    round: number | null,
+    item: { ticket_id?: string | null, ticket_url?: string | null },
+  ) => {
+    /* An item with no round of its own cannot claim to be about a different one. */
+    if (round != null && row.round != null && round !== row.round) return
     row.ticket = item.ticket_id ?? null
     row.ticketUrl = ticketUrl(item.ticket_url)
   }
@@ -235,17 +249,29 @@ function needingYou(data: Inbox): Waiting[] {
     const row = slot(item.review_id, item.round, item.pull_request)
     row.draft = item
     row.is_delta = item.is_delta
-    ticket(row, item)
+    ticket(row, item.round, item)
   }
   for (const item of data.briefs_to_confirm) {
     const row = slot(item.review_id, null, item.pull_request)
     row.brief = item
-    ticket(row, item)
+    ticket(row, null, item)
   }
+  /*
+   * **The newest round's reply wins, and the plain assignment this replaced did not.**
+   * `reviews_with_author_activity` is the one inbox query with no newest-round restriction
+   * — deliberately, because a reply on a posted round is a real thing the developer has to
+   * read — so a pull request whose round 1 was replied to *and* whose round 2 a harvest has
+   * written an outcome on yields two items. The store serves them newest id first, so
+   * `row.reply = item` left the row holding round 1's: its events, and through
+   * `queueRow`'s `at` its time, which also put the row in the wrong place in an
+   * oldest-first list. Nothing said the newer one had been dropped.
+   */
   for (const item of data.author_replies) {
     const row = slot(item.review_id, null, item.pull_request)
-    row.reply = item
-    ticket(row, item)
+    if (row.reply == null || item.round > row.reply.round) {
+      row.reply = item
+      ticket(row, item.round, item)
+    }
   }
   /*
    * **Joined, never slotted.** Neither of these makes a row: a posted review and a review
@@ -278,7 +304,14 @@ function needingYou(data: Inbox): Waiting[] {
    * what DEV-957 added it for.
    */
   for (const row of byPullRequest.values()) {
-    if (row.reply && row.reply.round !== row.round) row.replyRound = row.reply.round
+    /*
+     * **Only when this row's own round is known.** A row reached by a brief and a reply and
+     * nothing else has no round — neither item carries one — and `about()` draws no round
+     * for it, so "replied to round 1" would name a round beside a row that names none.
+     */
+    if (row.reply && row.round != null && row.reply.round !== row.round) {
+      row.replyRound = row.reply.round
+    }
   }
 
   return [...byPullRequest.values()]
@@ -548,16 +581,47 @@ const drawnAbove = computed(() => {
  */
 const withAgent = computed(() => {
   const needing = new Set(waiting.value.map(row => `${row.repo}#${row.pr}`))
-  return (inbox.data.value?.in_progress ?? []).filter(item => !needing.has(prKey(item)))
+  return byNewestRound(
+    (inbox.data.value?.in_progress ?? []).filter(item => !needing.has(prKey(item))),
+  )
 })
 
 /** How many pull requests a session is working on are drawn above, for the note. */
 const alsoWithAgent = computed(() => {
   const needing = new Set(waiting.value.map(row => `${row.repo}#${row.pr}`))
-  return (inbox.data.value?.in_progress ?? []).filter(
-    item => showing(item.pull_request.repo) && needing.has(prKey(item)),
+  return byNewestRound(
+    (inbox.data.value?.in_progress ?? []).filter(
+      item => showing(item.pull_request.repo) && needing.has(prKey(item)),
+    ),
   ).length
 })
+
+/**
+ * One item per pull request, keeping the newest round's.
+ *
+ * **"With the agent" needed this and had it only by accident.** `reviews_in_progress` asks
+ * whether a layer is `running` and says nothing about which round — the group's own comment
+ * says so — so a session working on round 2 while round 1's harvest step is still running
+ * drew #9541 twice, and the note beside the heading counted rounds. That is the defect
+ * DEV-957 names, in the one group the merge above does not reach: a needs-you row is built
+ * by `needingYou`, and these items are drawn as they come.
+ *
+ * **The newest round, which is the same choice the merge makes.** An item has a round only
+ * through its review, and `in_progress` does not carry one — so the tie is broken on the
+ * review id, which rises with the round for a pull request whose rounds this record opened
+ * in order. It is a weaker guarantee than the merge's and it is the one the answer supports;
+ * what matters is that it is *a* choice rather than whichever arrived last.
+ */
+function byNewestRound<T extends { review_id: number, pull_request: { repo: string, pr: number } }>(
+  items: T[],
+): T[] {
+  const byPr = new Map<string, T>()
+  for (const item of items) {
+    const held = byPr.get(prKey(item))
+    if (held == null || item.review_id > held.review_id) byPr.set(prKey(item), item)
+  }
+  return [...byPr.values()]
+}
 
 /**
  * The posted reviews this page draws under "Waiting on the author", before the picker.
@@ -1031,12 +1095,18 @@ function handledLine(data: Inbox): string {
           heading="Your pull requests"
           :count="rows.ownPrs.length"
         >
+          <!--
+            **The repository, with no leading separator** — the same correction `alsoAbout`
+            took. The line used to sit inside the row's own cell, where a leading dot read as
+            a continuation; it is a line of its own since DEV-957, and one beginning with a
+            middle dot reads as a stray mark.
+          -->
           <QueueRow
             v-for="item in rows.ownPrs"
             :key="`${item.pull_request.repo}-${item.pull_request.pr}`"
             :pr="item.pull_request.pr"
             :title="item.pull_request.title ?? 'no title recorded'"
-            :meta="`· ${item.pull_request.repo}`"
+            :meta="item.pull_request.repo"
             :href="item.link.href"
             :action="item.link.action"
             :action-tone="item.link.tone"

@@ -395,6 +395,50 @@ fn a_reopen_read_on_the_newest_round_outranks_a_stale_close_on_an_older_one() {
 }
 
 #[test]
+fn a_round_opened_on_a_closed_pull_request_comes_back_at_the_next_sweep() {
+    // **The window the derivation leaves, pinned rather than left to a comment.** A pull
+    // request closed at round 1, reopened, and pushed to opens a round 2 whose own state is
+    // null — and round 1's `closed` still decides, so round 2 is out of the queue until
+    // something reads it. Found by a review of this branch.
+    //
+    // It is a window and not a hole, and this is the assertion that says which: round 2
+    // holds no state, so the sweep takes it, and one harvest puts it back. Taking a missing
+    // state as open instead would answer sooner and would put every unharvested round of a
+    // merged pull request back in the queue — which is the whole of what this issue fixes.
+    let (_dir, store) = temp_store();
+    let one = store.open_review(REPO, 9602, "aaa1111").expect("round 1");
+    store
+        .add_finding(one.review.id, a_finding("raised on round 1"))
+        .expect("a finding");
+    harvest_found(&store, one.review.id, PrState::Closed, Some(1_791_000_000));
+
+    let two = waiting_round(&store, 9602, "bbb2222", 2);
+    assert_eq!(
+        in_any_queue_group(&store, two.id),
+        Vec::<&str>::new(),
+        "while the record's only reading of this pull request says closed"
+    );
+
+    let up: Vec<i64> = store
+        .reviews_to_harvest(None)
+        .expect("the sweep")
+        .into_iter()
+        .map(|review| review.id)
+        .collect();
+    assert!(
+        up.contains(&two.id),
+        "but the sweep takes the round that holds no state: {up:?}"
+    );
+
+    harvest_found(&store, two.id, PrState::Open, None);
+    assert_eq!(
+        in_any_queue_group(&store, two.id),
+        vec!["briefs to confirm", "drafts to approve"],
+        "and one harvest is all it takes"
+    );
+}
+
+#[test]
 fn a_dismissed_review_whose_pull_request_merges_stays_dismissed() {
     // Two facts about one review, and one of them is somebody's act. The issue settles
     // it: a dismissed review that then merges stays dismissed.
@@ -557,6 +601,41 @@ fn a_posted_round_is_not_superseded_by_a_newer_one() {
         "round 1 posted, so a newer round does not make it a thing that never happened"
     );
     assert_eq!(store.not_for_signing(two.id).expect("the standing"), None);
+}
+
+#[test]
+fn a_round_posted_by_review_link_with_no_draft_is_not_superseded_either() {
+    // **The other way a round is posted, and the one the first test cannot tell apart.**
+    // `post_draft` writes the draft's `posted_at` *and* the review's `github_review_id` in
+    // one transaction, so a test that posts through it leaves both true and would pass
+    // whichever of the two `not_for_signing` actually read. `review link --github-review`
+    // writes only the second and needs no draft at all — it is how the command line posts a
+    // review, and `posted_reviews_awaiting_author` admits it by name — so this is the shape
+    // that pins the first half of that `OR`.
+    let (_dir, store) = temp_store();
+    let one = store.open_review(REPO, 9601, "aaa1111").expect("round 1");
+    store
+        .add_finding(one.review.id, a_finding("raised on round 1"))
+        .expect("a finding");
+    store
+        .set_review_links(
+            one.review.id,
+            ReviewLinks {
+                github_review_id: Some("PRR_by_link".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("posted through review link");
+
+    let two = store.open_review(REPO, 9601, "bbb2222").expect("round 2");
+    assert_eq!(two.review.round, 2);
+
+    assert_eq!(
+        store.not_for_signing(one.review.id).expect("the standing"),
+        None,
+        "it was posted, through the one route the command line has, so a newer round does \
+         not make it a thing that never happened"
+    );
 }
 
 #[test]

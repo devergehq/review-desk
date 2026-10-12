@@ -828,6 +828,23 @@ impl Store {
     /// draft's own `posted_at`, or a `github_review_id` on the review for a review posted
     /// by `review link` with no draft at all.
     ///
+    /// **An *approved* round that a newer round supersedes is refused too, and that is
+    /// deliberate rather than an oversight.** It means a draft the developer signed off and
+    /// no session posted before the author pushed can no longer be sent back: it is stuck
+    /// at `approved`, which is the shape DEV-929 removed elsewhere on the ground that "a
+    /// stuck review is worse than the thing the refusal prevents".
+    ///
+    /// The difference is what the screen says. DEV-929's stuck draft was announcing that it
+    /// was *waiting to be posted* while nothing could post it; this one says "Not posted —
+    /// superseded by round N" and offers nothing, so the record and the page agree and no
+    /// developer is left waiting for an event that will not come. `approved` is also still
+    /// true: they did sign it off, and the author moving past that round does not unmake
+    /// it. Sending it back would ask a session to rewrite a round the work list no longer
+    /// offers, which is the thing this guard exists to refuse.
+    ///
+    /// Raised as "confirm intent" by a review of this branch, and confirmed rather than
+    /// changed.
+    ///
     /// The three questions in one read, because every caller needs all of them and the
     /// order between them is a decision [`NotForSigning`] states rather than one each
     /// caller makes.

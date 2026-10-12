@@ -1856,7 +1856,13 @@ export function sampleBackend(): DeskBackend {
     getReview: async (id) => {
       const detail = reviewById(id)
       if (!detail) throw notFound(`review ${id}`)
-      return answered(detail)
+      /*
+       * **Why nothing on it may be signed off, worked out at the moment it is read**, for
+       * the reason `standing` gives about the draft: it is derived from the review's pull
+       * request and from which round is newest, so a field in `reviews.json` would be a
+       * second copy of what the reviews beside it already hold.
+       */
+      return answered({ ...detail, not_for_signing: notForSigning(detail) })
     },
     getDraft: async (id) => {
       const detail = draftById(id)

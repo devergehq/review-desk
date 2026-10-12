@@ -20,6 +20,7 @@
       "dismissed_at": null,
       "dismissed_reason": null
     },
+    "not_for_signing": null,
     "layers": [
       {
         "number": 1,
@@ -389,6 +390,7 @@
       "dismissed_at": null,
       "dismissed_reason": null
     },
+    "not_for_signing": null,
     "layers": [
       {
         "number": 1,
@@ -738,6 +740,7 @@
       "dismissed_at": null,
       "dismissed_reason": null
     },
+    "not_for_signing": null,
     "layers": [
       {
         "number": 1,
@@ -980,6 +983,7 @@
       "dismissed_at": null,
       "dismissed_reason": null
     },
+    "not_for_signing": null,
     "layers": [
       {
         "number": 1,
@@ -1362,6 +1366,7 @@
       "dismissed_at": null,
       "dismissed_reason": null
     },
+    "not_for_signing": null,
     "layers": [
       {
         "number": 1,
@@ -1562,6 +1567,7 @@
       "dismissed_at": null,
       "dismissed_reason": null
     },
+    "not_for_signing": null,
     "layers": [
       {
         "number": 1,
@@ -1744,6 +1750,7 @@
       "dismissed_at": null,
       "dismissed_reason": null
     },
+    "not_for_signing": null,
     "layers": [
       {
         "number": 1,
@@ -3679,6 +3686,7 @@
       "dismissed_at": null,
       "dismissed_reason": null
     },
+    "not_for_signing": null,
     "layers": [
       {
         "number": 1,
@@ -3822,6 +3830,7 @@
       "dismissed_at": null,
       "dismissed_reason": null
     },
+    "not_for_signing": null,
     "layers": [
       {
         "number": 1,
@@ -3873,7 +3882,19 @@
         "updated_at": "2026-10-11T10:05:00Z"
       }
     ],
-    "brief": null,
+    "brief": {
+      "review_id": 60,
+      "problem": "The export holds the request's tenant after the request has returned.",
+      "diagram": null,
+      "options": [],
+      "approach_verdict": null,
+      "provenance": "from the ticket and the code",
+      "confirmed": false,
+      "confirmed_at": null,
+      "confirmation_required": true,
+      "confirmation_not_required_because": null,
+      "updated_at": "2026-10-11T09:40:00Z"
+    },
     "findings": [
       {
         "review_id": 60,
@@ -3946,6 +3967,7 @@
       "dismissed_at": null,
       "dismissed_reason": null
     },
+    "not_for_signing": null,
     "layers": [
       {
         "number": 1,
@@ -4070,6 +4092,7 @@
       "dismissed_at": null,
       "dismissed_reason": null
     },
+    "not_for_signing": null,
     "layers": [
       {
         "number": 1,
@@ -4205,6 +4228,7 @@
       "dismissed_at": null,
       "dismissed_reason": null
     },
+    "not_for_signing": null,
     "layers": [
       {
         "number": 1,
@@ -4329,6 +4353,7 @@
       "dismissed_at": null,
       "dismissed_reason": null
     },
+    "not_for_signing": null,
     "layers": [
       {
         "number": 1,
@@ -4453,6 +4478,7 @@
       "dismissed_at": null,
       "dismissed_reason": null
     },
+    "not_for_signing": null,
     "layers": [
       {
         "number": 1,
@@ -4504,7 +4530,19 @@
         "updated_at": "2026-10-10T10:30:00Z"
       }
     ],
-    "brief": null,
+    "brief": {
+      "review_id": 65,
+      "problem": "The retry reads its key from the job rather than from the delivery, so a rebuilt payload gets a new one.",
+      "diagram": null,
+      "options": [],
+      "approach_verdict": null,
+      "provenance": "from the ticket and the code",
+      "confirmed": false,
+      "confirmed_at": null,
+      "confirmation_required": true,
+      "confirmation_not_required_because": null,
+      "updated_at": "2026-10-11T09:40:00Z"
+    },
     "findings": [
       {
         "review_id": 65,
@@ -4577,6 +4615,7 @@
       "dismissed_at": null,
       "dismissed_reason": null
     },
+    "not_for_signing": null,
     "layers": [
       {
         "number": 1,
@@ -4701,6 +4740,7 @@
       "dismissed_at": null,
       "dismissed_reason": null
     },
+    "not_for_signing": null,
     "layers": [
       {
         "number": 1,

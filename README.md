@@ -1398,7 +1398,7 @@ screen, and every write the five screens make.
 | Screen | Reads | Writes |
 | -- | -- | -- |
 | Queue | `GET /inbox` | `POST /reviews` |
-| Reviews | `GET /reviews?repo=&dismissed=` | — |
+| Reviews | `GET /reviews?repo=&show=` | — |
 | One review | `GET /reviews/{id}` | `POST …/brief/confirm`, `PATCH …/findings/{seq}`, `POST …/dismiss`, `POST …/restore`, `DELETE /reviews/{id}` |
 | Draft preview | `GET /reviews/{id}/draft` — the body as it will post, the blocks it is composed of, and the inline threads with the line each sits on | `PUT …/draft`, `POST …/draft/approve`, `POST …/draft/send-back`, `POST …/held-back/ticket` |
 | Rules | `GET /rules?repo=`, `GET /repos` | `POST /rules/{id}/promote`, `/dismiss`, `/retire`, `/defer` |

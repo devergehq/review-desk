@@ -707,6 +707,13 @@ impl Api {
             200,
             json!({
                 "review": wire::review(&full.review),
+                // **Why nothing on it may be signed off, or null.** The same value the draft
+                // page reads, one step earlier: confirming a brief is one of the four acts
+                // the store refuses on a review that has left the desk, so the screen that
+                // offers it needs the answer or it offers a button the API refuses.
+                "not_for_signing": wire::not_for_signing(
+                    self.records.not_for_signing(review_id)?,
+                ),
                 "layers": full.layers.iter().map(wire::review_layer).collect::<Vec<_>>(),
                 "brief": full.brief.as_ref().map_or(Value::Null, wire::brief),
                 "findings": findings.iter().map(wire::finding_in_round).collect::<Vec<_>>(),

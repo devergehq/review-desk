@@ -228,6 +228,94 @@ describe('the queue', () => {
     expect(rows[0]!.text()).toContain('the author has replied to round 1')
   })
 
+  it('keeps the newest round’s reply when two rounds have author activity', async () => {
+    /*
+     * **The one inbox query with no newest-round restriction**, deliberately — a reply on a
+     * posted round is a real thing the developer has to read — so a pull request can be in
+     * `author_replies` twice. The merge took whichever arrived last, which the store serves
+     * newest id *first*, so the row held the **older** round's events and, through the row's
+     * age, the older round's time. Nothing said the newer one had been dropped. Found by a
+     * review of this branch.
+     */
+    const source = loadSource()
+    await resetDesk({
+      reviews: source.reviews.map((detail) => {
+        /* An outcome on round 2 of #9585, beside the one its round 1 already carries. */
+        if (detail.review.id !== 63) return detail
+        return {
+          ...detail,
+          outcomes: [{
+            id: 9100,
+            review_id: 63,
+            finding_seq: 1,
+            finding_key: 'F1',
+            kind: 'code_changed_after',
+            actor: 'harvester',
+            occurred_at: '2026-10-13T06:00:00Z',
+            detail: null,
+          }],
+        }
+      }) as typeof source.reviews,
+    })
+
+    const page = await shown(Inbox)
+    const row = needsYouRows(page).find(one => one.text().includes('#9585'))
+    expect(row, 'one row for #9585').toBeDefined()
+    /*
+     * Round 2 is the row's own round, so its reply is the row's reply — and the row says
+     * nothing about an earlier round, because the reply it holds is this round's.
+     */
+    expect(row!.text()).toContain('round 2')
+    expect(row!.text()).not.toContain('replied to round 1')
+  })
+
+  it('draws one row for a pull request a session is working two rounds of', async () => {
+    /*
+     * `reviews_in_progress` asks only whether a layer is `running` and says nothing about
+     * which round — the group's own comment says so — so two rounds of one pull request can
+     * both be in it. "With the agent" drew them as two rows and its note counted rounds,
+     * which is the defect this issue names, in the one group the needs-you merge does not
+     * reach. Found by a review of this branch.
+     */
+    const source = loadSource()
+    const running = (id: number) => ({
+      number: 5,
+      name: 'code_review' as const,
+      state: 'running' as const,
+      detail: 'code review',
+      updated_at: '2026-10-13T06:00:00Z',
+      review_id: id,
+    })
+    const twoRounds = [60, 61]
+    await resetDesk({
+      reviews: source.reviews.map((detail) => {
+        /* Rounds 1 and 2 of #9541, each with a layer running. */
+        if (!twoRounds.includes(detail.review.id)) return detail
+        return {
+          ...detail,
+          brief: null,
+          draft_status: null,
+          layers: detail.layers.map(layer =>
+            layer.number === 5 ? { ...layer, ...running(detail.review.id) } : layer),
+        }
+      }) as typeof source.reviews,
+      /*
+       * **And no draft on either**, or they are waiting on the developer and the merge
+       * above subtracts them from this group before it can be measured. What is being
+       * measured is the group's own deduplication.
+       */
+      drafts: source.drafts.filter(one => !twoRounds.includes(one.draft.review_id)),
+    })
+
+    const page = await shown(Inbox)
+    const group = page.findAll('section').find(one => one.text().startsWith('With the agent'))
+    expect(group, 'the With the agent group is on the page').toBeDefined()
+    expect(
+      group!.findAll('.queue-line').filter(one => one.text().includes('#9541')),
+      'one row for two rounds',
+    ).toHaveLength(1)
+  })
+
   it('draws no row for any round of a merged pull request', async () => {
     /*
      * **The four rounds of `tc/portal#9568`**, one posted and three not, on a pull request

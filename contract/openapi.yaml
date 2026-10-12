@@ -1338,7 +1338,16 @@ components:
         open_reviews:
           type: integer
           minimum: 0
-          description: Reviews on this repository not yet posted.
+          description: |
+            Reviews on this repository that are **still on the desk and not yet posted** —
+            no GitHub review recorded, not dismissed, and on a pull request that has not
+            merged or closed.
+
+            The last of those three is DEV-957 and it made this number smaller: a review on
+            a merged pull request was counted as not yet posted, which is true and reads as
+            work outstanding. The repository is still **listed** when every review it has
+            has left the desk, or the Finished and Dismissed views could not be reached
+            for it.
         active_rules:
           type: integer
           minimum: 0
@@ -2931,9 +2940,24 @@ components:
         - criteria
         - coverage
         - timings
+        - not_for_signing
       description: Everything the One review screen shows.
       properties:
         review: { $ref: '#/components/schemas/Review' }
+        not_for_signing:
+          oneOf:
+            - $ref: '#/components/schemas/NotForSigning'
+            - type: 'null'
+          description: |
+            Why nothing on this review may be signed off, or null when it may — the same
+            value `GET /reviews/{reviewId}/draft` carries, and for the same reason one step
+            earlier.
+
+            **Confirming a brief is a sign-off too.** It is one of the four acts refused on
+            a review that has left the desk, because each of them asks a session to do
+            something afterwards; so the screen that offers it needs the same answer the
+            draft page has, or it offers a button the API refuses. Found by a review of the
+            branch that widened the guard.
         layers:
           type: array
           minItems: 7

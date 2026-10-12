@@ -54,11 +54,32 @@ pub(super) const REVIEW_COLUMNS: &str = "v.id, v.repo, v.pr, v.head_sha, v.round
 /// makes this right: GitHub cannot un-merge a pull request, and a `closed` that a later
 /// round reads as `open` is a reopen, which is exactly what should win.
 ///
+/// **What "freshest" rests on, said rather than assumed.** It is the *sweep's* order, and
+/// `harvest --review N` reads one round whatever its number — so a developer who narrows a
+/// harvest to an early round of a pull request their newest round last saw `closed` writes
+/// a newer reading that this rule ignores. It resolves itself at the next sweep, because
+/// [`Store::reviews_to_harvest`] keeps the newest round of a closed pull request and that
+/// reading is the one this takes. Stated because the paragraph above would otherwise be
+/// claiming a thing that is true of the sweep and not of every harvest.
+///
 /// **`COALESCE` to `open`, and that is load-bearing rather than tidy.** A pull request no
 /// harvest has looked at yields null here, and `null NOT IN (…)` is null in SQL — so a
 /// `WHERE` built on the bare subquery would drop every review of every unharvested pull
 /// request out of the queue, which is every review on a fresh database. Unlooked-at reads
 /// as open, which is the rule [`Store::reviews_to_harvest`] has always used and says so.
+///
+/// **"Unlooked-at reads as open" is about the pull request, not about a round**, and the
+/// difference has one live consequence worth stating. A pull request closed while it was on
+/// round 1, reopened, and pushed to opens a round 2 whose own state is null — and round 1's
+/// `closed` still decides, so round 2 is out of the queue and out of the work list **until a
+/// harvest reads it**. That is a window rather than a hole: round 2 holds no state, so
+/// `reviews_to_harvest` takes it on the next sweep and writes `open`, and the issue's own
+/// criterion is that a reopened pull request returns at the next harvest.
+///
+/// Taking the newest round's *absence* as open instead would answer this case sooner and
+/// break the case the whole rule is for: Patrick's #9568 has four rounds, one harvested and
+/// three not, and the three unharvested ones are exactly where "no state means open" would
+/// put a merged pull request back in the queue.
 macro_rules! pr_state {
     () => {
         "COALESCE((SELECT settled.pr_state FROM reviews settled

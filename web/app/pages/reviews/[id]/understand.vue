@@ -236,6 +236,7 @@ function sources(data: ReviewDetail) {
         <BriefConfirmation
           :brief="data.brief"
           :review-id="data.review.id"
+          :not-for-signing="data.not_for_signing"
         />
 
         <DeskNotice tone="plain">
@@ -290,6 +291,7 @@ function sources(data: ReviewDetail) {
         <BriefConfirmation
           :brief="data.brief"
           :review-id="data.review.id"
+          :not-for-signing="data.not_for_signing"
         />
 
         <!-- ------------------------------ The two flows ------------------------------ -->

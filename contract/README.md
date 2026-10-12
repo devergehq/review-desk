@@ -78,7 +78,7 @@ Each screen is one GET. The dashboard does no joining.
 | Screen | Reads | Writes |
 |---|---|---|
 | Inbox | `GET /inbox` | `POST /reviews` |
-| Reviews | `GET /reviews?repo=&dismissed=` | — |
+| Reviews | `GET /reviews?repo=&show=` | — |
 | One review | `GET /reviews/{reviewId}` | `POST /reviews/{reviewId}/brief/confirm`, `PATCH /reviews/{reviewId}/findings/{seq}`, `POST /reviews/{reviewId}/findings/{seq}/decide`, `POST …/dismiss`, `POST …/restore`, `DELETE /reviews/{reviewId}` |
 | — not a screen | `GET /reviews/{reviewId}/brief/problem-statement` | — |
 | — not a screen | `GET /timings` | — |
@@ -650,7 +650,7 @@ and the screen renders the ones that are present.
 | Rules | "Dismiss" | `POST /rules/{ruleId}/dismiss` |
 | Rules | "Retire" | `POST /rules/{ruleId}/retire` |
 | Rules | "Keep 60 more days" | `POST /rules/{ruleId}/defer` |
-| Reviews | repository picker, "In play" / "Dismissed" / "Everything" | `GET /reviews?repo=&dismissed=` |
+| Reviews | repository picker, "In play" / "Dismissed" / "Finished" / "Everything" | `GET /reviews?repo=&show=` |
 | Understand | "Dismiss this review", with a reason | `POST /reviews/{reviewId}/dismiss` |
 | Understand | "Bring it back" | `POST /reviews/{reviewId}/restore` |
 | Understand | "Delete it" → "Delete it for good" | `DELETE /reviews/{reviewId}`, offered only for a review holding nothing: no brief, no findings, no draft, and no review posted on GitHub |
