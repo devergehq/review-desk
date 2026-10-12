@@ -595,7 +595,8 @@ pub struct NewReview {
     pub github_review_id: Option<String>,
 }
 
-/// A review opened for a head commit: the one that was already there, or a new round.
+/// A review opened for a head commit: the one that was already there, the one whose head
+/// moved to it, or a new round.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OpenedReview {
     pub review: Review,
@@ -603,6 +604,66 @@ pub struct OpenedReview {
     /// A caller that needs to know which happened should not have to read the round and
     /// guess.
     pub created: bool,
+    /// The commit this review used to be of, when this call moved it to the one asked
+    /// for; `None` when the head did not move.
+    ///
+    /// Only an unstarted round's head moves — see [`Store::open_review`] — so a caller
+    /// seeing this knows the review it has been handed is the request it recorded
+    /// before, now pointing at a newer commit, rather than a round somebody reviewed.
+    #[serde(default)]
+    pub head_moved_from: Option<String>,
+}
+
+/// What a review holds of the three things only a session writes: the brief, the
+/// findings and the draft.
+///
+/// **One answer to one question, asked in three places.** "Has anybody started this
+/// review?" decides whether [`Store::open_review`] moves a round's head rather than
+/// starting a new one, whether [`Store::delete_review`] is allowed at all, and what the
+/// refusal says when it is not. Three separate judgements would be three chances for
+/// `open_review` to treat a review as unstarted that `delete_review` treats as started.
+///
+/// **The layers are deliberately not counted.** A session that wrote layer 1 and died
+/// left a running step and nothing else, and DEV-945 names the three things that make a
+/// review worth keeping: "no brief, no findings and no draft". A layer row is a note
+/// about what a session was doing, not work the developer would lose.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReviewWork {
+    pub has_brief: bool,
+    pub findings: i64,
+    pub has_draft: bool,
+}
+
+impl ReviewWork {
+    /// Whether a session has written any of the three.
+    pub fn started(&self) -> bool {
+        self.has_brief || self.findings > 0 || self.has_draft
+    }
+
+    /// The three in words, for a refusal that has to say what it is protecting: "a
+    /// brief, 4 findings and a draft".
+    ///
+    /// Empty when nothing is there, which no caller prints: a refusal is only ever
+    /// composed when [`ReviewWork::started`] is true.
+    pub fn in_words(&self) -> String {
+        let mut held: Vec<String> = Vec::new();
+        if self.has_brief {
+            held.push("a brief".to_string());
+        }
+        if self.findings == 1 {
+            held.push("1 finding".to_string());
+        } else if self.findings > 1 {
+            held.push(format!("{} findings", self.findings));
+        }
+        if self.has_draft {
+            held.push("a draft".to_string());
+        }
+        match held.as_slice() {
+            [] => String::new(),
+            [one] => one.clone(),
+            [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+        }
+    }
 }
 
 /// The ids of the other systems' records for a review. A field left `None` is left

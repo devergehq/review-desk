@@ -13,7 +13,7 @@ mod common;
 
 use std::path::Path;
 
-use common::{open_review, Desk};
+use common::{open_review, start_review, Desk};
 use tempfile::TempDir;
 
 /// A `gh` that answers the two reads `round commits` makes, and refuses anything else.
@@ -378,6 +378,9 @@ fn round_commits_records_what_changed_since_the_previous_round() {
 
     let first = open_review(&desk, "acme/portal", "412", "3f9c2ab");
     assert!(!first.is_empty());
+    // Round 1 is reviewed, so the second commit is round 2 rather than round 1 moved to
+    // it: DEV-945's rule for a request nobody has started.
+    start_review(&desk, &first);
     let second = open_review(&desk, "acme/portal", "412", "9d02e71");
 
     let output = desk

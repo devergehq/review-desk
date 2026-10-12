@@ -10,7 +10,7 @@
 
 mod common;
 
-use common::{open_review, Desk};
+use common::{open_review, start_review, Desk};
 use review_desk_store::Actor;
 use serde_json::json;
 
@@ -228,6 +228,10 @@ fn a_new_head_commit_opens_the_next_round() {
         "--head",
         "c0ffee1",
     ]);
+    // Round one is reviewed, which is what makes the next commit a round: a commit on a
+    // round nobody has started moves that round instead, and the test below is that.
+    start_review(&desk, &round_one["review"]["id"].to_string());
+
     let round_two = desk.json(&[
         "review",
         "open",
@@ -242,6 +246,7 @@ fn a_new_head_commit_opens_the_next_round() {
     assert_eq!(round_one["review"]["round"], 1);
     assert_eq!(round_two["review"]["round"], 2);
     assert_eq!(round_two["created"], true);
+    assert_eq!(round_two["head_moved_from"], serde_json::Value::Null);
     assert_ne!(round_one["review"]["id"], round_two["review"]["id"]);
 
     // And the earlier commit is still handed back rather than opening a round three.
@@ -257,6 +262,87 @@ fn a_new_head_commit_opens_the_next_round() {
     ]);
     assert_eq!(reopened["created"], false);
     assert_eq!(reopened["review"]["id"], round_one["review"]["id"]);
+}
+
+#[test]
+fn recording_a_review_request_twice_is_one_review_even_when_the_commit_moved() {
+    // **The Locus dispatcher's call, made twice.** It records a review request the moment
+    // GitHub shows it one, before any session runs; the author pushes; it records the same
+    // request again with the commit now in front of it. One request is one review —
+    // Patrick, 12 October 2026, DEV-945 — so the round moves rather than a second
+    // unstarted review opening beside it, and `work list` goes on offering one item.
+    let desk = Desk::new();
+
+    let recorded = desk.json(&[
+        "review",
+        "open",
+        "--repo",
+        "acme/portal",
+        "--pr",
+        "777",
+        "--head",
+        "c0ffee1",
+        "--title",
+        "Give a scheduled export its own context",
+        "--ticket",
+        "ABC-402",
+        "--ledger",
+        "ledger-9f2",
+    ]);
+    assert_eq!(recorded["created"], true);
+    assert_eq!(recorded["review"]["ledger_id"], "ledger-9f2");
+
+    let again = desk.json(&[
+        "review",
+        "open",
+        "--repo",
+        "acme/portal",
+        "--pr",
+        "777",
+        "--head",
+        "c0ffee2",
+    ]);
+
+    assert_eq!(again["created"], false, "not a second review");
+    assert_eq!(again["review"]["id"], recorded["review"]["id"]);
+    assert_eq!(again["review"]["round"], 1, "no round was spent");
+    assert_eq!(again["review"]["head_sha"], "c0ffee2");
+    assert_eq!(
+        again["head_moved_from"], "c0ffee1",
+        "the answer says which commit it was of before"
+    );
+    assert_eq!(
+        again["review"]["title"], "Give a scheduled export its own context",
+        "what the first call recorded is still there"
+    );
+    assert_eq!(again["review"]["ticket_id"], "ABC-402");
+    assert_eq!(
+        again["review"]["ledger_id"], "ledger-9f2",
+        "a call that gives no ledger id clears none"
+    );
+
+    let found = desk.json(&["review", "find", "--repo", "acme/portal", "--pr", "777"]);
+    assert_eq!(
+        found["reviews"].as_array().expect("reviews").len(),
+        1,
+        "one request, one review"
+    );
+}
+
+#[test]
+fn a_request_still_prints_its_id_and_nothing_else() {
+    // `ID=$(review-desk review open ...)` is the whole of what a shell caller does, and a
+    // moved head must not add a word to that line.
+    let desk = Desk::new();
+
+    let first = open_review(&desk, "acme/portal", "778", "c0ffee1");
+    let moved = open_review(&desk, "acme/portal", "778", "c0ffee2");
+
+    assert_eq!(first, moved, "the same review, printed the same way");
+    assert!(
+        moved.parse::<i64>().is_ok(),
+        "the id alone, and nothing else: {moved}"
+    );
 }
 
 #[test]

@@ -45,6 +45,20 @@ pub enum ReviewCommand {
     /// findings cannot say "two fixed, two still open, one new", which is the whole of a
     /// second-round review — so they come back with the review rather than needing a
     /// command of their own. A first round has none, and `carryable` is then null.
+    ///
+    /// **This is also how a review request is recorded before any session starts.** The
+    /// Locus dispatcher calls it the moment GitHub shows it a review request, with the
+    /// repository, the pull request, the head commit, the title and the ticket if it knows
+    /// one — and a review with no brief is what `work list` reports as
+    /// `review_requested`, so the request is in the dispatcher's own queue the moment it
+    /// is recorded. Recording the same request twice creates one review: the record is
+    /// keyed on the head commit, and `created` says which of the two happened.
+    ///
+    /// **A new commit on a request nobody has started moves that request's head** rather
+    /// than starting a second round beside it, and `head_moved_from` in the `--json`
+    /// answer carries the commit it was of before. DEV-945, Patrick: "two unstarted
+    /// reviews for one request is wrong." A round somebody has started is untouched by
+    /// that rule — a new commit on it is the next round, as it has always been.
     Open {
         /// The repository, as owner/repo.
         #[arg(long, value_name = "OWNER/REPO")]
@@ -71,6 +85,14 @@ pub enum ReviewCommand {
         /// What the review did not look at, in the reviewer's own words.
         #[arg(long = "not-checked", value_name = "TEXT")]
         not_checked: Option<String>,
+        /// The Locus dispatcher's ledger entry for this request.
+        ///
+        /// Here as well as on `review link` so that recording a review request is one
+        /// call rather than two: the dispatcher knows its own ledger id at the moment it
+        /// sees the request, and a second command to attach it is a second thing that can
+        /// fail between them.
+        #[arg(long = "ledger", value_name = "ID")]
+        ledger: Option<String>,
     },
 
     /// Store the other systems' ids against a review.
@@ -145,6 +167,7 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
             ticket_url,
             changed_lines,
             not_checked,
+            ledger,
         } => {
             let store = Store::open_default()?;
             let opened = store.open_review_with(
@@ -160,12 +183,32 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
                 },
             )?;
 
-            let carryable = store.carryable(opened.review.id)?;
+            // The ledger id goes on after the facts, through the same call `review link`
+            // makes. A value given is written and an absent one leaves what is there, so
+            // recording the same request twice does not clear a ledger id the first call
+            // set.
+            let review = match ledger {
+                Some(_) => store.set_review_links(
+                    opened.review.id,
+                    ReviewLinks {
+                        ledger_id: ledger.clone(),
+                        ..Default::default()
+                    },
+                )?,
+                None => opened.review,
+            };
+
+            let carryable = store.carryable(review.id)?;
 
             Ok(Report::new(
                 json!({
-                    "review": opened.review,
+                    "review": review,
                     "created": opened.created,
+                    // The commit this review was of before this call moved it, or null.
+                    // A dispatcher recording a request that the author has pushed to
+                    // reads this to learn that its request moved rather than that a
+                    // round was spent.
+                    "head_moved_from": opened.head_moved_from,
                     "carryable": carryable,
                 }),
                 // The id alone, so `ID=$(review-desk review open ...)` is the whole of
@@ -173,7 +216,7 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
                 // document for a caller that needs to know, and so are the findings
                 // waiting to be carried: a line of prose about them here would break
                 // every caller that reads this output as an id.
-                opened.review.id.to_string(),
+                review.id.to_string(),
             ))
         }
 

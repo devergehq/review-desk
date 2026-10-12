@@ -77,18 +77,31 @@ fn two_processes_opening_a_fresh_database_both_succeed() {
 }
 
 #[test]
-fn two_callers_opening_two_new_head_commits_both_get_a_round() {
+fn two_callers_opening_two_new_head_commits_are_neither_refused_a_round() {
     // The race `open_review` exists to close. Composed from `find_review_by_head`,
     // `latest_round` and `create_review` by a caller, both sides would read the same
     // latest round, both would ask for the same next one, and the loser would be refused
-    // as a duplicate of a round it never supplied.
+    // as a duplicate of a round it never supplied. Neither is refused here, which is what
+    // this test has always been about.
+    //
+    // **What the two calls now end with is one new round, not two**, and that is DEV-945
+    // rather than a regression. Round one carries a finding, so the first call through
+    // the lock supersedes it with round two — and round two is a round nobody has
+    // started, so the second call moves *its* head rather than opening a round three. Two
+    // unstarted reviews for one pull request is the state the issue exists to prevent, and
+    // it is unreachable through this function now: for two rounds to be created at once,
+    // both callers would have to see a started newest round, and the first of them leaves
+    // an unstarted one behind.
     let dir = tempfile::TempDir::new().unwrap();
     let path = dir.path().join("two-heads.db");
 
     let first = Store::open(&path).unwrap();
     let second = Store::open(&path).unwrap();
-    first
+    let seeded = first
         .create_review(new_review("devergehq/review-desk", 4, "head-one", 1))
+        .unwrap();
+    first
+        .add_finding(seeded.id, a_finding("round one was reviewed"))
         .unwrap();
 
     let worker = thread::spawn(move || second.open_review("devergehq/review-desk", 4, "head-two"));
@@ -98,15 +111,75 @@ fn two_callers_opening_two_new_head_commits_both_get_a_round() {
     let mine = mine.expect("this caller's round");
     let theirs = theirs.expect("the other caller's round");
 
-    assert!(mine.created && theirs.created);
     assert_ne!(
-        mine.review.round, theirs.review.round,
-        "two reviews of one pull request cannot share a round"
+        mine.created, theirs.created,
+        "one call opened round two and the other moved it"
     );
     assert_eq!(
+        mine.review.id, theirs.review.id,
+        "both calls are working on the same round"
+    );
+    assert_eq!(mine.review.round, 2);
+    assert_eq!(
         first.latest_round("devergehq/review-desk", 4).unwrap(),
-        Some(3),
-        "round one was seeded, so the two new commits are rounds two and three"
+        Some(2),
+        "round one was seeded and reviewed, so the two new commits are round two"
+    );
+    assert_eq!(
+        first
+            .list_reviews("devergehq/review-desk", 4)
+            .unwrap()
+            .len(),
+        2,
+        "one pull request, two rounds, neither duplicated"
+    );
+}
+
+#[test]
+fn two_callers_recording_one_unstarted_request_on_two_commits_get_one_review() {
+    // The race the other way round, and the one DEV-945 is about: the dispatcher
+    // recording a review request twice while the author pushes between the two calls.
+    // Both calls move the same unstarted round — the loser finds the round the winner
+    // moved and moves it again — so one request is one review whichever order they land
+    // in, and `work list` offers a session for it once.
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("one-request.db");
+
+    let first = Store::open(&path).unwrap();
+    let second = Store::open(&path).unwrap();
+    let recorded = first
+        .open_review("devergehq/review-desk", 777, "head-one")
+        .unwrap();
+
+    let worker =
+        thread::spawn(move || second.open_review("devergehq/review-desk", 777, "head-two"));
+    let mine = first.open_review("devergehq/review-desk", 777, "head-three");
+    let theirs = worker.join().unwrap();
+
+    let mine = mine.expect("this caller's answer");
+    let theirs = theirs.expect("the other caller's answer");
+
+    assert!(
+        !mine.created && !theirs.created,
+        "neither call created a second review"
+    );
+    assert_eq!(mine.review.id, recorded.review.id);
+    assert_eq!(theirs.review.id, recorded.review.id);
+    assert!(
+        mine.head_moved_from.is_some() && theirs.head_moved_from.is_some(),
+        "each call moved the request's head"
+    );
+    assert_eq!(
+        first.latest_round("devergehq/review-desk", 777).unwrap(),
+        Some(1),
+        "one request, one review, one round"
+    );
+    assert_eq!(
+        first
+            .list_reviews("devergehq/review-desk", 777)
+            .unwrap()
+            .len(),
+        1
     );
 }
 

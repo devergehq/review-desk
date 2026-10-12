@@ -67,7 +67,7 @@ review-desk db version   # the schema version, creating the database if absent
 
 `review open` prints the review's id and nothing else, so a shell caller can keep it in a
 variable. A head commit already reviewed is handed back; a new head commit on a pull
-request reviewed before starts the next round.
+request **somebody has reviewed** starts the next round.
 
 ```sh
 REVIEW=$(review-desk review open --repo devergehq/review-desk --pr 851 --head c0ffee1)
@@ -122,6 +122,43 @@ as it was", and it is there because an address belongs to one ticket: kept again
 different id, the dashboard drew a link whose text and destination named two different
 things. Correct a ticket id and the address goes with it; pass both to move both. There is
 no way to clear an address and keep the id — a blank value reads as absent.
+
+#### Recording a review request, before any session starts
+
+**This is the command the Locus dispatcher calls the moment GitHub shows it a review
+request**, and it is `review open` rather than a command of its own, because a review with
+no brief is exactly a request: `work list` reports it as `review_requested`, which is the
+dispatcher's own cue to start a session for it.
+
+```sh
+review-desk review open --repo acme/portal --pr 777 --head 4f1a9c2 \
+  --title "Give a scheduled export its own context" --ticket ABC-402 \
+  --ledger ledger-9f2 --json
+```
+
+`--ledger` is the dispatcher's own ledger entry, here as well as on `review link` so that
+recording a request is one call rather than two.
+
+**Recording the same request twice records one review.** The record is keyed on the head
+commit, so the second call hands back the first call's review and spends no round;
+`created` in the `--json` answer says which of the two happened.
+
+**And a push between the request and the session moves the request rather than doubling
+it.** A new head commit on a pull request whose newest round nobody has started — no
+brief, no findings, no draft — moves that round to the new commit. `head_moved_from`
+carries the commit it was of before:
+
+```sh
+review-desk review open --repo acme/portal --pr 777 --head 9d02e71 --json
+# {"review":{"id":13,"head_sha":"9d02e71","round":1,…},
+#  "created":false,"head_moved_from":"4f1a9c2","carryable":null}
+```
+
+Patrick, on DEV-945: "two unstarted reviews for one request is wrong." Both of them would
+be offered by `work list`, and a session could be dispatched for each. A round somebody
+*has* started is untouched by this rule — a new commit on it is the next round, which is
+what rounds are for — and so is a review somebody dismissed: its head moves and it stays
+dismissed, because a push is not the developer changing their mind.
 
 `review find` lists a pull request's rounds, newest first, for an agent that has lost
 an id:

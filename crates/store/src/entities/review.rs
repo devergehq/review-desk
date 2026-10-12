@@ -5,7 +5,7 @@ use rusqlite::{params, Connection, OptionalExtension, Row, Transaction, Transact
 use crate::error::{Result, StoreError};
 use crate::model::{
     Disposition, NewReview, NitTicket, NitTicketStatus, OpenedReview, PrState, Review, ReviewFacts,
-    ReviewLinks, Timestamp,
+    ReviewLinks, ReviewWork, Timestamp,
 };
 use crate::{is_unique_violation, normalise, Store};
 
@@ -65,12 +65,34 @@ impl Store {
         self.get_review(self.conn.last_insert_rowid())
     }
 
-    /// Open the review of this head commit: the one already on the record, or a new
-    /// round if this commit has never been reviewed.
+    /// Open the review of this head commit: the one already on the record, the unstarted
+    /// round whose head moves to it, or a new round.
     ///
     /// A head commit already reviewed is handed back — the newest round for that commit,
-    /// even when later rounds exist for other commits. A round is only ever started for
-    /// a commit with no review.
+    /// even when later rounds exist for other commits.
+    ///
+    /// **A new commit on a pull request whose newest round nobody has started moves that
+    /// round's head; it does not start a round.** Patrick, 12 October 2026, on DEV-945:
+    /// "two unstarted reviews for one request is wrong". The dispatcher records a review
+    /// request the moment GitHub shows it one, before any session runs, and an author who
+    /// pushes between the request and the session would otherwise turn one request into
+    /// two reviews — both unstarted, both offered to the dispatcher by `work list`, and
+    /// each able to have a session dispatched for it. Unstarted is [`ReviewWork`]'s
+    /// question, so it is the same three things `delete_review` protects: no brief, no
+    /// findings, no draft.
+    ///
+    /// The round that moved comes back with `created: false` and
+    /// [`OpenedReview::head_moved_from`] set, so a caller can say which of the three
+    /// things happened without comparing commits itself.
+    ///
+    /// **A dismissed round's head moves too, and it stays dismissed.** It is still one
+    /// request, and the developer has said they do not want it reviewed; starting a fresh
+    /// round instead would put the request they declined back in front of a session on
+    /// the author's next push. DEV-945 puts automatic dismissal out of scope, and
+    /// automatic *un*-dismissal is the same decision read backwards.
+    ///
+    /// A round that has been started keeps the old behaviour exactly: a new commit on it
+    /// is the next round, which is what rounds are for.
     ///
     /// The lookup, the round arithmetic and the insert are one step, for the reason
     /// [`Store::add_finding`] gives: two sessions opening the same pull request at the
@@ -93,6 +115,7 @@ impl Store {
             return Ok(OpenedReview {
                 review,
                 created: false,
+                head_moved_from: None,
             });
         }
 
@@ -112,6 +135,28 @@ impl Store {
             return Ok(OpenedReview {
                 review,
                 created: false,
+                head_moved_from: None,
+            });
+        }
+
+        // The newest round, when nobody has started it: this commit is where that
+        // request is now, so the round moves to it rather than a second one opening
+        // beside it. Inside the write lock, which is what makes two callers arriving on
+        // two different commits end with one review rather than two — the second finds
+        // the round the first moved and moves it again.
+        if let Some(unstarted) = self.latest_unstarted_round(&repo, pr)? {
+            let moved_from = unstarted.head_sha.clone();
+            self.conn.execute(
+                "UPDATE reviews SET head_sha = ?2 WHERE id = ?1",
+                params![unstarted.id, head_sha],
+            )?;
+            self.mark_review_active(unstarted.id)?;
+            let review = self.get_review(unstarted.id)?;
+            tx.commit()?;
+            return Ok(OpenedReview {
+                review,
+                created: false,
+                head_moved_from: Some(moved_from),
             });
         }
 
@@ -128,7 +173,48 @@ impl Store {
         Ok(OpenedReview {
             review,
             created: true,
+            head_moved_from: None,
         })
+    }
+
+    /// The newest round of this pull request, when no session has started it.
+    ///
+    /// `None` when the pull request has no review at all, and `None` when its newest
+    /// round holds a brief, a finding or a draft. Only the newest round is asked about:
+    /// an older unstarted round was superseded by a commit somebody did review, and
+    /// moving *that* one would move a round out from under the history it sits in.
+    fn latest_unstarted_round(&self, repo: &str, pr: i64) -> Result<Option<Review>> {
+        let Some(round) = self.latest_round(repo, pr)? else {
+            return Ok(None);
+        };
+        let Some(review) = self.find_review(repo, pr, round)? else {
+            return Ok(None);
+        };
+        if self.review_work(review.id)?.started() {
+            return Ok(None);
+        }
+        Ok(Some(review))
+    }
+
+    /// What this review holds of the three things only a session writes.
+    ///
+    /// One read of three counts rather than three reads, because both callers need all
+    /// three: `open_review` to decide whether a round may move, and `delete_review` to
+    /// decide whether it may go and to say what it is protecting if it may not.
+    pub fn review_work(&self, id: i64) -> Result<ReviewWork> {
+        Ok(self.conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM briefs WHERE review_id = ?1) AS has_brief,
+                    (SELECT COUNT(*) FROM findings WHERE review_id = ?1) AS findings,
+                    EXISTS (SELECT 1 FROM drafts WHERE review_id = ?1) AS has_draft",
+            params![id],
+            |row| {
+                Ok(ReviewWork {
+                    has_brief: row.get("has_brief")?,
+                    findings: row.get("findings")?,
+                    has_draft: row.get("has_draft")?,
+                })
+            },
+        )?)
     }
 
     /// Open the review of this head commit, and record what the caller knows about the

@@ -94,3 +94,26 @@ impl Desk {
 pub fn open_review(desk: &Desk, repo: &str, pr: &str, head: &str) -> String {
     desk.run(&["review", "open", "--repo", repo, "--pr", pr, "--head", head])
 }
+
+/// Make a review count as started, so that a new head commit on its pull request opens
+/// the next round rather than moving this round's head.
+///
+/// **DEV-945.** `review open` moves an unstarted round to a new commit, because the Locus
+/// dispatcher records a review request the moment GitHub shows it one and an author who
+/// pushes before the session runs would otherwise turn one request into two reviews. A
+/// test that wants a second round therefore has to have reviewed the first, and one
+/// finding is the cheapest honest way to say a session got that far.
+pub fn start_review(desk: &Desk, review: &str) {
+    desk.command()
+        .args(["finding", "add", "--review", review, "--file", "-"])
+        .write_stdin(
+            serde_json::json!({
+                "lens": "correctness",
+                "severity": "nit",
+                "claim": "a session reviewed this round",
+            })
+            .to_string(),
+        )
+        .assert()
+        .success();
+}
