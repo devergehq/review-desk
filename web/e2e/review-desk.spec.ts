@@ -7,6 +7,7 @@ import {
   cli,
   cliJson,
   readAddresses,
+  seedReadyDraft,
   serversUnderTest,
   stillServing,
   STRUCTURED_LONG_NOTE,
@@ -3102,75 +3103,6 @@ test.describe('the guard is still on', () => {
  * and this block runs last in the file.
  */
 test.describe('the draft page after a sign-off', () => {
-  /**
-   * A review with a finding and a draft ready for the developer, recorded the way a session
-   * records one.
-   *
-   * `--sections` rather than `--file`: the store composes the body from the blocks, which
-   * is what a session writes since DEV-929 and is what keeps `body_is_stale` false. A draft
-   * written as one block of markdown would be as good for this test and worse as a picture.
-   */
-  function readyDraft(pr: number, title: string): number {
-    const opened = cli(seededDatabase, [
-      'review',
-      'open',
-      '--repo',
-      'acme/portal',
-      '--pr',
-      String(pr),
-      '--head',
-      'b4d9e01',
-      '--title',
-      title,
-      '--ticket',
-      'ABC-251',
-      '--changed-lines',
-      '64',
-    ])
-    const id = Number(opened.match(/\d+/)?.[0])
-    if (!Number.isInteger(id)) throw new Error(`review open printed no id: ${opened}`)
-
-    const finding = resolve('e2e/.posting-finding.json')
-    writeFileSync(
-      finding,
-      JSON.stringify({
-        lens: 'correctness',
-        severity: 'should',
-        claim: 'The attempt count is written outside the transaction',
-        title: 'The attempt count is written outside the transaction',
-        file: 'app/Jobs/DeliverWebhook.php',
-        line: 73,
-        disposition: 'in_draft',
-      }),
-    )
-    cli(seededDatabase, ['finding', 'add', '--review', String(id), '--file', finding])
-    rmSync(finding, { force: true })
-
-    const sections = resolve('e2e/.posting-sections.json')
-    writeFileSync(
-      sections,
-      JSON.stringify([
-        {
-          kind: 'prose',
-          text:
-            '**1 Should — 1 open.** The retry carries a key now, which is the right shape. '
-            + 'One finding, about where the attempt count is written.',
-        },
-        {
-          kind: 'finding',
-          finding_seq: 1,
-          text:
-            'A delivery that fails after the increment leaves the count ahead of what was '
-            + 'actually attempted, and the audit row is written from the count.',
-        },
-      ]),
-    )
-    cli(seededDatabase, ['draft', 'put', '--review', String(id), '--sections', sections])
-    rmSync(sections, { force: true })
-
-    return id
-  }
-
   /** The draft as the command line reads it, which is how a review session reads it. */
   function draftRecord(id: number) {
     return cliJson(seededDatabase, ['draft', 'show', '--review', String(id)]) as unknown as {
@@ -3187,14 +3119,13 @@ test.describe('the draft page after a sign-off', () => {
   }
 
   test('while it waits, the page says what is known and keeps it current', async ({ page }) => {
-    const id = readyDraft(418, 'Carry an idempotency key on a retried delivery')
+    const id = seedReadyDraft(seededDatabase, 428, 'Carry an idempotency key on a retried delivery')
     await signOff(page, id, 'request_changes')
 
     const panel = page.locator('.watch')
 
     /* Who is expected to act, which nothing on this page said before. */
-    await expect(panel).toContainText('This review’s own session posts it')
-    await expect(panel).toContainText('never writes to GitHub')
+    await expect(panel).toContainText('This review’s own session posts it, not Review Desk')
     /* And what it cannot say: Allele owns whether a session is running. */
     await expect(panel).toContainText('not something Review Desk is told')
     await expect(panel).toContainText('within about 40 seconds')
@@ -3216,7 +3147,7 @@ test.describe('the draft page after a sign-off', () => {
   })
 
   test('the session posts it, and the page says so without a reload', async ({ page }) => {
-    const id = readyDraft(419, 'Record the delivery attempt count inside the transaction')
+    const id = seedReadyDraft(seededDatabase, 429, 'Record the delivery attempt count inside the transaction')
     await signOff(page, id, 'comment')
 
     /*
@@ -3252,7 +3183,7 @@ test.describe('the draft page after a sign-off', () => {
     const link = panel.getByRole('link', { name: /See the review on GitHub/ })
     await expect(link).toHaveAttribute(
       'href',
-      `https://github.com/acme/portal/pull/419#pullrequestreview-1842003517`,
+      `https://github.com/acme/portal/pull/429#pullrequestreview-1842003517`,
     )
 
     /* The heading and the sentence under it followed, which is the rest of the page. */
@@ -3267,7 +3198,7 @@ test.describe('the draft page after a sign-off', () => {
   test('after forty seconds with no post it says the session may not be running', async ({
     page,
   }) => {
-    const id = readyDraft(420, 'Skip a schedule whose tenant row has gone')
+    const id = seedReadyDraft(seededDatabase, 430, 'Skip a schedule whose tenant row has gone')
 
     /*
      * **The browser's clock, moved rather than waited out.** Forty seconds of real waiting
@@ -3285,6 +3216,7 @@ test.describe('the draft page after a sign-off', () => {
     await page.clock.fastForward('45')
 
     await expect(panel).toContainText('may not be running')
+    await expect(panel).toContainText('in the 45 sec since you signed off')
     /* Plainly, and with the way out — not an alarm, and nothing is boxed or coloured. */
     await expect(panel).toContainText('Check the session that was reviewing this')
     await expect(panel).toContainText('take the sign-off back')
@@ -3297,7 +3229,7 @@ test.describe('the draft page after a sign-off', () => {
   test('taking the sign-off back stops the waiting, while the page is watching', async ({
     page,
   }) => {
-    const id = readyDraft(421, 'Name the helper this change deletes')
+    const id = seedReadyDraft(seededDatabase, 431, 'Name the helper this change deletes')
     await signOff(page, id, 'request_changes')
 
     const panel = page.locator('.watch')

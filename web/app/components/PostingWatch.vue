@@ -177,14 +177,21 @@ const announcement = computed(() => {
      * along with the event.
      */
     return watchedTheSignOff.value
-      ? 'The sign-off is taken back. The draft is with the session again, with your note.'
+      ? 'The sign-off is taken back. The draft is with the session again.'
       : ''
   }
   if (!waiting.value) return ''
+  /*
+   * **Neither of these opens with "Signed off", and that is measured rather than taste.**
+   * The heading says it, the sentence under the heading says it, and the notice the write
+   * itself leaves — which is a `role="status"` of its own — says it. A fourth would be the
+   * same two words announced twice in a row to anybody listening. What is new here is the
+   * waiting, so that is what this says.
+   */
   return late.value
-    ? 'Signed off, and nothing has reported it posted. The session that was reviewing '
-    + 'this may not be running.'
-    : 'Signed off. Waiting for this review’s session to post it.'
+    ? 'Nothing has reported it posted. The session that was reviewing this may not be '
+    + 'running.'
+    : 'Waiting for this review’s session to post it.'
 })
 
 /**
@@ -248,21 +255,26 @@ const postedAs = computed(() =>
 
 const whoPosts = computed(
   () =>
-    'This review’s own session posts it; Review Desk never writes to GitHub. It reads '
-    + `Review Desk about every ${WATCHER_READS_EVERY_SECONDS} seconds while a draft is `
-    + `waiting, so a session that is running posts within about ${POSTED_WITHIN_SECONDS} `
-    + 'seconds. Whether it is running is not something Review Desk is told — the time '
-    + 'above is how long the review has been silent, which is the nearest thing the record '
-    + 'holds.',
+    'This review’s own session posts it, not Review Desk — it reads the desk about every '
+    + `${WATCHER_READS_EVERY_SECONDS} seconds while a draft is waiting, so one that is `
+    + `running posts within about ${POSTED_WITHIN_SECONDS} seconds. Whether it is running `
+    + 'is not something Review Desk is told; the time above is how long the review has been '
+    + 'silent, which is the nearest thing the record holds.',
 )
 
+/**
+ * The sentence the long wait adds, which states nothing the paragraph above it already has.
+ *
+ * The forty seconds are stated once, up there, as what a running session takes. Repeating
+ * them here as what this one has exceeded was two statements of one number a line apart —
+ * and the number a developer wants at this point is how long *they* have been waiting.
+ */
 const lateSentence = computed(
   () =>
-    `You signed off ${signedOffLabel.value} and nothing has reported it posted, which is `
-    + `longer than the ${POSTED_WITHIN_SECONDS} seconds a running session takes. It may not `
-    + 'be running. Check the session that was reviewing this, or take the sign-off back and '
-    + 'send the draft back with a note — a session that picks it up afterwards writes the '
-    + 'draft again.',
+    `Nothing has reported it posted in the ${durationLabel(sinceSignOff.value)} since you `
+    + 'signed off, so the session may not be running. Check the session that was reviewing '
+    + 'this, or take the sign-off back and send the draft back with a note — a session that '
+    + 'picks it up later writes the draft again.',
 )
 
 const noAnchorSentence = computed(

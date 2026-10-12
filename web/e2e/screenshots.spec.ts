@@ -2,7 +2,7 @@ import { resolve } from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
-import { readAddresses } from './harness'
+import { cli, readAddresses, seedReadyDraft } from './harness'
 
 /*
  * The screenshots in `docs/screenshots/`, produced rather than taken by hand.
@@ -21,8 +21,15 @@ import { readAddresses } from './harness'
 
 const addresses = readAddresses()
 
-const { seeded, empty, reviewId, waivedReviewId, structuredReviewId, heldBackReviewId }
-  = addresses
+const {
+  seeded,
+  seededDatabase,
+  empty,
+  reviewId,
+  waivedReviewId,
+  structuredReviewId,
+  heldBackReviewId,
+} = addresses
 
 const INTO = resolve('../docs/screenshots')
 
@@ -464,5 +471,83 @@ test.describe('the server stopped', () => {
     await expect(page.getByText('Review Desk is not answering')).toBeVisible()
 
     await shot(page, 'server-stopped')
+  })
+})
+
+/*
+ * **The four states of the gap between a sign-off and a posting**, which is DEV-932, at the
+ * width of a laptop and at the width of a phone.
+ *
+ * Each one is reached the way the real thing reaches it. The sign-off is a click, because
+ * that is the only way a draft can be signed off; the posting is `review-desk draft posted`,
+ * which is the command a review session runs; the take-back is a click on the control
+ * DEV-929 added. Nothing here writes a status into a database to get a picture of it.
+ *
+ * `body_is_stale` is not among them and cannot be: `draft put` with no blocks stores the
+ * whole body as one prose block, so the composition always matches what is stored and the
+ * command line cannot reach that state. `web/test/posting-watch.nuxt.spec.ts` is where it
+ * is measured.
+ */
+test.describe('waiting for the session that posts it', () => {
+  /** Both widths of one state, so a state is never pictured at one width only. */
+  async function bothWidths(page: Page, name: string) {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await shot(page, name)
+    await page.setViewportSize({ width: 390, height: 844 })
+    await shot(page, `${name}-390`)
+    await page.setViewportSize({ width: 1440, height: 900 })
+  }
+
+  /** Sign off in the browser, which is the only place a draft can be signed off. */
+  async function signOff(page: Page, id: number) {
+    await page.goto(`${seeded}reviews/${id}/draft`)
+    await page.locator('select#event').selectOption('request_changes')
+    await page.getByRole('button', { name: 'Sign off and post' }).click()
+    await expect(page.getByText('Waiting for this review’s session to post it.')).toBeVisible()
+  }
+
+  test('signed off, and then posted', async ({ page }) => {
+    const id = seedReadyDraft(seededDatabase, 440, 'Carry an idempotency key on a retry')
+    await signOff(page, id)
+    await bothWidths(page, 'dev-932-1-waiting')
+
+    cli(seededDatabase, [
+      'draft',
+      'posted',
+      '--review',
+      String(id),
+      '--github-review',
+      '1842003517',
+    ])
+
+    /* Noticed on the page's own timer. Nothing is reloaded to take this picture. */
+    await expect(page.locator('.watch')).toContainText('Posted on GitHub.', {
+      timeout: 20_000,
+    })
+    await bothWidths(page, 'dev-932-3-posted')
+  })
+
+  test('signed off, and nothing has posted it', async ({ page }) => {
+    const id = seedReadyDraft(seededDatabase, 441, 'Skip a schedule whose tenant row has gone')
+
+    /* The browser's clock moved rather than waited out; the page itself runs normally. */
+    await page.clock.install()
+    await signOff(page, id)
+    await page.clock.fastForward('45')
+
+    await expect(page.locator('.watch')).toContainText('may not be running')
+    await bothWidths(page, 'dev-932-2-nothing-posted')
+  })
+
+  test('the sign-off taken back while the page was watching', async ({ page }) => {
+    const id = seedReadyDraft(seededDatabase, 442, 'Name the helper this change deletes')
+    await signOff(page, id)
+
+    await page.getByRole('button', { name: 'Take back the sign-off and send it back' }).click()
+    await page.locator('textarea#send-back-note').fill('Fold F1 into the prose; it has no line')
+    await page.getByRole('button', { name: 'Send back', exact: true }).click()
+
+    await expect(page.locator('.watch')).toContainText('The sign-off is taken back')
+    await bothWidths(page, 'dev-932-4-sent-back')
   })
 })

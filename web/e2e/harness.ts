@@ -1346,3 +1346,115 @@ export async function stop(serving: Serving): Promise<void> {
   await Promise.race([ended, new Promise(wait => setTimeout(wait, 5_000))])
   if (serving.process.exitCode == null) serving.process.kill('SIGKILL')
 }
+
+/**
+ * A review with one finding and a draft ready for the developer, opened on the fly.
+ *
+ * **Not part of `seed()`, and that is the point.** Everything the acceptance suite asserts
+ * on the seeded database includes how many reviews the queue is waiting on, so a review
+ * added to the seed to test one screen changes the assertions and the pictures of four
+ * others. The two callers — the draft page's sign-off block and its screenshots — open
+ * their own and name their own pull request numbers.
+ *
+ * **`--sections` rather than `--file`.** The store composes the body from the blocks, which
+ * is what a session writes since DEV-929 and is what keeps `body_is_stale` false; a draft
+ * written as one block of markdown would do as well for the test and worse as a picture.
+ *
+ * It stops at `ready`. Signing off is the developer's act and there is no command for it,
+ * which is the boundary the whole of this file is arranged around.
+ *
+ * **`pr` must be a pull request nothing else on this database has reviewed.** `review open`
+ * on a pull request already reviewed at another head starts the *next round* of it, which
+ * carries the earlier round's findings forward and moves `rounds_on_pr` on a review some
+ * other test is asserting about. That is checked below rather than left to whoever picks
+ * the next number: it cost a confusing "finding 6/1 does not exist" to find once.
+ */
+export function seedReadyDraft(database: string, pr: number, title: string): number {
+  const directory = scratch()
+
+  const opened = cli(database, [
+    'review',
+    'open',
+    '--repo',
+    'acme/portal',
+    '--pr',
+    String(pr),
+    '--head',
+    'b4d9e01',
+    '--title',
+    title,
+    '--ticket',
+    'ABC-251',
+    '--changed-lines',
+    '64',
+  ])
+  const reviewId = Number(opened.match(/\d+/)?.[0])
+  if (!Number.isInteger(reviewId)) {
+    throw new Error(`review open printed no id: ${opened}`)
+  }
+
+  const review = (
+    cliJson(database, ['review', 'show', '--review', String(reviewId)]) as unknown as {
+      review: { round: number }
+    }
+  ).review
+  if (review.round !== 1) {
+    throw new Error(
+      `acme/portal#${pr} has been reviewed on this database already, so this opened round `
+      + `${review.round} of it rather than a review of its own. Pick a pull request number `
+      + 'no other seed uses.',
+    )
+  }
+
+  const finding = join(directory, 'posting-finding.json')
+  writeFileSync(
+    finding,
+    JSON.stringify({
+      lens: 'correctness',
+      severity: 'should',
+      claim: 'The attempt count is written outside the transaction',
+      title: 'The attempt count is written outside the transaction',
+      file: 'app/Jobs/DeliverWebhook.php',
+      line: 73,
+      disposition: 'in_draft',
+    }),
+  )
+  /*
+   * The number the store gave it, not a 1. A block about a finding that is not there is
+   * refused, and the refusal names a sequence number rather than the reason — so reading
+   * it back is a line here instead of a puzzle wherever this is called from.
+   */
+  const seq = (
+    cliJson(database, [
+      'finding',
+      'add',
+      '--review',
+      String(reviewId),
+      '--file',
+      finding,
+    ]) as unknown as { finding: { seq: number } }
+  ).finding.seq
+
+  const sections = join(directory, 'posting-sections.json')
+  writeFileSync(
+    sections,
+    JSON.stringify([
+      {
+        kind: 'prose',
+        text:
+          '**1 Should — 1 open.** The retry carries a key now, which is the right shape. '
+          + 'One finding, about where the attempt count is written.',
+      },
+      {
+        kind: 'finding',
+        finding_seq: seq,
+        text:
+          'A delivery that fails after the increment leaves the count ahead of what was '
+          + 'actually attempted, and the audit row is written from the count.',
+      },
+    ]),
+  )
+  cli(database, ['draft', 'put', '--review', String(reviewId), '--sections', sections])
+
+  return reviewId
+}

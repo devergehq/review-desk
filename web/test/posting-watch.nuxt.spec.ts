@@ -6,7 +6,7 @@ import type { VueWrapper } from '@vue/test-utils'
 import PostingWatch from '../app/components/PostingWatch.vue'
 import { POSTED_WITHIN_SECONDS, RE_READ_EVERY_SECONDS } from '../app/utils/posting'
 
-import type { Draft, DraftStatus, Instant, Review, ReviewEvent } from '../app/types/desk'
+import type { Draft, DraftStatus, Instant, Review } from '../app/types/desk'
 
 /*
  * `PostingWatch`, mounted — the gap between a sign-off and a posting, which is the whole
@@ -171,10 +171,9 @@ describe('while a signed-off draft is waiting', () => {
     expect(page.text()).not.toContain('0 sec ago')
   })
 
-  it('says the review’s own session posts it, and that Review Desk never does', async () => {
+  it('says the review’s own session posts it, and that Review Desk does not', async () => {
     const page = await watching()
-    expect(page.text()).toContain('This review’s own session posts it')
-    expect(page.text()).toContain('never writes to GitHub')
+    expect(page.text()).toContain('This review’s own session posts it, not Review Desk')
   })
 
   it('says it is not told whether that session is running', async () => {
@@ -207,11 +206,34 @@ describe('when nothing has posted it', () => {
     expect(announced(page)).toContain('may not be running')
   })
 
+  it('never opens an announcement with the two words three things above it say', async () => {
+    /*
+     * The heading, the sentence under it and the notice the write leaves all say "Signed
+     * off" — and the notice is a live region of its own, so a fourth would be the same two
+     * words announced twice in a row.
+     */
+    const page = await watching()
+    expect(announced(page)).not.toContain('Signed off')
+    await tick(page, POSTED_WITHIN_SECONDS)
+    expect(announced(page)).not.toContain('Signed off')
+  })
+
   it('names what the developer can do about it', async () => {
     const page = await watching()
     await tick(page, POSTED_WITHIN_SECONDS)
     expect(page.text()).toContain('Check the session')
     expect(page.text()).toContain('take the sign-off back')
+  })
+
+  it('says how long they have waited, and states the forty seconds only once', async () => {
+    const page = await watching()
+    await tick(page, POSTED_WITHIN_SECONDS)
+    expect(page.text()).toContain('in the 40 sec since you signed off')
+    /*
+     * The threshold belongs to the paragraph that says what a running session takes.
+     * Repeated a line below as what this one has exceeded, it was one number stated twice.
+     */
+    expect(page.text().match(/40 seconds/g) ?? []).toHaveLength(1)
   })
 
   it('keeps reading, because the draft is still signed off and still postable', async () => {
@@ -447,7 +469,7 @@ describe('what a screen reader is told', () => {
   it('carries the state and never a figure, so a moving clock is not an interruption', async () => {
     const page = await watching()
     const first = announced(page)
-    expect(first).toContain('Waiting for this review')
+    expect(first).toBe('Waiting for this review’s session to post it.')
 
     await tick(page, 25)
     /*

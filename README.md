@@ -489,6 +489,9 @@ go. A posted review is not sent back; what follows it is the next round.
 The command line can reach `drafting`, `ready` and `posted`. It cannot reach `approved` or
 `sent_back`: those are the developer's, in the dashboard.
 
+**The gap between `approved` and `posted` is a real wait, and the draft page says so while
+it lasts** — see [After a sign-off](#after-a-sign-off).
+
 **A change that would alter what the
 review posts is refused once the draft is approved** — moving a finding between the draft,
 the held-back list and the suppressed one, or giving it a round status that stops it being
@@ -937,6 +940,39 @@ Nuxt runs with server-side rendering off and generates static files, which `carg
 embeds in the binary — see [the local server](#the-local-server). Nuxt's own server routes
 are not used: the JSON API is the Rust server's. Fonts are bundled rather than fetched, so
 the built app asks nothing of the network and works on a machine with no internet.
+
+### After a sign-off
+
+**The draft page keeps itself current between the sign-off and the posting**, because that
+gap is a wait on a system Review Desk does not control. It signed off once and went quiet
+before DEV-932: on 11 October 2026 a sign-off posted 4 min 28 s later, with nothing on
+screen in between to say whether anything would pick it up.
+
+While a draft is `approved` and unposted, the page re-reads the review every five seconds —
+stopping on a post, on a send-back, and while the tab is hidden, and reading once the
+moment it is looked at again. It shows how long ago the sign-off was, when anything last
+wrote to the review (`last_activity_at`), and that the review's own session is what posts
+it. When the record reports it posted it flips without a reload: the word, the time, the
+event, how long the session took, and a link to the review on GitHub.
+
+**After forty seconds it says the session may not be running**, as a plain sentence rather
+than an alarm — nothing has gone wrong with the record, and the draft is still signed off
+and still postable. Forty is two intervals of Locus 0.5.12's session watcher, which reads
+Review Desk every twenty seconds while a draft waits on the developer. **Locus owns that
+number and nothing on the wire carries it**, so it is a named setting of the page,
+`POSTED_WITHIN_SECONDS` in `web/app/utils/posting.ts`, written down beside where it came
+from.
+
+**It will not say whether the session is alive.** Allele owns that; `session_alive` is null
+in every response this server writes, and `GET /reviews/{id}` does not carry it at all. How
+long the review has been silent is the nearest thing the record holds, and that is what is
+shown.
+
+The GitHub link is built from `github_review_id`, which is a `ForeignId` — opaque, stored
+and returned and never parsed. GitHub's own address for a review is the pull request plus
+`#pullrequestreview-<number>`, so a run of digits becomes that anchor and anything else
+addresses the pull request and the page says which it got; an anchor built from a GraphQL
+node id matches nothing and lands silently at the top of the pull request.
 
 ### The development loop
 
