@@ -188,6 +188,18 @@ describe('the draft page of a review that cannot be posted', () => {
     expect(page.text()).toContain('No round of it can be posted now')
   })
 
+  it('reads its step trail in the past tense too', async () => {
+    /*
+     * **"Nothing left to do." two lines above "6 Draft · waiting on you"** is the same
+     * contradiction the Reviews list carried, on the page a developer is most likely to be
+     * reading when they wonder what happened. The record is untouched — step 6 really is
+     * `waiting_on_you` — and only the tense the page reads it in changes.
+     */
+    const page = await draftOf(MERGED.unposted[0]!)
+    expect(page.text()).toContain('was waiting on you')
+    expect(page.text()).not.toContain('Draftwaiting on you')
+  })
+
   it('offers no sign-off, and no way to send it back either', async () => {
     /*
      * **Not a disabled button.** Each of the three acts the panel offers asks a session to

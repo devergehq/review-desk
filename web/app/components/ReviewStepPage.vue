@@ -118,6 +118,7 @@ const ticket = computed(() => ticketUrl(props.detail.review.ticket_url))
         :review-id="detail.review.id"
         :active="step"
         :round="detail.review.round"
+        :off-the-desk="detail.not_for_signing != null"
       />
 
       <!--
