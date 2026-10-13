@@ -60,6 +60,25 @@ function toggleOption(key: string) {
   openOption.value = openOption.value === key ? null : key
 }
 
+/**
+ * Another review on this page starts with nothing open.
+ *
+ * `openOption` is about *this* review's options, and it is an option's key: on a page that
+ * was reused across a review change, an option left open on review 50 would come back open
+ * on review 51 over whichever of its options shared the letter. DEV-960, and the watch is
+ * DEV-958's, whose own page was written with it.
+ *
+ * **It cannot fire today, and that is deliberate rather than overlooked.** `<NuxtPage />`
+ * keys a page by its own path with the parameters interpolated, so changing the review
+ * unmounts this component and mounts a fresh one — DEV-960 says the component is reused and
+ * it is not. `draft.vue` carries the measurement and the whole argument for keeping the
+ * watch: it is the page's statement of what belongs to one review, and a `pageKey` added
+ * later makes it the only thing standing between two reviews.
+ */
+watch(reviewId, () => {
+  openOption.value = null
+})
+
 /* ------------------------------- Reading the brief ------------------------------- */
 
 function options(brief: Brief): BriefOption[] {

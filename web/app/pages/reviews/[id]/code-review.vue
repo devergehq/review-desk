@@ -182,6 +182,44 @@ watch(
   { immediate: true },
 )
 
+/**
+ * Another review on this page starts as the page opens it.
+ *
+ * Every one of these is about *this* review's findings, and `open` is a sequence number: on
+ * a page that was reused across a review change, a finding left open on review 50 would come
+ * back open on review 51 over whichever finding shared the number. DEV-960, and the watch is
+ * DEV-958's, whose own page was written with it.
+ *
+ * **It cannot fire today, and that is deliberate rather than overlooked.** `<NuxtPage />`
+ * keys a page by its own path with the parameters interpolated, so changing the review
+ * unmounts this component and mounts a fresh one — DEV-960 says the component is reused and
+ * it is not. `draft.vue` carries the measurement and the whole argument for keeping the
+ * watch: it is the page's statement of what belongs to one review, and a `pageKey` added
+ * later makes it the only thing standing between two reviews.
+ *
+ * Five things, and three of them are not the open row:
+ *
+ * 1. **The two filters.** `part` is an index into *this* brief's parts and `list` is which
+ *    of three lists is showing — review 50's answer to "which of these do I want to see",
+ *    over review 51's findings.
+ * 2. **`open` and `reasoning` by hand, not by way of the watcher above.** It fires on a
+ *    *change* to the list or the part, and arriving with both already at their defaults
+ *    changes neither — which is the common case and the one that would be missed.
+ * 3. **`notice`** — what a decision on review 50's finding came to, over review 51.
+ * 4. **`arrived`**, which is once-only *per review* rather than per page: a `#F9` on the
+ *    second review is an arrival of its own, and a page that was reused with `arrived` still
+ *    set would ignore it. Re-arming is safe — the watch it gates is keyed on the findings
+ *    arriving, so it next runs against this review's own.
+ */
+watch(reviewId, () => {
+  list.value = 'post'
+  part.value = 0
+  open.value = 0
+  reasoning.value = false
+  notice.value = null
+  arrived.value = false
+})
+
 /* --------------------------------- The findings ---------------------------------- */
 
 const parts = computed(() => detail.data.value?.brief?.parts ?? [])
