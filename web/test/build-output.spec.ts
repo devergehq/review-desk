@@ -81,7 +81,7 @@ describe('the built dashboard', () => {
      * screen first, and they are short enough to appear by accident in a minified bundle,
      * so a failure here deserves its own message rather than being lumped in above.
      */
-    const invented = ['acme/portal', 'acme/billing-api', 'ABC-231', 'DEF-118']
+    const invented = ['acme/portal', 'acme/billing-api', 'globex/portal', 'ABC-231', 'DEF-118']
     const leaked = invented.filter(name => text.some(file => file.body.includes(name)))
     expect(leaked).toEqual([])
   })

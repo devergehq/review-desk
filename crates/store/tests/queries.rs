@@ -776,7 +776,7 @@ fn a_brief_with_no_problem_in_it_is_refused() {
 #[test]
 fn every_lookup_finds_a_repository_however_it_is_spelled() {
     // **Found on a real repository by the Locus half**: `review find --repo
-    // Acme-Corp/web-portal` answered "no reviews" while `review open` and `work list`
+    // Globex/portal` answered "no reviews" while `review open` and `work list`
     // found them. The record holds a repository canonically and these four lookups
     // compared the caller's spelling to it under SQLite's binary collation, so they
     // missed — and a miss is "there is no such review", not a slow path.
@@ -785,15 +785,15 @@ fn every_lookup_finds_a_repository_however_it_is_spelled() {
     // rule the inserts keep was kept by some of the reads.
     let (_dir, store) = temp_store();
     let opened = store
-        .open_review("Acme-Corp/Web-Portal", 9585, "ABC1234")
+        .open_review("Globex/Portal", 9585, "ABC1234")
         .expect("open");
-    assert_eq!(opened.review.repo, "acme-corp/web-portal");
+    assert_eq!(opened.review.repo, "globex/portal");
 
     for spelling in [
-        "Acme-Corp/web-portal",
-        "acme-corp/Web-Portal",
-        " Acme-Corp/Web-Portal ",
-        "acme-corp/web-portal",
+        "Globex/portal",
+        "globex/Portal",
+        " Globex/Portal ",
+        "globex/portal",
     ] {
         assert_eq!(
             store.list_reviews(spelling, 9585).unwrap().len(),

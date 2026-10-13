@@ -649,7 +649,7 @@ function seedPosted(directory: string, database: string): number {
  * DEV-957 was raised from, in the browser.
  *
  * On 13 October Patrick's queue held ten drafts to approve, five of them rounds of pull
- * requests that had already merged. `#9568` was four of those five: round 1 had
+ * requests that had already merged. `globex/portal#9568` was four of those five: round 1 had
  * been posted and the author's three later pushes each opened a round whose draft was
  * never signed off. None of those three could ever be posted, and all three sat in "drafts
  * to approve".
@@ -787,7 +787,7 @@ function seedMerged(directory: string, database: string): number[] {
  * **Two rounds of one open pull request, both unposted drafts** — the other half of
  * DEV-957's comment.
  *
- * `#9541` drew two rows on Patrick's screen, round 1 and round 2, both "Draft
+ * `globex/portal#9541` drew two rows on Patrick's screen, round 1 and round 2, both "Draft
  * ready". Round 1 can never be the review that posts: the author pushed past the commit it
  * was written against. So the queue draws one row, for round 2, and the heading counts one
  * pull request rather than two rounds.

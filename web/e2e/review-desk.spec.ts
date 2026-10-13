@@ -2055,11 +2055,11 @@ async function draftPage(page: Page, width = 1440) {
 /*
  * **What GitHub receives, in a real browser, at both widths.**
  *
- * DEV-929. A real review was 309 lines with no index, no severity
- * glyph and two inline threads, because the posted body *was* the blocks joined. The seeded
- * structured review is the contract's real-length example — twelve posted findings, nine of
- * them with a line inside the diff — so this is the volume the complaint was about rather
- * than a two-finding draft that proves nothing about an index.
+ * DEV-929. A real review was 309 lines with no index, no severity glyph and two inline
+ * threads, because the posted body *was* the blocks joined. The seeded structured review is
+ * the contract's real-length example — twelve posted findings, nine of them with a line
+ * inside the diff — so this is the volume the complaint was about rather than a two-finding
+ * draft that proves nothing about an index.
  *
  * The page never scrolling sideways is asserted for every step, at both widths, in "no page
  * of a review scrolls sideways"; this is what the two halves of the preview say.
@@ -2757,8 +2757,8 @@ test.describe('a drawing opens larger', () => {
  * Its own group because it is the one screen that is not about a review needing something:
  * the queue is what is waiting and `GET /timings` is what has finished, so a review that
  * was posted and has not been replied to was in neither. "The actual review itself has
- * disappeared… I can't even get to the review page if I wanted to go back" — Patrick, on
- * a review, which is the sentence this page deletes.
+ * disappeared… I can't even get to the review page if I wanted to go back" — Patrick, on a
+ * review, which is the sentence this page deletes.
  */
 test.describe('the list of every review', () => {
   test('is in the header, lists every review, and reaches a posted one in two clicks', async ({

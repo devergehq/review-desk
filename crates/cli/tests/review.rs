@@ -769,7 +769,7 @@ fn review_find_answers_for_the_repository_however_it_was_typed() {
         "review",
         "open",
         "--repo",
-        "Acme-Corp/Web-Portal",
+        "Globex/Portal",
         "--pr",
         "9585",
         "--head",
@@ -778,45 +778,24 @@ fn review_find_answers_for_the_repository_however_it_was_typed() {
         "A review",
     ]);
 
-    let found = desk.json(&[
-        "review",
-        "find",
-        "--repo",
-        "Acme-Corp/web-portal",
-        "--pr",
-        "9585",
-    ]);
+    let found = desk.json(&["review", "find", "--repo", "Globex/portal", "--pr", "9585"]);
     assert_eq!(
         found["reviews"].as_array().expect("reviews").len(),
         1,
         "the repository is the same repository however it is spelled: {found}"
     );
     assert_eq!(
-        found["repo"], "acme-corp/web-portal",
+        found["repo"], "globex/portal",
         "and the answer carries the spelling the record holds"
     );
 
-    let plain = desk.run(&[
-        "review",
-        "find",
-        "--repo",
-        "ACME-CORP/WEB-PORTAL",
-        "--pr",
-        "9585",
-    ]);
+    let plain = desk.run(&["review", "find", "--repo", "GLOBEX/PORTAL", "--pr", "9585"]);
     assert!(plain.starts_with("1 round 1 head abc1234"), "{plain}");
 
     // And an empty answer names what was searched rather than what was typed, which is
     // the half that hid the fault.
-    let none = desk.run(&[
-        "review",
-        "find",
-        "--repo",
-        "Acme-Corp/Nothing",
-        "--pr",
-        "9585",
-    ]);
-    assert_eq!(none, "no reviews of acme-corp/nothing#9585");
+    let none = desk.run(&["review", "find", "--repo", "Globex/Nothing", "--pr", "9585"]);
+    assert_eq!(none, "no reviews of globex/nothing#9585");
 }
 
 #[test]

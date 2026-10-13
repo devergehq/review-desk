@@ -3,9 +3,9 @@
 //! **The draft is blocks; what posts is composed from them.** DEV-877 made the body a list
 //! of blocks so that a finding can be cut, regraded or rewritten, and DEV-891 made every
 //! posted finding a block of its own. Then the posted body *was* those blocks joined end to
-//! end: a real review ran to 309 lines with no index, no severity glyph and
-//! two inline threads. DEV-929 keeps the blocks and composes what GitHub receives from the
-//! same record, in the shape `house-style.md` asks for:
+//! end: a real review ran to 309 lines with no index, no severity glyph and two inline
+//! threads. DEV-929 keeps the blocks and composes what GitHub receives from the same
+//! record, in the shape `house-style.md` asks for:
 //!
 //! | The body, in order | Where it comes from |
 //! | -- | -- |

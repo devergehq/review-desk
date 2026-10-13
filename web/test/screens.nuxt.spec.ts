@@ -1244,11 +1244,11 @@ describe('the draft preview', () => {
   })
 
   /*
-   * **The body is an index, and the threads are the rest of what posts.** DEV-929: a
-   * real review went out as 309 lines with no index and two threads because
-   * the posted body *was* the blocks joined. The page's own job did not change — nothing is
-   * posted unread — but what it has to draw did: a finding with a line inside the diff is a
-   * row in the body and a comment on the code.
+   * **The body is an index, and the threads are the rest of what posts.** DEV-929: a real
+   * review went out as 309 lines with no index and two threads because the posted body
+   * *was* the blocks joined. The page's own job did not change — nothing is posted unread —
+   * but what it has to draw did: a finding with a line inside the diff is a row in the body
+   * and a comment on the code.
    *
    * Review 41 is the real-length example: twelve posted findings, nine of them anchored.
    */

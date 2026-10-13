@@ -183,12 +183,12 @@ pub(crate) fn validate(sections: &[NewDraftSection]) -> Result<()> {
 /// What the review's blocks compose to: the body GitHub receives.
 ///
 /// **The blocks are the draft; the shape is the house style's.** Until DEV-929 this was the
-/// posted blocks joined end to end, which is how a real review came out as
-/// 309 lines with no index and two threads. The joining is still here — a prose block is
-/// carried through character for character and a finding block still composes its own
-/// heading — and what sits between them is now an index, with each anchored finding lifted
-/// out of the body and handed over as a thread instead. [`super::house_style`] holds that
-/// shape and the reason for each part of it.
+/// posted blocks joined end to end, which is how a real review came out as 309 lines with
+/// no index and two threads. The joining is still here — a prose block is carried through
+/// character for character and a finding block still composes its own heading — and what
+/// sits between them is now an index, with each anchored finding lifted out of the body and
+/// handed over as a thread instead. [`super::house_style`] holds that shape and the reason
+/// for each part of it.
 ///
 /// A composition with nothing to post is the empty string rather than a lone newline: a
 /// draft at `drafting` may hold no body at all.
