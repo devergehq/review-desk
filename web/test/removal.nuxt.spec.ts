@@ -150,7 +150,7 @@ describe('the Reviews list’s dismissed filter', () => {
      * **`#88`, which is the pull request of the review this block dismisses.** It read
      * `#9585` and was therefore vacuous: no fixture had that number, so the assertion
      * passed whether or not the dismissed review was drawn. DEV-957's fixtures gave
-     * `tc/portal#9585` to a review that is in play, and the test failed — which is how the
+     * `globex/portal#9585` to a review that is in play, and the test failed — which is how the
      * hole was found. The lesson is the one the queue's own comments keep: an assertion
      * about a fixture has to name a fixture that exists.
      */

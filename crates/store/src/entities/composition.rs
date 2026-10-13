@@ -183,7 +183,7 @@ pub(crate) fn validate(sections: &[NewDraftSection]) -> Result<()> {
 /// What the review's blocks compose to: the body GitHub receives.
 ///
 /// **The blocks are the draft; the shape is the house style's.** Until DEV-929 this was the
-/// posted blocks joined end to end, which is how the review on tc-portal#9585 came out as
+/// posted blocks joined end to end, which is how a real review came out as
 /// 309 lines with no index and two threads. The joining is still here — a prose block is
 /// carried through character for character and a finding block still composes its own
 /// heading — and what sits between them is now an index, with each anchored finding lifted

@@ -82,7 +82,7 @@ describe('the inbox', () => {
      * `screens.nuxt.spec.ts`.
      *
      * It was eight until DEV-878 gave the real-length review a draft, and nine until
-     * DEV-957 added the fixtures in the shape of Patrick's own queue: `tc/portal#9541`
+     * DEV-957 added the fixtures in the shape of Patrick's own queue: `globex/portal#9541`
      * round 2's draft, `#9585` round 2's draft, and `#9585` round 1's author reply. Three
      * more items, on a third repository. The four rounds of merged `#9568` add none — a
      * finished review is in no group, which is that issue.
@@ -93,7 +93,7 @@ describe('the inbox', () => {
   it('leaves every round of a merged pull request out of every group', async () => {
     /*
      * **The record this is built from is Patrick's own**, from DEV-957: four rounds of
-     * `tc/portal#9568`, one posted and three not, on a pull request that merged on 11
+     * `globex/portal#9568`, one posted and three not, on a pull request that merged on 11
      * October. Every one of those three drafts was in "drafts to approve" and none of them
      * could ever be posted.
      *
@@ -121,7 +121,7 @@ describe('the inbox', () => {
 
   it('leaves an unposted round a newer round supersedes out of the queue', async () => {
     /*
-     * `tc/portal#9541` drew two rows on Patrick's screen, round 1 and round 2, both "Draft
+     * `globex/portal#9541` drew two rows on Patrick's screen, round 1 and round 2, both "Draft
      * ready". Round 1 can never be the review that posts — the author pushed past the
      * commit it was written against — so it is in no group, and round 2 is.
      */
@@ -135,7 +135,7 @@ describe('the inbox', () => {
   it('has all five groups filled', async () => {
     const inbox = await settled(desk().inbox())
     expect(inbox.briefs_to_confirm).toHaveLength(1)
-    /* Four, plus round 2 of each of `tc/portal#9541` and `#9585` — see DEV-957's shape. */
+    /* Four, plus round 2 of each of `globex/portal#9541` and `#9585` — see DEV-957's shape. */
     expect(inbox.drafts_to_approve).toHaveLength(6)
     /* The one on review 12, plus `#9585` round 1's, which its author answered. */
     expect(inbox.author_replies).toHaveLength(2)
@@ -247,7 +247,7 @@ describe('the reviews list', () => {
     expect(answer.repo).toBeNull()
     /*
      * Every review in play, including the two that were posted — and **not** the four
-     * rounds of merged `tc/portal#9568`, which are under Finished. This is the default
+     * rounds of merged `globex/portal#9568`, which are under Finished. This is the default
      * view, and DEV-957 is what the four absences are.
      */
     expect(answer.reviews.map(row => row.review.id))

@@ -387,7 +387,7 @@ const waiting = computed(() => (inbox.data.value ? needingYou(inbox.data.value) 
 /**
  * Where a row goes: **Understand, whatever the row is waiting for.**
  *
- * Patrick, on tc-portal #9584: "when we click a review, we want to go to the review, not to
+ * Patrick, on a review: "when we click a review, we want to go to the review, not to
  * the draft." In a page-per-step review the review *starts* at Understand — his order is
  * understand, alternatives, solution, then the code, then the draft — so every row lands
  * there and the reading happens in the order it was designed to happen in.

@@ -6,7 +6,7 @@ import { prUrl, ticketUrl } from '../app/utils/links'
  * **The two addresses a review's header and rows link to.**
  *
  * `app/utils/links.ts` says why they differ: the pull request's is *built* from `repo` and
- * `pr`, and the ticket's is *stored*, because nothing can turn an opaque `DUC-2045` into an
+ * `pr`, and the ticket's is *stored*, because nothing can turn an opaque `ACME-2045` into an
  * address.
  *
  * ## Why `prUrl` needs a list of its own

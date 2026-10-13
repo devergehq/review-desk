@@ -669,7 +669,7 @@ export function stepLabel(row: ReviewListItem, now: Date = new Date()): string {
    * **And of a superseded round, which is the third case and was missed.** `left_the_desk`
    * had two values and a superseded round got neither, so the Reviews list's default view
    * still read "Draft · waiting on you" over the one row DEV-957's comment is actually
-   * about — `tc/portal#9541` round 1 — while its own draft page said "Nothing left to do".
+   * about — `globex/portal#9541` round 1 — while its own draft page said "Nothing left to do".
    * Found by a review of this branch; the field grew the case rather than this growing a
    * second source.
    *

@@ -21,9 +21,9 @@ import Understand from '../app/pages/reviews/[id]/understand.vue'
  *
  * | Pull request | What the fixture holds |
  * | -- | -- |
- * | `tc/portal#9541` | rounds 1 and 2, both unposted drafts |
- * | `tc/portal#9585` | round 1 posted and replied to, round 2 an unposted draft |
- * | `tc/portal#9568` | four rounds, one posted and three not, **merged on 11 October** |
+ * | `globex/portal#9541` | rounds 1 and 2, both unposted drafts |
+ * | `globex/portal#9585` | round 1 posted and replied to, round 2 an unposted draft |
+ * | `globex/portal#9568` | four rounds, one posted and three not, **merged on 11 October** |
  *
  * The merged one is where the defect was: three of its four rounds hold no `pr_state` of
  * their own, because the harvest reads the round that was posted. So every claim below
@@ -74,7 +74,7 @@ async function draftOf(reviewId: number) {
   return shown(Draft, { route: `/reviews/${reviewId}/draft` })
 }
 
-/** The four rounds of merged `tc/portal#9568`, round 1 being the one that posted. */
+/** The four rounds of merged `globex/portal#9568`, round 1 being the one that posted. */
 const MERGED = { posted: 64, unposted: [65, 66, 67] }
 
 beforeEach(async () => {
@@ -145,7 +145,7 @@ describe('the Reviews list’s Finished view', () => {
 describe('a superseded round in the Reviews list', () => {
   /*
    * **The third state that is nobody's turn, and the one DEV-957's comment is about.**
-   * `tc/portal#9541` round 1 is in play — its pull request is open — and the store refuses
+   * `globex/portal#9541` round 1 is in play — its pull request is open — and the store refuses
    * every act on it, so the row read "Draft · waiting on you" while its own draft page said
    * "Nothing left to do". Found by a review of this branch.
    */
@@ -364,7 +364,7 @@ describe('the draft page of a review that cannot be posted', () => {
 
   it('says a superseded round is superseded, and names the round that can post', async () => {
     /*
-     * `tc/portal#9541` round 1, which drew the second of Patrick's two rows for one pull
+     * `globex/portal#9541` round 1, which drew the second of Patrick's two rows for one pull
      * request. Its pull request is open, so this is the supersession and not the merge.
      */
     const page = await draftOf(60)
