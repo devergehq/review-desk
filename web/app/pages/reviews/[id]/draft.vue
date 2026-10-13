@@ -222,9 +222,20 @@ function askBeforeLeaving(): boolean | Promise<boolean> {
  * **Both guards, because the two ways out are different route changes.** Another review's
  * draft is an *update* — the same page record with a new parameter, which is the route the
  * issue was raised about — and any other page is a *leave*. Neither fires for the other.
+ *
+ * **And the path has to change, or it is not a way out at all.** The layout's first control
+ * is `<a href="#main">Skip to the page</a>`, and vue-router 5 sees a fragment jump from a
+ * plain anchor as a navigation on this route: without this test, a keyboard user with
+ * unsaved edits met the card every time they skipped the header, and the guard had turned an
+ * accessibility control into an interruption. Measured, not reasoned about — the first
+ * version of this was `() => askBeforeLeaving()` and the test for it failed.
+ *
+ * `to.path`, so a query or a fragment on this same page is not asked about and a Back out of
+ * one is not either. What the card is for is the page going away, which is the only thing
+ * that takes the editor with it.
  */
-onBeforeRouteUpdate(() => askBeforeLeaving())
-onBeforeRouteLeave(() => askBeforeLeaving())
+onBeforeRouteUpdate((to, from) => (to.path === from.path ? true : askBeforeLeaving()))
+onBeforeRouteLeave((to, from) => (to.path === from.path ? true : askBeforeLeaving()))
 
 const keep = useTemplateRef<HTMLButtonElement>('keep')
 

@@ -4316,6 +4316,40 @@ test.describe('state that belongs to one review', () => {
   })
 
   /**
+   * **"Skip to the page" is not leaving, and must not be asked about.**
+   *
+   * The layout's skip link is `<a href="#main">`, and a fragment is the one navigation that
+   * changes the address without changing the page. If the router saw it as an update, a
+   * keyboard user with unsaved edits would be stopped by a card every time they skipped the
+   * header — the guard turning an accessibility control into an interruption.
+   *
+   * It does not, because a plain anchor's fragment jump is the browser's and the router
+   * listens for `popstate`. That is a claim about two libraries, so it is asserted rather
+   * than reasoned about — including the Back press afterwards, which *is* a `popstate`.
+   */
+  test('skipping to the page with unsaved edits asks nothing', async ({ page }) => {
+    await page.goto(`${seeded}reviews/${first}/draft`)
+    await page.getByRole('tab', { name: 'Edit' }).click()
+    const editor = page.locator('textarea#draft-body')
+    await editor.fill(`${firstBody}\n\n${TYPED}`)
+
+    const skip = page.getByRole('link', { name: 'Skip to the page' })
+    await skip.focus()
+    await page.keyboard.press('Enter')
+
+    await expect(page.getByRole('button', { name: 'Keep editing' })).toHaveCount(0)
+    await expect(editor).toHaveValue(`${firstBody}\n\n${TYPED}`)
+
+    /* And back out of the fragment, which the router does see. */
+    await page.goBack()
+    await expect(page.getByRole('button', { name: 'Keep editing' })).toHaveCount(0)
+    await expect(page).toHaveURL(new RegExp(`reviews/${first}/draft`))
+    await expect(editor).toHaveValue(`${firstBody}\n\n${TYPED}`)
+
+    expect(bodyOf(first)).toBe(firstBody)
+  })
+
+  /**
    * **Leaving the draft for another step of the same review asks as well.**
    *
    * The other guard: another page is a *leave*, not an update, and the edits are as lost
