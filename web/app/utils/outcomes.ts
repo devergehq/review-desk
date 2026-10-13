@@ -493,6 +493,35 @@ export function outcomeLine(outcome: OutcomeLike & { finding_key?: string }): st
 }
 
 /**
+ * Who to credit for an outcome, as a page draws it beside the sentence — or `null` where
+ * nobody may be.
+ *
+ * **The harvester is not somebody who acted, and the record says so in as many words.**
+ * `harvest::actor_for` maps a login to `author` or `developer` and keeps `harvester` for
+ * "a fact GitHub attributes to nobody" — so it is the actor on every `code_changed_after`,
+ * which is an observation of a push and not a push. Drawn as "by the harvester", the code
+ * review page told a reader the harvester changed line 40 of their file, in the same slot
+ * that correctly reads "by the developer" over a decision. The rule was already written
+ * down one screen away: `cameBackHeadline` says the kind settles it, "a code change is an
+ * observation", and the step-7 page draws that outcome with no actor at all. This is what
+ * stops the two screens saying different things about one row.
+ *
+ * **And not twice.** A reply and a resolution name their login inside the sentence, which
+ * `outcomeSaid` composes from the detail; `by` is set there, and this adds nothing.
+ *
+ * What is left is an outcome whose sentence names nobody and whose actor is somebody: on
+ * the one screen that draws this, an author's own reason on a `rejected`. The developer's
+ * decisions — `cut`, `regraded`, `kept` and the rest — never reach it, because that block
+ * is everything the developer did *not* do; `entities/decision.rs` writes
+ * `Actor::Developer` on every decision it records, so the two sets do not overlap.
+ */
+export function outcomeBy(said: OutcomeSaid, actor: Actor | null | undefined): string | null {
+  if (said.by != null) return null
+  if (actor == null || actor === 'harvester') return null
+  return `by the ${actor}`
+}
+
+/**
  * How a pull request ended, or that it has not — **the fourth fact the harvest records.**
  *
  * It is not an outcome: the harvester writes it to `Review.pr_state`, and the day it

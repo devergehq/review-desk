@@ -21,8 +21,8 @@
  *  NOTHING CAME BACK · the other 7 of 14 findings            [ Open the 7 … ]
  *
  *  THE ROUNDS OF THIS PULL REQUEST
- *  Round 1   11 findings · 3 replies · 2 threads resolved   nothing decided yet
- *  Round 2   14 findings · 2 replies · 1 thread resolved   2 fixed, 1 still open
+ *  Round 1   11 findings · 3 replies · 2 threads resolved   nothing decided about any of them
+ *  Round 2   14 findings · 2 replies · 1 thread resolved   2 fixed, 1 still open, 1 their reason accepted
  * ```
  *
  * The figures are the fixture's — `test/what-happened.nuxt.spec.ts` and
@@ -358,9 +358,17 @@ function detailId(seq: number): string {
           heading="Nothing came back"
           :note="`the other ${silent.length} of ${posted} findings`"
         >
+          <!--
+            **`nothingLooked`, not `!harvested`** — the same key the notice above wants, and
+            for the same record. A harvest writes the pull request's state first and its
+            read time last, so a run that fails part way leaves a state and no time: keyed
+            on `!harvested`, this sentence said nothing had looked under a headline saying
+            the pull request had merged and a line saying seven findings had something come
+            back. Three statements about one record, and two of them cannot be true.
+          -->
           <p class="rd-note none">
             No reply, no resolved thread and no change to the code these findings point at.
-            <template v-if="!harvested">
+            <template v-if="nothingLooked">
               Nothing has looked, so this is an absence of a reading rather than a reading.
             </template>
           </p>

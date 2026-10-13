@@ -372,13 +372,14 @@ function saidByOthers(data: ReviewDetail, finding: Finding) {
         sentence: sentence(said.sentence),
         quote: said.quote,
         /*
-         * **Who acted, where the sentence does not already say.** A reply and a resolution
-         * name their login inside the sentence — `outcomeSaid` composes them from the
-         * detail — and every other kind does not, so replacing `by the {{ outcome.actor }}`
-         * with the time alone took the actor off the page for all of them: an agent's
-         * `raised_again` read "Raised again. 3 days ago" with nobody in it.
+         * **Who acted, where the sentence does not already say and where somebody did.**
+         * Replacing `by the {{ outcome.actor }}` with the time alone left an author's own
+         * reason with nobody in it; the first way back credited the recording actor for
+         * every kind, and the harvester is the actor on every code change, so it read "the
+         * code at line 40 changed in 9f3ac21 · by the harvester". `outcomeBy` carries both
+         * halves and the argument, so this page and step 7's cannot drift on one row.
          */
-        by: said.by == null ? `by the ${outcome.actor}` : null,
+        by: outcomeBy(said, outcome.actor),
         when: outcomeWhen(said, outcome.occurred_at),
       }
     })

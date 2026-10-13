@@ -30,7 +30,7 @@
  *
  * | Question | What the record supports |
  * |---|---|
- * | When did the pull request merge? | Nothing. The store holds `pr_state_at` and the contract deliberately does not serve it, so the page says *that* it merged and not when |
+ * | When did the pull request merge? | The day, from `Review.pr_state_at`, which DEV-957 added to the contract — and from no other instant: `harvested_at` is when this desk last read GitHub and the round's `created_at` is when the review started. Null is a merge GitHub gave no time for, and the line then names no day rather than inventing one |
  * | Which findings did a *later* round carry? | This review is one round. A finding carried **into** this one names the round it came from — `continues_round` — and `rounds` gives the pull request's whole timeline. A later round's own findings are a different review and a different read |
  * | Was a finding posted? | `willPost`, the store's `Finding::is_posted` restated: at disposition `in_draft` with an open round status. A `github_comment_id` is a stronger fact but a narrower one — it means posted **as a comment**, which is the only way a reply can come back, and most findings are posted in the body alone |
  */

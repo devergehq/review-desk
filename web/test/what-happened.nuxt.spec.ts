@@ -803,6 +803,14 @@ describe('the states a posted review can be in', () => {
     expect(page.find('.notice').exists()).toBe(false)
     /* And it does not claim the harvest found nothing, because it did not finish. */
     expect(page.text()).not.toContain('found no reply, no resolved thread')
+    /*
+     * **Nor anywhere else on the page**, which is where the first fix left it: the "Nothing
+     * came back" section carried the same claim keyed on `!harvested`, so the page said a
+     * harvest had found the merge, said seven findings had something come back, and said
+     * nothing had looked. Asserted over the whole page rather than over the two sentences
+     * known about, because this is the second place it was found in.
+     */
+    expect(page.text()).not.toContain('Nothing has looked')
   })
 
   /*
@@ -1011,6 +1019,42 @@ describe('a review whose repository name is not a repository name', () => {
 /* ================================ Later rounds ================================ */
 
 describe('the rounds of the pull request', () => {
+  /**
+   * **The sketch at the top of the page draws the same cells the page does.**
+   *
+   * The page's header carries an ASCII sketch of the screen, under a line saying the
+   * figures are the fixture's "because a sketch that disagrees with the thing it is a
+   * sketch of is worse than none". Both round cells were rewritten when the column stopped
+   * claiming a carry, and neither was: the sketch said "nothing decided yet" and "2 fixed,
+   * 1 still open" over a page drawing "nothing decided about any of them" and "2 fixed, 1
+   * still open, 1 their reason accepted".
+   *
+   * **Checked rather than reread, because this is the third claim on this branch to go
+   * stale in a comment** — the whitespace rule and the module header's "the contract does
+   * not serve `pr_state_at`" were the others, and the rule this repository already settled
+   * on is that the second instance of a defect gets a check and not a third careful edit.
+   * It reads the cells off the rendered page, so a wording change fails here until the
+   * sketch follows it.
+   */
+  it('is drawn in the sketch at the top of the page, cell for cell', async () => {
+    await withDense(dense({ round: 2, rounds: ROUNDS }))
+    const page = await shown(REVIEW)
+    const drawn = page.findAll('[data-label="How they stood"]')
+      .map(cell => cell.text())
+      .filter(cell => cell !== '')
+
+    expect(drawn.length).toBeGreaterThan(1)
+
+    const source = readFileSync(resolve('app/pages/reviews/[id]/what-happened.vue'), 'utf8')
+    const sketch = source.slice(
+      source.indexOf('THE ROUNDS OF THIS PULL REQUEST'),
+      source.indexOf('```', source.indexOf('THE ROUNDS OF THIS PULL REQUEST')),
+    )
+    expect(sketch, 'the sketch is where this says it is').toContain('Round 1')
+
+    for (const cell of drawn) expect(sketch).toContain(cell)
+  })
+
   it('are not drawn for a pull request with one round', async () => {
     await withDense()
     const page = await shown(REVIEW)

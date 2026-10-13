@@ -1131,10 +1131,10 @@ the built app asks nothing of the network and works on a machine with no interne
 
 | Part | Says |
 | -- | -- |
-| One line | How the pull request ended, or that it is open, and when a harvest last read it |
+| One line | How the pull request ended and on what day, or that it is open, and when a harvest last read it |
 | A row per posted finding | Its key, severity and title, where it is, the round it was carried from — then what came back, oldest first: the author's words quoted, the thread resolved, the code changed and in which commit |
 | Folded under a count | The findings nothing came back on, each saying *why* nothing could have: raised in the body alone, or posted as a comment and waiting |
-| A table, on a pull request with more than one round | What each round held and how much of it it carried in |
+| A table, on a pull request with more than one round | What each round held, and how its findings stood — which is what the record supports; a carry is on the row of the finding that was carried |
 
 **It describes; it does not grade.** No severity tag and no severity colour, no ordering by
 anything but time and the review's own grade, and nothing on it says a finding was fixed —
@@ -1149,10 +1149,8 @@ construction rather than by three screens remembering. `web/test/outcomes.spec.t
 the field names out of `crates/harvest/src/run.rs`, so a field added to a detail in Rust
 fails a test in TypeScript.
 
-**Two things it cannot say**, both because the record does not support them:
+**One thing it cannot say**, because the record does not support it:
 
-* *When* a pull request merged or closed. The store holds `pr_state_at` and the contract
-  does not serve it, so the line says that it merged and not when.
 * Where a finding's comment is, when the recorded `github_comment_id` is not GitHub's
   numeric comment id. `#discussion_r<id>` takes that number, and the harvester needs the
   same one to match a thread — so a record holding another kind of id gets no link rather

@@ -1036,23 +1036,48 @@ describe('what the author said', () => {
   })
 
   /**
-   * **Who acted, where the sentence does not already say it.**
+   * **Who acted, where the sentence does not already say it and where somebody did.**
    *
    * A reply and a resolution name their login inside the sentence, composed from the
-   * detail. Every other kind does not — so replacing `by the {{ outcome.actor }}` with the
-   * time alone took the actor off the page for all of them, and an agent's `raised_again`
-   * read "Raised again. 3 days ago" with nobody in it.
+   * detail. An author's own reason on a `rejected` does not — so replacing
+   * `by the {{ outcome.actor }}` with the time alone left "A restart re-runs at most one
+   * tenant… 3 days ago" with nobody in it.
+   *
+   * **On the shipped fixture, with no edit.** An earlier version of this test asked for a
+   * `raised_again` by the harvester, which is a row the store cannot write — `Actor` is
+   * three values and `entities/decision.rs` hardcodes `Actor::Developer` on every decision
+   * it records, and a developer's outcome never reaches this block at all, because
+   * `saidByOthers` is everything the developer did not do. Asserting a case that cannot
+   * happen is how it left the two that do.
    */
-  it('names who acted for a kind whose sentence does not', async () => {
-    const detail = fixture(POSTED)
-    const changed = detail.outcomes.find(one => one.kind === 'code_changed_after')!
-    await withReview({
-      ...detail,
-      outcomes: [{ ...changed, kind: 'raised_again', actor: 'harvester', detail: null }],
-    })
+  it('names who acted for an author’s reason, whose sentence does not', async () => {
     const page = await codeReview(POSTED)
+    const rejected = fixture(POSTED).outcomes.find(one => one.kind === 'rejected')!
+    expect(rejected.actor).toBe('author')
+    await openFinding(page, rejected.finding_key)
+    const said = page.findAll('.reply').map(one => one.text())
+    expect(said.some(one => one.includes('by the author'))).toBe(true)
+  })
+
+  /**
+   * **And credits nobody with a code change, which the harvester only watched.**
+   *
+   * `harvest::actor_for` keeps `harvester` for "a fact GitHub attributes to nobody", and
+   * it is the actor on every `code_changed_after` — so the slot that reads "by the author"
+   * above read "by the harvester" here, telling a reader the harvester changed line 40 of
+   * their file. `cameBackHeadline` had already written the rule down — "a code change is
+   * an observation" — and step 7's page draws the same outcome with no actor, so the two
+   * screens were making different claims about one row.
+   */
+  it('credits nobody with a code change the harvester observed', async () => {
+    const page = await codeReview(POSTED)
+    const changed = fixture(POSTED).outcomes.find(one => one.kind === 'code_changed_after')!
+    expect(changed.actor).toBe('harvester')
     await openFinding(page, changed.finding_key)
-    expect(page.find('.reply').text()).toContain('by the harvester')
+    const said = page.findAll('.reply').map(one => one.text())
+    const row = said.find(one => one.includes('changed in'))
+    expect(row, 'the code change is drawn').toBeDefined()
+    expect(row).not.toContain('by the')
   })
 
   it('does not name the actor twice where the sentence already does', async () => {
