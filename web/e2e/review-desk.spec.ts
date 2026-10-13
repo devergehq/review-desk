@@ -3937,6 +3937,18 @@ test.describe('state that belongs to one review', () => {
   /** The two reviews, of the same shape so that one review's row numbers exist on the other. */
   let first = 0
   let second = 0
+  /**
+   * Their pull request numbers, which the frame draws and a test waits for.
+   *
+   * **A jump lands before the arriving review has been read.** `resource()` keeps the
+   * previous answer while the next read is in flight, so for a moment the address is the
+   * first review's and every row on screen is still the second's — and `toHaveCount(0)` is
+   * satisfied by a *transient* absence, so an assertion made in that window would pass over
+   * a page that had carried the state and was about to draw it again. Waiting for `#412` to
+   * become `#413` is waiting for the read, which is the only thing that closes the window.
+   */
+  let firstPr = 0
+  let secondPr = 0
   /** Each review's draft body as the record holds it, which is what the editor must show. */
   let firstBody = ''
   let secondBody = ''
@@ -3967,8 +3979,13 @@ test.describe('state that belongs to one review', () => {
   }
 
   test.beforeAll(() => {
-    first = seedStructuredReview(seededDatabase, 'Give the webhook retry its own context').reviewId
-    second = seedStructuredReview(seededDatabase, 'Carry the delivery window on the job').reviewId
+    const one = seedStructuredReview(seededDatabase, 'Give the webhook retry its own context')
+    const two = seedStructuredReview(seededDatabase, 'Carry the delivery window on the job')
+    first = one.reviewId
+    second = two.reviewId
+    firstPr = one.pr
+    secondPr = two.pr
+    expect(firstPr).not.toBe(secondPr)
     draftSaying(first, 'The first of the two drafts, written against the first review.')
     draftSaying(second, 'The second of the two drafts, written against the second review.')
     firstBody = bodyOf(first)
@@ -4034,6 +4051,10 @@ test.describe('state that belongs to one review', () => {
 
       await jump(page, -entries)
       await expect(page).toHaveURL(`${seeded}reviews/${first}/${step}`)
+
+      /* The arriving review has been read: its own pull request number is in the frame. */
+      await expect(page.getByText(`· #${firstPr}`).first()).toBeVisible()
+      await expect(page.getByText(`· #${secondPr}`)).toHaveCount(0)
 
       /*
        * **And this row exists here**, so the assertion is about something: both reviews carry
