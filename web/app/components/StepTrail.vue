@@ -113,35 +113,13 @@ const props = defineProps<{
   offTheDesk?: boolean
 }>()
 
-/**
- * The six steps that have somewhere to go.
- *
- * A suffix each, now that every one of them is a suffix: step 5 was the base route while
- * the one-page review was where the findings were, and `/reviews/{id}` is a redirect to
- * Understand since DEV-878 retired it.
+/*
+ * **The step-to-page map and the group boundary are `PAGE_OF_STEP` and `SETTLED_THROUGH`
+ * in `utils/steps.ts`**, which is where this file used to spell both out. DEV-976 added a
+ * second thing that answers "where is step N" — the round switcher, which links the same
+ * step of every *other* round — and two copies of that map would be two chances for one of
+ * them to send a reader to a page the other knows is not there.
  */
-const PAGES: Partial<Record<ReviewLayerName, string>> = {
-  understand: 'understand',
-  alternatives: 'alternatives',
-  solution_map: 'solution',
-  code_review: 'code-review',
-  draft: 'draft',
-  /*
-   * **Step 7 since DEV-958**, which is the issue that gave it a page. Before it the only
-   * trace of a harvest anywhere was the four facts on this step's own card, which is a
-   * tooltip — and what the developer said of the queue's version of the same four was "I
-   * don't really know what that means".
-   */
-  harvest: 'what-happened',
-}
-
-/**
- * The two groups, and the boundary between them.
- *
- * Four and three, which is where the pull request stops being settled once and the round
- * starts repeating. Named here rather than inline so the split has one statement.
- */
-const SETTLED_THROUGH = 4
 
 interface Step {
   number: number
@@ -223,9 +201,9 @@ const steps = computed<Step[]>(() =>
         read,
         title: titleOf(said, read),
         opens: facts.length > 0 || read != null,
-        to: PAGES[layer.name] == null
+        to: PAGE_OF_STEP[layer.name] == null
           ? null
-          : `/reviews/${props.reviewId}/${PAGES[layer.name]}`,
+          : `/reviews/${props.reviewId}/${PAGE_OF_STEP[layer.name]}`,
         current: layer.name === props.active,
         tone: layerTone(layer.state),
       }

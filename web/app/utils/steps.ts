@@ -15,6 +15,39 @@
 import type { ReviewLayer, ReviewLayerName } from '~/types/desk'
 
 /**
+ * The six steps that have somewhere to go, by the suffix their page sits at.
+ *
+ * A suffix each, now that every one of them is a suffix: step 5 was the base route while
+ * the one-page review was where the findings were, and `/reviews/{id}` is a redirect to
+ * Understand since DEV-878 retired it. Step 7 joined in DEV-958, which is the issue that
+ * gave it a page — before it the only trace of a harvest anywhere was the four facts on
+ * that step's own card, which is a tooltip, and what the developer said of the queue's
+ * version of the same four was "I don't really know what that means".
+ *
+ * **Here rather than in `StepTrail`, because two things now answer the same question.**
+ * The trail links each step of *this* round; the round switcher links the same step of
+ * *every other* round. Two copies of this map would be two chances for one of them to send
+ * a reader to a page the other knows is not there.
+ */
+export const PAGE_OF_STEP: Partial<Record<ReviewLayerName, string>> = {
+  understand: 'understand',
+  alternatives: 'alternatives',
+  solution_map: 'solution',
+  code_review: 'code-review',
+  draft: 'draft',
+  harvest: 'what-happened',
+}
+
+/**
+ * Where the pull request stops being settled once and the round starts repeating.
+ *
+ * Four and three, which is the split the trail draws its two groups along. Named here
+ * rather than inline so it has one statement, and read by the round switcher too: steps 1
+ * to 4 are the ones a later round can be holding none of.
+ */
+export const SETTLED_THROUGH = 4
+
+/**
  * The four things a step page has to be able to say about an absence.
  *
  * **They are four, and no two of them read alike.** That is DEV-892's acceptance criterion

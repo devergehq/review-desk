@@ -73,6 +73,8 @@ import type {
   ReviewList,
   ReviewsShown,
   RoundStatus,
+  RoundStatusCounts,
+  RoundSummary,
   Rule,
   RuleStage,
   RulesPage,
@@ -245,6 +247,74 @@ function isOffTheDesk(detail: ReviewDetail): boolean {
 function isNewestRound(detail: ReviewDetail): boolean {
   return newestRoundByPr().get(`${detail.review.repo}#${detail.review.pr}`)
     === detail.review.round
+}
+
+/**
+ * Every round of this review's pull request, as `GET /reviews/{id}` carries them.
+ *
+ * **Derived at the moment it is read, for the reason `notForSigning` gives**: the fixtures
+ * already hold every round as a review of its own — `globex/portal#9568` is four of them —
+ * so a `rounds` array written into `reviews.json` would be a second copy of what the
+ * reviews beside it say, and the two could come to disagree about which round posted.
+ *
+ * Oldest first and counting every round, dismissed or finished, which is the server's own
+ * order and its rule: a round that has left is still a round the pull request reached.
+ *
+ * `commits` is 0 throughout, because the fixtures record no commit comparison for any
+ * round. That is the record's own "none recorded" rather than a stub — `rounds[].commits`
+ * is three-valued through `commits_since_previous_round` being empty either way, and the
+ * fixtures' is empty.
+ */
+function roundsOf(detail: ReviewDetail): RoundSummary[] {
+  return source.reviews
+    .filter(one => one.review.repo === detail.review.repo && one.review.pr === detail.review.pr)
+    .sort((one, two) => one.review.round - two.review.round)
+    .map((one) => {
+      const draft = draftById(one.review.id)
+      const outcomes = one.outcomes ?? []
+      return {
+        review_id: one.review.id,
+        round: one.review.round,
+        head_sha: one.review.head_sha,
+        created_at: one.review.created_at,
+        posted_at: draft?.draft.posted_at ?? null,
+        event: draft?.draft.event ?? null,
+        findings: one.findings.length,
+        commits: 0,
+        replies: outcomes.filter(outcome => outcome.kind === 'replied').length,
+        threads_resolved: outcomes.filter(outcome => outcome.kind === 'thread_resolved').length,
+        statuses: roundStatuses(one),
+        /*
+         * **Whether that round wrote a brief, which is the question itself.** Nothing
+         * carries a brief between rounds, so a round holds one or holds none — and the
+         * fixtures say so directly: `#9568` round 1 has none and round 2 has one, which is
+         * the case that makes guessing the first round wrong.
+         */
+        brief_written: one.brief != null,
+      }
+    })
+}
+
+/**
+ * How one round's findings stand.
+ *
+ * A finding with no `round_status` counts as `new`, which is not a guess: the column is
+ * `NOT NULL DEFAULT 'new'`, so that is what the store holds for a finding nothing has
+ * decided about. The fixtures predate the column and record none.
+ */
+function roundStatuses(detail: ReviewDetail): RoundStatusCounts {
+  const counts: RoundStatusCounts = {
+    new: 0,
+    fixed: 0,
+    still_open: 0,
+    accepted: 0,
+    withdrawn: 0,
+    ticketed: 0,
+  }
+  for (const finding of detail.findings) {
+    counts[finding.round_status ?? 'new'] += 1
+  }
+  return counts
 }
 
 /** Whether this review's own review is on GitHub: a posted draft, or a recorded id. */
@@ -2035,7 +2105,18 @@ export function sampleBackend(): DeskBackend {
        * request and from which round is newest, so a field in `reviews.json` would be a
        * second copy of what the reviews beside it already hold.
        */
-      return answered({ ...detail, not_for_signing: notForSigning(detail) })
+      return answered({
+        ...detail,
+        not_for_signing: notForSigning(detail),
+        /*
+         * Derived for the same reason, one line above — **unless the fixture states them.**
+         * No fixture in `reviews.json` does; a test that wants a particular timeline sets
+         * `rounds` on the review it loads and is taken at its word, which is how
+         * `test/what-happened.nuxt.spec.ts` builds its round-two cases. `??`, so a test
+         * asking for an empty timeline gets one rather than a derived one. See `roundsOf`.
+         */
+        rounds: detail.rounds ?? roundsOf(detail),
+      })
     },
     getDraft: async (id) => {
       const detail = draftById(id)
