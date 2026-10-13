@@ -629,6 +629,7 @@ pub fn round_summary(round: &RoundSummary) -> Value {
         "replies": round.replies,
         "threads_resolved": round.threads_resolved,
         "statuses": round_status_counts(&round.statuses),
+        "brief_written": round.brief_written,
     })
 }
 

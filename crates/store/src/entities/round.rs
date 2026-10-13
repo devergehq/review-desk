@@ -483,6 +483,12 @@ impl Store {
                 replies: replies.get(&review.id).copied().unwrap_or(0),
                 threads_resolved: resolved.get(&review.id).copied().unwrap_or(0),
                 statuses: statuses.get(&review.id).copied().unwrap_or_default(),
+                // **Whether this round holds a brief, asked of this round alone.** There
+                // is nothing to fall back to: `briefs` is keyed by `review_id`, so a
+                // round whose session wrote none has none, and that is what a step page
+                // has to be able to say. Beside `find_draft` above because it is the same
+                // question one table over, and the loop already costs a read per round.
+                brief_written: self.find_brief(review.id)?.is_some(),
             });
         }
 

@@ -2758,6 +2758,14 @@ pub struct RoundSummary {
     pub replies: i64,
     pub threads_resolved: i64,
     pub statuses: RoundStatusCounts,
+    /// Whether a brief was written **for this round**.
+    ///
+    /// A round holds its own brief or holds none: `briefs` is keyed by `review_id`, as is
+    /// every record behind steps 1 to 4, and opening a round copies none of it. So this is
+    /// how a step page can say which round wrote the understanding it is pointing at,
+    /// rather than guessing the first — which is wrong the moment a later round rewrites
+    /// the brief.
+    pub brief_written: bool,
 }
 
 string_enum! {

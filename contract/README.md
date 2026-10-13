@@ -223,6 +223,8 @@ Everything else on the five screens is below.
 | "Round 1 · posted 6 Oct as Request changes · 5 findings" | `rounds[].round`, `.posted_at`, `.event`, `.findings` |
 | "The author came back · 3 commits · 3 replies · 2 threads resolved" | `rounds[].replies`, `.threads_resolved`, and the **next** round's `.commits` — see below |
 | "Round 2 · this draft · 2 fixed · 2 still open · 1 new" | `rounds[].statuses` |
+| "Round 2 of 3", and a link to the same step of each other round | `rounds[].round`, `.review_id`, `.posted_at`, `.head_sha` |
+| "Written in round 1, and not rewritten since" | `rounds[].brief_written`, with `.review_id` for the link |
 | "What changed since round 1" | `commits_since_previous_round[].sha`, `.summary`, `.files` |
 | "Fixed · 2 · nothing to post" | `findings[].round_status` |
 | "Checked. Their new test fails with the fix reverted." | `findings[].round_status_checked` |
@@ -501,6 +503,7 @@ still open, one new" was unanswerable.
 | What became of it in this round | `Finding.round_status`, with `.round_status_by`, `.round_status_checked`, `.round_status_at`, `.round_status_commit` |
 | What a new finding is attributed to | `Finding.introduced_by_commit`, `.introduced_by_seq` |
 | The rounds so far | `ReviewDetail.rounds` |
+| Which rounds wrote a brief of their own | `ReviewDetail.rounds[].brief_written` |
 | What changed between two rounds | `ReviewDetail.commits_since_previous_round` |
 
 **A carried finding keeps everything a finding *is*, including what DEV-874 added.** Its
@@ -556,6 +559,15 @@ with no file lists reported every new finding as late. `review-desk round commit
 rather than recording a commit whose files it could not read, and refuses a range longer
 than GitHub will list in one comparison — its cap is 250 — because a truncated list that
 nothing says is truncated feeds the same flag.
+
+**`rounds[].brief_written` is how a step page says where its understanding was written.**
+A round holds its own brief or holds none. `briefs` is keyed by the review id, as is every
+record behind steps 1 to 4 — the problems, the options, the flows, the parts, the step rows,
+their facts and the provenance — and opening a round copies none of it; the only thing
+carried between rounds is a finding. So a later round whose session wrote no brief shows
+nothing at Understand, Alternatives and Solution, and the page needs this field to name the
+round that *did* write one rather than guessing the first. Guessing the first is wrong the
+moment a round after the first rewrites the brief.
 
 **`rounds[].commits` counts the commits recorded *for* that round — the ones since the round
 before it.** The mockup shows the figure under the *earlier* round's card, as "the author
