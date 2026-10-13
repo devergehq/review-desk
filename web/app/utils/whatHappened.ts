@@ -423,7 +423,12 @@ export function whatHappened(detail: ReviewDetail, now: Date = new Date()): What
   const drawn = new Set(rows.map(row => row.seq))
 
   return {
-    headline: prEndLabel(detail.review.pr_state),
+    /*
+     * **The state and its day, both off this review's own row.** `pr_state_at` is kept
+     * per round, so the pair has to be read together or the headline could date a state
+     * this row never held — the argument is in `prEndLabel`, which owns the sentence.
+     */
+    headline: prEndLabel(detail.review.pr_state, detail.review.pr_state_at),
     sub: subLine(answered, rows.length, detail.review.harvested_at, now),
     elsewhere: fromOthers(detail.outcomes).filter(one => !drawn.has(one.finding_seq)).length,
     harvested: detail.review.harvested_at != null,

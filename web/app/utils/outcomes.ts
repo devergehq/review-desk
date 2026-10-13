@@ -61,7 +61,7 @@
  * position.
  */
 
-import { sinceLabel } from './format'
+import { dayLabel, sinceLabel } from './format'
 
 import type { Actor, Instant, OutcomeKind } from '~/types/desk'
 
@@ -495,18 +495,51 @@ export function outcomeLine(outcome: OutcomeLike & { finding_key?: string }): st
 /**
  * How a pull request ended, or that it has not — **the fourth fact the harvest records.**
  *
- * It is not an outcome: the harvester writes it to `Review.pr_state` and `pr_state_at`, and
- * the contract serves the first and not the second. So the sentence says what happened and
- * not when, which is the honest reading of what a client can see.
+ * It is not an outcome: the harvester writes it to `Review.pr_state`, and the day it
+ * happened to `pr_state_at` beside it. **Both are served, and this says both.** An earlier
+ * version of this function said the contract served the state and not the day, so the
+ * sentence named no day on purpose; DEV-957 added the column to `Review` and that reason
+ * expired with it. A page that still said only "The pull request was merged" would be
+ * holding back a fact it had been handed.
  *
- * `null` is not "open": it is nothing having looked. Every review is in that state until
- * `review-desk harvest` runs over it, and a page that drew it as open would be reporting a
- * measurement nobody took — the same rule `prStateLabel` keeps for the queue's row, in the
- * words a page has room for.
+ * **The day comes from `pr_state_at` and from nothing else.** The two timestamps nearby
+ * are a different fact each: `harvested_at` is when this desk last *read* GitHub, which
+ * can be days after the merge, and the round's `created_at` is when the review started.
+ * Dating a merge from either would put a day in the sentence that nobody merged on.
+ *
+ * **Both off the same row, so the state and its day cannot disagree.** `pr_state_at` is
+ * kept per round and only the round a harvest read gets its copy written, so a day fetched
+ * from another round could date a state this row never held. The caller passes this
+ * review's own pair or neither.
+ *
+ * **A settled pull request with no day says so without inventing one.** `pr_state_at` is
+ * null where GitHub gave no time for the merge, and the contract's own instruction is to
+ * say it merged without naming the day — which is what `dayLabel` returning null leaves.
+ *
+ * **Nothing is dated while it is open.** "Still open on 11 October 2026" reads as the day
+ * it opened, which is not what the column holds; the contract has it null for an open pull
+ * request, and an instant arriving there anyway is not a day this sentence can name.
+ *
+ * `null` state is not "open": it is nothing having looked. Every review is in that state
+ * until `review-desk harvest` runs over it, and a page that drew it as open would be
+ * reporting a measurement nobody took — the same rule `prStateLabel` keeps for the queue's
+ * row, in the words a page has room for.
  */
-export function prEndLabel(state: 'open' | 'merged' | 'closed' | null | undefined): string {
-  if (state === 'merged') return 'The pull request was merged'
-  if (state === 'closed') return 'The pull request was closed without being merged'
+export function prEndLabel(
+  state: 'open' | 'merged' | 'closed' | null | undefined,
+  at?: Instant | null,
+): string {
+  const day = dayLabel(at)
+  if (state === 'merged') {
+    return day == null
+      ? 'The pull request was merged'
+      : `The pull request was merged on ${day}`
+  }
+  if (state === 'closed') {
+    return day == null
+      ? 'The pull request was closed without being merged'
+      : `The pull request was closed on ${day} without being merged`
+  }
   if (state === 'open') return 'The pull request is still open'
   return 'Nothing has read this pull request back from GitHub'
 }

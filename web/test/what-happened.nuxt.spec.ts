@@ -1,4 +1,7 @@
 // @vitest-environment nuxt
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
 import { beforeEach, describe, expect, it } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { flushPromises, type VueWrapper } from '@vue/test-utils'
@@ -10,6 +13,7 @@ import WhatHappened from '../app/pages/reviews/[id]/what-happened.vue'
 
 import type {
   Finding,
+  NotForSigning,
   Outcome,
   PrState,
   ReviewDetail,
@@ -286,9 +290,44 @@ const ROUNDS: RoundSummary[] = [
   },
 ]
 
-/** The density review. `over` replaces any part of it, which is how the states below differ. */
+/**
+ * When the pull request this fixture describes merged or closed.
+ *
+ * **Local noon, not an instant written out as UTC.** `dayLabel` words the developer's own
+ * day, so `2026-10-11T22:41:00Z` is the 11th in London and the 12th in Sydney and a test
+ * naming either is a test that fails on somebody else's machine. Noon local is the same
+ * calendar day in every zone, which lets the headline be asserted whole rather than as a
+ * pattern.
+ */
+const SETTLED_AT = new Date(2026, 9, 11, 12, 0, 0).toISOString()
+const SETTLED_DAY = '11 October 2026'
+
+/**
+ * The density review. `over` replaces any part of it, which is how the states below differ.
+ *
+ * **`pr_state_at` and `not_for_signing` follow `pr_state` unless a caller says otherwise,
+ * because a record where they disagree is not a record the server can produce.** A merged
+ * pull request has a day it merged and is refused for signing with `reason: finished`; an
+ * open one has neither. A fixture that set `pr_state: 'merged'` and left the other two at
+ * their open values would have the page's headline drawing a merge with no day — the state
+ * this function is *least* able to tell apart from the real "GitHub gave no time for it",
+ * which is a case with its own test below.
+ *
+ * **And it is not cast any more** — it returned `as unknown as ReviewDetail`, which is how
+ * `not_for_signing` came to be a required field of the contract that this fixture did not
+ * carry, with every check green.
+ *
+ * **Dropping the cast is not what catches the next one, and this was measured rather than
+ * assumed.** Deleting `not_for_signing` from the object below and running `pnpm typecheck`
+ * exits 0: Nuxt's app tsconfig includes `test/nuxt/**`, and every spec in this repository
+ * is `test/*.spec.ts`, so none of them is typechecked at all. The cast is gone because an
+ * unchecked cast is a claim nobody can read, not because removing it checks anything. What
+ * checks it is the test directly below, which reads the contract's own `required` list.
+ */
 function dense(over: {
   prState?: PrState | null
+  prStateAt?: string | null
+  notForSigning?: NotForSigning | null
   harvestedAt?: string | null
   outcomes?: Outcome[]
   round?: number
@@ -296,6 +335,9 @@ function dense(over: {
   findings?: Finding[]
 } = {}): ReviewDetail {
   const findings = over.findings ?? Array.from({ length: 14 }, (_, at) => finding(at + 1))
+  const state = over.prState === undefined ? 'open' : over.prState
+  const settled = state === 'merged' || state === 'closed'
+  const stateAt = over.prStateAt === undefined ? (settled ? SETTLED_AT : null) : over.prStateAt
   return {
     review: {
       id: REVIEW,
@@ -311,11 +353,15 @@ function dense(over: {
       ledger_id: null,
       github_review_id: 'PRR_kwDODense',
       created_at: '2026-10-09T07:00:00Z',
-      pr_state: over.prState === undefined ? 'open' : over.prState,
+      pr_state: state,
+      pr_state_at: stateAt,
       harvested_at: over.harvestedAt === undefined ? '2026-10-12T17:00:00Z' : over.harvestedAt,
       dismissed_at: null,
       dismissed_reason: null,
     },
+    not_for_signing: over.notForSigning === undefined
+      ? (settled ? { reason: 'finished', how: state, at: stateAt } : null)
+      : over.notForSigning,
     layers: layers(),
     brief: null,
     findings,
@@ -332,13 +378,110 @@ function dense(over: {
     timings: {},
     rounds: over.rounds,
     commits_since_previous_round: [],
-  } as unknown as ReviewDetail
+  }
 }
 
 /** The density review, plus whatever the sample records already hold. */
 async function withDense(detail: ReviewDetail = dense()) {
   await resetDesk({ reviews: [...loadSource().reviews, detail] })
 }
+
+/* ====================== The fixture against the contract ====================== */
+
+/**
+ * **Every field the contract requires, checked against the contract itself.**
+ *
+ * `not_for_signing` was added to `ReviewDetail` as a required field by DEV-957 and this
+ * fixture did not carry it, with lint, typecheck, 1,097 unit tests and 91 browser tests
+ * green — because `dense()` was cast, and because no spec in this repository is
+ * typechecked (Nuxt's app tsconfig includes `test/nuxt/**`, and these specs are
+ * `test/*.spec.ts`). A fixture short of a field the server always sends is a page measured
+ * against a record that cannot arrive, and the field it is short of is invisible.
+ *
+ * So the check reads the `required` list out of `contract/openapi.yaml` — the document the
+ * served type is generated from — rather than naming the fields here, which would be the
+ * same list going stale in a second place. The next required field added to either schema
+ * fails this spec until the fixture carries it.
+ */
+describe('the density fixture against the contract', () => {
+  const YAML = readFileSync(resolve('../contract/openapi.yaml'), 'utf8').split('\n')
+
+  /**
+   * One schema's `required` names, in either of the two shapes this document writes them:
+   * a block list of `- name` lines, or a bracketed list that may run over several lines.
+   */
+  function requiredOf(schema: string): string[] {
+    const at = YAML.findIndex(line => line === `    ${schema}:`)
+    expect(at, `${schema} is a schema in the contract`).toBeGreaterThan(-1)
+
+    const body: string[] = []
+    for (const line of YAML.slice(at + 1)) {
+      if (/^ {4}\S/.test(line)) break
+      body.push(line)
+    }
+
+    const key = body.findIndex(line => /^ {6}required:/.test(line))
+    expect(key, `${schema} declares required fields`).toBeGreaterThan(-1)
+
+    /*
+     * Everything indented past the key, whichever shape it is in: the `- name` lines of a
+     * block list sit at eight spaces and a bracketed list's continuation at nine, while
+     * the next key of the schema — `description`, `properties` — sits at six and ends it.
+     * The first draft of this branched on the bracket and read `Review` as an empty list,
+     * which the test above caught before either assertion below could pass on nothing.
+     */
+    const tail: string[] = []
+    for (const line of body.slice(key + 1)) {
+      if (/^ {6}\S/.test(line)) break
+      tail.push(line)
+    }
+
+    const text = [body[key]!.replace(/^ {6}required:/, ''), ...tail].join(' ')
+    return text.match(/[a-z_]+/g) ?? []
+  }
+
+  /*
+   * **The parser is checked before it is trusted.** `arrayContaining([])` passes over any
+   * object at all, so a `requiredOf` that quietly returned nothing would make both tests
+   * below green against a fixture missing every field — which is the shape of the three
+   * checks on this branch that proved nothing until the defect was put back.
+   */
+  it('reads a real list out of the contract, in both the shapes it is written in', () => {
+    expect(requiredOf('ReviewDetail').length).toBeGreaterThan(10)
+    expect(requiredOf('Review').length).toBeGreaterThan(10)
+    expect(requiredOf('ReviewDetail')).not.toContain('brief')
+  })
+
+  it('carries every field ReviewDetail requires, not_for_signing among them', () => {
+    const names = requiredOf('ReviewDetail')
+    expect(names).toContain('not_for_signing')
+    expect(Object.keys(dense())).toEqual(expect.arrayContaining(names))
+  })
+
+  it('carries every field Review requires, pr_state_at among them', () => {
+    const names = requiredOf('Review')
+    expect(names).toContain('pr_state_at')
+    expect(Object.keys(dense().review)).toEqual(expect.arrayContaining(names))
+  })
+
+  /*
+   * **And the pair the headline is drawn from agrees with itself.** A merged pull request
+   * has a day it merged and is refused for signing as `finished`; the fixture derives both
+   * from `pr_state` so no state below can be measured against a record the server could
+   * not produce.
+   */
+  it('keeps pr_state, pr_state_at and not_for_signing in one state', () => {
+    expect(dense().review.pr_state_at).toBeNull()
+    expect(dense().not_for_signing).toBeNull()
+
+    const merged = dense({ prState: 'merged' })
+    expect(merged.review.pr_state_at).toBe(SETTLED_AT)
+    expect(merged.not_for_signing).toEqual({ reason: 'finished', how: 'merged', at: SETTLED_AT })
+
+    const none = dense({ prState: 'merged', prStateAt: null })
+    expect(none.review.pr_state_at).toBeNull()
+  })
+})
 
 /* ================================== The shell ================================= */
 
@@ -514,6 +657,26 @@ describe('what came back', () => {
     const row = page.findAll('.silent-row').find(one => one.text().includes('F4'))!
     expect(row.text()).toContain('…')
   })
+
+  /**
+   * **No sentence about what came back names a round.**
+   *
+   * The ticket asks for outcomes described in words — the author's words for a reply, the
+   * thread for a resolution, the commit for a code change. A round is not one of those
+   * facts: it is where the finding was raised, which the row already says in its own note
+   * where it matters, and the pull request's timeline says once at the foot of the page.
+   * An earlier draft headed a reply with the round it came back in, which read as though
+   * the reply were about the round rather than about the finding.
+   *
+   * Over every sentence the page draws, not over one row: the three kinds the harvest
+   * writes are each worded by a different branch of `outcomeSaid`.
+   */
+  it('words what came back without naming a round', async () => {
+    const page = await shown(REVIEW)
+    const said = page.findAll('.came-said').map(one => one.text())
+    expect(said.length).toBeGreaterThan(6)
+    for (const one of said) expect(one.toLowerCase()).not.toContain('round')
+  })
 })
 
 /* ========================== Nothing came back on ============================== */
@@ -574,16 +737,56 @@ describe('the findings nothing came back on', () => {
 /* ============================ Every state it can be in ======================== */
 
 describe('the states a posted review can be in', () => {
-  it('a merged pull request', async () => {
+  it('a merged pull request, on the day it merged', async () => {
     await withDense(dense({ prState: 'merged' }))
+    const page = await shown(REVIEW)
+    expect(page.find('h1').text()).toBe(`The pull request was merged on ${SETTLED_DAY}`)
+  })
+
+  it('a pull request closed without being merged, on the day it closed', async () => {
+    await withDense(dense({ prState: 'closed' }))
+    const page = await shown(REVIEW)
+    expect(page.find('h1').text())
+      .toBe(`The pull request was closed on ${SETTLED_DAY} without being merged`)
+  })
+
+  /**
+   * **The day comes from `pr_state_at` and from no other instant on the record.**
+   *
+   * Two others are within reach and each is a different fact. `harvested_at` is when this
+   * desk last read GitHub — three days after the merge on this fixture — and the round's
+   * `created_at` is when the review started. Either would put a day in the headline that
+   * nobody merged on, and the reader has no way to tell which day they were given.
+   */
+  it('does not date the merge from the harvest, or from when the review started', async () => {
+    await withDense(dense({
+      prState: 'merged',
+      prStateAt: null,
+      harvestedAt: '2026-10-14T06:00:00Z',
+    }))
+    const page = await shown(REVIEW)
+    expect(page.find('h1').text()).toBe('The pull request was merged')
+    expect(page.find('h1').text()).not.toContain('14 October')
+    expect(page.find('h1').text()).not.toContain('9 October')
+    expect(page.find('h1').text()).not.toContain(' on ')
+  })
+
+  /**
+   * **A settled pull request GitHub gave no time for says it settled and names no day**,
+   * which is the contract's own instruction about this column: null is "no time given",
+   * and a reader must not be handed an invented one.
+   */
+  it('a merged pull request the record holds no day for', async () => {
+    await withDense(dense({ prState: 'merged', prStateAt: null }))
     const page = await shown(REVIEW)
     expect(page.find('h1').text()).toBe('The pull request was merged')
   })
 
-  it('a pull request closed without being merged', async () => {
-    await withDense(dense({ prState: 'closed' }))
+  /** And an open one is not dated at all: the column is null while it is open. */
+  it('does not date a pull request that is still open', async () => {
+    await withDense(dense({ prState: 'open', prStateAt: SETTLED_AT }))
     const page = await shown(REVIEW)
-    expect(page.find('h1').text()).toBe('The pull request was closed without being merged')
+    expect(page.find('h1').text()).toBe('The pull request is still open')
   })
 
   /**
@@ -596,7 +799,7 @@ describe('the states a posted review can be in', () => {
   it('does not say nothing has looked over a state only a harvest could know', async () => {
     await withDense(dense({ prState: 'merged', harvestedAt: null }))
     const page = await shown(REVIEW)
-    expect(page.find('h1').text()).toBe('The pull request was merged')
+    expect(page.find('h1').text()).toBe(`The pull request was merged on ${SETTLED_DAY}`)
     expect(page.find('.notice').exists()).toBe(false)
     /* And it does not claim the harvest found nothing, because it did not finish. */
     expect(page.text()).not.toContain('found no reply, no resolved thread')

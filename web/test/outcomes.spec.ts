@@ -378,6 +378,58 @@ describe('how the pull request ended', () => {
     expect(prEndLabel(state)).toBe(said)
   })
 
+  /**
+   * **The day it ended, from `pr_state_at` and from nothing else.**
+   *
+   * DEV-957 added the column to `Review`, and this function's own comment used to say the
+   * contract served the state and not the day — true when it was written, and the reason
+   * the sentence named no day. The reason expired with the column's arrival.
+   *
+   * **Local noon, not an instant written out as UTC.** `dayLabel` words the developer's
+   * own day: `2026-10-11T22:41:00Z` is the 11th in London and the 12th in Sydney, so a
+   * test naming either day is one that fails on somebody else's machine. The e2e suite
+   * pins the *format* for this reason and says so; here the instant is built from a local
+   * noon instead, which is the same calendar day in every zone and lets the sentence be
+   * asserted whole.
+   */
+  const SETTLED_AT = new Date(2026, 9, 11, 12, 0, 0).toISOString()
+
+  it.each([
+    ['merged', 'The pull request was merged on 11 October 2026'],
+    ['closed', 'The pull request was closed on 11 October 2026 without being merged'],
+  ] as const)('%s, with the day it happened', (state, said) => {
+    expect(prEndLabel(state, SETTLED_AT)).toBe(said)
+  })
+
+  /*
+   * **Null is a settled pull request GitHub gave no time for**, which the contract names
+   * in as many words: the reader is told it merged, and no day is invented for it.
+   */
+  it.each([null, undefined] as const)('a merge the record holds no day for (%s)', (at) => {
+    expect(prEndLabel('merged', at)).toBe('The pull request was merged')
+    expect(prEndLabel('closed', at))
+      .toBe('The pull request was closed without being merged')
+  })
+
+  /*
+   * **A column this app cannot parse is the absence of a day**, not `Invalid Date` in a
+   * headline — `dayLabel`'s own rule, kept here because this is the sentence it reaches.
+   */
+  it('names no day for an instant it cannot read', () => {
+    expect(prEndLabel('merged', 'the eleventh')).toBe('The pull request was merged')
+  })
+
+  /*
+   * **Nothing is dated while it is open.** The contract has the column null for an open
+   * pull request, and "still open on 11 October 2026" would read as the day it opened —
+   * which is not what the column holds even when something has put an instant in it.
+   */
+  it('dates neither an open pull request nor one nothing has read', () => {
+    expect(prEndLabel('open', SETTLED_AT)).toBe('The pull request is still open')
+    expect(prEndLabel(null, SETTLED_AT))
+      .toBe('Nothing has read this pull request back from GitHub')
+  })
+
   /*
    * **Null is not open.** It is nothing having looked, which is every review until
    * `review-desk harvest` has run over it — the rule `prStateLabel` keeps for the queue.
