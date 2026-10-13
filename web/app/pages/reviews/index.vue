@@ -51,6 +51,14 @@ import type { ReviewListItem, ReviewsShown } from '~/types/desk'
  * the two sentences are different because the facts are, and a row that said "dismissed"
  * over a merge would be putting words in the developer's mouth.
  *
+ * ## And a third row that is nobody's turn, which stays in play
+ *
+ * A **superseded** round — an unposted round the author has pushed past — is not off the
+ * desk in the filter's sense: its pull request is in play and so is its own record, so it is
+ * under **In play** and there is no position for it. What it is not is anybody's turn, and
+ * the step column would otherwise read "Draft · waiting on you" over a round the store
+ * refuses every act on. So it reads in the past tense like the other two and says why.
+ *
  * ## Where the record has no answer
  *
  * A review nothing has reported on is "Not started", in words: the record holds seven
@@ -390,6 +398,17 @@ function nothingHere(answer: { repo: string | null, show: ReviewsShown }): strin
               v-else-if="row.left_the_desk === 'finished'"
               class="rd-meta left"
             >{{ finishedLine(row) }}</span>
+            <!--
+              **A superseded round, which is in play and is still nobody's turn.** It stays
+              under In play — the pull request is in play and so is this round's record — and
+              the row says why nothing is waiting on it, because the step beside it reads
+              "was waiting on you" and a reader is owed the reason.
+            -->
+            <span
+              v-else-if="row.left_the_desk === 'superseded'"
+              class="rd-meta left"
+            >Superseded by round {{ row.rounds_on_pr }}. The author pushed past the commit
+              this round was written against, so it can never be the review that posts.</span>
           </QueueRow>
         </DeskSection>
       </template>

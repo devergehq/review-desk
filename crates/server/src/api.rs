@@ -470,6 +470,24 @@ impl Api {
         // paragraph says must not happen, for a client that serialises its filters
         // whether or not they are set: the page reads its view line off this field, so it
         // would have said "Every review in play" under a picker set to Dismissed.
+        // **The name this parameter had until DEV-957 is refused by name.** An unknown
+        // parameter is ignored by this server, so `?dismissed=only` from a bookmark or a
+        // saved client would have answered with the in-play view — which is exactly the
+        // failure the paragraph above forbids, reached through the rename rather than
+        // through a typo. Found by a review of this branch.
+        if query
+            .split('&')
+            .any(|pair| pair == "dismissed" || pair.starts_with("dismissed="))
+        {
+            return Err(ApiError::invalid_value(
+                "dismissed",
+                "`dismissed` was renamed to `show` in DEV-957, when it gained a value \
+                 called `finished`"
+                    .to_string(),
+                format!("show, one of: {}", ReviewsShown::valid_values()),
+            ));
+        }
+
         let asked_blank = query
             .split('&')
             .any(|pair| pair == "show=" || pair == "show");

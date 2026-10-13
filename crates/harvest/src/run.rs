@@ -245,9 +245,56 @@ fn select(store: &Store, selection: &Selection) -> Result<Vec<Review>> {
 }
 
 /// Harvest one review.
+///
+/// **A review whose pull request is still settled when this reads it stops after the first
+/// call**, which is what makes DEV-957's re-read of a closed pull request affordable. That
+/// change keeps the newest round of a `closed` pull request in the sweep so a reopen can be
+/// seen at all — and without this, seeing it cost the *whole* harvest every quarter of an
+/// hour: the pull request, then every review thread whenever any finding carries a comment
+/// id, then a commit comparison and a commit read per finding whose file moved. Three calls
+/// and more, for ever, on a pull request nobody is going to touch again.
+///
+/// The question that re-read exists to ask is "is it open again", and the first call answers
+/// it. Everything after it reads what came back *on* the review, and nothing comes back on a
+/// pull request that is closed. So a settled read records the state and returns; a read that
+/// finds it open again falls through and harvests it properly, which is the next sweep's job
+/// anyway.
+///
+/// **It also stops the sweep touching a review nobody touched.** `set_review_pr_state` and
+/// `mark_review_harvested` both move `last_activity_at`, so the quarter-hourly re-read had a
+/// row in the Finished view reading "last written to just now" beside "No round of it can be
+/// posted". Writing the same state twice is already a no-op for the columns; what was not a
+/// no-op was the stamp. Found by a review of this branch.
 fn harvest_one(store: &Store, github: &dyn GitHub, review: &Review) -> Result<ReviewReport> {
     let pull_request = github.pull_request(&review.repo, review.pr)?;
-    store.set_review_pr_state(review.id, pull_request.state, pull_request.state_at)?;
+    let settled_again = review.is_settled() && pull_request.state.is_settled();
+    if !settled_again {
+        store.set_review_pr_state(review.id, pull_request.state, pull_request.state_at)?;
+    }
+
+    if settled_again {
+        return Ok(ReviewReport {
+            review_id: review.id,
+            repo: review.repo.clone(),
+            pr: review.pr,
+            round: review.round,
+            pr_state: pull_request.state,
+            pr_state_at: pull_request.state_at,
+            was_settled: true,
+            reviewed_head: review.head_sha.clone(),
+            current_head: pull_request.head_sha.clone(),
+            findings: 0,
+            findings_without_comment: 0,
+            findings_with_missing_thread: 0,
+            replies_recorded: 0,
+            threads_resolved_recorded: 0,
+            code_changed_recorded: 0,
+            already_recorded: 0,
+            // Step 7 is not rewritten either. The last harvest that read this pull request
+            // while it was open wrote it, and nothing has happened since.
+            step_seven: None,
+        });
+    }
 
     let findings = store.list_findings(review.id)?;
     let linked: Vec<&Finding> = findings

@@ -732,16 +732,35 @@ function reviewList(repo: string | null, show: ReviewsShown): ReviewList {
   const leftTheDesk = (detail: ReviewDetail): LeftTheDesk | null => {
     if (detail.review.dismissed_at != null) return 'dismissed'
     if (isFinished(detail)) return 'finished'
+    /*
+     * **And superseded last**, which is `NotForSigning`'s order: a round both on a merged
+     * pull request and under a newer one says merged, because once the pull request is over
+     * which round is newest no longer matters. A posted round is never superseded.
+     */
+    if (!isNewestRound(detail) && !isPostedReview(detail)) return 'superseded'
     return null
+  }
+
+  /*
+   * **The filter asks the two ways off the desk, and `leftTheDesk` reports three.** They
+   * are not the same question and reading the filter off the label was a defect: a
+   * superseded round is *in play* — its pull request is in play and so is its own record —
+   * and taking it out of the In play view would make it reachable from no position at all.
+   * The server keeps them apart too: `reviews_at_step`'s filter is two bound comparisons
+   * and `left_the_desk` is computed after them.
+   */
+  const offTheDesk = (detail: ReviewDetail): 'dismissed' | 'finished' | null => {
+    if (detail.review.dismissed_at != null) return 'dismissed'
+    return isFinished(detail) ? 'finished' : null
   }
 
   const wanted = (detail: ReviewDetail): boolean => {
     switch (show) {
-      case 'dismissed': return leftTheDesk(detail) === 'dismissed'
-      case 'finished': return leftTheDesk(detail) === 'finished'
+      case 'dismissed': return offTheDesk(detail) === 'dismissed'
+      case 'finished': return offTheDesk(detail) === 'finished'
       case 'everything': return true
       /* The default, and the only safe one: a review off the desk is off it. */
-      case 'in_play': return leftTheDesk(detail) == null
+      case 'in_play': return offTheDesk(detail) == null
     }
   }
 

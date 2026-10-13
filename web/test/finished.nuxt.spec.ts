@@ -142,6 +142,45 @@ describe('the Reviews list’s Finished view', () => {
   })
 })
 
+describe('a superseded round in the Reviews list', () => {
+  /*
+   * **The third state that is nobody's turn, and the one DEV-957's comment is about.**
+   * `tc/portal#9541` round 1 is in play — its pull request is open — and the store refuses
+   * every act on it, so the row read "Draft · waiting on you" while its own draft page said
+   * "Nothing left to do". Found by a review of this branch.
+   */
+  it('stays under In play, reads in the past tense, and says why', async () => {
+    const page = await shown(Reviews)
+    const row = page.findAll('.queue-line').find(one => one.text().includes('#9541')
+      && one.text().includes('round 1 of 2'))
+    expect(row, 'round 1 of #9541 is in the default view').toBeDefined()
+    expect(row!.text()).toContain('was waiting on you')
+    expect(row!.text()).toContain('Superseded by round 2')
+    expect(row!.text(), 'nobody dismissed it').not.toContain('Dismissed')
+    expect(row!.text(), 'and its pull request has not merged').not.toContain('Finished —')
+  })
+
+  it('is in no other view, because it has not left the desk', async () => {
+    const page = await shown(Reviews)
+    for (const view of ['Dismissed', 'Finished']) {
+      await choose(page, view)
+      expect(
+        page.findAll('.queue-line').filter(one => one.text().includes('#9541')),
+        `#9541 is not under ${view}`,
+      ).toHaveLength(0)
+    }
+  })
+
+  it('leaves the newest round saying what it is still waiting for', async () => {
+    const page = await shown(Reviews)
+    const row = page.findAll('.queue-line').find(one => one.text().includes('round 2 of 2'))
+    expect(row, 'round 2 of #9541').toBeDefined()
+    expect(row!.text()).toContain('waiting on you')
+    expect(row!.text()).not.toContain('was waiting on you')
+    expect(row!.text()).not.toContain('Superseded')
+  })
+})
+
 describe('the brief of a review that cannot be posted', () => {
   /*
    * **Confirming a brief is a sign-off too**, and it is one of the four acts the store

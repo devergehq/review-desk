@@ -1105,10 +1105,16 @@ impl Store {
     /// and nothing can notice a reopen without reading it: a state nobody reads is a state
     /// that never changes. The set is bounded by a fact rather than by a window — **GitHub
     /// cannot reopen a merged pull request**, so `merged` is genuinely terminal and only
-    /// `closed` can come back. The cost, said plainly: one call per sweep per
-    /// closed-and-unmerged pull request, where before it was none. The newest round only,
-    /// because that is the round a reopen would put back in play and the only one whose
-    /// reading the derived state is taken from.
+    /// `closed` can come back. The newest round only, because that is the round a reopen
+    /// would put back in play and the only one whose reading the derived state is taken from.
+    ///
+    /// **The cost, said plainly: one GitHub call per sweep per closed-and-unmerged pull
+    /// request, where before it was none.** One, and that is a property of
+    /// `harvest::run::harvest_one` rather than of this list: it stops after reading the pull
+    /// request when the review was already settled and still is. Without that it would be
+    /// three calls and more — the review threads and a commit comparison follow the state
+    /// read — on a pull request nobody is going to touch again, for ever. Found by a review
+    /// of this branch, which priced the first version of this sentence and found it wrong.
     ///
     /// **Nor does a dismissed review**, for the same reason read a different way: the
     /// developer has said they will not act on it again, so a quarter-hourly read of

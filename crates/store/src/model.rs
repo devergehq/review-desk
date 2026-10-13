@@ -602,6 +602,14 @@ pub enum LeftTheDesk {
     Dismissed,
     /// Its pull request merged or closed, so no round of it can be posted.
     Finished,
+    /// An unposted round a newer round of the same pull request has replaced.
+    ///
+    /// **Not a filter position, and the Reviews list draws it under In play.** A superseded
+    /// round is on a pull request that is still in play and is still the record of a review
+    /// somebody ran; what it is not is anybody's turn. Added so a row can say that: without
+    /// it the list read "Draft · waiting on you" over a round the store refuses all four
+    /// acts on, which is the contradiction this issue fixed for the other two.
+    Superseded,
 }
 
 string_enum! {

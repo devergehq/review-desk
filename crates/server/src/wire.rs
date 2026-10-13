@@ -198,6 +198,7 @@ pub fn review_list_item(at: &ReviewAtStep) -> Value {
         "left_the_desk": at.left_the_desk.map(|left| match left {
             LeftTheDesk::Dismissed => "dismissed",
             LeftTheDesk::Finished => "finished",
+            LeftTheDesk::Superseded => "superseded",
         }),
         // Which way it ended and when, on a finished row only. Read off the pull request
         // rather than off this round's own column, which holds nothing for three of the

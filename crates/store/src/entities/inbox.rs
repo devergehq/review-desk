@@ -435,6 +435,11 @@ impl Store {
                  l.state  AS step_state,
                  l.detail AS step_detail,
                  ({FINISHED}) AS is_finished,
+                 ({NEWEST_ROUND}) AS is_newest_round,
+                 EXISTS (
+                     SELECT 1 FROM drafts d2
+                     WHERE d2.review_id = v.id AND d2.posted_at IS NOT NULL
+                 ) OR v.github_review_id IS NOT NULL AS is_posted,
                  {PR_STATE} AS pr_state_now,
                  (SELECT settled.pr_state_at FROM reviews settled
                   WHERE settled.repo = v.repo AND settled.pr = v.pr
@@ -470,6 +475,8 @@ impl Store {
                         row.get::<_, Option<ReviewLayerState>>("step_state")?,
                         row.get::<_, Option<String>>("step_detail")?,
                         row.get::<_, bool>("is_finished")?,
+                        row.get::<_, bool>("is_newest_round")?,
+                        row.get::<_, bool>("is_posted")?,
                         row.get::<_, Option<PrState>>("pr_state_now")?,
                         row.get::<_, Option<Timestamp>>("finished_at")?,
                     ))
@@ -486,6 +493,8 @@ impl Store {
                     state,
                     detail,
                     is_finished,
+                    is_newest_round,
+                    is_posted,
                     pr_state_now,
                     finished_at,
                 )| {
@@ -508,10 +517,18 @@ impl Store {
                     // dismissed and whose pull request later merged says dismissed: the
                     // dismissal is an act somebody took and the merge is something that
                     // happened to it, and the issue settles it that way.
+                    //
+                    // **And superseded last**, which is [`NotForSigning`]'s order too: a
+                    // round that is both on a merged pull request and under a newer one says
+                    // merged, because once the pull request is over which round is newest no
+                    // longer matters. A *posted* round is never superseded — it did post —
+                    // which is the same condition `not_for_signing` applies.
                     let left_the_desk = if review.is_dismissed() {
                         Some(LeftTheDesk::Dismissed)
                     } else if is_finished {
                         Some(LeftTheDesk::Finished)
+                    } else if !is_newest_round && !is_posted {
+                        Some(LeftTheDesk::Superseded)
                     } else {
                         None
                     };

@@ -1954,18 +1954,33 @@ components:
 
     LeftTheDesk:
       type: string
-      enum: [dismissed, finished]
+      enum: [dismissed, finished, superseded]
       description: |
-        How a review left the desk. **Two different facts, deliberately not one.**
+        How a review left the desk. **Three different facts, deliberately not one.**
 
         `dismissed` is the developer's act: they will not act on this review again, and
         the reason is in their own words on the review. `finished` is the record saying
         the pull request merged or closed, which nobody decided — it happened, and no
-        round of that pull request can be posted afterwards.
+        round of that pull request can be posted afterwards. `superseded` is an unposted
+        round a newer round of the same pull request has replaced: the author pushed past
+        the commit it was written against, so it can never be the review that posts.
 
         Before DEV-957 only the first existed, and the queue consequently held five drafts
         on pull requests that had already merged. Patrick asked whether they should be
         dismissed or gone; ruled: neither — finished.
+
+        **The third was added late and for one reason: a row has to be able to say that
+        nothing is waiting on anybody.** The Reviews list words a step in the past tense
+        when a review has left the desk, and a superseded round is as unactionable as the
+        other two — the store refuses all four acts on it and the queue does not list it —
+        so without this case its row went on reading "Draft · waiting on you" while its own
+        draft page said "Nothing left to do". Found by a review of this branch.
+
+        **It is not a filter position.** `show=` has four and they are about where a review
+        *is*; a superseded round is in play on a pull request that is in play, and the view
+        it belongs to is **In play**. What this field does is let the row say so honestly.
+        The order is the order `NotForSigning` asks in: dismissed, then finished, then
+        superseded.
 
     NotForSigning:
       type: object

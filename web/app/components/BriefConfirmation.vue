@@ -64,10 +64,15 @@ const notice = ref<DeskNotice | null>(null)
 /**
  * Which of the four states the record is in.
  *
- * **`off the desk` is asked before the other three**, because it outranks them: a brief on
- * a merged pull request may be unconfirmed and confirmation may be required, and neither is
- * a reason to ask for an act nothing will act on. A brief already *confirmed* keeps saying
- * so — that happened, and a review leaving the desk does not unmake it.
+ * **`confirmed` is asked first, and `off the desk` before the remaining two.** A brief that
+ * was confirmed keeps saying so: that happened, and a review leaving the desk does not
+ * unmake it. After that, a brief on a merged pull request may be unconfirmed and
+ * confirmation may be required, and neither is a reason to ask for an act nothing will act
+ * on — so the question "has this review left" outranks both.
+ *
+ * (The first version of this said `off the desk` came before all three and the code asked
+ * `confirmed` first. The code was right and the sentence was not; found by a review of this
+ * branch.)
  */
 const state = computed<'asking' | 'confirmed' | 'not required' | 'off the desk'>(() => {
   if (props.brief.confirmed) return 'confirmed'

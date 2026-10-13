@@ -242,20 +242,32 @@ fn a_choice_of_which_reviews_to_show_that_is_not_one_is_refused_rather_than_igno
         answer.text()
     );
 
-    // **The old spelling is refused too, rather than quietly taken.** `?dismissed=only`
-    // was this parameter until DEV-957, and a server that ignored an unknown parameter
-    // would answer such a request with the default view — "there are no dismissed
-    // reviews" — which is the very failure the paragraph above is about. An unknown
-    // parameter is ignored by this server by design, so what makes the old spelling safe
-    // is that the *field name* changed: a caller still sending it reads `show` in the
-    // answer and can see it was not honoured.
-    let stale = harness.api("GET", "/reviews?dismissed=only", None);
-    assert_eq!(stale.status, 200, "{}", stale.text());
-    assert_eq!(
-        stale.json()["show"],
-        "in_play",
-        "the answer says which view it is, so an old client cannot mistake it"
-    );
+    // **The old spelling is refused by name.** `?dismissed=only` was this parameter until
+    // DEV-957, and an unknown parameter is ignored by this server — so a bookmark or a saved
+    // client sending it would have been answered with the in-play view, which is the very
+    // failure the paragraph above is about, reached through the rename rather than through a
+    // typo.
+    //
+    // An earlier version of this asserted the 200 was *fine* because the answer echoes
+    // `show`. A review of this branch pointed out that a client reading rows does not read
+    // the echo, and it was right.
+    for stale in [
+        "/reviews?dismissed=only",
+        "/reviews?dismissed=",
+        "/reviews?dismissed",
+    ] {
+        let answer = harness.api("GET", stale, None);
+        assert_eq!(answer.status, 400, "{stale}: {}", answer.text());
+        assert_eq!(answer.error_code(), "invalid_value", "{stale}");
+        assert_eq!(answer.json()["field"], "dismissed", "{stale}");
+        assert!(
+            answer.json()["expected"]
+                .as_str()
+                .is_some_and(|expected| expected.contains("show")),
+            "{stale}: and it names the parameter that replaced it: {}",
+            answer.text()
+        );
+    }
 }
 
 #[test]
@@ -280,7 +292,7 @@ fn deleting_a_review_nobody_started_removes_it() {
 
     // And it is gone from the Reviews list in every view, which is the difference between
     // a delete and a dismissal.
-    for query in ["", "?dismissed=only", "?dismissed=included"] {
+    for query in ["", "?show=dismissed", "?show=everything"] {
         assert!(
             !listed(&harness, query).contains(&stray),
             "a deleted review is in no view, and {query:?} had it"

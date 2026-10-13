@@ -414,6 +414,43 @@ describe('the queue', () => {
     expect(row!.text(), 'and not the posted round’s').not.toContain('DEV-OLD')
   })
 
+  it('drops the author’s figures rather than showing a newer round’s on an older row', async () => {
+    /*
+     * **The join that could attach the wrong round's measurement.**
+     * `posted_awaiting_author` serves a pull request's newest round only, which rules out
+     * attaching an older round's posting to a newer row — and not the reverse. A row's
+     * round comes from the three slotting arrays, and `author_replies` has no newest-round
+     * restriction, so a pull request whose round 1 was posted and replied to and whose
+     * round 2 is posted with nothing back yet draws one row numbered round 1 and took round
+     * 2's counts. The row then read "The author replied to F1 · No reply yet". Found by a
+     * review of this branch.
+     *
+     * Dropping the figures is the right failure: a measurement about the wrong round is
+     * worse than none.
+     */
+    const source = loadSource()
+    await resetDesk({
+      reviews: source.reviews.map((detail) => {
+        /* Round 2 of #9585: posted, nothing back, and nothing waiting on the developer. */
+        if (detail.review.id !== 63) return detail
+        return {
+          ...detail,
+          review: { ...detail.review, github_review_id: 'PRR_tc9585r2' },
+          brief: null,
+        }
+      }) as typeof source.reviews,
+      /* No draft on round 2, so only round 1's reply can give the row its round. */
+      drafts: source.drafts.filter(one => one.draft.review_id !== 63),
+    })
+
+    const page = await shown(Inbox)
+    const row = needsYouRows(page).find(one => one.text().includes('#9585'))
+    expect(row, 'one row for #9585').toBeDefined()
+    expect(row!.text(), 'the round the reply is on').toContain('round 1')
+    expect(row!.text()).toContain('The author replied to')
+    expect(row!.text(), 'and not a newer round’s measurement').not.toContain('No reply yet')
+  })
+
   it('draws no row for any round of a merged pull request', async () => {
     /*
      * **The four rounds of `tc/portal#9568`**, one posted and three not, on a pull request

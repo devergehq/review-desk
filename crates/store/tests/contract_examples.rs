@@ -1429,6 +1429,7 @@ fn review_list(store: &Store) -> Value {
                     "left_the_desk": at.left_the_desk.map(|left| match left {
                         LeftTheDesk::Dismissed => "dismissed",
                         LeftTheDesk::Finished => "finished",
+                        LeftTheDesk::Superseded => "superseded",
                     }),
                     "finished_how": at.finished_how.map(|state| state.as_str()),
                     "finished_at": at.finished_at,

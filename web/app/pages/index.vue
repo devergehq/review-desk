@@ -317,7 +317,22 @@ function needingYou(data: Inbox): Waiting[] {
    */
   for (const item of data.posted_awaiting_author) {
     const row = byPullRequest.get(keyOf(item.pull_request))
-    if (row) row.posted = item
+    /*
+     * **Only when it is about the round this row is**, which the first version of this
+     * argued it need not be: `posted_awaiting_author` serves a pull request's newest round
+     * only, so it cannot attach an *older* round's posting to a newer row. The reverse is
+     * reachable and was not ruled out — a row's round comes from the three slotting arrays,
+     * and `author_replies` has no newest-round restriction, so a pull request whose round 1
+     * was posted and replied to and whose round 2 is posted with nothing back yet draws one
+     * row numbered round 1 and took round 2's figures. The row then read "The author replied
+     * to F1 · No reply yet", which is round 1's reply beside round 2's counts. Found by a
+     * review of this branch.
+     *
+     * Dropping the figures is the right failure: they are a measurement about a round, and a
+     * measurement about the wrong round is worse than none. The posted group's own note
+     * already says how many rows it left to the groups above it.
+     */
+    if (row && item.round === row.round) row.posted = item
   }
   for (const item of data.in_progress) {
     const row = byPullRequest.get(keyOf(item.pull_request))

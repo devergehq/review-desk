@@ -666,6 +666,13 @@ export function stepLabel(row: ReviewListItem, now: Date = new Date()): string {
    * row too and had been since DEV-945; both are fixed here, because both are the same
    * sentence: the step *was* waiting, and then the review left.
    *
+   * **And of a superseded round, which is the third case and was missed.** `left_the_desk`
+   * had two values and a superseded round got neither, so the Reviews list's default view
+   * still read "Draft · waiting on you" over the one row DEV-957's comment is actually
+   * about — `tc/portal#9541` round 1 — while its own draft page said "Nothing left to do".
+   * Found by a review of this branch; the field grew the case rather than this growing a
+   * second source.
+   *
    * **The past tense rather than a different step.** The record is not wrong — step 6 of
    * that review really is `waiting_on_you`, and nothing should rewrite it — so what changes
    * is the tense the row reads it in. The detail is dropped with it: it is the stored
@@ -674,6 +681,7 @@ export function stepLabel(row: ReviewListItem, now: Date = new Date()): string {
   const outcome = row.left_the_desk != null && row.step_state === 'waiting_on_you'
     ? 'was waiting on you'
     : layerOutcome({ state: row.step_state, detail: row.step_detail })
+
   const said = `${layerLabel(row.step_name)} · ${outcome}`
   const read = harvestReadLabel({
     name: row.step_name,
