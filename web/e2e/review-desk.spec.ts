@@ -3949,14 +3949,24 @@ test.describe('state that belongs to one review', () => {
    */
   let firstPr = 0
   let secondPr = 0
-  /** Each review's draft body as the record holds it, which is what the editor must show. */
-  let firstBody = ''
-  let secondBody = ''
 
   /** A sentence typed into the editor and never saved. */
   const TYPED = 'A sentence the developer typed and did not save.'
 
-  /** The draft body the record holds, which is what the editor is seeded from. */
+  /** Each review's draft, named once so the seed and the restore cannot come to differ. */
+  const FIRST_DRAFT = 'The first of the two drafts, written against the first review.'
+  const SECOND_DRAFT = 'The second of the two drafts, written against the second review.'
+
+  /**
+   * The draft body the record holds, which is what the editor is seeded from.
+   *
+   * **Read at every use rather than cached in two `let`s, which is what it was.** One test
+   * here saves through the editor, so the body it cached went stale the moment that test
+   * ran — and the suite is serial with no retries, so a failure anywhere in that test left
+   * every assertion after it comparing the editor against a body the record no longer held.
+   * Three red tests for one defect, with the cause two tests back. A read is one spawn and
+   * the record is the only thing that cannot be stale. Raised by a review of this branch.
+   */
   function bodyOf(id: number): string {
     return (
       cliJson(seededDatabase, ['draft', 'show', '--review', String(id)]) as unknown as {
@@ -3986,12 +3996,10 @@ test.describe('state that belongs to one review', () => {
     firstPr = one.pr
     secondPr = two.pr
     expect(firstPr).not.toBe(secondPr)
-    draftSaying(first, 'The first of the two drafts, written against the first review.')
-    draftSaying(second, 'The second of the two drafts, written against the second review.')
-    firstBody = bodyOf(first)
-    secondBody = bodyOf(second)
+    draftSaying(first, FIRST_DRAFT)
+    draftSaying(second, SECOND_DRAFT)
     /* A seed that produced two equal bodies would make four assertions below vacuous. */
-    expect(firstBody).not.toBe(secondBody)
+    expect(bodyOf(first)).not.toBe(bodyOf(second))
   })
 
   /**
@@ -4103,8 +4111,8 @@ test.describe('state that belongs to one review', () => {
 
     await page.getByRole('tab', { name: 'Edit' }).click()
     const editor = page.locator('textarea#draft-body')
-    await expect(editor).toHaveValue(secondBody)
-    await editor.fill(`${secondBody}\n\n${TYPED}`)
+    await expect(editor).toHaveValue(bodyOf(second))
+    await editor.fill(`${bodyOf(second)}\n\n${TYPED}`)
 
     /* The back menu, three entries up: the same page, the first review. */
     await jump(page, -entries)
@@ -4122,7 +4130,7 @@ test.describe('state that belongs to one review', () => {
       page.getByText('You have unsaved edits to this review’s draft'),
     ).toBeVisible()
     await expect(page.getByRole('button', { name: 'Keep editing' })).toBeFocused()
-    await expect(editor).toHaveValue(`${secondBody}\n\n${TYPED}`)
+    await expect(editor).toHaveValue(`${bodyOf(second)}\n\n${TYPED}`)
 
     /*
      * Keep editing: the address comes back, not a character is lost, and the editor is the
@@ -4133,11 +4141,11 @@ test.describe('state that belongs to one review', () => {
     await expect(page).toHaveURL(`${seeded}reviews/${second}/draft`)
     await expect(page.getByRole('button', { name: 'Keep editing' })).toHaveCount(0)
     await expect(page.getByRole('tab', { name: 'Edit' })).toHaveAttribute('aria-selected', 'true')
-    await expect(editor).toHaveValue(`${secondBody}\n\n${TYPED}`)
+    await expect(editor).toHaveValue(`${bodyOf(second)}\n\n${TYPED}`)
 
     /* Nothing has been written to either review. The sentence was never saved. */
-    expect(bodyOf(first)).toBe(firstBody)
-    expect(bodyOf(second)).toBe(secondBody)
+    expect(bodyOf(first)).toContain(FIRST_DRAFT)
+    expect(bodyOf(second)).toContain(SECOND_DRAFT)
 
     /* Discard: the navigation goes through. */
     await jump(page, -entries)
@@ -4151,7 +4159,7 @@ test.describe('state that belongs to one review', () => {
      * here rather than silence.
      */
     await page.getByRole('tab', { name: 'Edit' }).click()
-    await expect(editor).toHaveValue(firstBody)
+    await expect(editor).toHaveValue(bodyOf(first))
     await expect(editor).not.toHaveValue(new RegExp(TYPED))
     await expect(page.getByText('Save or discard your changes before signing off.'))
       .toHaveCount(0)
@@ -4174,8 +4182,8 @@ test.describe('state that belongs to one review', () => {
 
     await page.getByRole('tab', { name: 'Edit' }).click()
     const editor = page.locator('textarea#draft-body')
-    await expect(editor).toHaveValue(firstBody)
-    await editor.fill(`${firstBody}\n\n${TYPED}`)
+    await expect(editor).toHaveValue(bodyOf(first))
+    await editor.fill(`${bodyOf(first)}\n\n${TYPED}`)
 
     await jump(page, entries)
     await expect(
@@ -4184,17 +4192,17 @@ test.describe('state that belongs to one review', () => {
 
     await page.getByRole('button', { name: 'Keep editing' }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${first}/draft`)
-    await expect(editor).toHaveValue(`${firstBody}\n\n${TYPED}`)
+    await expect(editor).toHaveValue(`${bodyOf(first)}\n\n${TYPED}`)
 
     await jump(page, entries)
     await page.getByRole('button', { name: 'Discard the edits' }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${second}/draft`)
     await page.getByRole('tab', { name: 'Edit' }).click()
-    await expect(editor).toHaveValue(secondBody)
+    await expect(editor).toHaveValue(bodyOf(second))
     await expect(page.getByRole('button', { name: 'Save the draft' })).toBeDisabled()
 
-    expect(bodyOf(first)).toBe(firstBody)
-    expect(bodyOf(second)).toBe(secondBody)
+    expect(bodyOf(first)).toContain(FIRST_DRAFT)
+    expect(bodyOf(second)).toContain(SECOND_DRAFT)
   })
 
   /**
@@ -4213,15 +4221,15 @@ test.describe('state that belongs to one review', () => {
 
     await page.getByRole('tab', { name: 'Edit' }).click()
     const editor = page.locator('textarea#draft-body')
-    await editor.fill(`${secondBody}\n\n${TYPED}`)
+    await editor.fill(`${bodyOf(second)}\n\n${TYPED}`)
 
     await jump(page, -entries)
     await page.getByRole('button', { name: 'Discard the edits' }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${first}/draft`)
 
-    const saved = `${firstBody}\n\nTyped on the first review, and saved there.`
+    const saved = `${bodyOf(first)}\n\nTyped on the first review, and saved there.`
     await page.getByRole('tab', { name: 'Edit' }).click()
-    await expect(editor).toHaveValue(firstBody)
+    await expect(editor).toHaveValue(bodyOf(first))
     await editor.fill(saved)
     await page.getByRole('button', { name: 'Save the draft' }).click()
 
@@ -4241,12 +4249,8 @@ test.describe('state that belongs to one review', () => {
      */
     expect(bodyOf(first).trimEnd()).toBe(saved)
     expect(bodyOf(first)).not.toContain(TYPED)
-    expect(bodyOf(second)).toBe(secondBody)
+    expect(bodyOf(second)).toContain(SECOND_DRAFT)
     expect(bodyOf(second)).not.toContain(TYPED)
-
-    /* Put it back, so a later run of this block starts where this one did. */
-    draftSaying(first, 'The first of the two drafts, written against the first review.')
-    firstBody = bodyOf(first)
   })
 
   /**
@@ -4269,19 +4273,25 @@ test.describe('state that belongs to one review', () => {
     await page.goto(`${seeded}reviews/${first}/draft`)
     await page.getByRole('tab', { name: 'Edit' }).click()
     const editor = page.locator('textarea#draft-body')
-    await expect(editor).toHaveValue(firstBody)
-    await editor.fill(`${firstBody}\n\n${TYPED}`)
+    await expect(editor).toHaveValue(bodyOf(first))
+    await editor.fill(`${bodyOf(first)}\n\n${TYPED}`)
 
     /* Typed into the address bar, which is a request for the page rather than a route. */
     await page.goto(`${seeded}reviews/${second}/draft`)
 
-    await expect(page.getByRole('button', { name: 'Keep editing' })).toHaveCount(0)
+    /*
+     * **The editor holding the second review's own body first.** A `toHaveCount(0)` straight
+     * after a `goto` is answered by a document that has not booted, so it would pass over a
+     * card that appeared on hydration. Seeding the editor from this review's record is the
+     * page having run. Raised by a review of this branch.
+     */
     await page.getByRole('tab', { name: 'Edit' }).click()
-    await expect(editor).toHaveValue(secondBody)
+    await expect(editor).toHaveValue(bodyOf(second))
+    await expect(page.getByRole('button', { name: 'Keep editing' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Save the draft' })).toBeDisabled()
 
-    expect(bodyOf(first)).toBe(firstBody)
-    expect(bodyOf(second)).toBe(secondBody)
+    expect(bodyOf(first)).toContain(FIRST_DRAFT)
+    expect(bodyOf(second)).toContain(SECOND_DRAFT)
   })
 
   /**
@@ -4298,7 +4308,7 @@ test.describe('state that belongs to one review', () => {
     await byTheTrail(page, first, 'draft')
 
     await page.getByRole('tab', { name: 'Edit' }).click()
-    await page.locator('textarea#draft-body').fill(`${firstBody}\n\n${TYPED}`)
+    await page.locator('textarea#draft-body').fill(`${bodyOf(first)}\n\n${TYPED}`)
 
     /* Back to reading it, which is where the card now has to find the developer. */
     await page.getByRole('tab', { name: 'Rendered' }).click()
@@ -4310,9 +4320,9 @@ test.describe('state that belongs to one review', () => {
     await page.getByRole('button', { name: 'Keep editing' }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${first}/draft`)
     await expect(page.locator('textarea#draft-body'))
-      .toHaveValue(`${firstBody}\n\n${TYPED}`)
+      .toHaveValue(`${bodyOf(first)}\n\n${TYPED}`)
 
-    expect(bodyOf(first)).toBe(firstBody)
+    expect(bodyOf(first)).toContain(FIRST_DRAFT)
   })
 
   /**
@@ -4323,30 +4333,44 @@ test.describe('state that belongs to one review', () => {
    * keyboard user with unsaved edits would be stopped by a card every time they skipped the
    * header — the guard turning an accessibility control into an interruption.
    *
-   * It does not, because a plain anchor's fragment jump is the browser's and the router
-   * listens for `popstate`. That is a claim about two libraries, so it is asserted rather
-   * than reasoned about — including the Back press afterwards, which *is* a `popstate`.
+   * **It did, until f64fec0.** The reasoning that said it could not — a plain anchor's
+   * fragment jump is the browser's, and the router listens for `popstate` — is wrong:
+   * vue-router 5 sees it, `onBeforeRouteUpdate` fired, and this test failed on its first
+   * run. The guards compare `to.path` to `from.path` now, and this is what holds them to
+   * it. Do not read the first paragraph as a reason the check is redundant; it is the
+   * reason the check exists.
+   *
+   * The Back press is asserted too, because that one *is* a `popstate`.
    */
   test('skipping to the page with unsaved edits asks nothing', async ({ page }) => {
     await page.goto(`${seeded}reviews/${first}/draft`)
     await page.getByRole('tab', { name: 'Edit' }).click()
     const editor = page.locator('textarea#draft-body')
-    await editor.fill(`${firstBody}\n\n${TYPED}`)
+    await editor.fill(`${bodyOf(first)}\n\n${TYPED}`)
 
     const skip = page.getByRole('link', { name: 'Skip to the page' })
     await skip.focus()
     await page.keyboard.press('Enter')
 
+    /*
+     * **The positive assertion comes first, and it is what makes the negative one mean
+     * something.** `toHaveCount(0)` is answered by the first poll, so on its own it passes
+     * when the card is merely not there *yet* — which on the regression test for f64fec0
+     * would make the protection depend on Vue's scheduling rather than on the guard. The
+     * fragment reaching the address is the navigation having been handled. Raised by a
+     * review of this branch.
+     */
+    await expect(page).toHaveURL(`${seeded}reviews/${first}/draft#main`)
     await expect(page.getByRole('button', { name: 'Keep editing' })).toHaveCount(0)
-    await expect(editor).toHaveValue(`${firstBody}\n\n${TYPED}`)
+    await expect(editor).toHaveValue(`${bodyOf(first)}\n\n${TYPED}`)
 
     /* And back out of the fragment, which the router does see. */
     await page.goBack()
+    await expect(page).toHaveURL(`${seeded}reviews/${first}/draft`)
     await expect(page.getByRole('button', { name: 'Keep editing' })).toHaveCount(0)
-    await expect(page).toHaveURL(new RegExp(`reviews/${first}/draft`))
-    await expect(editor).toHaveValue(`${firstBody}\n\n${TYPED}`)
+    await expect(editor).toHaveValue(`${bodyOf(first)}\n\n${TYPED}`)
 
-    expect(bodyOf(first)).toBe(firstBody)
+    expect(bodyOf(first)).toContain(FIRST_DRAFT)
   })
 
   /**
@@ -4365,7 +4389,7 @@ test.describe('state that belongs to one review', () => {
 
     await page.getByRole('tab', { name: 'Edit' }).click()
     const editor = page.locator('textarea#draft-body')
-    await editor.fill(`${firstBody}\n\n${TYPED}`)
+    await editor.fill(`${bodyOf(first)}\n\n${TYPED}`)
 
     const codeReview = page.locator(`.trail a[href="/reviews/${first}/code-review"]`)
     await codeReview.click()
@@ -4374,13 +4398,13 @@ test.describe('state that belongs to one review', () => {
 
     await page.getByRole('button', { name: 'Keep editing' }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${first}/draft`)
-    await expect(editor).toHaveValue(`${firstBody}\n\n${TYPED}`)
+    await expect(editor).toHaveValue(`${bodyOf(first)}\n\n${TYPED}`)
 
     await codeReview.click()
     await page.getByRole('button', { name: 'Discard the edits' }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${first}/code-review`)
 
     /* And the draft is as the session left it. */
-    expect(bodyOf(first)).toBe(firstBody)
+    expect(bodyOf(first)).toContain(FIRST_DRAFT)
   })
 })

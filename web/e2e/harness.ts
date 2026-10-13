@@ -1854,6 +1854,13 @@ export function seedStructuredReview(
    * which is a full page load, and a full page load is the one route that cannot carry the
    * state this is testing.
    */
+  /*
+   * **Step 7 is `pending`, as it is in every other seed here.** It was `done`, which is a
+   * record that cannot occur: nothing has posted this draft, so the step that reads the
+   * author's replies has not run. Nothing asserts on step 7 in this block, so nothing
+   * failed — the pages were simply being exercised against a state no developer will see.
+   * Raised by a review of this branch.
+   */
   for (let number = 1; number <= 7; number += 1) {
     cli(database, [
       'layer',
@@ -1863,9 +1870,9 @@ export function seedStructuredReview(
       '--layer',
       String(number),
       '--state',
-      number === 6 ? 'waiting_on_you' : 'done',
+      number === 6 ? 'waiting_on_you' : number === 7 ? 'pending' : 'done',
       '--detail',
-      number === 6 ? 'waiting on you' : 'done',
+      number === 6 ? 'waiting on you' : number === 7 ? 'once the session posts it' : 'done',
     ])
   }
 

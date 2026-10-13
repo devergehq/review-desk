@@ -144,9 +144,12 @@ const dirty = computed(() => editing.value !== loadedBody.value)
  * makes the page correct whichever way `NuxtPage` is keyed. A `pageKey`, or a
  * `definePageMeta({ key })`, added later for any reason — the obvious one is stopping the
  * remount flash between two rounds of a pull request — turns every ref below into exactly
- * the defect the issue describes, and this watch is then the only thing between review 50's
- * prose and review 51's draft. It costs ten lines and it is already the house pattern:
- * DEV-958's page carries the same watch.
+ * the defect the issue describes, and this watch is then what stands between review 50's
+ * prose and review 51's draft. **Necessary and not sufficient**, which the sentence here
+ * used to claim: `ofThisReview` below would be carrying the five writes, and the read that
+ * is still in flight would be drawing review 50's threads, held-back rows and sign-off under
+ * review 51's address. Raised by a review of this branch. It costs ten lines and it is
+ * already the house pattern: DEV-958's page carries the same watch.
  *
  * As written it fires on an instance that is about to be unmounted — the global route
  * updates before Vue re-renders with the new key — so it is a no-op rather than dead code.
@@ -277,6 +280,26 @@ function discardEdits() {
   waiting?.decide(true)
 }
 
+/*
+ * **A save landing while the card is up answers it, and the navigation goes through.**
+ *
+ * `dirty` can go false underneath the card. Type, press Save the draft, and press a link
+ * while the PUT is in flight: the guard sees unsaved edits because `loadedBody` has not been
+ * refreshed yet, the card comes up, and then the write's own refresh lands and there is
+ * nothing unsaved left to ask about. The card was then asking about edits that are on the
+ * record — Discard the edits discarding nothing, Keep editing holding the developer back
+ * for no reason either of them could see.
+ *
+ * **Answered here and deliberately not with `v-if="leaving && dirty"`.** That is the obvious
+ * version and it is the one that wedges the page: it takes away the only two controls that
+ * can resolve the promise, leaving a navigation nobody can settle and a page nobody can
+ * leave. Raised by a review of this branch, which named both the sequence and the trap.
+ */
+watch(dirty, (unsaved) => {
+  if (unsaved || !leaving.value) return
+  discardEdits()
+})
+
 /**
  * The aside's two derived lists, computed rather than called from the template.
  *
@@ -375,18 +398,45 @@ function said(result: WriteResult): boolean {
   return result.ok
 }
 
+/**
+ * Whether the draft on screen is the review in the address.
+ *
+ * **Every write on this page is gated on it, not only the body.** `resource()` keeps the
+ * previous answer while the next read is in flight, so a page that was reused across a
+ * review change would draw review 50 under review 51's address for the length of that
+ * read — and each of these five reads the review off the draft it is drawing.
+ *
+ * It began as one line in `save()`, on the argument that writing a body against the wrong
+ * review is the one thing this page must never do. That was true of the body and not of
+ * the rest: a **sign-off** is the worse write of the two, because the session posts what it
+ * finds approved, and `approve`, `sendBack`, `requestNitTicket` and `ticketRestAndApprove`
+ * all took the id the same way. Raised by a review of this branch.
+ *
+ * None of it can fire as the page is keyed — see the watch above — which is why it is four
+ * words at each call rather than a mechanism.
+ */
+function ofThisReview(data: DraftDetail): boolean {
+  return data.draft.review_id === reviewId.value
+}
+
+/**
+ * What a control says when it is pressed between two reviews.
+ *
+ * **Said rather than ignored.** A guard that returns silently leaves the developer pressing
+ * a live button that does nothing, which reads as the page being broken — and the page
+ * already has one place for a sentence about a write that did not happen.
+ */
+function stillReading(): void {
+  notice.value = {
+    tone: 'problem',
+    text: 'This review is still being read. Try that again in a moment.',
+  }
+}
+
 async function save() {
   const data = detail.data.value
   if (!data) return
-  /*
-   * **A save names the review it read, and this says so.** `resource()` keeps the previous
-   * answer while the next read is in flight, so a page that was reused across a review
-   * change would still be drawing review 50 under review 51's address — and a save reads
-   * the review from the draft it is drawing. It is not reused today, so this cannot fire;
-   * it is one line, and the one thing this page must never do is write a body against a
-   * review the developer is not on.
-   */
-  if (data.draft.review_id !== reviewId.value) return
+  if (!ofThisReview(data)) return stillReading()
   working.value = true
   const result = await desk.saveDraft(data.draft.review_id, loadedBody.value, editing.value)
   working.value = false
@@ -396,6 +446,7 @@ async function save() {
 async function approve() {
   const data = detail.data.value
   if (!data) return
+  if (!ofThisReview(data)) return stillReading()
   working.value = true
   said(await desk.approveDraft(data.draft.review_id, event.value))
   working.value = false
@@ -404,6 +455,7 @@ async function approve() {
 async function sendBack() {
   const data = detail.data.value
   if (!data) return
+  if (!ofThisReview(data)) return stillReading()
   working.value = true
   const result = await desk.sendBackDraft(data.draft.review_id, note.value)
   working.value = false
@@ -478,6 +530,7 @@ watch(
 async function fileTicket() {
   const data = detail.data.value
   if (!data) return
+  if (!ofThisReview(data)) return stillReading()
   working.value = true
   said(await desk.requestNitTicket(data.draft.review_id))
   working.value = false
@@ -506,6 +559,7 @@ async function fileTicket() {
 async function ticketRest() {
   const data = detail.data.value
   if (!data) return
+  if (!ofThisReview(data)) return stillReading()
   working.value = true
   const result = await desk.ticketRestAndApprove(data.draft.review_id, ticketNote.value)
   working.value = false
@@ -618,6 +672,12 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
           a failure *over* it, so the frame is still here — and a review that never read at
           all has no draft to have edited.
 
+          **One sentence for two guards, so it has to be true of both.** It read "They
+          cannot be carried to another review", which is the reason for the *update* guard
+          and no reason at all for the *leave* guard — the trail's Code review link involves
+          one review, and what is at stake there is that leaving the page discards the
+          typing. Both are said now, in that order. Raised by a review of this branch.
+
           The review is named by its pull request, as every other sentence on these screens
           names one, so that the choice is about a review and not about "this page".
         -->
@@ -627,8 +687,9 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
           @keyup.escape="keepEditing"
         >
           <DeskNotice tone="problem">
-            You have unsaved edits to this review’s draft, #{{ owner.review.pr }}. They
-            cannot be carried to another review: keep editing them here, or discard them.
+            You have unsaved edits to this review’s draft, #{{ owner.review.pr }}. Leaving
+            this page discards them, and they are never carried to another review: keep
+            editing them here, or discard them.
           </DeskNotice>
           <div class="unsaved-actions">
             <button

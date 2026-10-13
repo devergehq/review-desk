@@ -85,12 +85,8 @@ const cameFromOpen = ref(false)
  * pieces of recorded text with two different questions behind them. Either one left unfolded
  * would show the next review's prose under a control the reader never pressed.
  *
- * **It cannot fire today, and that is deliberate rather than overlooked.** `<NuxtPage />`
- * keys a page by its own path with the parameters interpolated, so changing the review
- * unmounts this component and mounts a fresh one — DEV-960 says the component is reused and
- * it is not. `draft.vue` carries the measurement and the whole argument for keeping the
- * watch: it is the page's statement of what belongs to one review, and a `pageKey` added
- * later makes it the only thing standing between two reviews.
+ * **It cannot fire as pages are keyed today, and is kept deliberately.** The measurement
+ * and the argument are in `draft.vue`, once.
  */
 watch(reviewId, () => {
   openProblem.value = null
