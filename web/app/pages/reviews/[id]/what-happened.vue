@@ -256,11 +256,15 @@ function detailId(seq: number): string {
                   <span class="rd-visually-hidden">Severity:</span>{{ ' ' }}{{ row.severity }}
                 </span>
                 <span class="line">
-                  <TickedText :text="row.line" />
+                  <TickedText :text="row.line" />{{ ' ' }}
                   <!--
                     A line the page cut says so, with the whole claim within a pointer's
                     reach. `HeldBackRows`' rule: a reader has to know the line they are
                     reading was cut by the page and is not what the review wrote.
+
+                    The space before it is the rule this file argues for, inside a cell
+                    rather than between two: without it the row's text read
+                    `…a session really…shortened`.
                   -->
                   <span
                     v-if="row.shortened"
@@ -397,7 +401,7 @@ function detailId(seq: number): string {
                   <TickedText
                     :text="row.line"
                     in-control
-                  />
+                  />{{ ' ' }}
                   <!--
                     **A line the page cut says so here too.** It is the same rule as the
                     row above, and it was only on the open half until the browser showed

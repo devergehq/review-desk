@@ -340,10 +340,11 @@ for (const { name, width, height } of WIDTHS) {
 
     /*
      * **The severity's hidden label keeps its space through the real build.** Vue's
-     * `whitespace: 'condense'` deletes a whitespace-only text node between two elements, so
-     * the separator is `&#32;` — and whether an entity survives the compiler, the bundler
-     * and the binary is a question for the thing that serves it rather than for a test
-     * environment's renderer.
+     * `whitespace: 'condense'` deletes a whitespace-only text node between two elements,
+     * and merges a trailing `&#32;` into one before deleting it — so the separator is an
+     * interpolated space, which is a text node wherever it is written. Whether it survives
+     * the compiler, the bundler and the binary is a question for the thing that serves it
+     * rather than for a test environment's renderer, which is why it is asserted here too.
      */
     expect(await page.locator('.answered-row .severity').first().textContent())
       .toBe('Severity: blocker')

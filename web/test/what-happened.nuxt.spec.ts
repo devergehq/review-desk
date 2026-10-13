@@ -847,10 +847,12 @@ describe('it describes and does not grade', () => {
     const page = await shown(REVIEW)
     /*
      * `Severity:` is the visually-hidden label, which is in the text and not on the
-     * screen — and the space after it is `&#32;`, because Vue's `whitespace: 'condense'`
-     * deletes a whitespace-only text node between two elements. Written as a newline, or
-     * as a second `<span>` around the value, this read `Severity:blocker`, which is what a
-     * screen reader then says. `textContent` rather than `text()`, which trims.
+     * screen — and the space after it is an interpolated one, because Vue's
+     * `whitespace: 'condense'` deletes a whitespace-only text node between two elements and
+     * merges a trailing `&#32;` into it. Written as a newline, as a second `<span>` around
+     * the value, or as an entity at the end of a line, this read `Severity:blocker` — which
+     * is what a reader of the text then gets. `textContent` rather than `text()`, which
+     * trims.
      */
     expect(page.find('.severity').element.textContent).toBe('Severity: blocker')
     expect(page.findAll('.tag')).toHaveLength(0)

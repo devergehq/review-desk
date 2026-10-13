@@ -179,7 +179,7 @@ const heading = computed(() => count(props.rows.length, 'finding'))
               <TickedText
                 :text="row.line"
                 in-control
-              />
+              />{{ ' ' }}
               <!--
                 **A line the page cut says so.** The claim's first twelve words standing in
                 for a title the session never wrote is not what the review said, and a reader

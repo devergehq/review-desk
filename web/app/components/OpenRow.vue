@@ -51,8 +51,14 @@ const says = computed(() => (props.open ? 'Fold' : props.opens))
 
       **Two of the three boundaries are this component's**: after the hidden label, and
       before the "Open" at the end. The ones *between* the cells belong to whoever fills the
-      slot, because this component does not know how many there are — `HeldBackRows` and
-      the step-7 page both separate their own.
+      slot, because this component does not know how many there are.
+
+      Six components fill it. `HeldBackRows` and the step-7 page separate their own cells;
+      `solution.vue`, `code-review.vue`, `understand.vue` and `alternatives.vue` do not, so
+      a part on the Solution page still announces as `Open Allowed columns…: 1Allowed
+      columns…`. That is the same defect, it predates DEV-958, and it is four pages that
+      issue does not touch — reported rather than swept in, which is what the last three
+      attempts at this rule got wrong in the other direction.
 
       **An interpolated space, not `&#32;`**, and the difference is measured: an entity at
       the end of a line is merged with the following newline into one whitespace-only node

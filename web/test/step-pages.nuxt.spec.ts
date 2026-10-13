@@ -1,6 +1,6 @@
 // @vitest-environment nuxt
 import { readFileSync, readdirSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { relative, resolve, sep } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { flushPromises, type VueWrapper } from '@vue/test-utils'
@@ -2268,33 +2268,90 @@ describe('nothing on these pages is handed to the browser as markup', () => {
    * span that *continues* a visible phrase — "The finding", then " F1 on the code review
    * page" — carries its own leading space and needs nothing here.
    */
-  const LABEL = /class="rd-visually-hidden"[^>]*>[^<]*:<\/span>/
-  const SEPARATED = /:<\/span>\{\{ ' ' \}\}/
+  /**
+   * The label, matched **over the whole file and per occurrence** rather than per line.
+   *
+   * Two things that cost a line-by-line version its coverage. The opening tag is allowed to
+   * wrap, because this repository writes every span with two or more attributes that way —
+   * `[^>]*` crosses a newline, so `<span\n  v-if="…"\n  class="rd-visually-hidden"\n>Size:</span>`
+   * is seen. And the class list is allowed to hold more than the one class.
+   *
+   * Per occurrence, because a line with two of these passed as long as *one* of them was
+   * separated: `LABEL.test(line) && !SEPARATED.test(line)` asks two questions about the
+   * whole line and never about the same label twice.
+   */
+  const LABEL = /<span[^>]*class="[^"]*rd-visually-hidden[^"]*"[^>]*>[^<]*:<\/span>/g
+  const SEPARATOR = '{{ \' \' }}'
 
-  /** Every line that opens a hidden label ending in a colon and does not separate it. */
-  function runTogether(files: Array<{ name: string, text: string }>): string[] {
-    return files.flatMap(file =>
-      file.text
-        .split('\n')
-        .filter(line => LABEL.test(line) && !SEPARATED.test(line))
-        .map(line => `${file.name}: ${line.trim()}`))
+  /**
+   * **Every `.vue` under `app/`, at any depth** — its own list rather than the `sources`
+   * the checks above share, which is components and the pages of a review.
+   *
+   * Those checks are about this feature's pages and are right to be. This rule is about
+   * any markup that draws a hidden label, and the queue, the Reviews list, the rules page
+   * and the layout all draw one. Widening the shared list would have changed what four
+   * other tests are about; a list of its own changes nothing but this.
+   */
+  function everyTemplate(dir: string): Array<{ name: string, text: string }> {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = resolve(dir, entry.name)
+      if (entry.isDirectory()) return everyTemplate(full)
+      if (!entry.name.endsWith('.vue')) return []
+      return [{ name: relative(resolve('app'), full), text: readFileSync(full, 'utf8') }]
+    })
   }
 
+  const templates = everyTemplate(resolve('app'))
+
+  /** Every hidden label ending in a colon that nothing separates from its value. */
+  function runTogether(files: Array<{ name: string, text: string }>): string[] {
+    return files.flatMap(file =>
+      [...file.text.matchAll(LABEL)]
+        .filter(hit => !file.text.slice(hit.index + hit[0].length).startsWith(SEPARATOR))
+        .map(hit => `${file.name}: ${hit[0].replace(/\s+/g, ' ')}`))
+  }
+
+  it('finds every template, not only this feature\u2019s', () => {
+    const names = templates.map(file => file.name)
+    expect(names.length).toBeGreaterThan(40)
+    for (const outside of ['pages/index.vue', 'pages/rules.vue', 'layouts/default.vue']) {
+      expect(names.map(name => name.split(sep).join('/'))).toContain(outside)
+    }
+  })
+
   it('separates a hidden label from the value after it', () => {
-    expect(runTogether(sources)).toEqual([])
+    expect(runTogether(templates)).toEqual([])
   })
 
   /**
-   * **And the scan refuses the three forms that do not work**, run through the same
-   * predicate rather than re-tested as regexes against a literal — which is what the
-   * version this replaces did, and why it was green over four broken boundaries.
+   * **And the scan refuses every form that does not work**, run through the same predicate
+   * rather than re-tested as regexes against a literal — which is what the version before
+   * it did, and why it was green over four broken boundaries.
+   *
+   * The newline case really carries a newline. The version this replaces split the input on
+   * `\n` first, so its "a newline" case was a single line ending at `</span>` — the same
+   * input as "nothing at all", testing the same thing twice and the form the argument is
+   * really about not at all.
    */
   it.each([
     ['nothing at all', '<span class="rd-visually-hidden">Severity:</span>{{ row.severity }}'],
-    ['a newline', '<span class="rd-visually-hidden">Severity:</span>'],
-    ['an entity', '<span class="rd-visually-hidden">Severity:</span>&#32;'],
-  ])('reports a label separated by %s', (_what, line) => {
-    expect(runTogether([{ name: 'invented.vue', text: line }])).toHaveLength(1)
+    ['a newline', '<span class="rd-visually-hidden">Severity:</span>\n  {{ row.severity }}'],
+    ['an entity', '<span class="rd-visually-hidden">Severity:</span>&#32;\n  <span>x</span>'],
+    ['a wrapped opening tag', '<span\n  v-if="x"\n  class="rd-visually-hidden"\n>Size:</span>\n  <span>x</span>'],
+    ['a second class', '<span class="rd-meta rd-visually-hidden">Size:</span>\n  <span>x</span>'],
+  ])('reports a label separated by %s', (_what, text) => {
+    expect(runTogether([{ name: 'invented.vue', text }])).toHaveLength(1)
+  })
+
+  it('reports both labels on a line that carries two', () => {
+    const two = '<span class="rd-visually-hidden">A:</span>{{ one }}'
+      + '<span class="rd-visually-hidden">B:</span>{{ two }}'
+    expect(runTogether([{ name: 'invented.vue', text: two }])).toHaveLength(2)
+  })
+
+  it('accepts the one form that works', () => {
+    const good = `<span class="rd-visually-hidden">Severity:</span>${SEPARATOR}{{ row.severity }}`
+    expect(runTogether([{ name: 'invented.vue', text: good }])).toEqual([])
   })
 
   it('never lets a pill break across two lines', () => {

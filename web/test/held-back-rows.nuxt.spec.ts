@@ -145,8 +145,15 @@ describe('eight findings held back, which is what the complaint was about', () =
     const said = page.find('.held-row').element.textContent ?? ''
     expect(said).toMatch(/^Open [^:]+:\s/)
     expect(said).toMatch(/\sOpen$/)
-    /* No two parts of it run together: every colon and every cell has a space after it. */
-    expect(said).not.toMatch(/:\S/)
+    /*
+     * **The label's own colon, not any colon.** `not.toMatch(/:\S/)` was coupled to the
+     * fixture's prose rather than to the rule: it passed because no title in `FINDINGS`
+     * happens to contain one, and `path.php:44` in a title would have failed it for a
+     * reason with nothing to do with label separation.
+     */
+    const label = said.match(/^Open .*?:/)
+    expect(label).not.toBeNull()
+    expect(said.slice(label![0].length)).toMatch(/^\s/)
     /*
      * **Including the cells inside the slot**, which `OpenRow` cannot separate because it
      * does not know how many there are. Measured by reading a row's text out of the real
@@ -216,6 +223,12 @@ describe('eight findings held back, which is what the complaint was about', () =
     const page = await panel()
     const row = page.findAll('.held-row').find(one => one.text().includes('shortened'))!
     expect(row.find('.cell--line').text()).toContain('…')
+    /*
+     * **And the marker does not run into the line it is about.** Inside a cell rather than
+     * between two, which is why the row-level check above missed it: the first row is never
+     * a shortened one. Without the space the text read `…a session really…shortened`.
+     */
+    expect(row.find('.cell--line').element.textContent).toMatch(/…\s+shortened/)
     /* Twelve words and the ellipsis, which is what the row carries for F7. */
     expect(row.find('.cell--line').text().replace('shortened', '').trim().split(/\s+/))
       .toHaveLength(12)
