@@ -3742,6 +3742,41 @@ test.describe('a superseded round', () => {
     await expect(page.getByRole('button', { name: 'Sign off and post' })).toHaveCount(0)
   })
 
+  /**
+   * **A review nobody can sign off still has somewhere to say what a write did.**
+   *
+   * The page's notice was the last line of the sign-off card, and that card is the `v-else`
+   * of the one saying "Nothing to sign off" — so on exactly the reviews this block is about,
+   * no element on the page could draw it. Raised by a review of this branch.
+   *
+   * **Asserted through a save that succeeds**, which is the sharper half of it. The record
+   * takes an edit to a superseded round: the draft stays on it to be read, and `save_draft`
+   * refuses only an `approved` or a `posted` draft. So this is not a refusal going missing —
+   * it is the ordinary "Saved." that every other review on the desk gets, and that this one
+   * could not be told.
+   */
+  test('a draft nobody can sign off still says what a save did', async ({ page }) => {
+    const id = supersededReviewIds[0]!
+    await page.goto(`${seeded}reviews/${id}/draft`)
+    const aside = page.getByRole('complementary')
+    await expect(aside.getByText('Nothing to sign off')).toBeVisible()
+
+    await page.getByRole('tab', { name: 'Edit' }).click()
+    const editor = page.locator('textarea#draft-body')
+    const before = await editor.inputValue()
+    await editor.fill(`${before}\n\nA sentence saved on a round nobody can sign off.`)
+    await page.getByRole('button', { name: 'Save the draft' }).click()
+
+    /* The sentence the page could not say before: it is in the aside, outside that card. */
+    await expect(aside.getByText(/^Saved\./)).toBeVisible()
+
+    /* And the record took it, which is why a refusal is not what this asserts. */
+    const saved = cliJson(seededDatabase, ['draft', 'show', '--review', String(id)]) as unknown as {
+      draft: { body: string }
+    }
+    expect(saved.draft.body).toContain('nobody can sign off')
+  })
+
   test('the newer round’s draft page still offers the sign-off', async ({ page }) => {
     /* The converse: a guard that refused every round would refuse the one that can post. */
     await page.goto(`${seeded}reviews/${supersededReviewIds[1]}/draft`)
@@ -3976,7 +4011,11 @@ test.describe('state that belongs to one review', () => {
   }
 
   /**
-   * The review's draft is as this block seeded it: its own sentence, and nothing typed.
+   * The review's draft carries its own sentence and nothing that was typed and not saved.
+   *
+   * **Not "as this block seeded it"**, which is what this said and is false of the first
+   * review once the saving test has run: its body then carries a saved paragraph too. The
+   * assertion is a substring and an absence, and the sentence now says so.
    *
    * **Both halves, because `toContain` on its own cannot fail on an append.** These sites
    * read "nothing has been written to either review", and `toContain(SECOND_DRAFT)` passes
@@ -4368,12 +4407,21 @@ test.describe('state that belongs to one review', () => {
     await page.keyboard.press('Enter')
 
     /*
-     * **The positive assertion comes first, and it is what makes the negative one mean
-     * something.** `toHaveCount(0)` is answered by the first poll, so on its own it passes
-     * when the card is merely not there *yet* — which on the regression test for f64fec0
-     * would make the protection depend on Vue's scheduling rather than on the guard. The
-     * fragment reaching the address is the navigation having been handled. Raised by a
-     * review of this branch.
+     * **The exact address, and it is not a synchronisation barrier — read on.**
+     *
+     * The first version of this comment claimed the fragment reaching the address was the
+     * navigation having been handled. It is not: vue-router 5 attaches only `popstate` and
+     * `pagehide`, and its one `preventDefault` is `RouterLink`'s, so a plain anchor's
+     * fragment jump is performed by the browser and the router hears about it afterwards.
+     * The address is therefore answered before any guard runs. Measured, after a review of
+     * this branch disputed the claim: deleting this line and reverting the guard fails the
+     * test in exactly the same place, which is what shows the line was never carrying it.
+     *
+     * So the negative below is bounded by the expect timeout and nothing more — it holds
+     * because Vue renders the card well inside ten seconds, not because anything waits for
+     * it. What this line is still worth keeping for is the `goBack` leg: asserting the
+     * exact address rather than a regular expression is what makes "the fragment is gone"
+     * an assertion at all, and the pattern it replaced matched `…/draft#main` too.
      */
     await expect(page).toHaveURL(`${seeded}reviews/${first}/draft#main`)
     await expect(page.getByRole('button', { name: 'Keep editing' })).toHaveCount(0)
@@ -4419,7 +4467,7 @@ test.describe('state that belongs to one review', () => {
     await page.getByRole('button', { name: 'Discard the edits' }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${first}/code-review`)
 
-    /* And the draft is as the session left it. */
+    /* And nothing the developer typed reached the record. */
     untouched(first, FIRST_DRAFT)
   })
 })

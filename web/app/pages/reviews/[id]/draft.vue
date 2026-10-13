@@ -828,6 +828,22 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                           spellcheck="false"
                         />
                         <div class="editor-actions">
+                          <!--
+                            **Not gated on the status, and that is deliberate.** A review of
+                            DEV-960 proposed disabling this on a draft the server will refuse
+                            — `save_draft` refuses an `approved` or a `posted` one — on the
+                            argument that a button whose only outcome is a 409 is a refusal
+                            pretending to be an act.
+
+                            It is the opposite here, and DEV-862 asked for it by name:
+                            attempting the save is how the developer is *told* why, and the
+                            refusal keeps what they typed. `test/screens.nuxt.spec.ts`'s
+                            "keeps what the developer typed when a save is refused" is that
+                            criterion, and it fails against the gate — which is how the
+                            proposal was caught. What was actually wrong is that the sentence
+                            had nowhere to be drawn on a review nobody can sign off; that is
+                            fixed in the aside, not here.
+                          -->
                           <button
                             type="button"
                             class="rd-btn rd-btn--primary"
@@ -1211,12 +1227,6 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                     >
                       Save or discard your changes before signing off.
                     </DeskNotice>
-                    <DeskNotice
-                      v-if="notice"
-                      :tone="notice.tone"
-                    >
-                      {{ notice.text }}
-                    </DeskNotice>
                     <!--
                       **What happens after the press, kept current.** Everything above this
                       is the developer's to do; this is the only part of the panel that
@@ -1235,6 +1245,33 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                     <p class="rd-meta foot">
                       The review session posts it under your name, with no bot banner.
                     </p>
+                  </DeskCard>
+
+                  <!--
+                    **What the last write did, in the aside itself and not in a panel.**
+
+                    It was the last line of the sign-off card — and that card is the `v-else`
+                    of the one that says "Nothing to sign off", so on a review the record
+                    will not let anybody sign off, there was no element on this page that
+                    could draw a notice at all. The editor is not gated on status, and the
+                    server refuses a save on an `approved` or a `posted` draft, so a
+                    developer on a merged pull request could press Save the draft, be refused
+                    with a 409, and watch nothing happen: `said()` set a sentence that had
+                    nowhere to go. Raised by a review of this branch, which also caught that
+                    `stillReading()` had been written into the same blind spot while its own
+                    comment claimed the page always had somewhere to say this.
+
+                    It belongs out here because it is the page's notice, not the sign-off
+                    panel's: four of the five writes it reports on are in that panel, and the
+                    fifth — the save — is in the editor in the other column.
+                  -->
+                  <DeskCard
+                    v-if="notice"
+                    class="panel"
+                  >
+                    <DeskNotice :tone="notice.tone">
+                      {{ notice.text }}
+                    </DeskNotice>
                   </DeskCard>
                 </aside>
               </div>
