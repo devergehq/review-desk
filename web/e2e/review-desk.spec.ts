@@ -4103,10 +4103,15 @@ test.describe('state that belongs to one review', () => {
     await expect(page.getByRole('button', { name: 'Keep editing' })).toBeFocused()
     await expect(editor).toHaveValue(`${secondBody}\n\n${TYPED}`)
 
-    /* Keep editing: the address comes back, and not a character is lost. */
+    /*
+     * Keep editing: the address comes back, not a character is lost, and the editor is the
+     * tab showing — the card can come up over the Rendered preview, and a button named Keep
+     * editing that left the developer unable to see the editing would not be doing its job.
+     */
     await page.getByRole('button', { name: 'Keep editing' }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${second}/draft`)
     await expect(page.getByRole('button', { name: 'Keep editing' })).toHaveCount(0)
+    await expect(page.getByRole('tab', { name: 'Edit' })).toHaveAttribute('aria-selected', 'true')
     await expect(editor).toHaveValue(`${secondBody}\n\n${TYPED}`)
 
     /* Nothing has been written to either review. The sentence was never saved. */
@@ -4256,6 +4261,37 @@ test.describe('state that belongs to one review', () => {
 
     expect(bodyOf(first)).toBe(firstBody)
     expect(bodyOf(second)).toBe(secondBody)
+  })
+
+  /**
+   * **The card comes up over the Rendered preview too, and Keep editing opens the editor.**
+   *
+   * `dirty` is about what is in the textarea, not about which tab is showing: a developer
+   * who typed, switched back to read the preview and then pressed a link has unsaved edits
+   * and cannot see them. The card has to appear, and the way back has to be to the editor.
+   */
+  test('the card comes up from the preview, and Keep editing opens the editor', async ({
+    page,
+  }) => {
+    await page.goto(seeded)
+    await byTheTrail(page, first, 'draft')
+
+    await page.getByRole('tab', { name: 'Edit' }).click()
+    await page.locator('textarea#draft-body').fill(`${firstBody}\n\n${TYPED}`)
+
+    /* Back to reading it, which is where the card now has to find the developer. */
+    await page.getByRole('tab', { name: 'Rendered' }).click()
+    await expect(page.locator('textarea#draft-body')).toHaveCount(0)
+
+    await page.locator(`.trail a[href="/reviews/${first}/code-review"]`).click()
+    await expect(page.getByRole('button', { name: 'Keep editing' })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Keep editing' }).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${first}/draft`)
+    await expect(page.locator('textarea#draft-body'))
+      .toHaveValue(`${firstBody}\n\n${TYPED}`)
+
+    expect(bodyOf(first)).toBe(firstBody)
   })
 
   /**

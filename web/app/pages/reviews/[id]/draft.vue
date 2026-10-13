@@ -241,9 +241,17 @@ watch(leaving, async (waiting) => {
   keep.value?.focus()
 })
 
+/*
+ * **And it opens the editor, because that is what the button says.** `dirty` is about the
+ * textarea's contents and not about which tab is showing, so the card can come up over the
+ * Rendered preview — the developer typed, switched back to read it, and then pressed a
+ * link. Keeping the editing while leaving them on a tab that does not show it would be the
+ * control not doing the one thing it is named for.
+ */
 function keepEditing() {
   const waiting = leaving.value
   leaving.value = null
+  view.value = 'edit'
   waiting?.decide(false)
 }
 
