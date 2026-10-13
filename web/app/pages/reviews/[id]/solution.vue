@@ -167,6 +167,21 @@ function togglePart(index: number) {
   openPart.value = openPart.value === index ? null : index
 }
 
+/**
+ * Another review on this page starts with nothing open.
+ *
+ * `openPart` is an index into *this* review's parts, and every brief has a part 0: on a page
+ * that was reused across a review change, a row left open on review 50 would come back open
+ * on review 51 over a different part of a different change. DEV-960, and the watch is
+ * DEV-958's, whose own page was written with it.
+ *
+ * **It cannot fire as pages are keyed today, and is kept deliberately.** The measurement
+ * and the argument are in `draft.vue`, once.
+ */
+watch(reviewId, () => {
+  openPart.value = null
+})
+
 /* ------------------------------- Reading the brief ------------------------------- */
 
 function parts(brief: Brief): BriefPart[] {

@@ -76,6 +76,15 @@ const sendingBack = ref(false)
 const working = ref(false)
 const notice = ref<DeskNotice | null>(null)
 
+/*
+ * Whether the developer is being asked why the rest is going to a ticket. Up here with the
+ * rest of the page's own state rather than beside `ticketRest` below, as `sendingBack` and
+ * `note` are: the watch that clears every one of them when the review changes reads them
+ * all, and reads nothing declared after it.
+ */
+const ticketingRest = ref(false)
+const ticketNote = ref('')
+
 /**
  * The body the editor last loaded, which is what a save compares against.
  *
@@ -109,6 +118,194 @@ watch(
 )
 
 const dirty = computed(() => editing.value !== loadedBody.value)
+
+/* ---------------- Unsaved edits belong to the review they were typed on ---------------- */
+
+/**
+ * Another review on this page is read from its own record, with nothing carried over.
+ *
+ * ## It cannot fire today, and the reason is worth more than the watch
+ *
+ * **This page is not reused when the review in the address changes.** DEV-960 says it is,
+ * and that is true of a bare `<RouterView>` — it is not true of `<NuxtPage />` without a
+ * `pageKey`, which keys a page by its own path with the parameters interpolated. Changing
+ * the review changes the key, so Vue unmounts this component and mounts a fresh one.
+ *
+ * **Measured, not read off the documentation.** Against this file as it stood before the
+ * change: unsaved text typed on one review's draft, a history jump to another review's
+ * draft, and the arriving page had the Edit tab unselected and the text nowhere on it. The
+ * carry-over the issue describes — and with it the save into the wrong draft — does not
+ * happen here. What does happen is that the typing is destroyed without a word, which is
+ * what the guards below are for and the only part of this change that alters behaviour.
+ *
+ * ## So why it is here
+ *
+ * Because it is this page's own statement of what belongs to one review, and the thing that
+ * makes the page correct whichever way `NuxtPage` is keyed. A `pageKey`, or a
+ * `definePageMeta({ key })`, added later for any reason — the obvious one is stopping the
+ * remount flash between two rounds of a pull request — turns every ref below into exactly
+ * the defect the issue describes, and this watch is then what stands between review 50's
+ * prose and review 51's draft. **Necessary and not sufficient**, which the sentence here
+ * used to claim: `ofThisReview` below would be carrying the five writes, and the read that
+ * is still in flight would be drawing review 50's threads, held-back rows and sign-off under
+ * review 51's address. Raised by a review of this branch. It costs ten lines and it is
+ * already the house pattern: DEV-958's page carries the same watch.
+ *
+ * As written it fires on an instance that is about to be unmounted — the global route
+ * updates before Vue re-renders with the new key — so it is a no-op rather than dead code.
+ *
+ * **Both halves of the comparison are cleared, which is what would make the next read a
+ * first load**: they are equal, so the watch above seeds the editor from the arriving
+ * review's own body and `dirty` is false.
+ *
+ * `view` goes back to Rendered with the rest. `resource()` keeps the previous answer while
+ * the next read is in flight, so a page that *was* reused would still be drawing review 50
+ * under review 51's address; taking the textarea off screen is what would stop something
+ * typed in that window being saved against the review the page had left.
+ *
+ * `working` is deliberately not here. It is a write in flight rather than a view of a
+ * review, and clearing it would re-enable the controls a running write has disabled.
+ */
+watch(reviewId, () => {
+  editing.value = ''
+  loadedBody.value = ''
+  event.value = 'request_changes'
+  view.value = 'rendered'
+  note.value = ''
+  sendingBack.value = false
+  ticketNote.value = ''
+  ticketingRest.value = false
+  notice.value = null
+})
+
+/**
+ * The navigation waiting on the developer's choice, or null when none is.
+ *
+ * One ref, holding the pending navigation's own resolve. Its being non-null **is** "a
+ * choice is being asked for", so there is no second flag for the card to read that could
+ * fall out of step with the navigation it is about.
+ */
+const leaving = ref<{ decide: (go: boolean) => void } | null>(null)
+
+/**
+ * Ask, in the page, before unsaved edits are left behind — and make the navigation wait.
+ *
+ * **This is the part of DEV-960 that changes what the page does.** The watch above cannot
+ * fire, for the reason it states; what was really wrong is that leaving this page threw the
+ * developer's typing away and said nothing — the component is unmounted either way, and an
+ * unsaved draft is not on the record anywhere.
+ *
+ * **In the page and not in a browser dialog**, which is DEV-960's own wording and is also
+ * the only version that can name the review: `beforeunload` shows the browser's sentence,
+ * not ours. The guard returns a promise, so the navigation is held open until a button is
+ * pressed rather than being cancelled and re-offered.
+ *
+ * **The guards run on the live instance**, before the navigation is confirmed and so before
+ * any key change can take the component down. That is why they work where the watch does
+ * not.
+ *
+ * **Nothing is done for a full reload, deliberately.** The only tool for one is
+ * `beforeunload`, and it is the dialog this is written to avoid. It would also buy nothing:
+ * a reload re-mounts this page with an empty editor and re-seeds it from the record, so no
+ * typed text survives to be applied to a different review. What a reload loses is the edit
+ * itself, which is what a reload has always meant.
+ *
+ * A second navigation while the card is up resolves the first as a refusal. The router has
+ * already abandoned it, and a promise nobody resolves is a navigation that never settles.
+ */
+function askBeforeLeaving(): boolean | Promise<boolean> {
+  if (!dirty.value) return true
+  leaving.value?.decide(false)
+  return new Promise<boolean>((decide) => {
+    leaving.value = { decide }
+  })
+}
+
+/*
+ * **Both guards, because the two ways out are different route changes.** Another review's
+ * draft is an *update* — the same page record with a new parameter, which is the route the
+ * issue was raised about — and any other page is a *leave*. Neither fires for the other.
+ *
+ * **And the path has to change, or it is not a way out at all.** The layout's first control
+ * is `<a href="#main">Skip to the page</a>`, and vue-router 5 sees a fragment jump from a
+ * plain anchor as a navigation on this route: without this test, a keyboard user with
+ * unsaved edits met the card every time they skipped the header, and the guard had turned an
+ * accessibility control into an interruption. Measured, not reasoned about — the first
+ * version of this was `() => askBeforeLeaving()` and the test for it failed.
+ *
+ * `to.path`, so a query or a fragment on this same page is not asked about and a Back out of
+ * one is not either. What the card is for is the page going away, which is the only thing
+ * that takes the editor with it.
+ */
+onBeforeRouteUpdate((to, from) => (to.path === from.path ? true : askBeforeLeaving()))
+onBeforeRouteLeave((to, from) => (to.path === from.path ? true : askBeforeLeaving()))
+
+const keep = useTemplateRef<HTMLButtonElement>('keep')
+
+/*
+ * **Focused when it appears**, and on Keep editing rather than on Discard. The card is
+ * drawn at the top of a page that is often scrolled past it, so without this the developer
+ * presses a link, nothing appears to happen, and the answer is above the fold. The safe
+ * choice takes the focus because Enter is the key a keyboard reaches for first.
+ */
+watch(leaving, async (waiting) => {
+  if (!waiting) return
+  await nextTick()
+  keep.value?.scrollIntoView({ block: 'center' })
+  keep.value?.focus()
+})
+
+/*
+ * **And it opens the editor, because that is what the button says.** `dirty` is about the
+ * textarea's contents and not about which tab is showing, so the card can come up over the
+ * Rendered preview — the developer typed, switched back to read it, and then pressed a
+ * link. Keeping the editing while leaving them on a tab that does not show it would be the
+ * control not doing the one thing it is named for.
+ */
+function keepEditing() {
+  const waiting = leaving.value
+  leaving.value = null
+  view.value = 'edit'
+  waiting?.decide(false)
+}
+
+/*
+ * Discard lets the navigation through and clears nothing itself: arriving at another review
+ * runs the watch above, and leaving this page altogether takes the component with it. A
+ * third copy of the same clearing here would be a third place for it to be got wrong.
+ */
+function discardEdits() {
+  const waiting = leaving.value
+  leaving.value = null
+  waiting?.decide(true)
+}
+
+/*
+ * **A save landing while the card is up answers it, and the navigation goes through.**
+ *
+ * `dirty` can go false underneath the card. Type, press Save the draft, and press a link
+ * while the PUT is in flight: the guard sees unsaved edits because `loadedBody` has not been
+ * refreshed yet, the card comes up, and then the write's own refresh lands and there is
+ * nothing unsaved left to ask about. The card was then asking about edits that are on the
+ * record — Discard the edits discarding nothing, Keep editing holding the developer back
+ * for no reason either of them could see.
+ *
+ * **Answered here and deliberately not with `v-if="leaving && dirty"`.** That is the obvious
+ * version and it is the one that wedges the page: it takes away the only two controls that
+ * can resolve the promise, leaving a navigation nobody can settle and a page nobody can
+ * leave. Raised by a review of this branch, which named both the sequence and the trap.
+ *
+ * **It also covers the developer undoing their own typing while the card is up**, which the
+ * card does not prevent — the editor is still on screen behind it. They pressed the link,
+ * so the navigation is one they asked for; what the card asked about has stopped existing,
+ * and holding them on the page until they answer a question with no subject would be the
+ * worse of the two. So the navigation goes through on the keystroke rather than on either
+ * button, and that is the intended reading of it.
+ */
+watch(dirty, (unsaved) => {
+  if (unsaved || !leaving.value) return
+  discardEdits()
+})
 
 /**
  * The aside's two derived lists, computed rather than called from the template.
@@ -208,9 +405,45 @@ function said(result: WriteResult): boolean {
   return result.ok
 }
 
+/**
+ * Whether the draft on screen is the review in the address.
+ *
+ * **Every write on this page is gated on it, not only the body.** `resource()` keeps the
+ * previous answer while the next read is in flight, so a page that was reused across a
+ * review change would draw review 50 under review 51's address for the length of that
+ * read — and each of these five reads the review off the draft it is drawing.
+ *
+ * It began as one line in `save()`, on the argument that writing a body against the wrong
+ * review is the one thing this page must never do. That was true of the body and not of
+ * the rest: a **sign-off** is the worse write of the two, because the session posts what it
+ * finds approved, and `approve`, `sendBack`, `requestNitTicket` and `ticketRestAndApprove`
+ * all took the id the same way. Raised by a review of this branch.
+ *
+ * None of it can fire as the page is keyed — see the watch above — which is why it is four
+ * words at each call rather than a mechanism.
+ */
+function ofThisReview(data: DraftDetail): boolean {
+  return data.draft.review_id === reviewId.value
+}
+
+/**
+ * What a control says when it is pressed between two reviews.
+ *
+ * **Said rather than ignored.** A guard that returns silently leaves the developer pressing
+ * a live button that does nothing, which reads as the page being broken — and the page
+ * already has one place for a sentence about a write that did not happen.
+ */
+function stillReading(): void {
+  notice.value = {
+    tone: 'problem',
+    text: 'This review is still being read. Try that again in a moment.',
+  }
+}
+
 async function save() {
   const data = detail.data.value
   if (!data) return
+  if (!ofThisReview(data)) return stillReading()
   working.value = true
   const result = await desk.saveDraft(data.draft.review_id, loadedBody.value, editing.value)
   working.value = false
@@ -220,6 +453,7 @@ async function save() {
 async function approve() {
   const data = detail.data.value
   if (!data) return
+  if (!ofThisReview(data)) return stillReading()
   working.value = true
   said(await desk.approveDraft(data.draft.review_id, event.value))
   working.value = false
@@ -228,6 +462,7 @@ async function approve() {
 async function sendBack() {
   const data = detail.data.value
   if (!data) return
+  if (!ofThisReview(data)) return stillReading()
   working.value = true
   const result = await desk.sendBackDraft(data.draft.review_id, note.value)
   working.value = false
@@ -302,14 +537,11 @@ watch(
 async function fileTicket() {
   const data = detail.data.value
   if (!data) return
+  if (!ofThisReview(data)) return stillReading()
   working.value = true
   said(await desk.requestNitTicket(data.draft.review_id))
   working.value = false
 }
-
-/** Whether the developer is being asked why the rest is going to a ticket. */
-const ticketingRest = ref(false)
-const ticketNote = ref('')
 
 /**
  * "Ticket what is left, and sign off" — one act, and a sign-off.
@@ -334,6 +566,7 @@ const ticketNote = ref('')
 async function ticketRest() {
   const data = detail.data.value
   if (!data) return
+  if (!ofThisReview(data)) return stillReading()
   working.value = true
   const result = await desk.ticketRestAndApprove(data.draft.review_id, ticketNote.value)
   working.value = false
@@ -435,6 +668,55 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
         :headline="heading"
         :sub="detail.data.value ? statusLine(detail.data.value) : null"
       >
+        <!--
+          **Unsaved edits belong to the review they were typed on**, and the navigation
+          that would leave them behind is waiting on this card.
+
+          **Above the draft's own `DeskState` on purpose.** A card drawn inside it would not
+          be there when `GET …/draft` refuses or is in flight, and a guard that blocks on a
+          control the page is not drawing is a page with no way off it. The review's
+          `DeskState` outside is not the same hazard: it keeps the last good answer and draws
+          a failure *over* it, so the frame is still here — and a review that never read at
+          all has no draft to have edited.
+
+          **One sentence for two guards, so it has to be true of both.** It read "They
+          cannot be carried to another review", which is the reason for the *update* guard
+          and no reason at all for the *leave* guard — the trail's Code review link involves
+          one review, and what is at stake there is that leaving the page discards the
+          typing. Both are said now, in that order. Raised by a review of this branch.
+
+          The review is named by its pull request, as every other sentence on these screens
+          names one, so that the choice is about a review and not about "this page".
+        -->
+        <DeskCard
+          v-if="leaving"
+          class="unsaved"
+          @keyup.escape="keepEditing"
+        >
+          <DeskNotice tone="problem">
+            You have unsaved edits to this review’s draft, #{{ owner.review.pr }}. Leaving
+            this page discards them, and they are never carried to another review: keep
+            editing them here, or discard them.
+          </DeskNotice>
+          <div class="unsaved-actions">
+            <button
+              ref="keep"
+              type="button"
+              class="rd-btn rd-btn--primary"
+              @click="keepEditing"
+            >
+              Keep editing
+            </button>
+            <button
+              type="button"
+              class="rd-btn"
+              @click="discardEdits"
+            >
+              Discard the edits
+            </button>
+          </div>
+        </DeskCard>
+
         <!--
           No draft, said inside the frame. This is the whole reason step 6 can be a link
           unconditionally: the trail is above this sentence, so a reader who came here from
@@ -546,6 +828,22 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                           spellcheck="false"
                         />
                         <div class="editor-actions">
+                          <!--
+                            **Not gated on the status, and that is deliberate.** A review of
+                            DEV-960 proposed disabling this on a draft the server will refuse
+                            — `save_draft` refuses an `approved` or a `posted` one — on the
+                            argument that a button whose only outcome is a 409 is a refusal
+                            pretending to be an act.
+
+                            It is the opposite here, and DEV-862 asked for it by name:
+                            attempting the save is how the developer is *told* why, and the
+                            refusal keeps what they typed. `test/screens.nuxt.spec.ts`'s
+                            "keeps what the developer typed when a save is refused" is that
+                            criterion, and it fails against the gate — which is how the
+                            proposal was caught. What was actually wrong is that the sentence
+                            had nowhere to be drawn on a review nobody can sign off; that is
+                            fixed in the aside, not here.
+                          -->
                           <button
                             type="button"
                             class="rd-btn rd-btn--primary"
@@ -929,12 +1227,6 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                     >
                       Save or discard your changes before signing off.
                     </DeskNotice>
-                    <DeskNotice
-                      v-if="notice"
-                      :tone="notice.tone"
-                    >
-                      {{ notice.text }}
-                    </DeskNotice>
                     <!--
                       **What happens after the press, kept current.** Everything above this
                       is the developer's to do; this is the only part of the panel that
@@ -953,6 +1245,33 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                     <p class="rd-meta foot">
                       The review session posts it under your name, with no bot banner.
                     </p>
+                  </DeskCard>
+
+                  <!--
+                    **What the last write did, in the aside itself and not in a panel.**
+
+                    It was the last line of the sign-off card — and that card is the `v-else`
+                    of the one that says "Nothing to sign off", so on a review the record
+                    will not let anybody sign off, there was no element on this page that
+                    could draw a notice at all. The editor is not gated on status, and the
+                    server refuses a save on an `approved` or a `posted` draft, so a
+                    developer on a merged pull request could press Save the draft, be refused
+                    with a 409, and watch nothing happen: `said()` set a sentence that had
+                    nowhere to go. Raised by a review of this branch, which also caught that
+                    `stillReading()` had been written into the same blind spot while its own
+                    comment claimed the page always had somewhere to say this.
+
+                    It belongs out here because it is the page's notice, not the sign-off
+                    panel's: four of the five writes it reports on are in that panel, and the
+                    fifth — the save — is in the editor in the other column.
+                  -->
+                  <DeskCard
+                    v-if="notice"
+                    class="panel"
+                  >
+                    <DeskNotice :tone="notice.tone">
+                      {{ notice.text }}
+                    </DeskNotice>
                   </DeskCard>
                 </aside>
               </div>
@@ -986,6 +1305,17 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
 .status--decided {
   color: var(--rd-accent-dark);
   font-weight: 500;
+}
+
+.unsaved {
+  max-width: var(--rd-measure);
+}
+
+.unsaved-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 0;
 }
 
 .sent-back {
