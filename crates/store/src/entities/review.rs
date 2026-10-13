@@ -344,7 +344,7 @@ impl Store {
     /// `NEWEST_ROUND` states for the queue and it holds for the same reason: a round number
     /// that fell back to an earlier round the moment the newest one was dismissed would make
     /// the dismissed round's own head the one that moves next.
-    fn newest_round(&self, repo: &str, pr: i64) -> Result<Option<Review>> {
+    pub(crate) fn newest_round(&self, repo: &str, pr: i64) -> Result<Option<Review>> {
         // Its callers normalise already; the two lookups below do it again for themselves,
         // which is the rule this crate keeps rather than an argument about who called whom.
         let Some(round) = self.latest_round(repo, pr)? else {
@@ -1112,8 +1112,22 @@ impl Store {
     pub fn delete_review(&self, id: i64) -> Result<Review> {
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
         let review = self.get_review(id)?;
+        self.refuse_if_started(&review)?;
+        self.remove_review(id)?;
+        tx.commit()?;
 
-        let work = self.review_work(id)?;
+        Ok(review)
+    }
+
+    /// Refuse a removal of a review that holds something the developer would lose.
+    ///
+    /// **One refusal, two callers**, which is why it is a function: [`Store::delete_review`]
+    /// and [`Store::fold_round`] remove a review row, and a fold that judged this for itself
+    /// could offer to fold a round the delete would refuse. The words are the ones the
+    /// refusal is read in — "review 7 holds a brief and 4 findings" — and
+    /// [`ReviewWork::in_words`] composes them.
+    pub(crate) fn refuse_if_started(&self, review: &Review) -> Result<()> {
+        let work = self.review_work(review.id)?;
         if work.started() {
             return Err(StoreError::ReviewStarted {
                 review_id: review.id,
@@ -1121,12 +1135,16 @@ impl Store {
                 lost: work.lost(),
             });
         }
+        Ok(())
+    }
 
+    /// Remove the review row, with everything under it cascading.
+    ///
+    /// Private and unguarded: the two callers check first, inside their own transaction.
+    pub(crate) fn remove_review(&self, id: i64) -> Result<()> {
         self.conn
             .execute("DELETE FROM reviews WHERE id = ?1", params![id])?;
-        tx.commit()?;
-
-        Ok(review)
+        Ok(())
     }
 
     /// Refuse an act that needs an agent afterwards, on a review the developer dismissed.

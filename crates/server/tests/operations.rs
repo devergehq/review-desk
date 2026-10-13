@@ -1,4 +1,4 @@
-//! Every one of the contract's twenty-four operations is routed and answers.
+//! Every one of the contract's twenty-six operations is routed and answers.
 //!
 //! This walks `Operation::ALL` rather than listing routes by hand, so an operation added
 //! to the contract and not to the server fails here instead of 404ing in a browser.
@@ -10,10 +10,10 @@ use std::collections::BTreeSet;
 use review_desk_server::route::Operation;
 use serde_json::Value;
 
-/// The twenty-four operations, as `contract/README.md` counts them.
+/// The twenty-six operations, as `contract/README.md` counts them.
 #[test]
-fn the_contract_has_twenty_four_operations() {
-    assert_eq!(Operation::ALL.len(), 24);
+fn the_contract_has_twenty_six_operations() {
+    assert_eq!(Operation::ALL.len(), 26);
 }
 
 /// The contract's own `paths` and this crate's `Operation` name the same set.
@@ -253,12 +253,13 @@ pub fn call(
         .replace("/rules/1/", &format!("/rules/{}/", seeded.rule_id));
     let (method, path) = route.split_once(' ').expect("a method and a path");
 
-    // **Two operations cannot be asked of the seeded review as it stands**, and that is
+    // **Three operations cannot be asked of the seeded review as it stands**, and that is
     // the record being right rather than the harness being awkward: the seeded review
-    // holds a brief, findings and a draft, so a delete of it is correctly refused, and it
-    // is not dismissed, so a restore of it is correctly refused too. Each is pointed at a
-    // review it can succeed on, so that this test goes on being about whether the
-    // operation is routed and answers.
+    // holds a brief, findings and a draft, so a delete of it is correctly refused; it is
+    // not dismissed, so a restore of it is correctly refused too; and it is its pull
+    // request's only round, so folding it is correctly refused — a round folds into a newer
+    // one, and it has none. Each is pointed at a review it can succeed on, so that this
+    // test goes on being about whether the operation is routed and answers.
     let path = match operation {
         // A review of its own, with nothing written to it: what the Locus dispatcher
         // leaves behind when it records a request, and the only thing a delete is for.
@@ -277,6 +278,33 @@ pub fn call(
                 .dismiss_review(seeded.review_id, "the pull request was closed unmerged")
                 .expect("dismiss it so there is something to restore");
             path.to_string()
+        }
+        // An extra unposted round holding nothing, which is the only thing a fold is for.
+        // Written through `create_review` because `open_review` cannot make one any more —
+        // since DEV-962 a new commit on an unposted round moves it — and the record this
+        // tidy exists for was written by the rule before that one.
+        Operation::FoldRound { .. } => {
+            let extra = harness
+                .store
+                .create_review(review_desk_store::NewReview {
+                    repo: "acme/portal".to_string(),
+                    pr: 778,
+                    head_sha: "4d9464f".to_string(),
+                    round: 1,
+                    ..Default::default()
+                })
+                .expect("an extra round, as the old rule left them");
+            harness
+                .store
+                .create_review(review_desk_store::NewReview {
+                    repo: "acme/portal".to_string(),
+                    pr: 778,
+                    head_sha: "a41c9e2".to_string(),
+                    round: 2,
+                    ..Default::default()
+                })
+                .expect("and the newer round it folds into");
+            format!("/reviews/{}/fold", extra.id)
         }
         _ => path.to_string(),
     };

@@ -1089,6 +1089,40 @@ fn age(path: &Path, rule_id: i64) {
 // holds; converting them is the server's job at its own boundary.
 // ---------------------------------------------------------------------------
 
+/// The tidy's proposal, as the server serialises it.
+fn duplicate_rounds_document(store: &Store, repo: Option<&str>) -> Value {
+    let found = store.duplicate_rounds(repo).expect("the proposal");
+    json!({
+        "pull_requests": found
+            .iter()
+            .map(|one| json!({
+                "repo": one.repo,
+                "pr": one.pr,
+                "title": one.title,
+                "newest": {
+                    "review_id": one.newest.review_id,
+                    "round": one.newest.round,
+                    "head_sha": one.newest.head_sha,
+                },
+                "extras": one
+                    .extras
+                    .iter()
+                    .map(|extra| json!({
+                        "review_id": extra.review_id,
+                        "round": extra.round,
+                        "head_sha": extra.head_sha,
+                        "created_at": extra.created_at,
+                        "holds": extra.holds,
+                        "act": extra.act,
+                    }))
+                    .collect::<Vec<_>>(),
+            }))
+            .collect::<Vec<_>>(),
+        "pull_requests_affected": found.len(),
+        "extra_rounds": found.iter().map(|one| one.extras.len()).sum::<usize>(),
+    })
+}
+
 fn review_document(review: &Review) -> Value {
     json!({
         "id": review.id,
@@ -2506,6 +2540,50 @@ fn every_response_example_can_be_produced_from_the_store() {
         }),
     );
 
+    // **The tidy's two, on a pull request of their own.** Written through `create_review`
+    // because `open_review` cannot make a second unposted round since DEV-962 — which is
+    // the rule the tidy exists to clean up after — and the fold has to come straight after
+    // the proposal that names it, because folding changes what the proposal says.
+    let mut extras = Vec::new();
+    for (round, head, at) in [(1, "3f9c2ab", 17), (2, "9d02e71", 20), (3, "1b7c4e0", 22)] {
+        let _ = at;
+        extras.push(
+            store
+                .create_review(review_desk_store::NewReview {
+                    repo: "acme/portal".to_string(),
+                    pr: 414,
+                    head_sha: head.to_string(),
+                    round,
+                    title: Some("Retry failed webhook deliveries".to_string()),
+                    ..Default::default()
+                })
+                .expect("a round, as the rule before DEV-962 left them")
+                .id,
+        );
+    }
+    store
+        .put_draft(
+            extras[0],
+            NewDraft::ready("One finding on the retry path.\n"),
+        )
+        .expect("round 1 holds a draft, so the tidy would dismiss it rather than fold it");
+    fields += check(
+        "listDuplicateRounds",
+        &duplicate_rounds_document(&store, None),
+    );
+    fields += check(
+        "foldRound",
+        &json!({
+            "folded": review_document(
+                &store
+                    .fold_round(extras[1])
+                    .expect("round 2 holds nothing, so it folds")
+                    .folded,
+            ),
+            "into": review_document(&store.get_review(extras[2]).expect("the newest round")),
+        }),
+    );
+
     // **The three removals come last, and deliberately**: the first two write to the
     // seeded review and the third deletes a review outright, so anything above them
     // would be checking a record they had moved. Each is the document the server answers
@@ -2538,7 +2616,7 @@ fn every_response_example_can_be_produced_from_the_store() {
     );
 
     // Said out loud, so that a refactor which quietly stops checking most of the
-    // contract fails here rather than passing. The twenty-four examples carry well over
+    // contract fails here rather than passing. The twenty-six examples carry well over
     // three hundred leaf fields between them.
     assert!(
         fields >= 300,
@@ -2575,6 +2653,8 @@ fn every_response_example_is_checked() {
         "dismissReview",
         "restoreReview",
         "deleteReview",
+        "listDuplicateRounds",
+        "foldRound",
     ]
     .into_iter()
     .collect();

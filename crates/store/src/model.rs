@@ -2819,6 +2819,70 @@ pub struct HeadUpdates {
     pub updates: Vec<HeadUpdate>,
 }
 
+string_enum! {
+    /// What the duplicate-round tidy would do with one extra unposted round.
+    ///
+    /// **Two acts, because two kinds of row are on the record.** DEV-962: the tidy "folds
+    /// them into the newest (or dismisses them); nothing is deleted without confirmation".
+    /// Which one a round gets is [`ReviewWork::started`]'s question, and nothing else:
+    /// holding a brief, a finding, a draft or a posted review is work a delete would lose.
+    TidyAct as "act" {
+        /// It holds nothing a delete would lose, so its head is recorded on the newest
+        /// round and the empty row goes.
+        Fold => "fold",
+        /// It holds work, so it is kept and hidden instead — which is what a dismissal is
+        /// for, and the developer's reason goes on it.
+        Dismiss => "dismiss",
+    }
+}
+
+/// A round, named by the three things that identify it on a screen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoundRef {
+    pub review_id: i64,
+    pub round: i64,
+    pub head_sha: String,
+}
+
+/// One extra unposted round, with what it holds and what the tidy would do with it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExtraRound {
+    pub review_id: i64,
+    pub round: i64,
+    pub head_sha: String,
+    pub created_at: Timestamp,
+    /// What it holds, in the words a refused delete is composed from: "a brief and 4
+    /// findings", or "nothing". **The screen says this before the developer agrees to
+    /// anything** — it is the sentence that makes a dismissal the obvious choice over a
+    /// fold, and the tidy is not allowed to ask for a decision without it.
+    pub holds: String,
+    pub act: TidyAct,
+}
+
+/// One pull request's extra unposted rounds, and the round they would fold into.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DuplicateRounds {
+    pub repo: String,
+    pub pr: i64,
+    /// The pull request's title, from whichever of its rounds holds one.
+    pub title: Option<String>,
+    /// The newest round: the one that can still post, and the one the others fold into.
+    pub newest: RoundRef,
+    /// The extra rounds, oldest first. Never empty — a pull request with none is not in
+    /// the answer at all.
+    pub extras: Vec<ExtraRound>,
+}
+
+/// A folded round: the row that went, and the round its head was recorded on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FoldedRound {
+    /// The round that was folded away. Nothing can read it again, and a screen has a line
+    /// to draw about what went.
+    pub folded: Review,
+    /// The newest round, which now carries the folded round's head as an update.
+    pub into: Review,
+}
+
 /// A finding with the three things about it that are derived from the carry chain rather
 /// than stored.
 ///

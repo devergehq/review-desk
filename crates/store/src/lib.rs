@@ -52,16 +52,17 @@ pub use crate::migrations::newest_version;
 pub use crate::model::{
     now, Actor, AuthorResponse, Brief, BriefOption, Carryable, DecidedBy, Decision, DecisionMade,
     DiffAtHead, Disposition, Draft, DraftHandover, DraftLint, DraftSection, DraftSectionKind,
-    DraftStatus, DraftThread, Finding, FindingAnchor, FindingCarry, FindingDecision, FindingHunk,
-    FindingInRound, FindingRef, FullReview, HeadUpdate, HeadUpdateKind, HeadUpdates, HunkLine,
-    HunkLineMarker, LayerFact, LeftTheDesk, NewBrief, NewDraft, NewDraftSection, NewFinding,
-    NewLayerFact, NewOutcome, NewReview, NewRoundCommit, NewRule, NitTicket, NitTicketStatus,
-    NotForSigning, OpenedAction, OpenedReview, OutOfPlay, Outcome, OutcomeKind, PostedReview,
-    PrState, RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewEvent, ReviewFacts,
-    ReviewLayer, ReviewLayerName, ReviewLayerRun, ReviewLayerState, ReviewLinks, ReviewStep,
-    ReviewTimings, ReviewWork, ReviewsShown, RoundCommit, RoundStatus, RoundStatusCounts,
-    RoundSummary, Rule, RuleCounts, RuleException, RuleScope, RuleStage, RulesSummary, Severity,
-    SignOff, Timestamp, Verification, WorkFilter, WorkItem, WorkKind, ACTIVE_RULES_CAP,
+    DraftStatus, DraftThread, DuplicateRounds, ExtraRound, Finding, FindingAnchor, FindingCarry,
+    FindingDecision, FindingHunk, FindingInRound, FindingRef, FoldedRound, FullReview, HeadUpdate,
+    HeadUpdateKind, HeadUpdates, HunkLine, HunkLineMarker, LayerFact, LeftTheDesk, NewBrief,
+    NewDraft, NewDraftSection, NewFinding, NewLayerFact, NewOutcome, NewReview, NewRoundCommit,
+    NewRule, NitTicket, NitTicketStatus, NotForSigning, OpenedAction, OpenedReview, OutOfPlay,
+    Outcome, OutcomeKind, PostedReview, PrState, RepoSummary, Review, ReviewAtLayer, ReviewAtStep,
+    ReviewEvent, ReviewFacts, ReviewLayer, ReviewLayerName, ReviewLayerRun, ReviewLayerState,
+    ReviewLinks, ReviewStep, ReviewTimings, ReviewWork, ReviewsShown, RoundCommit, RoundRef,
+    RoundStatus, RoundStatusCounts, RoundSummary, Rule, RuleCounts, RuleException, RuleScope,
+    RuleStage, RulesSummary, Severity, SignOff, TidyAct, Timestamp, Verification, WorkFilter,
+    WorkItem, WorkKind, ACTIVE_RULES_CAP,
 };
 /// Whether a string is a repository name — the one copy of that rule. See
 /// [`normalise::is_repo_name`].

@@ -348,6 +348,126 @@ paths:
         '500':
           $ref: '#/components/responses/StoreUnavailable'
 
+  /duplicate-rounds:
+    get:
+      operationId: listDuplicateRounds
+      tags: [review]
+      summary: Pull requests with more than one unposted round, and what to do about each
+      description: |
+        **The one-off tidy, and it only shows.** DEV-962 asks for a tidy that "shows each
+        pull request's extra unposted rounds and folds them into the newest (or dismisses
+        them); nothing is deleted without confirmation" — so this is a read, and the two
+        acts it proposes are `POST /reviews/{reviewId}/fold` and
+        `POST /reviews/{reviewId}/dismiss`, both the developer's. There is no command line
+        path to any of the three.
+
+        **An extra round is one that is not the newest and has not posted.** A posted round
+        is a review that happened rather than a duplicate of anything, the newest round is
+        what the others fold into, and a round the developer has already dismissed is left
+        out — offering to tidy it would be asking them to decide the same thing twice.
+
+        **Nothing new can appear here.** Since DEV-962 a round opens only when the newest one
+        has posted, so a pull request cannot grow a second unposted round. What this answers
+        about is the record as it stood when the rule changed: on 13 October 2026 one pull
+        request was in the queue twice and another had reached round 4 with no post at all.
+
+        Newest pull request first, and each one's extras oldest round first — the order they
+        were opened in.
+      parameters:
+        - name: repo
+          in: query
+          required: false
+          description: One repository, as `owner/repo`. Omit it for every repository.
+          schema: { $ref: '#/components/schemas/RepoName' }
+      responses:
+        '200':
+          description: Every pull request with extra unposted rounds.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [pull_requests, pull_requests_affected, extra_rounds]
+                properties:
+                  pull_requests:
+                    type: array
+                    items: { $ref: '#/components/schemas/DuplicateRounds' }
+                  pull_requests_affected:
+                    type: integer
+                    minimum: 0
+                    description: |
+                      How many pull requests are in `pull_requests`. Served rather than
+                      counted by the screen so that the heading and the rows cannot
+                      disagree.
+                  extra_rounds:
+                    type: integer
+                    minimum: 0
+                    description: Every extra round, across every pull request.
+        '400':
+          description: The `repo` filter is not a repository.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
+  /reviews/{reviewId}/fold:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+    post:
+      operationId: foldRound
+      tags: [review]
+      summary: Fold an extra unposted round into its pull request's newest round
+      description: |
+        **The developer's act, on their confirmation, and only here.** It does what
+        `review open` would have done had DEV-962's rule existed when the commit arrived:
+        the folded round's head is recorded against the newest round as a `folded` head
+        update, and the empty row goes. So the history survives the row — "the request was
+        at `4d9464f` before it was at `a41c9e2`" stays answerable — which is the difference
+        between folding and deleting.
+
+        **Offered only for a round that holds nothing**: no brief, no finding, no draft and
+        no review posted on GitHub. `GET /duplicate-rounds` says `act: "dismiss"` for the
+        rest, and this refuses them with the same words a refused delete uses — "review 7
+        holds a brief and 4 findings" — because a round holding work is kept and hidden
+        rather than removed.
+
+        The newest round itself is refused, and so is a round that posted: a posted round is
+        a review that happened, and folding it would delete the record that a review was
+        posted on that pull request at all.
+      responses:
+        '200':
+          description: |
+            The round that went and the round it folded into. The first is served because
+            nothing can read it again and the screen has a line to draw about what was
+            removed.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [folded, into]
+                properties:
+                  folded: { $ref: '#/components/schemas/Review' }
+                  into: { $ref: '#/components/schemas/Review' }
+        '400':
+          description: |
+            It is the newest round, or it posted. Neither is a duplicate of anything.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            It holds a brief, a finding, a draft or a posted review. The error names what
+            it holds, and the screen offers a dismissal instead.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
   /reviews/{reviewId}/restore:
     parameters:
       - $ref: '#/components/parameters/ReviewId'
@@ -4635,6 +4755,91 @@ components:
         accepted: { type: integer, minimum: 0 }
         withdrawn: { type: integer, minimum: 0 }
         ticketed: { type: integer, minimum: 0 }
+
+    RoundRef:
+      type: object
+      additionalProperties: false
+      required: [review_id, round, head_sha]
+      description: A round, named by the three things that identify it on a screen.
+      properties:
+        review_id: { type: integer, format: int64, minimum: 1 }
+        round: { type: integer, format: int64, minimum: 1 }
+        head_sha:
+          type: string
+          pattern: '^[0-9a-f]{7,40}$'
+
+    TidyAct:
+      type: string
+      enum: [fold, dismiss]
+      description: |
+        What the tidy would do with one extra unposted round.
+
+        **Two acts, because two kinds of row are on the record.** `fold` is for a round
+        holding nothing a delete would lose: its head is recorded on the newest round and
+        the empty row goes. `dismiss` is for one holding a brief, a finding, a draft or a
+        posted review — it is kept and hidden instead, with the developer's reason on it,
+        which is the whole argument for choosing a dismissal over a delete.
+
+        Which one a round gets is `delete_review`'s own question, so the screen cannot offer
+        a fold the API would refuse.
+
+    ExtraRound:
+      type: object
+      additionalProperties: false
+      required: [review_id, round, head_sha, created_at, holds, act]
+      description: One extra unposted round, with what it holds and what would happen to it.
+      properties:
+        review_id: { type: integer, format: int64, minimum: 1 }
+        round: { type: integer, format: int64, minimum: 1 }
+        head_sha:
+          type: string
+          pattern: '^[0-9a-f]{7,40}$'
+        created_at: { type: string, format: date-time }
+        holds:
+          type: string
+          minLength: 1
+          description: |
+            What it holds, in the words a refused delete is composed from — "a brief and 4
+            findings" — or **"nothing"**.
+
+            **The screen says this before the developer agrees to anything.** It is the
+            sentence that makes a dismissal the obvious choice over a fold, and a tidy that
+            asked for a decision without it would be asking them to confirm a removal they
+            cannot see the size of. Words rather than flags, and composed in one place, so
+            the screen and the refusal cannot word the same fact differently.
+        act: { $ref: '#/components/schemas/TidyAct' }
+
+    DuplicateRounds:
+      type: object
+      additionalProperties: false
+      required: [repo, pr, title, newest, extras]
+      description: |
+        One pull request's extra unposted rounds, and the round they would fold into.
+      properties:
+        repo: { $ref: '#/components/schemas/RepoName' }
+        pr:
+          type: integer
+          format: int64
+          minimum: 1
+        title:
+          type: [string, 'null']
+          minLength: 1
+          description: |
+            The pull request's title, from whichever of its rounds holds one — a round
+            recorded before a title was known has none, and a later round may have it.
+        newest:
+          allOf:
+            - $ref: '#/components/schemas/RoundRef'
+          description: |
+            The newest round: the one that can still post, and the one the extras fold
+            into. Never in `extras`.
+        extras:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/ExtraRound' }
+          description: |
+            The extra rounds, oldest first. Never empty: a pull request with none is not in
+            the answer at all.
 
     HeadUpdateKind:
       type: string

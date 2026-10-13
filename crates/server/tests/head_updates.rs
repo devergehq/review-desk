@@ -271,3 +271,152 @@ fn a_review_whose_pull_request_is_out_of_play_says_so_on_the_wire() {
         "the row says where the review went rather than disappearing: {row}"
     );
 }
+
+#[test]
+fn the_tidy_shows_each_extra_unposted_round_and_what_it_would_do() {
+    // The proposal is a read and decides nothing: DEV-962 asks for a tidy that shows each
+    // pull request's extra unposted rounds and acts only on the developer's confirmation.
+    let harness = common::start_with_no_github();
+    let store = &harness.store;
+
+    // Written through `create_review`, because `open_review` cannot make a second unposted
+    // round any more — that is the whole of DEV-962 — and this tidy is for the record the
+    // rule before it left.
+    let mut rounds = Vec::new();
+    for (round, head) in [(1, "4d9464f"), (2, "a41c9e2"), (3, "1b7c4e0")] {
+        rounds.push(
+            store
+                .create_review(review_desk_store::NewReview {
+                    repo: REPO.to_string(),
+                    pr: 61,
+                    head_sha: head.to_string(),
+                    round,
+                    ..Default::default()
+                })
+                .expect("a round, as the old rule left it")
+                .id,
+        );
+    }
+    store
+        .put_draft(rounds[0], NewDraft::ready("One finding.\n"))
+        .expect("round 1 holds a draft");
+
+    let answer = harness.api("GET", "/duplicate-rounds", None);
+    assert_eq!(answer.status, 200, "{}", answer.text());
+    let body = answer.json();
+
+    assert_eq!(body["pull_requests_affected"], 1);
+    assert_eq!(body["extra_rounds"], 2);
+    let found = &body["pull_requests"][0];
+    assert_eq!(found["repo"], REPO);
+    assert_eq!(found["pr"], 61);
+    assert_eq!(found["newest"]["review_id"], rounds[2]);
+    assert_eq!(found["newest"]["round"], 3);
+    assert_eq!(found["extras"][0]["review_id"], rounds[0]);
+    assert_eq!(
+        found["extras"][0]["act"], "dismiss",
+        "it holds a draft, so it is kept and hidden rather than removed: {found}"
+    );
+    assert_eq!(found["extras"][0]["holds"], "a draft");
+    assert_eq!(found["extras"][1]["act"], "fold");
+    assert_eq!(found["extras"][1]["holds"], "nothing");
+}
+
+#[test]
+fn folding_a_round_answers_with_both_rounds_and_records_the_head() {
+    let harness = common::start_with_no_github();
+    let store = &harness.store;
+    let one = store
+        .create_review(review_desk_store::NewReview {
+            repo: REPO.to_string(),
+            pr: 62,
+            head_sha: "4d9464f".to_string(),
+            round: 1,
+            ..Default::default()
+        })
+        .expect("round 1")
+        .id;
+    let two = store
+        .create_review(review_desk_store::NewReview {
+            repo: REPO.to_string(),
+            pr: 62,
+            head_sha: "a41c9e2".to_string(),
+            round: 2,
+            ..Default::default()
+        })
+        .expect("round 2")
+        .id;
+
+    let answer = harness.api("POST", &format!("/reviews/{one}/fold"), None);
+    assert_eq!(answer.status, 200, "{}", answer.text());
+    let body = answer.json();
+    assert_eq!(body["folded"]["id"], one);
+    assert_eq!(body["into"]["id"], two);
+
+    assert_eq!(
+        harness.api("GET", &format!("/reviews/{one}"), None).status,
+        404,
+        "the empty row has gone"
+    );
+    let newest = harness.api("GET", &format!("/reviews/{two}"), None).json();
+    assert_eq!(newest["head_updates"]["folded"], 1);
+    assert_eq!(newest["head_updates"]["updates"][0]["kind"], "folded");
+    assert_eq!(
+        newest["head_updates"]["updates"][0]["from_sha"], "4d9464f",
+        "so the history survives the row: {newest}"
+    );
+}
+
+#[test]
+fn folding_a_round_that_holds_work_is_refused_and_names_what_it_holds() {
+    let harness = common::start_with_no_github();
+    let store = &harness.store;
+    let one = store
+        .create_review(review_desk_store::NewReview {
+            repo: REPO.to_string(),
+            pr: 63,
+            head_sha: "4d9464f".to_string(),
+            round: 1,
+            ..Default::default()
+        })
+        .expect("round 1")
+        .id;
+    store
+        .create_review(review_desk_store::NewReview {
+            repo: REPO.to_string(),
+            pr: 63,
+            head_sha: "a41c9e2".to_string(),
+            round: 2,
+            ..Default::default()
+        })
+        .expect("round 2");
+    store
+        .add_finding(one, a_finding("the retry has no ceiling"))
+        .expect("a finding");
+
+    let answer = harness.api("POST", &format!("/reviews/{one}/fold"), None);
+    assert_eq!(answer.status, 409, "{}", answer.text());
+    assert_eq!(
+        answer.error_code(),
+        "conflict",
+        "the contract's code for a refusal about the state of the record"
+    );
+    assert!(
+        answer.text().contains("1 finding"),
+        "the refusal names what it holds, so the screen can offer a dismissal: {}",
+        answer.text()
+    );
+    assert_eq!(
+        harness.api("GET", &format!("/reviews/{one}"), None).status,
+        200,
+        "and the round is still there"
+    );
+}
+
+#[test]
+fn folding_a_round_nobody_has_is_not_found() {
+    let harness = common::start_with_no_github();
+    let answer = harness.api("POST", "/reviews/9001/fold", None);
+    assert_eq!(answer.status, 404, "{}", answer.text());
+    assert_eq!(answer.error_code(), "not_found");
+}

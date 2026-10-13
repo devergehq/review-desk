@@ -15,11 +15,11 @@ use std::sync::{Arc, Mutex};
 
 use review_desk_store::{
     Actor, Brief, Decision, DecisionMade, DiffAtHead, Disposition, Draft, DraftSection,
-    DraftThread, Finding, FindingInRound, FullReview, HeadUpdates, NewDraft, NewOutcome, NitTicket,
-    NotForSigning, OpenedReview, PostedReview, ProblemStatement, RepoSummary, Review,
-    ReviewAtLayer, ReviewAtStep, ReviewEvent, ReviewFacts, ReviewLayer, ReviewProvenance,
-    ReviewTimings, ReviewsShown, RoundCommit, RoundSummary, Rule, RuleCounts, RuleStage,
-    RulesSummary, Store, StoreError, TicketedAndApproved, Timestamp,
+    DraftThread, DuplicateRounds, Finding, FindingInRound, FoldedRound, FullReview, HeadUpdates,
+    NewDraft, NewOutcome, NitTicket, NotForSigning, OpenedReview, PostedReview, ProblemStatement,
+    RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewEvent, ReviewFacts, ReviewLayer,
+    ReviewProvenance, ReviewTimings, ReviewsShown, RoundCommit, RoundSummary, Rule, RuleCounts,
+    RuleStage, RulesSummary, Store, StoreError, TicketedAndApproved, Timestamp,
 };
 
 use crate::error::{ApiError, Code};
@@ -380,6 +380,23 @@ impl Records {
     /// this server has one GitHub read and it is `POST /reviews`.
     pub fn round_commits(&self, review_id: i64) -> Result<Vec<RoundCommit>, ApiError> {
         self.with(|store| store.list_round_commits(review_id))
+    }
+
+    /// Every pull request with more than one unposted round, and what the tidy would do.
+    ///
+    /// A read. The acts it proposes are `fold_round` below and the dismissal that already
+    /// exists, and both are the developer's.
+    pub fn duplicate_rounds(&self, repo: Option<&str>) -> Result<Vec<DuplicateRounds>, ApiError> {
+        self.with(|store| store.duplicate_rounds(repo))
+    }
+
+    /// Fold an extra unposted round into its pull request's newest round.
+    ///
+    /// **The store decides whether it may be folded**, and this passes the refusal through
+    /// — the newest round, a round that posted and a round holding work are each refused by
+    /// name. A screen that judged it here would offer a button the API refuses.
+    pub fn fold_round(&self, review_id: i64) -> Result<FoldedRound, ApiError> {
+        self.with(|store| store.fold_round(review_id))
     }
 
     /// What has happened to this round's head commit, with the counts the page reads.

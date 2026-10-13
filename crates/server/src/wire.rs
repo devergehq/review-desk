@@ -19,12 +19,12 @@ use review_desk_store::{
     finding_heading, AcceptanceCriterion, BlindPassState, Brief, BriefBlindPass, BriefDisagreement,
     BriefFlowBox, BriefFlowRow, BriefOpenChoice, BriefOption, BriefOptionVerdict, BriefPart,
     BriefPartFile, BriefProblem, BriefSupportTable, DescriptionLintResult, Disposition, Draft,
-    DraftLint, DraftSection, DraftThread, FileChange, Finding, FindingHunk, FindingInRound,
-    HeadUpdate, HeadUpdates, LayerFact, LeftTheDesk, NitTicket, NotForSigning, Outcome,
-    PostedReview, ProblemStatement, RepoSummary, Review, ReviewAtStep, ReviewLayer,
-    ReviewLayerName, ReviewLayerRun, ReviewProvenance, ReviewSource, ReviewTimings, RoundCommit,
-    RoundStatusCounts, RoundSummary, Rule, RuleCounts, RuleScope, RuleStage, RulesSummary,
-    Severity, Timestamp,
+    DraftLint, DraftSection, DraftThread, DuplicateRounds, ExtraRound, FileChange, Finding,
+    FindingHunk, FindingInRound, HeadUpdate, HeadUpdates, LayerFact, LeftTheDesk, NitTicket,
+    NotForSigning, Outcome, PostedReview, ProblemStatement, RepoSummary, Review, ReviewAtStep,
+    ReviewLayer, ReviewLayerName, ReviewLayerRun, ReviewProvenance, ReviewSource, ReviewTimings,
+    RoundCommit, RoundRef, RoundStatusCounts, RoundSummary, Rule, RuleCounts, RuleScope, RuleStage,
+    RulesSummary, Severity, Timestamp,
 };
 use serde_json::{json, Value};
 
@@ -629,6 +629,43 @@ pub fn round_summary(round: &RoundSummary) -> Value {
         "replies": round.replies,
         "threads_resolved": round.threads_resolved,
         "statuses": round_status_counts(&round.statuses),
+    })
+}
+
+/// The contract's `DuplicateRounds`: one pull request's extra unposted rounds.
+///
+/// **What each extra round holds is served as words, not as flags.** The screen has to say
+/// "round 2 holds a brief and 4 findings" before the developer agrees to anything, and the
+/// words are the ones a refused delete is composed from — one sentence, written once in the
+/// store, so the screen and the refusal cannot word the same fact differently.
+pub fn duplicate_rounds(found: &DuplicateRounds) -> Value {
+    json!({
+        "repo": found.repo,
+        "pr": found.pr,
+        "title": found.title,
+        "newest": round_ref(&found.newest),
+        "extras": found.extras.iter().map(extra_round).collect::<Vec<_>>(),
+    })
+}
+
+/// The contract's `ExtraRound`: one round the tidy would fold or dismiss.
+fn extra_round(extra: &ExtraRound) -> Value {
+    json!({
+        "review_id": extra.review_id,
+        "round": extra.round,
+        "head_sha": extra.head_sha,
+        "created_at": rfc3339(extra.created_at),
+        "holds": extra.holds,
+        "act": extra.act.as_str(),
+    })
+}
+
+/// The contract's `RoundRef`: a round named by what identifies it on a screen.
+fn round_ref(round: &RoundRef) -> Value {
+    json!({
+        "review_id": round.review_id,
+        "round": round.round,
+        "head_sha": round.head_sha,
     })
 }
 

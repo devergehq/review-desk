@@ -19,6 +19,7 @@ pub(crate) mod provenance;
 pub(crate) mod review;
 mod round;
 mod rule;
+mod tidy;
 mod timings;
 mod work;
 
