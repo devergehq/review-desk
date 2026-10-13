@@ -41,6 +41,14 @@ cargo clippy --all-targets -- -D warnings
 SQLite is compiled in through `rusqlite`'s `bundled` feature, so a clean clone needs
 nothing on the machine but a Rust toolchain.
 
+**The checks run once a pull request is ready, not on every push to a draft.** A push to a
+draft runs nothing, marking it ready runs every check, each push after that runs them
+again, a merge to `master` runs nothing because the ready pull request's run already
+covered that tree, and any workflow can still be started by hand from the Actions tab on
+any branch. So run the checks above locally while a pull request is a draft — DEV-961: at
+about 13 billed minutes a push, 146 pushes over two days was a whole 3,000-minute month
+spent on drafts nobody was ready to read.
+
 **Before adding a dependency, read [docs/dependencies.md](docs/dependencies.md).** The bar
 is that a dependency is active, maintained and popular, and it is checked before adopting
 rather than after. Two checks enforce it in CI, and both run locally:
@@ -1233,7 +1241,7 @@ the brief's `confirmed_by` and the draft's `approved_by` are both `developer`, w
 sign-off boundary this project rests on.
 
 Forty-four tests, about half a minute of browser once the build is warm.
-`.github/workflows/e2e.yml` runs it on every pull request.
+`.github/workflows/e2e.yml` runs it on every ready pull request.
 
 Two of them are measurements rather than assertions about words: the queue and the Reviews
 list are opened at 1440 and at 390 pixels wide, and nothing may scroll sideways or draw a

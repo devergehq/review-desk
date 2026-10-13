@@ -2,20 +2,19 @@
 # common, and a Rust change should not wait on a Node install to find out it compiles.
 name: Web
 
+# **Checks run once a pull request is ready.** The types below add `ready_for_review`,
+# every job is gated on the pull request not being a draft, and `workflow_dispatch` keeps any
+# branch checkable by hand. DEV-961; the README states the rule under "Build and test".
 on:
   pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
     paths:
       - 'web/**'
       # The dashboard's types are generated from the contract and a test regenerates them
       # to compare, so a contract change can fail this workflow without touching `web/`.
       - 'contract/openapi.yaml'
       - '.github/workflows/web.yml'
-  push:
-    branches: [master]
-    paths:
-      - 'web/**'
-      - 'contract/openapi.yaml'
-      - '.github/workflows/web.yml'
+  workflow_dispatch:
 
 concurrency:
   group: web-${{ github.ref }}
@@ -29,6 +28,7 @@ jobs:
   check:
     name: Lint, types, tests and a static build
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v7
 

@@ -6,16 +6,19 @@
 # Node install to find out it compiles. This one needs Rust, Node and a browser, so it is
 # the slowest of the three and is kept apart rather than making the other two slower.
 #
-# It runs on every pull request and on master, with no path filter. The point of an
-# end-to-end test is that it fails when any of the pieces stops fitting the others, and a
-# filter would be a list of the places a break can come from — which is the thing nobody can
-# write down correctly.
+# It runs on every ready pull request, with no path filter. The point of an end-to-end test
+# is that it fails when any of the pieces stops fitting the others, and a filter would be a
+# list of the places a break can come from — which is the thing nobody can write down
+# correctly.
 name: End to end
 
+# **Checks run once a pull request is ready.** The types below add `ready_for_review`,
+# every job is gated on the pull request not being a draft, and `workflow_dispatch` keeps any
+# branch checkable by hand. DEV-961; the README states the rule under "Build and test".
 on:
   pull_request:
-  push:
-    branches: [master]
+    types: [opened, reopened, synchronize, ready_for_review]
+  workflow_dispatch:
 
 concurrency:
   group: e2e-${{ github.ref }}
@@ -28,6 +31,7 @@ jobs:
   e2e:
     name: A review, through the binary, in a browser
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     timeout-minutes: 20
 
     defaults:
