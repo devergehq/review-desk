@@ -1020,7 +1020,7 @@ describe('a review whose repository name is not a repository name', () => {
 
 describe('the rounds of the pull request', () => {
   /**
-   * **The sketch at the top of the page draws the same cells the page does.**
+   * **The sketch at the top of the page draws the same cells the page does — both ways.**
    *
    * The page's header carries an ASCII sketch of the screen, under a line saying the
    * figures are the fixture's "because a sketch that disagrees with the thing it is a
@@ -1029,30 +1029,49 @@ describe('the rounds of the pull request', () => {
    * 1 still open" over a page drawing "nothing decided about any of them" and "2 fixed, 1
    * still open, 1 their reason accepted".
    *
-   * **Checked rather than reread, because this is the third claim on this branch to go
-   * stale in a comment** — the whitespace rule and the module header's "the contract does
-   * not serve `pr_state_at`" were the others, and the rule this repository already settled
-   * on is that the second instance of a defect gets a check and not a third careful edit.
-   * It reads the cells off the rendered page, so a wording change fails here until the
-   * sketch follows it.
+   * **Equality, not containment.** The first version asked that the sketch contain each
+   * drawn cell, which is one-directional: a cell that *narrows* leaves the sketch
+   * overclaiming and the test green. Dropping `accepted` from `stood` makes round 2 read
+   * "2 fixed, 1 still open" while the sketch goes on asserting a status the page no longer
+   * draws, and containment cannot tell that from a match. The comment above it said "a
+   * wording change fails here until the sketch follows it", which was true of a widening
+   * and false of a narrowing — the claim being wider than the check is the fault this test
+   * exists to catch, one level up.
+   *
+   * **The two columns that are data.** "Round 2 · this one" is drawn from where the reader
+   * is and the sketch does not carry it, so that column is not compared and the name does
+   * not say it is.
+   *
+   * Checked rather than reread, because this is the third claim on this branch to go stale
+   * in a comment — the whitespace rule and "the contract does not serve `pr_state_at`" were
+   * the others — and the rule this repository settled on is that the second instance of a
+   * defect gets a check and not a third careful edit.
    */
-  it('is drawn in the sketch at the top of the page, cell for cell', async () => {
+  it('matches the sketch at the top of the page, held and stood', async () => {
     await withDense(dense({ round: 2, rounds: ROUNDS }))
     const page = await shown(REVIEW)
-    const drawn = page.findAll('[data-label="How they stood"]')
-      .map(cell => cell.text())
-      .filter(cell => cell !== '')
 
-    expect(drawn.length).toBeGreaterThan(1)
+    const held = page.findAll('[data-label="What it held"]').map(cell => cell.text())
+    const stood = page.findAll('[data-label="How they stood"]').map(cell => cell.text())
+    const drawn = held.map((one, at) => [one, stood[at]!])
+    expect(drawn.length).toBe(ROUNDS.length)
 
     const source = readFileSync(resolve('app/pages/reviews/[id]/what-happened.vue'), 'utf8')
-    const sketch = source.slice(
-      source.indexOf('THE ROUNDS OF THIS PULL REQUEST'),
-      source.indexOf('```', source.indexOf('THE ROUNDS OF THIS PULL REQUEST')),
-    )
-    expect(sketch, 'the sketch is where this says it is').toContain('Round 1')
+    const from = source.indexOf('THE ROUNDS OF THIS PULL REQUEST')
+    expect(from, 'the sketch is where this says it is').toBeGreaterThan(-1)
 
-    for (const cell of drawn) expect(sketch).toContain(cell)
+    /*
+     * The sketch's own rows, as cells: the comment's leading ` * ` off the front, and the
+     * columns split on the run of spaces that separates them — which is the sketch's only
+     * column boundary, and three or more spaces never occur inside one of these cells.
+     */
+    const sketched = source.slice(from, source.indexOf('```', from))
+      .split('\n')
+      .map(line => line.replace(/^\s*\*\s*/, '').trimEnd())
+      .filter(line => /^Round \d/.test(line))
+      .map(line => line.split(/\s{3,}/).slice(1).map(cell => cell.trim()))
+
+    expect(sketched).toEqual(drawn)
   })
 
   it('are not drawn for a pull request with one round', async () => {

@@ -1131,7 +1131,7 @@ the built app asks nothing of the network and works on a machine with no interne
 
 | Part | Says |
 | -- | -- |
-| One line | How the pull request ended and on what day, or that it is open, and when a harvest last read it |
+| One line | How the pull request ended and on what day — or without the day, where GitHub gave none — or that it is open, and when a harvest last read it |
 | A row per posted finding | Its key, severity and title, where it is, the round it was carried from — then what came back, oldest first: the author's words quoted, the thread resolved, the code changed and in which commit |
 | Folded under a count | The findings nothing came back on, each saying *why* nothing could have: raised in the body alone, or posted as a comment and waiting |
 | A table, on a pull request with more than one round | What each round held, and how its findings stood — which is what the record supports; a carry is on the row of the finding that was carried |

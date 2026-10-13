@@ -6,6 +6,7 @@ import {
   cameBackAction,
   cameBackHeadline,
   freeDetail,
+  outcomeBy,
   outcomeLine,
   outcomeSaid,
   outcomeWhen,
@@ -14,6 +15,7 @@ import {
 } from '../app/utils/outcomes'
 import { sentence } from '../app/utils/format'
 
+import type { OutcomeSaid } from '../app/utils/outcomes'
 import type { OutcomeKind } from '../app/types/desk'
 
 /**
@@ -364,6 +366,82 @@ describe('code that changed after the review reads as what changed, and where', 
       expect(said.sentence).not.toContain('fixed')
       expect(said.sentence).not.toContain('still')
     }
+  })
+})
+
+/* ------------------------------ who may be credited --------------------------- */
+
+/**
+ * **`outcomeBy` is the rule about who may be credited, and it is stated here.**
+ *
+ * It had no test of its own: it was pinned only through the one screen that calls it, so
+ * the branch the doc argues is unreachable — a developer's decision — was asserted nowhere,
+ * and a change to the rule would have been measured in a component test about a page.
+ */
+describe('who may be credited for an outcome', () => {
+  const said = (over: Partial<OutcomeSaid> = {}): OutcomeSaid => ({
+    sentence: 'the code at line 40 changed in 9f3ac21',
+    quote: null,
+    by: null,
+    commit: '9f3ac21',
+    file: null,
+    observed: false,
+    ...over,
+  })
+
+  /*
+   * **The harvester is nobody.** `harvest::actor_for` returns it only for a fact GitHub
+   * attributes to no login, and it is the actor on every `code_changed_after` — so the
+   * code review page read "the code at line 40 changed in 9f3ac21 · by the harvester",
+   * crediting it with the author's push.
+   */
+  it('credits nobody where the actor is the harvester', () => {
+    expect(outcomeBy(said(), 'harvester')).toBeNull()
+  })
+
+  /*
+   * **A test on the actor rather than on the kind**, which is the same answer today and a
+   * stronger one tomorrow: an outcome of any kind recorded with no login behind it is one
+   * nobody did, and `outcome add --by harvester --kind thread_resolved` is how a kind the
+   * harvester does not normally own gets that actor.
+   */
+  it('credits nobody for any kind recorded with no login behind it', () => {
+    for (const kind of ['thread_resolved', 'replied', 'raised_again'] as const) {
+      expect(outcomeBy(said({ sentence: `a thread was ${kind}` }), 'harvester')).toBeNull()
+    }
+  })
+
+  it('credits the author, which is the only thing the one screen drawing this can say', () => {
+    expect(outcomeBy(said(), 'author')).toBe('by the author')
+  })
+
+  /*
+   * **And a developer, though no screen asks it today.** The one block that draws this is
+   * everything the developer did *not* do, so this branch is unreachable from there — it is
+   * stated here rather than left to the next caller to discover, because a rule with an
+   * untested branch is a rule in a comment.
+   */
+  it('credits a developer, for a caller that ever draws one', () => {
+    expect(outcomeBy(said(), 'developer')).toBe('by the developer')
+  })
+
+  /*
+   * **Never twice.** A reply and a resolution name their login inside the sentence, where
+   * `outcomeSaid` composed it from the detail.
+   */
+  it('adds nothing where the sentence already names who', () => {
+    expect(outcomeBy(said({ by: 'dana-okoye' }), 'author')).toBeNull()
+    expect(outcomeBy(said({ by: 'dana-okoye' }), 'harvester')).toBeNull()
+  })
+
+  /*
+   * `Outcome.actor` is required and non-nullable in the contract, so this is the same
+   * defensive shape `cameBackAction` keeps for a kind the bundle has no entry for — and
+   * without it the slot rendered the literal "by the null".
+   */
+  it('credits nobody where there is no actor at all', () => {
+    expect(outcomeBy(said(), null)).toBeNull()
+    expect(outcomeBy(said(), undefined)).toBeNull()
   })
 })
 

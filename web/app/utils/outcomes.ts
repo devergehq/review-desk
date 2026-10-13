@@ -501,10 +501,12 @@ export function outcomeLine(outcome: OutcomeLike & { finding_key?: string }): st
  * "a fact GitHub attributes to nobody" — so it is the actor on every `code_changed_after`,
  * which is an observation of a push and not a push. Drawn as "by the harvester", the code
  * review page told a reader the harvester changed line 40 of their file, in the same slot
- * that correctly reads "by the developer" over a decision. The rule was already written
- * down one screen away: `cameBackHeadline` says the kind settles it, "a code change is an
- * observation", and the step-7 page draws that outcome with no actor at all. This is what
- * stops the two screens saying different things about one row.
+ * that correctly reads "by the author" over an author's own reason — the only other thing
+ * that slot can say, for the reason three paragraphs down. The rule was already written
+ * one screen away: `cameBackHeadline` says the kind settles it, "a code change is an
+ * observation", and the step-7 page draws that outcome with no actor at all. Step 7 agrees
+ * by drawing no actor for any kind rather than by calling this, so what this adds is one
+ * place to change if either ever has to say who.
  *
  * **And not twice.** A reply and a resolution name their login inside the sentence, which
  * `outcomeSaid` composes from the detail; `by` is set there, and this adds nothing.

@@ -377,7 +377,9 @@ function saidByOthers(data: ReviewDetail, finding: Finding) {
          * reason with nobody in it; the first way back credited the recording actor for
          * every kind, and the harvester is the actor on every code change, so it read "the
          * code at line 40 changed in 9f3ac21 · by the harvester". `outcomeBy` carries both
-         * halves and the argument, so this page and step 7's cannot drift on one row.
+         * halves and the argument for them; it is the only caller, and step 7 agrees by
+         * drawing no actor at all, so this is where the rule lives rather than a thing two
+         * screens share.
          */
         by: outcomeBy(said, outcome.actor),
         when: outcomeWhen(said, outcome.occurred_at),
@@ -698,7 +700,17 @@ function coverage(data: ReviewDetail): string | null {
                           :key="outcome.id"
                           class="rd-recorded reply"
                         >
-                          <span class="reply-kind">{{ outcome.sentence }}</span>
+                          <!--
+                            **A text node between them, not a newline.** Both spans are
+                            inline and the newline between two elements is a whitespace-only
+                            node that `whitespace: 'condense'` deletes — so this read
+                            "The code at line 40 changed in 9f3ac21.5 days ago", a commit id
+                            with a digit welded to it, on the one value of the row a reader
+                            copies. Step 7 draws the same pair with the sentence as bare
+                            text in a flex row, which keeps its own trailing space; here the
+                            sentence is wrapped, so the space has to be written.
+                          -->
+                          <span class="reply-kind">{{ outcome.sentence }}</span>{{ ' ' }}
                           <span class="rd-note">
                             <template v-if="outcome.by">{{ outcome.by }} · </template>{{ outcome.when }}
                           </span>

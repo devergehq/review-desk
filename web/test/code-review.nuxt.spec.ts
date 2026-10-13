@@ -1069,6 +1069,27 @@ describe('what the author said', () => {
    * an observation" — and step 7's page draws the same outcome with no actor, so the two
    * screens were making different claims about one row.
    */
+  /**
+   * **And the sentence does not run into the time beside it.**
+   *
+   * Both spans are inline and the newline between them is a whitespace-only text node
+   * `whitespace: 'condense'` deletes, so the row read "…changed in 9f3ac21.5 days ago" —
+   * a seven-character commit id with a digit welded on, which is the one value on the row
+   * a reader copies out. It was there before the actor was taken off this kind and `.by`
+   * was not a plausible continuation of a hex id; `.5` is.
+   *
+   * Asserted on the text rather than on the markup, because what a reader copies and what
+   * a screen reader announces are both `textContent`, and a CSS gap fixes neither.
+   */
+  it('does not run the commit id into the time after it', async () => {
+    const page = await codeReview(POSTED)
+    const changed = fixture(POSTED).outcomes.find(one => one.kind === 'code_changed_after')!
+    await openFinding(page, changed.finding_key)
+    const said = page.findAll('.reply').map(one => one.text()).find(one => one.includes('changed in'))!
+    expect(said).toMatch(/changed in [0-9a-f]{7}\.\s/)
+    expect(said).not.toMatch(/[0-9a-f]{7}\.\d/)
+  })
+
   it('credits nobody with a code change the harvester observed', async () => {
     const page = await codeReview(POSTED)
     const changed = fixture(POSTED).outcomes.find(one => one.kind === 'code_changed_after')!
