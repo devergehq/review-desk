@@ -260,9 +260,20 @@ function standingOf(round: RoundSummary, rounds: RoundSummary[], live: boolean):
 /**
  * Whether the record says this review's pull request is still in play.
  *
- * **Positive evidence, which is what "being worked on" needs and the other two wordings do
- * not.** "Not posted" and a posted day are true whatever became of the pull request; "being
- * worked on" is a claim about now, and a page has to have been told something to make it.
+ * **The same answer the rest of Review Desk gives**, which is what "being worked on" needs
+ * and the other two wordings do not: "not posted" and a posted day are true whatever became
+ * of the pull request, and this one is a claim about now.
+ *
+ * **Null is "the record knows of no reason it is not", not "somebody looked".** A review no
+ * harvest has run over has a null `pr_state`, and `prStateLabel` is emphatic that null is
+ * not "open" — so a pull request that merged on GitHub and was never harvested reads as live
+ * here. A review of this branch raised that as a false promise and it is the same answer
+ * every other screen gives: `IN_PLAY` coalesces an unharvested `pr_state` to `'open'`, so
+ * that review is in the queue, in the work list, and its draft can be signed off. Gating
+ * this on `review.pr_state` instead would make the switcher stricter than the queue and
+ * would silence the wording almost everywhere, because only the round a harvest read carries
+ * a state at all — DEV-957's own lesson. The staleness is Review Desk's, not this
+ * function's, and the fix for it is a harvest.
  *
  * `not_for_signing` is the answer because its three reasons are asked in a fixed order
  * (`Store::not_for_signing`): **dismissed first, then finished, then superseded.** So null

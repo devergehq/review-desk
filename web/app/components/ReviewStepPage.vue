@@ -220,9 +220,15 @@ const stepName = computed(() => layerLabel(props.step))
       fixtures have exactly that. A second review of this branch caught it.
     -->
     <DeskNotice v-if="writtenEarlier">
-      <NuxtLink :to="writtenEarlier.to">
-        Open round {{ writtenEarlier.round }}’s {{ stepName }}
-      </NuxtLink>.
+      <!--
+        **Closed hard against the full stop**, for the reason `RoundSwitcher`'s own comment
+        gives: Vue's `whitespace: 'condense'` condenses the whitespace around an
+        interpolation rather than deleting it, so a closing tag on its own line leaves a
+        trailing space inside the anchor — and the browser's default underline runs over it.
+        Neither the component nor the browser assertions see it, because both match on the
+        accessible name and that normalises whitespace.
+      -->
+      <NuxtLink :to="writtenEarlier.to">Open round {{ writtenEarlier.round }}’s {{ stepName }}</NuxtLink>.
     </DeskNotice>
 
     <slot />

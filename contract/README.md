@@ -223,8 +223,8 @@ Everything else on the five screens is below.
 | "Round 1 · posted 6 Oct as Request changes · 5 findings" | `rounds[].round`, `.posted_at`, `.event`, `.findings` |
 | "The author came back · 3 commits · 3 replies · 2 threads resolved" | `rounds[].replies`, `.threads_resolved`, and the **next** round's `.commits` — see below |
 | "Round 2 · this draft · 2 fixed · 2 still open · 1 new" | `rounds[].statuses` |
-| "Round 2 of 3", and a link to the same step of each other round | `rounds[].round`, `.review_id`, `.posted_at`, `.head_sha` |
-| "Written in round 1, and not rewritten since" | `rounds[].brief_written`, with `.review_id` for the link |
+| "Round 2 of 3", and a link to the same step of each other round | `review.round` and the length of `rounds[]`, then `rounds[].review_id`, `.posted_at`, `.head_sha` |
+| "The last brief before this round was written in round 1." | `rounds[].brief_written`, with `.review_id` for the link |
 | "What changed since round 1" | `commits_since_previous_round[].sha`, `.summary`, `.files` |
 | "Fixed · 2 · nothing to post" | `findings[].round_status` |
 | "Checked. Their new test fails with the fix reverted." | `findings[].round_status_checked` |

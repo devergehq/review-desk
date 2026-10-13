@@ -42,8 +42,14 @@ export const PAGE_OF_STEP: Partial<Record<ReviewLayerName, string>> = {
  * Where the pull request stops being settled once and the round starts repeating.
  *
  * Four and three, which is the split the trail draws its two groups along. Named here
- * rather than inline so it has one statement, and read by the round switcher too: steps 1
- * to 4 are the ones a later round can be holding none of.
+ * rather than inline so it has one statement.
+ *
+ * **`StepTrail` is its only reader, and the round switcher is deliberately not a second
+ * one.** The doc said it was, and said the boundary was "the steps a later round can be
+ * holding none of" — neither is true, and a reader would have changed this constant on the
+ * strength of it. Those steps are the three the *brief* feeds, which `FROM_THE_BRIEF` in
+ * `utils/rounds.ts` names: step 1 is `lint`, and no brief feeds it. Only `PAGE_OF_STEP`
+ * above has two readers, and only it carries that argument. Found by a review of DEV-976.
  */
 export const SETTLED_THROUGH = 4
 

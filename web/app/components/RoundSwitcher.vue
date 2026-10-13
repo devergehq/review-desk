@@ -67,13 +67,17 @@ const rounds = computed(() => roundLinks(props.detail, props.step))
 const label = computed(() => roundsLabel(props.detail))
 
 /**
- * The step's name, for the part of each link only a screen reader hears.
+ * The step's name, for the part of each link only a screen reader hears. The template
+ * comment on it carries the reason.
  *
- * "Round 1" on its own does not say where it goes, and six of these pages differ by nothing
- * else. Said in the link rather than in the heading, because a screen reader reading the
- * links of a page reads them out of their surroundings.
+ * **`stepName`, not `step`.** A setup binding of that name would shadow the prop of that
+ * name in the compiled render function, so `step` inside this template would silently mean
+ * "Understand" rather than `'understand'` — correct today only because the template happens
+ * to want the label everywhere, and a trap with no type error behind it for whoever next
+ * writes `v-if="step === 'draft'"`. `ReviewStepPage` already calls the same value this.
+ * Found by a review of this branch.
  */
-const step = computed(() => layerLabel(props.step))
+const stepName = computed(() => layerLabel(props.step))
 </script>
 
 <template>
@@ -111,7 +115,7 @@ const step = computed(() => layerLabel(props.step))
             the browser as "Round 2 , Understand". Measured in `e2e/rounds.spec.ts`, which
             asserts the accessible name through the real build.
           -->
-          <span class="which">Round {{ round.round }}<span class="rd-visually-hidden"><template v-if="round.here">, the round you are reading</template><template v-else>, {{ step }}</template></span></span>
+          <span class="which">Round {{ round.round }}<span class="rd-visually-hidden"><template v-if="round.here">, the round you are reading</template><template v-else>, {{ stepName }}</template></span></span>
           <span class="standing">{{ round.standing }}</span>
           <span class="shas">
             <span class="rd-mono head">{{ round.head }}</span>
