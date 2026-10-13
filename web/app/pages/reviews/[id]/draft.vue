@@ -294,6 +294,13 @@ function discardEdits() {
  * version and it is the one that wedges the page: it takes away the only two controls that
  * can resolve the promise, leaving a navigation nobody can settle and a page nobody can
  * leave. Raised by a review of this branch, which named both the sequence and the trap.
+ *
+ * **It also covers the developer undoing their own typing while the card is up**, which the
+ * card does not prevent — the editor is still on screen behind it. They pressed the link,
+ * so the navigation is one they asked for; what the card asked about has stopped existing,
+ * and holding them on the page until they answer a question with no subject would be the
+ * worse of the two. So the navigation goes through on the keystroke rather than on either
+ * button, and that is the intended reading of it.
  */
 watch(dirty, (unsaved) => {
   if (unsaved || !leaving.value) return

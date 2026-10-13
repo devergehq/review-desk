@@ -3976,6 +3976,22 @@ test.describe('state that belongs to one review', () => {
   }
 
   /**
+   * The review's draft is as this block seeded it: its own sentence, and nothing typed.
+   *
+   * **Both halves, because `toContain` on its own cannot fail on an append.** These sites
+   * read "nothing has been written to either review", and `toContain(SECOND_DRAFT)` passes
+   * just as happily over `SECOND_DRAFT` with the unsaved sentence appended to it — which is
+   * the one thing they exist to catch. They were `toBe` against a cached body until that
+   * cache was removed for going stale; this is the assertion the cache was carrying. Raised
+   * by a review of the commit that removed it.
+   */
+  function untouched(id: number, sentence: string): void {
+    const body = bodyOf(id)
+    expect(body).toContain(sentence)
+    expect(body).not.toContain(TYPED)
+  }
+
+  /**
    * Give a review a draft whose body says which review it is.
    *
    * **The two bodies have to differ**, or "shows that review's own body" is an assertion
@@ -4144,8 +4160,8 @@ test.describe('state that belongs to one review', () => {
     await expect(editor).toHaveValue(`${bodyOf(second)}\n\n${TYPED}`)
 
     /* Nothing has been written to either review. The sentence was never saved. */
-    expect(bodyOf(first)).toContain(FIRST_DRAFT)
-    expect(bodyOf(second)).toContain(SECOND_DRAFT)
+    untouched(first, FIRST_DRAFT)
+    untouched(second, SECOND_DRAFT)
 
     /* Discard: the navigation goes through. */
     await jump(page, -entries)
@@ -4201,8 +4217,8 @@ test.describe('state that belongs to one review', () => {
     await expect(editor).toHaveValue(bodyOf(second))
     await expect(page.getByRole('button', { name: 'Save the draft' })).toBeDisabled()
 
-    expect(bodyOf(first)).toContain(FIRST_DRAFT)
-    expect(bodyOf(second)).toContain(SECOND_DRAFT)
+    untouched(first, FIRST_DRAFT)
+    untouched(second, SECOND_DRAFT)
   })
 
   /**
@@ -4249,8 +4265,7 @@ test.describe('state that belongs to one review', () => {
      */
     expect(bodyOf(first).trimEnd()).toBe(saved)
     expect(bodyOf(first)).not.toContain(TYPED)
-    expect(bodyOf(second)).toContain(SECOND_DRAFT)
-    expect(bodyOf(second)).not.toContain(TYPED)
+    untouched(second, SECOND_DRAFT)
   })
 
   /**
@@ -4290,8 +4305,8 @@ test.describe('state that belongs to one review', () => {
     await expect(page.getByRole('button', { name: 'Keep editing' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Save the draft' })).toBeDisabled()
 
-    expect(bodyOf(first)).toContain(FIRST_DRAFT)
-    expect(bodyOf(second)).toContain(SECOND_DRAFT)
+    untouched(first, FIRST_DRAFT)
+    untouched(second, SECOND_DRAFT)
   })
 
   /**
@@ -4322,7 +4337,7 @@ test.describe('state that belongs to one review', () => {
     await expect(page.locator('textarea#draft-body'))
       .toHaveValue(`${bodyOf(first)}\n\n${TYPED}`)
 
-    expect(bodyOf(first)).toContain(FIRST_DRAFT)
+    untouched(first, FIRST_DRAFT)
   })
 
   /**
@@ -4370,7 +4385,7 @@ test.describe('state that belongs to one review', () => {
     await expect(page.getByRole('button', { name: 'Keep editing' })).toHaveCount(0)
     await expect(editor).toHaveValue(`${bodyOf(first)}\n\n${TYPED}`)
 
-    expect(bodyOf(first)).toContain(FIRST_DRAFT)
+    untouched(first, FIRST_DRAFT)
   })
 
   /**
@@ -4405,6 +4420,6 @@ test.describe('state that belongs to one review', () => {
     await expect(page).toHaveURL(`${seeded}reviews/${first}/code-review`)
 
     /* And the draft is as the session left it. */
-    expect(bodyOf(first)).toContain(FIRST_DRAFT)
+    untouched(first, FIRST_DRAFT)
   })
 })
