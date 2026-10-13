@@ -303,7 +303,7 @@ the link resolved, looked right, and sent the reader to whatever is on line 40 n
 |---|---|
 | a finding's code link, and the index row in the posted body | `finding.line_sha` — the commit that line was measured on |
 | a finding whose `line_sha` is null | `review.head_sha`, exactly as before. **Nothing is invented for it**: a client says the commit was not recorded, and does not say the line was never measured — the line was measured, and what is missing is which commit on |
-| a finding with no line, no flagged line and no hunk | neither. There is nothing in the code to point at, so the row links the pull request |
+| a finding that names **no file** | neither. There is nothing in the code to point at, so the row links the pull request. **The condition is the file and not the line**: a finding with a file and no line still links `blob/{sha}/{path}`, so it still has a commit |
 | where the inline thread lands | GitHub's. It anchors `path` + `line` + `RIGHT` against the pull request's head, which is why `DraftThread.line_sha` is handed over — **as a fact, not as a `commit_id`** |
 
 `line_sha` is **the writing session's to state and is never derived**. The head is not a

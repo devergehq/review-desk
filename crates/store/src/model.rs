@@ -1312,10 +1312,11 @@ pub struct Finding {
     /// moves without a new round opening. Either way line 40 of one commit is a different
     /// line of a different file at the next, and the link said nothing about it.
     ///
-    /// **`None` is a row written before the column existed**, and nothing invents a value for
-    /// one: its link is composed from the review's head exactly as it is today, and the
-    /// page says the line was never measured rather than letting that fallback read as a
-    /// measurement.
+    /// **`None` is a row written before the column existed**, and nothing invents a value
+    /// for one: its link is composed from the review's head exactly as it is today, and the
+    /// page says the *commit was not recorded* rather than letting that fallback read as a
+    /// measurement. Not that the line was never measured, which is a different claim and an
+    /// untrue one — the line was measured, and what is missing is which commit on.
     pub line_sha: Option<String>,
     /// What is claimed to be wrong.
     pub claim: String,

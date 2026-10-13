@@ -320,6 +320,22 @@ fn handover_lines(handover: &DraftHandover) -> String {
     if handover.threads.is_empty() {
         lines.push("  no thread: no finding in this draft has a line inside the diff".to_string());
     }
+
+    // **Said once where it is true of every thread**, which is the rule `DraftThreads.vue`
+    // follows for the same sentence and for the same reason: nothing backfills the column,
+    // so until sessions record it every finding on a record has none — and the per-thread
+    // version would print this nine times under a real-length review, burying the lines a
+    // reader came for. A draft where only some are missing keeps it per thread, because
+    // there the absence is about that one anchor rather than about the review.
+    let none_recorded = !handover.threads.is_empty()
+        && handover
+            .threads
+            .iter()
+            .all(|thread| thread.line_sha.is_none());
+    if none_recorded {
+        lines.push("  none of these records which commit its line was measured on".to_string());
+    }
+
     for thread in &handover.threads {
         // **And which commit that line was counted on, where it is not this head.** The
         // line a reader is checking here is a number, and a number is an address only
@@ -332,6 +348,7 @@ fn handover_lines(handover: &DraftHandover) -> String {
                 format!(" — measured at {sha}")
             }
             Some(_) => String::new(),
+            None if none_recorded => String::new(),
             None => " — the commit it was measured on was not recorded".to_string(),
         };
         lines.push(format!(

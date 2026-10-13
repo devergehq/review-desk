@@ -1689,8 +1689,9 @@ ALTER TABLE reviews ADD COLUMN out_of_play_at INTEGER;
 -- has moved since for exactly the rows this is about, and `created_at` plus the move log
 -- cannot tell a line written at the old head from one an agent rewrote at the new one. So
 -- a row from before this migration says it does not know, its link is composed as it is
--- today, and the page marks it unmeasured rather than letting a fallback read as a
--- measurement. That is migration 13's rule — nullable is the honest default — applied to
+-- today, and the page says the commit was not recorded rather than letting a fallback read
+-- as a measurement. Not that the line is unmeasured: it was measured, and what is missing
+-- is which commit on. That is migration 13's rule — nullable is the honest default — applied to
 -- the one case where a default would be a quiet lie about where a reader is being sent.
 --
 -- **No CHECK on the shape.** SQLite cannot add one to a table that already exists, which

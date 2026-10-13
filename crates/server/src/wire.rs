@@ -529,11 +529,11 @@ pub fn finding(finding: &Finding) -> Value {
         "lens": finding.lens,
         "severity": finding.severity.as_str(),
         "file": finding.file,
+        "line": finding.line,
         // The commit that line was counted on, which is what a link is built from. Null
         // where no session said, and then a client links from the review's head as it
         // always did and says the commit was not recorded — not that the line was never
         // measured, which is a different and untrue claim.
-        "line": finding.line,
         "line_sha": finding.line_sha,
         "claim": finding.claim,
         // Null when nothing has titled this finding, which is every finding written before

@@ -307,4 +307,76 @@ fn the_hand_over_says_which_commit_each_threads_line_was_measured_on() {
         plain.contains("F2 should on app/Retry.php:58 (RIGHT)\n"),
         "and the one measured on this head says nothing extra:\n{plain}"
     );
+    assert!(
+        !plain.contains("none of these records"),
+        "and the sentence for a whole list is not drawn where one of them does record \
+         a commit:\n{plain}"
+    );
+}
+
+/// **Where no thread records a commit, the hand-over says so once.**
+///
+/// Nothing backfills the column, so until sessions record it every finding on a record
+/// has none — and saying it per thread would print the same sentence under all nine
+/// threads of a real-length review, burying the lines a reader came for. The same rule
+/// `DraftThreads.vue` follows for the same sentence. Found by a review of this branch.
+#[test]
+fn the_hand_over_says_no_commit_was_recorded_once_for_the_whole_list() {
+    let desk = Desk::new();
+    let review = open_review(&desk, "acme/portal", "412", "a1b2c3d");
+    let id: i64 = review.parse().expect("the review id");
+
+    let anchored = |seq: i64, file: &str, line: i64| {
+        format!(
+            r#"{{"lens":"error handling","severity":"should",
+                 "claim":"finding {seq}","title":"Finding {seq}",
+                 "file":"{file}","line":{line},"flagged_line":{line},
+                 "hunk":{{"file":"{file}","start_line":{start},
+                          "lines":[{{"marker":"unchanged","text":"    {{"}},
+                                   {{"marker":"added","text":"        return $r;"}}]}}}}"#,
+            start = line - 1
+        )
+    };
+
+    add(&desk, &review, &anchored(1, "app/Export.php", 40));
+    add(&desk, &review, &anchored(2, "app/Retry.php", 58));
+
+    let sections = desk.write_file(
+        "sections.json",
+        r#"[{"kind":"prose","text":"**2 Should — 2 open.** The approach fits."},
+            {"kind":"finding","finding_seq":1,"text":"**in diff** · `Open`"},
+            {"kind":"finding","finding_seq":2,"text":"**in diff** · `Open`"}]"#,
+    );
+    desk.command()
+        .args([
+            "draft",
+            "put",
+            "--review",
+            &review,
+            "--sections",
+            sections.to_str().expect("a path"),
+        ])
+        .assert()
+        .success();
+    desk.store()
+        .approve_draft(
+            id,
+            review_desk_store::ReviewEvent::RequestChanges,
+            review_desk_store::Actor::Developer,
+        )
+        .expect("the developer approves");
+
+    let plain = desk.run(&["draft", "handover", "--review", &review]);
+
+    assert_eq!(
+        plain
+            .matches("none of these records which commit its line was measured on")
+            .count(),
+        1,
+        "once, above the list:\n{plain}"
+    );
+    assert!(
+        !plain.contains("was measured on was not recorded"),
+        "and not again under each thread:\n{plain}"
+    );
 }

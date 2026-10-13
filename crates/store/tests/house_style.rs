@@ -1474,7 +1474,7 @@ fn a_row_with_no_measured_commit_links_exactly_as_it_did_before() {
         ),
         "a finding written before the column existed has no commit of its own, and nothing \
          invents one for it: the link is the review's head, character for character what \
-         it was. What says the line was never measured is the page, not this:\n{body}"
+         it was. What says the commit was not recorded is the page, not this:\n{body}"
     );
 }
 

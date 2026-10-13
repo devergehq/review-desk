@@ -73,6 +73,22 @@ const noneRecorded = computed(() =>
 )
 
 /**
+ * That sentence, with the head named only where there is one to name.
+ *
+ * A head was storable blank until DEV-936 and `commitLabel('')` is the empty string, so
+ * the clause would otherwise render as "the pull request is at ." — composed here rather
+ * than branched in the template, which is where the markup stopped being readable.
+ */
+const noneRecordedLine = computed(() => {
+  const where = props.headSha.length > 0
+    ? `, and the pull request is at ${commitLabel(props.headSha)}`
+    : ''
+  return `None of these records which commit its line was measured on${where}. Whether `
+    + 'each line still means there what it meant where it was counted is not something '
+    + 'the record can say.'
+})
+
+/**
  * Which commit this thread's line was counted on, where that is not where the pull request
  * is now — and nothing when it is. DEV-978.
  *
@@ -90,9 +106,18 @@ function measuredElsewhere(thread: DraftThread): string | null {
     // Said once above the list when it is true of all of them — see `noneRecorded`.
     return noneRecorded.value ? null : 'the commit it was measured on was not recorded'
   }
-  return sameCommit(measured, props.headSha)
-    ? null
-    : `measured at ${commitLabel(measured)}, not at ${commitLabel(props.headSha)}`
+  if (sameCommit(measured, props.headSha)) return null
+
+  /*
+   * **A blank head is named as nothing at all, not as an empty string.** It was storable
+   * until DEV-936, `sameCommit` answers false for it by design, and `commitLabel('')` is
+   * `''` — so the unguarded sentence read "measured at a1b2c3d, not at " on every thread.
+   * Where there is no head to compare against, what is true is only where this was
+   * measured.
+   */
+  return props.headSha.length > 0
+    ? `measured at ${commitLabel(measured)}, not at ${commitLabel(props.headSha)}`
+    : `measured at ${commitLabel(measured)}`
 }
 </script>
 
@@ -139,9 +164,7 @@ function measuredElsewhere(thread: DraftThread): string | null {
       v-if="noneRecorded"
       class="rd-meta help"
     >
-      None of these records which commit its line was measured on. The pull request is at
-      <code>{{ commitLabel(headSha) }}</code>, and whether each line still means what it
-      did there is not something the record can say.
+      {{ noneRecordedLine }}
     </p>
 
     <ol

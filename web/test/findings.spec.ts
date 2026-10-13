@@ -373,7 +373,35 @@ describe('which commit a line was measured on', () => {
 
     expect(said).toContain('Measured at a1b2c3d')
     expect(said).toContain('e4f5a6b')
-    expect(said).toContain('has not been re-read')
+  })
+
+  /*
+   * **And it claims nothing about re-reading.** An earlier wording ended "and this has
+   * not been re-read against it", which the record cannot support: a session that
+   * re-reads after a head move and confirms the line records `round_status_commit`, and
+   * nothing can rewrite `line_sha` — so the page would have gone on contradicting that
+   * for ever. Found by a review of this branch.
+   */
+  it('states the two commits and claims nothing about re-reading', () => {
+    const said = measuredAt(
+      finding({ seq: 1, line: 40, line_sha: 'a1b2c3d' }),
+      reviewAt('e4f5a6b'),
+    )
+
+    expect(said).not.toContain('re-read')
+  })
+
+  /*
+   * A head was storable blank until DEV-936, and `commitLabel('')` is the empty string —
+   * so the clause about where the pull request is would have rendered as "at .".
+   */
+  it('drops the clause about a head it cannot name', () => {
+    const said = measuredAt(finding({ seq: 1, line: 40, line_sha: 'a1b2c3d' }), reviewAt(''))
+
+    expect(said).toBe('Measured at a1b2c3d.')
+    expect(
+      measuredAt(finding({ seq: 1, line: 40, line_sha: null }), reviewAt('')),
+    ).toBe('The commit this was measured on was not recorded.')
   })
 
   it('says nothing when the line was measured on the head the review is at', () => {

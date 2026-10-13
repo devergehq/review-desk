@@ -474,7 +474,7 @@ export function sameCommit(one: string, two: string): boolean {
  * | The record | What the page says |
  * | -- | -- |
  * | the commit is this review's head | nothing. The place describes the code the review is of, which is what a reader already assumes |
- * | the commit is an earlier one | which commit, and that it has not been re-read against the head |
+ * | the commit is an earlier one | which commit, and where the pull request is now |
  * | there is no commit | that it was not recorded. **Not "not measured"**: the line was measured, and what is missing is which commit on. Saying the line was never measured, beside the line number printed on the same row, would contradict itself |
  *
  * **It keys on the file, not on the line**, because the file is what decides whether there
@@ -485,22 +485,32 @@ export function sameCommit(one: string, two: string): boolean {
  *
  * **It promises no link.** An earlier wording ended "…which the link goes to", and there
  * is no link on this page: the row draws its place as text, and the links are in the
- * composed body the author reads on GitHub. A sentence that sends a reader looking for
- * something that is not there says less than one that stays quiet about it.
+ * composed body the author reads on GitHub.
+ *
+ * **And it does not say the line has not been re-read**, which an earlier wording did.
+ * Nothing in the record supports that: a session that re-reads the diff after a head move
+ * and confirms the line records `round_status_commit`, and the page would have gone on
+ * calling it un-re-read for ever, because nothing can rewrite `line_sha`. The two facts
+ * the record does hold are the commit the place was measured on and the commit the pull
+ * request is at, so those are the two the sentence states.
  *
  * Both commits are named, which is `withdrawnLine`'s rule in `utils/rounds`: a sentence
- * that names one of two commits leaves the reader to find the other.
+ * that names one of two commits leaves the reader to find the other. **A blank head names
+ * none** — it was storable until DEV-936 — so the clause about it is dropped rather than
+ * rendered as "the pull request is at ." around an empty string.
  */
 export function measuredAt(finding: Finding, review: Review): string | null {
   if (finding.file == null) return null
 
+  const head = review.head_sha.length > 0
+    ? ` The pull request is at ${commitLabel(review.head_sha)}.`
+    : ''
+
   const measured = finding.line_sha
   if (measured == null || measured.length === 0) {
-    return 'The commit this was measured on was not recorded. The pull request is at '
-      + `${commitLabel(review.head_sha)}.`
+    return `The commit this was measured on was not recorded.${head}`
   }
   if (sameCommit(measured, review.head_sha)) return null
 
-  return `Measured at ${commitLabel(measured)}. The pull request is at `
-    + `${commitLabel(review.head_sha)}, and this has not been re-read against it.`
+  return `Measured at ${commitLabel(measured)}.${head}`
 }
