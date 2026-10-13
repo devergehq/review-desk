@@ -30,7 +30,7 @@ const {
   structuredReviewId,
   heldBackReviewId,
   mergedReviewIds,
-  supersededReviewIds,
+  movedHeadReviewId,
 } = addresses
 
 const INTO = resolve('../docs/screenshots')
@@ -641,13 +641,20 @@ test.describe('a finished review, and a row’s links', () => {
         .toHaveCount(mergedReviewIds.length)
       await shot(page, `dev-957-2-finished${suffix}`)
 
-      await page.goto(`${seeded}reviews/${mergedReviewIds[1]}/draft`)
+      /* Round 4: the one round of the four that never posted. */
+      await page.goto(`${seeded}reviews/${mergedReviewIds[3]}/draft`)
       await expect(page.getByText('Nothing to sign off')).toBeVisible()
       await shot(page, `dev-957-3-merged-draft${suffix}`)
 
-      await page.goto(`${seeded}reviews/${supersededReviewIds[0]}/draft`)
-      await expect(page.getByText('Nothing to sign off')).toBeVisible()
-      await shot(page, `dev-957-4-superseded-draft${suffix}`)
+      /*
+       * **DEV-962's shape A, where the fourth of these used to be a superseded round.** A
+       * second unposted round of one pull request is not a thing the binary can record any
+       * more, so what is drawn here is what replaced it: one round, whose head moved and
+       * whose base-branch merges changed nothing.
+       */
+      await page.goto(`${seeded}reviews/${movedHeadReviewId}/code-review`)
+      await expect(page.getByText('Rounds')).toBeVisible()
+      await shot(page, `dev-962-1-moved-head${suffix}`)
     })
   }
 })
