@@ -409,6 +409,9 @@ pub fn seed(store: &Store) -> Seeded {
                 severity: Severity::Blocker,
                 file: Some("jobs/DeliverWebhook.php".to_string()),
                 line: Some(58),
+                // The commit that line was counted on, which is this review's head here
+                // and is the ordinary case. The second-round test is where it is not.
+                line_sha: Some("3f9c2ab".to_string()),
                 claim: "A retried delivery is sent without an idempotency key.".to_string(),
                 evidence: Some("throwaway test, 2 deliveries for 1 event".to_string()),
                 disposition: Disposition::InDraft,

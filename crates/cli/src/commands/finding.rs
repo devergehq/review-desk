@@ -22,11 +22,21 @@ pub enum FindingCommand {
     /// Add one finding to a review, and print its number.
     ///
     /// The document is `{"lens": "...", "severity": "...", "claim": "...", "title":
-    /// "...", "file": "...", "line": 12, "evidence": "...", "disposition": "...",
-    /// "disposition_reason": "...", "rule_id": 9, "introduced_by_commit": "a41c9e2",
-    /// "introduced_by_seq": 1}`. `lens`, `severity` and `claim` are required, the
-    /// disposition defaults to `in_draft`, and a field that is not one of the names here
-    /// is refused rather than quietly dropped.
+    /// "...", "file": "...", "line": 12, "line_sha": "a1b2c3d", "evidence": "...",
+    /// "disposition": "...", "disposition_reason": "...", "rule_id": 9,
+    /// "introduced_by_commit": "a41c9e2", "introduced_by_seq": 1}`. `lens`, `severity`
+    /// and `claim` are required, the disposition defaults to `in_draft`, and a field that
+    /// is not one of the names here is refused rather than quietly dropped.
+    ///
+    /// **`line_sha` is the commit `line` was measured on — say it.** It is what the
+    /// finding's permalink is built from, and without it the link falls back to the
+    /// review's head, which is where the review *is* and not where the line was counted.
+    /// The two come apart: a carried finding keeps the earlier round's numbering, and a
+    /// new commit on an unposted round moves its head under findings nobody has re-read.
+    /// Nothing defaults it, because a session reads the diff for some minutes while the
+    /// author pushes, and a commit derived from the head afterwards would be a confident
+    /// wrong answer where the record can simply have none. It covers `flagged_line` and
+    /// the hunk as well; all three are measured together.
     ///
     /// `title` is the one line the code review page's row carries — "A retried delivery
     /// carries no idempotency key". It is optional and has no maximum length; a

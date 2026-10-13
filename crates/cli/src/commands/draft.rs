@@ -321,15 +321,47 @@ fn handover_lines(handover: &DraftHandover) -> String {
         lines.push("  no thread: no finding in this draft has a line inside the diff".to_string());
     }
     for thread in &handover.threads {
+        // **And which commit that line was counted on, where it is not this head.** The
+        // line a reader is checking here is a number, and a number is an address only
+        // against a commit: a carried finding keeps the earlier round's numbering, and
+        // since DEV-962 this head moves under findings nobody has re-read. Said only when
+        // it differs, because on the ordinary round it is the head on the line above and
+        // repeating it on every thread would bury the one that does not match.
+        let measured = match thread.line_sha.as_deref() {
+            Some(sha) if !same_commit(sha, &handover.review.head_sha) => {
+                format!(" — measured at {sha}")
+            }
+            Some(_) => String::new(),
+            None => " — the commit it was measured on was not recorded".to_string(),
+        };
         lines.push(format!(
-            "  F{} {} on {}:{} ({})",
-            thread.finding_seq, thread.severity, thread.path, thread.line, thread.side
+            "  F{} {} on {}:{} ({}){}",
+            thread.finding_seq, thread.severity, thread.path, thread.line, thread.side, measured
         ));
     }
 
     lines.push(String::new());
     lines.push(handover.draft.body.clone());
     lines.join("\n")
+}
+
+/// Whether two commits are the same one, when either may be abbreviated.
+///
+/// **A prefix match and not an equality, because the record holds both lengths.** A head
+/// is "full or abbreviated" by the contract's own words and `open_round` checks only that
+/// it is not empty, while a finding's commit is 7 to 40 characters — so the same commit
+/// reaches here written two ways, and `==` would report a move that never happened. The
+/// comparison is on the shorter of the two, which is what `git` itself does with an
+/// abbreviation.
+///
+/// Two different commits sharing a seven-character prefix read as one. That is the same
+/// bargain every abbreviated sha in this tool makes, and the alternative — calling two
+/// spellings of one commit a difference — is the error a reader cannot check.
+fn same_commit(one: &str, two: &str) -> bool {
+    let shortest = one.len().min(two.len());
+    one.get(..shortest)
+        .zip(two.get(..shortest))
+        .is_some_and(|(one, two)| one.eq_ignore_ascii_case(two))
 }
 
 /// `passes, 118 of 150 words, 3 of 3 findings, 0 raised before`, leaving out whatever

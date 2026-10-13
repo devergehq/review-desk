@@ -1261,6 +1261,22 @@ fn a_second_round_validates_whole_and_carries_the_timeline() {
         Value::Null,
         "a carried finding is not late; it is open or it is answered"
     );
+
+    // **And the commit its line was measured on is round one's, not this round's head.**
+    // DEV-978: the carry copies the number, so it copies the commit that number is an
+    // address against. Round 2 is at 9d02e71 and line 58 there is a different line.
+    assert_eq!(
+        carried["line"], 58,
+        "the line is round one's, as the carry has always copied it"
+    );
+    assert_eq!(
+        carried["line_sha"], "3f9c2ab",
+        "and so is its commit. Pairing this round's 9d02e71 with round one's line 58 is          the defect DEV-978 is: {carried:#}"
+    );
+    assert_eq!(
+        detail["review"]["head_sha"], "9d02e71",
+        "which is a different commit from the one the review is of"
+    );
 }
 
 #[test]
