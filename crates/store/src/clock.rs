@@ -33,6 +33,20 @@ pub struct Clock(Source);
 enum Source {
     /// The machine's clock.
     System,
+    /// A clock that moves one second on every reading. Shared, for `Fixed`'s reason.
+    ///
+    /// **For the tests that are about two writes having one time.** A fixed clock cannot
+    /// fail them and neither can the system clock: both readings land in the same second,
+    /// so an invariant like "the draft is stamped from the move rather than from a second
+    /// reading" holds whether the code threads the time through or reads the clock twice.
+    /// Measured by a review of this branch — the test passed 200 times out of 200 with the
+    /// code it was written to guard reverted. This clock puts the second boundary between
+    /// every pair of readings, so the test fails by construction without the fix.
+    ///
+    /// Gated with `Fixed` and present for the same reason: nothing a release binary can
+    /// build.
+    #[cfg_attr(not(feature = "fixed-clock"), allow(dead_code))]
+    Ticking(Arc<AtomicI64>),
     /// A time a test holds and moves. Shared, so a clock handed to a store and the copy
     /// the test kept are the same clock.
     ///
@@ -54,6 +68,9 @@ impl Clock {
         match &self.0 {
             Source::System => crate::model::now(),
             Source::Fixed(held) => held.load(Ordering::SeqCst),
+            // Every reading is a second later than the one before it, which is what makes a
+            // test about two writes sharing one time able to fail.
+            Source::Ticking(held) => held.fetch_add(1, Ordering::SeqCst),
         }
     }
 
@@ -66,6 +83,17 @@ impl Clock {
         Clock(Source::Fixed(Arc::new(AtomicI64::new(at))))
     }
 
+    /// A clock that reads one second later every time it is asked, starting at `at`.
+    ///
+    /// **For the tests that are about two writes having one time**, and the only clock that
+    /// can fail one — see [`Source::Ticking`]. A test that wants time to stand still wants
+    /// [`Clock::fixed`]; this one is for proving that a function threads a time through
+    /// rather than reading the clock again.
+    #[cfg(feature = "fixed-clock")]
+    pub fn ticking(at: Timestamp) -> Self {
+        Clock(Source::Ticking(Arc::new(AtomicI64::new(at))))
+    }
+
     /// Move a fixed clock on by `seconds`, and say what it now reads.
     ///
     /// Does nothing to the system clock, which is the honest answer rather than a panic:
@@ -74,7 +102,11 @@ impl Clock {
     #[cfg(feature = "fixed-clock")]
     pub fn advance(&self, seconds: i64) -> Timestamp {
         match &self.0 {
-            Source::System => self.now(),
+            // Neither the system clock nor a ticking one is a clock a test moves: the first
+            // moves itself and the second moves on every reading, which is the whole of what
+            // it is for. The honest answer is what it reads now, which is `fixed`'s own rule
+            // for the system clock.
+            Source::System | Source::Ticking(_) => self.now(),
             Source::Fixed(held) => held.fetch_add(seconds, Ordering::SeqCst) + seconds,
         }
     }

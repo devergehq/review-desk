@@ -8,11 +8,12 @@
 
 mod common;
 
-use common::{posted, temp_store};
+use common::{db_path, posted, temp_store};
 use review_desk_store::{
-    Actor, DiffAtHead, Disposition, DraftStatus, HeadUpdateKind, NewDraft, NewFinding,
+    Actor, Clock, DiffAtHead, Disposition, DraftStatus, HeadUpdateKind, NewDraft, NewFinding,
     NewRoundCommit, OpenedAction, ReviewEvent, ReviewFacts, Severity, Store,
 };
+use tempfile::TempDir;
 
 const REPO: &str = "acme/portal";
 const PR: i64 = 41;
@@ -674,7 +675,15 @@ fn the_withdrawal_is_stamped_with_the_move_that_caused_it() {
     // date the draft one second after the move that caused it, and the page would then go
     // silent about the one push that took a sign-off away. Raised by a review of the fix that
     // made that comparison inclusive.
-    let (_dir, store) = temp_store();
+    //
+    // **On a clock that moves a second every time it is read, because nothing else can fail
+    // this.** On the system clock the two readings land in the same second and the assertion
+    // holds whether the time is threaded through or read again — measured by a review of this
+    // test: 200 runs, 0 failures, with the fix reverted. `Clock::ticking` puts the boundary
+    // between every pair of readings, so this fails by construction without it.
+    let dir = TempDir::new().expect("temporary directory");
+    let clock = Clock::ticking(1_760_000_000);
+    let store = Store::open_with_clock(db_path(&dir), clock).expect("open store");
 
     let review = signed_off(&store, "4d9464f");
     store

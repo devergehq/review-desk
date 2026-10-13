@@ -623,6 +623,14 @@ impl Api {
         // The title is filled on any round, which is right: it is a fact about the pull
         // request rather than about a commit or a round, which is also why a move leaves it
         // alone.
+        //
+        // **One cell where the round number and the history diverge, and it fails safe.**
+        // `round == 1` stands in for "nothing has been posted to the author yet", and the
+        // duplicate-round tidy can part the two: folding a legacy round 1 into round 2 leaves
+        // one round, numbered 2, on a pull request nothing ever posted — so a paste declines a
+        // whole-pull-request count that would have been right. It needs records written before
+        // DEV-962 to reach, and it leaves a null rather than a wrong figure, which is the
+        // direction this whole paragraph argues for. Noticed by a review of the fix.
         let gaps = ReviewFacts {
             title: resolved
                 .as_ref()
