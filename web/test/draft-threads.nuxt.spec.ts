@@ -219,4 +219,39 @@ describe('the threads the draft hands over', () => {
 
     expect(panel.find('.thread').text()).not.toContain('measured at')
   })
+
+  /*
+   * **A head that names nothing is not rendered as nothing.** It was storable blank until
+   * DEV-936 and `commitLabel('')` is the empty string, so the unguarded sentence read
+   * "measured at a1b2c3d, not at " under every thread. Found by a review of this branch.
+   */
+  it('says only where a line was measured when there is no head to name', async () => {
+    const panel = await mountSuspended(DraftThreads, {
+      props: { headSha: '', threads: [thread(1, { line_sha: 'a1b2c3d' })] },
+    })
+
+    const text = panel.find('.thread').text()
+    expect(text).toContain('measured at a1b2c3d')
+    expect(text).not.toContain('not at')
+  })
+
+  /*
+   * And the list's own sentence keeps the commit in the monospace face the places below
+   * it have — the card's rule that a value a reader copies is set as one.
+   */
+  it('sets the head in the monospace face, as the places are', async () => {
+    const threads = [1, 3].map(seq => thread(seq, { line_sha: null }))
+    const panel = await mountSuspended(DraftThreads, { props: { headSha: HEAD, threads } })
+
+    expect(panel.find('.none-recorded code').text()).toBe(HEAD)
+  })
+
+  it('leaves the head out of that sentence when there is none to name', async () => {
+    const threads = [1, 3].map(seq => thread(seq, { line_sha: null }))
+    const panel = await mountSuspended(DraftThreads, { props: { headSha: '', threads } })
+
+    const said = panel.find('.none-recorded').text()
+    expect(said).toContain('None of these records which commit its line was measured on')
+    expect(said).not.toContain('The pull request is at')
+  })
 })

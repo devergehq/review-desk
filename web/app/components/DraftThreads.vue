@@ -73,22 +73,6 @@ const noneRecorded = computed(() =>
 )
 
 /**
- * That sentence, with the head named only where there is one to name.
- *
- * A head was storable blank until DEV-936 and `commitLabel('')` is the empty string, so
- * the clause would otherwise render as "the pull request is at ." — composed here rather
- * than branched in the template, which is where the markup stopped being readable.
- */
-const noneRecordedLine = computed(() => {
-  const where = props.headSha.length > 0
-    ? `, and the pull request is at ${commitLabel(props.headSha)}`
-    : ''
-  return `None of these records which commit its line was measured on${where}. Whether `
-    + 'each line still means there what it meant where it was counted is not something '
-    + 'the record can say.'
-})
-
-/**
  * Which commit this thread's line was counted on, where that is not where the pull request
  * is now — and nothing when it is. DEV-978.
  *
@@ -162,9 +146,20 @@ function measuredElsewhere(thread: DraftThread): string | null {
     -->
     <p
       v-if="noneRecorded"
-      class="rd-meta help"
+      class="rd-meta help none-recorded"
     >
-      {{ noneRecordedLine }}
+      None of these records which commit its line was measured on. Whether each line
+      still means what it meant where it was counted is not something the record can say.
+      <!--
+        **Its own sentence, and only where there is a head to name.** A head was storable
+        blank until DEV-936 and `commitLabel('')` is the empty string, so a clause welded
+        into the sentence above rendered as "at ." and left the "there" in it pointing at
+        nothing. The commit keeps the monospace face the places below it have, because it
+        is a value a reader copies.
+      -->
+      <span v-if="headSha.length > 0">
+        The pull request is at <code class="place">{{ commitLabel(headSha) }}</code>.
+      </span>
     </p>
 
     <ol
