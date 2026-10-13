@@ -5,7 +5,7 @@ use review_desk_store::{
     DiffAtHead, Draft, Finding, FullReview, OutOfPlay, Outcome, Review, ReviewFacts, ReviewLayer,
     ReviewLinks, Store,
 };
-use serde_json::{json, Value};
+use serde_json::json;
 
 use crate::error::{CliError, Result};
 use crate::report::Report;
@@ -462,29 +462,13 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
         ReviewCommand::OutOfPlay { repo, pr, reason } => {
             let store = Store::open_default()?;
             let rounds = store.set_pr_out_of_play(repo, *pr, Some(reason.0))?;
-            Ok(Report::new(
-                json!({
-                    "repo": rounds.first().map(|review| review.repo.clone()),
-                    "pr": pr,
-                    "out_of_play": reason.0,
-                    "rounds": rounds,
-                }),
-                out_of_play_line(&rounds, Some(reason.0)),
-            ))
+            Ok(out_of_play_report(repo, *pr, Some(reason.0), rounds))
         }
 
         ReviewCommand::InPlay { repo, pr } => {
             let store = Store::open_default()?;
             let rounds = store.set_pr_out_of_play(repo, *pr, None)?;
-            Ok(Report::new(
-                json!({
-                    "repo": rounds.first().map(|review| review.repo.clone()),
-                    "pr": pr,
-                    "out_of_play": Value::Null,
-                    "rounds": rounds,
-                }),
-                out_of_play_line(&rounds, None),
-            ))
+            Ok(out_of_play_report(repo, *pr, None, rounds))
         }
 
         ReviewCommand::Show { review } => {
@@ -518,30 +502,44 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
     }
 }
 
-/// `acme/portal#41 is out of play (draft), 2 rounds` or `… is back in play, 2 rounds`.
+/// The one answer both `review out-of-play` and `review in-play` give.
 ///
-/// The repository is taken from the rows rather than echoed from the argument, for
-/// `found_line`'s reason: the record holds it canonically, and printing what was typed is
-/// how two spellings of one repository come to look like two repositories.
-fn out_of_play_line(rounds: &[Review], why: Option<OutOfPlay>) -> String {
+/// **One function, because they are one fact read two ways**: a pull request is out of play
+/// for a reason or it is not, and two handlers wording the same answer is two places for it
+/// to be worded differently.
+///
+/// **The repository is the stored spelling, not the one that was typed**, which is
+/// `review find`'s rule and its reason: the record holds it canonically, and echoing the
+/// argument is how two spellings of one repository come to look like two repositories. Taken
+/// from the rows where there are any, and from the same helper the store keys on where there
+/// are not — `set_pr_out_of_play` refuses a pull request with no review, so the fallback is
+/// unreachable and is here rather than a `null` the contract would have to allow.
+fn out_of_play_report(repo: &str, pr: i64, why: Option<OutOfPlay>, rounds: Vec<Review>) -> Report {
+    let found = match rounds.first() {
+        Some(first) => first.repo.clone(),
+        None => review_desk_store::normalised_repo(repo),
+    };
     let what = match why {
         Some(why) => format!("is out of play ({why})"),
         None => "is back in play".to_string(),
     };
-    match rounds.first() {
-        Some(first) => format!(
-            "{}#{} {what}, {}",
-            first.repo,
-            first.pr,
-            match rounds.len() {
-                1 => "1 round".to_string(),
-                count => format!("{count} rounds"),
-            }
-        ),
-        // `set_pr_out_of_play` refuses a pull request with no review, so this cannot
-        // happen; it says so rather than unwrapping on it.
-        None => format!("{what}, no rounds"),
-    }
+    let line = format!(
+        "{found}#{pr} {what}, {}",
+        match rounds.len() {
+            1 => "1 round".to_string(),
+            count => format!("{count} rounds"),
+        }
+    );
+
+    Report::new(
+        json!({
+            "repo": found,
+            "pr": pr,
+            "out_of_play": why,
+            "rounds": rounds,
+        }),
+        line,
+    )
 }
 
 /// `draft` or `withdrawn`, as clap reads it off the command line.
