@@ -107,6 +107,17 @@ const showTabs: Array<{ value: ReviewsShown, label: string }> = [
 const reviews = desk.reviews(repo, show)
 
 /**
+ * The one-off tidy's proposal, and whether it is open.
+ *
+ * **Read whether or not it is open**, which is the composable's own shape — a resource
+ * follows the repository picker and refreshes with every write, and gating the *read* on a
+ * button would mean the first open shows a spinner over a question the page could already
+ * have answered. What the button gates is the drawing.
+ */
+const duplicates = desk.duplicateRounds(repo)
+const tidyOpen = ref(false)
+
+/**
  * The repositories to pick from, read the way the Rules screen reads them.
  *
  * **A second read, and the same exception that screen already takes.** The contract's rule
@@ -209,6 +220,33 @@ function finishedLine(row: ReviewListItem): string {
     return `Finished${when}. No round of this pull request can be posted.`
   }
   return `Finished — the pull request ${how}${when}. No round of it can be posted.`
+}
+
+/**
+ * What a row whose pull request is out of play says under its title.
+ *
+ * **The reason, and that it is coming back.** Out of play is the one of the four ways off
+ * the queue that undoes itself — the author converted the pull request to a draft, or the
+ * review request was withdrawn — so the sentence has to say *paused* rather than *over*, or
+ * a reader will read it as a finish and stop expecting the review.
+ */
+function outOfPlayLine(row: ReviewListItem): string {
+  const why = row.review.out_of_play
+  const since = row.review.out_of_play_at ? ` ${sinceLabel(row.review.out_of_play_at)}` : ''
+  if (why === 'withdrawn') {
+    return `Out of play${since} — the review request was withdrawn. It comes back when `
+      + 'somebody asks for a review again.'
+  }
+  if (why === 'draft') {
+    return `Out of play${since} — the pull request is a draft. It comes back when the `
+      + 'author marks it ready.'
+  }
+  /*
+   * **No default reason.** A row served as out of play without one would otherwise read
+   * "the pull request is a draft" about a withdrawn request — the mistake `finishedLine`
+   * above avoids by leaving the word out rather than guessing it.
+   */
+  return `Out of play${since}. It comes back when the pull request does.`
 }
 
 /** Whether any row has no activity time, which the caption then says. */
@@ -399,6 +437,17 @@ function nothingHere(answer: { repo: string | null, show: ReviewsShown }): strin
               class="rd-meta left"
             >{{ finishedLine(row) }}</span>
             <!--
+              **A pull request the author has pulled back, which is coming back.** It stays
+              under In play for the reason a superseded round does, and one more of its own:
+              this row is the only sentence that explains where the review went, so hiding
+              it would hide the explanation. Not a dismissal and not a finish — the two words
+              this page exists to tell apart — and the reason names which of the two it is.
+            -->
+            <span
+              v-else-if="row.left_the_desk === 'out_of_play'"
+              class="rd-meta left"
+            >{{ outOfPlayLine(row) }}</span>
+            <!--
               **A superseded round, which is in play and is still nobody's turn.** It stays
               under In play — the pull request is in play and so is this round's record — and
               the row says why nothing is waiting on it, because the step beside it reads
@@ -411,6 +460,49 @@ function nothingHere(answer: { repo: string | null, show: ReviewsShown }): strin
               this round was written against, so it can never be the review that posts.</span>
           </QueueRow>
         </DeskSection>
+
+        <!--
+          **The one-off tidy, opened rather than drawn.** It answers about the record as the
+          rule before DEV-962 left it, and on a desk with no duplicates there is nothing to
+          say — so the page asks for the proposal when the developer opens it, and says so
+          either way. Here because the Reviews list is the one place every round is visible.
+        -->
+        <div class="tidy-opener">
+          <DeskButton
+            v-if="!tidyOpen"
+            kind="quiet"
+            @click="tidyOpen = true"
+          >
+            Tidy the duplicate rounds
+          </DeskButton>
+          <template v-else>
+            <DeskState
+              :resource="duplicates"
+              what="the duplicate rounds"
+            >
+              <template #default="{ data: tidy }">
+                <TidyRounds
+                  v-if="tidy.pull_requests.length > 0"
+                  :page="tidy"
+                />
+                <DeskNotice
+                  v-else
+                  tone="plain"
+                >
+                  No pull request has more than one unposted round. A new commit on an
+                  unposted round moves that round rather than opening another, so none can
+                  turn up from here on.
+                </DeskNotice>
+              </template>
+            </DeskState>
+            <DeskButton
+              kind="quiet"
+              @click="tidyOpen = false"
+            >
+              Close the tidy
+            </DeskButton>
+          </template>
+        </div>
       </template>
 
       <!--

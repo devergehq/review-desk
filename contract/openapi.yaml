@@ -348,6 +348,126 @@ paths:
         '500':
           $ref: '#/components/responses/StoreUnavailable'
 
+  /duplicate-rounds:
+    get:
+      operationId: listDuplicateRounds
+      tags: [review]
+      summary: Pull requests with more than one unposted round, and what to do about each
+      description: |
+        **The one-off tidy, and it only shows.** DEV-962 asks for a tidy that "shows each
+        pull request's extra unposted rounds and folds them into the newest (or dismisses
+        them); nothing is deleted without confirmation" — so this is a read, and the two
+        acts it proposes are `POST /reviews/{reviewId}/fold` and
+        `POST /reviews/{reviewId}/dismiss`, both the developer's. There is no command line
+        path to any of the three.
+
+        **An extra round is one that is not the newest and has not posted.** A posted round
+        is a review that happened rather than a duplicate of anything, the newest round is
+        what the others fold into, and a round the developer has already dismissed is left
+        out — offering to tidy it would be asking them to decide the same thing twice.
+
+        **Nothing new can appear here.** Since DEV-962 a round opens only when the newest one
+        has posted, so a pull request cannot grow a second unposted round. What this answers
+        about is the record as it stood when the rule changed: on 13 October 2026 one pull
+        request was in the queue twice and another had reached round 4 with no post at all.
+
+        Newest pull request first, and each one's extras oldest round first — the order they
+        were opened in.
+      parameters:
+        - name: repo
+          in: query
+          required: false
+          description: One repository, as `owner/repo`. Omit it for every repository.
+          schema: { $ref: '#/components/schemas/RepoName' }
+      responses:
+        '200':
+          description: Every pull request with extra unposted rounds.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [pull_requests, pull_requests_affected, extra_rounds]
+                properties:
+                  pull_requests:
+                    type: array
+                    items: { $ref: '#/components/schemas/DuplicateRounds' }
+                  pull_requests_affected:
+                    type: integer
+                    minimum: 0
+                    description: |
+                      How many pull requests are in `pull_requests`. Served rather than
+                      counted by the screen so that the heading and the rows cannot
+                      disagree.
+                  extra_rounds:
+                    type: integer
+                    minimum: 0
+                    description: Every extra round, across every pull request.
+        '400':
+          description: The `repo` filter is not a repository.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
+  /reviews/{reviewId}/fold:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+    post:
+      operationId: foldRound
+      tags: [review]
+      summary: Fold an extra unposted round into its pull request's newest round
+      description: |
+        **The developer's act, on their confirmation, and only here.** It does what
+        `review open` would have done had DEV-962's rule existed when the commit arrived:
+        the folded round's head is recorded against the newest round as a `folded` head
+        update, and the empty row goes. So the history survives the row — "the request was
+        at `4d9464f` before it was at `a41c9e2`" stays answerable — which is the difference
+        between folding and deleting.
+
+        **Offered only for a round that holds nothing**: no brief, no finding, no draft and
+        no review posted on GitHub. `GET /duplicate-rounds` says `act: "dismiss"` for the
+        rest, and this refuses them with the same words a refused delete uses — "review 7
+        holds a brief and 4 findings" — because a round holding work is kept and hidden
+        rather than removed.
+
+        The newest round itself is refused, and so is a round that posted: a posted round is
+        a review that happened, and folding it would delete the record that a review was
+        posted on that pull request at all.
+      responses:
+        '200':
+          description: |
+            The round that went and the round it folded into. The first is served because
+            nothing can read it again and the screen has a line to draw about what was
+            removed.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [folded, into]
+                properties:
+                  folded: { $ref: '#/components/schemas/Review' }
+                  into: { $ref: '#/components/schemas/Review' }
+        '400':
+          description: |
+            It is the newest round, or it posted. Neither is a duplicate of anything.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            It holds a brief, a finding, a draft or a posted review. The error names what
+            it holds, and the screen offers a dismissal instead.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
   /reviews/{reviewId}/restore:
     parameters:
       - $ref: '#/components/parameters/ReviewId'
@@ -1358,7 +1478,7 @@ components:
       additionalProperties: false
       required:
         [id, repo, pr, head_sha, round, created_at, pr_state, pr_state_at, harvested_at,
-         ticket_url, dismissed_at, dismissed_reason]
+         ticket_url, dismissed_at, dismissed_reason, out_of_play, out_of_play_at]
       description: One review of one pull request at one head commit.
       properties:
         id: { type: integer, format: int64, minimum: 1 }
@@ -1514,6 +1634,48 @@ components:
             Why it was dismissed, in the developer's own words. Null exactly when
             `dismissed_at` is null: a dismissal with no reason is refused, because a
             review hidden silently is one nobody can afterwards say why they hid.
+
+        # -- out of play (DEV-962) ---------------------------------------------------
+        #
+        # The third way a review leaves the queue, and the only one that undoes itself.
+        # Beside the dismissal for the same reason it gives: every screen that can draw a
+        # review has to be able to say the review is paused.
+        #
+        # **Both required**, for `pr_state`'s argument above.
+        out_of_play:
+          oneOf:
+            - $ref: '#/components/schemas/OutOfPlay'
+            - type: 'null'
+          description: |
+            Why this review's pull request is out of play — converted to a draft, or its
+            review request withdrawn — and null while it is in play.
+
+            **Not finished and not dismissed.** A dismissal is the developer declining a
+            review and only they undo it; merged and closed are final. This is the author
+            saying "not yet" or somebody saying "not you", and it is answered by the pull
+            request coming back: the review returns on the round it was on. So it leaves
+            the queue and the work list an agent reads, and it changes nothing else — in
+            particular it refuses no sign-off, because the draft will post when the pull
+            request returns.
+
+            It is a fact about the pull request, and every round of it carries the same
+            value. Written by `review-desk review out-of-play` and cleared by
+            `review-desk review in-play`: Review Desk polls nothing and this document has
+            no operation that writes it, for the reason the provenance fields give — the
+            caller watching GitHub is the only thing that knows.
+        out_of_play_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When it went out of play. Null exactly when `out_of_play` is null.
+
+    OutOfPlay:
+      type: string
+      description: |
+        Why a pull request is out of play. Two values, and both of them undo themselves:
+        the author converted the pull request to a draft, or the review request was
+        withdrawn.
+      enum: [draft, withdrawn]
 
     StartReviewRequest:
       type: object
@@ -1954,9 +2116,9 @@ components:
 
     LeftTheDesk:
       type: string
-      enum: [dismissed, finished, superseded]
+      enum: [dismissed, finished, out_of_play, superseded]
       description: |
-        How a review left the desk. **Three different facts, deliberately not one.**
+        How a review left the desk. **Four different facts, deliberately not one.**
 
         `dismissed` is the developer's act: they will not act on this review again, and
         the reason is in their own words on the review. `finished` is the record saying
@@ -1976,11 +2138,21 @@ components:
         so without this case its row went on reading "Draft · waiting on you" while its own
         draft page said "Nothing left to do". Found by a review of this branch.
 
-        **It is not a filter position.** `show=` has four and they are about where a review
-        *is*; a superseded round is in play on a pull request that is in play, and the view
-        it belongs to is **In play**. What this field does is let the row say so honestly.
-        The order is the order `NotForSigning` asks in: dismissed, then finished, then
-        superseded.
+        **`out_of_play` is the fourth, and the only one of the four that undoes itself.**
+        Its pull request was converted to a draft, or its review request was withdrawn —
+        the author saying "not yet", or somebody saying "not you". The review leaves the
+        queue and the work list and comes back on the round it was on, so a row saying this
+        is a row saying *paused*, not *over*: `review.out_of_play` beside it names which of
+        the two reasons it is. Added by DEV-962.
+
+        **Neither `out_of_play` nor `superseded` is a filter position.** `show=` has four
+        and they are about where a review *is*; both of these are in play on a pull request
+        that is in play, and the view they belong to is **In play**. What this field does is
+        let the row say so honestly — and for a pull request the author has pulled back,
+        hiding the row would hide the one sentence that explains where the review went.
+
+        The order is the order `NotForSigning` asks in, with the reversible one below the
+        two that are not: dismissed, then finished, then out of play, then superseded.
 
     NotForSigning:
       type: object
@@ -3055,6 +3227,17 @@ components:
             here, for the reason the `Finding` round fields are not: a response written
             before DEV-873 is missing it rather than wrong.
           minItems: 1
+        head_updates:
+          allOf:
+            - $ref: '#/components/schemas/HeadUpdates'
+          description: |
+            **What has happened to this round's head commit since it was opened**, with the
+            counts the review page's "Updated for 3 commits since `4d9464f`" is written
+            from.
+
+            Always served, and empty — `moved: 0`, `since_sha: null`, no rows — on a round
+            whose head has never moved. It is not required here, for the reason `rounds` is
+            not: a response written before DEV-962 is missing it rather than wrong.
         commits_since_previous_round:
           type: array
           items: { $ref: '#/components/schemas/RoundCommit' }
@@ -3331,6 +3514,29 @@ components:
           description: |
             When the session reported the posted review. Set together with the review's
             `github_review_id`, never by this API acting on GitHub.
+
+        # -- a withdrawn sign-off (DEV-962) ------------------------------------------
+        signoff_withdrawn_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When a sign-off was withdrawn because the head commit moved under it, and null
+            for a draft nobody has signed off or one signed off since.
+
+            **The developer approved different code.** An approved draft is what a session
+            reads and posts under their name, so one still marked approved over a commit
+            they never saw would be a review posted in their name about code they did not
+            read. The draft goes back to `drafting` — not `ready`, which would leave
+            "waiting on you to sign off" over a draft written for a commit nobody is
+            looking at — and `event` is kept, because what it is to be posted as is still
+            true.
+        signoff_withdrawn_head:
+          type: [string, 'null']
+          pattern: '^[0-9a-f]{7,40}$'
+          description: |
+            The commit the developer had approved. Null exactly when
+            `signoff_withdrawn_at` is null, and it is what the page names: they approved
+            this commit, and `review.head_sha` is where the pull request is now.
         updated_at: { type: string, format: date-time }
 
     DraftDetail:
@@ -4550,6 +4756,199 @@ components:
         withdrawn: { type: integer, minimum: 0 }
         ticketed: { type: integer, minimum: 0 }
 
+    RoundRef:
+      type: object
+      additionalProperties: false
+      required: [review_id, round, head_sha]
+      description: A round, named by the three things that identify it on a screen.
+      properties:
+        review_id: { type: integer, format: int64, minimum: 1 }
+        round: { type: integer, format: int64, minimum: 1 }
+        head_sha:
+          type: string
+          pattern: '^[0-9a-f]{7,40}$'
+
+    TidyAct:
+      type: string
+      enum: [fold, dismiss]
+      description: |
+        What the tidy would do with one extra unposted round.
+
+        **Two acts, because two kinds of row are on the record.** `fold` is for a round
+        holding nothing a delete would lose: its head is recorded on the newest round and
+        the empty row goes. `dismiss` is for one holding a brief, a finding, a draft or a
+        posted review — it is kept and hidden instead, with the developer's reason on it,
+        which is the whole argument for choosing a dismissal over a delete.
+
+        Which one a round gets is `delete_review`'s own question, so the screen cannot offer
+        a fold the API would refuse.
+
+    ExtraRound:
+      type: object
+      additionalProperties: false
+      required: [review_id, round, head_sha, created_at, holds, act]
+      description: One extra unposted round, with what it holds and what would happen to it.
+      properties:
+        review_id: { type: integer, format: int64, minimum: 1 }
+        round: { type: integer, format: int64, minimum: 1 }
+        head_sha:
+          type: string
+          pattern: '^[0-9a-f]{7,40}$'
+        created_at: { type: string, format: date-time }
+        holds:
+          type: string
+          minLength: 1
+          description: |
+            What it holds, in the words a refused delete is composed from — "a brief and 4
+            findings" — or **"nothing"**.
+
+            **The screen says this before the developer agrees to anything.** It is the
+            sentence that makes a dismissal the obvious choice over a fold, and a tidy that
+            asked for a decision without it would be asking them to confirm a removal they
+            cannot see the size of. Words rather than flags, and composed in one place, so
+            the screen and the refusal cannot word the same fact differently.
+        act: { $ref: '#/components/schemas/TidyAct' }
+
+    DuplicateRounds:
+      type: object
+      additionalProperties: false
+      required: [repo, pr, title, newest, extras]
+      description: |
+        One pull request's extra unposted rounds, and the round they would fold into.
+      properties:
+        repo: { $ref: '#/components/schemas/RepoName' }
+        pr:
+          type: integer
+          format: int64
+          minimum: 1
+        title:
+          type: [string, 'null']
+          minLength: 1
+          description: |
+            The pull request's title, from whichever of its rounds holds one — a round
+            recorded before a title was known has none, and a later round may have it.
+        newest:
+          allOf:
+            - $ref: '#/components/schemas/RoundRef'
+          description: |
+            The newest round: the one that can still post, and the one the extras fold
+            into. Never in `extras`.
+        extras:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/ExtraRound' }
+          description: |
+            The extra rounds, oldest first. Never empty: a pull request with none is not in
+            the answer at all.
+
+    HeadUpdateKind:
+      type: string
+      enum: [moved, base_only, folded]
+      description: |
+        What happened to a round's head commit. **Three kinds, because three different
+        things happen and a boolean could only word one.**
+
+        `moved` is new commits on an unposted round: the round's head became `to_sha`, and
+        the session re-reads the delta. `base_only` is the caller saying the pull request's
+        own diff against its base is unchanged, so the commits only brought the base branch
+        in — the head stayed at `from_sha` and nothing else changed. `folded` is the
+        duplicate-round tidy folding an earlier unposted round into this one, and `from_sha`
+        is the folded round's head.
+
+        DEV-962 asks for the move to record "whether the PR's own diff changed", and a
+        `diff_changed` boolean would hold false for every move nobody said anything about —
+        an assertion the record was never given. The kind names the event instead, and
+        every value is a statement something actually made.
+
+    HeadUpdate:
+      type: object
+      additionalProperties: false
+      required: [kind, from_sha, to_sha, at]
+      description: |
+        One thing that happened to this round's head commit. Append-only: the record keeps
+        every one, and the code review reads them to say what changed since the draft was
+        written.
+      properties:
+        kind: { $ref: '#/components/schemas/HeadUpdateKind' }
+        from_sha:
+          type: string
+          pattern: '^[0-9a-f]{7,40}$'
+          description: |
+            The commit the round was of. On a `folded` row, the folded round's own head.
+        to_sha:
+          type: string
+          pattern: '^[0-9a-f]{7,40}$'
+          description: |
+            The commit reported. The round's head afterwards on a `moved` row, and a commit
+            the round never became on the other two.
+        at: { type: string, format: date-time }
+
+    HeadUpdates:
+      type: object
+      additionalProperties: false
+      required: [since_sha, moved, base_only, folded, commits, last_at, updates]
+      description: |
+        What has happened to this round's head commit, with the counts the page reads.
+
+        **This is the sentence "Updated for 3 commits since `4d9464f`" and the evidence
+        under it.** Since DEV-962 a new commit on an unposted round moves that round rather
+        than opening the next one, so the page has to be able to say the round is no longer
+        of the commit the developer was shown — and the code review has to be able to show
+        what changed since the draft was written.
+
+        Empty on every round whose head has never moved, which is every round opened and
+        posted without a push and every round recorded before DEV-962.
+      properties:
+        since_sha:
+          type: [string, 'null']
+          pattern: '^[0-9a-f]{7,40}$'
+          description: |
+            The commit this round was opened on: the first `moved` row's `from_sha`, and
+            the commit the sentence measures from. Null when the head has never moved — a
+            round whose only updates are `base_only` has nothing to say it was updated
+            since, because nothing about it changed.
+
+            Deliberately the *first* move's, not the last: a later move's `from_sha` is a
+            commit this round was already of, which would make the sentence say "since" a
+            commit the developer has already been shown.
+        moved:
+          type: integer
+          minimum: 0
+          description: How many times the head moved.
+        base_only:
+          type: integer
+          minimum: 0
+          description: |
+            How many times commits arrived that only brought the base branch in. The page
+            says they changed nothing, which is the difference between a quiet record and a
+            record that cannot tell "nothing happened" from "nobody looked".
+        folded:
+          type: integer
+          minimum: 0
+          description: |
+            How many earlier unposted rounds the developer-confirmed tidy folded into this
+            one.
+        commits:
+          type: [integer, 'null']
+          minimum: 0
+          description: |
+            How many of this round's recorded commits came after `since_sha`.
+
+            **Three-valued, and the null is the honest half.** It is counted from the
+            commits a session recorded when it last read the pull request — Review Desk
+            reads no GitHub — so a round whose commits were never recorded, or recorded
+            before the move and not since, cannot answer "3 commits" and must not answer
+            "0 commits": zero would read as "nothing changed", which is the one thing it is
+            not. The page then says it was updated since a commit without counting them.
+        last_at:
+          type: [string, 'null']
+          format: date-time
+          description: When the last of them happened, and null when there have been none.
+        updates:
+          type: array
+          items: { $ref: '#/components/schemas/HeadUpdate' }
+          description: Every one of them, oldest first.
+
     RoundCommit:
       type: object
       additionalProperties: false
@@ -4591,7 +4990,7 @@ components:
       type: object
       additionalProperties: false
       required:
-        [review_id, round, head_sha, created_at, findings, commits, replies,
+        [review_id, round, head_sha, created_at, dismissed, findings, commits, replies,
          threads_resolved, statuses]
       description: |
         One round of a pull request, as the timeline across the top of the round-two page
@@ -4604,6 +5003,22 @@ components:
           type: string
           pattern: '^[0-9a-f]{7,40}$'
         created_at: { type: string, format: date-time }
+        dismissed:
+          type: boolean
+          description: |
+            Whether the developer has dismissed this round.
+
+            **The one fact here that is not a count, and the one the timeline could not
+            draw without.** Every other field on a summary looks the same for a round the
+            developer took out of play as for a live one, so the timeline drew a dismissed
+            round as live — DEV-954. A dismissed round stays *in* this list on purpose: a
+            hole where round 2 was would read as a gap in the record, so the word goes on
+            the round instead.
+
+            **Required, for the argument `Review.pr_state` makes**: a boolean left out of
+            `required` becomes optional in the generated type, and a fixture without it is
+            then not even a type error — which is exactly how a round would come to be
+            drawn as live again.
         posted_at:
           type: [string, 'null']
           format: date-time

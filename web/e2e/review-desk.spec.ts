@@ -53,7 +53,7 @@ const {
   postedReviewId,
   requestedReviewId,
   mergedReviewIds,
-  supersededReviewIds,
+  movedHeadReviewId,
 } = addresses
 
 /**
@@ -151,8 +151,8 @@ test.describe('the whole path, on a seeded database', () => {
      * developer, so it is in this count.
      *
      * **Four since DEV-957, and the noun changed with the count.** The fourth is
-     * `globex/portal#9541`, which has *two* rounds with unposted drafts and draws **one** row:
-     * a row is one pull request, and the heading counts rows. The four rounds of merged
+     * `globex/portal#9541`, whose head has moved and which draws **one** row: a row is one
+     * pull request, and the heading counts rows. The four rounds of merged
      * `globex/portal#9568` add nothing at all — a finished review is in no group, which is that
      * issue and is asserted below.
      */
@@ -160,13 +160,17 @@ test.describe('the whole path, on a seeded database', () => {
       page.getByRole('heading', { name: '4 pull requests need you' }),
     ).toBeVisible()
 
-    /* One row for #9541, and it is the newer round's. */
-    const superseded = page.locator('.queue-line').filter({ hasText: '#9541' })
-    await expect(superseded, 'one row for two rounds').toHaveCount(1)
-    await expect(superseded).toContainText('round 2')
-    await expect(superseded.locator('.row')).toHaveAttribute(
+    /*
+     * **One row for #9541, and one round behind it.** It was one row for two rounds until
+     * DEV-962: the author's pushes moved this round's head instead of opening rounds beside
+     * it, so the pull request the old rule recorded four times is one review.
+     */
+    const moved = page.locator('.queue-line').filter({ hasText: '#9541' })
+    await expect(moved, 'one row for one round').toHaveCount(1)
+    await expect(moved).toContainText('round 1')
+    await expect(moved.locator('.row')).toHaveAttribute(
       'href',
-      `/reviews/${supersededReviewIds[1]}/understand`,
+      `/reviews/${movedHeadReviewId}/understand`,
     )
 
     /*
@@ -3659,8 +3663,8 @@ test.describe('a merged pull request finishes its review', () => {
   ]) {
     test(`an unposted draft on it says so and offers no sign-off at ${name}`, async ({ page }) => {
       await page.setViewportSize({ width, height })
-      /* Round 2: a draft the session finished and nothing will ever post. */
-      await page.goto(`${seeded}reviews/${mergedReviewIds[1]}/draft`)
+      /* Round 4: a draft the session finished and nothing will ever post. */
+      await page.goto(`${seeded}reviews/${mergedReviewIds[3]}/draft`)
 
       /*
        * **Said twice, deliberately, and both are asserted.** The status line under the
@@ -3721,7 +3725,7 @@ test.describe('a merged pull request finishes its review', () => {
         body: JSON.stringify({ event: 'comment' }),
       })
       return { status: answer.status, body: await answer.text() }
-    }, { base: seeded, reviewId: mergedReviewIds[1] })
+    }, { base: seeded, reviewId: mergedReviewIds[3] })
 
     expect(refusal.status, refusal.body).toBe(409)
     const body = JSON.parse(refusal.body) as { code: string, message: string }
@@ -3731,24 +3735,219 @@ test.describe('a merged pull request finishes its review', () => {
 })
 
 /*
- * **A round a newer round supersedes, in a browser.**
+ * **A round whose head moved, in a browser.** DEV-962, measured against the seeded binary.
  *
- * DEV-957's comment: "The older round's draft page says it is superseded, and its draft
- * cannot be signed off." `globex/portal#9541` round 1 is that round — its pull request is open,
- * so this is the supersession on its own rather than the merge.
+ * Four of the issue's acceptance criteria are about what a screen says, and none of them can
+ * be settled by reasoning about a template: that the review page says it was updated and for
+ * which commits, that a base-branch merge changed nothing, that a signed-off draft whose head
+ * moves is no longer signed off *and the page says why*, and that the round timeline draws a
+ * dismissed round as dismissed.
+ *
+ * **Where the superseded tests were.** A second unposted round of one pull request is not a
+ * thing the binary can record any more — `review open` moves the round that is there — so the
+ * superseded state is now reachable only on records written before this change. It is still
+ * live code and still tested: `crates/store/tests/finished.rs` seeds it through the store,
+ * which is the only writer that can, and `crates/store/tests/tidy.rs` is the tidy that folds
+ * the rounds it comes from.
  */
-test.describe('a superseded round', () => {
-  test('its draft page says which round superseded it, and offers no sign-off', async ({
-    page,
-  }) => {
-    await page.goto(`${seeded}reviews/${supersededReviewIds[0]}/draft`)
+test.describe('a round whose head moved', () => {
+  test('the code review says it was updated, and names the commit it was opened on',
+    async ({ page }) => {
+      await page.goto(`${seeded}reviews/${movedHeadReviewId}/code-review`)
 
-    const said = /Not posted — superseded by round 2/
-    await expect(page.locator('.prose').filter({ hasText: said })).toBeVisible()
-    const aside = page.getByRole('complementary')
-    await expect(aside.getByText('Nothing to sign off')).toBeVisible()
-    await expect(aside.getByText(said)).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Sign off and post' })).toHaveCount(0)
+      const timeline = page.locator('.timeline')
+      await expect(timeline).toBeVisible()
+      /*
+       * **"Updated since a1b2c31", without a count**, and that is the honest sentence here:
+       * the count comes from the commits a session recorded when it last read the pull
+       * request, and nothing has recorded any for this round — `round commits` reads GitHub,
+       * which this suite never does. "Updated for 0 commits" would read as "nothing
+       * changed", which is the one thing a moved head is not. The counted sentence is
+       * measured in `test/rounds.spec.ts` and `test/round-timeline.nuxt.spec.ts`.
+       */
+      await expect(timeline).toContainText('Updated since a1b2c31')
+
+      /* And the two pushes that brought the base branch in and changed nothing. */
+      await expect(timeline).toContainText('2 pushes brought the base branch in')
+      await expect(timeline).toContainText('changed nothing')
+    })
+
+  test('the base-branch merges did not move the head', async ({ page }) => {
+    /*
+     * **The record, read through the binary.** The page says the base merges changed
+     * nothing; this is the half that says the record agrees — the review is of the commit
+     * the *real* push moved it to, not of either base merge.
+     */
+    const found = cliJson(seededDatabase, [
+      'review',
+      'find',
+      '--repo',
+      'globex/portal',
+      '--pr',
+      '9541',
+    ]) as unknown as { reviews: Array<{ head_sha: string, round: number, started: boolean }> }
+
+    expect(found.reviews, 'one request, one review').toHaveLength(1)
+    expect(found.reviews[0]!.round).toBe(1)
+    expect(found.reviews[0]!.head_sha, 'the commit the real push moved it to').toBe('c3d4e53')
+    expect(found.reviews[0]!.started, 'and a caller can see somebody has begun').toBe(true)
+
+    await page.goto(`${seeded}reviews/${movedHeadReviewId}/understand`)
+    await expect(page.getByText('Updated since a1b2c31')).toBeVisible()
+  })
+
+  test('a sign-off is withdrawn when the head moves under it, and the page says why',
+    async ({ page }) => {
+      /*
+       * **The whole of DEV-962's hardest criterion, end to end**: the developer signs off in
+       * the dashboard, the author pushes, and the page they signed off on says why the
+       * sign-off has gone. Written through the dashboard and the binary — nothing here
+       * reaches into the database.
+       *
+       * It runs on a pull request of its own, recorded here rather than in the seed, because
+       * it signs a draft off: a fixture the other tests read would then depend on the order
+       * this suite ran in.
+       */
+      const opened = cliJson(seededDatabase, [
+        'review',
+        'open',
+        '--repo',
+        'acme/portal',
+        '--pr',
+        '9542',
+        '--head',
+        'e1f2a31',
+        '--title',
+        'Hold the export context on the job',
+        '--changed-lines',
+        '64',
+      ]) as unknown as { review: { id: number } }
+      const reviewId = opened.review.id
+
+      const sections = resolve(scratch(), `withdrawn-body-${reviewId}.json`)
+      writeFileSync(
+        sections,
+        JSON.stringify([{
+          kind: 'prose',
+          text: 'One finding on the context the retry reads. Nothing else changed.',
+        }]),
+      )
+      cli(seededDatabase, [
+        'draft',
+        'put',
+        '--review',
+        String(reviewId),
+        '--sections',
+        sections,
+      ])
+
+      await page.goto(`${seeded}reviews/${reviewId}/draft`)
+      await page.getByRole('button', { name: 'Sign off and post' }).click()
+      /* The sign-off is recorded, and the page says the session posts it. */
+      await expect(page.getByText(/signed off|Signed off|posts it/)).toBeVisible()
+
+      /* And then the author pushes. */
+      cli(seededDatabase, [
+        'review',
+        'open',
+        '--repo',
+        'acme/portal',
+        '--pr',
+        '9542',
+        '--head',
+        'f2a3b42',
+      ])
+
+      await page.reload()
+      await expect(
+        page.getByText('You signed this off on e1f2a31'),
+        'the page names the commit they approved',
+      ).toBeVisible()
+      await expect(page.getByText('has moved to f2a3b42')).toBeVisible()
+      await expect(
+        page.getByRole('button', { name: 'Sign off and post' }),
+        'and it is theirs to sign off again, on the code that would post',
+      ).toBeVisible()
+
+      /*
+       * **And the code review shows the push that did it**, which is the other half of the
+       * issue's criterion. It was silent here until a review of this branch: the withdrawal
+       * writes the draft in the same transaction as the move, so the draft's time equalled
+       * the move's and a strict comparison filtered out the one move the section is for.
+       */
+      await page.goto(`${seeded}reviews/${reviewId}/code-review`)
+      const since = page.locator('.since-draft')
+      await expect(since).toBeVisible()
+      await expect(since).toContainText('e1f2a31')
+      await expect(since).toContainText('f2a3b42')
+    })
+
+  test('the round timeline draws a dismissed round as dismissed', async ({ page }) => {
+    /*
+     * **DEV-954, measured in a browser**, which is what that issue asks for. The round is
+     * dismissed through the dashboard, because dismissing is the developer's act and the
+     * dashboard is the only surface it happens on.
+     *
+     * Two rounds of a pull request of its own: round 1 posts — which is what makes round 2 a
+     * round rather than round 1 moved — and round 2 is the one dismissed.
+     */
+    const one = cliJson(seededDatabase, [
+      'review',
+      'open',
+      '--repo',
+      'acme/portal',
+      '--pr',
+      '9543',
+      '--head',
+      'a2b3c41',
+      '--title',
+      'Send the delivery receipt once',
+    ]) as unknown as { review: { id: number } }
+    cli(seededDatabase, [
+      'review',
+      'link',
+      '--review',
+      String(one.review.id),
+      '--github-review',
+      'PRR_acme9543r1',
+    ])
+    const two = cliJson(seededDatabase, [
+      'review',
+      'open',
+      '--repo',
+      'acme/portal',
+      '--pr',
+      '9543',
+      '--head',
+      'b3c4d52',
+    ]) as unknown as { review: { id: number }, action: string }
+    expect(two.action, 'round 1 posted, so this is a round of its own').toBe('created')
+
+    /* Dismissed through the dashboard: the developer's act, on the review's own page. */
+    await page.goto(`${seeded}reviews/${two.review.id}/understand`)
+    await page.getByRole('button', { name: 'Dismiss this review' }).click()
+    await page.getByLabel(/Why are you dismissing/).fill('superseded, waiting for the rewrite')
+    await page.getByRole('button', { name: 'Dismiss it' }).click()
+    await expect(page.getByText(/Dismissed/).first()).toBeVisible()
+
+    /* And the timeline on round 1's page draws it as dismissed, in the word and the line. */
+    await page.goto(`${seeded}reviews/${one.review.id}/code-review`)
+    const chips = page.locator('.chip')
+    await expect(chips).toHaveCount(2)
+    await expect(chips.nth(1)).toContainText('Round 2')
+    await expect(chips.nth(1)).toContainText('dismissed')
+    await expect(chips.nth(1)).toHaveAttribute('data-dismissed', 'yes')
+    await expect(chips.nth(0)).toHaveAttribute('data-dismissed', 'no')
+
+    /*
+     * **The strike-through is measured rather than assumed.** A class name asserts what the
+     * markup says; this asserts what the browser drew, which is the half a template cannot
+     * promise.
+     */
+    const struck = await chips.nth(1).locator('.round').evaluate(
+      element => getComputedStyle(element).textDecorationLine,
+    )
+    expect(struck, 'the round number is struck through').toContain('line-through')
   })
 
   /**
@@ -3756,16 +3955,24 @@ test.describe('a superseded round', () => {
    *
    * The page's notice was the last line of the sign-off card, and that card is the `v-else`
    * of the one saying "Nothing to sign off" — so on exactly the reviews this block is about,
-   * no element on the page could draw it. Raised by a review of this branch.
+   * no element on the page could draw it. Raised by a review of DEV-960.
    *
    * **Asserted through a save that succeeds**, which is the sharper half of it. The record
-   * takes an edit to a superseded round: the draft stays on it to be read, and `save_draft`
-   * refuses only an `approved` or a `posted` draft. So this is not a refusal going missing —
+   * takes an edit to a round nothing can post: the draft stays on it to be read, and
+   * `save_draft` refuses only an `approved` or a `posted` draft. So this is not a refusal going missing —
    * it is the ordinary "Saved." that every other review on the desk gets, and that this one
    * could not be told.
    */
   test('a draft nobody can sign off still says what a save did', async ({ page }) => {
-    const id = supersededReviewIds[0]!
+    /*
+     * **Round 4 of the merged pull request, where it was a superseded round.** DEV-962 made
+     * a superseded round unseedable — a new commit moves the round that is there, so an
+     * unposted round can never be anything but the newest — and this test is not about
+     * supersession: it is about a review *nobody can sign off* still having somewhere to say
+     * what a write did. A draft on a merged pull request is that review, and the store
+     * refuses the same four acts on it for the same reason.
+     */
+    const id = mergedReviewIds[3]!
     await page.goto(`${seeded}reviews/${id}/draft`)
     const aside = page.getByRole('complementary')
     await expect(aside.getByText('Nothing to sign off')).toBeVisible()
@@ -3786,12 +3993,23 @@ test.describe('a superseded round', () => {
     expect(saved.draft.body).toContain('nobody can sign off')
   })
 
-  test('the newer round’s draft page still offers the sign-off', async ({ page }) => {
-    /* The converse: a guard that refused every round would refuse the one that can post. */
-    await page.goto(`${seeded}reviews/${supersededReviewIds[1]}/draft`)
-    await expect(page.getByRole('button', { name: 'Sign off and post' })).toBeVisible()
-    await expect(page.getByText('Nothing to sign off')).toHaveCount(0)
-  })
+  test('the tidy says there is nothing to tidy on a record written under this rule',
+    async ({ page }) => {
+      /*
+       * **The strongest thing this suite can say about the tidy, and it is worth saying.**
+       * Every round in this database was recorded by a binary that moves an unposted round's
+       * head instead of opening another, so there is no duplicate to show — which is the
+       * main fix, measured from the other side. The rows the tidy draws are measured over
+       * the record the old rule left, in `test/tidy-rounds.nuxt.spec.ts` and
+       * `crates/store/tests/tidy.rs`.
+       */
+      await page.goto(`${seeded}reviews`)
+      await page.getByRole('button', { name: 'Tidy the duplicate rounds' }).click()
+      await expect(
+        page.getByText('No pull request has more than one unposted round'),
+      ).toBeVisible()
+      await expect(page.getByText('none can turn up from here on')).toBeVisible()
+    })
 })
 
 /*

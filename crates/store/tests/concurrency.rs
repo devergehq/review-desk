@@ -8,7 +8,7 @@ mod common;
 
 use std::thread;
 
-use common::new_review;
+use common::{new_review, posted};
 use review_desk_store::{
     newest_version, Actor, Decision, Disposition, FindingDecision, NewDraft, NewDraftSection,
     NewFinding, ReviewLayerState, Severity, Store,
@@ -85,13 +85,12 @@ fn two_callers_opening_two_new_head_commits_are_neither_refused_a_round() {
     // this test has always been about.
     //
     // **What the two calls now end with is one new round, not two**, and that is DEV-945
-    // rather than a regression. Round one carries a finding, so the first call through
-    // the lock supersedes it with round two — and round two is a round nobody has
-    // started, so the second call moves *its* head rather than opening a round three. Two
-    // unstarted reviews for one pull request is the state the issue exists to prevent, and
-    // it is unreachable through this function now: for two rounds to be created at once,
-    // both callers would have to see a started newest round, and the first of them leaves
-    // an unstarted one behind.
+    // and DEV-962 rather than a regression. Round one is posted, so the first call through
+    // the lock opens round two — and round two has not posted, so the second call moves
+    // *its* head rather than opening a round three. Two unposted rounds of one pull request
+    // is the state those issues exist to prevent, and it is unreachable through this
+    // function now: for two rounds to be created at once, both callers would have to see a
+    // posted newest round, and the first of them leaves an unposted one behind.
     let dir = tempfile::TempDir::new().unwrap();
     let path = dir.path().join("two-heads.db");
 
@@ -103,6 +102,7 @@ fn two_callers_opening_two_new_head_commits_are_neither_refused_a_round() {
     first
         .add_finding(seeded.id, a_finding("round one was reviewed"))
         .unwrap();
+    posted(&first, seeded.id);
 
     let worker = thread::spawn(move || second.open_review("devergehq/review-desk", 4, "head-two"));
     let mine = first.open_review("devergehq/review-desk", 4, "head-three");
@@ -139,7 +139,7 @@ fn two_callers_opening_two_new_head_commits_are_neither_refused_a_round() {
 fn two_callers_recording_one_unstarted_request_on_two_commits_get_one_review() {
     // The race the other way round, and the one DEV-945 is about: the dispatcher
     // recording a review request twice while the author pushes between the two calls.
-    // Both calls move the same unstarted round — the loser finds the round the winner
+    // Both calls move the same unposted round — the loser finds the round the winner
     // moved and moves it again — so one request is one review whichever order they land
     // in, and `work list` offers a session for it once.
     let dir = tempfile::TempDir::new().unwrap();

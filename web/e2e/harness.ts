@@ -164,24 +164,35 @@ export interface Addresses {
    */
   requestedReviewId: number
   /**
-   * **Four rounds of one merged pull request**, in the order they were opened: `globex/portal
-   * #9568`, round 1 posted and rounds 2 to 4 each holding a draft nobody signed off.
+   * **Four rounds of one merged pull request**, in the order they were opened:
+   * `globex/portal #9568`, rounds 1 to 3 posted and round 4 holding a draft nobody signed
+   * off.
    *
-   * It is the record DEV-957 was raised from, and every one of these four is **finished**:
-   * in no group of the queue, in no work list, under Finished on the Reviews list, and with
-   * no sign-off offered on any of the three unposted drafts. So it moves none of this
-   * suite's needs-you counts — which is the assertion, not a convenience.
+   * It is the record DEV-957 was raised from. **Three of them post, which is what makes
+   * four rounds reachable at all**: since DEV-962 a new commit on an unposted round moves
+   * that round, so a pull request can hold at most one round that has not posted. The shape
+   * this fixture used to have — one post and three unposted rounds — is what the tidy is
+   * for, and it is a store-level fixture in `crates/store/tests/tidy.rs` because nothing on
+   * the command line can produce it any more.
+   *
+   * Every one of these four is **finished**: in no group of the queue, in no work list,
+   * under Finished on the Reviews list, and with no sign-off offered on the unposted draft.
+   * So it moves none of this suite's needs-you counts — which is the assertion, not a
+   * convenience.
    */
   mergedReviewIds: number[]
   /**
-   * **Two rounds of one open pull request, both unposted drafts**: `globex/portal#9541`, in
-   * the order they were opened.
+   * **One round of one open pull request whose head has moved**: `globex/portal#9541`.
    *
-   * Round 1 is superseded — the author pushed past its commit — so the queue draws one row
-   * for this pull request and it is round 2's. Round 1's draft page says so and offers no
-   * sign-off. It is **one** of the queue's needs-you rows, so it moves that count by one.
+   * DEV-962's shape A. It holds a finding and a draft the session finished, two pushes that
+   * only brought the base branch in, and one that moved the head — so the review page says
+   * it was updated and says the base merges changed nothing. **One round, not two**: the old
+   * rule would have made four reviews of this pull request, and that is the fixture.
+   *
+   * It is **one** of the queue's needs-you rows, so it moves that count by one — which is
+   * what the two-round version of it moved, because only its newest round was ever a row.
    */
-  supersededReviewIds: number[]
+  movedHeadReviewId: number
 }
 
 /** The addresses, as the setup wrote them. */
@@ -645,14 +656,22 @@ function seedPosted(directory: string, database: string): number {
 }
 
 /**
- * **Four rounds of one merged pull request, one posted and three not** — the record
+ * **Four rounds of one merged pull request, three posted and one not** — the record
  * DEV-957 was raised from, in the browser.
  *
  * On 13 October Patrick's queue held ten drafts to approve, five of them rounds of pull
- * requests that had already merged. `globex/portal#9568` was four of those five: round 1 had
- * been posted and the author's three later pushes each opened a round whose draft was
+ * requests that had already merged. `globex/portal#9568` was four of those five: round 1
+ * had been posted and the author's three later pushes each opened a round whose draft was
  * never signed off. None of those three could ever be posted, and all three sat in "drafts
  * to approve".
+ *
+ * **Three of the four post here, and that is DEV-962 rather than a change of subject.** A
+ * new commit on an unposted round now moves that round, so the pull request the issue was
+ * raised from cannot be recorded through the binary any more: four rounds need three posts
+ * between them. What is still measured is every word of DEV-957 — four rounds under
+ * Finished, none in the queue or the work list, and the unposted draft saying so and
+ * offering no sign-off. The shape with three unposted rounds is a store-level fixture in
+ * `crates/store/tests/tidy.rs`, which is where the tidy that folds them is tested.
  *
  * **The state is written by a harvest, because the harvest is the only thing that writes
  * it.** Nothing on the command line records a pull request's state, and the issue says
@@ -703,10 +722,9 @@ function seedMerged(directory: string, database: string): number[] {
     }
 
     /*
-     * **A finding on each round, and it is load-bearing rather than decoration.**
-     * `review open` moves an *unstarted* round's head rather than opening a round beside
-     * it — DEV-945 — so without something on the round, the next head in this list would
-     * move this one instead of becoming round 2. A finding is what makes the round started.
+     * **A finding on each round**, so each one is a round somebody reviewed rather than a
+     * request nobody picked up. It is no longer what makes the next head a round of its
+     * own — see the post below, which is.
      */
     const finding = join(directory, `merged-finding-${index + 1}.json`)
     writeFileSync(
@@ -735,18 +753,29 @@ function seedMerged(directory: string, database: string): number[] {
     )
     cli(database, ['draft', 'put', '--review', String(reviewId), '--sections', body])
 
+    /*
+     * **Every round but the last posts, and that is what makes four rounds reachable.**
+     * Since DEV-962 a new commit on an *unposted* round moves that round's head instead of
+     * opening the next one — so without this the four heads in this list would be one round
+     * that moved three times. `review link --github-review` is the one way the command line
+     * says a review was posted; Review Desk posts nothing itself.
+     *
+     * The last round is left unposted on purpose: it is the draft on a merged pull request
+     * that DEV-957's "says so and cannot be signed off" is measured against.
+     */
+    if (index < heads.length - 1) {
+      cli(database, [
+        'review',
+        'link',
+        '--review',
+        String(reviewId),
+        '--github-review',
+        `PRR_acme9568r${index + 1}`,
+      ])
+    }
+
     rounds.push(reviewId)
   })
-
-  /* Round 1 is the one that posted, which is the round a harvest reads. */
-  cli(database, [
-    'review',
-    'link',
-    '--review',
-    String(rounds[0]),
-    '--github-review',
-    'PRR_tc9568r1',
-  ])
 
   const recording = join(directory, 'recorded-9568')
   mkdirSync(recording, { recursive: true })
@@ -784,24 +813,90 @@ function seedMerged(directory: string, database: string): number[] {
 }
 
 /**
- * **Two rounds of one open pull request, both unposted drafts** — the other half of
- * DEV-957's comment.
+ * **Shape A: one round nobody has posted, and commits that arrived after it.** DEV-962's
+ * first fixture, in the shape Patrick's own record held on 13 October 2026 — `globex/portal
+ * #9541` showed twice, round 1 and round 2 both offering "changes since your last review",
+ * over a round 1 he had never posted, and the only new commits were the author merging the
+ * base branch in.
  *
  * `globex/portal#9541` drew two rows on Patrick's screen, round 1 and round 2, both "Draft
- * ready". Round 1 can never be the review that posts: the author pushed past the commit it
- * was written against. So the queue draws one row, for round 2, and the heading counts one
- * pull request rather than two rounds.
+ * ready", and the queue counted them as two. So this pull request has **one** round here,
+ * and that is the fixture: the old rule would have made four reviews of it.
+ *
+ * | What the seed does | What the record holds |
+ * |---|---|
+ * | `review open` on `a1b2c31` | round 1, with a finding and a draft the session finished |
+ * | `review open --diff-unchanged` twice | two `base_only` updates. The head does not move, the draft is untouched, and nothing is woken |
+ * | `review open` on `c3d4e53` | the head moves. One `moved` update, and the review page says so |
+ *
+ * **It cannot be seeded as two rounds any more, and that is the point.** `review open` on a
+ * new commit moves an unposted round's head — so a second round of this pull request is not
+ * something the binary can be asked for. The shape the tidy is for, four unposted rounds, is
+ * a store-level fixture in `crates/store/tests/tidy.rs` for the same reason: it is written
+ * through `create_review`, because nothing reachable from the command line can produce it.
  *
  * **Nothing in the acceptance path touches it**, which is deliberate. That path confirms a
  * brief and signs a draft off on `acme/portal#412`, so a measurement named against #412 is
  * a measurement whose subject depends on the order the tests ran in. This pull request is
- * in play from the first test to the last.
+ * in play from the first test to the last, and it is the one queue row #9541 gets.
  */
-function seedSuperseded(directory: string, database: string): number[] {
-  const rounds: number[] = []
+function seedMovedHead(directory: string, database: string): number {
+  const opened = cli(database, [
+    'review',
+    'open',
+    '--repo',
+    'globex/portal',
+    '--pr',
+    '9541',
+    '--head',
+    'a1b2c31',
+    '--title',
+    'Give a scheduled export its own context',
+    '--ticket',
+    'DEV-941',
+    '--ticket-url',
+    'https://linear.app/deverge/issue/DEV-941',
+    '--changed-lines',
+    '188',
+  ])
+  const reviewId = Number(opened.match(/\d+/)?.[0])
+  if (!Number.isInteger(reviewId)) {
+    throw new Error(`review open printed no id: ${opened}`)
+  }
 
-  for (const [index, head] of ['a1b2c31', 'b2c3d42'].entries()) {
-    const opened = cli(database, [
+  const finding = join(directory, 'moved-head-finding.json')
+  writeFileSync(
+    finding,
+    JSON.stringify({
+      lens: 'correctness',
+      severity: 'blocker',
+      claim: 'The export holds the request\'s tenant after it returns',
+      file: 'app/Exports/ScheduledExport.php',
+      line: 48,
+      disposition: 'in_draft',
+    }),
+  )
+  cli(database, ['finding', 'add', '--review', String(reviewId), '--file', finding])
+
+  const sections = join(directory, 'moved-head-body.json')
+  writeFileSync(
+    sections,
+    JSON.stringify([{
+      kind: 'prose',
+      text: 'The export still runs inside the request. One blocker on the tenant it holds.',
+    }]),
+  )
+  cli(database, ['draft', 'put', '--review', String(reviewId), '--sections', sections])
+
+  /*
+   * **Two base-branch merges, and the flag is the whole of what makes them that.** Review
+   * Desk reads no git, so the caller that compared the pull request's own diff against its
+   * base is the one that says it did not change. Nothing moves: the head stays at
+   * `a1b2c31`, the line count stays right because the diff it measured is the same diff,
+   * and the draft is still the draft the session finished.
+   */
+  for (const head of ['b2c3d42', 'd4e5f64']) {
+    cli(database, [
       'review',
       'open',
       '--repo',
@@ -810,53 +905,23 @@ function seedSuperseded(directory: string, database: string): number[] {
       '9541',
       '--head',
       head,
-      '--title',
-      'Give a scheduled export its own context',
-      '--ticket',
-      'DEV-941',
-      '--ticket-url',
-      'https://linear.app/deverge/issue/DEV-941',
-      '--changed-lines',
-      String(188 + index * 12),
+      '--diff-unchanged',
     ])
-    const reviewId = Number(opened.match(/\d+/)?.[0])
-    if (!Number.isInteger(reviewId)) {
-      throw new Error(`review open printed no id: ${opened}`)
-    }
-
-    /* A finding, so the round is started and the next head opens a round beside it. */
-    const finding = join(directory, `superseded-finding-${index + 1}.json`)
-    writeFileSync(
-      finding,
-      JSON.stringify({
-        lens: 'correctness',
-        severity: index === 0 ? 'blocker' : 'should',
-        claim: index === 0
-          ? 'The export holds the request\'s tenant after it returns'
-          : 'A retried export re-reads the context it was given',
-        file: 'app/Exports/ScheduledExport.php',
-        line: 48 + index * 13,
-        disposition: 'in_draft',
-      }),
-    )
-    cli(database, ['finding', 'add', '--review', String(reviewId), '--file', finding])
-
-    const sections = join(directory, `superseded-body-${index + 1}.json`)
-    writeFileSync(
-      sections,
-      JSON.stringify([{
-        kind: 'prose',
-        text: index === 0
-          ? 'The export still runs inside the request. One blocker on the tenant it holds.'
-          : 'The context is passed explicitly now. One finding is left on the retry path.',
-      }]),
-    )
-    cli(database, ['draft', 'put', '--review', String(reviewId), '--sections', sections])
-
-    rounds.push(reviewId)
   }
 
-  return rounds
+  /* And one real push, which moves the head of the round that is already there. */
+  cli(database, [
+    'review',
+    'open',
+    '--repo',
+    'globex/portal',
+    '--pr',
+    '9541',
+    '--head',
+    'c3d4e53',
+  ])
+
+  return reviewId
 }
 
 export function seed(
@@ -870,7 +935,7 @@ export function seed(
   postedReviewId: number
   requestedReviewId: number
   mergedReviewIds: number[]
-  supersededReviewIds: number[]
+  movedHeadReviewId: number
 } {
   const database = join(directory, 'seeded.db')
 
@@ -1117,7 +1182,7 @@ Ran the job twice against a local endpoint that 500s once, and counted the deliv
     postedReviewId: seedPosted(directory, database),
     requestedReviewId: seedRequested(database),
     mergedReviewIds: seedMerged(directory, database),
-    supersededReviewIds: seedSuperseded(directory, database),
+    movedHeadReviewId: seedMovedHead(directory, database),
   }
 }
 

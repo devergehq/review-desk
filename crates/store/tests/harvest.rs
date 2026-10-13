@@ -4,7 +4,7 @@
 
 mod common;
 
-use common::{new_review, temp_store};
+use common::{new_review, posted, temp_store};
 use review_desk_store::{
     Actor, Disposition, FindingRef, NewFinding, NewOutcome, OutcomeKind, PrState, ReviewLayerState,
     Severity, Store, StoreError,
@@ -317,6 +317,8 @@ fn only_the_newest_round_of_a_closed_pull_request_is_read_again() {
             a_finding("round one was reviewed", None, None),
         )
         .unwrap();
+    // Posted, so that the next commit is round 2 rather than round 1 moved — DEV-962.
+    posted(&store, one.review.id);
     let two = store.open_review("devergehq/locus", 70, "bbb2222").unwrap();
     assert_eq!(two.review.round, 2, "two rounds of one pull request");
 

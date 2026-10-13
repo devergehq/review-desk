@@ -109,6 +109,8 @@ impl Api {
             Operation::DismissReview { review_id } => self.dismiss_review(review_id, body),
             Operation::RestoreReview { review_id } => self.restore_review(review_id),
             Operation::DeleteReview { review_id } => self.delete_review(review_id),
+            Operation::ListDuplicateRounds => self.duplicate_rounds(query),
+            Operation::FoldRound { review_id } => self.fold_round(review_id),
             Operation::ConfirmBrief { review_id } => self.confirm_brief(review_id),
             Operation::GetProblemStatement { review_id } => self.problem_statement(review_id),
             Operation::SetFindingDisposition { review_id, seq } => {
@@ -440,22 +442,7 @@ impl Api {
         // own state. `ACME/Portal` came back beside rows all spelled `acme/portal`, which
         // is the shape of the fault the Locus half found in `review find`: when a lookup
         // misses, an answer repeating the caller's words shows them nothing.
-        let repo = query_value(query, "repo").map(|repo| {
-            if wire::is_repo_name(&repo) {
-                review_desk_store::normalised_repo(&repo)
-            } else {
-                repo
-            }
-        });
-        if let Some(repo) = &repo {
-            if !wire::is_repo_name(repo) {
-                return Err(ApiError::invalid_value(
-                    "repo",
-                    format!("{repo:?} is not a repository"),
-                    "a repository as owner/repo",
-                ));
-            }
-        }
+        let repo = repo_filter(query)?;
 
         // **A review off the desk is left out unless it is asked for.** The default is
         // the narrow view rather than everything, for the reason `ReviewsShown`'s own doc
@@ -616,6 +603,34 @@ impl Api {
         //
         // Only a field the record has no answer for is filled, which is also the only case
         // the read was widened for.
+        //
+        // **And a line count is filled only on a first round, because that is the round the
+        // figure is about.** What this read resolves is the pull request's own additions plus
+        // deletions; round 1 reviews the whole pull request, so the figure is its subject,
+        // and every later round is about the delta since the round before it — for which a
+        // whole-pull-request count is a wrong answer rather than a missing one. It is the
+        // figure the draft's word budget is computed from, so the difference is not cosmetic.
+        //
+        // **Two wrong answers, one condition.** This gated on "did the head move" first,
+        // which DEV-962 made newly reachable: the Inbox's own paste resolves the head, so a
+        // pull request the author had pushed to moved the round and the cleared count was
+        // refilled with the whole pull request's. But the move was never what made the figure
+        // wrong — a *round 2* opened on the pull request's current commit takes no move at
+        // all, and was filled with the same wrong number; and a *round 1* whose head moved
+        // had a correct figure thrown away. Both measured by a review of the fix, in probes
+        // against this server. The round is the question, and asking it answers both.
+        //
+        // The title is filled on any round, which is right: it is a fact about the pull
+        // request rather than about a commit or a round, which is also why a move leaves it
+        // alone.
+        //
+        // **One cell where the round number and the history diverge, and it fails safe.**
+        // `round == 1` stands in for "nothing has been posted to the author yet", and the
+        // duplicate-round tidy can part the two: folding a legacy round 1 into round 2 leaves
+        // one round, numbered 2, on a pull request nothing ever posted — so a paste declines a
+        // whole-pull-request count that would have been right. It needs records written before
+        // DEV-962 to reach, and it leaves a null rather than a wrong figure, which is the
+        // direction this whole paragraph argues for. Noticed by a review of the fix.
         let gaps = ReviewFacts {
             title: resolved
                 .as_ref()
@@ -629,7 +644,7 @@ impl Api {
             changed_lines: resolved
                 .as_ref()
                 .and_then(|read| read.changed_lines)
-                .filter(|_| opened.review.changed_lines.is_none()),
+                .filter(|_| opened.review.round == 1 && opened.review.changed_lines.is_none()),
             not_checked: None,
         };
 
@@ -707,6 +722,63 @@ impl Api {
         Ok((200, wire::review(&review)))
     }
 
+    /// `GET /duplicate-rounds`: the one-off tidy's proposal, per pull request.
+    ///
+    /// **It shows and decides nothing.** DEV-962 asks for a tidy that "shows each pull
+    /// request's extra unposted rounds and folds them into the newest (or dismisses them);
+    /// nothing is deleted without confirmation" — so this is a read, and the two acts it
+    /// proposes are `POST /reviews/{reviewId}/fold` and the dismissal that already exists.
+    /// There is no command line path to any of the three.
+    ///
+    /// **Nothing new can appear here.** Since DEV-962 a round opens only when the newest one
+    /// has posted, so a pull request cannot grow a second unposted round; what this answers
+    /// about is the record as it stands.
+    fn duplicate_rounds(&self, query: &str) -> Result<(u16, Value), ApiError> {
+        let repo = repo_filter(query)?;
+        let found = self.records.duplicate_rounds(repo.as_deref())?;
+
+        Ok((
+            200,
+            json!({
+                "pull_requests": found
+                    .iter()
+                    .map(wire::duplicate_rounds)
+                    .collect::<Vec<_>>(),
+                // The two counts the screen's heading needs, so it does not add them up
+                // itself and disagree with the rows.
+                "pull_requests_affected": found.len(),
+                "extra_rounds": found
+                    .iter()
+                    .map(|found| found.extras.len())
+                    .sum::<usize>(),
+            }),
+        ))
+    }
+
+    /// `POST /reviews/{reviewId}/fold`: fold an extra unposted round into the newest one.
+    ///
+    /// **The developer's act, and this is the only surface it happens on**, as a dismissal
+    /// and a delete are: a session that could reach it could fold away a round of its own
+    /// review. The store judges whether the round may be folded — it refuses the newest
+    /// round, a round that posted, and a round holding a brief, a finding or a draft — and a
+    /// second opinion here is how a screen comes to offer a button the API refuses.
+    ///
+    /// **It answers with both rounds**: the one that went, because nothing can read it
+    /// again and the page has a line to draw about what was removed, and the one it folded
+    /// into, because that is the row the screen keeps.
+    fn fold_round(&self, review_id: i64) -> Result<(u16, Value), ApiError> {
+        self.records.review(review_id)?;
+        let folded = self.records.fold_round(review_id)?;
+
+        Ok((
+            200,
+            json!({
+                "folded": wire::review(&folded.folded),
+                "into": wire::review(&folded.into),
+            }),
+        ))
+    }
+
     /// `GET /reviews/{reviewId}`: one review whole, as the One review screen shows it.
     ///
     /// **Where the coverage answer is decided.** A review can record two things about what
@@ -780,6 +852,15 @@ impl Api {
                     .iter()
                     .map(wire::round_commit)
                     .collect::<Vec<_>>(),
+                // **What has happened to this round's head since it was opened.** The
+                // fourth question the round-two page asks, and the one DEV-962 added: the
+                // page says "Updated for 3 commits since `4d9464f`", and the code review
+                // shows what changed since the draft was written. Served with the round
+                // rather than fetched on its own, which is this contract's rule that each
+                // screen is one GET.
+                "head_updates": wire::head_updates(
+                    &self.records.head_updates(review_id)?,
+                ),
             }),
         ))
     }
@@ -1272,23 +1353,7 @@ impl Api {
 
     /// `GET /rules`: rules for a repository, by stage, with the week's figures.
     fn rules(&self, query: &str) -> Result<(u16, Value), ApiError> {
-        // The repository the store will search, as `reviews` above carries it.
-        let repo = query_value(query, "repo").map(|repo| {
-            if wire::is_repo_name(&repo) {
-                review_desk_store::normalised_repo(&repo)
-            } else {
-                repo
-            }
-        });
-        if let Some(repo) = &repo {
-            if !wire::is_repo_name(repo) {
-                return Err(ApiError::invalid_value(
-                    "repo",
-                    format!("{repo:?} is not a repository"),
-                    "a repository as owner/repo",
-                ));
-            }
-        }
+        let repo = repo_filter(query)?;
 
         // Unlike `rules list` on the command line, this includes proposals and retired
         // rules: the screen's whole purpose is deciding on them.
@@ -1458,6 +1523,35 @@ fn next_stage(stage: RuleStage) -> Option<RuleStage> {
         RuleStage::Lint => Some(RuleStage::Ci),
         RuleStage::Ci | RuleStage::Retired => None,
     }
+}
+
+/// The `repo=` filter, normalised, or a refusal naming the field.
+///
+/// **One reader, three callers**: `GET /reviews`, `GET /rules` and
+/// `GET /duplicate-rounds`. The normalising is load-bearing rather than cosmetic — the
+/// store keys on the canonical spelling, so a filter passed through as typed answers
+/// "nothing here" about a repository that is there, and `GET /reviews` echoes the value
+/// back for the page's own picker. Lifted out of `reviews`, whose comment carries the
+/// measurement; `rules` had the same fifteen lines copied, which is how two readers of one
+/// rule drift.
+fn repo_filter(query: &str) -> Result<Option<String>, ApiError> {
+    let repo = query_value(query, "repo").map(|repo| {
+        if wire::is_repo_name(&repo) {
+            review_desk_store::normalised_repo(&repo)
+        } else {
+            repo
+        }
+    });
+    if let Some(repo) = &repo {
+        if !wire::is_repo_name(repo) {
+            return Err(ApiError::invalid_value(
+                "repo",
+                format!("{repo:?} is not a repository"),
+                "a repository as owner/repo",
+            ));
+        }
+    }
+    Ok(repo)
 }
 
 /// A value from a query string, or `None`. An empty value is `None`: `?repo=` is the

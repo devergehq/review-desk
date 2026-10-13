@@ -3,6 +3,8 @@ import type { DraftDetail, NotForSigning, ReviewEvent } from '~/types/desk'
 import type { WriteResult } from '~/composables/useReviewDesk'
 import type { DeskNotice } from '~/utils/format'
 
+import { withdrawnLine } from '~/utils/rounds'
+
 /**
  * Step 6 — **the draft**: what GitHub will show, before anything is posted.
  *
@@ -352,6 +354,18 @@ function decided(data: DraftDetail): boolean {
 function notForSigning(data: DraftDetail): NotForSigning | null {
   if (data.draft.status === 'posted') return null
   return data.not_for_signing ?? null
+}
+
+/**
+ * Why the sign-off was withdrawn, or null when none was.
+ *
+ * **One copy of the sentence**, in `utils/rounds`, because the commit the developer
+ * approved is on the draft and the commit the pull request is on now is on the review —
+ * two records, one sentence, and a page composing it for itself is a second place for it
+ * to be worded.
+ */
+function withdrawn(data: DraftDetail): string | null {
+  return withdrawnLine(data.draft, data.review)
 }
 
 /**
@@ -744,6 +758,23 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
         >
           <template #default="{ data }">
             <div class="draft">
+              <!--
+                **Why the sign-off is gone, said before anything else about the draft.**
+                DEV-962's own criterion: a signed-off but unposted draft whose head moves is
+                no longer signed off, and the page says why. Without it the draft reads as
+                one nobody ever approved — the status went back to `drafting` and the
+                approval columns were cleared, so there is nothing else on the record a
+                reader could tell the difference from.
+                `problem`, not `blocked`: the record is right and the session is already
+                re-reading, so this is a thing that happened rather than a thing to fix.
+              -->
+              <DeskNotice
+                v-if="withdrawn(data)"
+                tone="problem"
+              >
+                {{ withdrawn(data) }}
+              </DeskNotice>
+
               <p
                 v-if="data.draft.sent_back_note"
                 class="rd-note sent-back"

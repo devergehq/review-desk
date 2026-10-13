@@ -8,6 +8,8 @@ import type { DeskNotice } from '~/utils/format'
 import type { FindingList } from '~/utils/findings'
 import type { TrackOption } from '~/components/DecisionTrack.vue'
 
+import { commitLabel, movesSince, nothingMoved } from '~/utils/rounds'
+
 /**
  * Step 5 — **Code review**. Board A8, which Patrick approved on 10 October 2026.
  *
@@ -102,6 +104,20 @@ const reasoning = ref(false)
 
 const working = ref(false)
 const notice = ref<DeskNotice | null>(null)
+
+/**
+ * The head moves since the draft was last written.
+ *
+ * **The draft's own time, not the round's.** A draft written before a push describes a
+ * commit the pull request has moved past, so what the page owes a reader is what moved
+ * *after* this body was written — which is `movesSince`, and is empty for a review with no
+ * draft at all, because there is nothing for the moves to be out of date against.
+ */
+const sinceTheDraft = computed(() => {
+  const updates = detail.data.value?.head_updates
+  if (!updates) return []
+  return movesSince(updates, draft.data.value?.draft.updated_at ?? null)
+})
 
 function show(seq: number) {
   open.value = open.value === seq ? 0 : seq
@@ -479,6 +495,62 @@ function coverage(data: ReviewDetail): string | null {
         >
           {{ notice.text }}
         </DeskNotice>
+
+        <!--
+          **The rounds, and what has happened to this one's head commit.** DEV-962: a new
+          commit on an unposted round moves that round rather than opening the next one, so
+          the findings below may have been written against a commit the pull request has
+          moved past — and this is where a reader is told. DEV-954's dismissed round is drawn
+          as dismissed by the same component.
+        -->
+        <RoundTimeline
+          :rounds="data.rounds ?? []"
+          :current="data.review.id"
+          :updates="data.head_updates ?? nothingMoved()"
+        />
+
+        <!--
+          **What changed since the draft was written.** The issue asks for it by name, and it
+          is a different question from "what has the head ever done": a draft written before
+          a push describes a commit the pull request has moved past, and the moves *after*
+          the draft's last write are the ones it is out of date about. Drawn only when there
+          is a draft and something moved after it — otherwise it is a heading over nothing.
+        -->
+        <section
+          v-if="sinceTheDraft.length > 0"
+          class="since-draft"
+          aria-labelledby="since-draft-heading"
+        >
+          <h2
+            id="since-draft-heading"
+            class="rd-rubric"
+          >
+            Changed since the draft was written
+          </h2>
+          <ul class="rd-stack">
+            <!--
+              **Keyed on the three facts together, because none of them is unique alone.**
+              `at` is seconds and the record refuses nothing for sharing one — migration 18
+              says two updates inside one second are ordered rather than refused — so two
+              pushes in the same second would give Vue one key twice. Raised by a review of
+              this branch.
+            -->
+            <li
+              v-for="move in sinceTheDraft"
+              :key="`${move.at}-${move.from_sha}-${move.to_sha}`"
+              class="rd-note"
+            >
+              <span class="rd-mono">{{ commitLabel(move.from_sha) }}</span>
+              →
+              <span class="rd-mono">{{ commitLabel(move.to_sha) }}</span>
+              <span class="rd-meta">{{ sinceLabel(move.at) }}</span>
+            </li>
+          </ul>
+          <p class="rd-note rd-measure">
+            The review session re-reads the change and updates its findings and the draft.
+            Anything below was written before this.
+          </p>
+        </section>
 
         <!--
           A review with no findings has said everything it has to say in the headline and

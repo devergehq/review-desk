@@ -11,7 +11,7 @@ mod common;
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 
-use common::{db_path, new_review, temp_store};
+use common::{db_path, new_review, posted, temp_store};
 use review_desk_store::{
     Actor, NewBrief, NewDraft, Review, ReviewEvent, ReviewLayerState, ReviewLinks, Store,
     WorkFilter, WorkItem, WorkKind,
@@ -358,10 +358,11 @@ fn a_round_superseded_by_a_new_head_commit_is_listed_by_nothing() {
         Some(WorkKind::ReviewRequested)
     );
 
-    // **A finding, so that round 1 has been started.** Since DEV-945 a new commit on a
-    // round nobody has started moves that round rather than superseding it, so without
-    // this there would be no round 2 to supersede anything. A finding and no brief leaves
-    // the kind exactly where it was, which is what this test needs round 1 to be.
+    // **A finding, and then a post, so that there is a round 2 at all.** Since DEV-962 a
+    // new commit on an unposted round moves that round rather than superseding it, so
+    // without the post below there would be no round 2 to supersede anything. The finding
+    // is here because it leaves the kind exactly where it was, which is what this test
+    // needs round 1 to be.
     store
         .add_finding(
             first.review.id,
@@ -379,6 +380,7 @@ fn a_round_superseded_by_a_new_head_commit_is_listed_by_nothing() {
         Some(WorkKind::ReviewRequested),
         "a finding alone does not change what an agent is to do"
     );
+    posted(&store, first.review.id);
 
     let second = store
         .open_review("acme/portal", 500, "2222bbb")

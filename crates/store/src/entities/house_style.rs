@@ -186,6 +186,20 @@ impl Store {
 }
 
 /// Where the review's pull request is, for the links a row carries.
+///
+/// **The head commit is the review's current one, and a finding's line may have been
+/// measured on another. Stated here because it predates DEV-962 and that issue makes it more
+/// frequent.** `code_link` builds `blob/{head_sha}/{path}#L{line}` from this, and the line
+/// comes from the finding — which `carry_finding` copies into a later round unchanged, so a
+/// round-two review has always linked round two's commit with round one's line numbers.
+/// DEV-962 adds a second way in: an unposted round's head moves, and until the session
+/// re-reads and rewrites its findings, their lines are the commit the round was opened on.
+///
+/// Not fixed here, deliberately. The record cannot say which commit a finding's line was
+/// measured on — `findings` holds no commit, and inferring one from `created_at` and the move
+/// log would be wrong the moment a session updated an anchor in place. What it needs is a
+/// column, and that belongs with the anchors (DEV-873's) rather than in the tail of this
+/// change. Raised for Patrick with this pull request.
 pub(crate) fn place(conn: &Connection, review_id: i64) -> Result<Place> {
     Ok(conn.query_row(
         "SELECT repo, pr, head_sha FROM reviews WHERE id = ?1",

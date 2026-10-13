@@ -1,4 +1,4 @@
-//! The contract's twenty-four operations, as a type.
+//! The contract's twenty-six operations, as a type.
 //!
 //! [`Operation::ALL`] is the point of this module: a test walks every operation the
 //! contract declares and asserts that each one is routed and answers, rather than the set
@@ -25,10 +25,12 @@ pub enum Operation {
     ListRepos,
     ListReviews,
     StartReview,
+    ListDuplicateRounds,
     GetReview { review_id: i64 },
     DismissReview { review_id: i64 },
     RestoreReview { review_id: i64 },
     DeleteReview { review_id: i64 },
+    FoldRound { review_id: i64 },
     ConfirmBrief { review_id: i64 },
     GetProblemStatement { review_id: i64 },
     SetFindingDisposition { review_id: i64, seq: i64 },
@@ -54,10 +56,12 @@ impl Operation {
         Operation::ListRepos,
         Operation::ListReviews,
         Operation::StartReview,
+        Operation::ListDuplicateRounds,
         Operation::GetReview { review_id: 1 },
         Operation::DismissReview { review_id: 1 },
         Operation::RestoreReview { review_id: 1 },
         Operation::DeleteReview { review_id: 1 },
+        Operation::FoldRound { review_id: 1 },
         Operation::ConfirmBrief { review_id: 1 },
         Operation::GetProblemStatement { review_id: 1 },
         Operation::SetFindingDisposition {
@@ -89,10 +93,12 @@ impl Operation {
             Operation::ListRepos => "listRepos",
             Operation::ListReviews => "listReviews",
             Operation::StartReview => "startReview",
+            Operation::ListDuplicateRounds => "listDuplicateRounds",
             Operation::GetReview { .. } => "getReview",
             Operation::DismissReview { .. } => "dismissReview",
             Operation::RestoreReview { .. } => "restoreReview",
             Operation::DeleteReview { .. } => "deleteReview",
+            Operation::FoldRound { .. } => "foldRound",
             Operation::ConfirmBrief { .. } => "confirmBrief",
             Operation::GetProblemStatement { .. } => "getProblemStatement",
             Operation::SetFindingDisposition { .. } => "setFindingDisposition",
@@ -120,6 +126,7 @@ impl Operation {
             Operation::ListRepos => "GET /repos".to_string(),
             Operation::ListReviews => "GET /reviews".to_string(),
             Operation::StartReview => "POST /reviews".to_string(),
+            Operation::ListDuplicateRounds => "GET /duplicate-rounds".to_string(),
             Operation::GetReview { review_id } => format!("GET /reviews/{review_id}"),
             Operation::DismissReview { review_id } => {
                 format!("POST /reviews/{review_id}/dismiss")
@@ -128,6 +135,9 @@ impl Operation {
                 format!("POST /reviews/{review_id}/restore")
             }
             Operation::DeleteReview { review_id } => format!("DELETE /reviews/{review_id}"),
+            Operation::FoldRound { review_id } => {
+                format!("POST /reviews/{review_id}/fold")
+            }
             Operation::ConfirmBrief { review_id } => {
                 format!("POST /reviews/{review_id}/brief/confirm")
             }
@@ -193,6 +203,14 @@ pub fn match_route(method: &str, path: &str) -> Target {
         ["inbox"] => (Target::Operation(Operation::GetInbox), method == "GET"),
         ["repos"] => (Target::Operation(Operation::ListRepos), method == "GET"),
         ["rules"] => (Target::Operation(Operation::ListRules), method == "GET"),
+        // **`/duplicate-rounds`, beside `/timings` and for its stated reason**: the review
+        // paths take an integer id, so a word here would be a path shape of its own anyway.
+        // It is the one-off tidy's read, and it is a read: the acts it proposes are
+        // `POST /reviews/{id}/fold` and the dismissal that already exists.
+        ["duplicate-rounds"] => (
+            Target::Operation(Operation::ListDuplicateRounds),
+            method == "GET",
+        ),
         // **`/timings`, not `/reviews/timings`.** The review paths take an integer id, so
         // a sibling segment there would be read as a review called "timings" and come back
         // as `Unknown`.
@@ -230,6 +248,17 @@ pub fn match_route(method: &str, path: &str) -> Target {
         ["reviews", id, "dismiss"] => match number(id) {
             Some(review_id) => (
                 Target::Operation(Operation::DismissReview { review_id }),
+                method == "POST",
+            ),
+            None => (Target::Unknown, true),
+        },
+        // **A sub-path rather than a verb on `/reviews/{id}`**, which `DELETE` already has:
+        // a fold is an act the round *has*, like a dismissal and a restore, and it is not
+        // the same act as a delete — it records the folded round's head on the newest round
+        // before the row goes.
+        ["reviews", id, "fold"] => match number(id) {
+            Some(review_id) => (
+                Target::Operation(Operation::FoldRound { review_id }),
                 method == "POST",
             ),
             None => (Target::Unknown, true),

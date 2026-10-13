@@ -358,6 +358,13 @@ function dense(over: {
       harvested_at: over.harvestedAt === undefined ? '2026-10-12T17:00:00Z' : over.harvestedAt,
       dismissed_at: null,
       dismissed_reason: null,
+      /*
+       * In play, which is what every other field here describes. Required of a `Review`
+       * since DEV-962 — and this fixture's own test, that it carries every field the
+       * contract requires, is what said so when they were added.
+       */
+      out_of_play: null,
+      out_of_play_at: null,
     },
     not_for_signing: over.notForSigning === undefined
       ? (settled ? { reason: 'finished', how: state, at: stateAt } : null)

@@ -10,7 +10,7 @@
 
 mod common;
 
-use common::{open_review, start_review, Desk};
+use common::{open_review, post_round, Desk};
 use review_desk_store::Actor;
 use serde_json::json;
 
@@ -230,7 +230,7 @@ fn a_new_head_commit_opens_the_next_round() {
     ]);
     // Round one is reviewed, which is what makes the next commit a round: a commit on a
     // round nobody has started moves that round instead, and the test below is that.
-    start_review(&desk, &round_one["review"]["id"].to_string());
+    post_round(&desk, &round_one["review"]["id"].to_string());
 
     let round_two = desk.json(&[
         "review",
@@ -686,10 +686,16 @@ fn a_ticket_address_with_no_ticket_is_refused() {
 
 #[test]
 fn a_session_that_opens_a_review_with_its_id_is_the_one_working_on_it() {
-    // **One call, two facts, and the second is what protects the first.** A session
-    // passing `--session` records who is working *and* takes the review out of reach of
-    // the head-moving rule — so a dispatcher recording the same request on a newer commit
-    // opens a round of its own rather than moving the commit this session is reviewing.
+    // **One call, and what it records is who is working.** DEV-954: a worker links itself
+    // only once it has begun, so in the window between a push and that link a dispatcher
+    // could not tell a round somebody was reading from a request nobody had picked up.
+    // `review open --session` closes that window on the session's own first call, and
+    // `review find`'s `started` is where a caller reads it.
+    //
+    // **It does not pin the head**, which is DEV-962's reversal: the push below moves the
+    // round rather than opening one beside it, and the record keeps the move so the session
+    // can be told what changed. Two rows for one request is the fault that reversal was
+    // raised from.
     let desk = Desk::new();
 
     let recorded = desk.json(&[
@@ -741,20 +747,30 @@ fn a_session_that_opens_a_review_with_its_id_is_the_one_working_on_it() {
         "c0ffee2",
     ]);
     assert_eq!(
-        pushed["created"], true,
-        "a round of its own: the session is at work on round 1"
+        pushed["created"], false,
+        "the same round, moved: one request is one review"
     );
-    assert_eq!(pushed["review"]["round"], 2);
+    assert_eq!(pushed["review"]["round"], 1);
+    assert_eq!(pushed["action"], "head_moved");
     assert_eq!(
-        pushed["head_moved_from"],
-        serde_json::Value::Null,
-        "nothing moved under the session"
+        pushed["head_moved_from"], "c0ffee1",
+        "and the answer says which commit it was of before"
+    );
+    assert_eq!(
+        pushed["review"]["session_id"], "allele-ae03f8ce",
+        "still the session's review, now of a newer commit"
     );
 
     let still = desk.json(&["review", "find", "--repo", "acme/portal", "--pr", "777"]);
     assert_eq!(
-        still["reviews"][1]["head_sha"], "c0ffee1",
-        "and the commit it is reviewing is the one it opened: {still}"
+        still["reviews"].as_array().expect("the rounds").len(),
+        1,
+        "one round, not two: {still}"
+    );
+    assert_eq!(still["reviews"][0]["head_sha"], "c0ffee2");
+    assert_eq!(
+        still["reviews"][0]["started"], true,
+        "and a caller can see that somebody is at work on it without reading session_id"
     );
 }
 

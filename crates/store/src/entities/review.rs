@@ -4,7 +4,8 @@ use rusqlite::{params, Connection, OptionalExtension, Row, Transaction, Transact
 
 use crate::error::{Result, StoreError};
 use crate::model::{
-    Disposition, NewReview, NitTicket, NitTicketStatus, NotForSigning, OpenedReview, PrState,
+    DiffAtHead, Disposition, DraftStatus, HeadUpdate, HeadUpdateKind, HeadUpdates, NewReview,
+    NitTicket, NitTicketStatus, NotForSigning, OpenedAction, OpenedReview, OutOfPlay, PrState,
     Review, ReviewFacts, ReviewLayerState, ReviewLinks, ReviewWork, Timestamp,
 };
 use crate::{is_unique_violation, normalise, Store};
@@ -14,7 +15,8 @@ pub(super) const COLUMNS: &str = "id, repo, pr, head_sha, round, title, ticket_i
                        not_checked, session_id, ledger_id, github_review_id, pr_state, \
                        pr_state_at, harvested_at, nit_ticket_status, nit_ticket_id, \
                        nit_ticket_requested_at, nit_ticket_filed_at, dismissed_at, \
-                       dismissed_reason, last_activity_at, created_at";
+                       dismissed_reason, out_of_play, out_of_play_at, last_activity_at, \
+                       created_at";
 
 impl Store {
     /// Create a review.
@@ -65,48 +67,69 @@ impl Store {
         self.get_review(self.conn.last_insert_rowid())
     }
 
-    /// Open the review of this head commit: the one already on the record, the unstarted
+    /// Open the review of this head commit: the one already on the record, the unposted
     /// round whose head moves to it, or a new round.
     ///
     /// A head commit already reviewed is handed back — the newest round for that commit,
     /// even when later rounds exist for other commits.
     ///
-    /// **A new commit on a pull request whose newest round nobody has started moves that
-    /// round's head; it does not start a round.** Patrick, 12 October 2026, on DEV-945:
-    /// "two unstarted reviews for one request is wrong". The dispatcher records a review
-    /// request the moment GitHub shows it one, before any session runs, and an author who
-    /// pushes between the request and the session would otherwise turn one request into
-    /// two reviews — both unstarted, both offered to the dispatcher by `work list`, and
-    /// each able to have a session dispatched for it. Unstarted is [`ReviewWork`]'s
-    /// question, so it is the same three things `delete_review` protects: no brief, no
-    /// findings, no draft.
+    /// **A round is a posted review, so a new commit opens a round only when the newest
+    /// round has posted.** Patrick, 13 October 2026, on DEV-962: "it shouldn't create a
+    /// whole new record because that doesn't make any sense… If changes happen after our
+    /// post, that's a new review. That's another round." Before this, his queue held one
+    /// pull request twice — round 1 and round 2, both offering "changes since your last
+    /// review" — over a round 1 he had never posted. So an unposted newest round *moves*,
+    /// whoever calls it, and the move is recorded: [`Store::head_updates`] is what lets the
+    /// page say "Updated for 3 commits since `4d9464f`" and the code review show what
+    /// changed since the draft was written.
     ///
-    /// The round that moved comes back with `created: false` and
-    /// [`OpenedReview::head_moved_from`] set, so a caller can say which of the three
-    /// things happened without comparing commits itself.
+    /// **Whoever calls it, including over a session at work — and that is the reversal
+    /// DEV-962 asks for.** DEV-945 refused to move a round anybody had *started*, on the
+    /// ground that a brief computed from one commit must not end up on a review the record
+    /// says is of another. That protection bought a second unposted round instead, which is
+    /// the fault this issue was raised from, and it bought it for every push: the dispatcher
+    /// records a request before any session runs, and the author pushes while the session
+    /// reads. What replaces it is the record of the move. The session re-reads the delta and
+    /// updates its findings and its draft; the review page says the head moved and for
+    /// which commits; and a sign-off that was given before the move is withdrawn, because
+    /// the developer approved different code.
     ///
-    /// **A round a session has picked up does not move either**, whatever it has written
-    /// yet: a linked session or a layer past `pending` is somebody at work, and moving the
-    /// head under them would put a brief computed from one commit on a review the record
-    /// says is of another. [`Store::latest_unstarted_round`] carries that argument.
+    /// **`--session` still matters and no longer protects.** A session passing its id on
+    /// its first call is how the record knows whose review it is — which is what
+    /// [`Store::review_started`] answers for a dispatcher's look-before-write guard, and
+    /// what DEV-954 added the argument for. What it no longer does is pin the head, because
+    /// pinning the head is the behaviour this issue removes.
+    ///
+    /// **Commits that only bring the base branch in change nothing**, which is
+    /// [`DiffAtHead::Unchanged`] and the third row of DEV-962's table. The head does not
+    /// move, no round is opened, the line count is left alone, nothing is marked active and
+    /// no sign-off is withdrawn; a `base_only` row records that they arrived. The caller
+    /// says so, because the store reads neither git nor GitHub.
     ///
     /// **A dismissed round's head moves too, and it stays dismissed.** It is still one
     /// request, and the developer has said they do not want it reviewed; starting a fresh
-    /// round instead would put the request they declined back in front of a session on
-    /// the author's next push. DEV-945 puts automatic dismissal out of scope, and
-    /// automatic *un*-dismissal is the same decision read backwards.
+    /// round instead would put the request they declined back in front of a session on the
+    /// author's next push. DEV-945 puts automatic dismissal out of scope, and automatic
+    /// *un*-dismissal is the same decision read backwards.
     ///
     /// **The cost of that, said out loud:** a dismissed request stays dismissed however
     /// many commits arrive, because each one moves its head and no round is ever opened
     /// that would be in play. For "I am not reviewing this pull request" that is the
     /// point. For a dismissal whose reason was about one commit — "superseded, waiting
     /// for the rewrite" — the rewrite lands and nothing happens, and the way back is the
-    /// Reviews list's dismissed view. Read as a fault by a review of this branch and kept
+    /// Reviews list's dismissed view. Read as a fault by a review of DEV-945 and kept
     /// deliberately: the alternative is Review Desk deciding that a push means the
     /// developer changed their mind.
     ///
-    /// A round that has been started keeps the old behaviour exactly: a new commit on it
-    /// is the next round, which is what rounds are for.
+    /// **A pull request out of play stays out of play, and a round opened on one inherits
+    /// it.** The author pulling the pull request back is not something a push undoes, and a
+    /// round that did not inherit the state would put the request back in front of a session
+    /// the moment a post was followed by a commit. `review in-play` is the way back, and it
+    /// clears every round at once.
+    ///
+    /// The round that moved comes back with `created: false`,
+    /// [`OpenedReview::head_moved_from`] set and [`OpenedAction::HeadMoved`], so a caller
+    /// can say which of the four things happened without comparing commits itself.
     ///
     /// The lookup, the round arithmetic and the insert are one step, for the reason
     /// [`Store::add_finding`] gives: two sessions opening the same pull request at the
@@ -114,20 +137,37 @@ impl Store {
     /// round, and the second would be refused as a duplicate of a round it never asked
     /// for.
     pub fn open_review(&self, repo: &str, pr: i64, head_sha: &str) -> Result<OpenedReview> {
+        self.open_round(repo, pr, head_sha, DiffAtHead::Unsaid)
+    }
+
+    /// [`Store::open_review`], with what the caller knows about the diff.
+    ///
+    /// Private because the two public doors are [`Store::open_review`], which says nothing
+    /// about the diff, and [`Store::open_review_with`], which is the command line's and the
+    /// API's and carries both the facts and what was said about the diff. A third public
+    /// name taking only the diff would be a door onto the same room.
+    fn open_round(
+        &self,
+        repo: &str,
+        pr: i64,
+        head_sha: &str,
+        diff: DiffAtHead,
+    ) -> Result<OpenedReview> {
         // Normalised before the lookup, through the same helper `create_review` uses
         // before the insert. A lookup keyed differently from the insert would miss and
         // then start a round for a commit already reviewed.
         let (repo, head_sha) = (normalise::repo(repo), normalise::head_sha(head_sha));
 
-        // **Refused here, because one of the two paths below does not reach `validate`.**
+        // **Refused here, because two of the paths below do not reach `validate`.**
         // Creating a round goes through `create_review`, which has refused a blank head
         // since the first slice; *moving* one is an `UPDATE` of this column and went
-        // nowhere near it. So `review open --head "$HEAD"` from a shell whose variable is
-        // unset wiped the commit the review was of — on a request nobody had started,
-        // which is exactly the row this feature is built for — and left a `head_sha` the
-        // contract's own pattern refuses, so `GET /reviews` then served a body failing
-        // its schema. Driven against the binary by a review of this branch. The same
-        // class as `--ticket ""`, which this branch repairs twice elsewhere.
+        // nowhere near it, and recording a base-only update is an `INSERT` into another
+        // table. So `review open --head "$HEAD"` from a shell whose variable is unset wiped
+        // the commit the review was of — on a request nobody had started, which is exactly
+        // the row this feature is built for — and left a `head_sha` the contract's own
+        // pattern refuses, so `GET /reviews` then served a body failing its schema. Driven
+        // against the binary by a review of DEV-945. The same class as `--ticket ""`, which
+        // that branch repaired twice elsewhere.
         if head_sha.is_empty() {
             return Err(StoreError::InvalidValue {
                 field: "head_sha",
@@ -147,6 +187,7 @@ impl Store {
                 review,
                 created: false,
                 head_moved_from: None,
+                action: OpenedAction::Unchanged,
             });
         }
 
@@ -167,16 +208,61 @@ impl Store {
                 review,
                 created: false,
                 head_moved_from: None,
+                action: OpenedAction::Unchanged,
             });
         }
 
-        // The newest round, when nobody has started it: this commit is where that
-        // request is now, so the round moves to it rather than a second one opening
-        // beside it. Inside the write lock, which is what makes two callers arriving on
-        // two different commits end with one review rather than two — the second finds
-        // the round the first moved and moves it again.
-        if let Some(unstarted) = self.latest_unstarted_round(&repo, pr)? {
-            let moved_from = unstarted.head_sha.clone();
+        let newest = self.newest_round(&repo, pr)?;
+        // **Kept before the branches consume `newest`.** Out of play is a fact about the
+        // pull request, so a round opened while the request is out of play is out of play
+        // too — see the inherit below.
+        let out_of_play = newest
+            .as_ref()
+            .and_then(|newest| newest.out_of_play.map(|why| (why, newest.out_of_play_at)));
+
+        // **The base-only case first, because it is the one that does nothing.** It is
+        // recorded against the newest round whether that round has posted or not: after a
+        // post, DEV-962's table says the same word — nothing — and a row saying the base
+        // branch arrived is true either way. With no round at all there is nothing for the
+        // commits to leave unchanged, so the call falls through and opens the first round:
+        // a first review has to exist before anything can be said to be unchanged about it.
+        if let (DiffAtHead::Unchanged, Some(newest)) = (diff, newest.as_ref()) {
+            // **Said twice is said once, because the caller is a poller.** Every other path
+            // through this function dedupes on the head commit — a commit already reviewed
+            // is found and handed back — and this one cannot, because it deliberately does
+            // not move `head_sha` onto the commit it is about. So a dispatcher that keeps
+            // asserting "the base branch came in and changed nothing" every tick, which is
+            // exactly the caller this flag is for, would add a row each time and the page
+            // would read "12 pushes brought the base branch in" for one push. Found by a
+            // review of this branch. `set_pr_out_of_play` is idempotent for the same caller
+            // and for the same reason; this is that rule applied to the other half.
+            self.record_base_only_once(newest.id, &newest.head_sha, &head_sha)?;
+            let review = self.get_review(newest.id)?;
+            tx.commit()?;
+            return Ok(OpenedReview {
+                review,
+                created: false,
+                head_moved_from: None,
+                action: OpenedAction::DiffUnchanged,
+            });
+        }
+
+        // The newest round, when it has not posted: this commit is where that request is
+        // now, so the round moves to it rather than a second one opening beside it. Inside
+        // the write lock, which is what makes two callers arriving on two different commits
+        // end with one review rather than two — the second finds the round the first moved
+        // and moves it again.
+        // **A failed read is not an answer of "no".** `.unwrap_or(false)` was here, and it
+        // would have moved the head of a round that *had* posted whenever the read behind
+        // this question failed — which is the one case this rule must not get wrong, because
+        // the move cannot be undone and the round it moved was a review that happened. The
+        // question is asked explicitly, and the error is returned.
+        let unposted = match &newest {
+            Some(newest) if !self.review_is_posted(newest.id)? => Some(newest.clone()),
+            _ => None,
+        };
+        if let Some(unposted) = unposted {
+            let moved_from = unposted.head_sha.clone();
             // **The line count goes with the commit it was counted on.** It is additions
             // plus deletions of the change as it stood, and `POST /reviews` says in its
             // own comment that it is what the draft's word budget is computed from — so a
@@ -187,17 +273,48 @@ impl Store {
             //
             // The title is left alone. It is a fact about the pull request rather than
             // about the commit, and a caller that has a newer one passes it.
+            //
+            // **And nothing else is cleared, which is a decision rather than an
+            // oversight.** The brief, the findings, the per-file change map and this
+            // round's commits were all written against the commit the review has just
+            // stopped being of, and every one of them is work a session will rewrite when
+            // it re-reads the delta — so clearing them would destroy the review in order
+            // to protect it from being out of date. The line count is the one exception
+            // because it is a bare number nothing can tell is stale and the next ordinary
+            // call refills it; the rest are measurements whose staleness the page states,
+            // in the sentence `head_updates` is for.
             self.conn.execute(
                 "UPDATE reviews SET head_sha = ?2, changed_lines = NULL WHERE id = ?1",
-                params![unstarted.id, head_sha],
+                params![unposted.id, head_sha],
             )?;
-            self.mark_review_active(unstarted.id)?;
-            let review = self.get_review(unstarted.id)?;
+            let moved = self.record_head_update(
+                unposted.id,
+                HeadUpdateKind::Moved,
+                &moved_from,
+                &head_sha,
+            )?;
+            // **A sign-off given before the move is withdrawn.** DEV-962's criterion: the
+            // developer approved different code, so the record stops saying they approved
+            // this. Inside the same transaction as the move, because a head that moved over
+            // a draft still marked `approved` is a draft a session may post.
+            //
+            // **Stamped with the move's own time, not a second reading of the clock.** The
+            // code review shows the moves since the draft was last written, by comparing the
+            // draft's `updated_at` with each move's `at` — and the withdrawal *is* a write to
+            // the draft, so two clock reads straddling a second boundary would date the draft
+            // one second after the move that caused it and the page would go silent about it.
+            // Microseconds of window per second, and free to close: the row this just wrote
+            // carries the time. Found by a review of the fix that made that comparison
+            // inclusive.
+            self.withdraw_signoff(unposted.id, &moved_from, moved.at)?;
+            self.mark_review_active(unposted.id)?;
+            let review = self.get_review(unposted.id)?;
             tx.commit()?;
             return Ok(OpenedReview {
                 review,
                 created: false,
                 head_moved_from: Some(moved_from),
+                action: OpenedAction::HeadMoved,
             });
         }
 
@@ -210,88 +327,153 @@ impl Store {
             ..Default::default()
         })?;
 
+        // **A round of a pull request that is out of play is out of play.** Migration 19's
+        // argument, applied to the one case that could break it: the state is the *pull
+        // request's*, and a round opened without it would make "no round holds one" false
+        // the moment a post was followed by a push — the queue would then offer a session a
+        // round of a pull request the author has pulled back, which is the thing the column
+        // exists to stop. The time comes with it rather than being taken now: this round is
+        // new, but the request has been out of play since the caller said so.
+        //
+        // The caller that polls the pull request need not know the rule. It keeps saying
+        // what GitHub shows it, and `review in-play` clears every round at once.
+        let review = match out_of_play {
+            Some((why, at)) => {
+                self.conn.execute(
+                    "UPDATE reviews SET out_of_play = ?2, out_of_play_at = ?3 WHERE id = ?1",
+                    params![review.id, why, at],
+                )?;
+                self.get_review(review.id)?
+            }
+            None => review,
+        };
+
         tx.commit()?;
         Ok(OpenedReview {
             review,
             created: true,
             head_moved_from: None,
+            action: OpenedAction::Created,
         })
     }
 
-    /// The newest round of this pull request, when it is a request nobody has picked up.
+    /// The newest round of this pull request, whatever became of it.
     ///
-    /// `None` when the pull request has no review at all, and `None` when its newest round
-    /// is being worked on. Only the newest round is asked about: an older unstarted round
-    /// was superseded by a commit somebody did review, and moving *that* one would move a
-    /// round out from under the history it sits in.
+    /// `None` only when the pull request has no review at all. A dismissed round counts, for
+    /// the reason [`Store::open_review`] gives — it is still the request — and so does a
+    /// finished one: a merged pull request that somehow gains a commit moves the round it
+    /// has rather than opening one nothing can post.
     ///
-    /// **Two questions, and they are deliberately not the same one.** [`ReviewWork`] asks
-    /// what a review *holds* — a brief, a finding, a draft — and that is the question
-    /// `delete_review` asks, because those are the three things DEV-945 says a delete
-    /// would lose. This asks the narrower thing: has anybody *begun*? A session that has
-    /// been dispatched links itself with `review link --session` and moves a layer off
-    /// `pending` long before it writes a brief, and between those two moments a review
-    /// holds none of the three.
-    ///
-    /// Without the second half, a dispatcher polling while that session worked would move
-    /// the head under it: the session would then write a brief, findings and anchors all
-    /// computed from the commit it read into a review the record says is of a newer one.
-    /// Before DEV-945 that push opened a round of its own and left the running round
-    /// alone, so the narrower question is what keeps that true.
-    ///
-    /// The case the move is for is untouched: a request the dispatcher recorded and
-    /// nothing has been dispatched for has no session, no layer past `pending` and none
-    /// of the three.
-    ///
-    /// **A commit the pull request has moved past moves the head too, and that is right
-    /// rather than a gap.** A session dispatched for commit A opens the review with A
-    /// while the dispatcher has already recorded B; the review becomes one of A, which is
-    /// what that session is actually reviewing, and the dispatcher's next poll finds a
-    /// review somebody has claimed and opens round 2 for B. The head is the commit the
-    /// review is *of*, not the pull request's newest — which is true of every review ever
-    /// posted. What the rule refuses to do is let two unstarted reviews exist; it does
-    /// not try to decide which of two commits is newer, and it could not: the store reads
-    /// no git.
-    ///
-    /// **What is left is the window before a session claims the review**, and it is
-    /// narrow rather than closed. A session opens the review and then links itself; a
-    /// caller moving the head between those two moments would leave the session holding
-    /// a commit the record no longer names. `review open --session` is the answer and is
-    /// why that argument exists: a session passing its id on its first call claims the
-    /// review in the same call, which leaves a window of one statement rather than of
-    /// however long the session takes to get to `review link`. A session that does not
-    /// pass it is protected from its first layer write onwards.
-    fn latest_unstarted_round(&self, repo: &str, pr: i64) -> Result<Option<Review>> {
+    /// **It counts every round rather than the newest in play**, which is the rule
+    /// `NEWEST_ROUND` states for the queue and it holds for the same reason: a round number
+    /// that fell back to an earlier round the moment the newest one was dismissed would make
+    /// the dismissed round's own head the one that moves next.
+    pub(crate) fn newest_round(&self, repo: &str, pr: i64) -> Result<Option<Review>> {
         // Its callers normalise already; the two lookups below do it again for themselves,
         // which is the rule this crate keeps rather than an argument about who called whom.
         let Some(round) = self.latest_round(repo, pr)? else {
             return Ok(None);
         };
-        let Some(review) = self.find_review(repo, pr, round)? else {
-            return Ok(None);
-        };
-        if self.review_work(review.id)?.started() || self.review_is_claimed(&review)? {
-            return Ok(None);
-        }
-        Ok(Some(review))
+        self.find_review(repo, pr, round)
     }
 
-    /// Whether a session has picked this review up, whatever it has written yet.
+    /// Whether this round has posted: its draft was reported posted, or a review was linked
+    /// against it with no draft at all.
+    ///
+    /// **One definition, read by both rules that turn on it.** [`Store::open_review`] asks
+    /// it to decide whether a new commit is this round or the next one, and
+    /// [`Store::not_for_signing`] asks it to decide whether a newer round supersedes this
+    /// one. Two spellings of "posted" would let the two disagree, and the disagreement would
+    /// be a round that can neither move nor be signed off.
+    pub fn review_is_posted(&self, review_id: i64) -> Result<bool> {
+        Ok(self.conn.query_row(
+            "SELECT EXISTS (
+                     SELECT 1 FROM drafts
+                     WHERE review_id = ?1 AND posted_at IS NOT NULL
+                 )
+                 OR EXISTS (
+                     SELECT 1 FROM reviews
+                     WHERE id = ?1 AND github_review_id IS NOT NULL
+                 )",
+            params![review_id],
+            |row| row.get(0),
+        )?)
+    }
+
+    /// Record that the base branch came in, unless this round already says so about these
+    /// two commits.
+    ///
+    /// **Idempotent, because what writes it is a poll.** The counts this feeds are what the
+    /// page says out loud — "2 pushes brought the base branch in and changed nothing" — so a
+    /// repeated assertion of one fact has to stay one row. The pair is the whole identity:
+    /// the commit the round is of and the commit the caller is reporting, which is what one
+    /// base-branch merge is. A *second* base merge reports a different `to_sha` and is a
+    /// second row, which is right.
+    pub(crate) fn record_base_only_once(
+        &self,
+        review_id: i64,
+        from_sha: &str,
+        to_sha: &str,
+    ) -> Result<()> {
+        let (from_sha, to_sha) = (normalise::head_sha(from_sha), normalise::head_sha(to_sha));
+        let said: bool = self.conn.query_row(
+            "SELECT EXISTS (
+                 SELECT 1 FROM round_head_updates
+                  WHERE review_id = ?1 AND kind = ?2 AND from_sha = ?3 AND to_sha = ?4
+             )",
+            params![review_id, HeadUpdateKind::BaseOnly, from_sha, to_sha],
+            |row| row.get(0),
+        )?;
+        if said {
+            return Ok(());
+        }
+
+        self.record_head_update(review_id, HeadUpdateKind::BaseOnly, &from_sha, &to_sha)?;
+        Ok(())
+    }
+
+    /// Record one thing that happened to a round's head.
+    ///
+    /// Append-only, and the caller is inside a transaction with whatever the row is about —
+    /// a move and the row saying it moved are one fact, and a record holding one without the
+    /// other is the state this table was added to stop.
+    pub(crate) fn record_head_update(
+        &self,
+        review_id: i64,
+        kind: HeadUpdateKind,
+        from_sha: &str,
+        to_sha: &str,
+    ) -> Result<HeadUpdate> {
+        // Normalised through the same helper every head goes through, so the CHECK that
+        // refuses a move from a commit to itself refuses a real mistake rather than two
+        // spellings of one commit.
+        let (from_sha, to_sha) = (normalise::head_sha(from_sha), normalise::head_sha(to_sha));
+        let at = self.now();
+        self.conn.execute(
+            "INSERT INTO round_head_updates (review_id, kind, from_sha, to_sha, at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![review_id, kind, from_sha, to_sha, at],
+        )?;
+        Ok(HeadUpdate {
+            id: self.conn.last_insert_rowid(),
+            review_id,
+            kind,
+            from_sha,
+            to_sha,
+            at,
+        })
+    }
+
+    /// Whether anybody has begun on this review: a session that said so, or anything only a
+    /// session writes.
     ///
     /// **Anything a session writes about the commit counts, and the point is the ones
     /// that are not work a delete would lose.** A session linked by
-    /// `review link --session`; a layer moved off `pending`; what the review did not look
-    /// at; and the three things `provenance` and `round commits` record — the per-file
-    /// change map, the sources and criteria its understanding came from, the description
-    /// lint's results, the commits since the previous round. Every one of them is a
-    /// session at work, and none of them makes [`ReviewWork::started`] true.
-    ///
-    /// **That gap was the hole.** `changed_lines` is cleared when a head moves because a
-    /// count measured on one commit is a wrong answer about another — and a per-file
-    /// change map and a round's commit list are the same kind of measurement, served by
-    /// `GET /reviews/{id}` as the review's coverage and as the commits in this round.
-    /// Found by a review of this branch, which traced a session on the old flow writing
-    /// them before it ever called `review link --session`.
+    /// `review link --session` or `review open --session`; a layer moved off `pending`;
+    /// what the review did not look at; and the things `provenance` and `round commits`
+    /// record — the per-file change map, the sources and criteria its understanding came
+    /// from, the description lint's results, the commits since the previous round. Every one
+    /// of them is a session at work, and none of them makes [`ReviewWork::started`] true.
     ///
     /// They are *claimed* rather than *held*: a delete still removes a review carrying
     /// only these, because none of them is work the developer would lose — which is what
@@ -300,6 +482,14 @@ impl Store {
     /// A request recorded by the dispatcher has none of them: `review open` writes no
     /// layer and no provenance, and the ledger id it may carry is the dispatcher's own
     /// entry rather than a session.
+    ///
+    /// **What this no longer decides is whether a head may move.** It was DEV-945's guard
+    /// against moving a round out from under a running session; DEV-962 moves an unposted
+    /// round's head whoever is working on it and records the move instead, for the reason
+    /// [`Store::open_review`] gives. What the question is still for is telling a caller
+    /// outside the record whether anybody has begun — [`Store::review_started`], which
+    /// DEV-954 asks for so that a dispatcher's guard does not have to infer it from
+    /// `session_id`.
     fn review_is_claimed(&self, review: &Review) -> Result<bool> {
         if review.session_id.is_some() || review.not_checked.is_some() {
             return Ok(true);
@@ -346,6 +536,151 @@ impl Store {
         )?)
     }
 
+    /// Whether anybody has begun on this round.
+    ///
+    /// **DEV-954 asks for this on the wire so that a caller does not have to infer it from
+    /// `session_id`.** A worker links itself only once it has begun, and in the window
+    /// between a push and that link a dispatcher could not tell a round somebody was
+    /// reading from a request nobody had picked up — so it guessed from the one field it
+    /// could see, and a round whose session id was not yet written read as free.
+    ///
+    /// True when the round holds a brief, a finding, a draft or a posted review — which is
+    /// [`ReviewWork::started`], the three things a delete would lose — **or** when anything
+    /// only a session writes is there: a linked session, a layer past `pending`, what was
+    /// not checked, the provenance, the description lint, this round's commits. The second
+    /// half is [`Store::review_is_claimed`] and its list is the longer one on purpose: the
+    /// question a guard needs answered is "has anybody begun", and a session that has
+    /// written a layer and no brief has begun.
+    ///
+    /// **It decides nothing here.** Since DEV-962 an unposted round's head moves whoever is
+    /// at work on it, so this is a fact a caller reads rather than a gate anything passes.
+    pub fn review_started(&self, review_id: i64) -> Result<bool> {
+        let review = self.get_review(review_id)?;
+        Ok(self.review_work(review.id)?.started() || self.review_is_claimed(&review)?)
+    }
+
+    /// Withdraw a sign-off because the commit under it moved, and say which commit it was
+    /// given on.
+    ///
+    /// **Only an approved draft, and only ever downwards.** A draft nobody has signed off
+    /// has nothing to withdraw, and a posted one cannot be here at all — a posted round
+    /// does not move its head. The status goes to `drafting` rather than `ready` for
+    /// migration 18's reason: the code it was written against has changed, so the next step
+    /// is the session's, and `ready` would leave "waiting on you to sign off" over a draft
+    /// written for a commit nobody is looking at.
+    ///
+    /// `event` is left where it is, which migration 4's CHECK permits once `approved_at`
+    /// and `approved_by` are null: it records what the review is *to be* posted as, which
+    /// is still true.
+    ///
+    /// Answers whether anything was withdrawn, which is what a caller needs in order to say
+    /// so and nothing more.
+    ///
+    /// `at` is the move's own time rather than a reading of the clock here: the draft's
+    /// `updated_at` and the move are one event, and the code review compares the two.
+    fn withdraw_signoff(&self, review_id: i64, approved_head: &str, at: Timestamp) -> Result<bool> {
+        let withdrawn = self.conn.execute(
+            "UPDATE drafts
+                SET status = ?2,
+                    approved_at = NULL,
+                    approved_by = NULL,
+                    signoff_withdrawn_at = ?3,
+                    signoff_withdrawn_head = ?4,
+                    updated_at = ?3
+              WHERE review_id = ?1 AND status = ?5",
+            params![
+                review_id,
+                DraftStatus::Drafting,
+                at,
+                normalise::head_sha(approved_head),
+                DraftStatus::Approved,
+            ],
+        )?;
+        Ok(withdrawn > 0)
+    }
+
+    /// Everything that has happened to this round's head, with the counts a page reads.
+    ///
+    /// Oldest first, which is the order they happened in and the order the code review
+    /// reads them to say what changed since the draft was written.
+    ///
+    /// **The commit count is derived from `round_commits` and is null rather than zero when
+    /// it cannot be.** "Updated for 3 commits since `4d9464f`" is a sentence about the pull
+    /// request's commits, and the only record of those is what a session wrote when it last
+    /// read the pull request. So the count is the commits recorded *after* the one the round
+    /// was opened on — and when that commit is not among them, because nothing recorded them
+    /// or because they were recorded before the move and not since, there is no count to
+    /// give. Zero would read as "nothing changed", which is the one thing it is not.
+    pub fn head_updates(&self, review_id: i64) -> Result<HeadUpdates> {
+        self.get_review(review_id)?;
+
+        let mut statement = self.conn.prepare(
+            "SELECT id, review_id, kind, from_sha, to_sha, at
+               FROM round_head_updates
+              WHERE review_id = ?1
+              ORDER BY id",
+        )?;
+        let updates = statement
+            .query_map(params![review_id], |row| {
+                Ok(HeadUpdate {
+                    id: row.get("id")?,
+                    review_id: row.get("review_id")?,
+                    kind: row.get("kind")?,
+                    from_sha: row.get("from_sha")?,
+                    to_sha: row.get("to_sha")?,
+                    at: row.get("at")?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+
+        let mut summary = HeadUpdates {
+            last_at: updates.last().map(|update| update.at),
+            ..HeadUpdates::default()
+        };
+        for update in &updates {
+            match update.kind {
+                HeadUpdateKind::Moved => {
+                    // The first move's `from_sha`: the commit this round was opened on, and
+                    // the one the page measures from. A later move's is a commit this round
+                    // was already of, which would make the sentence say "since" a commit
+                    // the developer has already been shown.
+                    summary.since_sha.get_or_insert(update.from_sha.clone());
+                    summary.moved += 1;
+                }
+                HeadUpdateKind::BaseOnly => summary.base_only += 1,
+                HeadUpdateKind::Folded => summary.folded += 1,
+            }
+        }
+
+        if let Some(since) = &summary.since_sha {
+            summary.commits = self.commits_after(review_id, since)?;
+        }
+
+        summary.updates = updates;
+        Ok(summary)
+    }
+
+    /// How many of this round's recorded commits come after this one, or `None` when the
+    /// commit is not among them.
+    ///
+    /// One query rather than reading the list: the position is what orders them, and
+    /// `round_commits` holds it for the reason its own migration gives — a rebased commit
+    /// can carry a committer date out of order.
+    fn commits_after(&self, review_id: i64, sha: &str) -> Result<Option<i64>> {
+        let sha = normalise::head_sha(sha);
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT (SELECT COUNT(*) FROM round_commits
+                          WHERE review_id = ?1 AND position > at_sha.position)
+                   FROM round_commits at_sha
+                  WHERE at_sha.review_id = ?1 AND at_sha.sha = ?2",
+                params![review_id, sha],
+                |row| row.get(0),
+            )
+            .optional()?)
+    }
+
     /// Open the review of this head commit, and record what the caller knows about the
     /// pull request.
     ///
@@ -356,6 +691,11 @@ impl Store {
     /// or found already on the record — which is what lets a session that has finished
     /// a review report what it did not check by opening the same head commit again,
     /// rather than needing a command of its own.
+    ///
+    /// **What the caller knows about the diff goes through to the same place.**
+    /// [`DiffAtHead::Unchanged`] is "these commits only brought the base branch in", and
+    /// then nothing moves and the facts given are still recorded against the round that is
+    /// there — a newer title is a newer title whatever the commits did.
     ///
     /// **Two steps, not one.** `open_review` takes its own write lock, and SQLite has
     /// no nested transaction to put around both, so a reader between them sees a review
@@ -369,6 +709,7 @@ impl Store {
         pr: i64,
         head_sha: &str,
         facts: &ReviewFacts,
+        diff: DiffAtHead,
     ) -> Result<OpenedReview> {
         // **The facts are checked before a round is spent.** `open_review` creates the
         // review, so a fact refused on the second step would leave behind a review the
@@ -410,22 +751,28 @@ impl Store {
                 (normalise::repo(repo), normalise::head_sha(head_sha));
             // **The review this call is about is not always the one at this commit.**
             // Since DEV-945 a head that names no review may be about to be *moved* onto
-            // an unstarted round, and that round is where `set_review_facts` will write —
+            // an earlier round, and that round is where `set_review_facts` will write —
             // so looking only by head handed the check `None` and refused an address for
-            // a review that already holds the id. Reproduced by a review of this branch:
+            // a review that already holds the id. Reproduced by a review of that branch:
             // record the id on one call, the address on the next after a push, and the
             // second was refused. Asked in the same order `open_review` resolves it, so
             // the pre-check and the write cannot disagree about which review they mean.
+            //
+            // **Since DEV-962 that round is the newest one, posted or not**, which is a
+            // wider net than the unstarted round this used to ask for and is right for both
+            // paths: an unposted newest round is where a move will write, and a *posted*
+            // one is where a base-only report will write. Either way the id this call is
+            // judged against is the one on the review the call is about.
             let held = match self.find_review_by_head(&looked_up_repo, pr, &looked_up_head)? {
                 Some(review) => review.ticket_id,
                 None => self
-                    .latest_unstarted_round(&looked_up_repo, pr)?
+                    .newest_round(&looked_up_repo, pr)?
                     .and_then(|review| review.ticket_id),
             };
             check_ticket(facts, held)?;
         }
 
-        let opened = self.open_review(repo, pr, head_sha)?;
+        let opened = self.open_round(repo, pr, head_sha, diff)?;
         if facts.is_empty() {
             return Ok(opened);
         }
@@ -624,6 +971,86 @@ impl Store {
         Ok(())
     }
 
+    /// Take a pull request out of play, or put it back.
+    ///
+    /// **One call for both directions, because they are one fact.** `Some(why)` records that
+    /// the pull request is a draft or that its review request was withdrawn; `None` records
+    /// that it is back. A second function for the way back would be a second place the
+    /// column's meaning is written down.
+    ///
+    /// **It names a pull request, not a round, and writes every round of it.** This is the
+    /// state of the *request* — the author pulled it back, or somebody took the reviewer off
+    /// it — and nothing about it belongs to one round. Writing it to every round is what
+    /// makes "no round holds one" mean exactly "the request is back": the alternative, a
+    /// value on the round that happened to be newest, leaves an older round still saying
+    /// `draft` after the pull request is ready, and `IN_PLAY` would then be answering from
+    /// whichever round a query reached first. Migration 19 carries the whole argument.
+    ///
+    /// **Review Desk read none of this.** It writes nothing to GitHub and polls nothing: the
+    /// dispatcher watching the pull request says so, through `review out-of-play` and
+    /// `review in-play`. That is also why there is no actor here — no developer act is
+    /// involved, and a column holding `agent` in every row cannot disagree with itself.
+    ///
+    /// **A pull request with no review at all is [`StoreError::NotFound`]**, rather than a
+    /// write of nothing reported as success. A dispatcher that has not recorded the request
+    /// yet is a dispatcher whose next `review open` records it, and answering 0 rounds
+    /// written as though something had happened is how a caller comes to believe a state it
+    /// never set.
+    ///
+    /// Answers the rounds as they now stand, oldest round first, so a caller can say how
+    /// many it wrote and a reader can see that every one of them agrees.
+    pub fn set_pr_out_of_play(
+        &self,
+        repo: &str,
+        pr: i64,
+        why: Option<OutOfPlay>,
+    ) -> Result<Vec<Review>> {
+        let repo = normalise::repo(repo);
+
+        // IMMEDIATE, so the read that proves the pull request exists and the write that
+        // changes every one of its rounds cannot have a round opened between them. A round
+        // opened a moment later is a round `review open` gives the state to, which is the
+        // next paragraph's job rather than this lock's.
+        let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+        if self.latest_round(&repo, pr)?.is_none() {
+            return Err(StoreError::NotFound {
+                entity: "pull request",
+                id: format!("{repo}#{pr}"),
+            });
+        }
+
+        // **`out_of_play_at` is written with the reason and cleared with it.** A time
+        // without a reason would be a review that went out of play for nothing, which is
+        // migration 17's rule for a dismissal's reason read the other way round.
+        //
+        // **And it does not move when the same reason is said again**, which matters
+        // because the caller that says it is a poller: a dispatcher that re-asserts `draft`
+        // every tick would otherwise reset "out of play since" for ever, and a page saying
+        // "a draft since 2 minutes ago" about a pull request pulled back last Tuesday is
+        // the fault `set_review_layer`'s idempotence argument describes. A *different*
+        // reason is a different fact and takes the new time: a pull request that went draft
+        // and then had its request withdrawn is out of play for the newer reason, and the
+        // two can arrive in either order.
+        //
+        // `IS` rather than `=`, which is SQLite's null-safe comparison: `out_of_play = NULL`
+        // is null, so the clearing case would fall to the `ELSE` and write a time against no
+        // reason.
+        self.conn.execute(
+            "UPDATE reviews
+                SET out_of_play = ?3,
+                    out_of_play_at = CASE
+                        WHEN ?3 IS NULL         THEN NULL
+                        WHEN out_of_play IS ?3  THEN out_of_play_at
+                        ELSE ?4
+                    END
+              WHERE repo = ?1 AND pr = ?2",
+            params![repo, pr, why, self.now()],
+        )?;
+        tx.commit()?;
+
+        self.list_reviews(&repo, pr)
+    }
+
     /// Dismiss a review, with the developer's reason.
     ///
     /// **Hidden and kept.** The review leaves the queue, the work list and the Reviews
@@ -744,8 +1171,22 @@ impl Store {
     pub fn delete_review(&self, id: i64) -> Result<Review> {
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
         let review = self.get_review(id)?;
+        self.refuse_if_started(&review)?;
+        self.remove_review(id)?;
+        tx.commit()?;
 
-        let work = self.review_work(id)?;
+        Ok(review)
+    }
+
+    /// Refuse a removal of a review that holds something the developer would lose.
+    ///
+    /// **One refusal, two callers**, which is why it is a function: [`Store::delete_review`]
+    /// and [`Store::fold_round`] remove a review row, and a fold that judged this for itself
+    /// could offer to fold a round the delete would refuse. The words are the ones the
+    /// refusal is read in — "review 7 holds a brief and 4 findings" — and
+    /// [`ReviewWork::in_words`] composes them.
+    pub(crate) fn refuse_if_started(&self, review: &Review) -> Result<()> {
+        let work = self.review_work(review.id)?;
         if work.started() {
             return Err(StoreError::ReviewStarted {
                 review_id: review.id,
@@ -753,12 +1194,16 @@ impl Store {
                 lost: work.lost(),
             });
         }
+        Ok(())
+    }
 
+    /// Remove the review row, with everything under it cascading.
+    ///
+    /// Private and unguarded: the two callers check first, inside their own transaction.
+    pub(crate) fn remove_review(&self, id: i64) -> Result<()> {
         self.conn
             .execute("DELETE FROM reviews WHERE id = ?1", params![id])?;
-        tx.commit()?;
-
-        Ok(review)
+        Ok(())
     }
 
     /// Refuse an act that needs an agent afterwards, on a review the developer dismissed.
@@ -854,7 +1299,7 @@ impl Store {
             return Ok(Some(NotForSigning::Dismissed));
         }
 
-        let (state, state_at, newest_round, is_posted) = self.conn.query_row(
+        let (state, state_at, newest_round) = self.conn.query_row(
             "SELECT
                  (SELECT settled.pr_state FROM reviews settled
                   WHERE settled.repo = ?2 AND settled.pr = ?3
@@ -865,25 +1310,24 @@ impl Store {
                     AND settled.pr_state IS NOT NULL
                   ORDER BY settled.round DESC LIMIT 1)       AS pr_state_at,
                  (SELECT MAX(round) FROM reviews
-                  WHERE repo = ?2 AND pr = ?3)               AS newest_round,
-                 EXISTS (
-                     SELECT 1 FROM drafts
-                     WHERE review_id = ?1 AND posted_at IS NOT NULL
-                 )
-                 OR EXISTS (
-                     SELECT 1 FROM reviews
-                     WHERE id = ?1 AND github_review_id IS NOT NULL
-                 )                                           AS is_posted",
+                  WHERE repo = ?2 AND pr = ?3)               AS newest_round",
             params![review.id, review.repo, review.pr],
             |row| {
                 Ok((
                     row.get::<_, Option<PrState>>("pr_state")?,
                     row.get::<_, Option<Timestamp>>("pr_state_at")?,
                     row.get::<_, Option<i64>>("newest_round")?,
-                    row.get::<_, bool>("is_posted")?,
                 ))
             },
         )?;
+
+        // **Asked through the one definition of posted**, which since DEV-962 is
+        // [`Store::review_is_posted`] because the round rule turns on the same word: a
+        // round that counts as posted here has to be a round `open_review` will not move,
+        // or a pull request could hold a round that can neither post nor be superseded.
+        // It was a fourth column of the query above until that rule arrived; one read more
+        // is the price of the two rules being unable to disagree.
+        let is_posted = self.review_is_posted(review.id)?;
 
         if let Some(how) = state.filter(PrState::is_settled) {
             return Ok(Some(NotForSigning::Finished { how, at: state_at }));
@@ -1355,6 +1799,8 @@ pub(super) fn row_to_review(row: &Row<'_>) -> rusqlite::Result<Review> {
         nit_ticket_filed_at: row.get("nit_ticket_filed_at")?,
         dismissed_at: row.get("dismissed_at")?,
         dismissed_reason: row.get("dismissed_reason")?,
+        out_of_play: row.get("out_of_play")?,
+        out_of_play_at: row.get("out_of_play_at")?,
         last_activity_at: row.get("last_activity_at")?,
         created_at: row.get("created_at")?,
     })

@@ -36,6 +36,8 @@ import type {
   DeferRuleRequest,
   DeskError,
   DismissReviewRequest,
+  DuplicateRoundsPage,
+  FoldedRound,
   ReviewsShown,
   Disposition,
   DraftDetail,
@@ -272,6 +274,31 @@ export function listReviews(
   if (show !== 'in_play') asked.set('show', show)
   const query = asked.size === 0 ? '' : `?${asked.toString()}`
   return send<ReviewList>('GET', `/reviews${query}`)
+}
+
+/**
+ * `GET /duplicate-rounds` — the one-off tidy's proposal, per pull request.
+ *
+ * A read that decides nothing: it says which pull requests hold more than one unposted
+ * round and what would happen to each extra one. The acts are `foldRound` below and
+ * `dismissReview`, both the developer's.
+ */
+export function listDuplicateRounds(repo: string | null): Promise<DuplicateRoundsPage> {
+  const asked = new URLSearchParams()
+  if (repo != null) asked.set('repo', repo)
+  const query = asked.size === 0 ? '' : `?${asked.toString()}`
+  return send<DuplicateRoundsPage>('GET', `/duplicate-rounds${query}`)
+}
+
+/**
+ * `POST /reviews/{id}/fold` — fold an extra unposted round into the newest one.
+ *
+ * Refused with `conflict` for a round holding a brief, a finding, a draft or the review it
+ * posted on GitHub, and the message says which — the proposal says `act: "dismiss"` for
+ * exactly those. It answers with the round that went and the round it folded into.
+ */
+export function foldRound(reviewId: number): Promise<FoldedRound> {
+  return send<FoldedRound>('POST', `/reviews/${reviewId}/fold`)
 }
 
 /** `GET /reviews/{reviewId}` — one review whole. */

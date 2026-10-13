@@ -56,7 +56,8 @@ pub(crate) const APPROVED_DETAIL: &str = "approved by the developer";
 pub(crate) const AWAITING_HARVEST_DETAIL: &str = "posted, waiting for the harvest";
 
 const COLUMNS: &str = "review_id, body, status, event, approved_at, approved_by, \
-                       sent_back_note, sent_back_at, posted_at, lint_passes, \
+                       sent_back_note, sent_back_at, posted_at, \
+                       signoff_withdrawn_at, signoff_withdrawn_head, lint_passes, \
                        lint_visible_words, lint_word_budget, lint_findings_in_body, \
                        lint_findings_expected, lint_raised_before_on_pr, lint_errors, \
                        lint_checked_at, updated_at";
@@ -517,12 +518,20 @@ pub(crate) fn write_approval(
     at: Timestamp,
 ) -> Result<()> {
     conn.execute(
+        // **The withdrawal is cleared here, and that is the whole of why it is cleared
+        // anywhere.** A draft whose sign-off was withdrawn when the head moved under it —
+        // migration 18 — carries the commit the developer had approved, and a draft that
+        // has now been approved again must not go on saying its sign-off was taken away.
+        // The history of the withdrawal is in `round_head_updates`, which is append-only
+        // and is where a history belongs.
         "UPDATE drafts SET
-             status      = ?2,
-             event       = ?3,
-             approved_at = ?4,
-             approved_by = ?5,
-             updated_at  = ?4
+             status                 = ?2,
+             event                  = ?3,
+             approved_at            = ?4,
+             approved_by            = ?5,
+             signoff_withdrawn_at   = NULL,
+             signoff_withdrawn_head = NULL,
+             updated_at             = ?4
          WHERE review_id = ?1",
         params![review_id, DraftStatus::Approved, event, at, by],
     )?;
@@ -555,6 +564,8 @@ fn row_to_draft(row: &Row<'_>) -> rusqlite::Result<Draft> {
         sent_back_note: row.get("sent_back_note")?,
         sent_back_at: row.get("sent_back_at")?,
         posted_at: row.get("posted_at")?,
+        signoff_withdrawn_at: row.get("signoff_withdrawn_at")?,
+        signoff_withdrawn_head: row.get("signoff_withdrawn_head")?,
         lint: DraftLint {
             passes: row.get::<_, Option<i64>>("lint_passes")?.map(|on| on != 0),
             visible_words: row.get("lint_visible_words")?,

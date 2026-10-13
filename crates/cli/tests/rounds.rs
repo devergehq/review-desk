@@ -13,7 +13,7 @@ mod common;
 
 use std::path::Path;
 
-use common::{open_review, start_review, Desk};
+use common::{open_review, post_round, Desk};
 use tempfile::TempDir;
 
 /// A `gh` that answers the two reads `round commits` makes, and refuses anything else.
@@ -98,6 +98,8 @@ fn opening_round_two_hands_back_round_ones_findings_ready_to_be_carried() {
     let first = open_review(&desk, "acme/portal", "412", "3f9c2ab");
     add(&desk, &first, "no idempotency key", "");
     add(&desk, &first, "the backoff has no ceiling", "");
+    // Posted, so the next commit is round 2 rather than round 1 moved — DEV-962.
+    post_round(&desk, &first);
 
     let document = desk.json(&[
         "review",
@@ -169,6 +171,9 @@ fn a_carried_finding_keeps_its_number_and_reports_the_rounds_it_has_been_open() 
     let f2 = add(&desk, &first, "the retry delay ignores Retry-After", "");
     assert_eq!(f2, "2");
 
+    // Posted, so the next commit is a round of its own rather than this round moved
+    // — DEV-962's rule, and what a real pull request does between two rounds.
+    post_round(&desk, &first);
     let second = open_review(&desk, "acme/portal", "412", "9d02e71");
     let line = desk.run(&[
         "finding",
@@ -193,6 +198,9 @@ fn a_carried_finding_keeps_its_number_and_reports_the_rounds_it_has_been_open() 
         "the sentence the page shows: {line}"
     );
 
+    // Posted, so the next commit is a round of its own rather than this round moved
+    // — DEV-962's rule, and what a real pull request does between two rounds.
+    post_round(&desk, &second);
     let third = open_review(&desk, "acme/portal", "412", "eeeeeee");
     let document = desk.json(&[
         "finding",
@@ -223,6 +231,9 @@ fn a_new_finding_names_the_commit_and_the_finding_it_was_introduced_by() {
     let first = open_review(&desk, "acme/portal", "412", "3f9c2ab");
     let f1 = add(&desk, &first, "no idempotency key", "");
 
+    // Posted, so the next commit is a round of its own rather than this round moved
+    // — DEV-962's rule, and what a real pull request does between two rounds.
+    post_round(&desk, &first);
     let second = open_review(&desk, "acme/portal", "412", "9d02e71");
     desk.run(&[
         "finding",
@@ -380,7 +391,7 @@ fn round_commits_records_what_changed_since_the_previous_round() {
     assert!(!first.is_empty());
     // Round 1 is reviewed, so the second commit is round 2 rather than round 1 moved to
     // it: DEV-945's rule for a request nobody has started.
-    start_review(&desk, &first);
+    post_round(&desk, &first);
     let second = open_review(&desk, "acme/portal", "412", "9d02e71");
 
     let output = desk
@@ -445,6 +456,9 @@ fn round_list_reports_each_rounds_findings_by_status() {
     let f1 = add(&desk, &first, "no idempotency key", "");
     let f2 = add(&desk, &first, "the backoff has no ceiling", "");
 
+    // Posted, so the next commit is a round of its own rather than this round moved
+    // — DEV-962's rule, and what a real pull request does between two rounds.
+    post_round(&desk, &first);
     let second = open_review(&desk, "acme/portal", "412", "9d02e71");
     desk.run(&[
         "finding",

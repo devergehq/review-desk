@@ -19,7 +19,9 @@
         "pr_state_at": null,
         "harvested_at": null,
         "dismissed_at": null,
-        "dismissed_reason": null
+        "dismissed_reason": null,
+        "out_of_play": null,
+        "out_of_play_at": null
       },
       "timings": {
         "requested_at": "2026-10-06T09:02:00Z",
@@ -194,7 +196,9 @@
         "pr_state_at": null,
         "harvested_at": "2026-10-09T08:15:00Z",
         "dismissed_at": null,
-        "dismissed_reason": null
+        "dismissed_reason": null,
+        "out_of_play": null,
+        "out_of_play_at": null
       },
       "timings": {
         "requested_at": "2026-09-29T11:00:00Z",

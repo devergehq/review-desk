@@ -61,8 +61,10 @@ import type {
   DeskError,
   Disposition,
   DraftDetail,
+  DuplicateRoundsPage,
   Finding,
   FindingDecisionMade,
+  FoldedRound,
   Inbox,
   NitTicket,
   RepoName,
@@ -379,6 +381,21 @@ export function useReviewDesk() {
       ))
   }
 
+  /**
+   * `GET /duplicate-rounds` — the one-off tidy's proposal, per pull request.
+   *
+   * **The seventh read, and the only one that is not a screen's.** It follows the Reviews
+   * page's own repository picker, so the tidy answers about the repository the developer is
+   * looking at, and it decides nothing: the two acts it proposes are `foldRound` below and
+   * `dismissReview`, both the developer's.
+   */
+  function duplicateRounds(
+    repo: Ref<string> | ComputedRef<string>,
+  ): DeskResource<DuplicateRoundsPage> {
+    return following(repo, (from, value) =>
+      from.listDuplicateRounds(value === ALL_REPOSITORIES ? null : (value as RepoName)))
+  }
+
   /** `GET /reviews/{id}` — one review whole, as the One review screen shows it. */
   function review(id: number | Ref<number> | ComputedRef<number>): DeskResource<ReviewDetail> {
     return following(id, (from, value) => from.getReview(value))
@@ -519,6 +536,27 @@ export function useReviewDesk() {
      */
     if (!result.ok) await refreshEverything()
     return result
+  }
+
+  /**
+   * `POST /reviews/{id}/fold` — fold an extra unposted round into the newest one.
+   *
+   * **Nothing is judged here**, which is `deleteReview`'s rule above and for the same
+   * reason: the store decides whether a round may be folded and says what it holds when it
+   * may not, and a second judgement in the page is how a button comes to be offered for a
+   * round the API refuses. The screen offers the fold only where the proposal says `fold`,
+   * which is a different thing from deciding the refusal.
+   *
+   * **It refreshes**, unlike a delete: the page that asked is the tidy, the proposal it is
+   * drawn from has just changed, and the round that went is not the page's own subject.
+   */
+  async function foldRound(id: number): Promise<WriteResult> {
+    return write(
+      to => to.foldRound(id),
+      (folded: FoldedRound) =>
+        `Round ${folded.folded.round} is folded into round ${folded.into.round}. Its head `
+        + `commit is on round ${folded.into.round}'s record, and the empty round has gone.`,
+    )
   }
 
   /** `POST /reviews/{id}/brief/confirm` — layer 2, and the gate on everything after it. */
@@ -690,12 +728,14 @@ export function useReviewDesk() {
     reviews,
     review,
     draft,
+    duplicateRounds,
     repos,
     rules,
     startReview,
     dismissReview,
     restoreReview,
     deleteReview,
+    foldRound,
     confirmBrief,
     setFindingDisposition,
     decideFinding,

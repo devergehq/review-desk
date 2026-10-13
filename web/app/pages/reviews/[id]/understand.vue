@@ -230,6 +230,16 @@ function sources(data: ReviewDetail) {
         sub="Step 2 is where a session writes what the change is solving. It has not written one, so there is nothing to confirm and nothing after it can run."
       >
         <!--
+          **Said on every one of these three pages, because a moved head is true of the
+          review rather than of the brief.** DEV-962: a new commit on an unposted round
+          moves that round's head, so what is on this page may describe a commit the pull
+          request has moved past — and that is at its most misleading where there is least
+          to read, which is this branch. Driven by the end-to-end run, which found the
+          sentence on the structured page and not on a review with no brief at all.
+        -->
+        <MovedHead :detail="data" />
+
+        <!--
           **The one page a never-started review has**, and so the one place it can be taken
           off the desk. This is the shape of the review DEV-945 was raised from: a request
           recorded and never picked up, with nothing under it to lose.
@@ -259,6 +269,12 @@ function sources(data: ReviewDetail) {
           :review-id="data.review.id"
           :not-for-signing="data.not_for_signing"
         />
+
+        <!--
+          The same sentence, for the reason the branch above gives: a moved head is a fact
+          about the review, not about which kind of brief it holds.
+        -->
+        <MovedHead :detail="data" />
 
         <DeskNotice tone="plain">
           <strong>Written before the structured brief.</strong>
@@ -314,6 +330,14 @@ function sources(data: ReviewDetail) {
           :review-id="data.review.id"
           :not-for-signing="data.not_for_signing"
         />
+
+        <!--
+          **The same component the other two branches draw**, which is the one copy of
+          these two sentences: Understand says them as a notice, the code review's timeline
+          says them over the findings, and two spellings is how two screens come to disagree
+          about the record in front of them.
+        -->
+        <MovedHead :detail="data" />
 
         <!-- ------------------------------ The two flows ------------------------------ -->
         <section

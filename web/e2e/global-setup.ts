@@ -28,7 +28,7 @@ export default async function globalSetup() {
     postedReviewId,
     requestedReviewId,
     mergedReviewIds,
-    supersededReviewIds,
+    movedHeadReviewId,
   } = seed(directory)
   /* The two share nothing, so they boot together rather than one after the other. */
   const [seeded, empty] = await Promise.all([serve(database), serve(fresh(directory))])
@@ -48,7 +48,7 @@ export default async function globalSetup() {
     postedReviewId,
     requestedReviewId,
     mergedReviewIds,
-    supersededReviewIds,
+    movedHeadReviewId,
   }
   writeFileSync(ADDRESSES, JSON.stringify(addresses, null, 2))
 

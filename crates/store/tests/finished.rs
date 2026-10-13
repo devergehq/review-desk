@@ -20,7 +20,7 @@
 
 mod common;
 
-use common::{new_review, temp_store};
+use common::{new_review, posted, temp_store};
 use review_desk_store::{
     Actor, Disposition, DraftStatus, LeftTheDesk, NewBrief, NewDraft, NewFinding, NewOutcome,
     NotForSigning, OutcomeKind, PrState, Review, ReviewEvent, ReviewLayerName, ReviewLayerState,
@@ -373,6 +373,9 @@ fn a_reopen_read_on_the_newest_round_outranks_a_stale_close_on_an_older_one() {
     store
         .add_finding(one.review.id, a_finding("round one was reviewed"))
         .expect("a finding");
+    // Posted, so that the commit below is round 2 rather than round 1 moved — DEV-962's
+    // rule, and what a real pull request does between two rounds.
+    posted(&store, one.review.id);
     harvest_found(&store, one.review.id, PrState::Closed, Some(1_791_000_000));
 
     let two = store.open_review(REPO, 9591, "bbb2222").expect("round 2");

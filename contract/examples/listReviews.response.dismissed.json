@@ -21,7 +21,9 @@
         "pr_state_at": null,
         "harvested_at": null,
         "dismissed_at": "2026-10-12T09:14:00Z",
-        "dismissed_reason": "a build session recorded this by accident; nobody asked for it"
+        "dismissed_reason": "a build session recorded this by accident; nobody asked for it",
+        "out_of_play": null,
+        "out_of_play_at": null
       },
       "rounds_on_pr": 1,
       "steps_total": 7,
@@ -49,7 +51,9 @@
         "pr_state_at": null,
         "harvested_at": "2026-10-10T06:00:00Z",
         "dismissed_at": "2026-10-10T08:31:00Z",
-        "dismissed_reason": "the pull request was closed unmerged in favour of ABC-402"
+        "dismissed_reason": "the pull request was closed unmerged in favour of ABC-402",
+        "out_of_play": null,
+        "out_of_play_at": null
       },
       "rounds_on_pr": 2,
       "step_number": 5,

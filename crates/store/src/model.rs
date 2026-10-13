@@ -256,6 +256,27 @@ impl PrState {
 }
 
 string_enum! {
+    /// Why a pull request is out of play: in neither state a review can be worked on, and
+    /// in neither state that is final.
+    ///
+    /// **Two values, and both of them undo themselves.** A pull request converted to draft
+    /// is the author saying "not yet"; a withdrawn review request is somebody saying "not
+    /// you". DEV-962: the review "leaves the queue and returns when it's ready or
+    /// re-requested" — so this is not [`PrState::is_settled`]'s question and not a
+    /// dismissal, which is the developer's own act on a review they decline.
+    ///
+    /// **Asserted by the caller watching GitHub, never read by Review Desk**, which polls
+    /// nothing and writes nothing to GitHub. `review out-of-play` records it and
+    /// `review in-play` clears it.
+    OutOfPlay as "out_of_play" {
+        /// The pull request was converted to a draft.
+        Draft => "draft",
+        /// The review request was withdrawn.
+        Withdrawn => "withdrawn",
+    }
+}
+
+string_enum! {
     /// Who brought an outcome about.
     Actor as "by" {
         Developer => "developer",
@@ -563,6 +584,15 @@ pub struct Review {
     /// Written with `dismissed_at` and never without it: a dismissal with no reason is
     /// refused, because a review hidden silently is one nobody can later say why they hid.
     pub dismissed_reason: Option<String>,
+    /// Why this pull request is out of play, or `None` while it is in play.
+    ///
+    /// Out of the queue and out of the work list, and back in both the moment it is
+    /// cleared — see [`OutOfPlay`] and migration 19. **A fact about the pull request**, so
+    /// every round of it carries the same value: "no round holds one" is what makes the
+    /// return unambiguous, with no stale value on an early round able to outvote it.
+    pub out_of_play: Option<OutOfPlay>,
+    /// When it went out of play. Written with `out_of_play` and cleared with it.
+    pub out_of_play_at: Option<Timestamp>,
     /// When anything last wrote to this review.
     ///
     /// **Every write moves it; no read does.** It is how long a session has been silent,
@@ -585,6 +615,11 @@ impl Review {
     pub fn is_dismissed(&self) -> bool {
         self.dismissed_at.is_some()
     }
+
+    /// Whether this review's pull request is out of play: draft, or its request withdrawn.
+    pub fn is_out_of_play(&self) -> bool {
+        self.out_of_play.is_some()
+    }
 }
 
 /// How a review came to leave the desk, for a reader listing one.
@@ -602,6 +637,18 @@ pub enum LeftTheDesk {
     Dismissed,
     /// Its pull request merged or closed, so no round of it can be posted.
     Finished,
+    /// Its pull request is a draft, or its review request was withdrawn.
+    ///
+    /// **Not a filter position either**, for [`LeftTheDesk::Superseded`]'s reason and one
+    /// more of its own: a pull request out of play is coming back, so hiding its review
+    /// from the Reviews list would make the one row that explains where the review went
+    /// the one row nobody can find. It leaves the *queue* — see `IN_PLAY` — and the list
+    /// draws it under In play with the reason.
+    ///
+    /// **Below dismissed and finished, above superseded.** A review the developer
+    /// dismissed stays dismissed, and a merged pull request is finished however it was
+    /// marked on the way there, because both of those are answers nothing takes back.
+    OutOfPlay,
     /// An unposted round a newer round of the same pull request has replaced.
     ///
     /// **Not a filter position, and the Reviews list draws it under In play.** A superseded
@@ -709,6 +756,32 @@ pub struct NewReview {
     pub github_review_id: Option<String>,
 }
 
+/// What [`Store::open_review`] did, in one word a caller can branch on.
+///
+/// **Four values, because `created` and `head_moved_from` could not say which of four
+/// things happened without the caller comparing them.** DEV-962 asks for the answer to be
+/// "explicitly enough for a dispatcher to branch on", and a dispatcher reading
+/// `created: false, head_moved_from: null` had to know that it meant "the commit was
+/// already reviewed" rather than "nothing needed doing" — two different instructions for
+/// what to do next. The two older fields are still served and still mean what they always
+/// meant; this is the field to read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenedAction {
+    /// A round was opened: the pull request had none, or its newest round has posted.
+    Created,
+    /// The newest round was unposted, so its head moved to this commit. The session
+    /// working on it, if there is one, re-reads the delta; it is the same round and the
+    /// same review.
+    HeadMoved,
+    /// This commit is already the one the review handed back is of. Nothing was written.
+    Unchanged,
+    /// The caller said the pull request's own diff against its base is unchanged, so the
+    /// commits only brought the base branch in. Nothing moved and nobody is woken; the
+    /// record notes that they arrived.
+    DiffUnchanged,
+}
+
 /// A review opened for a head commit: the one that was already there, the one whose head
 /// moved to it, or a new round.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -721,11 +794,39 @@ pub struct OpenedReview {
     /// The commit this review used to be of, when this call moved it to the one asked
     /// for; `None` when the head did not move.
     ///
-    /// Only an unstarted round's head moves — see [`Store::open_review`] — so a caller
-    /// seeing this knows the review it has been handed is the request it recorded
-    /// before, now pointing at a newer commit, rather than a round somebody reviewed.
+    /// Set exactly when [`OpenedAction::HeadMoved`] is the action, which since DEV-962 is
+    /// any unposted newest round rather than only an unstarted one: the review handed back
+    /// is the round that was already there, now of a newer commit. `None` for the other
+    /// three actions — including `DiffUnchanged`, where the head deliberately did not
+    /// move.
     #[serde(default)]
     pub head_moved_from: Option<String>,
+    /// Which of the four things happened. The field to branch on; the two above are kept
+    /// for callers written before it existed.
+    pub action: OpenedAction,
+}
+
+/// What the caller knows about the pull request's own diff at the head commit it is
+/// opening.
+///
+/// **Review Desk cannot work this out and will not try.** It reads no git and no GitHub, so
+/// the one caller that has compared the pull request's diff against its base is the one
+/// watching GitHub. DEV-962 asks for exactly this: "If Review Desk can't compute the diff
+/// itself without GitHub writes, accept a flag or field from the caller".
+///
+/// **Two values rather than three.** "The diff changed" and "nobody said" lead to the same
+/// act — the head moves — so a third value would be a distinction the behaviour does not
+/// make. What the record keeps is the event, not the caller's assertion about the diff: see
+/// [`HeadUpdateKind`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DiffAtHead {
+    /// Nobody said. Every `review open` written before DEV-962 means this.
+    #[default]
+    Unsaid,
+    /// The caller compared the pull request's own diff against its base and it is
+    /// unchanged, so these commits only brought the base branch in.
+    Unchanged,
 }
 
 /// What a review holds that somebody would lose: the brief, the findings, the draft, and
@@ -2012,6 +2113,21 @@ pub struct Draft {
     /// When the review session reported it posted. Set with the review's
     /// `github_review_id`, never by Review Desk acting on GitHub.
     pub posted_at: Option<Timestamp>,
+    /// When a sign-off was withdrawn because the head moved under it, and the commit the
+    /// developer had approved. Both `None` for a draft nobody has signed off, and both
+    /// cleared when the developer approves again.
+    ///
+    /// **The draft is `drafting` when these are set.** The developer approved different
+    /// code, so the next step is the session's — migration 18 carries the argument, and
+    /// the page says why rather than leaving a draft that looks half-signed.
+    ///
+    /// **They survive the session's rewrite, and that is the decision.** Clearing them when
+    /// a new body is written was the alternative, and it loses the sentence exactly when the
+    /// developer comes back to look: the draft in front of them is a fresh one, their
+    /// sign-off is gone, and nothing on the record would say why. So they are cleared by the
+    /// next approval and by nothing else.
+    pub signoff_withdrawn_at: Option<Timestamp>,
+    pub signoff_withdrawn_head: Option<String>,
     pub lint: DraftLint,
     pub updated_at: Timestamp,
 }
@@ -2623,6 +2739,14 @@ pub struct RoundSummary {
     pub round: i64,
     pub head_sha: String,
     pub created_at: Timestamp,
+    /// Whether the developer has dismissed this round.
+    ///
+    /// **DEV-954: the timeline was drawing a dismissed round as live.** Everything else
+    /// here is a count, and a round with two findings and a posted draft looks exactly like
+    /// a round the developer took out of play — so the one fact that changes what every
+    /// other field means was the one the wire did not carry. The timeline draws it struck
+    /// through and says the word.
+    pub dismissed: bool,
     /// When this round's draft was posted. `None` for a round that has not been.
     pub posted_at: Option<Timestamp>,
     /// The GitHub review event it was posted as, or is to be posted as.
@@ -2634,6 +2758,135 @@ pub struct RoundSummary {
     pub replies: i64,
     pub threads_resolved: i64,
     pub statuses: RoundStatusCounts,
+}
+
+string_enum! {
+    /// What a row of `round_head_updates` records.
+    ///
+    /// **The kind names the event, not a property of the diff**, and migration 18 carries
+    /// the argument: a `diff_changed` boolean would hold false for every move nobody said
+    /// anything about, which is an assertion the record was never given.
+    HeadUpdateKind as "kind" {
+        /// New commits on an unposted round: the round's head became `to_sha`.
+        Moved => "moved",
+        /// The caller said the pull request's own diff against its base is unchanged, so
+        /// the commits only brought the base branch in. The head stayed at `from_sha` and
+        /// nothing else changed.
+        BaseOnly => "base_only",
+        /// The duplicate-round tidy folded an earlier unposted round into this one.
+        /// `from_sha` is the folded round's head.
+        Folded => "folded",
+    }
+}
+
+/// One thing that happened to a round's head commit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HeadUpdate {
+    pub id: i64,
+    pub review_id: i64,
+    pub kind: HeadUpdateKind,
+    /// The commit the round was of. For a `folded` row, the folded round's head.
+    pub from_sha: String,
+    /// The commit reported. The round's head for a `moved` row, and a commit the round
+    /// never became for the other two.
+    pub to_sha: String,
+    pub at: Timestamp,
+}
+
+/// Everything that has happened to one round's head, with the counts a page reads.
+///
+/// **This is the sentence "Updated for 3 commits since `4d9464f`" and the evidence under
+/// it.** DEV-962 asks the review page to say that and the code review to show what changed
+/// since the draft was written, so the rows come with the answer rather than the page
+/// deriving one and the API another.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct HeadUpdates {
+    /// The commit this round was opened on: the first move's `from_sha`. `None` for a round
+    /// whose head has never moved — which is every round before DEV-962 and every round
+    /// the author has not pushed to.
+    pub since_sha: Option<String>,
+    /// How many times the head moved.
+    pub moved: i64,
+    /// How many times commits arrived that only brought the base branch in.
+    pub base_only: i64,
+    /// How many earlier unposted rounds the tidy folded into this one.
+    pub folded: i64,
+    /// How many of this round's recorded commits came after `since_sha`.
+    ///
+    /// **Three-valued, and the null is the honest half.** It is counted from
+    /// `round_commits`, which a session writes when it reads the pull request — so a round
+    /// whose commits were never recorded, or recorded before the head moved and not since,
+    /// cannot answer "3 commits" and must not answer "0 commits". The page then says it was
+    /// updated since a commit without counting them.
+    pub commits: Option<i64>,
+    /// When the last of them happened. `None` when there have been none.
+    pub last_at: Option<Timestamp>,
+    /// Every one of them, oldest first.
+    pub updates: Vec<HeadUpdate>,
+}
+
+string_enum! {
+    /// What the duplicate-round tidy would do with one extra unposted round.
+    ///
+    /// **Two acts, because two kinds of row are on the record.** DEV-962: the tidy "folds
+    /// them into the newest (or dismisses them); nothing is deleted without confirmation".
+    /// Which one a round gets is [`ReviewWork::started`]'s question, and nothing else:
+    /// holding a brief, a finding, a draft or a posted review is work a delete would lose.
+    TidyAct as "act" {
+        /// It holds nothing a delete would lose, so its head is recorded on the newest
+        /// round and the empty row goes.
+        Fold => "fold",
+        /// It holds work, so it is kept and hidden instead — which is what a dismissal is
+        /// for, and the developer's reason goes on it.
+        Dismiss => "dismiss",
+    }
+}
+
+/// A round, named by the three things that identify it on a screen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoundRef {
+    pub review_id: i64,
+    pub round: i64,
+    pub head_sha: String,
+}
+
+/// One extra unposted round, with what it holds and what the tidy would do with it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExtraRound {
+    pub review_id: i64,
+    pub round: i64,
+    pub head_sha: String,
+    pub created_at: Timestamp,
+    /// What it holds, in the words a refused delete is composed from: "a brief and 4
+    /// findings", or "nothing". **The screen says this before the developer agrees to
+    /// anything** — it is the sentence that makes a dismissal the obvious choice over a
+    /// fold, and the tidy is not allowed to ask for a decision without it.
+    pub holds: String,
+    pub act: TidyAct,
+}
+
+/// One pull request's extra unposted rounds, and the round they would fold into.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DuplicateRounds {
+    pub repo: String,
+    pub pr: i64,
+    /// The pull request's title, from whichever of its rounds holds one.
+    pub title: Option<String>,
+    /// The newest round: the one that can still post, and the one the others fold into.
+    pub newest: RoundRef,
+    /// The extra rounds, oldest first. Never empty — a pull request with none is not in
+    /// the answer at all.
+    pub extras: Vec<ExtraRound>,
+}
+
+/// A folded round: the row that went, and the round its head was recorded on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FoldedRound {
+    /// The round that was folded away. Nothing can read it again, and a screen has a line
+    /// to draw about what went.
+    pub folded: Review,
+    /// The newest round, which now carries the folded round's head as an update.
+    pub into: Review,
 }
 
 /// A finding with the three things about it that are derived from the carry chain rather

@@ -95,14 +95,34 @@ pub fn open_review(desk: &Desk, repo: &str, pr: &str, head: &str) -> String {
     desk.run(&["review", "open", "--repo", repo, "--pr", pr, "--head", head])
 }
 
-/// Make a review count as started, so that a new head commit on its pull request opens
-/// the next round rather than moving this round's head.
+/// Record a review as posted, so that a new head commit on its pull request opens the next
+/// round rather than moving this round's head.
 ///
-/// **DEV-945.** `review open` moves an unstarted round to a new commit, because the Locus
-/// dispatcher records a review request the moment GitHub shows it one and an author who
-/// pushes before the session runs would otherwise turn one request into two reviews. A
-/// test that wants a second round therefore has to have reviewed the first, and one
-/// finding is the cheapest honest way to say a session got that far.
+/// **DEV-962: a round is a posted review.** `review open` moves an unposted round to a new
+/// commit — Patrick's queue held one pull request twice, round 1 and round 2, over a round 1
+/// he had never posted — so a test that wants a second round has to have posted the first.
+/// `review link --github-review` is the one way the command line says a review was posted,
+/// and Review Desk posts nothing itself.
+pub fn post_round(desk: &Desk, review: &str) {
+    desk.command()
+        .args([
+            "review",
+            "link",
+            "--review",
+            review,
+            "--github-review",
+            &format!("gh-review-{review}"),
+        ])
+        .assert()
+        .success();
+}
+
+/// Make a review count as started: somebody has begun on it.
+///
+/// **One finding is the cheapest honest way to say a session got that far**, and it is what
+/// `ReviewWork` asks for — a brief, a finding or a draft. Since DEV-962 this no longer
+/// decides whether a new commit opens a round; [`post_round`] does. What it is still for is
+/// a test about work a delete would lose, or about `review find`'s `started`.
 pub fn start_review(desk: &Desk, review: &str) {
     desk.command()
         .args(["finding", "add", "--review", review, "--file", "-"])

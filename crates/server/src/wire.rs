@@ -19,11 +19,12 @@ use review_desk_store::{
     finding_heading, AcceptanceCriterion, BlindPassState, Brief, BriefBlindPass, BriefDisagreement,
     BriefFlowBox, BriefFlowRow, BriefOpenChoice, BriefOption, BriefOptionVerdict, BriefPart,
     BriefPartFile, BriefProblem, BriefSupportTable, DescriptionLintResult, Disposition, Draft,
-    DraftLint, DraftSection, DraftThread, FileChange, Finding, FindingHunk, FindingInRound,
-    LayerFact, LeftTheDesk, NitTicket, NotForSigning, Outcome, PostedReview, ProblemStatement,
-    RepoSummary, Review, ReviewAtStep, ReviewLayer, ReviewLayerName, ReviewLayerRun,
-    ReviewProvenance, ReviewSource, ReviewTimings, RoundCommit, RoundStatusCounts, RoundSummary,
-    Rule, RuleCounts, RuleScope, RuleStage, RulesSummary, Severity, Timestamp,
+    DraftLint, DraftSection, DraftThread, DuplicateRounds, ExtraRound, FileChange, Finding,
+    FindingHunk, FindingInRound, HeadUpdate, HeadUpdates, LayerFact, LeftTheDesk, NitTicket,
+    NotForSigning, Outcome, PostedReview, ProblemStatement, RepoSummary, Review, ReviewAtStep,
+    ReviewLayer, ReviewLayerName, ReviewLayerRun, ReviewProvenance, ReviewSource, ReviewTimings,
+    RoundCommit, RoundRef, RoundStatusCounts, RoundSummary, Rule, RuleCounts, RuleScope, RuleStage,
+    RulesSummary, Severity, Timestamp,
 };
 use serde_json::{json, Value};
 
@@ -110,6 +111,13 @@ pub fn review(review: &Review) -> Value {
         // reads `GET /reviews/{id}`, and the list reads `GET /reviews`.
         "dismissed_at": rfc3339_or_null(review.dismissed_at),
         "dismissed_reason": review.dismissed_reason,
+        // Why its pull request is out of play — `draft` or `withdrawn` — and when, both
+        // null while it is in play. Beside the dismissal for the same reason: every screen
+        // that can draw a review has to be able to say the review is paused, and the
+        // sentence it draws names which of the two it is. It is reversible, so nothing
+        // here refuses an act on the strength of it.
+        "out_of_play": review.out_of_play.map(|why| why.as_str()),
+        "out_of_play_at": rfc3339_or_null(review.out_of_play_at),
     })
 }
 
@@ -198,6 +206,11 @@ pub fn review_list_item(at: &ReviewAtStep) -> Value {
         "left_the_desk": at.left_the_desk.map(|left| match left {
             LeftTheDesk::Dismissed => "dismissed",
             LeftTheDesk::Finished => "finished",
+            // **The queue, not this list.** A pull request out of play is coming back, so
+            // its row stays under In play and says this instead of disappearing — the one
+            // row that explains where the review went must not be the row nobody can find.
+            // `Review.out_of_play` beside it carries which of the two reasons it is.
+            LeftTheDesk::OutOfPlay => "out_of_play",
             LeftTheDesk::Superseded => "superseded",
         }),
         // Which way it ended and when, on a finished row only. Read off the pull request
@@ -605,6 +618,10 @@ pub fn round_summary(round: &RoundSummary) -> Value {
         "round": round.round,
         "head_sha": round.head_sha,
         "created_at": rfc3339(round.created_at),
+        // **The one fact on a round that is not a count.** Every other field here looks
+        // the same for a round the developer took out of play as for a live one, which is
+        // why the timeline was drawing a dismissed round as live (DEV-954).
+        "dismissed": round.dismissed,
         "posted_at": rfc3339_or_null(round.posted_at),
         "event": round.event.map(|event| event.as_str()),
         "findings": round.findings,
@@ -612,6 +629,77 @@ pub fn round_summary(round: &RoundSummary) -> Value {
         "replies": round.replies,
         "threads_resolved": round.threads_resolved,
         "statuses": round_status_counts(&round.statuses),
+    })
+}
+
+/// The contract's `DuplicateRounds`: one pull request's extra unposted rounds.
+///
+/// **What each extra round holds is served as words, not as flags.** The screen has to say
+/// "round 2 holds a brief and 4 findings" before the developer agrees to anything, and the
+/// words are the ones a refused delete is composed from — one sentence, written once in the
+/// store, so the screen and the refusal cannot word the same fact differently.
+pub fn duplicate_rounds(found: &DuplicateRounds) -> Value {
+    json!({
+        "repo": found.repo,
+        "pr": found.pr,
+        "title": found.title,
+        "newest": round_ref(&found.newest),
+        "extras": found.extras.iter().map(extra_round).collect::<Vec<_>>(),
+    })
+}
+
+/// The contract's `ExtraRound`: one round the tidy would fold or dismiss.
+fn extra_round(extra: &ExtraRound) -> Value {
+    json!({
+        "review_id": extra.review_id,
+        "round": extra.round,
+        "head_sha": extra.head_sha,
+        "created_at": rfc3339(extra.created_at),
+        "holds": extra.holds,
+        "act": extra.act.as_str(),
+    })
+}
+
+/// The contract's `RoundRef`: a round named by what identifies it on a screen.
+fn round_ref(round: &RoundRef) -> Value {
+    json!({
+        "review_id": round.review_id,
+        "round": round.round,
+        "head_sha": round.head_sha,
+    })
+}
+
+/// The contract's `HeadUpdates`: what has happened to this round's head commit.
+///
+/// **The sentence and the evidence under it.** `since_sha` with `commits` is "Updated for 3
+/// commits since `4d9464f`"; `base_only` is "2 commits brought the base branch in and
+/// changed nothing"; and `updates` is each one with its time, which is what lets the code
+/// review show what changed since the draft was written. `commits` is null rather than zero
+/// when the round's commits were never recorded — see the store, which will not count what
+/// nobody read.
+pub fn head_updates(updates: &HeadUpdates) -> Value {
+    json!({
+        "since_sha": updates.since_sha,
+        "moved": updates.moved,
+        "base_only": updates.base_only,
+        "folded": updates.folded,
+        "commits": updates.commits,
+        "last_at": rfc3339_or_null(updates.last_at),
+        "updates": updates
+            .updates
+            .iter()
+            .map(head_update)
+            .collect::<Vec<_>>(),
+    })
+}
+
+/// The contract's `HeadUpdate`: one thing that happened to a round's head.
+fn head_update(update: &HeadUpdate) -> Value {
+    json!({
+        "kind": update.kind.as_str(),
+        "from_sha": update.from_sha,
+        "to_sha": update.to_sha,
+        "at": rfc3339(update.at),
     })
 }
 
@@ -791,6 +879,13 @@ pub fn draft(draft: &Draft) -> Value {
         "sent_back_note": draft.sent_back_note,
         "sent_back_at": rfc3339_or_null(draft.sent_back_at),
         "posted_at": rfc3339_or_null(draft.posted_at),
+        // **Why it is no longer signed off**, or null. A draft whose head moved under it
+        // went back to `drafting` and lost its approval, and the page has to say why or
+        // the sign-off looks as though it were never given: the developer approved the
+        // commit named here, and the pull request has moved past it. Null on every draft
+        // nobody has signed off and on one signed off since.
+        "signoff_withdrawn_at": rfc3339_or_null(draft.signoff_withdrawn_at),
+        "signoff_withdrawn_head": draft.signoff_withdrawn_head,
         "updated_at": rfc3339(draft.updated_at),
     })
 }

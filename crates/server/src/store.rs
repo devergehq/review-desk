@@ -14,12 +14,12 @@
 use std::sync::{Arc, Mutex};
 
 use review_desk_store::{
-    Actor, Brief, Decision, DecisionMade, Disposition, Draft, DraftSection, DraftThread, Finding,
-    FindingInRound, FullReview, NewDraft, NewOutcome, NitTicket, NotForSigning, OpenedReview,
-    PostedReview, ProblemStatement, RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewEvent,
-    ReviewFacts, ReviewLayer, ReviewProvenance, ReviewTimings, ReviewsShown, RoundCommit,
-    RoundSummary, Rule, RuleCounts, RuleStage, RulesSummary, Store, StoreError,
-    TicketedAndApproved, Timestamp,
+    Actor, Brief, Decision, DecisionMade, DiffAtHead, Disposition, Draft, DraftSection,
+    DraftThread, DuplicateRounds, Finding, FindingInRound, FoldedRound, FullReview, HeadUpdates,
+    NewDraft, NewOutcome, NitTicket, NotForSigning, OpenedReview, PostedReview, ProblemStatement,
+    RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewEvent, ReviewFacts, ReviewLayer,
+    ReviewProvenance, ReviewTimings, ReviewsShown, RoundCommit, RoundSummary, Rule, RuleCounts,
+    RuleStage, RulesSummary, Store, StoreError, TicketedAndApproved, Timestamp,
 };
 
 use crate::error::{ApiError, Code};
@@ -84,10 +84,17 @@ impl Records {
 
     // -- reviews ------------------------------------------------------------------
 
-    /// Open the review for this head commit: the one already on the record, or a new
-    /// round, carrying whatever facts the caller knew. `review open` in the command line
-    /// is the same call, so the two surfaces cannot disagree about what "the same review"
-    /// is.
+    /// Open the review for this head commit: the one already on the record, the unposted
+    /// round whose head moves to it, or a new round, carrying whatever facts the caller
+    /// knew. `review open` in the command line is the same call, so the two surfaces cannot
+    /// disagree about what "the same review" is.
+    ///
+    /// **[`DiffAtHead::Unsaid`], and this surface has no way to say otherwise.** The
+    /// command line's `--diff-unchanged` is for a caller watching GitHub that has compared
+    /// the pull request's own diff against its base and found it unchanged; `POST /reviews`
+    /// is the developer starting a review from the dashboard, which is never that. A
+    /// parameter nothing could vary would be a choice offered to a screen that has nothing
+    /// to decide.
     pub fn open_review(
         &self,
         repo: &str,
@@ -95,7 +102,7 @@ impl Records {
         head_sha: &str,
         facts: &ReviewFacts,
     ) -> Result<OpenedReview, ApiError> {
-        self.with(|store| store.open_review_with(repo, pr, head_sha, facts))
+        self.with(|store| store.open_review_with(repo, pr, head_sha, facts, DiffAtHead::Unsaid))
     }
 
     /// Record what is known about the pull request, leaving a fact left `None` as it was.
@@ -373,6 +380,32 @@ impl Records {
     /// this server has one GitHub read and it is `POST /reviews`.
     pub fn round_commits(&self, review_id: i64) -> Result<Vec<RoundCommit>, ApiError> {
         self.with(|store| store.list_round_commits(review_id))
+    }
+
+    /// Every pull request with more than one unposted round, and what the tidy would do.
+    ///
+    /// A read. The acts it proposes are `fold_round` below and the dismissal that already
+    /// exists, and both are the developer's.
+    pub fn duplicate_rounds(&self, repo: Option<&str>) -> Result<Vec<DuplicateRounds>, ApiError> {
+        self.with(|store| store.duplicate_rounds(repo))
+    }
+
+    /// Fold an extra unposted round into its pull request's newest round.
+    ///
+    /// **The store decides whether it may be folded**, and this passes the refusal through
+    /// — the newest round, a round that posted and a round holding work are each refused by
+    /// name. A screen that judged it here would offer a button the API refuses.
+    pub fn fold_round(&self, review_id: i64) -> Result<FoldedRound, ApiError> {
+        self.with(|store| store.fold_round(review_id))
+    }
+
+    /// What has happened to this round's head commit, with the counts the page reads.
+    ///
+    /// **Read, never computed here.** The moves are written by whatever opened the review
+    /// on a new commit — `review open`, which is the dispatcher's call — and the commit
+    /// count comes from the round's own recorded commits. This server reads no GitHub.
+    pub fn head_updates(&self, review_id: i64) -> Result<HeadUpdates, ApiError> {
+        self.with(|store| store.head_updates(review_id))
     }
 
     /// The findings held back from this review's draft.

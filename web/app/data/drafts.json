@@ -2,13 +2,15 @@
   {
     "draft": {
       "review_id": 17,
-      "body": "The queue-with-backoff approach fits the ticket: deliveries are stored, retried for 24 hours and visible to the customer. One thing blocks the merge and two should be fixed with it.\n\n### Blocker · F1 · A retried delivery is sent without an idempotency key\n\nA retry re-sends the same payload with no key, so a customer whose endpoint accepted the first attempt slowly receives the event twice. See `jobs/DeliverWebhook.php:58`.\n\n```mermaid\nflowchart LR\n  A[\"Attempt 1 times out\"] --> B[\"Endpoint still processes it\"]\n  B --> C[\"Attempt 2 sends again\"]\n  C --> D[\"Two events for one\"]\n  class D bad\n  classDef bad fill:#FCE9D9,stroke:#6B2F04,color:#6B2F04\n```\n\n<details>\n<summary>Proof: a throwaway test, two deliveries for one event</summary>\n\n```php\n$event = Event::factory()->create();\nDeliverWebhook::dispatchSync($event);   // times out; the endpoint commits anyway\nDeliverWebhook::dispatchSync($event);   // no key, so the endpoint commits again\n$this->assertSame(1, $endpoint->countReceived($event->id));  // got 2\n```\n\n</details>\n\n### Should · F2 · No way to replay a delivery after the window closes\n\nAfter 24 hours a delivery is marked dead and nothing can send it again. Acceptance criterion 3 on ABC-231 asks the customer to recover from a long outage.\n\n### Should · F3 · The failure test passes with the retry code reverted\n\nI reverted the retry and `tests/WebhookRetryTest.php:31` still passed, so it does not pin the behaviour.\n\n**Not checked:** worker behaviour across a deploy restart; production delivery volumes.\n",
+      "body": "The queue-with-backoff approach fits the ticket: deliveries are stored, retried for 24 hours and visible to the customer. One thing blocks the merge and two should be fixed with it.\n\n### Blocker \u00b7 F1 \u00b7 A retried delivery is sent without an idempotency key\n\nA retry re-sends the same payload with no key, so a customer whose endpoint accepted the first attempt slowly receives the event twice. See `jobs/DeliverWebhook.php:58`.\n\n```mermaid\nflowchart LR\n  A[\"Attempt 1 times out\"] --> B[\"Endpoint still processes it\"]\n  B --> C[\"Attempt 2 sends again\"]\n  C --> D[\"Two events for one\"]\n  class D bad\n  classDef bad fill:#FCE9D9,stroke:#6B2F04,color:#6B2F04\n```\n\n<details>\n<summary>Proof: a throwaway test, two deliveries for one event</summary>\n\n```php\n$event = Event::factory()->create();\nDeliverWebhook::dispatchSync($event);   // times out; the endpoint commits anyway\nDeliverWebhook::dispatchSync($event);   // no key, so the endpoint commits again\n$this->assertSame(1, $endpoint->countReceived($event->id));  // got 2\n```\n\n</details>\n\n### Should \u00b7 F2 \u00b7 No way to replay a delivery after the window closes\n\nAfter 24 hours a delivery is marked dead and nothing can send it again. Acceptance criterion 3 on ABC-231 asks the customer to recover from a long outage.\n\n### Should \u00b7 F3 \u00b7 The failure test passes with the retry code reverted\n\nI reverted the retry and `tests/WebhookRetryTest.php:31` still passed, so it does not pin the behaviour.\n\n**Not checked:** worker behaviour across a deploy restart; production delivery volumes.\n",
       "status": "ready",
       "event": null,
       "approved_at": null,
       "sent_back_note": null,
       "sent_back_at": null,
       "posted_at": null,
+      "signoff_withdrawn_at": null,
+      "signoff_withdrawn_head": null,
       "updated_at": "2026-10-08T11:21:00Z"
     },
     "review": {
@@ -29,7 +31,9 @@
       "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "lint": {
       "passes": true,
@@ -50,9 +54,9 @@
         "severity": null,
         "heading": null,
         "title": null,
-        "text": "The queue-with-backoff approach fits the ticket: deliveries are stored, retried for 24 hours and visible to the customer. One thing blocks the merge and two should be fixed with it.\n\n### Blocker · F1 · A retried delivery is sent without an idempotency key\n\nA retry re-sends the same payload with no key, so a customer whose endpoint accepted the first attempt slowly receives the event twice. See `jobs/DeliverWebhook.php:58`.\n\n```mermaid\nflowchart LR\n  A[\"Attempt 1 times out\"] --> B[\"Endpoint still processes it\"]\n  B --> C[\"Attempt 2 sends again\"]\n  C --> D[\"Two events for one\"]\n  class D bad\n  classDef bad fill:#FCE9D9,stroke:#6B2F04,color:#6B2F04\n```\n\n<details>\n<summary>Proof: a throwaway test, two deliveries for one event</summary>\n\n```php\n$event = Event::factory()->create();\nDeliverWebhook::dispatchSync($event);   // times out; the endpoint commits anyway\nDeliverWebhook::dispatchSync($event);   // no key, so the endpoint commits again\n$this->assertSame(1, $endpoint->countReceived($event->id));  // got 2\n```\n\n</details>\n\n### Should · F2 · No way to replay a delivery after the window closes\n\nAfter 24 hours a delivery is marked dead and nothing can send it again. Acceptance criterion 3 on ABC-231 asks the customer to recover from a long outage.\n\n### Should · F3 · The failure test passes with the retry code reverted\n\nI reverted the retry and `tests/WebhookRetryTest.php:31` still passed, so it does not pin the behaviour.\n\n**Not checked:** worker behaviour across a deploy restart; production delivery volumes.",
+        "text": "The queue-with-backoff approach fits the ticket: deliveries are stored, retried for 24 hours and visible to the customer. One thing blocks the merge and two should be fixed with it.\n\n### Blocker \u00b7 F1 \u00b7 A retried delivery is sent without an idempotency key\n\nA retry re-sends the same payload with no key, so a customer whose endpoint accepted the first attempt slowly receives the event twice. See `jobs/DeliverWebhook.php:58`.\n\n```mermaid\nflowchart LR\n  A[\"Attempt 1 times out\"] --> B[\"Endpoint still processes it\"]\n  B --> C[\"Attempt 2 sends again\"]\n  C --> D[\"Two events for one\"]\n  class D bad\n  classDef bad fill:#FCE9D9,stroke:#6B2F04,color:#6B2F04\n```\n\n<details>\n<summary>Proof: a throwaway test, two deliveries for one event</summary>\n\n```php\n$event = Event::factory()->create();\nDeliverWebhook::dispatchSync($event);   // times out; the endpoint commits anyway\nDeliverWebhook::dispatchSync($event);   // no key, so the endpoint commits again\n$this->assertSame(1, $endpoint->countReceived($event->id));  // got 2\n```\n\n</details>\n\n### Should \u00b7 F2 \u00b7 No way to replay a delivery after the window closes\n\nAfter 24 hours a delivery is marked dead and nothing can send it again. Acceptance criterion 3 on ABC-231 asks the customer to recover from a long outage.\n\n### Should \u00b7 F3 \u00b7 The failure test passes with the retry code reverted\n\nI reverted the retry and `tests/WebhookRetryTest.php:31` still passed, so it does not pin the behaviour.\n\n**Not checked:** worker behaviour across a deploy restart; production delivery volumes.",
         "agent_title": null,
-        "agent_text": "The queue-with-backoff approach fits the ticket: deliveries are stored, retried for 24 hours and visible to the customer. One thing blocks the merge and two should be fixed with it.\n\n### Blocker · F1 · A retried delivery is sent without an idempotency key\n\nA retry re-sends the same payload with no key, so a customer whose endpoint accepted the first attempt slowly receives the event twice. See `jobs/DeliverWebhook.php:58`.\n\n```mermaid\nflowchart LR\n  A[\"Attempt 1 times out\"] --> B[\"Endpoint still processes it\"]\n  B --> C[\"Attempt 2 sends again\"]\n  C --> D[\"Two events for one\"]\n  class D bad\n  classDef bad fill:#FCE9D9,stroke:#6B2F04,color:#6B2F04\n```\n\n<details>\n<summary>Proof: a throwaway test, two deliveries for one event</summary>\n\n```php\n$event = Event::factory()->create();\nDeliverWebhook::dispatchSync($event);   // times out; the endpoint commits anyway\nDeliverWebhook::dispatchSync($event);   // no key, so the endpoint commits again\n$this->assertSame(1, $endpoint->countReceived($event->id));  // got 2\n```\n\n</details>\n\n### Should · F2 · No way to replay a delivery after the window closes\n\nAfter 24 hours a delivery is marked dead and nothing can send it again. Acceptance criterion 3 on ABC-231 asks the customer to recover from a long outage.\n\n### Should · F3 · The failure test passes with the retry code reverted\n\nI reverted the retry and `tests/WebhookRetryTest.php:31` still passed, so it does not pin the behaviour.\n\n**Not checked:** worker behaviour across a deploy restart; production delivery volumes.",
+        "agent_text": "The queue-with-backoff approach fits the ticket: deliveries are stored, retried for 24 hours and visible to the customer. One thing blocks the merge and two should be fixed with it.\n\n### Blocker \u00b7 F1 \u00b7 A retried delivery is sent without an idempotency key\n\nA retry re-sends the same payload with no key, so a customer whose endpoint accepted the first attempt slowly receives the event twice. See `jobs/DeliverWebhook.php:58`.\n\n```mermaid\nflowchart LR\n  A[\"Attempt 1 times out\"] --> B[\"Endpoint still processes it\"]\n  B --> C[\"Attempt 2 sends again\"]\n  C --> D[\"Two events for one\"]\n  class D bad\n  classDef bad fill:#FCE9D9,stroke:#6B2F04,color:#6B2F04\n```\n\n<details>\n<summary>Proof: a throwaway test, two deliveries for one event</summary>\n\n```php\n$event = Event::factory()->create();\nDeliverWebhook::dispatchSync($event);   // times out; the endpoint commits anyway\nDeliverWebhook::dispatchSync($event);   // no key, so the endpoint commits again\n$this->assertSame(1, $endpoint->countReceived($event->id));  // got 2\n```\n\n</details>\n\n### Should \u00b7 F2 \u00b7 No way to replay a delivery after the window closes\n\nAfter 24 hours a delivery is marked dead and nothing can send it again. Acceptance criterion 3 on ABC-231 asks the customer to recover from a long outage.\n\n### Should \u00b7 F3 \u00b7 The failure test passes with the retry code reverted\n\nI reverted the retry and `tests/WebhookRetryTest.php:31` still passed, so it does not pin the behaviour.\n\n**Not checked:** worker behaviour across a deploy restart; production delivery volumes.",
         "rewritten": false,
         "posted": true
       }
@@ -119,13 +123,15 @@
   {
     "draft": {
       "review_id": 15,
-      "body": "Whole cents is the right representation and the migration is in the right order. One export path blocks the merge.\n\n### Blocker · F1 · The CSV export still divides by 100 twice\n\n`app/Invoice.php:102` divides the stored cents, and `ExportInvoices` divides the result again. An exported total of `12.34` comes out as `0.1234`.\n\n### Should · F2 · The migration has no down path for the decimal column\n\n`database/migrations/2026_09_30_invoices.php:18` drops the old column without recreating it, so the migration cannot be rolled back on a release that has to go backwards.\n\n### Should · F3 · The rounding test asserts on a value it computed the same way\n\n`tests/InvoiceTotalTest.php:44` builds the expected total with the same helper it is testing, so the test cannot fail if the helper is wrong.\n\n**Not checked:** the reporting warehouse reads the same column and was not looked at.\n",
+      "body": "Whole cents is the right representation and the migration is in the right order. One export path blocks the merge.\n\n### Blocker \u00b7 F1 \u00b7 The CSV export still divides by 100 twice\n\n`app/Invoice.php:102` divides the stored cents, and `ExportInvoices` divides the result again. An exported total of `12.34` comes out as `0.1234`.\n\n### Should \u00b7 F2 \u00b7 The migration has no down path for the decimal column\n\n`database/migrations/2026_09_30_invoices.php:18` drops the old column without recreating it, so the migration cannot be rolled back on a release that has to go backwards.\n\n### Should \u00b7 F3 \u00b7 The rounding test asserts on a value it computed the same way\n\n`tests/InvoiceTotalTest.php:44` builds the expected total with the same helper it is testing, so the test cannot fail if the helper is wrong.\n\n**Not checked:** the reporting warehouse reads the same column and was not looked at.\n",
       "status": "ready",
       "event": null,
       "approved_at": null,
       "sent_back_note": null,
       "sent_back_at": null,
       "posted_at": null,
+      "signoff_withdrawn_at": null,
+      "signoff_withdrawn_head": null,
       "updated_at": "2026-10-08T06:34:00Z"
     },
     "review": {
@@ -146,7 +152,9 @@
       "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "lint": {
       "passes": true,
@@ -167,9 +175,9 @@
         "severity": null,
         "heading": null,
         "title": null,
-        "text": "Whole cents is the right representation and the migration is in the right order. One export path blocks the merge.\n\n### Blocker · F1 · The CSV export still divides by 100 twice\n\n`app/Invoice.php:102` divides the stored cents, and `ExportInvoices` divides the result again. An exported total of `12.34` comes out as `0.1234`.\n\n### Should · F2 · The migration has no down path for the decimal column\n\n`database/migrations/2026_09_30_invoices.php:18` drops the old column without recreating it, so the migration cannot be rolled back on a release that has to go backwards.\n\n### Should · F3 · The rounding test asserts on a value it computed the same way\n\n`tests/InvoiceTotalTest.php:44` builds the expected total with the same helper it is testing, so the test cannot fail if the helper is wrong.\n\n**Not checked:** the reporting warehouse reads the same column and was not looked at.",
+        "text": "Whole cents is the right representation and the migration is in the right order. One export path blocks the merge.\n\n### Blocker \u00b7 F1 \u00b7 The CSV export still divides by 100 twice\n\n`app/Invoice.php:102` divides the stored cents, and `ExportInvoices` divides the result again. An exported total of `12.34` comes out as `0.1234`.\n\n### Should \u00b7 F2 \u00b7 The migration has no down path for the decimal column\n\n`database/migrations/2026_09_30_invoices.php:18` drops the old column without recreating it, so the migration cannot be rolled back on a release that has to go backwards.\n\n### Should \u00b7 F3 \u00b7 The rounding test asserts on a value it computed the same way\n\n`tests/InvoiceTotalTest.php:44` builds the expected total with the same helper it is testing, so the test cannot fail if the helper is wrong.\n\n**Not checked:** the reporting warehouse reads the same column and was not looked at.",
         "agent_title": null,
-        "agent_text": "Whole cents is the right representation and the migration is in the right order. One export path blocks the merge.\n\n### Blocker · F1 · The CSV export still divides by 100 twice\n\n`app/Invoice.php:102` divides the stored cents, and `ExportInvoices` divides the result again. An exported total of `12.34` comes out as `0.1234`.\n\n### Should · F2 · The migration has no down path for the decimal column\n\n`database/migrations/2026_09_30_invoices.php:18` drops the old column without recreating it, so the migration cannot be rolled back on a release that has to go backwards.\n\n### Should · F3 · The rounding test asserts on a value it computed the same way\n\n`tests/InvoiceTotalTest.php:44` builds the expected total with the same helper it is testing, so the test cannot fail if the helper is wrong.\n\n**Not checked:** the reporting warehouse reads the same column and was not looked at.",
+        "agent_text": "Whole cents is the right representation and the migration is in the right order. One export path blocks the merge.\n\n### Blocker \u00b7 F1 \u00b7 The CSV export still divides by 100 twice\n\n`app/Invoice.php:102` divides the stored cents, and `ExportInvoices` divides the result again. An exported total of `12.34` comes out as `0.1234`.\n\n### Should \u00b7 F2 \u00b7 The migration has no down path for the decimal column\n\n`database/migrations/2026_09_30_invoices.php:18` drops the old column without recreating it, so the migration cannot be rolled back on a release that has to go backwards.\n\n### Should \u00b7 F3 \u00b7 The rounding test asserts on a value it computed the same way\n\n`tests/InvoiceTotalTest.php:44` builds the expected total with the same helper it is testing, so the test cannot fail if the helper is wrong.\n\n**Not checked:** the reporting warehouse reads the same column and was not looked at.",
         "rewritten": false,
         "posted": true
       }
@@ -221,13 +229,15 @@
   {
     "draft": {
       "review_id": 16,
-      "body": "Round 2 adds the explicit bust, which is what round 1 asked for. One thing in the delta should be fixed.\n\n### Should · F1 · The revoke path busts one key, not the group the key belongs to\n\n`src/permissions/cache.rs:77` busts the key for the member whose permission changed. A revoke on a team leaves each member's entry alive until the window closes. Same ruling as `R-11`.\n\n**Not checked:** cache behaviour across two processes; the test runs in one.\n",
+      "body": "Round 2 adds the explicit bust, which is what round 1 asked for. One thing in the delta should be fixed.\n\n### Should \u00b7 F1 \u00b7 The revoke path busts one key, not the group the key belongs to\n\n`src/permissions/cache.rs:77` busts the key for the member whose permission changed. A revoke on a team leaves each member's entry alive until the window closes. Same ruling as `R-11`.\n\n**Not checked:** cache behaviour across two processes; the test runs in one.\n",
       "status": "ready",
       "event": null,
       "approved_at": null,
       "sent_back_note": null,
       "sent_back_at": null,
       "posted_at": null,
+      "signoff_withdrawn_at": null,
+      "signoff_withdrawn_head": null,
       "updated_at": "2026-10-08T10:12:00Z"
     },
     "review": {
@@ -248,7 +258,9 @@
       "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "lint": {
       "passes": true,
@@ -269,9 +281,9 @@
         "severity": null,
         "heading": null,
         "title": null,
-        "text": "Round 2 adds the explicit bust, which is what round 1 asked for. One thing in the delta should be fixed.\n\n### Should · F1 · The revoke path busts one key, not the group the key belongs to\n\n`src/permissions/cache.rs:77` busts the key for the member whose permission changed. A revoke on a team leaves each member's entry alive until the window closes. Same ruling as `R-11`.\n\n**Not checked:** cache behaviour across two processes; the test runs in one.",
+        "text": "Round 2 adds the explicit bust, which is what round 1 asked for. One thing in the delta should be fixed.\n\n### Should \u00b7 F1 \u00b7 The revoke path busts one key, not the group the key belongs to\n\n`src/permissions/cache.rs:77` busts the key for the member whose permission changed. A revoke on a team leaves each member's entry alive until the window closes. Same ruling as `R-11`.\n\n**Not checked:** cache behaviour across two processes; the test runs in one.",
         "agent_title": null,
-        "agent_text": "Round 2 adds the explicit bust, which is what round 1 asked for. One thing in the delta should be fixed.\n\n### Should · F1 · The revoke path busts one key, not the group the key belongs to\n\n`src/permissions/cache.rs:77` busts the key for the member whose permission changed. A revoke on a team leaves each member's entry alive until the window closes. Same ruling as `R-11`.\n\n**Not checked:** cache behaviour across two processes; the test runs in one.",
+        "agent_text": "Round 2 adds the explicit bust, which is what round 1 asked for. One thing in the delta should be fixed.\n\n### Should \u00b7 F1 \u00b7 The revoke path busts one key, not the group the key belongs to\n\n`src/permissions/cache.rs:77` busts the key for the member whose permission changed. A revoke on a team leaves each member's entry alive until the window closes. Same ruling as `R-11`.\n\n**Not checked:** cache behaviour across two processes; the test runs in one.",
         "rewritten": false,
         "posted": true
       }
@@ -293,13 +305,15 @@
   {
     "draft": {
       "review_id": 12,
-      "body": "Splitting per tenant with a cursor is the right shape. Two things should be fixed with it.\n\n### Should · F1 · A partial export leaves the previous file in place\n\n`jobs/ExportTenant.php:40` writes in place, so a failed run leaves yesterday's file looking like today's.\n\n### Should · F2 · The cursor is held in memory, so a restart starts the tenant again\n\nA restart re-runs the tenant from the beginning. For the largest tenant that is most of the window.\n\n**Not checked:** the bucket's lifecycle rules were not read, so the stale-file cleanup is assumed.\n",
+      "body": "Splitting per tenant with a cursor is the right shape. Two things should be fixed with it.\n\n### Should \u00b7 F1 \u00b7 A partial export leaves the previous file in place\n\n`jobs/ExportTenant.php:40` writes in place, so a failed run leaves yesterday's file looking like today's.\n\n### Should \u00b7 F2 \u00b7 The cursor is held in memory, so a restart starts the tenant again\n\nA restart re-runs the tenant from the beginning. For the largest tenant that is most of the window.\n\n**Not checked:** the bucket's lifecycle rules were not read, so the stale-file cleanup is assumed.\n",
       "status": "posted",
       "event": "request_changes",
       "approved_at": "2026-10-06T14:25:00Z",
       "sent_back_note": null,
       "sent_back_at": null,
       "posted_at": "2026-10-06T14:30:00Z",
+      "signoff_withdrawn_at": null,
+      "signoff_withdrawn_head": null,
       "updated_at": "2026-10-06T14:30:00Z"
     },
     "review": {
@@ -320,7 +334,9 @@
       "pr_state_at": null,
       "harvested_at": "2026-10-09T08:15:00Z",
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "lint": {
       "passes": true,
@@ -341,9 +357,9 @@
         "severity": null,
         "heading": null,
         "title": null,
-        "text": "Splitting per tenant with a cursor is the right shape. Two things should be fixed with it.\n\n### Should · F1 · A partial export leaves the previous file in place\n\n`jobs/ExportTenant.php:40` writes in place, so a failed run leaves yesterday's file looking like today's.\n\n### Should · F2 · The cursor is held in memory, so a restart starts the tenant again\n\nA restart re-runs the tenant from the beginning. For the largest tenant that is most of the window.\n\n**Not checked:** the bucket's lifecycle rules were not read, so the stale-file cleanup is assumed.",
+        "text": "Splitting per tenant with a cursor is the right shape. Two things should be fixed with it.\n\n### Should \u00b7 F1 \u00b7 A partial export leaves the previous file in place\n\n`jobs/ExportTenant.php:40` writes in place, so a failed run leaves yesterday's file looking like today's.\n\n### Should \u00b7 F2 \u00b7 The cursor is held in memory, so a restart starts the tenant again\n\nA restart re-runs the tenant from the beginning. For the largest tenant that is most of the window.\n\n**Not checked:** the bucket's lifecycle rules were not read, so the stale-file cleanup is assumed.",
         "agent_title": null,
-        "agent_text": "Splitting per tenant with a cursor is the right shape. Two things should be fixed with it.\n\n### Should · F1 · A partial export leaves the previous file in place\n\n`jobs/ExportTenant.php:40` writes in place, so a failed run leaves yesterday's file looking like today's.\n\n### Should · F2 · The cursor is held in memory, so a restart starts the tenant again\n\nA restart re-runs the tenant from the beginning. For the largest tenant that is most of the window.\n\n**Not checked:** the bucket's lifecycle rules were not read, so the stale-file cleanup is assumed.",
+        "agent_text": "Splitting per tenant with a cursor is the right shape. Two things should be fixed with it.\n\n### Should \u00b7 F1 \u00b7 A partial export leaves the previous file in place\n\n`jobs/ExportTenant.php:40` writes in place, so a failed run leaves yesterday's file looking like today's.\n\n### Should \u00b7 F2 \u00b7 The cursor is held in memory, so a restart starts the tenant again\n\nA restart re-runs the tenant from the beginning. For the largest tenant that is most of the window.\n\n**Not checked:** the bucket's lifecycle rules were not read, so the stale-file cleanup is assumed.",
         "rewritten": false,
         "posted": true
       }
@@ -373,7 +389,7 @@
   {
     "draft": {
       "review_id": 41,
-      "body": "**1 Blocker · 6 Should · 3 Questions · 2 Nits — 12 open.** The change does what the ticket asks and the shape is right: the scheduled path builds its own context and the branch is out of `ReportBuilder`. One blocker, and it is the composition of two reasonable-looking decisions rather than either of them.\n\n**Method** · read the scheduled path, the column policy and the audit writer at `d41c8e2` · ran `php artisan test --filter=Export` · **2 suppressed** · **1 not verified** · **1 area not reviewed** — detail at the end\n\n### Problem fit\n\nA scheduled export used to build its context from a request that was never there, which is why the branch inside `ReportBuilder` existed at all. Giving the scheduled path a context of its own is the right shape for that. What is new is that the column policy now runs in two places, and the blocker below is where the two disagree.\n\n```mermaid\nflowchart LR\n  A[Schedule due] --> B[Build its own context]\n  B --> C{Columns named?}\n  C -->|named| D[Narrow the select]\n  C -->|none named| E[Every column exported]\n```\n\n### Open — needs a decision\n\n| | Where | Finding | Status |\n| -- | -- | -- | -- |\n| 🔴 Blocker · F9 | [`ColumnPolicy.php:52`](https://github.com/acme/portal/blob/d41c8e2/app/Reporting/ColumnPolicy.php#L52) | The column policy is skipped entirely when the definition names no columns | Open · on the code |\n| 🟠 Should · F1 | [`ExportContext.php:47`](https://github.com/acme/portal/blob/d41c8e2/app/Reporting/ExportContext.php#L47) | An empty allowed-columns list means every column, not none | Open · on the code |\n| 🟠 Should · F3 | [`DispatchScheduledExports.php:61`](https://github.com/acme/portal/blob/d41c8e2/app/Console/Commands/DispatchScheduledExports.php#L61) | A schedule whose tenant row has gone is dispatched anyway | Open · on the code |\n| 🟠 Should · F6 | [`ColumnPolicy.php:31`](https://github.com/acme/portal/blob/d41c8e2/app/Reporting/ColumnPolicy.php#L31) | The policy is applied after the query is built, so a hidden column is still selected | Open · on the code |\n| 🟠 Should · F11 | [`ExportController.php:41`](https://github.com/acme/portal/blob/d41c8e2/app/Http/Controllers/ExportController.php#L41) | The web path builds its context from the request with no tenant check | Open · on the code |\n| 🟠 Should · F13 | [`RunScheduledExport.php:116`](https://github.com/acme/portal/blob/d41c8e2/app/Jobs/RunScheduledExport.php#L116) | A soft-deleted tenant is exported; only a hard-deleted one is skipped | Open · on the code |\n| 🟠 Should · F14 | [the pull request](https://github.com/acme/portal/pull/514) | The description does not say what happens to an export that is skipped | Open · in the body |\n| 🔵 Question · F5 | [`ExportPipeline.php:71`](https://github.com/acme/portal/blob/d41c8e2/app/Reporting/ExportPipeline.php#L71) | Two schedules for one tenant at once would write the audit entry twice | Open · on the code |\n| 🔵 Question · F7 | [`RunScheduledExport.php:94`](https://github.com/acme/portal/blob/d41c8e2/app/Jobs/RunScheduledExport.php#L94) | Nothing says what happens to a schedule whose definition was deleted | Open · on the code |\n| 🔵 Question · F12 | [`RecordsAnExport.php:22`](https://github.com/acme/portal/blob/d41c8e2/app/Audit/RecordsAnExport.php#L22) | Whether the audit entry still fits is not established | Open · in the body |\n| ⚪ Nit · F4 | [`ScheduleToContext.php:18`](https://github.com/acme/portal/blob/d41c8e2/app/Reporting/ScheduleToContext.php#L18) | The class is named for the direction, not for what it makes | Open · in the body |\n| ⚪ Nit · F10 | [`ReportBuilder.php:28`](https://github.com/acme/portal/blob/d41c8e2/app/Reporting/ReportBuilder.php#L28) | The removed branch leaves a comment describing it | Open · on the code |\n\n### Should · F14 · The description does not say what happens to an export that is skipped\n\nThree of the change's early returns each decide what an export produces, and none of them appears in the description. Three sentences under “What is skipped” would answer the question a reader otherwise has to read the job for.\n\n### Question · F12 · Whether the audit entry still fits is not established\n\n`RecordsAnExport` is outside this change, and the scheduled path passes it a system actor with no id. Is `export_audit.actor_id` nullable, and does its consumer read a null actor as a system export?\n\n### Nit · F4 · The class is named for the direction, not for what it makes\n\nThe two siblings in this namespace are named for what they return. This one is named for the direction of the conversion, so it does not read with them.\n\n<details><summary>How this review was made — scope, suppressed findings, what I could not verify</summary>\n\nRead the scheduled path, the column policy, the audit writer and the two controllers at `d41c8e2`; ran the export suite.\n\n**Suppressed (2)** · a redaction helper's naming, because the file is replaced by ABC-418 next week · a Horizon queue name, which this change does not reach.\n\n**Not verified (1)** · that the nightly dispatch really does run two schedules for one tenant in the same minute; the question is F5 and the answer is the author's.\n\n**Not reviewed (1)** · the reporting front end, which reads the same definitions but was not changed.\n\n</details>\n",
+      "body": "**1 Blocker \u00b7 6 Should \u00b7 3 Questions \u00b7 2 Nits \u2014 12 open.** The change does what the ticket asks and the shape is right: the scheduled path builds its own context and the branch is out of `ReportBuilder`. One blocker, and it is the composition of two reasonable-looking decisions rather than either of them.\n\n**Method** \u00b7 read the scheduled path, the column policy and the audit writer at `d41c8e2` \u00b7 ran `php artisan test --filter=Export` \u00b7 **2 suppressed** \u00b7 **1 not verified** \u00b7 **1 area not reviewed** \u2014 detail at the end\n\n### Problem fit\n\nA scheduled export used to build its context from a request that was never there, which is why the branch inside `ReportBuilder` existed at all. Giving the scheduled path a context of its own is the right shape for that. What is new is that the column policy now runs in two places, and the blocker below is where the two disagree.\n\n```mermaid\nflowchart LR\n  A[Schedule due] --> B[Build its own context]\n  B --> C{Columns named?}\n  C -->|named| D[Narrow the select]\n  C -->|none named| E[Every column exported]\n```\n\n### Open \u2014 needs a decision\n\n| | Where | Finding | Status |\n| -- | -- | -- | -- |\n| \ud83d\udd34 Blocker \u00b7 F9 | [`ColumnPolicy.php:52`](https://github.com/acme/portal/blob/d41c8e2/app/Reporting/ColumnPolicy.php#L52) | The column policy is skipped entirely when the definition names no columns | Open \u00b7 on the code |\n| \ud83d\udfe0 Should \u00b7 F1 | [`ExportContext.php:47`](https://github.com/acme/portal/blob/d41c8e2/app/Reporting/ExportContext.php#L47) | An empty allowed-columns list means every column, not none | Open \u00b7 on the code |\n| \ud83d\udfe0 Should \u00b7 F3 | [`DispatchScheduledExports.php:61`](https://github.com/acme/portal/blob/d41c8e2/app/Console/Commands/DispatchScheduledExports.php#L61) | A schedule whose tenant row has gone is dispatched anyway | Open \u00b7 on the code |\n| \ud83d\udfe0 Should \u00b7 F6 | [`ColumnPolicy.php:31`](https://github.com/acme/portal/blob/d41c8e2/app/Reporting/ColumnPolicy.php#L31) | The policy is applied after the query is built, so a hidden column is still selected | Open \u00b7 on the code |\n| \ud83d\udfe0 Should \u00b7 F11 | [`ExportController.php:41`](https://github.com/acme/portal/blob/d41c8e2/app/Http/Controllers/ExportController.php#L41) | The web path builds its context from the request with no tenant check | Open \u00b7 on the code |\n| \ud83d\udfe0 Should \u00b7 F13 | [`RunScheduledExport.php:116`](https://github.com/acme/portal/blob/d41c8e2/app/Jobs/RunScheduledExport.php#L116) | A soft-deleted tenant is exported; only a hard-deleted one is skipped | Open \u00b7 on the code |\n| \ud83d\udfe0 Should \u00b7 F14 | [the pull request](https://github.com/acme/portal/pull/514) | The description does not say what happens to an export that is skipped | Open \u00b7 in the body |\n| \ud83d\udd35 Question \u00b7 F5 | [`ExportPipeline.php:71`](https://github.com/acme/portal/blob/d41c8e2/app/Reporting/ExportPipeline.php#L71) | Two schedules for one tenant at once would write the audit entry twice | Open \u00b7 on the code |\n| \ud83d\udd35 Question \u00b7 F7 | [`RunScheduledExport.php:94`](https://github.com/acme/portal/blob/d41c8e2/app/Jobs/RunScheduledExport.php#L94) | Nothing says what happens to a schedule whose definition was deleted | Open \u00b7 on the code |\n| \ud83d\udd35 Question \u00b7 F12 | [`RecordsAnExport.php:22`](https://github.com/acme/portal/blob/d41c8e2/app/Audit/RecordsAnExport.php#L22) | Whether the audit entry still fits is not established | Open \u00b7 in the body |\n| \u26aa Nit \u00b7 F4 | [`ScheduleToContext.php:18`](https://github.com/acme/portal/blob/d41c8e2/app/Reporting/ScheduleToContext.php#L18) | The class is named for the direction, not for what it makes | Open \u00b7 in the body |\n| \u26aa Nit \u00b7 F10 | [`ReportBuilder.php:28`](https://github.com/acme/portal/blob/d41c8e2/app/Reporting/ReportBuilder.php#L28) | The removed branch leaves a comment describing it | Open \u00b7 on the code |\n\n### Should \u00b7 F14 \u00b7 The description does not say what happens to an export that is skipped\n\nThree of the change's early returns each decide what an export produces, and none of them appears in the description. Three sentences under \u201cWhat is skipped\u201d would answer the question a reader otherwise has to read the job for.\n\n### Question \u00b7 F12 \u00b7 Whether the audit entry still fits is not established\n\n`RecordsAnExport` is outside this change, and the scheduled path passes it a system actor with no id. Is `export_audit.actor_id` nullable, and does its consumer read a null actor as a system export?\n\n### Nit \u00b7 F4 \u00b7 The class is named for the direction, not for what it makes\n\nThe two siblings in this namespace are named for what they return. This one is named for the direction of the conversion, so it does not read with them.\n\n<details><summary>How this review was made \u2014 scope, suppressed findings, what I could not verify</summary>\n\nRead the scheduled path, the column policy, the audit writer and the two controllers at `d41c8e2`; ran the export suite.\n\n**Suppressed (2)** \u00b7 a redaction helper's naming, because the file is replaced by ABC-418 next week \u00b7 a Horizon queue name, which this change does not reach.\n\n**Not verified (1)** \u00b7 that the nightly dispatch really does run two schedules for one tenant in the same minute; the question is F5 and the answer is the author's.\n\n**Not reviewed (1)** \u00b7 the reporting front end, which reads the same definitions but was not changed.\n\n</details>\n",
       "status": "ready",
       "event": null,
       "approved_at": null,
@@ -399,7 +415,9 @@
       "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "lint": {
       "passes": false,
@@ -422,9 +440,9 @@
         "severity": null,
         "heading": null,
         "title": null,
-        "text": "**1 Blocker · 6 Should · 3 Questions · 2 Nits — 12 open.** The change does what the ticket asks and the shape is right: the scheduled path builds its own context and the branch is out of `ReportBuilder`. One blocker, and it is the composition of two reasonable-looking decisions rather than either of them.\n\n**Method** · read the scheduled path, the column policy and the audit writer at `d41c8e2` · ran `php artisan test --filter=Export` · **2 suppressed** · **1 not verified** · **1 area not reviewed** — detail at the end",
+        "text": "**1 Blocker \u00b7 6 Should \u00b7 3 Questions \u00b7 2 Nits \u2014 12 open.** The change does what the ticket asks and the shape is right: the scheduled path builds its own context and the branch is out of `ReportBuilder`. One blocker, and it is the composition of two reasonable-looking decisions rather than either of them.\n\n**Method** \u00b7 read the scheduled path, the column policy and the audit writer at `d41c8e2` \u00b7 ran `php artisan test --filter=Export` \u00b7 **2 suppressed** \u00b7 **1 not verified** \u00b7 **1 area not reviewed** \u2014 detail at the end",
         "agent_title": null,
-        "agent_text": "**1 Blocker · 6 Should · 3 Questions · 2 Nits — 12 open.** The change does what the ticket asks and the shape is right: the scheduled path builds its own context and the branch is out of `ReportBuilder`. One blocker, and it is the composition of two reasonable-looking decisions rather than either of them.\n\n**Method** · read the scheduled path, the column policy and the audit writer at `d41c8e2` · ran `php artisan test --filter=Export` · **2 suppressed** · **1 not verified** · **1 area not reviewed** — detail at the end",
+        "agent_text": "**1 Blocker \u00b7 6 Should \u00b7 3 Questions \u00b7 2 Nits \u2014 12 open.** The change does what the ticket asks and the shape is right: the scheduled path builds its own context and the branch is out of `ReportBuilder`. One blocker, and it is the composition of two reasonable-looking decisions rather than either of them.\n\n**Method** \u00b7 read the scheduled path, the column policy and the audit writer at `d41c8e2` \u00b7 ran `php artisan test --filter=Export` \u00b7 **2 suppressed** \u00b7 **1 not verified** \u00b7 **1 area not reviewed** \u2014 detail at the end",
         "rewritten": false,
         "posted": true
       },
@@ -448,11 +466,11 @@
         "finding_seq": 9,
         "finding_key": "F9",
         "severity": "blocker",
-        "heading": "### Blocker · F9 · The column policy is skipped entirely when the definition names no columns",
+        "heading": "### Blocker \u00b7 F9 \u00b7 The column policy is skipped entirely when the definition names no columns",
         "title": "The column policy is skipped entirely when the definition names no columns",
-        "text": "Two decisions compose here. The array cast answers `[]` for a null column, and this early return reads `[]` as “no policy” — so a definition older than the migration exports every column, including the two its tenant's policy hides. Eleven definitions in staging are in that state with an active schedule.",
+        "text": "Two decisions compose here. The array cast answers `[]` for a null column, and this early return reads `[]` as \u201cno policy\u201d \u2014 so a definition older than the migration exports every column, including the two its tenant's policy hides. Eleven definitions in staging are in that state with an active schedule.",
         "agent_title": "The column policy is skipped entirely when the definition names no columns",
-        "agent_text": "Two decisions compose here. The array cast answers `[]` for a null column, and this early return reads `[]` as “no policy” — so a definition older than the migration exports every column, including the two its tenant's policy hides. Eleven definitions in staging are in that state with an active schedule.",
+        "agent_text": "Two decisions compose here. The array cast answers `[]` for a null column, and this early return reads `[]` as \u201cno policy\u201d \u2014 so a definition older than the migration exports every column, including the two its tenant's policy hides. Eleven definitions in staging are in that state with an active schedule.",
         "rewritten": false,
         "posted": true
       },
@@ -462,11 +480,11 @@
         "finding_seq": 1,
         "finding_key": "F1",
         "severity": "should",
-        "heading": "### Should · F1 · An empty allowed-columns list means every column, not none",
+        "heading": "### Should \u00b7 F1 \u00b7 An empty allowed-columns list means every column, not none",
         "title": "An empty allowed-columns list means every column, not none",
-        "text": "`allowed_columns` arrives here as `[]` for any definition whose column was never written, and every reader downstream treats an empty list as “nothing to narrow”. `ColumnPolicy::for()` already draws the distinction the web path needs; this path could call it.",
+        "text": "`allowed_columns` arrives here as `[]` for any definition whose column was never written, and every reader downstream treats an empty list as \u201cnothing to narrow\u201d. `ColumnPolicy::for()` already draws the distinction the web path needs; this path could call it.",
         "agent_title": "An empty allowed-columns list means every column, not none",
-        "agent_text": "`allowed_columns` arrives here as `[]` for any definition whose column was never written, and every reader downstream treats an empty list as “nothing to narrow”. `ColumnPolicy::for()` already draws the distinction the web path needs; this path could call it.",
+        "agent_text": "`allowed_columns` arrives here as `[]` for any definition whose column was never written, and every reader downstream treats an empty list as \u201cnothing to narrow\u201d. `ColumnPolicy::for()` already draws the distinction the web path needs; this path could call it.",
         "rewritten": false,
         "posted": true
       },
@@ -476,7 +494,7 @@
         "finding_seq": 3,
         "finding_key": "F3",
         "severity": "should",
-        "heading": "### Should · F3 · A schedule whose tenant row has gone is dispatched anyway",
+        "heading": "### Should \u00b7 F3 \u00b7 A schedule whose tenant row has gone is dispatched anyway",
         "title": "A schedule whose tenant row has gone is dispatched anyway",
         "text": "A schedule whose tenant row is gone is dispatched and then fails inside `ExportContext::forSchedule` with a null dereference, four frames deep. Filtering the dispatch query on the tenant's existence makes the same failure readable.",
         "agent_title": "A schedule whose tenant row has gone is dispatched anyway",
@@ -490,7 +508,7 @@
         "finding_seq": 6,
         "finding_key": "F6",
         "severity": "should",
-        "heading": "### Should · F6 · The policy is applied after the query is built, so a hidden column is still selected",
+        "heading": "### Should \u00b7 F6 \u00b7 The policy is applied after the query is built, so a hidden column is still selected",
         "title": "The policy is applied after the query is built, so a hidden column is still selected",
         "text": "The policy narrows rows that are already in memory, so the hidden columns are selected and read before they are dropped. `ReportBuilder::withPolicy()` narrows the `select` instead.",
         "agent_title": "The policy is applied after the query is built, so a hidden column is still selected",
@@ -504,7 +522,7 @@
         "finding_seq": 11,
         "finding_key": "F11",
         "severity": "should",
-        "heading": "### Should · F11 · The web path builds its context from the request with no tenant check",
+        "heading": "### Should \u00b7 F11 \u00b7 The web path builds its context from the request with no tenant check",
         "title": "The web path builds its context from the request with no tenant check",
         "text": "The removed branch called `ReportPolicy::view()` before building the context, and the call went with it. `download()` still authorises; `stream()`, reachable from the signed-URL route added in #496, does not.",
         "agent_title": "The web path builds its context from the request with no tenant check",
@@ -518,7 +536,7 @@
         "finding_seq": 13,
         "finding_key": "F13",
         "severity": "should",
-        "heading": "### Should · F13 · A soft-deleted tenant is exported; only a hard-deleted one is skipped",
+        "heading": "### Should \u00b7 F13 \u00b7 A soft-deleted tenant is exported; only a hard-deleted one is skipped",
         "title": "A soft-deleted tenant is exported; only a hard-deleted one is skipped",
         "text": "The guard skips the job and not the schedule: `next_run_at` is advanced before the job runs, so a trashed tenant's schedule is dispatched and skipped every night. Schedule 118 has done that 39 times since September with no audit row to show for it.",
         "agent_title": "A soft-deleted tenant is exported; only a hard-deleted one is skipped",
@@ -532,11 +550,11 @@
         "finding_seq": 14,
         "finding_key": "F14",
         "severity": "should",
-        "heading": "### Should · F14 · The description does not say what happens to an export that is skipped",
+        "heading": "### Should \u00b7 F14 \u00b7 The description does not say what happens to an export that is skipped",
         "title": "The description does not say what happens to an export that is skipped",
-        "text": "Three of the change's early returns each decide what an export produces, and none of them appears in the description. Three sentences under “What is skipped” would answer the question a reader otherwise has to read the job for.",
+        "text": "Three of the change's early returns each decide what an export produces, and none of them appears in the description. Three sentences under \u201cWhat is skipped\u201d would answer the question a reader otherwise has to read the job for.",
         "agent_title": "The description does not say what happens to an export that is skipped",
-        "agent_text": "Three of the change's early returns each decide what an export produces, and none of them appears in the description. Three sentences under “What is skipped” would answer the question a reader otherwise has to read the job for.",
+        "agent_text": "Three of the change's early returns each decide what an export produces, and none of them appears in the description. Three sentences under \u201cWhat is skipped\u201d would answer the question a reader otherwise has to read the job for.",
         "rewritten": false,
         "posted": true
       },
@@ -546,7 +564,7 @@
         "finding_seq": 5,
         "finding_key": "F5",
         "severity": "question",
-        "heading": "### Question · F5 · Two schedules for one tenant at once would write the audit entry twice",
+        "heading": "### Question \u00b7 F5 \u00b7 Two schedules for one tenant at once would write the audit entry twice",
         "title": "Two schedules for one tenant at once would write the audit entry twice",
         "text": "Can two schedules for one tenant be due in the same minute? Both would write an audit row keyed on the tenant and the date, and the unique index on that pair was dropped in #502.",
         "agent_title": "Two schedules for one tenant at once would write the audit entry twice",
@@ -560,7 +578,7 @@
         "finding_seq": 7,
         "finding_key": "F7",
         "severity": "question",
-        "heading": "### Question · F7 · Nothing says what happens to a schedule whose definition was deleted",
+        "heading": "### Question \u00b7 F7 \u00b7 Nothing says what happens to a schedule whose definition was deleted",
         "title": "Nothing says what happens to a schedule whose definition was deleted",
         "text": "A schedule whose definition has been deleted releases back to the queue and is retried until the attempt limit, then dispatched again the next night. Is deactivating it the intended answer?",
         "agent_title": "Nothing says what happens to a schedule whose definition was deleted",
@@ -574,7 +592,7 @@
         "finding_seq": 12,
         "finding_key": "F12",
         "severity": "question",
-        "heading": "### Question · F12 · Whether the audit entry still fits is not established",
+        "heading": "### Question \u00b7 F12 \u00b7 Whether the audit entry still fits is not established",
         "title": "Whether the audit entry still fits is not established",
         "text": "`RecordsAnExport` is outside this change, and the scheduled path passes it a system actor with no id. Is `export_audit.actor_id` nullable, and does its consumer read a null actor as a system export?",
         "agent_title": "Whether the audit entry still fits is not established",
@@ -588,7 +606,7 @@
         "finding_seq": 4,
         "finding_key": "F4",
         "severity": "nit",
-        "heading": "### Nit · F4 · The class is named for the direction, not for what it makes",
+        "heading": "### Nit \u00b7 F4 \u00b7 The class is named for the direction, not for what it makes",
         "title": "The class is named for the direction, not for what it makes",
         "text": "The two siblings in this namespace are named for what they return. This one is named for the direction of the conversion, so it does not read with them.",
         "agent_title": "The class is named for the direction, not for what it makes",
@@ -602,7 +620,7 @@
         "finding_seq": 10,
         "finding_key": "F10",
         "severity": "nit",
-        "heading": "### Nit · F10 · The removed branch leaves a comment describing it",
+        "heading": "### Nit \u00b7 F10 \u00b7 The removed branch leaves a comment describing it",
         "title": "The removed branch leaves a comment describing it",
         "text": "The branch this comment describes was removed four lines above.",
         "agent_title": "The removed branch leaves a comment describing it",
@@ -618,9 +636,9 @@
         "severity": null,
         "heading": null,
         "title": null,
-        "text": "<details><summary>How this review was made — scope, suppressed findings, what I could not verify</summary>\n\nRead the scheduled path, the column policy, the audit writer and the two controllers at `d41c8e2`; ran the export suite.\n\n**Suppressed (2)** · a redaction helper's naming, because the file is replaced by ABC-418 next week · a Horizon queue name, which this change does not reach.\n\n**Not verified (1)** · that the nightly dispatch really does run two schedules for one tenant in the same minute; the question is F5 and the answer is the author's.\n\n**Not reviewed (1)** · the reporting front end, which reads the same definitions but was not changed.\n\n</details>",
+        "text": "<details><summary>How this review was made \u2014 scope, suppressed findings, what I could not verify</summary>\n\nRead the scheduled path, the column policy, the audit writer and the two controllers at `d41c8e2`; ran the export suite.\n\n**Suppressed (2)** \u00b7 a redaction helper's naming, because the file is replaced by ABC-418 next week \u00b7 a Horizon queue name, which this change does not reach.\n\n**Not verified (1)** \u00b7 that the nightly dispatch really does run two schedules for one tenant in the same minute; the question is F5 and the answer is the author's.\n\n**Not reviewed (1)** \u00b7 the reporting front end, which reads the same definitions but was not changed.\n\n</details>",
         "agent_title": null,
-        "agent_text": "<details><summary>How this review was made — scope, suppressed findings, what I could not verify</summary>\n\nRead the scheduled path, the column policy, the audit writer and the two controllers at `d41c8e2`; ran the export suite.\n\n**Suppressed (2)** · a redaction helper's naming, because the file is replaced by ABC-418 next week · a Horizon queue name, which this change does not reach.\n\n**Not verified (1)** · that the nightly dispatch really does run two schedules for one tenant in the same minute; the question is F5 and the answer is the author's.\n\n**Not reviewed (1)** · the reporting front end, which reads the same definitions but was not changed.\n\n</details>",
+        "agent_text": "<details><summary>How this review was made \u2014 scope, suppressed findings, what I could not verify</summary>\n\nRead the scheduled path, the column policy, the audit writer and the two controllers at `d41c8e2`; ran the export suite.\n\n**Suppressed (2)** \u00b7 a redaction helper's naming, because the file is replaced by ABC-418 next week \u00b7 a Horizon queue name, which this change does not reach.\n\n**Not verified (1)** \u00b7 that the nightly dispatch really does run two schedules for one tenant in the same minute; the question is F5 and the answer is the author's.\n\n**Not reviewed (1)** \u00b7 the reporting front end, which reads the same definitions but was not changed.\n\n</details>",
         "rewritten": false,
         "posted": true
       }
@@ -634,7 +652,7 @@
         "path": "app/Reporting/ColumnPolicy.php",
         "line": 52,
         "side": "RIGHT",
-        "body": "> [!CAUTION]\n> **Blocker · F9** — The column policy is skipped entirely when the definition names no columns · `Open`\n>\n> Two decisions compose here. The array cast answers `[]` for a null column, and this early return reads `[]` as “no policy” — so a definition older than the migration exports every column, including the two its tenant's policy hides. Eleven definitions in staging are in that state with an active schedule.\n\n<!-- review-desk:F9 -->"
+        "body": "> [!CAUTION]\n> **Blocker \u00b7 F9** \u2014 The column policy is skipped entirely when the definition names no columns \u00b7 `Open`\n>\n> Two decisions compose here. The array cast answers `[]` for a null column, and this early return reads `[]` as \u201cno policy\u201d \u2014 so a definition older than the migration exports every column, including the two its tenant's policy hides. Eleven definitions in staging are in that state with an active schedule.\n\n<!-- review-desk:F9 -->"
       },
       {
         "finding_seq": 1,
@@ -644,7 +662,7 @@
         "path": "app/Reporting/ExportContext.php",
         "line": 47,
         "side": "RIGHT",
-        "body": "> [!WARNING]\n> **Should · F1** — An empty allowed-columns list means every column, not none · `Open`\n>\n> `allowed_columns` arrives here as `[]` for any definition whose column was never written, and every reader downstream treats an empty list as “nothing to narrow”. `ColumnPolicy::for()` already draws the distinction the web path needs; this path could call it.\n\n<!-- review-desk:F1 -->"
+        "body": "> [!WARNING]\n> **Should \u00b7 F1** \u2014 An empty allowed-columns list means every column, not none \u00b7 `Open`\n>\n> `allowed_columns` arrives here as `[]` for any definition whose column was never written, and every reader downstream treats an empty list as \u201cnothing to narrow\u201d. `ColumnPolicy::for()` already draws the distinction the web path needs; this path could call it.\n\n<!-- review-desk:F1 -->"
       },
       {
         "finding_seq": 3,
@@ -654,7 +672,7 @@
         "path": "app/Console/Commands/DispatchScheduledExports.php",
         "line": 61,
         "side": "RIGHT",
-        "body": "> [!WARNING]\n> **Should · F3** — A schedule whose tenant row has gone is dispatched anyway · `Open`\n>\n> A schedule whose tenant row is gone is dispatched and then fails inside `ExportContext::forSchedule` with a null dereference, four frames deep. Filtering the dispatch query on the tenant's existence makes the same failure readable.\n\n<!-- review-desk:F3 -->"
+        "body": "> [!WARNING]\n> **Should \u00b7 F3** \u2014 A schedule whose tenant row has gone is dispatched anyway \u00b7 `Open`\n>\n> A schedule whose tenant row is gone is dispatched and then fails inside `ExportContext::forSchedule` with a null dereference, four frames deep. Filtering the dispatch query on the tenant's existence makes the same failure readable.\n\n<!-- review-desk:F3 -->"
       },
       {
         "finding_seq": 6,
@@ -664,7 +682,7 @@
         "path": "app/Reporting/ColumnPolicy.php",
         "line": 31,
         "side": "RIGHT",
-        "body": "> [!WARNING]\n> **Should · F6** — The policy is applied after the query is built, so a hidden column is still selected · `Open`\n>\n> The policy narrows rows that are already in memory, so the hidden columns are selected and read before they are dropped. `ReportBuilder::withPolicy()` narrows the `select` instead.\n\n<!-- review-desk:F6 -->"
+        "body": "> [!WARNING]\n> **Should \u00b7 F6** \u2014 The policy is applied after the query is built, so a hidden column is still selected \u00b7 `Open`\n>\n> The policy narrows rows that are already in memory, so the hidden columns are selected and read before they are dropped. `ReportBuilder::withPolicy()` narrows the `select` instead.\n\n<!-- review-desk:F6 -->"
       },
       {
         "finding_seq": 11,
@@ -674,7 +692,7 @@
         "path": "app/Http/Controllers/ExportController.php",
         "line": 41,
         "side": "RIGHT",
-        "body": "> [!WARNING]\n> **Should · F11** — The web path builds its context from the request with no tenant check · `Open`\n>\n> The removed branch called `ReportPolicy::view()` before building the context, and the call went with it. `download()` still authorises; `stream()`, reachable from the signed-URL route added in #496, does not.\n\n<!-- review-desk:F11 -->"
+        "body": "> [!WARNING]\n> **Should \u00b7 F11** \u2014 The web path builds its context from the request with no tenant check \u00b7 `Open`\n>\n> The removed branch called `ReportPolicy::view()` before building the context, and the call went with it. `download()` still authorises; `stream()`, reachable from the signed-URL route added in #496, does not.\n\n<!-- review-desk:F11 -->"
       },
       {
         "finding_seq": 13,
@@ -684,7 +702,7 @@
         "path": "app/Jobs/RunScheduledExport.php",
         "line": 116,
         "side": "RIGHT",
-        "body": "> [!WARNING]\n> **Should · F13** — A soft-deleted tenant is exported; only a hard-deleted one is skipped · `Open`\n>\n> The guard skips the job and not the schedule: `next_run_at` is advanced before the job runs, so a trashed tenant's schedule is dispatched and skipped every night. Schedule 118 has done that 39 times since September with no audit row to show for it.\n\n<!-- review-desk:F13 -->"
+        "body": "> [!WARNING]\n> **Should \u00b7 F13** \u2014 A soft-deleted tenant is exported; only a hard-deleted one is skipped \u00b7 `Open`\n>\n> The guard skips the job and not the schedule: `next_run_at` is advanced before the job runs, so a trashed tenant's schedule is dispatched and skipped every night. Schedule 118 has done that 39 times since September with no audit row to show for it.\n\n<!-- review-desk:F13 -->"
       },
       {
         "finding_seq": 5,
@@ -694,7 +712,7 @@
         "path": "app/Reporting/ExportPipeline.php",
         "line": 71,
         "side": "RIGHT",
-        "body": "> [!NOTE]\n> **Question · F5** — Two schedules for one tenant at once would write the audit entry twice · `Open`\n>\n> Can two schedules for one tenant be due in the same minute? Both would write an audit row keyed on the tenant and the date, and the unique index on that pair was dropped in #502.\n\n<!-- review-desk:F5 -->"
+        "body": "> [!NOTE]\n> **Question \u00b7 F5** \u2014 Two schedules for one tenant at once would write the audit entry twice \u00b7 `Open`\n>\n> Can two schedules for one tenant be due in the same minute? Both would write an audit row keyed on the tenant and the date, and the unique index on that pair was dropped in #502.\n\n<!-- review-desk:F5 -->"
       },
       {
         "finding_seq": 7,
@@ -704,7 +722,7 @@
         "path": "app/Jobs/RunScheduledExport.php",
         "line": 94,
         "side": "RIGHT",
-        "body": "> [!NOTE]\n> **Question · F7** — Nothing says what happens to a schedule whose definition was deleted · `Open`\n>\n> A schedule whose definition has been deleted releases back to the queue and is retried until the attempt limit, then dispatched again the next night. Is deactivating it the intended answer?\n\n<!-- review-desk:F7 -->"
+        "body": "> [!NOTE]\n> **Question \u00b7 F7** \u2014 Nothing says what happens to a schedule whose definition was deleted \u00b7 `Open`\n>\n> A schedule whose definition has been deleted releases back to the queue and is retried until the attempt limit, then dispatched again the next night. Is deactivating it the intended answer?\n\n<!-- review-desk:F7 -->"
       },
       {
         "finding_seq": 10,
@@ -714,7 +732,7 @@
         "path": "app/Reporting/ReportBuilder.php",
         "line": 28,
         "side": "RIGHT",
-        "body": "⚪ **Nit · F10** — The removed branch leaves a comment describing it · `Open`\nThe branch this comment describes was removed four lines above.\n\n<!-- review-desk:F10 -->"
+        "body": "\u26aa **Nit \u00b7 F10** \u2014 The removed branch leaves a comment describing it \u00b7 `Open`\nThe branch this comment describes was removed four lines above.\n\n<!-- review-desk:F10 -->"
       }
     ],
     "body_is_stale": false,
@@ -723,7 +741,7 @@
       {
         "finding_seq": 2,
         "finding_key": "F2",
-        "claim": "The superseded accessor `TenantContext::tenantForRequest()` is still public with nothing marking it superseded, so the next person who needs a tenant reads the accessor that is still there, reaches for the obvious name, and writes a second call path into the export code this change exists to remove — and because the `@deprecated` annotation is what the static analyser reads, that second caller is found in review by somebody rather than failing the build on the way in.",
+        "claim": "The superseded accessor `TenantContext::tenantForRequest()` is still public with nothing marking it superseded, so the next person who needs a tenant reads the accessor that is still there, reaches for the obvious name, and writes a second call path into the export code this change exists to remove \u2014 and because the `@deprecated` annotation is what the static analyser reads, that second caller is found in review by somebody rather than failing the build on the way in.",
         "severity": "nit"
       }
     ],
@@ -742,13 +760,15 @@
   {
     "draft": {
       "review_id": 43,
-      "body": "The log now has one writer, which is the right shape. One finding about the two call sites that have drifted apart.\n\n### Open — needs a decision\n\n| | Where | Finding | Status |\n| -- | -- | -- | -- |\n| 🟠 Should · F1 | [`DeliveryLog.php:62`](https://github.com/acme/portal/blob/c70a4d1/app/Logging/DeliveryLog.php#L62) | The log line is composed in two places | Open · in the body |\n\n### Should · F1 · The log line is composed in two places\n\nThe two call sites have drifted: one carries the tenant and one does not, so half the log cannot be filtered by it.\n",
+      "body": "The log now has one writer, which is the right shape. One finding about the two call sites that have drifted apart.\n\n### Open \u2014 needs a decision\n\n| | Where | Finding | Status |\n| -- | -- | -- | -- |\n| \ud83d\udfe0 Should \u00b7 F1 | [`DeliveryLog.php:62`](https://github.com/acme/portal/blob/c70a4d1/app/Logging/DeliveryLog.php#L62) | The log line is composed in two places | Open \u00b7 in the body |\n\n### Should \u00b7 F1 \u00b7 The log line is composed in two places\n\nThe two call sites have drifted: one carries the tenant and one does not, so half the log cannot be filtered by it.\n",
       "status": "posted",
       "event": "comment",
       "approved_at": "2026-10-10T11:03:00Z",
       "sent_back_note": null,
       "sent_back_at": null,
       "posted_at": "2026-10-10T11:04:00Z",
+      "signoff_withdrawn_at": null,
+      "signoff_withdrawn_head": null,
       "updated_at": "2026-10-10T11:04:00Z"
     },
     "review": {
@@ -769,7 +789,9 @@
       "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "lint": {
       "passes": true,
@@ -803,7 +825,7 @@
         "finding_seq": 1,
         "finding_key": "F1",
         "severity": "should",
-        "heading": "### Should · F1 · The log line is composed in two places",
+        "heading": "### Should \u00b7 F1 \u00b7 The log line is composed in two places",
         "title": "The log line is composed in two places",
         "text": "The two call sites have drifted: one carries the tenant and one does not, so half the log cannot be filtered by it.",
         "agent_title": "The log line is composed in two places",
@@ -844,6 +866,8 @@
       "sent_back_note": null,
       "sent_back_at": null,
       "posted_at": null,
+      "signoff_withdrawn_at": null,
+      "signoff_withdrawn_head": null,
       "updated_at": "2026-10-11T10:05:00Z"
     },
     "review": {
@@ -864,7 +888,9 @@
       "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "lint": {
       "passes": true,
@@ -916,6 +942,8 @@
       "sent_back_note": null,
       "sent_back_at": null,
       "posted_at": null,
+      "signoff_withdrawn_at": null,
+      "signoff_withdrawn_head": null,
       "updated_at": "2026-10-12T14:20:00Z"
     },
     "review": {
@@ -936,7 +964,9 @@
       "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "lint": {
       "passes": true,
@@ -988,6 +1018,8 @@
       "sent_back_note": null,
       "sent_back_at": null,
       "posted_at": "2026-10-11T11:40:00Z",
+      "signoff_withdrawn_at": null,
+      "signoff_withdrawn_head": null,
       "updated_at": "2026-10-11T11:40:00Z"
     },
     "review": {
@@ -1008,7 +1040,9 @@
       "pr_state_at": null,
       "harvested_at": "2026-10-13T07:45:00Z",
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "lint": {
       "passes": true,
@@ -1060,6 +1094,8 @@
       "sent_back_note": null,
       "sent_back_at": null,
       "posted_at": null,
+      "signoff_withdrawn_at": null,
+      "signoff_withdrawn_head": null,
       "updated_at": "2026-10-12T16:10:00Z"
     },
     "review": {
@@ -1080,7 +1116,9 @@
       "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "lint": {
       "passes": true,
@@ -1132,6 +1170,8 @@
       "sent_back_note": null,
       "sent_back_at": null,
       "posted_at": "2026-10-09T09:15:00Z",
+      "signoff_withdrawn_at": null,
+      "signoff_withdrawn_head": null,
       "updated_at": "2026-10-09T09:15:00Z"
     },
     "review": {
@@ -1152,7 +1192,9 @@
       "pr_state_at": "2026-10-11T22:41:00Z",
       "harvested_at": "2026-10-13T07:45:00Z",
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "lint": {
       "passes": true,
@@ -1204,6 +1246,8 @@
       "sent_back_note": null,
       "sent_back_at": null,
       "posted_at": null,
+      "signoff_withdrawn_at": null,
+      "signoff_withdrawn_head": null,
       "updated_at": "2026-10-10T10:30:00Z"
     },
     "review": {
@@ -1224,7 +1268,9 @@
       "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "lint": {
       "passes": true,
@@ -1276,6 +1322,8 @@
       "sent_back_note": null,
       "sent_back_at": null,
       "posted_at": null,
+      "signoff_withdrawn_at": null,
+      "signoff_withdrawn_head": null,
       "updated_at": "2026-10-10T17:05:00Z"
     },
     "review": {
@@ -1296,7 +1344,9 @@
       "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "lint": {
       "passes": true,
@@ -1348,6 +1398,8 @@
       "sent_back_note": null,
       "sent_back_at": null,
       "posted_at": null,
+      "signoff_withdrawn_at": null,
+      "signoff_withdrawn_head": null,
       "updated_at": "2026-10-11T12:50:00Z"
     },
     "review": {
@@ -1368,7 +1420,9 @@
       "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "lint": {
       "passes": true,
