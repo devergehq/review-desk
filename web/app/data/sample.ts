@@ -44,13 +44,18 @@ import {
   SEVERITY_LABELS,
 } from '~/utils/houseStyle'
 import { count, reviewWorkInWords, reviewWorkIsOneThing } from '~/utils/format'
+import { nothingMoved } from '~/utils/rounds'
 import type {
   Brief,
   DecideFindingRequest,
   DeskSource,
   Disposition,
   DraftDetail,
+  DuplicateRounds,
+  DuplicateRoundsPage,
+  ExtraRound,
   Finding,
+  FoldedRound,
   FindingDecision,
   FindingDecisionMade,
   Inbox,
@@ -1784,6 +1789,147 @@ function deleteReview(id: number): Review {
   return went
 }
 
+/**
+ * `GET /duplicate-rounds` — the one-off tidy's proposal, over the invented records.
+ *
+ * **The same three questions the binary asks**, in the same order: a round that is not the
+ * newest, that has not posted, and that the developer has not already dismissed. And the
+ * same act for each — fold what holds nothing, dismiss what holds something — through the
+ * helper `deleteReview` above refuses by, so sample mode cannot offer a fold the binary
+ * would refuse.
+ */
+function duplicateRounds(repo: string | null): DuplicateRoundsPage {
+  const byPullRequest = new Map<string, ReviewDetail[]>()
+  for (const detail of source.reviews) {
+    if (repo != null && detail.review.repo !== repo) continue
+    const key = `${detail.review.repo}#${detail.review.pr}`
+    byPullRequest.set(key, [...(byPullRequest.get(key) ?? []), detail])
+  }
+
+  const pull_requests: DuplicateRounds[] = []
+  for (const rounds of byPullRequest.values()) {
+    const ordered = [...rounds].sort((one, two) => one.review.round - two.review.round)
+    const newest = ordered[ordered.length - 1]
+    if (!newest || ordered.length < 2) continue
+
+    const extras: ExtraRound[] = []
+    for (const detail of ordered.slice(0, -1)) {
+      /* A posted round is a review that happened; a dismissed one is already out of play. */
+      if (detail.review.github_review_id != null) continue
+      if (detail.review.dismissed_at != null) continue
+      const held = {
+        brief: detail.brief != null,
+        findings: detail.findings.length,
+        draft: detail.draft_status != null,
+        posted: false,
+      }
+      const holds = reviewWorkInWords(held)
+      extras.push({
+        review_id: detail.review.id,
+        round: detail.review.round,
+        head_sha: detail.review.head_sha,
+        created_at: detail.review.created_at,
+        holds: holds === '' ? 'nothing' : holds,
+        act: holds === '' ? 'fold' : 'dismiss',
+      })
+    }
+    if (extras.length === 0) continue
+
+    pull_requests.push({
+      repo: newest.review.repo,
+      pr: newest.review.pr,
+      title: ordered.find(detail => detail.review.title != null)?.review.title ?? null,
+      newest: {
+        review_id: newest.review.id,
+        round: newest.review.round,
+        head_sha: newest.review.head_sha,
+      },
+      extras,
+    })
+  }
+
+  /* Newest pull request first, by the newest round's id, as the binary serves them. */
+  pull_requests.sort((one, two) => two.newest.review_id - one.newest.review_id)
+  return {
+    pull_requests,
+    pull_requests_affected: pull_requests.length,
+    extra_rounds: pull_requests.reduce((total, one) => total + one.extras.length, 0),
+  }
+}
+
+/**
+ * `POST /reviews/{id}/fold` — fold an extra unposted round into the newest one.
+ *
+ * **It refuses what the binary refuses, in the binary's own words**, and records the folded
+ * round's head on the newest round so the sample record answers the way a real one does: a
+ * `folded` head update, and the empty row gone.
+ */
+function foldRound(id: number): FoldedRound {
+  const detail = reviewById(id)
+  if (!detail) throw notFound(`review ${id}`)
+
+  const rounds = source.reviews.filter(
+    other => other.review.repo === detail.review.repo && other.review.pr === detail.review.pr,
+  )
+  const newest = rounds.reduce(
+    (held, other) => (other.review.round > held.review.round ? other : held),
+    detail,
+  )
+  if (newest.review.id === detail.review.id) {
+    throw invalidValue(
+      'review_id',
+      `Round ${detail.review.round} is the newest round of ${detail.review.repo}`
+      + `#${detail.review.pr} and the round the others fold into.`,
+      'an earlier round than the newest one',
+    )
+  }
+  if (detail.review.github_review_id != null) {
+    throw invalidValue(
+      'review_id',
+      `Round ${detail.review.round} posted its review, so it is a review that happened `
+      + 'rather than a duplicate.',
+      'a round that was never posted',
+    )
+  }
+
+  const held = {
+    brief: detail.brief != null,
+    findings: detail.findings.length,
+    draft: detail.draft_status != null,
+    posted: false,
+  }
+  const holds = reviewWorkInWords(held)
+  if (holds !== '') {
+    const lost = reviewWorkIsOneThing(held) ? 'that' : 'them'
+    throw conflict(
+      `Review ${id} holds ${holds}, and folding it would lose ${lost}: dismiss it `
+      + 'instead, which takes it out of the queue and keeps the record.',
+    )
+  }
+
+  if (detail.review.head_sha !== newest.review.head_sha) {
+    const updates = newest.head_updates ?? nothingMoved()
+    newest.head_updates = {
+      ...updates,
+      folded: updates.folded + 1,
+      last_at: new Date().toISOString(),
+      updates: [
+        ...updates.updates,
+        {
+          kind: 'folded',
+          from_sha: detail.review.head_sha,
+          to_sha: newest.review.head_sha,
+          at: new Date().toISOString(),
+        },
+      ],
+    }
+  }
+
+  const went = detail.review
+  source.reviews.splice(source.reviews.indexOf(detail), 1)
+  return { folded: went, into: newest.review }
+}
+
 /** `POST /rules/{id}/defer` — keep it, and ask again later. */
 function deferRule(id: number, days: number): Rule {
   if (!Number.isInteger(days) || days < 1 || days > 365) {
@@ -1929,6 +2075,13 @@ export function sampleBackend(): DeskBackend {
     dismissReview: async (id, reason) => answered(wrote(id, dismissReview(id, reason))),
     restoreReview: async id => answered(wrote(id, restoreReview(id))),
     deleteReview: async id => answered(deleteReview(id)),
+    listDuplicateRounds: async repo => answered(duplicateRounds(repo)),
+    /*
+     * Not wrapped in `wrote`, for `deleteReview`'s reason: the round is gone, so there is
+     * nothing left to stamp. The round it folded *into* is stamped, because something was
+     * written to it — its head updates.
+     */
+    foldRound: async id => answered(foldRound(id)),
     promoteRule: async (id, toStage) => answered(promoteRule(id, toStage)),
     dismissRule: async (id, reason) => answered(retireWithReason(id, reason, 'dismissed')),
     retireRule: async (id, reason) => answered(retireWithReason(id, reason, 'retired')),

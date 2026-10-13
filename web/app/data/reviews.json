@@ -18,7 +18,9 @@
       "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "not_for_signing": null,
     "layers": [
@@ -388,7 +390,9 @@
       "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "not_for_signing": null,
     "layers": [
@@ -738,7 +742,9 @@
       "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "not_for_signing": null,
     "layers": [
@@ -981,7 +987,9 @@
       "pr_state_at": null,
       "harvested_at": "2026-10-09T08:15:00Z",
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "not_for_signing": null,
     "layers": [
@@ -1364,7 +1372,9 @@
       "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "not_for_signing": null,
     "layers": [
@@ -1565,7 +1575,9 @@
       "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "not_for_signing": null,
     "layers": [
@@ -1748,7 +1760,9 @@
       "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "not_for_signing": null,
     "layers": [
@@ -3684,7 +3698,9 @@
       "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "not_for_signing": null,
     "layers": [
@@ -3828,7 +3844,9 @@
       "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "not_for_signing": null,
     "layers": [
@@ -3965,7 +3983,9 @@
       "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "not_for_signing": null,
     "layers": [
@@ -4090,7 +4110,9 @@
       "pr_state_at": null,
       "harvested_at": "2026-10-13T07:45:00Z",
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "not_for_signing": null,
     "layers": [
@@ -4226,7 +4248,9 @@
       "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "not_for_signing": null,
     "layers": [
@@ -4351,7 +4375,9 @@
       "pr_state_at": "2026-10-11T22:41:00Z",
       "harvested_at": "2026-10-13T07:45:00Z",
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "not_for_signing": null,
     "layers": [
@@ -4476,7 +4502,9 @@
       "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "not_for_signing": null,
     "layers": [
@@ -4613,7 +4641,9 @@
       "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "not_for_signing": null,
     "layers": [
@@ -4738,7 +4768,9 @@
       "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
-      "dismissed_reason": null
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
     },
     "not_for_signing": null,
     "layers": [

@@ -158,7 +158,36 @@ export type NitTicket = Schema['NitTicket']
 export type RoundSummary = Schema['RoundSummary']
 /** How a round's findings stand. Zero is a measurement here, not an absence. */
 export type RoundStatusCounts = Schema['RoundStatusCounts']
+/** What happened to a round's head commit: `moved`, `base_only` or `folded`. */
+export type HeadUpdateKind = Schema['HeadUpdateKind']
+export type HeadUpdate = Schema['HeadUpdate']
+/**
+ * What has happened to this round's head commit, with the counts the page reads.
+ *
+ * `commits` is null rather than zero when the round's commits were never recorded, and a
+ * screen must then say it was updated without counting them — zero would read as "nothing
+ * changed", which is the one thing it is not.
+ */
+export type HeadUpdates = Schema['HeadUpdates']
 export type ReviewDetail = Schema['ReviewDetail']
+
+/* ---- GET /duplicate-rounds, and the fold it proposes ---- */
+
+/** Why a pull request is out of play: `draft` or `withdrawn`. Both come back. */
+export type OutOfPlay = Schema['OutOfPlay']
+/** What the tidy would do with one extra unposted round: `fold` or `dismiss`. */
+export type TidyAct = Schema['TidyAct']
+export type RoundRef = Schema['RoundRef']
+export type ExtraRound = Schema['ExtraRound']
+export type DuplicateRounds = Schema['DuplicateRounds']
+
+/** `GET /duplicate-rounds` serves an object; this is what is inside it. */
+export type DuplicateRoundsPage
+  = operations['listDuplicateRounds']['responses']['200']['content']['application/json']
+
+/** What `POST /reviews/{id}/fold` answers: the round that went, and the one it folded into. */
+export type FoldedRound
+  = operations['foldRound']['responses']['200']['content']['application/json']
 
 /* ---- GET /reviews/{id}/draft ---- */
 

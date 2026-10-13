@@ -18,8 +18,10 @@ import type {
   ReviewsShown,
   Disposition,
   DraftDetail,
+  DuplicateRoundsPage,
   Finding,
   FindingDecisionMade,
+  FoldedRound,
   Inbox,
   NitTicket,
   OutcomeKind,
@@ -108,6 +110,21 @@ export interface DeskBackend {
    * has just removed.
    */
   deleteReview: (reviewId: number) => Promise<Review>
+  /**
+   * `GET /duplicate-rounds` — the one-off tidy's proposal.
+   *
+   * A seventh read, and the only one that is not a screen's own: the Reviews page asks for
+   * it when the developer opens the tidy. It decides nothing.
+   */
+  listDuplicateRounds: (repo: string | null) => Promise<DuplicateRoundsPage>
+  /**
+   * `POST /reviews/{id}/fold` — fold an extra unposted round into the newest one.
+   *
+   * **The developer's act, on their confirmation, and there is no other way to make it.**
+   * The same rule as a dismissal, a restore and a delete: no command folds a round, because
+   * a session that could would be able to fold away a round of its own review.
+   */
+  foldRound: (reviewId: number) => Promise<FoldedRound>
   promoteRule: (ruleId: number, toStage: RuleStage) => Promise<Rule>
   dismissRule: (ruleId: number, reason: string) => Promise<Rule>
   retireRule: (ruleId: number, reason: string) => Promise<Rule>

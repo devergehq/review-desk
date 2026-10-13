@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { Brief, ReviewDetail } from '~/types/desk'
 
+import { baseOnlyLine, nothingMoved, updatedLine } from '~/utils/rounds'
+
 /**
  * Step 2 — **Understand**. Board A5, which Patrick approved on 10 October 2026; of its
  * before-and-after picture, "perfect".
@@ -207,6 +209,22 @@ function stillOpen(brief: Brief): Array<{ count: number, says: string }> {
  */
 
 /** The sources the review recorded, which is what "already decided" rests on. */
+/**
+ * "Updated for 3 commits since 4d9464f", or null when this round's head has never moved.
+ *
+ * **One copy of the sentence**, in `utils/rounds`, which the code review's timeline reads
+ * too. `head_updates` is absent from a response written before DEV-962, and `nothingMoved`
+ * is the one reading of that absence — see its own note.
+ */
+function updatedSince(data: ReviewDetail): string | null {
+  return updatedLine(data.head_updates ?? nothingMoved())
+}
+
+/** "2 pushes brought the base branch in and changed nothing", or null. */
+function baseOnlySince(data: ReviewDetail): string | null {
+  return baseOnlyLine(data.head_updates ?? nothingMoved())
+}
+
 function sources(data: ReviewDetail) {
   return data.sources ?? []
 }
@@ -314,6 +332,34 @@ function sources(data: ReviewDetail) {
           :review-id="data.review.id"
           :not-for-signing="data.not_for_signing"
         />
+
+        <!--
+          **Said here because this is the page a review is read from.** DEV-962: a new
+          commit on an unposted round moves that round's head instead of opening a new one,
+          so everything below — the brief, the problems, the two flows — may have been
+          written against a commit the pull request has moved past. The words are
+          `utils/rounds`', which is the one copy of them: the code review's timeline says
+          the same sentence, and two spellings is how two screens come to disagree.
+        -->
+        <DeskNotice
+          v-if="updatedSince(data)"
+          tone="problem"
+        >
+          {{ updatedSince(data) }}. The review session re-reads the change and updates what
+          is below.
+        </DeskNotice>
+
+        <!--
+          And the quieter half: commits that only brought the base branch in. Nothing in
+          Review Desk changed, which is the point — but a reader who watched the pull request
+          move is owed the reason nothing here did.
+        -->
+        <DeskNotice
+          v-else-if="baseOnlySince(data)"
+          tone="plain"
+        >
+          {{ baseOnlySince(data) }}. The change itself is the one below.
+        </DeskNotice>
 
         <!-- ------------------------------ The two flows ------------------------------ -->
         <section
