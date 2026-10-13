@@ -8,6 +8,7 @@
  * |---|---|
  * | the pull request | **built** from `repo` and `pr`, which the record has held since its first slice |
  * | the ticket | **stored**, in `ticket_url`, because nothing can build it |
+ * | a finding's comment | **built**, from the pull request and the comment's numeric id — and only when the stored id really is one. See [`commentUrl`] |
  *
  * `contract/README.md`'s "The two links in a review's header" is the same table in the
  * contract's own words. Neither address is ever read from, and Review Desk asks a tracker
@@ -70,4 +71,38 @@ export function prUrl(repo: string, pr: number): string | null {
 export function ticketUrl(url: string | null | undefined): string | null {
   if (!url) return null
   return url.startsWith('https://') ? url : null
+}
+
+/**
+ * GitHub's address for the review comment a finding was posted as, or `null`.
+ *
+ * **A third row for the table at the top of this file, and it is a *built* address with a
+ * condition.** `#discussion_r<id>` is how GitHub addresses a review comment, and the id in
+ * it is the comment's numeric database id — which is exactly what `github_comment_id`
+ * holds: the harvester matches a finding to its thread by comparing that field to a
+ * thread's `root_comment_id`, read from GraphQL's `databaseId`, so a finding whose id is
+ * not a number is a finding the harvester could never read a reply for.
+ *
+ * **So the id is tested, not trusted.** `ForeignId` is documented as opaque — "Review Desk
+ * stores and returns it and never parses it" — and that is a rule about the API, not about
+ * a renderer: `prUrl` above makes the same distinction for `repo`, in as many words, and
+ * for the same reason. A column is not a promise about every row in it, and the one thing
+ * this value is for here is reaching an `href`. A node id (`IC_kwDOA1…`) appended to
+ * `#discussion_r` is a link whose text says "the comment" and whose destination is the top
+ * of the pull request, which is the defect `prUrl` refuses to build.
+ *
+ * **Null draws no link, and that is the whole of the fallback.** The page's header already
+ * links the pull request, so a reader is never stranded; a second link to the same place
+ * labelled as the comment would be the mislabelled link again.
+ *
+ * Digits only, so nothing a caller can store reaches the fragment as anything else.
+ */
+export function commentUrl(
+  repo: string,
+  pr: number,
+  commentId: string | null | undefined,
+): string | null {
+  if (!commentId || !/^\d+$/.test(commentId)) return null
+  const pull = prUrl(repo, pr)
+  return pull == null ? null : `${pull}#discussion_r${commentId}`
 }

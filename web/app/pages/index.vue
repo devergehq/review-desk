@@ -460,17 +460,38 @@ function nextAction(row: Waiting) {
   }
   const first = row.reply!.events[0]!
   return {
-    what: `The author replied to ${first.finding_key}`,
     /*
-     * **What came back, in figures, where the record has them.** These are the counts the
-     * posted-review group carries, and this is the row they are about — the review is
-     * here rather than in that group precisely because something has come back on it, so
-     * drawing them there would have meant drawing them nowhere.
+     * **Who did what, which is not "the author replied" for every kind.** This row is
+     * drawn for a resolution and for the harvester's observation about the code as well as
+     * for a reply — see `cameBackHeadline`, which is where the kinds are told apart.
+     */
+    what: cameBackHeadline(first),
+    /*
+     * **What came back, in words, then in figures where the record has them.**
+     *
+     * The words are `outcomeLine`, and this is the defect DEV-958 is named after: the
+     * expression here was `first.detail ?? replyLabel(first)`, and a harvested detail is
+     * JSON — so the row printed
+     * `{"basis":"compare 633e04a…","commit":…,"lines_changed":true}` and ran off the page.
+     * Preferring the stored detail was not a careless reach for a raw field; it was the
+     * only way to say anything about *this* outcome, because the function beside it worded
+     * the kind and dropped the detail. `outcomeLine` does both, so there is nothing left to
+     * prefer. No finding key, because `what` above has already named it.
+     *
+     * The figures are the counts the posted-review group carries, and this is the row they
+     * are about — the review is here rather than in that group precisely because something
+     * has come back on it, so drawing them there would have meant drawing them nowhere.
      */
     detail: row.posted
-      ? `${first.detail ?? replyLabel(first)} · ${authorResponseLabel(row.posted)}`
-      : (first.detail ?? replyLabel(first)),
-    action: 'Read the reply',
+      ? `${outcomeLine({ kind: first.kind, detail: first.detail })} · ${
+        authorResponseLabel(row.posted)}`
+      : outcomeLine({ kind: first.kind, detail: first.detail }),
+    /*
+     * **Worded from the kind, like the heading above it.** It said "Read the reply" over a
+     * row whose outcome was the harvester noticing the code had changed — an act that did
+     * not happen, offered to a developer who would go looking for it.
+     */
+    action: cameBackAction(first.kind),
     to: stepFor(row),
     at: row.reply!.replied_at ?? null,
     atUnknown: 'no outcome on this review carries a time',

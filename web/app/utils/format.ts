@@ -7,7 +7,6 @@ import type {
   DescriptionLint,
   DeskError,
   InboxPostedItem,
-  InboxReplyEvent,
   Rule,
   Instant,
   OutcomeKind,
@@ -202,6 +201,18 @@ export function startedReviewLine(review: {
     + 'No findings are written until you confirm it.'
 }
 
+/**
+ * A layer's name as the screen writes it.
+ *
+ * **Step 7 reads "What happened", and the record still calls it `harvest`.** The two are
+ * different vocabularies and this file is where they are told apart — the same split
+ * `LAYER_DETAILS` below makes for "approved by the developer". The developer read "Harvest"
+ * on the queue's step cell and said "I don't really know what that means": it is the name
+ * of the thing Review Desk does, not the name of what the step holds, and what the step
+ * holds is what a reader is looking for. The contract, the store and `review_desk_harvest`
+ * keep `harvest`, which is right — it is a read of GitHub — and DEV-958's page is "What
+ * happened".
+ */
 const LAYER_LABELS: Record<ReviewLayerName, string> = {
   lint: 'Lint',
   understand: 'Understand',
@@ -209,7 +220,7 @@ const LAYER_LABELS: Record<ReviewLayerName, string> = {
   solution_map: 'Solution map',
   code_review: 'Code review',
   draft: 'Draft',
-  harvest: 'Harvest',
+  harvest: 'What happened',
 }
 
 /** A layer's name as the screen writes it. */
@@ -445,7 +456,16 @@ const VERBS: Record<OutcomeKind, string> = {
   code_changed_after: 'Code changed after',
 }
 
-/** What an outcome kind is called in a sentence about an edit. */
+/**
+ * What an outcome kind is called in a sentence about an edit.
+ *
+ * **Not `outcomes.ts`'s `SAID`, and the difference is grammatical.** This is the verb at
+ * the head of a line about something the developer did — "Rewrote", "Cut" — which is what
+ * the draft page's edit list is a column of. `SAID` is the predicate of a sentence about a
+ * finding: "rewritten", "cut from this round". One map could not serve both without one of
+ * the two sentences reading wrong, which is the same reason `SEVERITY_LABELS` and
+ * `SEVERITY_WORDS` are two maps over four severities.
+ */
 export function editVerb(kind: OutcomeKind | string): string {
   return VERBS[kind as OutcomeKind] ?? kind
 }
@@ -691,41 +711,16 @@ export function stepLabel(row: ReviewListItem, now: Date = new Date()): string {
   return read ? `${said} · ${read}` : said
 }
 
-/**
- * One thing an author or the harvester did, as the Inbox words it.
+/*
+ * **`replyLabel` was here, and `outcomes.ts` replaced it.** It worded an outcome from its
+ * kind alone and threw the stored detail away, so the one caller it had — the queue's
+ * author-reply row — preferred the detail where there was one and printed the harvester's
+ * JSON. Wording the kind and reading the detail are the same job, and `outcomeLine` does
+ * both; a second function that did half of it is what let a row choose the raw half.
  *
- * Moved out of the template it used to be a nested ternary in. That expression handled
- * `rejected` and `code_changed_after` and fell through to the wire string with its
- * underscores swapped for spaces — which is how `thread_resolved` would have read as
- * "thread resolved" on the one group built from exactly that kind.
+ * It also worded `code_changed_after` as "fixed in a later commit", which the record does
+ * not support. See `outcomes.ts` — "It describes; it does not grade".
  */
-export function replyLabel(event: InboxReplyEvent): string {
-  const key = event.finding_key
-  switch (event.kind) {
-    case 'rejected':
-      return `finding ${key} rejected with a reason`
-    case 'code_changed_after':
-      return `${key} fixed in a later commit`
-    case 'replied':
-      return `the author replied on ${key}`
-    case 'thread_resolved':
-      return `${key}'s thread was resolved`
-    case 'raised_again':
-      return `${key} was raised again`
-    case 'kept':
-      return `${key} was kept`
-    case 'cut':
-      return `${key} was cut`
-    case 'regraded':
-      return `${key} was regraded`
-    case 'rewritten':
-      return `${key} was rewritten`
-    case 'ticketed':
-      return `${key} was moved to a ticket`
-    case 'withdrawn':
-      return `${key} was withdrawn`
-  }
-}
 
 /** A count the server has no measurement for is absent, not nought. */
 export function figure(

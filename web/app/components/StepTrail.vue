@@ -7,7 +7,7 @@ import type { LayerFact, ReviewLayer, ReviewLayerName } from '~/types/desk'
  * ```
  *  THE PULL REQUEST · SETTLED ONCE            ROUND 1 · REPEATS EACH ROUND
  *  ━━━━━━━━  ━━━━━━━━━━━  ━━━━━━━━━━  ━━━━━  ──────────  ──────  ───────
- *  1 Lint    2 Understand 3 Alternat… 4 Sol… 5 Code rev… 6 Draft 7 Harvest
+ *  1 Lint    2 Understand 3 Alternat… 4 Sol… 5 Code rev… 6 Draft 7 What hap…
  *  passes…   3 problems   9 options,… Right… 17 finding… Waitin… Not yet
  * ```
  *
@@ -47,7 +47,7 @@ import type { LayerFact, ReviewLayer, ReviewLayerName } from '~/types/desk'
  * reachable. Without that the answer would exist only in a `title`, which a keyboard
  * cannot reach and a phone does not draw.
  *
- * **The step's name is still a link, and the card is a second control.** Five of the seven
+ * **The step's name is still a link, and the card is a second control.** Six of the seven
  * steps have a page; a card and a link are two things, and a button inside a link is
  * neither valid markup nor clickable — which is also why DEV-892's control was a sibling of
  * the face. The link is the name, the button is the line under it.
@@ -63,7 +63,7 @@ import type { LayerFact, ReviewLayer, ReviewLayerName } from '~/types/desk'
  *
  * ## Which steps are links
  *
- * **Five of the seven, and the trail is the only way to four of them.**
+ * **Six of the seven, and the trail is the only way to five of them.**
  *
  * Every row in the queue opens Understand — "when we click a review, we want to go to the
  * review, not to the draft", and in a page-per-step review the review starts at
@@ -75,7 +75,8 @@ import type { LayerFact, ReviewLayer, ReviewLayerName } from '~/types/desk'
  * | 2, 3, 4 | the pages DEV-885 builds |
  * | 5 Code review | `/reviews/{id}/code-review`, which DEV-878 builds |
  * | 6 Draft | `/reviews/{id}/draft` |
- * | 1 Lint, 7 Harvest | nowhere — no page yet, and a link to a page that does not exist is worse than a label |
+ * | 7 What happened | `/reviews/{id}/what-happened`, which DEV-958 builds |
+ * | 1 Lint | nowhere — no page yet, and a link to a page that does not exist is worse than a label |
  *
  * **Step 6 is a link whatever the draft status says, and that changed in DEV-878.** It used
  * to be guarded on `draft_status`, because `GET …/draft` refuses when there is no draft row
@@ -113,7 +114,7 @@ const props = defineProps<{
 }>()
 
 /**
- * The five steps that have somewhere to go.
+ * The six steps that have somewhere to go.
  *
  * A suffix each, now that every one of them is a suffix: step 5 was the base route while
  * the one-page review was where the findings were, and `/reviews/{id}` is a redirect to
@@ -125,6 +126,13 @@ const PAGES: Partial<Record<ReviewLayerName, string>> = {
   solution_map: 'solution',
   code_review: 'code-review',
   draft: 'draft',
+  /*
+   * **Step 7 since DEV-958**, which is the issue that gave it a page. Before it the only
+   * trace of a harvest anywhere was the four facts on this step's own card, which is a
+   * tooltip — and what the developer said of the queue's version of the same four was "I
+   * don't really know what that means".
+   */
+  harvest: 'what-happened',
 }
 
 /**

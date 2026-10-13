@@ -1018,11 +1018,95 @@ describe('what the author said', () => {
    */
   it('shows a harvested reply on the finding it is about', async () => {
     const page = await codeReview(POSTED)
-    const replied = fixture(POSTED).outcomes.find(one => one.actor !== 'developer')!
+    const replied = fixture(POSTED).outcomes.find(one => one.kind === 'replied')!
     await openFinding(page, replied.finding_key)
 
-    expect(page.find('.reply').text()).toContain(replied.detail!.slice(0, 40))
-    expect(page.find('.reply').text()).toContain('by the author')
+    /*
+     * **The author's words, and not the record they were stored in.** The harvester writes
+     * an outcome's detail as JSON, and this block drew it raw until DEV-958 — so a reply
+     * arrived as `{"body":"…","comment_id":…}` inside the quotation meant to carry it.
+     * What is asserted is the body, read out of the fixture's own detail, and that no
+     * brace reaches the page.
+     */
+    const body = JSON.parse(replied.detail!) as { body: string, login: string }
+    expect(page.find('.reply').text()).toContain(body.body)
+    expect(page.find('.reply').text()).toContain(`A reply from ${body.login}`)
+    expect(page.find('.reply').text()).not.toContain('{')
+    expect(page.find('.reply').text()).not.toContain('comment_id')
+  })
+
+  /**
+   * **Who acted, where the sentence does not already say it and where somebody did.**
+   *
+   * A reply and a resolution name their login inside the sentence, composed from the
+   * detail. An author's own reason on a `rejected` does not — so replacing
+   * `by the {{ outcome.actor }}` with the time alone left "A restart re-runs at most one
+   * tenant… 3 days ago" with nobody in it.
+   *
+   * **On the shipped fixture, with no edit.** An earlier version of this test asked for a
+   * `raised_again` by the harvester, which is a row the store cannot write — `Actor` is
+   * three values and `entities/decision.rs` hardcodes `Actor::Developer` on every decision
+   * it records, and a developer's outcome never reaches this block at all, because
+   * `saidByOthers` is everything the developer did not do. Asserting a case that cannot
+   * happen is how it left the two that do.
+   */
+  it('names who acted for an author’s reason, whose sentence does not', async () => {
+    const page = await codeReview(POSTED)
+    const rejected = fixture(POSTED).outcomes.find(one => one.kind === 'rejected')!
+    expect(rejected.actor).toBe('author')
+    await openFinding(page, rejected.finding_key)
+    const said = page.findAll('.reply').map(one => one.text())
+    expect(said.some(one => one.includes('by the author'))).toBe(true)
+  })
+
+  /**
+   * **And credits nobody with a code change, which the harvester only watched.**
+   *
+   * `harvest::actor_for` keeps `harvester` for "a fact GitHub attributes to nobody", and
+   * it is the actor on every `code_changed_after` — so the slot that reads "by the author"
+   * above read "by the harvester" here, telling a reader the harvester changed line 40 of
+   * their file. `cameBackHeadline` had already written the rule down — "a code change is
+   * an observation" — and step 7's page draws the same outcome with no actor, so the two
+   * screens were making different claims about one row.
+   */
+  /**
+   * **And the sentence does not run into the time beside it.**
+   *
+   * Both spans are inline and the newline between them is a whitespace-only text node
+   * `whitespace: 'condense'` deletes, so the row read "…changed in 9f3ac21.5 days ago" —
+   * a seven-character commit id with a digit welded on, which is the one value on the row
+   * a reader copies out. It was there before the actor was taken off this kind and `.by`
+   * was not a plausible continuation of a hex id; `.5` is.
+   *
+   * Asserted on the text rather than on the markup, because what a reader copies and what
+   * a screen reader announces are both `textContent`, and a CSS gap fixes neither.
+   */
+  it('does not run the commit id into the time after it', async () => {
+    const page = await codeReview(POSTED)
+    const changed = fixture(POSTED).outcomes.find(one => one.kind === 'code_changed_after')!
+    await openFinding(page, changed.finding_key)
+    const said = page.findAll('.reply').map(one => one.text()).find(one => one.includes('changed in'))!
+    expect(said).toMatch(/changed in [0-9a-f]{7}\.\s/)
+    expect(said).not.toMatch(/[0-9a-f]{7}\.\d/)
+  })
+
+  it('credits nobody with a code change the harvester observed', async () => {
+    const page = await codeReview(POSTED)
+    const changed = fixture(POSTED).outcomes.find(one => one.kind === 'code_changed_after')!
+    expect(changed.actor).toBe('harvester')
+    await openFinding(page, changed.finding_key)
+    const said = page.findAll('.reply').map(one => one.text())
+    const row = said.find(one => one.includes('changed in'))
+    expect(row, 'the code change is drawn').toBeDefined()
+    expect(row).not.toContain('by the')
+  })
+
+  it('does not name the actor twice where the sentence already does', async () => {
+    const page = await codeReview(POSTED)
+    const replied = fixture(POSTED).outcomes.find(one => one.kind === 'replied')!
+    await openFinding(page, replied.finding_key)
+    expect(page.find('.reply').text()).toContain('A reply from dana-okoye')
+    expect(page.find('.reply').text()).not.toContain('by the author')
   })
 
   it('does not replay the developer’s own decisions at them', async () => {

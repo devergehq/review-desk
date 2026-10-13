@@ -354,6 +354,14 @@ downstream can record that the developer confirmed a review nobody looked at.
 name — 1 lint, 2 understand, 3 alternatives, 4 solution_map, 5 code_review, 6 draft,
 7 harvest — so only the number is given.
 
+**Layer 7 is `harvest` on the record and "What happened" on screen**, which is the one
+place the two vocabularies differ. `harvest` is right for the record: it is a read of
+GitHub, and it is what the command, the crate and the contract are called. It is not what
+the step *holds* — the developer read "Harvest" on the queue's step cell and said "I don't
+really know what that means" — so the dashboard says what the step holds. The split is in
+`web/app/utils/format.ts`, beside the one it already makes for layer 6's "approved by the
+developer".
+
 ```sh
 review-desk layer set --review "$REVIEW" --layer 1 --state done --detail passed
 review-desk layer set --review "$REVIEW" --layer 4 --state skipped --detail "no diagram needed"
@@ -1095,7 +1103,9 @@ functions. That is what keeps one way into the record.
 ## The dashboard
 
 Five screens — the queue, the reviews, one review, the draft preview and the rules — in
-`web/`. They read and write the JSON API that `review-desk serve` serves.
+`web/`. They read and write the JSON API that `review-desk serve` serves. A review is a
+page per step, reached from the trail across the top of each one: Understand, Alternatives,
+Solution map, Code review, Draft and [What happened](#what-happened-step-7s-page).
 
 ```sh
 cd web
@@ -1113,6 +1123,46 @@ Nuxt runs with server-side rendering off and generates static files, which `carg
 embeds in the binary — see [the local server](#the-local-server). Nuxt's own server routes
 are not used: the JSON API is the Rust server's. Fonts are bundled rather than fetched, so
 the built app asks nothing of the network and works on a machine with no internet.
+
+### What happened: step 7's page
+
+`/reviews/{id}/what-happened` is what a posted review came to. It is drawn from
+`GET /reviews/{id}` alone and reads GitHub nothing.
+
+| Part | Says |
+| -- | -- |
+| One line | How the pull request ended and on what day — or without the day, where GitHub gave none — or that it is open, and when a harvest last read it |
+| A row per posted finding | Its key, severity and title, where it is, the round it was carried from — then what came back, oldest first: the author's words quoted, the thread resolved, the code changed and in which commit |
+| Folded under a count | The findings nothing came back on, each saying *why* nothing could have: raised in the body alone, or posted as a comment and waiting |
+| A table, on a pull request with more than one round | What each round held, and how its findings stood — which is what the record supports; a carry is on the row of the finding that was carried |
+
+**It describes; it does not grade.** No severity tag and no severity colour, no ordering by
+anything but time and the review's own grade, and nothing on it says a finding was fixed —
+the harvester compares two commits and reports that the lines a finding points at are no
+longer the lines that were reviewed, which is not the same claim.
+
+**No outcome's stored detail is printed as it is stored.** The harvester writes a detail as
+JSON, because the fields it records are several; `web/app/utils/outcomes.ts` words every
+one of them, and `freeDetail` — its only route from a stored detail to a screen — answers
+nothing for anything that parses as an object or an array. So the shapes are unprintable by
+construction rather than by three screens remembering. `web/test/outcomes.spec.ts` reads
+the field names out of `crates/harvest/src/run.rs`, so a field added to a detail in Rust
+fails a test in TypeScript.
+
+**One thing it cannot say**, because the record does not support it:
+
+* Where a finding's comment is, when the recorded `github_comment_id` is not GitHub's
+  numeric comment id. `#discussion_r<id>` takes that number, and the harvester needs the
+  same one to match a thread — so a record holding another kind of id gets no link rather
+  than a link somewhere else.
+
+**Three reasons a row has no link to a comment, and the page says which.** They are not the
+same fact and the reader acts on each differently: a finding the review raised in its body
+alone has no thread at all, so no reply could ever be read on it; a finding posted as a
+comment whose id is of another kind has a thread, reachable on the pull request, and no
+address this page can build; and a review whose `repo` is not a repository name — which a
+released Review Desk could store, and which `app/utils/links.ts` refuses to build from — has
+no GitHub address anywhere on the page, which is nothing to do with any finding.
 
 ### After a sign-off
 

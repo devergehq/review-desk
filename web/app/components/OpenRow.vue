@@ -42,8 +42,33 @@ const says = computed(() => (props.open ? 'Fold' : props.opens))
     :aria-controls="controls"
     @click="$emit('toggle')"
   >
-    <span class="rd-visually-hidden">{{ open ? 'Fold' : 'Open' }} {{ label }}:</span>
-    <slot />
+    <!--
+      **`{{ ' ' }}` after each of these, and a scan found them.** Vue's
+      `whitespace: 'condense'` deletes a whitespace-only text node between two elements, so
+      the newlines here rendered nothing and the row's accessible name came out as
+      `Open F4, nit, What F4 says is wrong:F4nitWhat F4 says is wrongOpen`, every boundary
+      closed up.
+
+      **Two of the three boundaries are this component's**: after the hidden label, and
+      before the "Open" at the end. The ones *between* the cells belong to whoever fills the
+      slot, because this component does not know how many there are.
+
+      Six components fill it. `HeldBackRows` and the step-7 page separate their own cells;
+      `solution.vue`, `code-review.vue`, `understand.vue` and `alternatives.vue` do not, so
+      a part on the Solution page still announces as `Open Allowed columns…: 1Allowed
+      columns…`. That is the same defect, it predates DEV-958, and it is four pages that
+      issue does not touch — reported rather than swept in, which is what the last three
+      attempts at this rule got wrong in the other direction.
+
+      **An interpolated space, not `&#32;`**, and the difference is measured: an entity at
+      the end of a line is merged with the following newline into one whitespace-only node
+      and deleted with it, so a first fix here changed the compiled output not at all. An
+      interpolation is a text node wherever it is written. `what-happened.vue` carries the
+      argument; `test/step-pages.nuxt.spec.ts` and this component's own row test carry the
+      measurement.
+    -->
+    <span class="rd-visually-hidden">{{ open ? 'Fold' : 'Open' }} {{ label }}:</span>{{ ' ' }}
+    <slot />{{ ' ' }}
     <span class="opens">{{ says }}</span>
   </button>
 </template>

@@ -997,9 +997,18 @@ test.describe('the three step pages of one review', () => {
     await page.locator('.trail').getByRole('link', { name: /2 Understand/ }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/understand`)
 
-    /* Lint and Harvest are labels, not links: neither has a page of its own. */
+    /*
+     * **And step 7 is a link since DEV-958**, which is the issue that gave it a page:
+     * "What happened" is the whole of what came back on a posted review, and
+     * `e2e/what-happened.spec.ts` measures it at both widths against a seed of its own.
+     */
+    await page.locator('.trail').getByRole('link', { name: /7 What happened/ }).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/what-happened`)
+    await page.locator('.trail').getByRole('link', { name: /2 Understand/ }).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/understand`)
+
+    /* Lint alone is a label, not a link: it is the one step with no page of its own. */
     await expect(page.locator('.trail').getByRole('link', { name: /1 Lint/ })).toHaveCount(0)
-    await expect(page.locator('.trail').getByRole('link', { name: /7 Harvest/ })).toHaveCount(0)
   })
 
   /*
@@ -1308,7 +1317,7 @@ test.describe('the three step pages of one review', () => {
         await expect(page.locator('h1')).toBeVisible()
         await page.waitForLoadState('networkidle')
         const step = page.locator('.steps li').nth(6)
-        await expect(step).toContainText('7 Harvest')
+        await expect(step).toContainText('7 What happened')
         await expect(step.locator('.outcome')).toHaveText('posted, waiting for the harvest')
         await expect(step.locator('button')).toHaveCount(0)
         const before = await positions()
@@ -2971,7 +2980,7 @@ test.describe('a harvested review, on the queue and in the list', () => {
        * which on step 7 means "the pull request is open and still being watched" and
        * would read as a harvest executing for as long as a pull request stays open.
        */
-      await expect(row).toContainText(`Harvest · ${detail}`)
+      await expect(row).toContainText(`What happened · ${detail}`)
       await expect(row).toContainText('step 7 of 7')
       await expect(row).not.toContainText('· running')
     })

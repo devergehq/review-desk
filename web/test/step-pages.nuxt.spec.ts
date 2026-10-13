@@ -1,6 +1,6 @@
 // @vitest-environment nuxt
 import { readFileSync, readdirSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { relative, resolve, sep } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { flushPromises, type VueWrapper } from '@vue/test-utils'
@@ -515,14 +515,18 @@ describe('the shell every step page sits in', () => {
     expect(page.text()).toContain('waiting on you: not recorded')
   })
 
-  it('links the five steps that have somewhere to go, and no others', async () => {
+  it('links the six steps that have somewhere to go, and no others', async () => {
     const page = await understand(STRUCTURED)
     const links = page.findAll('.trail a').map(one => one.attributes('href'))
     /*
-     * **The trail is the only way to four of these.** Every row in the queue opens
+     * **The trail is the only way to five of these.** Every row in the queue opens
      * Understand, so if the trail did not reach the findings and the draft the queue would
-     * lead somewhere a reader could not leave. Steps 1 and 7 have no page, and a link to a
-     * page that does not exist is worse than a label.
+     * lead somewhere a reader could not leave. Step 1 has no page, and a link to a page
+     * that does not exist is worse than a label.
+     *
+     * **Step 7 is a link since DEV-958**, which is the issue that gave it a page: "What
+     * happened" is the whole of what came back on a posted review, and before it the only
+     * trace of a harvest anywhere was a count in the trail's own tooltip.
      */
     expect(links).toEqual([
       `/reviews/${STRUCTURED}/understand`,
@@ -530,12 +534,15 @@ describe('the shell every step page sits in', () => {
       `/reviews/${STRUCTURED}/solution`,
       `/reviews/${STRUCTURED}/code-review`,
       `/reviews/${STRUCTURED}/draft`,
+      `/reviews/${STRUCTURED}/what-happened`,
     ])
-    /* Lint and Harvest are labels. */
+    /* Lint alone is a label. */
     const labels = page.findAll('.trail .face:not(a)').map(one => one.text())
-    for (const step of ['1 Lint', '7 Harvest']) {
-      expect(labels.some(one => one.includes(step)), `${step} should be a label`).toBe(true)
-    }
+    expect(labels.some(one => one.includes('1 Lint')), '1 Lint should be a label').toBe(true)
+    expect(
+      labels.some(one => one.includes('What happened')),
+      '7 What happened should be a link',
+    ).toBe(false)
   })
 
   /*
@@ -2234,6 +2241,117 @@ describe('nothing on these pages is handed to the browser as markup', () => {
       expect(page.text, `${page.name} has table rows with no role`).toContain('role="row"')
       expect(page.text, `${page.name} has cells with no role`).toContain('role="cell"')
     }
+  })
+
+  /**
+   * **A hidden label that ends in a colon is followed by an interpolated space.**
+   *
+   * `rd-visually-hidden` is text in the document, so `<span …>Severity:</span>{{ value }}`
+   * reads `Severity:blocker`. A *newline* between the two is no better: Vue's
+   * `whitespace: 'condense'` deletes a whitespace-only text node between two elements.
+   *
+   * **And `&#32;` is not the answer either, which is why this rule names the form it
+   * wants.** Compiled with this repository's own `@vue/compiler-dom`, an entity at the end
+   * of a line is merged with the following newline and indentation into one whitespace-only
+   * node and deleted with it — so `</span>&#32;` followed by an element, or by a comment,
+   * emits no text node at all. It happens to work when what follows is on the same line,
+   * which is how four boundaries came to be written the broken way and a first version of
+   * this very scan came to accept them. An interpolation is a text node wherever it is
+   * written.
+   *
+   * **This is a scan because the rule was swept by hand three times.** DEV-958 found it on
+   * its own page, fixed two components beside it, then three more sites on the Solution
+   * page, then the four `&#32;` boundaries that compiled to nothing. A rule in a comment is
+   * a rule somebody has to remember.
+   *
+   * Only labels ending in a colon, which is the shape that has a value after it. A hidden
+   * span that *continues* a visible phrase — "The finding", then " F1 on the code review
+   * page" — carries its own leading space and needs nothing here.
+   */
+  /**
+   * The label, matched **over the whole file and per occurrence** rather than per line.
+   *
+   * Two things that cost a line-by-line version its coverage. The opening tag is allowed to
+   * wrap, because this repository writes every span with two or more attributes that way —
+   * `[^>]*` crosses a newline, so `<span\n  v-if="…"\n  class="rd-visually-hidden"\n>Size:</span>`
+   * is seen. And the class list is allowed to hold more than the one class.
+   *
+   * Per occurrence, because a line with two of these passed as long as *one* of them was
+   * separated: `LABEL.test(line) && !SEPARATED.test(line)` asks two questions about the
+   * whole line and never about the same label twice.
+   */
+  const LABEL = /<span[^>]*class="[^"]*rd-visually-hidden[^"]*"[^>]*>[^<]*:<\/span>/g
+  const SEPARATOR = '{{ \' \' }}'
+
+  /**
+   * **Every `.vue` under `app/`, at any depth** — its own list rather than the `sources`
+   * the checks above share, which is components and the pages of a review.
+   *
+   * Those checks are about this feature's pages and are right to be. This rule is about
+   * any markup that draws a hidden label, and the queue, the Reviews list, the rules page
+   * and the layout all draw one. Widening the shared list would have changed what four
+   * other tests are about; a list of its own changes nothing but this.
+   */
+  function everyTemplate(dir: string): Array<{ name: string, text: string }> {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = resolve(dir, entry.name)
+      if (entry.isDirectory()) return everyTemplate(full)
+      if (!entry.name.endsWith('.vue')) return []
+      return [{ name: relative(resolve('app'), full), text: readFileSync(full, 'utf8') }]
+    })
+  }
+
+  const templates = everyTemplate(resolve('app'))
+
+  /** Every hidden label ending in a colon that nothing separates from its value. */
+  function runTogether(files: Array<{ name: string, text: string }>): string[] {
+    return files.flatMap(file =>
+      [...file.text.matchAll(LABEL)]
+        .filter(hit => !file.text.slice(hit.index + hit[0].length).startsWith(SEPARATOR))
+        .map(hit => `${file.name}: ${hit[0].replace(/\s+/g, ' ')}`))
+  }
+
+  it('finds every template, not only this feature\u2019s', () => {
+    const names = templates.map(file => file.name)
+    expect(names.length).toBeGreaterThan(40)
+    for (const outside of ['pages/index.vue', 'pages/rules.vue', 'layouts/default.vue']) {
+      expect(names.map(name => name.split(sep).join('/'))).toContain(outside)
+    }
+  })
+
+  it('separates a hidden label from the value after it', () => {
+    expect(runTogether(templates)).toEqual([])
+  })
+
+  /**
+   * **And the scan refuses every form that does not work**, run through the same predicate
+   * rather than re-tested as regexes against a literal — which is what the version before
+   * it did, and why it was green over four broken boundaries.
+   *
+   * The newline case really carries a newline. The version this replaces split the input on
+   * `\n` first, so its "a newline" case was a single line ending at `</span>` — the same
+   * input as "nothing at all", testing the same thing twice and the form the argument is
+   * really about not at all.
+   */
+  it.each([
+    ['nothing at all', '<span class="rd-visually-hidden">Severity:</span>{{ row.severity }}'],
+    ['a newline', '<span class="rd-visually-hidden">Severity:</span>\n  {{ row.severity }}'],
+    ['an entity', '<span class="rd-visually-hidden">Severity:</span>&#32;\n  <span>x</span>'],
+    ['a wrapped opening tag', '<span\n  v-if="x"\n  class="rd-visually-hidden"\n>Size:</span>\n  <span>x</span>'],
+    ['a second class', '<span class="rd-meta rd-visually-hidden">Size:</span>\n  <span>x</span>'],
+  ])('reports a label separated by %s', (_what, text) => {
+    expect(runTogether([{ name: 'invented.vue', text }])).toHaveLength(1)
+  })
+
+  it('reports both labels on a line that carries two', () => {
+    const two = '<span class="rd-visually-hidden">A:</span>{{ one }}'
+      + '<span class="rd-visually-hidden">B:</span>{{ two }}'
+    expect(runTogether([{ name: 'invented.vue', text: two }])).toHaveLength(2)
+  })
+
+  it('accepts the one form that works', () => {
+    const good = `<span class="rd-visually-hidden">Severity:</span>${SEPARATOR}{{ row.severity }}`
+    expect(runTogether([{ name: 'invented.vue', text: good }])).toEqual([])
   })
 
   it('never lets a pill break across two lines', () => {

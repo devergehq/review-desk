@@ -132,6 +132,15 @@ describe('the threads the draft hands over', () => {
     })
 
     expect(panel.find('.severity').text()).toContain('blocker')
+    /*
+     * **And the hidden label is separated from it.** `rd-visually-hidden` is text in the
+     * document, so "Severity:" ran straight into the word and the whole thing read
+     * `Severity:blocker`. A newline between the two is a whitespace-only node Vue's
+     * `whitespace: 'condense'` deletes, and so is a `&#32;` at the end of one — so the
+     * separator is an interpolated space. `what-happened.vue` carries the argument, and
+     * `test/step-pages.nuxt.spec.ts` the scan that holds every template to it.
+     */
+    expect(panel.find('.severity').element.textContent).toBe('Severity: blocker')
     expect(panel.find('.tag').exists()).toBe(false)
   })
 })

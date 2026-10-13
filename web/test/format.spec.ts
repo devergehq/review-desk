@@ -183,6 +183,12 @@ describe('the seven layers', () => {
   it('writes a layer key as a person reads it', () => {
     expect(layerLabel('solution_map')).toBe('Solution map')
     expect(layerLabel('code_review')).toBe('Code review')
+    /*
+     * **Step 7 is "What happened", and the record still calls it `harvest`.** DEV-958: the
+     * developer read "Harvest" on this very cell and said "I don't really know what that
+     * means". The name of the read is not the name of what the step holds.
+     */
+    expect(layerLabel('harvest')).toBe('What happened')
   })
 
   /*
@@ -493,13 +499,13 @@ describe('what came back on a posted review', () => {
     const later = (minutes: number) => new Date(Date.parse(at) + minutes * 60_000)
 
     expect(stepLabel(row({}), later(3)))
-      .toBe('Harvest · nothing back yet · read 3 min ago')
+      .toBe('What happened · nothing back yet · read 3 min ago')
 
     /* Settled: how it ended, and no read time — nothing will read it again. */
     expect(stepLabel(
       row({ step_state: 'done', step_detail: 'merged, 2 replies back' }),
       later(3),
-    )).toBe('Harvest · merged, 2 replies back')
+    )).toBe('What happened · merged, 2 replies back')
 
     /* And posted, with no harvest yet: what posting wrote, and no invented time. */
     expect(stepLabel(
@@ -509,7 +515,7 @@ describe('what came back on a posted review', () => {
         step_detail: 'posted, waiting for the harvest',
       }),
       later(3),
-    )).toBe('Harvest · posted, waiting for the harvest')
+    )).toBe('What happened · posted, waiting for the harvest')
   })
 
   it('does not claim a pull request is open when nothing has looked', () => {

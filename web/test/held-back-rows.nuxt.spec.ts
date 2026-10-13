@@ -127,12 +127,57 @@ describe('eight findings held back, which is what the complaint was about', () =
       .toEqual(['2 questions', '6 nits'])
   })
 
+  /**
+   * **The whole row's text, which is what a screen reader is handed.**
+   *
+   * `OpenRow` draws the hidden "Open …:" label, then the caller's cells, then its own
+   * "Open" — and every boundary between them was a newline, which Vue's
+   * `whitespace: 'condense'` deletes. The row announced
+   * `Open F4, nit, …:F4nitWhat F4 says is wrongOpen`.
+   *
+   * **Asserted on the rendered text rather than on the markup**, because the first two
+   * attempts at this were a comment and a regex and both were satisfied by output that had
+   * not changed at all: `&#32;` at the end of a line compiles to nothing. A reading of the
+   * text cannot be fooled that way.
+   */
+  it('separates every part of a row’s announced name', async () => {
+    const page = await panel()
+    const said = page.find('.held-row').element.textContent ?? ''
+    expect(said).toMatch(/^Open [^:]+:\s/)
+    expect(said).toMatch(/\sOpen$/)
+    /*
+     * **The label's own colon, not any colon.** `not.toMatch(/:\S/)` was coupled to the
+     * fixture's prose rather than to the rule: it passed because no title in `FINDINGS`
+     * happens to contain one, and `path.php:44` in a title would have failed it for a
+     * reason with nothing to do with label separation.
+     */
+    const label = said.match(/^Open .*?:/)
+    expect(label).not.toBeNull()
+    expect(said.slice(label![0].length)).toMatch(/^\s/)
+    /*
+     * **Including the cells inside the slot**, which `OpenRow` cannot separate because it
+     * does not know how many there are. Measured by reading a row's text out of the real
+     * binary after the label's own boundary was fixed and finding `F4Severity: nitWhat F4
+     * says…` still closed up.
+     */
+    expect(said).toMatch(/F\d+\s+Severity:\s+(nit|question)\s+/)
+  })
+
   it('draws every row’s key, severity and line, and no severity tag', async () => {
     const page = await panel()
     const rows = page.findAll('.held-row')
     for (const row of rows) {
       expect(row.find('.cell--key').text()).toMatch(/^F\d+$/)
       expect(row.find('.cell--severity').text()).toMatch(/nit|question/)
+      /*
+       * **And the hidden label is separated from it.** `rd-visually-hidden` is text in the
+       * document, so this read `Severity:nit`: a newline between the label and the value
+       * is a whitespace-only node Vue's `whitespace: 'condense'` deletes, and `&#32;` at
+       * the end of a line is merged into that node and deleted with it. The separator is
+       * an interpolated space — `what-happened.vue` carries the argument.
+       */
+      expect(row.find('.cell--severity').element.textContent)
+        .toMatch(/^Severity: (nit|question)$/)
       expect(row.find('.cell--line').text().length).toBeGreaterThan(0)
     }
     /* Nothing grades a finding beyond the severity word the record holds. */
@@ -178,6 +223,12 @@ describe('eight findings held back, which is what the complaint was about', () =
     const page = await panel()
     const row = page.findAll('.held-row').find(one => one.text().includes('shortened'))!
     expect(row.find('.cell--line').text()).toContain('…')
+    /*
+     * **And the marker does not run into the line it is about.** Inside a cell rather than
+     * between two, which is why the row-level check above missed it: the first row is never
+     * a shortened one. Without the space the text read `…a session really…shortened`.
+     */
+    expect(row.find('.cell--line').element.textContent).toMatch(/…\s+shortened/)
     /* Twelve words and the ellipsis, which is what the row carries for F7. */
     expect(row.find('.cell--line').text().replace('shortened', '').trim().split(/\s+/))
       .toHaveLength(12)

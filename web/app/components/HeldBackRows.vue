@@ -135,7 +135,13 @@ const heading = computed(() => count(props.rows.length, 'finding'))
             class="held-row"
             @toggle="toggle(row.seq)"
           >
-            <span class="cell cell--key rd-mono rd-meta">{{ row.key }}</span>
+            <!--
+              **A space between the cells as well as inside them**, for the reason
+              `what-happened.vue` measures: they are separated by newlines, which
+              `whitespace: 'condense'` deletes, so the row's text — its accessible name —
+              read `F4Severity: nitWhat F4 says…`.
+            -->
+            <span class="cell cell--key rd-mono rd-meta">{{ row.key }}</span>{{ ' ' }}
 
             <!--
               **The severity as a word, with no tag and no colour.** Drawn only where the
@@ -145,13 +151,19 @@ const heading = computed(() => count(props.rows.length, 'finding'))
               read out by a screen reader, carries its own severity.
             -->
             <span class="cell cell--severity rd-meta">
-              <span class="rd-visually-hidden">Severity:</span>
-              <span v-if="row.severity">{{ row.severity }}</span>
+              <!--
+                `{{ ' ' }}`, for the reason `what-happened.vue` measures: the newline that
+                was here is a whitespace-only node between two elements, and Vue's
+                `whitespace: 'condense'` deletes it — so the text read `Severity:nit`.
+              -->
+              <span class="rd-visually-hidden">Severity:</span>{{ ' ' }}<span
+                v-if="row.severity"
+              >{{ row.severity }}</span>
               <span
                 v-else
                 class="rd-meta"
               >not recorded</span>
-            </span>
+            </span>{{ ' ' }}
 
             <span class="cell cell--line">
               <!--
@@ -167,7 +179,7 @@ const heading = computed(() => count(props.rows.length, 'finding'))
               <TickedText
                 :text="row.line"
                 in-control
-              />
+              />{{ ' ' }}
               <!--
                 **A line the page cut says so.** The claim's first twelve words standing in
                 for a title the session never wrote is not what the review said, and a reader

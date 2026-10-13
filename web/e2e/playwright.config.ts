@@ -68,13 +68,14 @@ export default defineConfig({
        * project — so a header that overflows at 390 fails the same run the acceptance path
        * does rather than waiting for somebody to remember a second command.
        *
-       * `header-links.spec.ts` starts a server of its own in `beforeAll` rather than using
-       * the two this config's global setup starts: the seeded database is asserted against
-       * by name and by count, and a fourth review added to it for one measurement would
-       * rewrite assertions with nothing to do with these links.
+       * `header-links.spec.ts` and `what-happened.spec.ts` each start a server of their
+       * own in `beforeAll` rather than using the two this config's global setup starts:
+       * the seeded database is asserted against by name and by count, and a review added
+       * to it for one measurement would rewrite assertions with nothing to do with that
+       * measurement. Each carries the argument in its own header.
        */
       name: 'desk',
-      testMatch: /(review-desk|header-links)\.spec\.ts/,
+      testMatch: /(review-desk|header-links|what-happened)\.spec\.ts/,
     },
     {
       /*
