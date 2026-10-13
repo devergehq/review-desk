@@ -25,7 +25,7 @@ env:
 jobs:
   check:
     name: Format, lint and test
-    runs-on: ubicloud-standard-2
+    runs-on: ubuntu-latest
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v7
@@ -83,7 +83,7 @@ jobs:
 
   embedded:
     name: The binary with the dashboard in it
-    runs-on: ubicloud-standard-2
+    runs-on: ubuntu-latest
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v7
