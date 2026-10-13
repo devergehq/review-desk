@@ -203,18 +203,20 @@ const stepName = computed(() => layerLabel(props.step))
       Solution — and a reader meeting an empty page cannot tell "nobody has written this"
       from "it was written in round 1 and nobody has rewritten it".
 
-      **Both halves of the sentence are measured.** `brief_written` on each round says which
-      rounds wrote one; `briefWrittenEarlier` answers the latest earlier round that did,
-      which is also what makes "no round since" true — any round in between that had written
-      one would have been named instead. Nothing here compares two briefs: a diff between
-      rounds is a thing in its own right and DEV-976 leaves it alone.
+      **Both halves of it are measured.** `brief_written` on each round says which rounds
+      wrote one; `briefWrittenEarlier` answers the latest earlier round that did, which is
+      also what makes "no round since" true — any round in between that had written one would
+      have been named instead. Nothing here compares two briefs: a diff between rounds is a
+      thing in its own right and DEV-976 leaves it alone.
+
+      **The link alone, because the heading above has already said it.** The three pages this
+      can appear on take their `headline` and `sub` from the same answer, so the state is
+      stated once. DEV-892's sixth defect was the Solution page saying one sentence twice,
+      as its headline and again as a notice under it.
     -->
     <DeskNotice v-if="writtenEarlier">
-      <strong>This round has written no {{ stepName }} of its own.</strong>
-      Round {{ writtenEarlier.round }} wrote the last one and no round since has written
-      another; nothing carries a brief from one round to the next.
       <NuxtLink :to="writtenEarlier.to">
-        Read {{ stepName }} in round {{ writtenEarlier.round }}
+        Read {{ stepName.toLowerCase() }} as round {{ writtenEarlier.round }} wrote it
       </NuxtLink>.
     </DeskNotice>
 

@@ -21,7 +21,7 @@
  * Pure functions over the contract's own shapes, so they are unit-tested without a browser.
  */
 
-import { dayLabel } from './format'
+import { dayLabel, layerLabel } from './format'
 import { PAGE_OF_STEP } from './steps'
 
 import type {
@@ -218,7 +218,7 @@ export function roundLinks(detail: ReviewDetail, step: ReviewLayerName): RoundLi
         reviewId: round.review_id,
         to: here ? null : `/reviews/${round.review_id}/${page}`,
         here,
-        standing: standingOf(round, rounds, finished(detail)),
+        standing: standingOf(round, rounds, inPlay(detail)),
         dismissed: roundDismissed(round),
         /* `commitLabel`, the one abbreviation of a commit this file has. */
         head: commitLabel(round.head_sha),
@@ -234,31 +234,44 @@ export function roundLinks(detail: ReviewDetail, step: ReviewLayerName): RoundLi
  * is DEV-957's whole subject, so calling it "being worked on" would promise something that
  * is never coming. It reads "not posted", which is what it is.
  *
- * **And nothing is being worked on once the pull request is over**, which is the same
- * correction `StepTrail` makes to a step's tense: a round of a merged pull request that was
- * never posted will not be now. DEV-957's record is exactly this shape —
- * `globex/portal#9568` merged with three unposted rounds behind it.
+ * **And it is said only where the record positively says the pull request is still in
+ * play**, which is the same correction `StepTrail` makes to a step's tense: a round of a
+ * merged pull request that was never posted will not be now. DEV-957's record is exactly
+ * that shape — `globex/portal#9568` merged with three unposted rounds behind it.
  */
-function standingOf(round: RoundSummary, rounds: RoundSummary[], over: boolean): string {
+function standingOf(round: RoundSummary, rounds: RoundSummary[], live: boolean): string {
   const posted = dayLabel(round.posted_at)
   if (posted) return `posted ${posted}`
-  if (over) return 'not posted'
+  if (!live) return 'not posted'
 
   const newest = rounds.reduce((high, one) => Math.max(high, one.round), 0)
   return round.round === newest ? 'being worked on' : 'not posted'
 }
 
 /**
- * Whether this review's pull request is over — merged or closed.
+ * Whether the record says this review's pull request is still in play.
  *
- * **`finished` alone of the three reasons.** It is the only one that is a fact about the
- * *pull request*, so it is the only one true of every round of it. `dismissed` is this
- * review's own, and a newer round of a pull request whose earlier round was dismissed may
- * well be being worked on; `superseded` says a newer round exists, and that round is then
- * the newest one, so the rule above already answers it.
+ * **Positive evidence, which is what "being worked on" needs and the other two wordings do
+ * not.** "Not posted" and a posted day are true whatever became of the pull request; "being
+ * worked on" is a claim about now, and a page has to have been told something to make it.
+ *
+ * `not_for_signing` is the answer because its three reasons are asked in a fixed order
+ * (`Store::not_for_signing`): **dismissed first, then finished, then superseded.** So null
+ * means none of the three, and `superseded` means the first two were asked and refused — a
+ * newer round exists on a pull request that has not merged, closed or been dismissed. Both
+ * say the pull request is live.
+ *
+ * `dismissed` says nothing either way, and that is the correction a review of this branch
+ * found: it is asked *first*, so a dismissed round of a **merged** pull request answers
+ * `dismissed` and never reaches the state check. Reading `reason === 'finished'` alone had
+ * that page promise that the newest unposted round of a merged pull request was in hand —
+ * the exact false promise this function exists to stop. Unknown reads as not in play: the
+ * cost is a dismissed round's page saying "not posted" where "being worked on" would have
+ * been true, which is a fact it loses rather than a promise it breaks.
  */
-function finished(detail: ReviewDetail): boolean {
-  return detail.not_for_signing?.reason === 'finished'
+function inPlay(detail: ReviewDetail): boolean {
+  const reason = detail.not_for_signing?.reason
+  return reason == null || reason === 'superseded'
 }
 
 /** Which round this is of how many, or `null` where there is only the one. */
@@ -268,10 +281,24 @@ export function roundsLabel(detail: ReviewDetail): string | null {
   return `Round ${detail.review.round} of ${rounds.length}`
 }
 
-/** An earlier round's step, and where to read it. */
+/** An earlier round's step, where to read it, and how the page says so. */
 export interface WrittenEarlier {
   round: number
   to: string
+  /**
+   * The page's own heading, which is the answer rather than an absence.
+   *
+   * **The page says this once.** DEV-892's sixth defect was the Solution page saying the
+   * same sentence twice, once as its headline and once as a notice under it — so where this
+   * is the state, the heading carries it and the notice carries only the link.
+   *
+   * It replaces a heading that was false here as well as duplicated: "Nothing has been
+   * written about this problem yet", over a round whose pull request has a brief, is the
+   * very ambiguity DEV-976 was raised to remove. Found by a review of this branch.
+   */
+  headline: string
+  /** The line under it: why this round holds none, without repeating who wrote it. */
+  sub: string
 }
 
 /**
@@ -313,5 +340,14 @@ export function briefWrittenEarlier(
   const wrote = (detail.rounds ?? [])
     .filter(round => round.brief_written && round.round < detail.review.round)
     .sort((one, two) => two.round - one.round)[0]
+  if (wrote == null) return null
 
-  return wrote == null ? null : { round: wrote.round, to: `/reviews/${wrote.review_id}/${page}` }
+  const label = layerLabel(step)
+  return {
+    round: wrote.round,
+    to: `/reviews/${wrote.review_id}/${page}`,
+    headline: `Round ${wrote.round} wrote this pull request’s ${label.toLowerCase()}.`,
+    sub: `No round since has written another, and nothing carries a brief from one round to `
+      + `the next — so round ${detail.review.round} holds no ${label.toLowerCase()} of its own.`,
+  }
+}

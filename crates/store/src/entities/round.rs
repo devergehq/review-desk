@@ -427,6 +427,17 @@ impl Store {
 
         let ids: Vec<i64> = reviews.iter().map(|review| review.id).collect();
 
+        // **Which rounds hold a brief, in one query over all of them.** `find_brief` would
+        // answer the same boolean, and did until a review of DEV-976 measured what it
+        // costs: it materialises the whole brief — the options and a verdict query per
+        // option, both flows, the problems, the support table, the blind pass, the parts,
+        // the open choices and the disagreements — so eleven-odd reads per round, every one
+        // of them deserialised and thrown away, on a query that runs on every
+        // `GET /reviews/{id}`. A four-round pull request paid about forty-five of them for
+        // four booleans, and the current round's brief was read twice over because
+        // `full_review` already had it.
+        let briefs = self.ids_present("briefs", &ids)?;
+
         let commits = self.count_by_review("round_commits", None, &ids)?;
         let replies = self.count_by_review("outcomes", Some("replied"), &ids)?;
         let resolved = self.count_by_review("outcomes", Some("thread_resolved"), &ids)?;
@@ -486,13 +497,31 @@ impl Store {
                 // **Whether this round holds a brief, asked of this round alone.** There
                 // is nothing to fall back to: `briefs` is keyed by `review_id`, so a
                 // round whose session wrote none has none, and that is what a step page
-                // has to be able to say. Beside `find_draft` above because it is the same
-                // question one table over, and the loop already costs a read per round.
-                brief_written: self.find_brief(review.id)?.is_some(),
+                // has to be able to say.
+                brief_written: briefs.contains(&review.id),
             });
         }
 
         Ok(summaries)
+    }
+
+    /// Which of the reviews named have a row in this table, in one query.
+    ///
+    /// For a column that is a `review_id` primary key, where the question is whether the row
+    /// is there rather than what is in it. The id list is formatted into the statement for
+    /// the reason [`Store::count_by_review`] gives below.
+    fn ids_present(&self, table: &str, ids: &[i64]) -> Result<BTreeSet<i64>> {
+        let list = ids
+            .iter()
+            .map(i64::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let mut statement = self.conn.prepare(&format!(
+            "SELECT review_id FROM {table} WHERE review_id IN ({list})"
+        ))?;
+        let rows = statement.query_map([], |row| row.get::<_, i64>(0))?;
+        Ok(rows.collect::<rusqlite::Result<BTreeSet<i64>>>()?)
     }
 
     /// Count rows per review, for the reviews named.

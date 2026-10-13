@@ -186,17 +186,37 @@ describe('the links to the other rounds', () => {
     })
 
     /**
-     * A dismissal is **this review's own** and says nothing about a newer round, so it does
-     * not suppress the wording. `superseded` cannot reach the branch at all: it means a
-     * newer round exists, and that round is then the newest one.
+     * **A superseded round still says it, because `superseded` is positive evidence.** The
+     * three reasons are asked in a fixed order — dismissed, then finished, then superseded —
+     * so reaching the third means the first two were asked and refused: the pull request has
+     * not merged, closed or been dismissed. This is the common case the whole feature is
+     * for, a reader on an earlier round of a live pull request.
      */
-    it('still says so where this round alone was dismissed', () => {
+    it('says so from an earlier round of a pull request still in play', () => {
+      const earlier = detail(41, {
+        review: { ...detail(41).review, id: 701, round: 1 },
+        rounds: THREE,
+        not_for_signing: { reason: 'superseded', by_round: 3 },
+      })
+      expect(roundLinks(earlier, 'understand')[2]!.standing).toBe('being worked on')
+    })
+
+    /**
+     * **And a dismissed round promises nothing, because `dismissed` is asked first.** A
+     * dismissed round of a *merged* pull request answers `dismissed` and never reaches the
+     * state check, so reading `finished` alone had this page say the newest unposted round of
+     * a merged pull request was in hand — the exact false promise the rule exists to stop.
+     * Found by a review of this branch. Unknown reads as not in play: a fact lost rather than
+     * a promise broken.
+     */
+    it('promises nothing from a dismissed round, which may be of a merged one', () => {
       const dismissed = detail(41, {
         review: { ...detail(41).review, id: 701, round: 1 },
         rounds: THREE,
         not_for_signing: { reason: 'dismissed' },
       })
-      expect(roundLinks(dismissed, 'understand')[2]!.standing).toBe('being worked on')
+      expect(roundLinks(dismissed, 'understand').map(one => one.standing))
+        .toEqual(['posted 9 October 2026', 'not posted', 'not posted'])
     })
   })
 
@@ -249,12 +269,15 @@ describe('where a step was written, when it was not written here', () => {
   it('names the earlier round that wrote one, and the same step of it', () => {
     const later = detail(43, { review: { ...detail(43).review, id: 703, round: 3 }, rounds: THREE })
     expect(later.brief, 'review 43 has no brief').toBeNull()
-    expect(briefWrittenEarlier(later, 'understand'))
-      .toEqual({ round: 1, to: '/reviews/701/understand' })
-    expect(briefWrittenEarlier(later, 'alternatives'))
-      .toEqual({ round: 1, to: '/reviews/701/alternatives' })
-    expect(briefWrittenEarlier(later, 'solution_map'))
-      .toEqual({ round: 1, to: '/reviews/701/solution' })
+    expect(briefWrittenEarlier(later, 'understand')).toMatchObject(
+      { round: 1, to: '/reviews/701/understand' },
+    )
+    expect(briefWrittenEarlier(later, 'alternatives')).toMatchObject(
+      { round: 1, to: '/reviews/701/alternatives' },
+    )
+    expect(briefWrittenEarlier(later, 'solution_map')).toMatchObject(
+      { round: 1, to: '/reviews/701/solution' },
+    )
   })
 
   /**
@@ -270,14 +293,33 @@ describe('where a step was written, when it was not written here', () => {
       THREE[2]!,
     ]
     const later = detail(43, { review: { ...detail(43).review, id: 703, round: 3 }, rounds: rewritten })
-    expect(briefWrittenEarlier(later, 'understand'))
-      .toEqual({ round: 2, to: '/reviews/702/understand' })
+    expect(briefWrittenEarlier(later, 'understand')).toMatchObject(
+      { round: 2, to: '/reviews/702/understand' },
+    )
   })
 
   it('says nothing where no earlier round wrote one either', () => {
     const none = THREE.map(one => ({ ...one, brief_written: false }))
     const later = detail(43, { review: { ...detail(43).review, id: 703, round: 3 }, rounds: none })
     expect(briefWrittenEarlier(later, 'understand')).toBeNull()
+  })
+
+  /**
+   * **The page's own heading, which is the answer rather than an absence.** It replaces
+   * "Nothing has been written about this problem yet" — false over a pull request whose
+   * brief is one round back, and exactly the ambiguity DEV-976 was raised to remove. The
+   * notice under it then carries only the link, because DEV-892's sixth defect was a page
+   * saying one sentence twice.
+   */
+  it('words the heading and the line under it for the page to use', () => {
+    const later = detail(43, { review: { ...detail(43).review, id: 703, round: 3 }, rounds: THREE })
+    expect(briefWrittenEarlier(later, 'understand')?.headline)
+      .toBe('Round 1 wrote this pull request’s understand.')
+    expect(briefWrittenEarlier(later, 'solution_map')?.headline)
+      .toBe('Round 1 wrote this pull request’s solution map.')
+    expect(briefWrittenEarlier(later, 'alternatives')?.sub)
+      .toBe('No round since has written another, and nothing carries a brief from one round '
+        + 'to the next — so round 3 holds no alternatives of its own.')
   })
 
   it('says nothing on the first round, which has nothing before it', () => {
