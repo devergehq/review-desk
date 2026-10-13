@@ -1822,9 +1822,12 @@ export function seedReadyDraft(
  * DEV-960 block asserts on how many reviews the queue and the list hold, so a review opened
  * here is one more of them — these are the block's own, as the sign-off block's are.
  *
- * No draft, and that is not an omission: the four pages this is for draw the brief and the
- * findings, and `GET …/draft` refusing is a state the code review page is built to carry.
- * The two reviews the draft page is tested on come from `seedReadyDraft` instead.
+ * **No draft here, and the caller writes its own.** All ten of the DEV-960 tests run against
+ * these two reviews, the draft page's included, and those four need the two bodies to differ
+ * — a draft composed from the same blocks twice is the same string, and "shows that review's
+ * own body" would be an assertion about nothing. So the block puts a one-sentence draft on
+ * each through `draft put` rather than taking one from here. `seedReadyDraft` above is the
+ * sign-off block's and is unchanged.
  */
 export function seedStructuredReview(
   database: string,
