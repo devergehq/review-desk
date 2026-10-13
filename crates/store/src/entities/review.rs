@@ -227,7 +227,7 @@ impl Store {
         // commits to leave unchanged, so the call falls through and opens the first round:
         // a first review has to exist before anything can be said to be unchanged about it.
         if let (DiffAtHead::Unchanged, Some(newest)) = (diff, newest.as_ref()) {
-            let update = self.record_head_update(
+            self.record_head_update(
                 newest.id,
                 HeadUpdateKind::BaseOnly,
                 &newest.head_sha,
@@ -235,7 +235,6 @@ impl Store {
             )?;
             let review = self.get_review(newest.id)?;
             tx.commit()?;
-            debug_assert_eq!(update.kind, HeadUpdateKind::BaseOnly);
             return Ok(OpenedReview {
                 review,
                 created: false,
@@ -249,9 +248,16 @@ impl Store {
         // the write lock, which is what makes two callers arriving on two different commits
         // end with one review rather than two — the second finds the round the first moved
         // and moves it again.
-        if let Some(unposted) =
-            newest.filter(|newest| !self.review_is_posted(newest.id).unwrap_or(false))
-        {
+        // **A failed read is not an answer of "no".** `.unwrap_or(false)` was here, and it
+        // would have moved the head of a round that *had* posted whenever the read behind
+        // this question failed — which is the one case this rule must not get wrong, because
+        // the move cannot be undone and the round it moved was a review that happened. The
+        // question is asked explicitly, and the error is returned.
+        let unposted = match &newest {
+            Some(newest) if !self.review_is_posted(newest.id)? => Some(newest.clone()),
+            _ => None,
+        };
+        if let Some(unposted) = unposted {
             let moved_from = unposted.head_sha.clone();
             // **The line count goes with the commit it was counted on.** It is additions
             // plus deletions of the change as it stood, and `POST /reviews` says in its

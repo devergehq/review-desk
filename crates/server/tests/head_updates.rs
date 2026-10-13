@@ -420,3 +420,40 @@ fn folding_a_round_nobody_has_is_not_found() {
     assert_eq!(answer.status, 404, "{}", answer.text());
     assert_eq!(answer.error_code(), "not_found");
 }
+
+#[test]
+fn the_tidy_can_be_asked_about_one_repository_and_refuses_a_filter_that_is_not_one() {
+    // The filter is the Reviews page's own picker, so it reaches this read the way it
+    // reaches `GET /reviews` — through the one function both of them ask it through.
+    let harness = common::start_with_no_github();
+    let store = &harness.store;
+    for (repo, pr) in [(REPO, 71), ("devergehq/locus", 72)] {
+        for (round, head) in [(1, "4d9464f"), (2, "a41c9e2")] {
+            store
+                .create_review(review_desk_store::NewReview {
+                    repo: repo.to_string(),
+                    pr,
+                    head_sha: head.to_string(),
+                    round,
+                    ..Default::default()
+                })
+                .expect("a round, as the old rule left it");
+        }
+    }
+
+    let all = harness.api("GET", "/duplicate-rounds", None).json();
+    assert_eq!(all["pull_requests_affected"], 2);
+
+    let one = harness
+        .api("GET", "/duplicate-rounds?repo=ACME%2FPortal", None)
+        .json();
+    assert_eq!(
+        one["pull_requests_affected"], 1,
+        "one repository, however it is spelled: {one}"
+    );
+    assert_eq!(one["pull_requests"][0]["repo"], REPO);
+
+    let refused = harness.api("GET", "/duplicate-rounds?repo=portal", None);
+    assert_eq!(refused.status, 400, "{}", refused.text());
+    assert_eq!(refused.error_code(), "invalid_value");
+}

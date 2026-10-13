@@ -100,3 +100,39 @@ describe('the duplicate-round tidy', () => {
     expect(screen.text()).toContain('2 extra rounds')
   })
 })
+
+describe('the tidy over the invented records', () => {
+  it('finds the duplicate rounds sample mode holds, and says what it would do', async () => {
+    /*
+     * **Sample mode and the binary answer the same question**, which is what this asserts:
+     * the fixtures were written under the old rule and hold the shapes this tidy is for —
+     * one pull request with two unposted rounds and one with four — so the proposal has rows
+     * to draw in the development loop and in these tests, where a record written by the
+     * binary cannot have any.
+     */
+    const { sampleBackend } = await import('../app/data/sample')
+    const page = await sampleBackend().listDuplicateRounds(null)
+
+    expect(page.pull_requests_affected).toBeGreaterThan(0)
+    expect(page.extra_rounds).toBe(
+      page.pull_requests.reduce((total, one) => total + one.extras.length, 0),
+    )
+
+    for (const pull of page.pull_requests) {
+      expect(pull.extras.length, `${pull.repo}#${pull.pr} has extras`).toBeGreaterThan(0)
+      for (const extra of pull.extras) {
+        expect(extra.round, 'an extra is never the newest round')
+          .toBeLessThan(pull.newest.round)
+        expect(extra.holds.length, 'and it always says what it holds').toBeGreaterThan(0)
+        expect(['fold', 'dismiss']).toContain(extra.act)
+      }
+    }
+
+    /* A round holding a draft is kept and hidden rather than removed. */
+    const holdingADraft = page.pull_requests
+      .flatMap(pull => pull.extras)
+      .filter(extra => extra.holds !== 'nothing')
+    expect(holdingADraft.length, 'the fixtures hold some').toBeGreaterThan(0)
+    expect(holdingADraft.every(extra => extra.act === 'dismiss')).toBe(true)
+  })
+})

@@ -2120,6 +2120,12 @@ pub struct Draft {
     /// **The draft is `drafting` when these are set.** The developer approved different
     /// code, so the next step is the session's — migration 18 carries the argument, and
     /// the page says why rather than leaving a draft that looks half-signed.
+    ///
+    /// **They survive the session's rewrite, and that is the decision.** Clearing them when
+    /// a new body is written was the alternative, and it loses the sentence exactly when the
+    /// developer comes back to look: the draft in front of them is a fresh one, their
+    /// sign-off is gone, and nothing on the record would say why. So they are cleared by the
+    /// next approval and by nothing else.
     pub signoff_withdrawn_at: Option<Timestamp>,
     pub signoff_withdrawn_head: Option<String>,
     pub lint: DraftLint,

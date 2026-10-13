@@ -14,8 +14,9 @@ use crate::report::Report;
 pub enum ReviewCommand {
     /// Open the review of a head commit, or hand back the one already on the record.
     ///
-    /// A head commit already reviewed returns that review. A new head commit on a pull
-    /// request that has been reviewed before starts the next round. Prints the id.
+    /// A head commit already reviewed returns that review. A new head commit moves the
+    /// newest round's head, or starts the next round when that round has posted — the rule
+    /// is below, under `action`. Prints the id.
     ///
     /// Any fact given is written to the review, and a fact left out is left as it was.
     /// Running this again on a head commit already reviewed hands back the same review
