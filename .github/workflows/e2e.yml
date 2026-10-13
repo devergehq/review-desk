@@ -36,7 +36,7 @@ env:
 jobs:
   e2e:
     name: A review, through the binary, in a browser
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-2
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     timeout-minutes: 20
 

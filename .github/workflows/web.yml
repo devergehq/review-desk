@@ -33,7 +33,7 @@ defaults:
 jobs:
   check:
     name: Lint, types, tests and a static build
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-2
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v7

@@ -1,0 +1,5 @@
+# actionlint knows only GitHub's own runner labels, so without this it reports every
+# `runs-on: ubicloud-standard-2` in .github/workflows as an unknown label. See DEV-961.
+self-hosted-runner:
+  labels:
+    - ubicloud-standard-2

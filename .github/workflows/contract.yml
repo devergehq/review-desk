@@ -28,7 +28,7 @@ concurrency:
 jobs:
   contract:
     name: Lint the OpenAPI document and validate every example
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-2
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     defaults:
       run:

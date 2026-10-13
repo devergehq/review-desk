@@ -81,7 +81,7 @@ jobs:
   # is broken there is no point asking two registries about thirty-five dependencies.
   logic:
     name: The checks' own logic, offline
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-2
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v7
@@ -98,7 +98,7 @@ jobs:
 
   advisories:
     name: Known vulnerabilities, Rust and npm
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-2
     needs: logic
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     steps:
@@ -149,7 +149,7 @@ jobs:
 
   release-age:
     name: No direct dependency over a year old
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-2
     needs: logic
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     steps:
