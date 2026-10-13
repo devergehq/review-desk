@@ -76,6 +76,15 @@ const sendingBack = ref(false)
 const working = ref(false)
 const notice = ref<DeskNotice | null>(null)
 
+/*
+ * Whether the developer is being asked why the rest is going to a ticket. Up here with the
+ * rest of the page's own state rather than beside `ticketRest` below, as `sendingBack` and
+ * `note` are: the watch that clears every one of them when the review changes reads them
+ * all, and reads nothing declared after it.
+ */
+const ticketingRest = ref(false)
+const ticketNote = ref('')
+
 /**
  * The body the editor last loaded, which is what a save compares against.
  *
@@ -109,6 +118,145 @@ watch(
 )
 
 const dirty = computed(() => editing.value !== loadedBody.value)
+
+/* ---------------- Unsaved edits belong to the review they were typed on ---------------- */
+
+/**
+ * Another review on this page is read from its own record, with nothing carried over.
+ *
+ * ## It cannot fire today, and the reason is worth more than the watch
+ *
+ * **This page is not reused when the review in the address changes.** DEV-960 says it is,
+ * and that is true of a bare `<RouterView>` — it is not true of `<NuxtPage />` without a
+ * `pageKey`, which keys a page by its own path with the parameters interpolated. Changing
+ * the review changes the key, so Vue unmounts this component and mounts a fresh one.
+ *
+ * **Measured, not read off the documentation.** Against this file as it stood before the
+ * change: unsaved text typed on one review's draft, a history jump to another review's
+ * draft, and the arriving page had the Edit tab unselected and the text nowhere on it. The
+ * carry-over the issue describes — and with it the save into the wrong draft — does not
+ * happen here. What does happen is that the typing is destroyed without a word, which is
+ * what the guards below are for and the only part of this change that alters behaviour.
+ *
+ * ## So why it is here
+ *
+ * Because it is this page's own statement of what belongs to one review, and the thing that
+ * makes the page correct whichever way `NuxtPage` is keyed. A `pageKey`, or a
+ * `definePageMeta({ key })`, added later for any reason — the obvious one is stopping the
+ * remount flash between two rounds of a pull request — turns every ref below into exactly
+ * the defect the issue describes, and this watch is then the only thing between review 50's
+ * prose and review 51's draft. It costs ten lines and it is already the house pattern:
+ * DEV-958's page carries the same watch.
+ *
+ * As written it fires on an instance that is about to be unmounted — the global route
+ * updates before Vue re-renders with the new key — so it is a no-op rather than dead code.
+ *
+ * **Both halves of the comparison are cleared, which is what would make the next read a
+ * first load**: they are equal, so the watch above seeds the editor from the arriving
+ * review's own body and `dirty` is false.
+ *
+ * `view` goes back to Rendered with the rest. `resource()` keeps the previous answer while
+ * the next read is in flight, so a page that *was* reused would still be drawing review 50
+ * under review 51's address; taking the textarea off screen is what would stop something
+ * typed in that window being saved against the review the page had left.
+ *
+ * `working` is deliberately not here. It is a write in flight rather than a view of a
+ * review, and clearing it would re-enable the controls a running write has disabled.
+ */
+watch(reviewId, () => {
+  editing.value = ''
+  loadedBody.value = ''
+  event.value = 'request_changes'
+  view.value = 'rendered'
+  note.value = ''
+  sendingBack.value = false
+  ticketNote.value = ''
+  ticketingRest.value = false
+  notice.value = null
+})
+
+/**
+ * The navigation waiting on the developer's choice, or null when none is.
+ *
+ * One ref, holding the pending navigation's own resolve. Its being non-null **is** "a
+ * choice is being asked for", so there is no second flag for the card to read that could
+ * fall out of step with the navigation it is about.
+ */
+const leaving = ref<{ decide: (go: boolean) => void } | null>(null)
+
+/**
+ * Ask, in the page, before unsaved edits are left behind — and make the navigation wait.
+ *
+ * **This is the part of DEV-960 that changes what the page does.** The watch above cannot
+ * fire, for the reason it states; what was really wrong is that leaving this page threw the
+ * developer's typing away and said nothing — the component is unmounted either way, and an
+ * unsaved draft is not on the record anywhere.
+ *
+ * **In the page and not in a browser dialog**, which is DEV-960's own wording and is also
+ * the only version that can name the review: `beforeunload` shows the browser's sentence,
+ * not ours. The guard returns a promise, so the navigation is held open until a button is
+ * pressed rather than being cancelled and re-offered.
+ *
+ * **The guards run on the live instance**, before the navigation is confirmed and so before
+ * any key change can take the component down. That is why they work where the watch does
+ * not.
+ *
+ * **Nothing is done for a full reload, deliberately.** The only tool for one is
+ * `beforeunload`, and it is the dialog this is written to avoid. It would also buy nothing:
+ * a reload re-mounts this page with an empty editor and re-seeds it from the record, so no
+ * typed text survives to be applied to a different review. What a reload loses is the edit
+ * itself, which is what a reload has always meant.
+ *
+ * A second navigation while the card is up resolves the first as a refusal. The router has
+ * already abandoned it, and a promise nobody resolves is a navigation that never settles.
+ */
+function askBeforeLeaving(): boolean | Promise<boolean> {
+  if (!dirty.value) return true
+  leaving.value?.decide(false)
+  return new Promise<boolean>((decide) => {
+    leaving.value = { decide }
+  })
+}
+
+/*
+ * **Both guards, because the two ways out are different route changes.** Another review's
+ * draft is an *update* — the same page record with a new parameter, which is the route the
+ * issue was raised about — and any other page is a *leave*. Neither fires for the other.
+ */
+onBeforeRouteUpdate(() => askBeforeLeaving())
+onBeforeRouteLeave(() => askBeforeLeaving())
+
+const keep = useTemplateRef<HTMLButtonElement>('keep')
+
+/*
+ * **Focused when it appears**, and on Keep editing rather than on Discard. The card is
+ * drawn at the top of a page that is often scrolled past it, so without this the developer
+ * presses a link, nothing appears to happen, and the answer is above the fold. The safe
+ * choice takes the focus because Enter is the key a keyboard reaches for first.
+ */
+watch(leaving, async (waiting) => {
+  if (!waiting) return
+  await nextTick()
+  keep.value?.scrollIntoView({ block: 'center' })
+  keep.value?.focus()
+})
+
+function keepEditing() {
+  const waiting = leaving.value
+  leaving.value = null
+  waiting?.decide(false)
+}
+
+/*
+ * Discard lets the navigation through and clears nothing itself: arriving at another review
+ * runs the watch above, and leaving this page altogether takes the component with it. A
+ * third copy of the same clearing here would be a third place for it to be got wrong.
+ */
+function discardEdits() {
+  const waiting = leaving.value
+  leaving.value = null
+  waiting?.decide(true)
+}
 
 /**
  * The aside's two derived lists, computed rather than called from the template.
@@ -211,6 +359,15 @@ function said(result: WriteResult): boolean {
 async function save() {
   const data = detail.data.value
   if (!data) return
+  /*
+   * **A save names the review it read, and this says so.** `resource()` keeps the previous
+   * answer while the next read is in flight, so a page that was reused across a review
+   * change would still be drawing review 50 under review 51's address — and a save reads
+   * the review from the draft it is drawing. It is not reused today, so this cannot fire;
+   * it is one line, and the one thing this page must never do is write a body against a
+   * review the developer is not on.
+   */
+  if (data.draft.review_id !== reviewId.value) return
   working.value = true
   const result = await desk.saveDraft(data.draft.review_id, loadedBody.value, editing.value)
   working.value = false
@@ -306,10 +463,6 @@ async function fileTicket() {
   said(await desk.requestNitTicket(data.draft.review_id))
   working.value = false
 }
-
-/** Whether the developer is being asked why the rest is going to a ticket. */
-const ticketingRest = ref(false)
-const ticketNote = ref('')
 
 /**
  * "Ticket what is left, and sign off" — one act, and a sign-off.
@@ -435,6 +588,48 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
         :headline="heading"
         :sub="detail.data.value ? statusLine(detail.data.value) : null"
       >
+        <!--
+          **Unsaved edits belong to the review they were typed on**, and the navigation
+          that would leave them behind is waiting on this card.
+
+          **Above the draft's own `DeskState` on purpose.** A card drawn inside it would not
+          be there when `GET …/draft` refuses or is in flight, and a guard that blocks on a
+          control the page is not drawing is a page with no way off it. The review's
+          `DeskState` outside is not the same hazard: it keeps the last good answer and draws
+          a failure *over* it, so the frame is still here — and a review that never read at
+          all has no draft to have edited.
+
+          The review is named by its pull request, as every other sentence on these screens
+          names one, so that the choice is about a review and not about "this page".
+        -->
+        <DeskCard
+          v-if="leaving"
+          class="unsaved"
+          @keyup.escape="keepEditing"
+        >
+          <DeskNotice tone="problem">
+            You have unsaved edits to this review’s draft, #{{ owner.review.pr }}. They
+            cannot be carried to another review: keep editing them here, or discard them.
+          </DeskNotice>
+          <div class="unsaved-actions">
+            <button
+              ref="keep"
+              type="button"
+              class="rd-btn rd-btn--primary"
+              @click="keepEditing"
+            >
+              Keep editing
+            </button>
+            <button
+              type="button"
+              class="rd-btn"
+              @click="discardEdits"
+            >
+              Discard the edits
+            </button>
+          </div>
+        </DeskCard>
+
         <!--
           No draft, said inside the frame. This is the whole reason step 6 can be a link
           unconditionally: the trail is above this sentence, so a reader who came here from
@@ -986,6 +1181,17 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
 .status--decided {
   color: var(--rd-accent-dark);
   font-weight: 500;
+}
+
+.unsaved {
+  max-width: var(--rd-measure);
+}
+
+.unsaved-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 0;
 }
 
 .sent-back {
