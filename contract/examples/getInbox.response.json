@@ -13,6 +13,7 @@
       },
       "ticket_id": "ABC-231",
       "ticket_url": "https://linear.app/acme/issue/ABC-231",
+      "round": 1,
       "brief_ready_at": "2026-10-08T10:54:00Z",
       "blocks_later_layers": true
     }

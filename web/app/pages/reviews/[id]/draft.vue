@@ -672,6 +672,20 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                     </p>
                   </DeskCard>
 
+                  <!--
+                    **Gated like the sign-off panel, because it is the fourth of the same
+                    four acts.** "File as one ticket for an agent" is `POST …/nit-ticket`,
+                    which `request_nit_ticket` refuses on a review that has left the desk
+                    for the reason the other three are refused: it asks an agent to file a
+                    ticket, and no agent is coming. The contract names it in
+                    `NotForSigning`'s own description. It lives in its own card, which is
+                    how it was missed when the panel below was gated — found by a review of
+                    the commit that gated the panel.
+
+                    **The rows stay; only the button goes.** What the review held back is
+                    part of the record, and a reader of a finished review still wants to see
+                    it. What they cannot do is ask for a ticket.
+                  -->
                   <DeskCard
                     v-if="data.held_back.length"
                     class="panel"
@@ -684,7 +698,15 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                       or the contract changed to allow it.
                     -->
                     <HeldBackRows :rows="heldRows" />
+                    <p
+                      v-if="notForSigning(data)"
+                      class="rd-meta foot"
+                    >
+                      These stay on the record. There is no ticket to ask for: nothing will
+                      act on this review.
+                    </p>
                     <button
+                      v-else
                       type="button"
                       class="rd-btn"
                       :disabled="data.nit_ticket.status !== 'none' || working"

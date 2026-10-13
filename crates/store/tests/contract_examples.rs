@@ -1904,6 +1904,9 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
                 "pull_request": pull_request(review),
                 "ticket_id": review.ticket_id,
                 "ticket_url": review.ticket_url,
+                // Which round this brief belongs to; every item that makes a queue row
+                // carries one.
+                "round": review.round,
                 "brief_ready_at": brief.updated_at,
                 "blocks_later_layers": layer
                     == Some(review_desk_store::ReviewLayerState::WaitingOnYou),

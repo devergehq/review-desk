@@ -288,7 +288,7 @@ function draftById(id: number): DraftDetail | undefined {
  * The ticket and its address, for an inbox item that makes a queue row.
  *
  * **On every array that is about a review**, which is what the contract requires and what
- * the queue needs: it draws one row per review, so a review reaches its row through
+ * the queue needs: it draws one row per pull request, so a review reaches its row through
  * `briefs_to_confirm`, `drafts_to_approve` or `author_replies` depending on what it is
  * waiting for — and a pair served on only one of those means a review whose brief is
  * confirmed and whose draft is waiting has a ticket on the record and no way to reach it.
@@ -445,6 +445,12 @@ function inbox(): Inbox {
       review_id: detail.review.id,
       pull_request: prOf(detail),
       ...ticketOf(detail),
+      /*
+       * Which round this brief belongs to. Every item that makes a queue row carries one
+       * since DEV-957: the row is one pull request, assembled from items that may be about
+       * different rounds.
+       */
+      round: detail.review.round,
       brief_ready_at: detail.brief!.updated_at,
       /* The session held at layer 2 only if nothing after it has run. */
       blocks_later_layers: detail.layers

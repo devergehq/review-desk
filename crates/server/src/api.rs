@@ -187,11 +187,18 @@ impl Api {
                 Ok(json!({
                     "review_id": review.id,
                     "pull_request": wire::inbox_pr(review),
+                    // Which round this brief belongs to. Every item that makes a queue row
+                    // carries one since DEV-957: the row is one pull request, assembled from
+                    // items that may be about different rounds, and one with no round cannot
+                    // be told from one about the row's own.
+                    "round": review.round,
                     // The ticket and its address, so the queue's row can link the ticket
                     // without the review being opened first. On all three arrays that make
                     // a row — this one, `drafts_to_approve` and `author_replies` — because
-                    // the queue draws one row per review and reads the ticket from
-                    // whichever of the three put it there. See `Inbox`'s own description.
+                    // the queue draws **one row per pull request** and reads the ticket
+                    // from the newest round that offered one. (Both halves of that sentence
+                    // changed in DEV-957: the key was the review, and the ticket came from
+                    // whichever array touched the row last.) See `Inbox`'s own description.
                     "ticket_id": review.ticket_id,
                     "ticket_url": review.ticket_url,
                     "brief_ready_at": wire::rfc3339_or_null(ready_at),
@@ -223,6 +230,11 @@ impl Api {
                 Ok(json!({
                     "review_id": review.id,
                     "pull_request": wire::inbox_pr(review),
+                    // Which round this brief belongs to. Every item that makes a queue row
+                    // carries one since DEV-957: the row is one pull request, assembled from
+                    // items that may be about different rounds, and one with no round cannot
+                    // be told from one about the row's own.
+                    "round": review.round,
                     // The same pair the brief item carries, and for the same reason: a
                     // review whose brief is confirmed and whose draft is waiting reaches
                     // the queue through this array and no other.

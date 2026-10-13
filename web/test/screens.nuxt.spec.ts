@@ -316,6 +316,63 @@ describe('the queue', () => {
     ).toHaveLength(1)
   })
 
+  it('takes the row’s ticket from the newest round that offered one', async () => {
+    /*
+     * **The guard's own blind spot, found by a review of the commit that added it.** It
+     * asked whether the *row's* round differed, and `row.round` is set only by
+     * `drafts_to_approve` — so a row made by a brief has none, the guard never fired, and an
+     * older round's reply decided the ticket. The question is which round the ticket came
+     * from.
+     *
+     * The shape: #9585's round 2 has an unconfirmed brief (so it is in `briefs_to_confirm`,
+     * which carries no round) and round 1 is posted with the author's reply on it. The two
+     * rounds are given different tickets here, which is what makes the fault visible — on
+     * the real record they are usually the same, which is why it was invisible.
+     */
+    const source = loadSource()
+    await resetDesk({
+      reviews: source.reviews.map((detail) => {
+        if (detail.review.id === 62) {
+          /* Round 1: posted, replied to, and carrying the *old* ticket. */
+          return { ...detail, review: {
+            ...detail.review,
+            ticket_id: 'DEV-OLD',
+            ticket_url: 'https://linear.app/deverge/issue/DEV-OLD',
+          } }
+        }
+        if (detail.review.id === 63) {
+          /* Round 2: the row's own round, with a brief waiting and the current ticket. */
+          return {
+            ...detail,
+            review: { ...detail.review, ticket_id: 'DEV-NEW' },
+            brief: {
+              review_id: 63,
+              problem: 'A guest session survives the redirect to the staff page.',
+              diagram: null,
+              options: [],
+              approach_verdict: null,
+              provenance: 'from the ticket and the code',
+              confirmed: false,
+              confirmed_at: null,
+              confirmation_required: true,
+              confirmation_not_required_because: null,
+              updated_at: '2026-10-12T16:10:00Z',
+            },
+          }
+        }
+        return detail
+      }) as typeof source.reviews,
+      /* No draft on round 2, so the row's own round is unknown — the case that failed. */
+      drafts: source.drafts.filter(one => one.draft.review_id !== 63),
+    })
+
+    const page = await shown(Inbox)
+    const row = needsYouRows(page).find(one => one.text().includes('#9585'))
+    expect(row, 'one row for #9585').toBeDefined()
+    expect(row!.text(), 'the newer round’s ticket').toContain('DEV-NEW')
+    expect(row!.text(), 'and not the posted round’s').not.toContain('DEV-OLD')
+  })
+
   it('draws no row for any round of a merged pull request', async () => {
     /*
      * **The four rounds of `tc/portal#9568`**, one posted and three not, on a pull request

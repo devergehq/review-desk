@@ -3918,11 +3918,25 @@ components:
       type: object
       additionalProperties: false
       required:
-        [review_id, pull_request, blocks_later_layers, ticket_id, ticket_url]
+        [review_id, pull_request, round, blocks_later_layers, ticket_id, ticket_url]
       description: A brief waiting to be confirmed. Layer 2.
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }
+        round:
+          type: integer
+          format: int64
+          minimum: 1
+          description: |
+            Which round of the pull request this brief belongs to.
+
+            **Every item that makes a queue row now carries one**, and that is the point of
+            adding it here. The queue draws one row per pull request, so a row is assembled
+            from items that may be about different rounds — and an item with no round of its
+            own cannot be told apart from one about the row's own. Without it the row's
+            ticket was decided by whichever item arrived last whenever the row had no draft
+            to take a round from. `drafts_to_approve` has carried one since DEV-876,
+            `author_replies` gained one in DEV-957, and this closes the set.
         ticket_id:
           allOf:
             - $ref: '#/components/schemas/ForeignId'

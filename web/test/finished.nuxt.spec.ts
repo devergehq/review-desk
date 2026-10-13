@@ -4,6 +4,7 @@ import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { flushPromises, type VueWrapper } from '@vue/test-utils'
 
 import { resetDesk, useReviewDesk } from '../app/composables/useReviewDesk'
+import { loadSource } from '../app/data/sample'
 
 import Draft from '../app/pages/reviews/[id]/draft.vue'
 import Reviews from '../app/pages/reviews/index.vue'
@@ -198,6 +199,41 @@ describe('the draft page of a review that cannot be posted', () => {
     const page = await draftOf(MERGED.unposted[0]!)
     expect(page.text()).toContain('was waiting on you')
     expect(page.text()).not.toContain('Draftwaiting on you')
+  })
+
+  it('offers no ticket for the findings it held back either', async () => {
+    /*
+     * **The fourth of the four acts, in a card of its own.** "File as one ticket for an
+     * agent" is `POST …/nit-ticket`, which `request_nit_ticket` refuses on a review off the
+     * desk for the reason the other three are refused: it asks an agent to file a ticket,
+     * and no agent is coming. Its card is separate from the sign-off panel, which is how it
+     * survived the commit that gated the panel — found by a review of that commit.
+     *
+     * The rows stay: what the review held back is part of the record, and a reader of a
+     * finished review still wants to see it.
+     */
+    const source = loadSource()
+    await resetDesk({
+      drafts: source.drafts.map(detail =>
+        detail.draft.review_id === MERGED.unposted[0]
+          ? {
+              ...detail,
+              held_back: [{
+                finding_seq: 1,
+                finding_key: 'F1',
+                claim: 'The key is read from the job rather than from the delivery',
+                severity: 'nit' as const,
+                reason: 'a nit; it goes in the ticket',
+              }],
+            }
+          : detail) as typeof source.drafts,
+    })
+
+    const page = await draftOf(MERGED.unposted[0]!)
+    expect(page.text(), 'the rows are still drawn').toContain('F1')
+    expect(page.findAll('button').map(one => one.text()))
+      .not.toContain('File as one ticket for an agent')
+    expect(page.text()).toContain('There is no ticket to ask for')
   })
 
   it('offers no sign-off, and no way to send it back either', async () => {

@@ -103,7 +103,15 @@ interface Waiting {
   repo: string
   pr: number
   title: string
-  round: number | null
+  /**
+   * Which round this row is about: the newest round of the pull request in the answer.
+   *
+   * **Never null since every item that makes a row carries a round.** It was nullable while
+   * only `drafts_to_approve` had one, and that nullability is what let an older round's
+   * reply decide the row's ticket — the guard against it could not fire on a row whose own
+   * round was unknown.
+   */
+  round: number
   ticket: string | null
   /**
    * Where that ticket is, when the record holds an address for it.
@@ -146,7 +154,7 @@ interface Waiting {
 }
 
 /**
- * Every review that is waiting on the developer, merged into one row each.
+ * Every pull request that is waiting on the developer, merged into one row each.
  *
  * Called through `waiting` below rather than directly, because every reader of it wants
  * the same answer about the same inbox.
@@ -174,19 +182,14 @@ function needingYou(data: Inbox): Waiting[] {
    */
   const slot = (
     id: number,
-    round: number | null,
+    round: number,
     pull: { repo: string, pr: number, title?: string | null },
   ): Waiting => {
     const key = keyOf(pull)
     const held = byPullRequest.get(key)
     if (held) {
-      /*
-       * A round at least as new as the one the row is already about. `??` rather than a
-       * comparison with null: an item that carries no round — the brief and the reply
-       * items do not — cannot claim to be newer, and must not overwrite a round that is
-       * known.
-       */
-      if (round != null && round > (held.round ?? 0)) {
+      /* A round newer than the one the row is already about takes it over. */
+      if (round > held.round) {
         held.review_id = id
         held.round = round
         held.title = pull.title ?? held.title
@@ -230,31 +233,45 @@ function needingYou(data: Inbox): Waiting[] {
    */
   const ticket = (
     row: Waiting,
-    round: number | null,
+    round: number,
     item: { ticket_id?: string | null, ticket_url?: string | null },
   ) => {
-    /* An item with no round of its own cannot claim to be about a different one. */
-    if (round != null && row.round != null && round !== row.round) return
+    /*
+     * **Only from an item about the round this row *is*.** The row is one pull request and
+     * two of its rounds can both be in the answer, so without this the last loop to touch
+     * the row decided its ticket whatever round it was about: `#9585`'s row is round 2's
+     * and took round 1's ticket. The two rounds of a pull request usually carry the same
+     * one, which is why it was invisible.
+     *
+     * **This asks a round of every item, and a round was added to two schemas to make that
+     * possible.** The first version compared against `row.round`, which is set only from a
+     * draft — so a row made by a brief had none, the comparison was skipped, and an older
+     * round's reply went straight through. Found by a review of the commit that added the
+     * guard; `briefs_to_confirm` and `author_replies` now carry a round, which closes the
+     * set and leaves nothing to special-case.
+     */
+    if (round !== row.round) return
     row.ticket = item.ticket_id ?? null
     row.ticketUrl = ticketUrl(item.ticket_url)
   }
 
   /*
-   * **The draft first, because it is the only one of the three that carries a round.** The
-   * slot takes the newest round it is shown, and a row reached by the brief or the reply
-   * first would have `round: null` until something told it — which is what `about()` draws
-   * as a row with no round at all. Nothing else depends on the order.
+   * **Every one of the three carries its round, so the order of these loops decides
+   * nothing.** It used to: the draft was the only item with a round, so it had to go first
+   * or the row had none to take — and the ticket, which is chosen by round, was then
+   * decided by whichever loop ran last. Two schemas gained a `round` to close that.
+   *
+   * The slot still takes the newest round it is shown, so the row's identity is the newest
+   * round whichever loop reaches it first.
    */
   for (const item of data.drafts_to_approve) {
     const row = slot(item.review_id, item.round, item.pull_request)
     row.draft = item
     row.is_delta = item.is_delta
-    ticket(row, item.round, item)
   }
   for (const item of data.briefs_to_confirm) {
-    const row = slot(item.review_id, null, item.pull_request)
+    const row = slot(item.review_id, item.round, item.pull_request)
     row.brief = item
-    ticket(row, null, item)
   }
   /*
    * **The newest round's reply wins, and the plain assignment this replaced did not.**
@@ -267,11 +284,25 @@ function needingYou(data: Inbox): Waiting[] {
    * oldest-first list. Nothing said the newer one had been dropped.
    */
   for (const item of data.author_replies) {
-    const row = slot(item.review_id, null, item.pull_request)
-    if (row.reply == null || item.round > row.reply.round) {
-      row.reply = item
-      ticket(row, item.round, item)
-    }
+    /*
+     * **Slotted with its own round like the other two.** A reply is always on a round that
+     * *posted*, which can be older than the row's — so this can take the row's identity only
+     * when no newer round is in the answer at all, which is a pull request whose only item
+     * is the reply.
+     */
+    const row = slot(item.review_id, item.round, item.pull_request)
+    if (row.reply == null || item.round > row.reply.round) row.reply = item
+  }
+
+  /*
+   * **The ticket last, once every row's identity has settled.** It is chosen by round, and
+   * the row's round is only final after all three loops — so choosing it inside them made
+   * the answer depend on the order they ran in, which is the fault a review of the previous
+   * commit found. Each row takes the ticket from whichever item is about the round it is.
+   */
+  for (const item of [...data.drafts_to_approve, ...data.briefs_to_confirm, ...data.author_replies]) {
+    const row = byPullRequest.get(keyOf(item.pull_request))
+    if (row) ticket(row, item.round, item)
   }
   /*
    * **Joined, never slotted.** Neither of these makes a row: a posted review and a review
@@ -305,13 +336,11 @@ function needingYou(data: Inbox): Waiting[] {
    */
   for (const row of byPullRequest.values()) {
     /*
-     * **Only when this row's own round is known.** A row reached by a brief and a reply and
-     * nothing else has no round — neither item carries one — and `about()` draws no round
-     * for it, so "replied to round 1" would name a round beside a row that names none.
+     * **Which round the reply was on, when it is not the one this row is numbered for.**
+     * Every item carries a round now, so every row has one — the guard against an unknown
+     * round that used to be here is gone with the schemas that made it necessary.
      */
-    if (row.reply && row.round != null && row.reply.round !== row.round) {
-      row.replyRound = row.reply.round
-    }
+    if (row.reply && row.reply.round !== row.round) row.replyRound = row.reply.round
   }
 
   return [...byPullRequest.values()]
@@ -487,8 +516,7 @@ function alsoAbout(item: { pull_request: { repo: string } }): string {
  * ABC-231". DEV-957.
  */
 function about(row: Waiting): string {
-  const parts = [row.repo]
-  if (row.round != null) parts.push(`round ${row.round}`)
+  const parts = [row.repo, `round ${row.round}`]
   if (row.is_delta) parts.push('changes since your last review')
   return parts.join(' · ')
 }
@@ -979,7 +1007,7 @@ function handledLine(data: Inbox): string {
           Nothing is waiting on you. Anything a session produces turns up here.
         </p>
 
-        <!-- Needs you: the three waiting groups, merged into one row per review. -->
+        <!-- Needs you: the three waiting groups, merged into one row per pull request. -->
         <DeskSection
           v-if="rows.needsYou.length"
           heading="Needs you"
