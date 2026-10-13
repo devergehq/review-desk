@@ -50,12 +50,6 @@ pull request is a draft — DEV-961: at about 13 billed minutes a push, 146 push
 and 12 October 2026 came to roughly 1,900 minutes, most of a 3,000-minute month, spent on
 drafts nobody was ready to read.
 
-**Those checks run on Ubicloud's runners, not GitHub's.** Every job is
-`runs-on: ubicloud-standard-2` — x64, Ubuntu 24.04, 2 vCPU, 8 GB — served by the Ubicloud
-Managed Runners app the organisation installed on 13 October 2026 and scoped to this
-repository alone. The minutes are Ubicloud's rather than GitHub's: 1,250 free a month, then
-about $0.0012 a minute. Switching back is the label alone.
-
 Two consequences worth knowing, because neither is obvious from the rule.
 
 **A green pull request is not a statement about `master`.** A `pull_request` run tests the
