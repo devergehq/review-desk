@@ -27,6 +27,25 @@ pub fn db_path(dir: &TempDir) -> PathBuf {
     dir.path().join("review-desk.db")
 }
 
+/// Record a round as posted: the one thing that makes the next commit a round of its own.
+///
+/// **Since DEV-962 a new commit on an unposted round moves that round's head**, so a test
+/// that needs two rounds has to post the first — which is what a real pull request does
+/// between them. Recorded the way a session records it, with the id of the review it posted;
+/// Review Desk posts nothing itself, and `review link --github-review` is the one way the
+/// command line says a review was posted at all.
+pub fn posted(store: &Store, review_id: i64) {
+    store
+        .set_review_links(
+            review_id,
+            review_desk_store::ReviewLinks {
+                github_review_id: Some(format!("gh-review-{review_id}")),
+                ..Default::default()
+            },
+        )
+        .expect("record the round as posted");
+}
+
 /// A review to create, with everything but the identity left out.
 pub fn new_review(repo: &str, pr: i64, head: &str, round: i64) -> review_desk_store::NewReview {
     review_desk_store::NewReview {

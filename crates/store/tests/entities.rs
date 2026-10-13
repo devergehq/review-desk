@@ -4,9 +4,9 @@ mod common;
 
 use common::{db_path, new_review, temp_store};
 use review_desk_store::{
-    Actor, BriefOption, Clock, Disposition, FindingRef, NewBrief, NewFinding, NewOutcome,
-    NewReview, NewRule, NitTicketStatus, OptionProposer, OutcomeKind, Review, ReviewFacts,
-    RuleScope, RuleStage, Severity, Store, StoreError,
+    Actor, BriefOption, Clock, DiffAtHead, Disposition, FindingRef, NewBrief, NewFinding,
+    NewOutcome, NewReview, NewRule, NitTicketStatus, OptionProposer, OutcomeKind, Review,
+    ReviewFacts, RuleScope, RuleStage, Severity, Store, StoreError,
 };
 use tempfile::TempDir;
 
@@ -761,6 +761,7 @@ fn a_ticket_address_with_no_id_is_refused_because_nothing_would_draw_it() {
                 ticket_url: Some("https://linear.app/acme/issue/ABC-777".to_string()),
                 ..Default::default()
             },
+            DiffAtHead::Unsaid,
         )
         .expect("the address, against an id held under the canonical spelling");
     assert_eq!(same.review.id, review.id, "and it is the same review");
@@ -890,7 +891,13 @@ fn a_call_whose_only_fact_is_blank_does_not_mark_the_review_active() {
         assert_ne!(Some(moved), before, "the clock really did move");
 
         let opened = store
-            .open_review_with("devergehq/review-desk", 12, "deadbeef", &blank)
+            .open_review_with(
+                "devergehq/review-desk",
+                12,
+                "deadbeef",
+                &blank,
+                DiffAtHead::Unsaid,
+            )
             .expect("reopen with nothing to write");
         assert_eq!(
             opened.review.last_activity_at, before,
@@ -943,6 +950,7 @@ fn a_call_whose_only_fact_is_blank_does_not_mark_the_review_active() {
                 ticket_id: Some("ABC-231".to_string()),
                 ..Default::default()
             },
+            DiffAtHead::Unsaid,
         )
         .expect("reopen with a fact to write");
     assert_eq!(set.review.last_activity_at, Some(wrote));
@@ -1025,7 +1033,7 @@ fn opening_a_review_records_what_the_caller_knows_about_it() {
     };
 
     let opened = store
-        .open_review_with("acme/portal", 412, "3f9c2ab", &facts)
+        .open_review_with("acme/portal", 412, "3f9c2ab", &facts, DiffAtHead::Unsaid)
         .expect("open with facts");
     assert!(opened.created);
     assert_eq!(
@@ -1044,6 +1052,7 @@ fn opening_a_review_records_what_the_caller_knows_about_it() {
                 not_checked: Some("production delivery volumes".to_string()),
                 ..Default::default()
             },
+            DiffAtHead::Unsaid,
         )
         .unwrap();
 

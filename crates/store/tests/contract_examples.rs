@@ -31,8 +31,8 @@ use review_desk_store::{
     finding_heading, now, Actor, BlindPassState, Brief, BriefBlindPass, BriefDisagreement,
     BriefFlowBox, BriefFlowRow, BriefOpenChoice, BriefOption, BriefOptionVerdict, BriefPart,
     BriefPartFile, BriefProblem, BriefSupportTable, CriterionStatus, Decision,
-    DescriptionLintStatus, Disposition, Draft, DraftLint, DraftSection, FileCheck, Finding,
-    FindingDecision, FindingHunk, FindingRef, HunkLine, HunkLineMarker, LeftTheDesk,
+    DescriptionLintStatus, DiffAtHead, Disposition, Draft, DraftLint, DraftSection, FileCheck,
+    Finding, FindingDecision, FindingHunk, FindingRef, HunkLine, HunkLineMarker, LeftTheDesk,
     NewAcceptanceCriterion, NewBrief, NewDescriptionLintResult, NewDraft, NewFileChange,
     NewFinding, NewOutcome, NewReview, NewReviewSource, NewRule, NitTicket, NotForSigning,
     OptionProposer, Outcome, OutcomeKind, ProblemStatement, ProblemVerdict, Review, ReviewEvent,
@@ -217,6 +217,7 @@ fn seed(store: &Store) -> Seeded {
                     "The queue worker's behaviour under a deploy restart was not run.".to_string(),
                 ),
             },
+            DiffAtHead::Unsaid,
         )
         .expect("a review")
         .review;
@@ -1429,6 +1430,7 @@ fn review_list(store: &Store) -> Value {
                     "left_the_desk": at.left_the_desk.map(|left| match left {
                         LeftTheDesk::Dismissed => "dismissed",
                         LeftTheDesk::Finished => "finished",
+                        LeftTheDesk::OutOfPlay => "out_of_play",
                         LeftTheDesk::Superseded => "superseded",
                     }),
                     "finished_how": at.finished_how.map(|state| state.as_str()),

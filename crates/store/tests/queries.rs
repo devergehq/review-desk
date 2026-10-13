@@ -7,8 +7,8 @@ mod common;
 
 use common::{new_review, temp_store};
 use review_desk_store::{
-    Actor, Disposition, FindingRef, NewBrief, NewFinding, NewOutcome, NewRule, OutcomeKind,
-    ReviewLinks, RuleScope, RuleStage, Severity, Store,
+    Actor, Disposition, FindingRef, NewBrief, NewFinding, NewOutcome, NewRule, OpenedAction,
+    OutcomeKind, ReviewLinks, RuleScope, RuleStage, Severity, Store,
 };
 
 const REPO: &str = "devergehq/review-desk";
@@ -410,12 +410,12 @@ fn opening_a_head_commit_already_reviewed_returns_it_rather_than_starting_a_roun
 }
 
 #[test]
-fn opening_a_new_head_commit_on_a_started_round_starts_the_next_round() {
-    // **The round has to have been started, and that is the whole of what changed in
-    // DEV-945.** A new commit on a round somebody reviewed is the next round, which is
-    // what rounds are for; a new commit on a round nobody has started moves that round,
-    // which is the test below. One finding is enough to make it started — `ReviewWork`
-    // asks for a brief, a finding or a draft.
+fn opening_a_new_head_commit_on_a_posted_round_starts_the_next_round() {
+    // **The round has to have *posted*, and that is the whole of what changed in
+    // DEV-962.** A new commit after a post is the next round, which is what rounds are
+    // for; a new commit before one moves the round, which is the test below. Posted is
+    // recorded the way a session records it, with the id of the review it posted — Review
+    // Desk posts nothing itself.
     let (_dir, store) = temp_store();
 
     let round_one = store
@@ -423,7 +423,16 @@ fn opening_a_new_head_commit_on_a_started_round_starts_the_next_round() {
         .expect("round one");
     store
         .add_finding(round_one.review.id, a_finding("reviewed", Severity::Nit))
-        .expect("a finding, so round one has been started");
+        .expect("a finding");
+    store
+        .set_review_links(
+            round_one.review.id,
+            ReviewLinks {
+                github_review_id: Some("gh-review-1".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("round one posted");
 
     let round_two = store
         .open_review("devergehq/review-desk", 21, "bbb222")
@@ -432,8 +441,42 @@ fn opening_a_new_head_commit_on_a_started_round_starts_the_next_round() {
     assert_eq!(round_one.review.round, 1);
     assert_eq!(round_two.review.round, 2);
     assert!(round_two.created);
+    assert_eq!(round_two.action, OpenedAction::Created);
     assert_eq!(round_two.head_moved_from, None);
     assert_ne!(round_one.review.id, round_two.review.id);
+}
+
+#[test]
+fn opening_a_new_head_commit_on_a_started_round_moves_its_head() {
+    // **The reversal DEV-962 asks for.** Until it, a finding was enough to make the next
+    // commit a round of its own: Patrick's queue then held one pull request twice, round 1
+    // and round 2 both offering "changes since your last review", over a round 1 he had
+    // never posted. A session at work on the round re-reads the delta; the record keeps the
+    // move, which `head_updates` is for.
+    let (_dir, store) = temp_store();
+
+    let round_one = store
+        .open_review("devergehq/review-desk", 22, "aaa111")
+        .expect("round one");
+    store
+        .add_finding(round_one.review.id, a_finding("reviewed", Severity::Nit))
+        .expect("a finding, so somebody has begun");
+
+    let pushed = store
+        .open_review("devergehq/review-desk", 22, "bbb222")
+        .expect("a push");
+
+    assert_eq!(pushed.review.id, round_one.review.id, "the same review");
+    assert_eq!(pushed.review.round, 1, "no round was spent");
+    assert_eq!(pushed.review.head_sha, "bbb222");
+    assert!(!pushed.created);
+    assert_eq!(pushed.action, OpenedAction::HeadMoved);
+    assert_eq!(pushed.head_moved_from.as_deref(), Some("aaa111"));
+    assert_eq!(
+        store.latest_round("devergehq/review-desk", 22).unwrap(),
+        Some(1),
+        "one unposted round, whoever is working on it"
+    );
 }
 
 #[test]
@@ -508,14 +551,23 @@ fn the_commit_a_request_moved_to_is_the_commit_it_is_found_by() {
 
 #[test]
 fn only_the_newest_round_moves() {
-    // Round 1 was reviewed, round 2 is the request nobody has started. A third commit
-    // moves round 2 and leaves round 1 exactly where it is.
+    // Round 1 posted, round 2 has not. A third commit moves round 2 and leaves round 1
+    // exactly where it is.
     let (_dir, store) = temp_store();
 
     let round_one = store.open_review(REPO, 780, "aaa111").expect("round one");
     store
         .add_finding(round_one.review.id, a_finding("reviewed", Severity::Nit))
         .expect("round one was reviewed");
+    store
+        .set_review_links(
+            round_one.review.id,
+            ReviewLinks {
+                github_review_id: Some("gh-review-1".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("round one posted, so the next commit is a round");
     let round_two = store.open_review(REPO, 780, "bbb222").expect("round two");
 
     let moved = store
@@ -527,7 +579,7 @@ fn only_the_newest_round_moves() {
     assert_eq!(
         store.find_review(REPO, 780, 1).unwrap().unwrap().head_sha,
         "aaa111",
-        "the round that was reviewed did not move"
+        "the round that posted did not move"
     );
 }
 
@@ -554,11 +606,14 @@ fn a_review_with_a_brief_has_been_started() {
     let work = store.review_work(review.review.id).unwrap();
     assert!(work.started());
     assert_eq!(work.in_words(), "a brief");
-    assert_eq!(
-        store.open_review(REPO, 781, "bbb222").unwrap().review.round,
-        2,
-        "a brief alone is enough to make a new commit the next round"
-    );
+
+    // **And that is now a question about a delete and nothing else.** A brief made the
+    // next commit a round of its own until DEV-962; what decides that now is whether the
+    // round has posted, so a new commit on this one moves it. `ReviewWork` is still what
+    // `delete_review` protects, which is the question it was added for.
+    let pushed = store.open_review(REPO, 781, "bbb222").unwrap();
+    assert_eq!(pushed.review.round, 1);
+    assert_eq!(pushed.action, OpenedAction::HeadMoved);
 }
 
 #[test]
@@ -601,29 +656,39 @@ fn an_earlier_head_commit_is_still_returned_once_later_rounds_exist() {
     // it reviewed two rounds ago must be handed that round back, not handed a round
     // three it never asked for.
     //
-    // Round one carries a finding so that round two is a round rather than round one
-    // moved — DEV-945's rule, which the two tests above cover.
+    // Round one is posted so that round two is a round rather than round one moved —
+    // DEV-962's rule, which the two tests above cover.
     let (_dir, store) = temp_store();
 
     let first = store
-        .open_review("devergehq/review-desk", 21, "aaa111")
+        .open_review("devergehq/review-desk", 23, "aaa111")
         .expect("round one");
     store
         .add_finding(first.review.id, a_finding("reviewed", Severity::Nit))
         .expect("round one was reviewed");
     store
-        .open_review("devergehq/review-desk", 21, "bbb222")
+        .set_review_links(
+            first.review.id,
+            ReviewLinks {
+                github_review_id: Some("gh-review-1".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("round one posted");
+    store
+        .open_review("devergehq/review-desk", 23, "bbb222")
         .expect("round two");
 
     let reopened = store
-        .open_review("devergehq/review-desk", 21, "aaa111")
+        .open_review("devergehq/review-desk", 23, "aaa111")
         .expect("reopen round one");
 
     assert!(!reopened.created);
     assert_eq!(reopened.review.id, first.review.id);
     assert_eq!(reopened.review.round, 1);
+    assert_eq!(reopened.action, OpenedAction::Unchanged);
     assert_eq!(
-        store.latest_round("devergehq/review-desk", 21).unwrap(),
+        store.latest_round("devergehq/review-desk", 23).unwrap(),
         Some(2),
         "reopening an old commit must not have started a round"
     );

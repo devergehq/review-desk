@@ -2,9 +2,10 @@
 
 use clap::Subcommand;
 use review_desk_store::{
-    Draft, Finding, FullReview, Outcome, Review, ReviewFacts, ReviewLayer, ReviewLinks, Store,
+    DiffAtHead, Draft, Finding, FullReview, OutOfPlay, Outcome, Review, ReviewFacts, ReviewLayer,
+    ReviewLinks, Store,
 };
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::error::{CliError, Result};
 use crate::report::Report;
@@ -54,13 +55,26 @@ pub enum ReviewCommand {
     /// is recorded. Recording the same request twice creates one review: the record is
     /// keyed on the head commit, and `created` says which of the two happened.
     ///
-    /// **A new commit on a request nobody has picked up moves that request's head**
-    /// rather than starting a second round beside it, and `head_moved_from` in the
-    /// `--json` answer carries the commit it was of before. DEV-945, Patrick: "two
-    /// unstarted reviews for one request is wrong." A round somebody is working on is
-    /// untouched by that rule — a new commit on it is the next round, as it has always
-    /// been — and `--session` is how a session says on its first call that it is the one
-    /// working, before it has written anything a reader could tell that from.
+    /// **A round is a posted review, so a new commit opens a round only when the newest
+    /// round has posted.** Otherwise it moves that round's head, whoever is calling and
+    /// whatever they have written: DEV-962, Patrick — "it shouldn't create a whole new
+    /// record because that doesn't make any sense… If changes happen after our post, that's
+    /// a new review. That's another round." The move is recorded, so the review page can
+    /// say "Updated for 3 commits since `4d9464f`" and the code review can show what
+    /// changed since the draft was written. A sign-off given before the move is withdrawn,
+    /// because the developer approved different code.
+    ///
+    /// **`action` in the `--json` answer says which of four things happened** —
+    /// `created`, `head_moved`, `unchanged` or `diff_unchanged` — and it is the field to
+    /// branch on. `created` and `head_moved_from` still mean exactly what they meant, for
+    /// callers written before it existed.
+    ///
+    /// **`--session` is how a session says on its first call that it is the one working.**
+    /// It no longer pins the head — that is the behaviour DEV-962 removes — and it is what
+    /// makes `started` true for a dispatcher's look-before-write guard.
+    ///
+    /// **`--diff-unchanged` is for commits that only brought the base branch in.** Nothing
+    /// moves: the record notes that they arrived and nobody is woken. See the flag.
     Open {
         /// The repository, as owner/repo.
         #[arg(long, value_name = "OWNER/REPO")]
@@ -98,14 +112,38 @@ pub enum ReviewCommand {
         /// The Allele session opening it. **A session should pass this on its first
         /// call.**
         ///
-        /// The same shape as `--ledger` — a fact about who is calling, recorded in the
-        /// same call rather than by a `review link` afterwards — and it does one thing
-        /// more. A review with a session linked is one somebody is at work on, so no
-        /// later `review open` moves its head: the window between a session opening a
-        /// review and claiming it is the window in which a dispatcher recording the same
-        /// request on a newer commit could move the head out from under it.
+        /// The same shape as `--ledger`: a fact about who is calling, recorded in the same
+        /// call rather than by a `review link` afterwards. A review with a session linked
+        /// is one somebody is at work on, which is what `review find`'s `started` reports
+        /// to a caller that cannot see inside the record.
+        ///
+        /// **It does not pin the head.** It did until DEV-962, which moves an unposted
+        /// round's head whoever is working on it and records the move instead — so what
+        /// this buys is the record knowing whose review it is from the first call, rather
+        /// than from whenever the session gets to `review link`.
         #[arg(long = "session", value_name = "ID")]
         session: Option<String>,
+        /// The pull request's own diff against its base is unchanged: these commits only
+        /// brought the base branch in.
+        ///
+        /// **Then nothing happens, which is the point.** No round is opened, no head
+        /// moves, the line count is left alone, no sign-off is withdrawn and no session is
+        /// woken; the record notes that the commits arrived, so the review page can say
+        /// they changed nothing. DEV-962: Patrick's queue showed a pull request twice over
+        /// a round 1 he had never posted, and the only new commits were the author merging
+        /// the base branch in.
+        ///
+        /// **The caller says so because Review Desk cannot.** It reads no git and no
+        /// GitHub, so the only thing that can compare the pull request's diff against its
+        /// base is whatever is already watching GitHub. Compare the two diffs — `git
+        /// patch-id` over the pull request's patch, or GitHub's own comparison — and pass
+        /// this when they match. Without it, a new commit moves the head, which is the
+        /// right default: "nobody said" and "the diff changed" lead to the same act.
+        ///
+        /// The answer carries `action: "diff_unchanged"`, and the review handed back is
+        /// the newest round with its head where it was.
+        #[arg(long = "diff-unchanged")]
+        diff_unchanged: bool,
     },
 
     /// Store the other systems' ids against a review.
@@ -131,6 +169,14 @@ pub enum ReviewCommand {
     ///
     /// For an agent that has lost a review id: the rounds are printed with their head
     /// commits, so the one being worked on can be picked out.
+    ///
+    /// **Each row in the `--json` answer carries `started`**, which is true when anybody
+    /// has begun on that round: it holds a brief, a finding, a draft or a posted review, or
+    /// anything only a session writes — a linked session, a layer past `pending`, what was
+    /// not checked, the provenance, the round's commits. DEV-954 asks for it so that a
+    /// caller does not have to infer it from `session_id`, which a worker writes only once
+    /// it has begun: in the window between a push and that link, a round somebody was
+    /// reading looked exactly like a request nobody had picked up.
     Find {
         /// The repository, as owner/repo.
         #[arg(long, value_name = "OWNER/REPO")]
@@ -160,6 +206,49 @@ pub enum ReviewCommand {
         ticket: String,
     },
 
+    /// Take a pull request out of play: it was converted to a draft, or its review request
+    /// was withdrawn.
+    ///
+    /// **Every round of it leaves the queue and the work list, with the reason, and nothing
+    /// else changes.** DEV-962: a pull request converted to draft is the author saying "not
+    /// yet" and a withdrawn request is somebody saying "not you", so neither is a dismissal
+    /// — which is the developer's own act on a review they decline — and neither is
+    /// finished, which merged and closed are. `review in-play` is the way back, and the
+    /// review returns on the round it was on.
+    ///
+    /// **A sign-off is still offered.** The pull request is coming back, so a draft the
+    /// developer wants to approve is a draft that will post when it does; refusing it would
+    /// leave a stuck review rather than protect anybody.
+    ///
+    /// **Review Desk reads none of this.** It polls nothing and writes nothing to GitHub,
+    /// so whatever is watching the pull request says so here.
+    OutOfPlay {
+        /// The repository, as owner/repo.
+        #[arg(long, value_name = "OWNER/REPO")]
+        repo: String,
+        /// The pull request number.
+        #[arg(long, value_name = "N")]
+        pr: i64,
+        /// Why: `draft` or `withdrawn`.
+        #[arg(long, value_name = "WHY")]
+        reason: OutOfPlayReason,
+    },
+
+    /// Put a pull request back in play: it is ready again, or the review was re-requested.
+    ///
+    /// The undo half of `review out-of-play`, on the round the review was already on. A
+    /// pull request that is already in play is not an error: the state is the same
+    /// afterwards either way, and a dispatcher that cannot tell whether it has already said
+    /// so would otherwise have to ask first.
+    InPlay {
+        /// The repository, as owner/repo.
+        #[arg(long, value_name = "OWNER/REPO")]
+        repo: String,
+        /// The pull request number.
+        #[arg(long, value_name = "N")]
+        pr: i64,
+    },
+
     /// Print the whole review: the layers, the brief, the findings, the outcomes and
     /// the draft.
     Show {
@@ -182,6 +271,7 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
             not_checked,
             ledger,
             session,
+            diff_unchanged,
         } => {
             let store = Store::open_default()?;
             let opened = store.open_review_with(
@@ -194,6 +284,13 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
                     ticket_url: ticket_url.clone(),
                     changed_lines: *changed_lines,
                     not_checked: not_checked.clone(),
+                },
+                // The flag's absence is `Unsaid` rather than "the diff changed": nobody
+                // said, and the two lead to the same act. See the flag's own help.
+                if *diff_unchanged {
+                    DiffAtHead::Unchanged
+                } else {
+                    DiffAtHead::Unsaid
                 },
             )?;
 
@@ -224,6 +321,13 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
                     // reads this to learn that its request moved rather than that a
                     // round was spent.
                     "head_moved_from": opened.head_moved_from,
+                    // **Which of the four things happened, in one word.** `created` and
+                    // `head_moved_from` are kept exactly as they were, and together they
+                    // could not tell "this commit was already reviewed" from "these
+                    // commits changed nothing" — two different instructions for what a
+                    // dispatcher does next. DEV-962 asks for the answer to be explicit
+                    // enough to branch on, and this is it.
+                    "action": opened.action,
                     "carryable": carryable,
                 }),
                 // The id alone, so `ID=$(review-desk review open ...)` is the whole of
@@ -298,8 +402,27 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
                     .join("\n")
             };
 
+            // **`started` goes on each row rather than into a wrapper**, so the rows are
+            // the same objects they have always been with one key more: a caller reading
+            // `reviews[0].round` keeps working, which is the rule every addition to this
+            // output has followed. Merged the way `review show` merges the provenance into
+            // its document, which is this file's own idiom for exactly this.
+            let rows = reviews
+                .iter()
+                .map(|review| -> Result<serde_json::Value> {
+                    let mut row = serde_json::to_value(review)?;
+                    if let Some(fields) = row.as_object_mut() {
+                        fields.insert(
+                            "started".to_string(),
+                            json!(store.review_started(review.id)?),
+                        );
+                    }
+                    Ok(row)
+                })
+                .collect::<Result<Vec<_>>>()?;
+
             Ok(Report::new(
-                json!({ "repo": found, "pr": pr, "reviews": reviews }),
+                json!({ "repo": found, "pr": pr, "reviews": rows }),
                 plain,
             ))
         }
@@ -322,6 +445,34 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
                         .collect::<Vec<_>>()
                         .join(", ")
                 ),
+            ))
+        }
+
+        ReviewCommand::OutOfPlay { repo, pr, reason } => {
+            let store = Store::open_default()?;
+            let rounds = store.set_pr_out_of_play(repo, *pr, Some(reason.0))?;
+            Ok(Report::new(
+                json!({
+                    "repo": rounds.first().map(|review| review.repo.clone()),
+                    "pr": pr,
+                    "out_of_play": reason.0,
+                    "rounds": rounds,
+                }),
+                out_of_play_line(&rounds, Some(reason.0)),
+            ))
+        }
+
+        ReviewCommand::InPlay { repo, pr } => {
+            let store = Store::open_default()?;
+            let rounds = store.set_pr_out_of_play(repo, *pr, None)?;
+            Ok(Report::new(
+                json!({
+                    "repo": rounds.first().map(|review| review.repo.clone()),
+                    "pr": pr,
+                    "out_of_play": Value::Null,
+                    "rounds": rounds,
+                }),
+                out_of_play_line(&rounds, None),
             ))
         }
 
@@ -353,6 +504,62 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
 
             Ok(Report::new(document, plain))
         }
+    }
+}
+
+/// `acme/portal#41 is out of play (draft), 2 rounds` or `… is back in play, 2 rounds`.
+///
+/// The repository is taken from the rows rather than echoed from the argument, for
+/// `found_line`'s reason: the record holds it canonically, and printing what was typed is
+/// how two spellings of one repository come to look like two repositories.
+fn out_of_play_line(rounds: &[Review], why: Option<OutOfPlay>) -> String {
+    let what = match why {
+        Some(why) => format!("is out of play ({why})"),
+        None => "is back in play".to_string(),
+    };
+    match rounds.first() {
+        Some(first) => format!(
+            "{}#{} {what}, {}",
+            first.repo,
+            first.pr,
+            match rounds.len() {
+                1 => "1 round".to_string(),
+                count => format!("{count} rounds"),
+            }
+        ),
+        // `set_pr_out_of_play` refuses a pull request with no review, so this cannot
+        // happen; it says so rather than unwrapping on it.
+        None => format!("{what}, no rounds"),
+    }
+}
+
+/// `draft` or `withdrawn`, as clap reads it off the command line.
+///
+/// A wrapper rather than `#[arg(value_enum)]` on [`OutOfPlay`] itself: the store's enum is
+/// spelled by `string_enum!`, which gives it `FromStr` and `Display` from the same strings
+/// the column holds — so this takes those and the command line cannot drift from the
+/// record. The error names both values, because a caller who typed `--reason ready` has to
+/// be told that the way back is `review in-play`.
+#[derive(Debug, Clone, Copy)]
+pub struct OutOfPlayReason(OutOfPlay);
+
+impl std::str::FromStr for OutOfPlayReason {
+    type Err = String;
+
+    fn from_str(given: &str) -> std::result::Result<Self, Self::Err> {
+        given
+            .parse::<OutOfPlay>()
+            .map(OutOfPlayReason)
+            .map_err(|_| {
+                format!(
+                    "expected one of {}; the way back in is `review in-play`",
+                    OutOfPlay::ALL
+                        .iter()
+                        .map(|why| why.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            })
     }
 }
 

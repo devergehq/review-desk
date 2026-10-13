@@ -14,12 +14,12 @@
 use std::sync::{Arc, Mutex};
 
 use review_desk_store::{
-    Actor, Brief, Decision, DecisionMade, Disposition, Draft, DraftSection, DraftThread, Finding,
-    FindingInRound, FullReview, NewDraft, NewOutcome, NitTicket, NotForSigning, OpenedReview,
-    PostedReview, ProblemStatement, RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewEvent,
-    ReviewFacts, ReviewLayer, ReviewProvenance, ReviewTimings, ReviewsShown, RoundCommit,
-    RoundSummary, Rule, RuleCounts, RuleStage, RulesSummary, Store, StoreError,
-    TicketedAndApproved, Timestamp,
+    Actor, Brief, Decision, DecisionMade, DiffAtHead, Disposition, Draft, DraftSection,
+    DraftThread, Finding, FindingInRound, FullReview, NewDraft, NewOutcome, NitTicket,
+    NotForSigning, OpenedReview, PostedReview, ProblemStatement, RepoSummary, Review,
+    ReviewAtLayer, ReviewAtStep, ReviewEvent, ReviewFacts, ReviewLayer, ReviewProvenance,
+    ReviewTimings, ReviewsShown, RoundCommit, RoundSummary, Rule, RuleCounts, RuleStage,
+    RulesSummary, Store, StoreError, TicketedAndApproved, Timestamp,
 };
 
 use crate::error::{ApiError, Code};
@@ -84,10 +84,17 @@ impl Records {
 
     // -- reviews ------------------------------------------------------------------
 
-    /// Open the review for this head commit: the one already on the record, or a new
-    /// round, carrying whatever facts the caller knew. `review open` in the command line
-    /// is the same call, so the two surfaces cannot disagree about what "the same review"
-    /// is.
+    /// Open the review for this head commit: the one already on the record, the unposted
+    /// round whose head moves to it, or a new round, carrying whatever facts the caller
+    /// knew. `review open` in the command line is the same call, so the two surfaces cannot
+    /// disagree about what "the same review" is.
+    ///
+    /// **[`DiffAtHead::Unsaid`], and this surface has no way to say otherwise.** The
+    /// command line's `--diff-unchanged` is for a caller watching GitHub that has compared
+    /// the pull request's own diff against its base and found it unchanged; `POST /reviews`
+    /// is the developer starting a review from the dashboard, which is never that. A
+    /// parameter nothing could vary would be a choice offered to a screen that has nothing
+    /// to decide.
     pub fn open_review(
         &self,
         repo: &str,
@@ -95,7 +102,7 @@ impl Records {
         head_sha: &str,
         facts: &ReviewFacts,
     ) -> Result<OpenedReview, ApiError> {
-        self.with(|store| store.open_review_with(repo, pr, head_sha, facts))
+        self.with(|store| store.open_review_with(repo, pr, head_sha, facts, DiffAtHead::Unsaid))
     }
 
     /// Record what is known about the pull request, leaving a fact left `None` as it was.

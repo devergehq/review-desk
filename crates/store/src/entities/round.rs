@@ -469,6 +469,13 @@ impl Store {
                 round: review.round,
                 head_sha: review.head_sha,
                 created_at: review.created_at,
+                // **Read from the row that is already here, not counted.** DEV-954: the
+                // timeline drew a dismissed round as live, because every other field on a
+                // summary is a count and a dismissed round's counts look exactly like a
+                // live one's. `list_reviews` keeps dismissed rounds in the list on purpose
+                // — a hole where round 2 was would read as a gap in the record — so the
+                // word has to be on the round instead.
+                dismissed: review.dismissed_at.is_some(),
                 posted_at: draft.as_ref().and_then(|draft| draft.posted_at),
                 event: draft.as_ref().and_then(|draft| draft.event),
                 findings: findings.get(&review.id).copied().unwrap_or(0),

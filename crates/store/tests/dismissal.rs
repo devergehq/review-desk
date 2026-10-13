@@ -12,10 +12,10 @@ mod common;
 
 use common::{new_review, temp_store};
 use review_desk_store::{
-    Actor, Disposition, DraftStatus, FileCheck, FindingRef, NewBrief, NewDraft, NewFileChange,
-    NewFinding, NewOutcome, NewReviewSource, NitTicketStatus, OutcomeKind, Review, ReviewEvent,
-    ReviewFacts, ReviewLayerState, ReviewLinks, ReviewsShown, Severity, SourceKind, Store,
-    WorkFilter,
+    Actor, DiffAtHead, Disposition, DraftStatus, FileCheck, FindingRef, NewBrief, NewDraft,
+    NewFileChange, NewFinding, NewOutcome, NewReviewSource, NitTicketStatus, OpenedAction,
+    OutcomeKind, Review, ReviewEvent, ReviewFacts, ReviewLayerState, ReviewLinks, ReviewsShown,
+    Severity, SourceKind, Store, WorkFilter,
 };
 
 const REPO: &str = "acme/portal";
@@ -749,10 +749,12 @@ fn a_dismissed_request_keeps_its_dismissal_when_the_author_pushes() {
 }
 
 #[test]
-fn what_a_review_holds_is_the_same_question_for_a_delete_and_for_a_moved_head() {
-    // One predicate, two callers. If they disagreed, the page would offer a delete for a
-    // review the store treats as started, or `open_review` would move a round somebody
-    // had begun.
+fn what_a_review_holds_is_a_question_about_a_delete_and_not_about_a_moved_head() {
+    // **It was one predicate and two callers, and DEV-962 took one of them away.** A
+    // delete is still refused for a review holding a brief, a finding or a draft — that is
+    // work the developer would lose. A head still moves, because the round has not posted:
+    // the session re-reads the delta and the record keeps the move. Asserted together, so
+    // the two answers cannot drift back into agreeing by accident.
     let (_dir, store) = temp_store();
     let review = requested(&store, 805, "aaa1111");
     assert!(!store.review_work(review.id).unwrap().started());
@@ -766,14 +768,16 @@ fn what_a_review_holds_is_the_same_question_for_a_delete_and_for_a_moved_head() 
         store.delete_review(review.id).is_err(),
         "a delete is refused for it"
     );
+    let pushed = store.open_review(REPO, 805, "bbb2222").unwrap();
     assert_eq!(
-        store
-            .open_review(REPO, 805, "bbb2222")
-            .unwrap()
-            .review
-            .round,
-        2,
-        "and a new commit on it is the next round rather than this round moved"
+        pushed.review.round, 1,
+        "and a new commit on it moves this round rather than opening the next"
+    );
+    assert_eq!(pushed.action, OpenedAction::HeadMoved);
+    assert_eq!(
+        store.head_updates(review.id).unwrap().moved,
+        1,
+        "with the move on the record, which is what replaced the refusal"
     );
 }
 
@@ -923,6 +927,15 @@ fn deleting_the_newest_round_makes_the_round_before_it_the_newest_again() {
     store
         .add_finding(round_one.review.id, a_finding("round one was reviewed"))
         .expect("a finding");
+    store
+        .set_review_links(
+            round_one.review.id,
+            ReviewLinks {
+                github_review_id: Some("gh-review-810".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("round 1 posted, so the next commit is a round of its own");
     let round_two = store.open_review(REPO, 810, "bbb2222").expect("round 2");
     assert_eq!(work_ids(&store), vec![round_two.review.id]);
 
@@ -938,7 +951,7 @@ fn deleting_the_newest_round_makes_the_round_before_it_the_newest_again() {
     assert_eq!(
         work_ids(&store),
         vec![round_one.review.id],
-        "and round 1 is the live round again"
+        "and round 1 is the live round again — posted, so it is the harvest's turn"
     );
     assert_eq!(
         store
@@ -952,12 +965,15 @@ fn deleting_the_newest_round_makes_the_round_before_it_the_newest_again() {
 }
 
 #[test]
-fn a_request_a_session_has_picked_up_does_not_move_under_it() {
-    // **The window between a session being dispatched and its brief.** It links itself
-    // and starts a layer long before it writes a brief, a finding or a draft — so a
-    // dispatcher polling in that moment would otherwise move the head under a session
-    // that had already read the commit it was moved off, and the brief it then wrote
-    // would be of one commit on a review the record said was of another.
+fn a_request_a_session_has_picked_up_moves_under_it_and_the_record_says_so() {
+    // **DEV-945 refused this move; DEV-962 makes it.** The refusal bought a second
+    // unposted round of the same pull request — two rows for one request, which is the
+    // fault this reversal was raised from — so what protects the session now is the record
+    // of the move rather than the refusal of it: `head_updates` says which commit the round
+    // was of, the page says it moved, and the session re-reads the delta.
+    //
+    // What the linked session still buys is `review_started`, which is the fact a
+    // dispatcher outside the record cannot otherwise see.
     let (_dir, store) = temp_store();
 
     let linked = store.open_review(REPO, 820, "aaa1111").expect("a request");
@@ -971,23 +987,34 @@ fn a_request_a_session_has_picked_up_does_not_move_under_it() {
         )
         .expect("a session picked it up");
 
+    assert!(
+        store.review_started(linked.review.id).unwrap(),
+        "a linked session is somebody at work, which is what a caller reads"
+    );
+
     let next = store
         .open_review(REPO, 820, "bbb2222")
         .expect("the author pushed");
-    assert!(next.created, "the push is a round of its own");
-    assert_eq!(next.review.round, 2);
-    assert_eq!(next.head_moved_from, None);
+    assert!(!next.created, "one request, one review");
+    assert_eq!(next.review.id, linked.review.id);
+    assert_eq!(next.review.round, 1);
+    assert_eq!(next.action, OpenedAction::HeadMoved);
+    assert_eq!(next.head_moved_from.as_deref(), Some("aaa1111"));
+
+    let updates = store.head_updates(linked.review.id).unwrap();
+    assert_eq!(updates.moved, 1);
     assert_eq!(
-        store.get_review(linked.review.id).unwrap().head_sha,
-        "aaa1111",
-        "and the running session's review is still of the commit it read"
+        updates.since_sha.as_deref(),
+        Some("aaa1111"),
+        "so the session can be told what changed since the commit it read"
     );
 }
 
 #[test]
-fn a_request_whose_lint_has_run_does_not_move_under_it_either() {
+fn a_request_whose_lint_has_run_has_started_and_still_moves() {
     // The other sign of a session at work, for a session that writes its layers before it
-    // links itself: a layer moved off `pending`.
+    // links itself: a layer moved off `pending`. It makes `review_started` true and, since
+    // DEV-962, stops nothing.
     let (_dir, store) = temp_store();
 
     let started = store.open_review(REPO, 821, "aaa1111").expect("a request");
@@ -1000,11 +1027,14 @@ fn a_request_whose_lint_has_run_does_not_move_under_it_either() {
         )
         .expect("layer 1 ran");
 
+    assert!(store.review_started(started.review.id).unwrap());
+
     let next = store
         .open_review(REPO, 821, "bbb2222")
         .expect("the author pushed");
-    assert!(next.created);
-    assert_eq!(next.review.round, 2);
+    assert!(!next.created);
+    assert_eq!(next.review.round, 1);
+    assert_eq!(next.action, OpenedAction::HeadMoved);
 }
 
 #[test]
@@ -1066,10 +1096,14 @@ fn a_review_a_session_picked_up_but_wrote_nothing_to_can_still_be_deleted() {
 }
 
 #[test]
-fn a_session_that_says_who_it_is_on_the_first_call_is_claimed_at_once() {
-    // `review open --session` is one call, and what it buys is that the review is claimed
-    // before anything else can reach it: the session's own first call is what closes the
-    // window a dispatcher could move the head in.
+fn a_session_that_says_who_it_is_on_the_first_call_has_started_at_once() {
+    // `review open --session` is one call, and what it buys is that the record knows whose
+    // review it is from that call rather than from whenever the session gets to
+    // `review link` — which is what `review find`'s `started` reports to a dispatcher that
+    // cannot see inside the record. DEV-954 asks for exactly that.
+    //
+    // **What it no longer buys is a pinned head**, which is DEV-962's reversal: the push
+    // below moves the round it is already on.
     let (_dir, store) = temp_store();
     let recorded = store.open_review(REPO, 824, "aaa1111").expect("a request");
 
@@ -1085,13 +1119,17 @@ fn a_session_that_says_who_it_is_on_the_first_call_is_claimed_at_once() {
         )
         .expect("the session says who it is");
 
+    assert!(
+        store.review_started(recorded.review.id).unwrap(),
+        "claimed by the first call, before it has written anything else"
+    );
+
     let pushed = store
         .open_review(REPO, 824, "bbb2222")
         .expect("the author pushed");
-    assert!(
-        pushed.created,
-        "a round of its own, because somebody is at work on round 1"
-    );
+    assert!(!pushed.created, "the same round, moved");
+    assert_eq!(pushed.action, OpenedAction::HeadMoved);
+    assert_eq!(pushed.review.id, recorded.review.id);
 }
 
 #[test]
@@ -1171,6 +1209,7 @@ fn a_moved_head_takes_the_line_count_with_it() {
                 changed_lines: Some(50),
                 ..Default::default()
             },
+            DiffAtHead::Unsaid,
         )
         .expect("a request, with what the dispatcher knew");
 
@@ -1198,6 +1237,7 @@ fn a_moved_head_takes_the_line_count_with_it() {
                 changed_lines: Some(3_000),
                 ..Default::default()
             },
+            DiffAtHead::Unsaid,
         )
         .expect("recorded again, with the new count");
     assert_eq!(told.review.changed_lines, Some(3_000));
@@ -1205,14 +1245,17 @@ fn a_moved_head_takes_the_line_count_with_it() {
 
 #[test]
 fn a_change_map_or_a_commit_list_is_a_session_at_work_too() {
-    // **The hole the fifth review pass found.** `provenance changes` and `round commits`
-    // need nothing but the review row — no brief, no finding, no draft, no session id,
-    // no layer past `pending` — so a session on the old flow that recorded them before
-    // linking itself had none of the signs. The head would move under it, and the review
-    // would then serve a per-file change map computed on one commit as the coverage of
-    // another. `changed_lines` is cleared on a move for exactly that reason; these are
-    // the same kind of measurement and there is no clearing them, because they are what
-    // the session is building.
+    // **The hole the fifth review pass of DEV-945 found, and what DEV-962 does with it.**
+    // `provenance changes` and `round commits` need nothing but the review row — no brief,
+    // no finding, no draft, no session id, no layer past `pending` — so a session that
+    // records them before linking itself has none of the other signs. They still make
+    // `review_started` true, which is what a caller outside the record reads.
+    //
+    // The head now moves anyway, and the change map is left exactly as it was: it is a
+    // measurement of the commit it was made on, it is what the session is building, and
+    // clearing it would destroy the work in order to protect it from being out of date.
+    // `changed_lines` is the one thing cleared, for `open_review`'s stated reason — a bare
+    // number nothing can tell is stale, which the next ordinary call refills.
     let (_dir, store) = temp_store();
     let mapped = store.open_review(REPO, 840, "aaa1111").expect("a request");
     store
@@ -1229,14 +1272,28 @@ fn a_change_map_or_a_commit_list_is_a_session_at_work_too() {
         )
         .expect("a session mapped the change");
 
+    assert!(store.review_started(mapped.review.id).unwrap());
+
     let pushed = store
         .open_review(REPO, 840, "bbb2222")
         .expect("the author pushed");
-    assert!(pushed.created, "a round of its own");
+    assert_eq!(
+        pushed.action,
+        OpenedAction::HeadMoved,
+        "the same round, moved"
+    );
     assert_eq!(
         store.get_review(mapped.review.id).unwrap().head_sha,
-        "aaa1111",
-        "the change map still describes the commit it was made on"
+        "bbb2222"
+    );
+    assert_eq!(
+        store
+            .review_provenance(mapped.review.id)
+            .unwrap()
+            .files
+            .len(),
+        1,
+        "and the change map is still there, to be rewritten when the session re-reads"
     );
 
     // And a session that recorded what it did not look at is at work as well.
@@ -1249,17 +1306,16 @@ fn a_change_map_or_a_commit_list_is_a_session_at_work_too() {
                 not_checked: Some("the dashboard against the real API".to_string()),
                 ..Default::default()
             },
+            DiffAtHead::Unsaid,
         )
         .expect("a request, with what a session did not check");
-    assert!(
+    assert!(store.review_started(noted.review.id).unwrap());
+    assert_eq!(
         store
             .open_review(REPO, 841, "bbb2222")
             .expect("the author pushed")
-            .created
-    );
-    assert_eq!(
-        store.get_review(noted.review.id).unwrap().head_sha,
-        "aaa1111"
+            .action,
+        OpenedAction::HeadMoved
     );
 }
 
@@ -1359,6 +1415,7 @@ fn an_address_may_follow_the_id_onto_a_request_whose_head_moved() {
                 ticket_id: Some("ABC-402".to_string()),
                 ..Default::default()
             },
+            DiffAtHead::Unsaid,
         )
         .expect("the id, on the first call");
 
@@ -1371,6 +1428,7 @@ fn an_address_may_follow_the_id_onto_a_request_whose_head_moved() {
                 ticket_url: Some("https://linear.app/acme/issue/ABC-402".to_string()),
                 ..Default::default()
             },
+            DiffAtHead::Unsaid,
         )
         .expect("the address, on the next call, after a push");
 

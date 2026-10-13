@@ -7,7 +7,7 @@
 
 mod common;
 
-use common::{new_review, temp_store};
+use common::{new_review, posted, temp_store};
 use review_desk_store::{
     AcceptanceCriterion, CriterionStatus, DecidedBy, DescriptionLintStatus, FileCheck,
     FindingCarry, NewAcceptanceCriterion, NewDescriptionLintResult, NewFileChange, NewFinding,
@@ -940,6 +940,9 @@ fn a_criterion_can_point_at_a_finding_carried_into_a_later_round() {
         .expect("the finding")
         .seq;
 
+    // Round one is posted, so the next commit is round 2 rather than round 1 moved —
+    // DEV-962's rule, and what a real pull request does between two rounds.
+    posted(&store, first);
     let second = store
         .open_review("acme/portal", 412, "bbbbbbb")
         .expect("round 2")
@@ -1012,6 +1015,9 @@ fn a_criterion_cannot_point_at_a_finding_that_was_not_carried() {
         .expect("the finding")
         .seq;
 
+    // Round one is posted, so the next commit is round 2 rather than round 1 moved —
+    // DEV-962's rule, and what a real pull request does between two rounds.
+    posted(&store, first);
     let second = store
         .open_review("acme/portal", 412, "bbbbbbb")
         .expect("round 2")
@@ -1092,6 +1098,9 @@ fn a_carried_finding_brings_no_criteria_with_it() {
         )
         .expect("round 1's criterion");
 
+    // Round one is posted, so the next commit is round 2 rather than round 1 moved —
+    // DEV-962's rule, and what a real pull request does between two rounds.
+    posted(&store, first);
     let second = store
         .open_review("acme/portal", 412, "bbbbbbb")
         .expect("round 2")

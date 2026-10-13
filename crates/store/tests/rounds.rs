@@ -7,7 +7,7 @@
 
 mod common;
 
-use common::temp_store;
+use common::{posted, temp_store};
 use review_desk_store::{
     DecidedBy, Disposition, FindingCarry, FindingHunk, HunkLine, HunkLineMarker, NewDraft,
     NewFinding, NewOutcome, NewReview, NewRoundCommit, OutcomeKind, ReviewEvent, RoundStatus,
@@ -18,12 +18,32 @@ const REPO: &str = "acme/portal";
 const PR: i64 = 412;
 
 /// A round of the one pull request every test here uses.
+///
+/// **Whatever round is already there is recorded as posted first.** Since DEV-962 a new
+/// commit on an unposted round moves that round's head instead of opening the next one —
+/// which is what a round *is* now — and every test in this file is about a finding, a status
+/// or a commit list crossing from one round to another. So the rounds here are rounds: each
+/// one posts, and then the next commit opens the next round, which is the sequence DEV-873
+/// was written against and is still the one after a post.
+///
+/// Recorded the way a session records it, with the id of the review it posted. Review Desk
+/// posts nothing itself.
 fn round(store: &Store, head: &str) -> i64 {
+    post_whatever_is_open(store);
     store
         .open_review(REPO, PR, head)
         .expect("open the round")
         .review
         .id
+}
+
+/// Record every round of this pull request as posted, so the next commit opens a round.
+fn post_whatever_is_open(store: &Store) {
+    for review in store.list_reviews(REPO, PR).expect("the rounds so far") {
+        if review.github_review_id.is_none() {
+            posted(store, review.id);
+        }
+    }
 }
 
 /// A finding on a review, and the number it was given.

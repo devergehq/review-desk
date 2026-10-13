@@ -9,7 +9,7 @@
 
 mod common;
 
-use common::{open_review, start_review, Desk};
+use common::{open_review, post_round, Desk};
 use review_desk_store::{
     Actor, NewRule, ReviewEvent, ReviewLayerName, ReviewLayerState, RuleScope, RuleStage,
 };
@@ -400,9 +400,9 @@ fn review_find_lists_a_pull_requests_rounds_newest_first() {
     // next commit a round: since DEV-945 a commit on a round nobody started moves that
     // round instead.
     let first = open_review(&desk, "acme/portal", "412", "aaaaaaa");
-    start_review(&desk, &first);
+    post_round(&desk, &first);
     let second = open_review(&desk, "acme/portal", "412", "bbbbbbb");
-    start_review(&desk, &second);
+    post_round(&desk, &second);
     let third = desk.run(&[
         "review",
         "open",

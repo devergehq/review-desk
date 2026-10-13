@@ -64,6 +64,13 @@
 //! review. It was written as 11 and renumbered when DEV-878's own 11 merged first, which
 //! is the rule above being used rather than quoted.
 //!
+//! Version 18 is what makes a round a posted review rather than a commit: every time an
+//! unposted round's head moved, what it moved from and to, and the two columns that say a
+//! sign-off was withdrawn because the code under it changed. Version 19 is the state a pull
+//! request can be in that is neither open nor finished — converted to draft, or its review
+//! request withdrawn — which takes a review out of the queue and gives it back when the
+//! pull request comes back.
+//!
 //! Version 16 is the one thing a review could not say about its ticket: where the ticket
 //! is. The record has held `ticket_id` since version 1, and nothing can turn `ACME-2045`
 //! into an address — the tracker and its workspace are the session's knowledge, not the
@@ -1501,6 +1508,147 @@ UPDATE reviews
          TRIM(title, ' ' || char(9) || char(10) || char(11) || char(12) || char(13)),
          ''
        );
+"#,
+    },
+    Migration {
+        version: 18,
+        name: "unposted-rounds",
+        sql: r#"
+-- Every time a round's head moved, and every time the author brought the base branch in
+-- without changing the change. One row per event, append-only, oldest first.
+--
+-- **This is what makes a round a posted review rather than a commit.** Patrick, 13 October
+-- 2026: "it shouldn't create a whole new record because that doesn't make any sense… If
+-- changes happen after our post, that's a new review. That's another round." His queue held
+-- one pull request twice, round 1 and round 2 both offering "changes since your last
+-- review", over a round 1 he had never posted and whose only new commits were the author
+-- merging the base branch in. DEV-945 had already stopped a *second unstarted* round being
+-- opened; what was missing is the other half, which is that moving a head is a thing that
+-- happened and the record said nothing about it.
+--
+-- **Three kinds, because three different things happen and a boolean could only word one.**
+-- DEV-962 asks for a move to record "whether the PR's own diff changed", and a
+-- `diff_changed` column would have to hold false for every move nobody said anything about
+-- — a field asserting the diff changed on the strength of nobody having said it did not.
+-- The kind names the event instead, and every value is a statement something actually made:
+--
+-- | kind | What happened | What `reviews.head_sha` does |
+-- | -- | -- | -- |
+-- | `moved` | new commits on an unposted round | becomes `to_sha` |
+-- | `base_only` | the caller said the pull request's own diff against its base is unchanged | stays `from_sha` |
+-- | `folded` | the tidy folded an earlier unposted round into this one | unchanged, and `from_sha` is the folded round's head |
+--
+-- The closed set is enforced on the way in and out by `HeadUpdateKind`, which is the rule
+-- `RoundStatus` and `NitTicketStatus` already follow, *and* by a CHECK here: this table is
+-- new, so SQLite will take one, and there is no reason to keep only the weaker half of a
+-- guarantee the schema can hold.
+--
+-- **`base_only` writes this row and nothing else.** The issue is explicit that a merge of
+-- the base branch which leaves the pull request's own diff alone changes nothing: no
+-- update, no new round, no session woken. So it does not move the head; it does not clear
+-- the line count, because a figure measured on a diff that did not change is still right;
+-- it does not touch `last_activity_at`; and it withdraws no sign-off. What it does is let
+-- the review page say that two commits arrived and changed nothing, which is the difference
+-- between a quiet record and a record that cannot tell "nothing happened" from "nobody
+-- looked".
+--
+-- **`position` is not a column, and `at` is not unique.** The order is the order the rows
+-- were written, which `id` already gives, so two updates inside one second are ordered
+-- rather than refused. `round_commits` stores a position because GitHub hands it an order
+-- that is not the committer-date order; nothing here is handed an order at all.
+CREATE TABLE round_head_updates (
+    id        INTEGER PRIMARY KEY,
+    review_id INTEGER NOT NULL REFERENCES reviews (id) ON DELETE CASCADE,
+    kind      TEXT    NOT NULL,
+    from_sha  TEXT    NOT NULL,
+    to_sha    TEXT    NOT NULL,
+    at        INTEGER NOT NULL,
+    CHECK (kind IN ('moved', 'base_only', 'folded')),
+    CHECK (from_sha <> '' AND to_sha <> ''),
+    -- An update from a commit to itself is not an update. Every caller normalises both
+    -- shas through `normalise::head_sha` first, so this refuses the real mistake — a
+    -- caller recording a move it did not make — rather than a difference in spelling.
+    CHECK (from_sha <> to_sha)
+);
+
+-- Read per review, in the order they were written, which is the order a page reads them.
+CREATE INDEX round_head_updates_by_review ON round_head_updates (review_id, id);
+
+-- When a sign-off was withdrawn because the head moved under it, and the commit the
+-- developer had actually approved.
+--
+-- **The developer approved different code.** DEV-962's own criterion: "a signed-off but
+-- unposted draft whose head moves is no longer signed off, and the page says why". Both
+-- halves are here — the record stops saying `approved`, and these two columns are what the
+-- page says instead of inferring it from a timestamp comparison it would have to make for
+-- itself.
+--
+-- **The draft goes back to `drafting`, not to `ready`.** The code it was written against
+-- has changed, so the next step is the session's: it re-reads the delta and updates the
+-- body. `ready` would leave "waiting on you to sign off" over a draft written for a commit
+-- nobody is looking at any more, which is the contradiction DEV-957 removed for a
+-- superseded round and this would be reintroducing.
+--
+-- **`event` is kept.** Migration 4's CHECK ties `event`, `approved_at` and `approved_by` to
+-- the approved and posted statuses *as a group*, so clearing the two that record the act
+-- leaves the one that records the intent — which is what `RoundSummary.event` already
+-- documents it as: what the round was posted as, or is to be posted as.
+--
+-- **Cleared when the developer approves again**, in `approve_draft`. A draft that is signed
+-- off now must not go on saying it is not, and the history of the withdrawal is in
+-- `round_head_updates`, which is append-only and is where a history belongs.
+--
+-- Nullable, and the pair is written together in one statement rather than policed by a
+-- CHECK: SQLite cannot add one to a table that already exists, which is migration 17's
+-- reasoning for `dismissed_reason` and holds here for the same reason.
+ALTER TABLE drafts ADD COLUMN signoff_withdrawn_at   INTEGER;
+ALTER TABLE drafts ADD COLUMN signoff_withdrawn_head TEXT;
+"#,
+    },
+    Migration {
+        version: 19,
+        name: "out-of-play",
+        sql: r#"
+-- The state a pull request can be in that is neither open nor finished: converted to draft,
+-- or its review request withdrawn. Null for a pull request in play.
+--
+-- **Out of play is not finished and not dismissed, and it is the only one of the three that
+-- undoes itself.** DEV-957 gave the record "finished" for merged and closed, which are
+-- final; a dismissal is the developer declining a review, which only they undo. A pull
+-- request converted to draft is the author saying "not yet", and a withdrawn review request
+-- is somebody saying "not you" — both are answered by the pull request coming back, and
+-- DEV-962 says so in as many words: it "leaves the queue and returns when it's ready or
+-- re-requested".
+--
+-- So this leaves the queue and the work list and changes nothing else. In particular it does
+-- not refuse a sign-off, which `not_for_signing` refuses on the three states that cannot be
+-- undone: a draft the developer wants to approve on a pull request the author has pulled
+-- back is a draft that will post when it returns, and refusing it would be the stuck review
+-- DEV-929 removed rather than a protection.
+--
+-- **Written to every round of the pull request, and that is the difference from
+-- `pr_state`.** A `pr_state` is a *reading* one harvest took of one round, which is why the
+-- queue has to work out whose reading is freshest — the comment on `pr_state!()` carries
+-- that whole argument. This is not a reading: it is the state of the request, as the caller
+-- watching GitHub asserts it, and that caller names a pull request rather than a round.
+-- Writing it to every round makes "no round holds it" mean exactly "the request is back",
+-- with no stale value on an early round able to outvote the return. One statement sets it
+-- and one clears it.
+--
+-- **Review Desk read none of this.** It writes nothing to GitHub and polls nothing: the
+-- dispatcher watching the pull request says so through `review out-of-play` and
+-- `review in-play`. The closed set is enforced on the way in and out by `OutOfPlay` and by
+-- nothing else — `ALTER TABLE ... ADD COLUMN` cannot carry a CHECK, so the absence of one
+-- here is SQLite's limit rather than a decision, which is the rule `nit_ticket_status`
+-- states for the same reason.
+ALTER TABLE reviews ADD COLUMN out_of_play    TEXT;
+ALTER TABLE reviews ADD COLUMN out_of_play_at INTEGER;
+
+-- Partial, because a pull request out of play is the rare row and every query that lists
+-- reviews now asks this column about every row it considers.
+CREATE INDEX reviews_out_of_play
+    ON reviews (repo, pr)
+    WHERE out_of_play IS NOT NULL;
 "#,
     },
 ];

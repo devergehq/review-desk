@@ -30,7 +30,8 @@ pub(super) const REVIEW_COLUMNS: &str = "v.id, v.repo, v.pr, v.head_sha, v.round
                               v.ledger_id, v.github_review_id, v.pr_state, v.pr_state_at, \
                               v.harvested_at, v.nit_ticket_status, v.nit_ticket_id, \
                               v.nit_ticket_requested_at, v.nit_ticket_filed_at, \
-                              v.dismissed_at, v.dismissed_reason, v.last_activity_at, \
+                              v.dismissed_at, v.dismissed_reason, v.out_of_play, \
+                              v.out_of_play_at, v.last_activity_at, \
                               v.created_at";
 
 /// What the pull request a review belongs to was last seen to be, as a SQL expression.
@@ -122,6 +123,14 @@ pub(super) const PR_STATE: &str = pr_state!();
 /// belongs here *especially*: it is derived rather than stored, so a query spelling it out
 /// for itself would be a second definition of when a review is over.
 ///
+/// **A pull request out of play is the third way, and the only one that undoes itself.**
+/// DEV-962: a pull request converted to draft, or whose review request was withdrawn, "leaves
+/// the queue and returns when it's ready or re-requested". So it belongs here for the reason
+/// the other two do — one clause, pasted everywhere, rather than a group added later
+/// forgetting it — and it is the one of the three a later call takes back, which is why it is
+/// a column written to every round of the pull request rather than a state derived from one
+/// round's reading. Migration 19 carries that argument.
+///
 /// **Two queries here do something else, and both say so.** [`Store::reviews_at_step`]
 /// takes a [`ReviewsShown`] instead, because the Reviews list is the page both filters
 /// live on. And [`Store::list_repos`] applies the clause to the count it draws but *not*
@@ -130,7 +139,7 @@ pub(super) const PR_STATE: &str = pr_state!();
 /// reached for it. `every_query_that_lists_reviews_says_what_it_does_about_the_ones_that_have_left`
 /// is what holds the rest to the rule.
 pub(super) const IN_PLAY: &str = concat!(
-    "v.dismissed_at IS NULL AND ",
+    "v.dismissed_at IS NULL AND v.out_of_play IS NULL AND ",
     pr_state!(),
     " NOT IN ('merged', 'closed')"
 );
@@ -357,11 +366,18 @@ impl Store {
     /// that a review which has left the queue is still somewhere a reader can find it.
     ///
     /// **`shown` is the one filter in this module, and the default is the reviews in
-    /// play.** A review is off the desk two ways — the developer dismissed it, or its
-    /// pull request merged or closed — and the page has a position for each:
+    /// play.** A review is off the *queue* three ways — the developer dismissed it, its
+    /// pull request merged or closed, or its pull request is out of play — and this filter
+    /// has a position for the two that are answers nothing takes back:
     /// [`ReviewsShown::Dismissed`] is the filter DEV-945 asks for,
     /// [`ReviewsShown::Finished`] is DEV-957's, and [`ReviewsShown::Everything`] is the
     /// whole record on one page.
+    ///
+    /// **Out of play is not a position, and the In play view keeps it.** A pull request
+    /// converted to draft is coming back, so the row that explains where the review went
+    /// must not be the row nobody can find: it says so in `left_the_desk` and is drawn under
+    /// In play, which is exactly what [`LeftTheDesk::Superseded`] does and for the same
+    /// reason. The queue is where it stops appearing, and `IN_PLAY` is what stops it.
     ///
     /// **Each position is a bound comparison rather than a clause built by hand.** Two
     /// `Option<bool>` parameters, one per way off the desk, each compared against the
@@ -523,10 +539,18 @@ impl Store {
                     // merged, because once the pull request is over which round is newest no
                     // longer matters. A *posted* round is never superseded — it did post —
                     // which is the same condition `not_for_signing` applies.
+                    //
+                    // **Out of play sits between them**, which is [`LeftTheDesk`]'s order:
+                    // below the two answers nothing takes back, and above superseded,
+                    // because a round the author has pushed past on a pull request that has
+                    // been pulled back is better described by the thing that will change
+                    // than by the thing that cannot.
                     let left_the_desk = if review.is_dismissed() {
                         Some(LeftTheDesk::Dismissed)
                     } else if is_finished {
                         Some(LeftTheDesk::Finished)
+                    } else if review.is_out_of_play() {
+                        Some(LeftTheDesk::OutOfPlay)
                     } else if !is_newest_round && !is_posted {
                         Some(LeftTheDesk::Superseded)
                     } else {
@@ -718,6 +742,8 @@ pub(super) fn row_to_review(row: &Row<'_>) -> rusqlite::Result<Review> {
         nit_ticket_filed_at: row.get("nit_ticket_filed_at")?,
         dismissed_at: row.get("dismissed_at")?,
         dismissed_reason: row.get("dismissed_reason")?,
+        out_of_play: row.get("out_of_play")?,
+        out_of_play_at: row.get("out_of_play_at")?,
         last_activity_at: row.get("last_activity_at")?,
         created_at: row.get("created_at")?,
     })

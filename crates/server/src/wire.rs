@@ -198,6 +198,11 @@ pub fn review_list_item(at: &ReviewAtStep) -> Value {
         "left_the_desk": at.left_the_desk.map(|left| match left {
             LeftTheDesk::Dismissed => "dismissed",
             LeftTheDesk::Finished => "finished",
+            // **The queue, not this list.** A pull request out of play is coming back, so
+            // its row stays under In play and says this instead of disappearing — the one
+            // row that explains where the review went must not be the row nobody can find.
+            // `Review.out_of_play` beside it carries which of the two reasons it is.
+            LeftTheDesk::OutOfPlay => "out_of_play",
             LeftTheDesk::Superseded => "superseded",
         }),
         // Which way it ended and when, on a finished row only. Read off the pull request
