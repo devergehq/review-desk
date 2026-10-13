@@ -14,8 +14,10 @@
 # it as a property nobody wrote down.
 #
 # **The pull-request trigger waits for the pull request to be ready**, like every other check
-# here: the types below add `ready_for_review` and each job is gated on the pull request not
-# being a draft. DEV-961, and the README states the rule. The schedule and
+# here: the types below add `ready_for_review` and `converted_to_draft`, and each job is gated
+# on the pull request not being a draft. DEV-961, and the README states the rule.
+# `converted_to_draft` exists to stop work: its jobs skip, and the run cancels whatever the
+# ready pull request still had in flight. The schedule and
 # `workflow_dispatch` are unaffected — the gate only looks at a `pull_request` event — so the
 # authoritative weekly run on `master` is exactly what it was — and it is now the only thing
 # that runs against `master` at all, which makes it worth more than it was. There is no
@@ -33,7 +35,7 @@ name: Dependencies
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize, ready_for_review]
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
     paths:
       # Every file through which a dependency can arrive or be excused, plus the tools that
       # do the judging and this workflow itself. A narrower filter would be a list of the

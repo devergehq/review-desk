@@ -44,7 +44,8 @@ nothing on the machine but a Rust toolchain.
 **The checks run once a pull request is ready, not on every push to a draft.** A push to a
 draft runs nothing; marking it ready runs every check whose path filter matches, as does
 each push after that; a merge to `master` runs nothing; and any workflow can still be
-started by hand from the Actions tab on any branch. So run the checks above locally while a
+started by hand from the Actions tab on any branch that carries these workflows. So run the
+checks above locally while a
 pull request is a draft — DEV-961: at about 13 billed minutes a push, 146 pushes over 11
 and 12 October 2026 came to roughly 1,900 minutes, most of a 3,000-minute month, spent on
 drafts nobody was ready to read.
@@ -53,20 +54,35 @@ Two consequences worth knowing, because neither is obvious from the rule.
 
 **A green pull request is not a statement about `master`.** A `pull_request` run tests the
 head merged with `master` *as it stood when the event fired*, and GitHub does not re-run
-when `master` moves underneath. Nothing runs on `master` itself any more, and no branch
-here has protection rules to require an up-to-date branch, so two pull requests that both
-went green can merge in turn and leave a `master` tree that nothing ever built. When
-`master` has moved under a ready pull request and the change is not plainly independent,
-push to it or re-run its checks before merging.
+when `master` moves underneath. The only thing that still runs against `master` is the
+weekly dependency watch, and no branch here has protection rules to require an up-to-date
+branch — so two pull requests that both went green can merge in turn and leave a `master`
+tree that nothing ever built. When `master` has moved under a ready pull request and the
+change is not plainly independent, **merge `master` in and push**. Re-running the checks
+does not do it: a re-run replays the original commit and event payload, so it re-tests the
+same stale merge, and a `workflow_dispatch` run checks out the branch head without merging
+`master` at all. A push is the only thing that makes GitHub compute a new merge commit.
 
-**The build caches are no longer refreshed on `master`.** An Actions cache is readable by
-the ref that wrote it, that ref's base, and the default branch; a `pull_request` run writes
-into `refs/pull/N/merge`, which no other pull request can read. The push-to-`master` runs
-used to leave a cache every pull request could restore. Measured cost of losing that: about
-25 seconds, once per pull request open when `web/pnpm-lock.yaml` changes, for the Playwright
-browser — the one cache with no `restore-keys`. The cargo caches prefix-match the previous
-lockfile's entry, so they stay warm; and reading a cache resets its seven-day expiry, so
-ordinary pull-request traffic keeps `master`'s copies alive.
+**The build caches are no longer refreshed on `master`.** Cache access runs from base to
+descendant: a run restores caches written by its own ref, by the base branch and by the
+default branch — never the other way about, so a cache a `pull_request` run writes into
+`refs/pull/N/merge` is readable by nothing else. The push-to-`master` runs used to leave
+entries every pull request could restore, and nothing writes a `master`-scoped entry now.
+
+What that costs, measured on 13 October 2026. The expensive miss is Playwright's browser,
+about **25 seconds** paid once per pull request open when `web/pnpm-lock.yaml` changes; it
+has no `restore-keys`, and neither do `actions/setup-node`'s built-in `cache: pnpm` and
+`cache: npm`, though those entries are 3-4MB here against the browser's 279MB. The cargo
+caches do have `restore-keys`, so a new lockfile still prefix-matches the previous entry —
+**a point-in-time figure that decays.** The `master` entry is now frozen at whatever the
+last push-triggered run left, and as `Cargo.lock` drifts away from it the prefix match
+restores a less and less useful `target/`. Reading a cache resets its seven-day expiry, so
+pull-request traffic keeps `master`'s copies from lapsing, but nothing refreshes them.
+
+A weekly restore-build-save job on `master` would fix all of it and was measured as not
+worth building: roughly 20 minutes a month against about 8 saved. **Revisit it when the
+first run of a ready pull request is more than about three minutes slower than a later
+one** — that is the point the sum turns over.
 
 **Before adding a dependency, read [docs/dependencies.md](docs/dependencies.md).** The bar
 is that a dependency is active, maintained and popular, and it is checked before adopting

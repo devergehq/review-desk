@@ -1,11 +1,17 @@
 name: CI
 
-# **Checks run once a pull request is ready.** The types below add `ready_for_review`,
-# every job is gated on the pull request not being a draft, and `workflow_dispatch` keeps any
-# branch checkable by hand. DEV-961; the README states the rule under "Build and test".
+# **Checks run once a pull request is ready.** The types below add `ready_for_review` and
+# `converted_to_draft`, every job is gated on the pull request not being a draft, and
+# `workflow_dispatch` keeps any branch checkable by hand. DEV-961; the README states the rule
+# under "Build and test".
+#
+# `converted_to_draft` is here to STOP work, not to start it: its jobs skip like any draft's,
+# and because the run joins the concurrency group below with `cancel-in-progress`, it cancels
+# whatever is still running from when the pull request was ready. Without it, converting back
+# to a draft left an in-flight job billing to its timeout.
 on:
   pull_request:
-    types: [opened, reopened, synchronize, ready_for_review]
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
   workflow_dispatch:
 
 # A new push to a branch makes the previous run's answer irrelevant.
