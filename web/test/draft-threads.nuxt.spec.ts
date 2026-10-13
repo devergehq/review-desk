@@ -254,11 +254,36 @@ describe('the threads the draft hands over', () => {
     expect(said).toContain('None of these records which commit its line was measured on')
     expect(said).not.toContain('The pull request is at')
     /*
-     * **And the caveat still names no place.** The head sentence is what a word like
-     * "there" would point at, and it is not drawn here — so the sentence after it must
-     * read on its own. An earlier pass fixed that word by moving the head sentence to
-     * the end, which left it unanchored; this is the other half.
+     * **And the caveat reads on its own, with nothing pointing at a commit that is not
+     * there.** The head sentence is what a word like "there" or "that commit" would
+     * refer to, and on a review with no head it is not drawn — so the sentence after it
+     * must stand alone. Matched on the deictics rather than on one phrasing: an earlier
+     * version of this asserted the literal "still means there", which the rendered text
+     * never contains and which therefore could not fail.
      */
-    expect(said).not.toContain('still means there')
+    for (const pointing of [' there ', ' there.', 'that commit']) {
+      expect(said, `the caveat points at a commit the page does not name: ${said}`)
+        .not.toContain(pointing)
+    }
+  })
+
+  /*
+   * **The head sentence comes before the caveat it anchors**, which is the ordering the
+   * fourth review pass asked for. Asserted as an ordering rather than as a phrase,
+   * because the defect is where the sentence sits: with it at the end, the commit is
+   * named with no stated relation to what follows, and a test matching either sentence
+   * on its own would pass either way.
+   */
+  it('names the head before the sentence that depends on it', async () => {
+    const threads = [1, 3].map(seq => thread(seq, { line_sha: null }))
+    const panel = await mountSuspended(DraftThreads, { props: { headSha: HEAD, threads } })
+
+    const said = panel.find('.none-recorded').text()
+    const head = said.indexOf('The pull request is at')
+    const caveat = said.indexOf('Whether each line still means')
+
+    expect(head, `the head sentence is drawn: ${said}`).toBeGreaterThan(-1)
+    expect(caveat, `the caveat is drawn: ${said}`).toBeGreaterThan(-1)
+    expect(head, `the head comes first: ${said}`).toBeLessThan(caveat)
   })
 })
