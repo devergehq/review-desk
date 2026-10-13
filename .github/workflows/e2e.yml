@@ -70,6 +70,11 @@ jobs:
       # Chromium only. The dashboard is served from loopback to one developer who chose
       # their own browser, so running the suite three times over would cost three times as
       # much to learn nothing about this app.
+      # No `restore-keys`, deliberately: a browser build from another lockfile need not match
+      # the Playwright that drives it. That makes this the one cache a miss costs in full —
+      # about 25 seconds — and since DEV-961 removed the push-to-`master` run, the miss is
+      # paid once per open pull request after a `web/pnpm-lock.yaml` change rather than once
+      # on `master`. Measured as too small to be worth a warming job; the README has the sum.
       - name: Cache the browser
         id: browser
         uses: actions/cache@v6

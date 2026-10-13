@@ -42,12 +42,31 @@ SQLite is compiled in through `rusqlite`'s `bundled` feature, so a clean clone n
 nothing on the machine but a Rust toolchain.
 
 **The checks run once a pull request is ready, not on every push to a draft.** A push to a
-draft runs nothing, marking it ready runs every check, each push after that runs them
-again, a merge to `master` runs nothing because the ready pull request's run already
-covered that tree, and any workflow can still be started by hand from the Actions tab on
-any branch. So run the checks above locally while a pull request is a draft — DEV-961: at
-about 13 billed minutes a push, 146 pushes over two days was a whole 3,000-minute month
-spent on drafts nobody was ready to read.
+draft runs nothing; marking it ready runs every check whose path filter matches, as does
+each push after that; a merge to `master` runs nothing; and any workflow can still be
+started by hand from the Actions tab on any branch. So run the checks above locally while a
+pull request is a draft — DEV-961: at about 13 billed minutes a push, 146 pushes over 11
+and 12 October 2026 came to roughly 1,900 minutes, most of a 3,000-minute month, spent on
+drafts nobody was ready to read.
+
+Two consequences worth knowing, because neither is obvious from the rule.
+
+**A green pull request is not a statement about `master`.** A `pull_request` run tests the
+head merged with `master` *as it stood when the event fired*, and GitHub does not re-run
+when `master` moves underneath. Nothing runs on `master` itself any more, and no branch
+here has protection rules to require an up-to-date branch, so two pull requests that both
+went green can merge in turn and leave a `master` tree that nothing ever built. When
+`master` has moved under a ready pull request and the change is not plainly independent,
+push to it or re-run its checks before merging.
+
+**The build caches are no longer refreshed on `master`.** An Actions cache is readable by
+the ref that wrote it, that ref's base, and the default branch; a `pull_request` run writes
+into `refs/pull/N/merge`, which no other pull request can read. The push-to-`master` runs
+used to leave a cache every pull request could restore. Measured cost of losing that: about
+25 seconds, once per pull request open when `web/pnpm-lock.yaml` changes, for the Playwright
+browser — the one cache with no `restore-keys`. The cargo caches prefix-match the previous
+lockfile's entry, so they stay warm; and reading a cache resets its seven-day expiry, so
+ordinary pull-request traffic keeps `master`'s copies alive.
 
 **Before adding a dependency, read [docs/dependencies.md](docs/dependencies.md).** The bar
 is that a dependency is active, maintained and popular, and it is checked before adopting
