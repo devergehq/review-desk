@@ -263,14 +263,123 @@ fn harvest_with_json_prints_one_document_even_with_nothing_to_do() {
 }
 
 #[test]
-fn harvest_help_documents_both_narrowings() {
+fn harvest_help_documents_all_three_narrowings() {
     let desk = Desk::new();
     desk.command()
         .args(["harvest", "--help"])
         .assert()
         .code(0)
         .stdout(predicate::str::contains("--repo"))
-        .stdout(predicate::str::contains("--review"));
+        .stdout(predicate::str::contains("--review"))
+        .stdout(predicate::str::contains("--from"));
+}
+
+/// **`--from` replays recorded responses, through the whole of the live path.**
+///
+/// DEV-957 needed a merged pull request in a record the command line could build: nothing
+/// here writes `pr_state` — the harvest is the only writer, which that issue says is right
+/// — and the end-to-end seed goes through this binary and writes no SQL. `recorded::Recorded`
+/// has been how this crate's own tests run with no network since the first slice; this makes
+/// it reachable.
+///
+/// **With an empty `PATH`**, which is what proves the claim: a run that reached for `gh`
+/// here would fail the way `harvest_reports_an_absent_gh_as_review_desk_being_unable_to_run`
+/// does, and this one succeeds. Nothing leaves the machine, and nothing could.
+///
+/// The recording is the one in `crates/harvest/tests/fixtures`, captured from
+/// `devergehq/locus#64` — a merged pull request — so the state it writes is `merged` and the
+/// step it leaves is `done`.
+#[test]
+fn harvest_from_a_recording_records_the_merge_with_no_network() {
+    let desk = Desk::new();
+    let empty = TempDir::new().unwrap();
+    let (review, _) = a_review(&desk);
+
+    // Posted, because step 7 is the harvest of a posted review and `record_harvest_step`
+    // answers `None` for one nothing has posted.
+    desk.run(&[
+        "review",
+        "link",
+        "--review",
+        &review,
+        "--github-review",
+        "PRR_recorded",
+    ]);
+
+    let recording = concat!(env!("CARGO_MANIFEST_DIR"), "/../harvest/tests/fixtures");
+    let output = without_gh(&desk, &empty)
+        .args([
+            "harvest", "--review", &review, "--from", recording, "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let document: serde_json::Value = serde_json::from_slice(&output).expect("one JSON document");
+    let read = &document["harvest"]["reviews"][0];
+    assert_eq!(read["pr_state"], "merged", "{document}");
+    assert_eq!(read["step_seven"]["state"], "done", "{document}");
+
+    // And the record holds it, which is what the dashboard reads.
+    let shown: serde_json::Value =
+        serde_json::from_str(&desk.run(&["review", "show", "--review", &review, "--json"]))
+            .expect("the review");
+    assert_eq!(shown["review"]["pr_state"], "merged", "{shown}");
+}
+
+/// **`--from` without `--review` is refused before anything is read.**
+///
+/// A recording is one pull request's — `Recorded` answers `pull_request` from one file
+/// whatever it is asked about — so an unnarrowed sweep with `--from` would read every
+/// in-play review from it and write that pull request's state onto all of them. One command
+/// could mark a whole desk merged, and `IN_PLAY` would then take every one of those reviews
+/// off the queue and out of the work list. Found by a review of this branch.
+///
+/// Refused by `clap`, so it costs exit 2 and a usage message rather than a check somebody
+/// has to remember to write.
+#[test]
+fn harvest_from_without_a_review_is_refused() {
+    let desk = Desk::new();
+    let empty = TempDir::new().unwrap();
+    let recording = concat!(env!("CARGO_MANIFEST_DIR"), "/../harvest/tests/fixtures");
+
+    without_gh(&desk, &empty)
+        .args(["harvest", "--from", recording])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--review"));
+}
+
+/// A directory with no recording in it is a refusal that names what it wanted, not a run
+/// that found nothing.
+#[test]
+fn harvest_from_a_directory_with_no_recording_says_what_it_could_not_read() {
+    let desk = Desk::new();
+    let empty = TempDir::new().unwrap();
+    let nowhere = TempDir::new().unwrap();
+    let (review, _) = a_review(&desk);
+    desk.run(&[
+        "review",
+        "link",
+        "--review",
+        &review,
+        "--github-review",
+        "PRR_recorded",
+    ]);
+
+    without_gh(&desk, &empty)
+        .args([
+            "harvest",
+            "--review",
+            &review,
+            "--from",
+            nowhere.path().to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("pull_request"));
 }
 
 #[test]

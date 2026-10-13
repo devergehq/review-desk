@@ -16,9 +16,9 @@ use rusqlite::{params, Row};
 
 use crate::error::Result;
 use crate::model::{
-    Actor, AuthorResponse, DismissedReviews, DraftStatus, NitTicket, NitTicketStatus, OutcomeKind,
+    Actor, AuthorResponse, DraftStatus, LeftTheDesk, NitTicket, NitTicketStatus, OutcomeKind,
     PostedReview, PrState, RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewLayerName,
-    ReviewLayerState, ReviewStep, RuleStage, Timestamp,
+    ReviewLayerState, ReviewStep, ReviewsShown, RuleStage, Timestamp,
 };
 use crate::{normalise, Store};
 
@@ -33,8 +33,79 @@ pub(super) const REVIEW_COLUMNS: &str = "v.id, v.repo, v.pr, v.head_sha, v.round
                               v.dismissed_at, v.dismissed_reason, v.last_activity_at, \
                               v.created_at";
 
-/// **Every query in this module leaves a dismissed review out, and this is the clause that
-/// does it.**
+/// What the pull request a review belongs to was last seen to be, as a SQL expression.
+///
+/// **The state is the pull request's, and the record keeps a copy of it per round.** Only
+/// the round a harvest read gets its copy written, so round 1 of a merged pull request
+/// still says `open` — or says nothing at all, which is every round nobody has harvested.
+/// Reading `v.pr_state` alone therefore answers a question about one round's last reading
+/// rather than about the pull request, and that was the whole of DEV-957: five rounds of
+/// already-merged pull requests sat in "drafts to approve" because each of those rounds
+/// had never been read.
+///
+/// **So it is the highest-numbered round that holds a state.** Not "any round that holds
+/// a settled one": a pull request closed, reopened and reviewed again would be outvoted
+/// for ever by the stale `closed` on an early round. And not the newest round's own
+/// column: Patrick's #9568 has four rounds, one posted and read, three never read, so the
+/// newest round's column is null on a pull request that merged a week ago.
+///
+/// Within one sweep the rounds are read oldest id first, so the highest round's reading is
+/// the freshest one there is. The two readings can only disagree in the direction that
+/// makes this right: GitHub cannot un-merge a pull request, and a `closed` that a later
+/// round reads as `open` is a reopen, which is exactly what should win.
+///
+/// **What "freshest" rests on, said rather than assumed.** It is the *sweep's* order, and
+/// `harvest --review N` reads one round whatever its number — so a developer who narrows a
+/// harvest to an early round of a pull request their newest round last saw `closed` writes
+/// a newer reading that this rule ignores. It resolves itself at the next sweep, because
+/// [`Store::reviews_to_harvest`] keeps the newest round of a closed pull request and that
+/// reading is the one this takes. Stated because the paragraph above would otherwise be
+/// claiming a thing that is true of the sweep and not of every harvest.
+///
+/// **`COALESCE` to `open`, and that is load-bearing rather than tidy.** A pull request no
+/// harvest has looked at yields null here, and `null NOT IN (…)` is null in SQL — so a
+/// `WHERE` built on the bare subquery would drop every review of every unharvested pull
+/// request out of the queue, which is every review on a fresh database. Unlooked-at reads
+/// as open, which is the rule [`Store::reviews_to_harvest`] has always used and says so.
+///
+/// **"Unlooked-at reads as open" is about the pull request, not about a round**, and the
+/// difference has one live consequence worth stating. A pull request closed while it was on
+/// round 1, reopened, and pushed to opens a round 2 whose own state is null — and round 1's
+/// `closed` still decides, so round 2 is out of the queue and out of the work list **until a
+/// harvest reads it**. That is a window rather than a hole: round 2 holds no state, so
+/// `reviews_to_harvest` takes it on the next sweep and writes `open`, and the issue's own
+/// criterion is that a reopened pull request returns at the next harvest.
+///
+/// Taking the newest round's *absence* as open instead would answer this case sooner and
+/// break the case the whole rule is for: Patrick's #9568 has four rounds, one harvested and
+/// three not, and the three unharvested ones are exactly where "no state means open" would
+/// put a merged pull request back in the queue.
+macro_rules! pr_state {
+    () => {
+        "COALESCE((SELECT settled.pr_state FROM reviews settled
+                   WHERE settled.repo = v.repo AND settled.pr = v.pr
+                     AND settled.pr_state IS NOT NULL
+                   ORDER BY settled.round DESC LIMIT 1), 'open')"
+    };
+}
+
+/// Whether the pull request this review belongs to is finished with.
+///
+/// Written once so that the clause below and [`Store::reviews_at_step`]'s filter cannot
+/// disagree about what finished means. The two words are checked against
+/// [`PrState::is_settled`] by `the_words_in_the_finished_clause_are_the_settled_states`,
+/// because a state renamed in the enum would leave this compiling and counting nothing.
+pub(super) const FINISHED: &str = concat!(pr_state!(), " IN ('merged', 'closed')");
+
+/// The pull request's state as a selectable expression, for a row that has to word it.
+///
+/// The same `pr_state!()`, named so a `SELECT` can use it: a row saying a review is
+/// finished has to say *which way*, and reading the round's own column would word three of
+/// the four rounds of a merged pull request from a column holding nothing.
+pub(super) const PR_STATE: &str = pr_state!();
+
+/// **Every query in this module leaves out a review that has left the desk, and this is
+/// the clause that does it.** Two ways of leaving, and the same exclusion.
 ///
 /// A dismissal is the developer saying they will not act on a review again, so it leaves
 /// the queue — every group on it — as well as the work list and the Reviews list's default
@@ -42,14 +113,42 @@ pub(super) const REVIEW_COLUMNS: &str = "v.id, v.repo, v.pr, v.head_sha, v.round
 /// because a group added later that forgot it would put a dismissed review back in front of
 /// the developer and nothing would fail.
 ///
+/// **A merged or closed pull request is the other way, and it is not a dismissal.**
+/// DEV-957: on 13 October 2026 the queue held five drafts on pull requests that had
+/// already merged, none of which could ever be posted, and Patrick asked whether they
+/// should be dismissed or gone. Neither — finished. Dismissal stays the developer's act
+/// for a review they decline; finishing is what the record already knew and nothing acted
+/// on. Both belong here for the same reason the paragraph above gives, and finishing
+/// belongs here *especially*: it is derived rather than stored, so a query spelling it out
+/// for itself would be a second definition of when a review is over.
+///
 /// **Two queries here do something else, and both say so.** [`Store::reviews_at_step`]
-/// takes a [`DismissedReviews`] instead, because the Reviews list is the page the filter
-/// DEV-945 asks for lives on. And [`Store::list_repos`] applies the clause to the count
-/// it draws but *not* to the set of repositories it lists: a repository whose only review
-/// is dismissed has to stay in the picker, or the dismissed view could not be reached for
-/// it. `every_query_that_lists_reviews_says_what_it_does_about_dismissed_ones` is what
-/// holds the rest to the rule.
-pub(super) const IN_PLAY: &str = "v.dismissed_at IS NULL";
+/// takes a [`ReviewsShown`] instead, because the Reviews list is the page both filters
+/// live on. And [`Store::list_repos`] applies the clause to the count it draws but *not*
+/// to the set of repositories it lists: a repository whose only review has left the desk
+/// has to stay in the picker, or neither the dismissed nor the finished view could be
+/// reached for it. `every_query_that_lists_reviews_says_what_it_does_about_the_ones_that_have_left`
+/// is what holds the rest to the rule.
+pub(super) const IN_PLAY: &str = concat!(
+    "v.dismissed_at IS NULL AND ",
+    pr_state!(),
+    " NOT IN ('merged', 'closed')"
+);
+
+/// The newest round of the pull request this review belongs to, as a SQL expression.
+///
+/// **An unposted round superseded by a newer one can never be the review that posts**, so
+/// it is not work waiting on anybody. DEV-957's comment is the measurement: the queue
+/// listed #9541 twice, round 1 and round 2 both "Draft ready", and only round 2 could ever
+/// be posted — the author had pushed past round 1's commit, and a draft written against a
+/// commit nobody is looking at any more is a draft with nowhere to go.
+///
+/// **It counts every round, dismissed or finished.** [`Store::work_list`] carries that
+/// argument word for word and it holds here: filtering the subquery as well would make
+/// round 1 the live round again the moment round 2 was dismissed, and round 1 is the one
+/// with nothing that can move its state.
+pub(super) const NEWEST_ROUND: &str = "v.round = (SELECT MAX(round) FROM reviews
+                   WHERE repo = v.repo AND pr = v.pr)";
 
 impl Store {
     /// Every review whose brief is written, needs confirming, and has not been
@@ -63,6 +162,10 @@ impl Store {
     /// anybody's queue — listing it would be asking for the act the field exists to say
     /// was unnecessary. It is still on the One review screen, where the developer can
     /// read it and still send the draft back.
+    ///
+    /// **Nor a round a newer round has superseded**, which is [`NEWEST_ROUND`] and its
+    /// argument: confirming the problem of a round whose commit the author has pushed past
+    /// asks a session to carry on reviewing a commit nobody is looking at.
     pub fn reviews_with_unconfirmed_brief(&self, repo: Option<&str>) -> Result<Vec<Review>> {
         let repo = repo.map(normalise::repo);
         let mut statement = self.conn.prepare(&format!(
@@ -71,6 +174,7 @@ impl Store {
              WHERE b.confirmed_at IS NULL
                AND b.confirmation_required = 1
                AND {IN_PLAY}
+               AND {NEWEST_ROUND}
                AND (?1 IS NULL OR v.repo = ?1)
              ORDER BY v.id DESC"
         ))?;
@@ -83,6 +187,13 @@ impl Store {
     /// `ready` is the Inbox's "Approve a draft". `approved` is what a review session
     /// looks for to learn that it may post — the question the project brief leaves
     /// open, answered by polling until something better exists.
+    ///
+    /// **Only the newest round of a pull request**, which is [`NEWEST_ROUND`] and is the
+    /// defect DEV-957's comment measured: #9541 drew two rows, round 1 and round 2 both
+    /// "Draft ready", and signing round 1 off would have asked a session to post a review
+    /// of a commit the author has pushed past. A superseded *posted* draft is not in this
+    /// group anyway — its status is `posted`, not `ready` — so the restriction takes out
+    /// exactly the rounds that can never post and nothing else.
     pub fn reviews_with_draft_status(
         &self,
         status: DraftStatus,
@@ -94,6 +205,7 @@ impl Store {
              JOIN drafts d ON d.review_id = v.id
              WHERE d.status = ?1
                AND {IN_PLAY}
+               AND {NEWEST_ROUND}
                AND (?2 IS NULL OR v.repo = ?2)
              ORDER BY v.id DESC"
         ))?;
@@ -149,19 +261,20 @@ impl Store {
     /// longer being open. A review posted through `review link` was in no group on any
     /// page, which is the complaint this query exists to answer, so both count.
     ///
-    /// **Open means open or unlooked-at**, the rule [`Store::reviews_to_harvest`] uses
-    /// and for the same reason: a review nobody has harvested has no recorded state, so
-    /// the honest answer is that nothing is known. A pull request merged or closed at
-    /// its last harvest is finished with — there is no author left to wait for.
+    /// **A merged or closed pull request is not here, and [`IN_PLAY`] is now what says
+    /// so.** This query carried its own `pr_state` test, and that test read the round's
+    /// own column — which is written only for the round a harvest happened to read. So a
+    /// pull request merged a week ago whose newest round nobody had harvested was still
+    /// "waiting on the author", with no author left to wait for: DEV-957. The derived
+    /// clause answers about the pull request rather than about one round's last reading,
+    /// and an unlooked-at pull request still reads as open, which was the one thing the
+    /// column test got right.
     ///
-    /// **Only the newest round of a pull request**, which is [`Store::work_list`]'s
-    /// restriction and its argument word for word: nothing moves a superseded round's
-    /// state again, so nothing could retract it. Without this, a pull request whose
-    /// author pushed a fix — the very event this group waits for — keeps its posted
-    /// round here for ever, and a pull request on round four draws four rows each
-    /// claiming its author owes a reply. `reviews_to_harvest` can afford to ignore that
-    /// because harvesting a dead round costs one wasted call; a group the developer
-    /// reads cannot.
+    /// **Only the newest round of a pull request**, which is [`NEWEST_ROUND`] and its
+    /// argument: nothing moves a superseded round's state again, so nothing could retract
+    /// it. Without this, a pull request whose author pushed a fix — the very event this
+    /// group waits for — keeps its posted round here for ever, and a pull request on
+    /// round four draws four rows each claiming its author owes a reply.
     ///
     /// **The counts are of the author's own acts, so they read the actor and not only
     /// the kind.** `review_desk_harvest`'s `actor_for` maps a reply from any login that
@@ -208,12 +321,8 @@ impl Store {
              LEFT JOIN drafts d ON d.review_id = v.id
              WHERE (d.posted_at IS NOT NULL OR v.github_review_id IS NOT NULL)
                AND {IN_PLAY}
-               AND (v.pr_state IS NULL OR v.pr_state = ?5)
-               AND v.round = (
-                   SELECT MAX(round) FROM reviews
-                   WHERE repo = v.repo AND pr = v.pr
-               )
-               AND (?6 IS NULL OR v.repo = ?6)
+               AND {NEWEST_ROUND}
+               AND (?5 IS NULL OR v.repo = ?5)
              ORDER BY d.posted_at DESC, v.id DESC"
         ))?;
         let rows = statement.query_map(
@@ -222,7 +331,6 @@ impl Store {
                 OutcomeKind::ThreadResolved,
                 OutcomeKind::CodeChangedAfter,
                 Actor::Author,
-                PrState::Open,
                 repo
             ],
             |row| {
@@ -248,13 +356,24 @@ impl Store {
     /// The Reviews list: the one place every review is named, whatever became of it, so
     /// that a review which has left the queue is still somewhere a reader can find it.
     ///
-    /// **`dismissed` is the one filter in this module, and the default leaves them out.**
-    /// A dismissed review has been taken out of play by the developer, so the page's
-    /// default view is the reviews in play — [`DismissedReviews::Only`] is the filter
-    /// DEV-945 asks for, and [`DismissedReviews::Included`] is the whole record on one
-    /// page. It is a bound parameter rather than three queries or a clause built by hand:
-    /// `(v.dismissed_at IS NOT NULL) = ?` compares the column's state to the answer the
-    /// caller asked for, and a `None` asks for neither.
+    /// **`shown` is the one filter in this module, and the default is the reviews in
+    /// play.** A review is off the desk two ways — the developer dismissed it, or its
+    /// pull request merged or closed — and the page has a position for each:
+    /// [`ReviewsShown::Dismissed`] is the filter DEV-945 asks for,
+    /// [`ReviewsShown::Finished`] is DEV-957's, and [`ReviewsShown::Everything`] is the
+    /// whole record on one page.
+    ///
+    /// **Each position is a bound comparison rather than a clause built by hand.** Two
+    /// `Option<bool>` parameters, one per way off the desk, each compared against the
+    /// column or the derived state: `None` asks nothing about that one. So the four
+    /// positions are four pairs of answers and not four queries, and a position added
+    /// later cannot forget a clause the others have.
+    ///
+    /// **Dismissed outranks finished, and the single-row answer says so too.** A review
+    /// the developer dismissed and whose pull request later merged is under **Dismissed**
+    /// and not under **Finished** — the issue's own rule, that a dismissed review which
+    /// then merges stays dismissed — and [`LeftTheDesk`] carries the same order so the
+    /// filter and the row's own words cannot disagree.
     ///
     /// **Newest first is by id**, which is the order every other query in this module
     /// serves and the order reviews were opened in. Deliberately not by
@@ -297,19 +416,35 @@ impl Store {
     pub fn reviews_at_step(
         &self,
         repo: Option<&str>,
-        dismissed: DismissedReviews,
+        shown: ReviewsShown,
     ) -> Result<Vec<ReviewAtStep>> {
         let repo = repo.map(normalise::repo);
-        let only_dismissed = match dismissed {
-            DismissedReviews::Excluded => Some(false),
-            DismissedReviews::Only => Some(true),
-            DismissedReviews::Included => None,
+        // One answer per way off the desk. `Some(true)` asks for only those, `Some(false)`
+        // for only the rest, `None` asks nothing. **Dismissed is asked first and
+        // `Finished` pairs it with `Some(false)`**, which is what keeps a dismissed review
+        // whose pull request merged out of the Finished view: it stays dismissed.
+        let (only_dismissed, only_finished) = match shown {
+            ReviewsShown::InPlay => (Some(false), Some(false)),
+            ReviewsShown::Dismissed => (Some(true), None),
+            ReviewsShown::Finished => (Some(false), Some(true)),
+            ReviewsShown::Everything => (None, None),
         };
         let mut statement = self.conn.prepare(&format!(
             "SELECT {REVIEW_COLUMNS},
                  l.number AS step_number,
                  l.state  AS step_state,
                  l.detail AS step_detail,
+                 ({FINISHED}) AS is_finished,
+                 ({NEWEST_ROUND}) AS is_newest_round,
+                 EXISTS (
+                     SELECT 1 FROM drafts d2
+                     WHERE d2.review_id = v.id AND d2.posted_at IS NOT NULL
+                 ) OR v.github_review_id IS NOT NULL AS is_posted,
+                 {PR_STATE} AS pr_state_now,
+                 (SELECT settled.pr_state_at FROM reviews settled
+                  WHERE settled.repo = v.repo AND settled.pr = v.pr
+                    AND settled.pr_state IS NOT NULL
+                  ORDER BY settled.round DESC LIMIT 1) AS finished_at,
                  (SELECT MAX(round) FROM reviews r
                   WHERE r.repo = v.repo AND r.pr = v.pr) AS rounds_on_pr
              FROM reviews v
@@ -321,11 +456,17 @@ impl Store {
                 )
              WHERE (?2 IS NULL OR v.repo = ?2)
                AND (?3 IS NULL OR (v.dismissed_at IS NOT NULL) = ?3)
+               AND (?4 IS NULL OR ({FINISHED}) = ?4)
              ORDER BY v.id DESC"
         ))?;
         let rows = statement
             .query_map(
-                params![ReviewLayerState::Pending, repo, only_dismissed],
+                params![
+                    ReviewLayerState::Pending,
+                    repo,
+                    only_dismissed,
+                    only_finished
+                ],
                 |row| {
                     Ok((
                         row_to_review(row)?,
@@ -333,33 +474,79 @@ impl Store {
                         row.get::<_, Option<i64>>("step_number")?,
                         row.get::<_, Option<ReviewLayerState>>("step_state")?,
                         row.get::<_, Option<String>>("step_detail")?,
+                        row.get::<_, bool>("is_finished")?,
+                        row.get::<_, bool>("is_newest_round")?,
+                        row.get::<_, bool>("is_posted")?,
+                        row.get::<_, Option<PrState>>("pr_state_now")?,
+                        row.get::<_, Option<Timestamp>>("finished_at")?,
                     ))
                 },
             )?
             .collect::<rusqlite::Result<Vec<_>>>()?;
 
         rows.into_iter()
-            .map(|(review, rounds_on_pr, number, state, detail)| {
-                // Both or neither. The join either matched the layer the subquery named,
-                // in which case the row is `NOT NULL` in both columns because the table
-                // is, or it matched nothing at all. A number without a state would be a
-                // row this build does not understand, and `for_number` is the only part
-                // that can fail.
-                let step = match (number, state) {
-                    (Some(number), Some(state)) => Some(ReviewStep {
-                        number,
-                        name: ReviewLayerName::for_number(number)?,
-                        state,
-                        detail,
-                    }),
-                    _ => None,
-                };
-                Ok(ReviewAtStep {
+            .map(
+                |(
                     review,
                     rounds_on_pr,
-                    step,
-                })
-            })
+                    number,
+                    state,
+                    detail,
+                    is_finished,
+                    is_newest_round,
+                    is_posted,
+                    pr_state_now,
+                    finished_at,
+                )| {
+                    // Both or neither. The join either matched the layer the subquery named,
+                    // in which case the row is `NOT NULL` in both columns because the table
+                    // is, or it matched nothing at all. A number without a state would be a
+                    // row this build does not understand, and `for_number` is the only part
+                    // that can fail.
+                    let step = match (number, state) {
+                        (Some(number), Some(state)) => Some(ReviewStep {
+                            number,
+                            name: ReviewLayerName::for_number(number)?,
+                            state,
+                            detail,
+                        }),
+                        _ => None,
+                    };
+                    // **Dismissed before finished, which is the order [`LeftTheDesk`] states
+                    // and the same order the filter above uses.** A review the developer
+                    // dismissed and whose pull request later merged says dismissed: the
+                    // dismissal is an act somebody took and the merge is something that
+                    // happened to it, and the issue settles it that way.
+                    //
+                    // **And superseded last**, which is [`NotForSigning`]'s order too: a
+                    // round that is both on a merged pull request and under a newer one says
+                    // merged, because once the pull request is over which round is newest no
+                    // longer matters. A *posted* round is never superseded — it did post —
+                    // which is the same condition `not_for_signing` applies.
+                    let left_the_desk = if review.is_dismissed() {
+                        Some(LeftTheDesk::Dismissed)
+                    } else if is_finished {
+                        Some(LeftTheDesk::Finished)
+                    } else if !is_newest_round && !is_posted {
+                        Some(LeftTheDesk::Superseded)
+                    } else {
+                        None
+                    };
+                    // Only on a finished row, both of them. A dismissed review whose
+                    // pull request also merged is a dismissed row, and a day or a word
+                    // for a thing the row does not say happened would be a fact with
+                    // nothing to attach to.
+                    let finished = left_the_desk == Some(LeftTheDesk::Finished);
+                    Ok(ReviewAtStep {
+                        review,
+                        rounds_on_pr,
+                        step,
+                        left_the_desk,
+                        finished_how: finished.then_some(pr_state_now).flatten(),
+                        finished_at: finished.then_some(finished_at).flatten(),
+                    })
+                },
+            )
             .collect()
     }
 
@@ -539,6 +726,48 @@ pub(super) fn row_to_review(row: &Row<'_>) -> rusqlite::Result<Review> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::PrState;
+
+    /// **The two words in the finished clause are the two settled states, and nothing
+    /// holds that but this.**
+    ///
+    /// `rules_for_repo` and `harvested_so_far` build their lists of words out of the enum
+    /// for this reason, and the clause above cannot: it is a `const` that
+    /// [`IN_PLAY`] is concatenated from, so the words have to be literals. A state renamed
+    /// in `PrState` would leave the SQL compiling and matching nothing — every merged pull
+    /// request quietly back in the queue, which is the whole of DEV-957 undone with no test
+    /// failing. So the words are read back out of the clause and checked against the enum.
+    #[test]
+    fn the_words_in_the_finished_clause_are_the_settled_states() {
+        let settled: Vec<&str> = PrState::ALL
+            .iter()
+            .filter(|state| state.is_settled())
+            .map(|state| state.as_str())
+            .collect();
+        assert_eq!(
+            settled,
+            vec!["merged", "closed"],
+            "the settled states, which is what the clause has to name"
+        );
+
+        let listed = FINISHED
+            .rsplit_once("IN (")
+            .expect("the clause ends in an IN list")
+            .1;
+        for state in &settled {
+            assert!(
+                listed.contains(&format!("'{state}'")),
+                "{state} is settled and the finished clause does not name it: {listed}"
+            );
+        }
+        for state in PrState::ALL.iter().filter(|state| !state.is_settled()) {
+            assert!(
+                !listed.contains(&format!("'{}'", state.as_str())),
+                "{} is not settled and the finished clause names it: {listed}",
+                state.as_str()
+            );
+        }
+    }
 
     /// A column added to one list and not the other would make a review read through
     /// the Inbox a different record from the same review read by id — the same class of

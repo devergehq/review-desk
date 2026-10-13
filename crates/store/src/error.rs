@@ -66,6 +66,37 @@ pub enum StoreError {
     )]
     DismissedReview { review_id: i64, act: &'static str },
 
+    /// An act that needs an agent afterwards was asked for on a review whose pull request
+    /// has merged or closed.
+    ///
+    /// **Its own variant rather than a reworded dismissal**, because the two are different
+    /// facts and DEV-957 asks for them to be told apart everywhere: nobody dismissed this
+    /// review, and there is nothing to bring back. `how` is the word GitHub used, so the
+    /// message reads "merged" or "closed" rather than a term of Review Desk's own.
+    #[error(
+        "the pull request of review {review_id} {how}, so nothing would come of {act}: no \
+         round of a {how} pull request can be posted"
+    )]
+    FinishedReview {
+        review_id: i64,
+        how: &'static str,
+        act: &'static str,
+    },
+
+    /// An act that needs an agent afterwards was asked for on an unposted round a newer
+    /// round has superseded.
+    #[error(
+        "review {review_id} is round {round}, and round {by_round} of the same pull \
+         request is newer, so nothing would come of {act}: this round was never posted \
+         and the newest round is the one that can be"
+    )]
+    SupersededRound {
+        review_id: i64,
+        round: i64,
+        by_round: i64,
+        act: &'static str,
+    },
+
     /// A review that is not dismissed cannot be brought back.
     #[error("review {review_id} is not dismissed, so there is nothing to bring back")]
     NotDismissed { review_id: i64 },
@@ -158,6 +189,8 @@ impl StoreError {
             StoreError::NoDraftSection { .. } => "no_draft_section",
             StoreError::AlreadyDismissed { .. } => "already_dismissed",
             StoreError::DismissedReview { .. } => "dismissed_review",
+            StoreError::FinishedReview { .. } => "finished_review",
+            StoreError::SupersededRound { .. } => "superseded_round",
             StoreError::NotDismissed { .. } => "not_dismissed",
             StoreError::ReviewStarted { .. } => "review_started",
             StoreError::NotFound { .. } => "not_found",
@@ -183,6 +216,8 @@ impl StoreError {
                 | StoreError::NoDraftSection { .. }
                 | StoreError::AlreadyDismissed { .. }
                 | StoreError::DismissedReview { .. }
+                | StoreError::FinishedReview { .. }
+                | StoreError::SupersededRound { .. }
                 | StoreError::NotDismissed { .. }
                 | StoreError::ReviewStarted { .. }
                 | StoreError::NotFound { .. }

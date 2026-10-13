@@ -15,10 +15,12 @@
       "github_review_id": null,
       "created_at": "2026-10-08T10:31:00Z",
       "pr_state": null,
+      "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
       "dismissed_reason": null
     },
+    "not_for_signing": null,
     "layers": [
       {
         "number": 1,
@@ -383,10 +385,12 @@
       "github_review_id": null,
       "created_at": "2026-10-08T06:00:00Z",
       "pr_state": null,
+      "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
       "dismissed_reason": null
     },
+    "not_for_signing": null,
     "layers": [
       {
         "number": 1,
@@ -731,10 +735,12 @@
       "github_review_id": null,
       "created_at": "2026-10-08T09:50:00Z",
       "pr_state": null,
+      "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
       "dismissed_reason": null
     },
+    "not_for_signing": null,
     "layers": [
       {
         "number": 1,
@@ -972,10 +978,12 @@
       "github_review_id": "PRR_kwDOA1",
       "created_at": "2026-10-06T11:10:00Z",
       "pr_state": "open",
+      "pr_state_at": null,
       "harvested_at": "2026-10-09T08:15:00Z",
       "dismissed_at": null,
       "dismissed_reason": null
     },
+    "not_for_signing": null,
     "layers": [
       {
         "number": 1,
@@ -1125,10 +1133,34 @@
         ],
         "seconds": null,
         "facts": [
-          { "review_id": 12, "number": 7, "position": 1, "label": "Pull request", "value": "open" },
-          { "review_id": 12, "number": 7, "position": 2, "label": "Replies", "value": "2" },
-          { "review_id": 12, "number": 7, "position": 3, "label": "Threads resolved", "value": "1" },
-          { "review_id": 12, "number": 7, "position": 4, "label": "Code changed since", "value": "1 finding" }
+          {
+            "review_id": 12,
+            "number": 7,
+            "position": 1,
+            "label": "Pull request",
+            "value": "open"
+          },
+          {
+            "review_id": 12,
+            "number": 7,
+            "position": 2,
+            "label": "Replies",
+            "value": "2"
+          },
+          {
+            "review_id": 12,
+            "number": 7,
+            "position": 3,
+            "label": "Threads resolved",
+            "value": "1"
+          },
+          {
+            "review_id": 12,
+            "number": 7,
+            "position": 4,
+            "label": "Code changed since",
+            "value": "1 finding"
+          }
         ]
       }
     ],
@@ -1329,10 +1361,12 @@
       "github_review_id": null,
       "created_at": "2026-10-08T11:16:00Z",
       "pr_state": null,
+      "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
       "dismissed_reason": null
     },
+    "not_for_signing": null,
     "layers": [
       {
         "number": 1,
@@ -1528,10 +1562,12 @@
       "github_review_id": null,
       "created_at": "2026-10-08T11:22:00Z",
       "pr_state": null,
+      "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
       "dismissed_reason": null
     },
+    "not_for_signing": null,
     "layers": [
       {
         "number": 1,
@@ -1709,10 +1745,12 @@
       "github_review_id": null,
       "created_at": "2026-10-09T20:40:00Z",
       "pr_state": null,
+      "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
       "dismissed_reason": null
     },
+    "not_for_signing": null,
     "layers": [
       {
         "number": 1,
@@ -3643,10 +3681,12 @@
       "github_review_id": "PRR_kwDOA43",
       "created_at": "2026-10-10T09:12:00Z",
       "pr_state": null,
+      "pr_state_at": null,
       "harvested_at": null,
       "dismissed_at": null,
       "dismissed_reason": null
     },
+    "not_for_signing": null,
     "layers": [
       {
         "number": 1,
@@ -3767,6 +3807,1041 @@
       "with_the_agent_seconds": 3600,
       "waiting_on_you_seconds": 1380,
       "last_activity_at": "2026-10-10T11:05:00Z"
+    }
+  },
+  {
+    "review": {
+      "id": 60,
+      "repo": "tc/portal",
+      "pr": 9541,
+      "head_sha": "a1b2c31",
+      "round": 1,
+      "title": "Give a scheduled export its own context",
+      "ticket_id": "DEV-941",
+      "ticket_url": "https://linear.app/deverge/issue/DEV-941",
+      "changed_lines": 270,
+      "session_id": "ses_0000003c",
+      "ledger_id": "ledger-2026-10-11-9541-1",
+      "github_review_id": null,
+      "created_at": "2026-10-11T10:05:00Z",
+      "pr_state": null,
+      "pr_state_at": null,
+      "harvested_at": null,
+      "dismissed_at": null,
+      "dismissed_reason": null
+    },
+    "not_for_signing": null,
+    "layers": [
+      {
+        "number": 1,
+        "name": "lint",
+        "state": "done",
+        "detail": "passed",
+        "updated_at": "2026-10-11T10:05:00Z"
+      },
+      {
+        "number": 2,
+        "name": "understand",
+        "state": "done",
+        "detail": "confirmed by you",
+        "updated_at": "2026-10-11T10:05:00Z"
+      },
+      {
+        "number": 3,
+        "name": "alternatives",
+        "state": "done",
+        "detail": "2 options",
+        "updated_at": "2026-10-11T10:05:00Z"
+      },
+      {
+        "number": 4,
+        "name": "solution_map",
+        "state": "done",
+        "detail": "one place to change",
+        "updated_at": "2026-10-11T10:05:00Z"
+      },
+      {
+        "number": 5,
+        "name": "code_review",
+        "state": "done",
+        "detail": "3 findings",
+        "updated_at": "2026-10-11T10:05:00Z"
+      },
+      {
+        "number": 6,
+        "name": "draft",
+        "state": "waiting_on_you",
+        "detail": "waiting on you",
+        "updated_at": "2026-10-11T10:05:00Z"
+      },
+      {
+        "number": 7,
+        "name": "harvest",
+        "state": "pending",
+        "detail": "not started yet",
+        "updated_at": "2026-10-11T10:05:00Z"
+      }
+    ],
+    "brief": {
+      "review_id": 60,
+      "problem": "The export holds the request's tenant after the request has returned.",
+      "diagram": null,
+      "options": [],
+      "approach_verdict": null,
+      "provenance": "from the ticket and the code",
+      "confirmed": false,
+      "confirmed_at": null,
+      "confirmation_required": true,
+      "confirmation_not_required_because": null,
+      "updated_at": "2026-10-11T09:40:00Z"
+    },
+    "findings": [
+      {
+        "review_id": 60,
+        "seq": 1,
+        "key": "F1",
+        "lens": "correctness",
+        "severity": "blocker",
+        "file": "app/Exports/ScheduledExport.php",
+        "line": 48,
+        "claim": "The export holds the request's tenant after it returns",
+        "evidence": null,
+        "disposition": "in_draft",
+        "disposition_reason": null,
+        "rule_id": null,
+        "rule_key": null,
+        "github_comment_id": null,
+        "created_at": "2026-10-11T09:30:00Z"
+      }
+    ],
+    "outcomes": [],
+    "finding_severities": {
+      "blocker": 1,
+      "should": 0,
+      "nit": 0,
+      "question": 0
+    },
+    "finding_dispositions": {
+      "in_draft": 1,
+      "held_back": 0,
+      "suppressed": 0
+    },
+    "not_checked": null,
+    "nit_ticket": {
+      "review_id": 60,
+      "status": "none",
+      "ticket_id": null,
+      "finding_seqs": [],
+      "requested_at": null,
+      "filed_at": null
+    },
+    "draft_status": "ready",
+    "timings": {
+      "requested_at": "2026-10-11T10:05:00Z",
+      "draft_ready_at": "2026-10-11T10:05:00Z",
+      "signed_off_at": null,
+      "posted_at": null,
+      "with_the_agent_seconds": 2700,
+      "waiting_on_you_seconds": 900,
+      "last_activity_at": "2026-10-11T10:05:00Z"
+    }
+  },
+  {
+    "review": {
+      "id": 61,
+      "repo": "tc/portal",
+      "pr": 9541,
+      "head_sha": "b2c3d42",
+      "round": 2,
+      "title": "Give a scheduled export its own context",
+      "ticket_id": "DEV-941",
+      "ticket_url": "https://linear.app/deverge/issue/DEV-941",
+      "changed_lines": 271,
+      "session_id": "ses_0000003d",
+      "ledger_id": "ledger-2026-10-11-9541-2",
+      "github_review_id": null,
+      "created_at": "2026-10-12T14:20:00Z",
+      "pr_state": null,
+      "pr_state_at": null,
+      "harvested_at": null,
+      "dismissed_at": null,
+      "dismissed_reason": null
+    },
+    "not_for_signing": null,
+    "layers": [
+      {
+        "number": 1,
+        "name": "lint",
+        "state": "done",
+        "detail": "passed",
+        "updated_at": "2026-10-12T14:20:00Z"
+      },
+      {
+        "number": 2,
+        "name": "understand",
+        "state": "done",
+        "detail": "confirmed by you",
+        "updated_at": "2026-10-12T14:20:00Z"
+      },
+      {
+        "number": 3,
+        "name": "alternatives",
+        "state": "done",
+        "detail": "2 options",
+        "updated_at": "2026-10-12T14:20:00Z"
+      },
+      {
+        "number": 4,
+        "name": "solution_map",
+        "state": "done",
+        "detail": "one place to change",
+        "updated_at": "2026-10-12T14:20:00Z"
+      },
+      {
+        "number": 5,
+        "name": "code_review",
+        "state": "done",
+        "detail": "3 findings",
+        "updated_at": "2026-10-12T14:20:00Z"
+      },
+      {
+        "number": 6,
+        "name": "draft",
+        "state": "waiting_on_you",
+        "detail": "waiting on you",
+        "updated_at": "2026-10-12T14:20:00Z"
+      },
+      {
+        "number": 7,
+        "name": "harvest",
+        "state": "pending",
+        "detail": "not started yet",
+        "updated_at": "2026-10-12T14:20:00Z"
+      }
+    ],
+    "brief": null,
+    "findings": [
+      {
+        "review_id": 61,
+        "seq": 1,
+        "key": "F1",
+        "lens": "correctness",
+        "severity": "should",
+        "file": "app/Exports/ScheduledExport.php",
+        "line": 61,
+        "claim": "A retried export re-reads the context it was given",
+        "evidence": null,
+        "disposition": "in_draft",
+        "disposition_reason": null,
+        "rule_id": null,
+        "rule_key": null,
+        "github_comment_id": null,
+        "created_at": "2026-10-11T09:30:00Z"
+      }
+    ],
+    "outcomes": [],
+    "finding_severities": {
+      "blocker": 0,
+      "should": 1,
+      "nit": 0,
+      "question": 0
+    },
+    "finding_dispositions": {
+      "in_draft": 1,
+      "held_back": 0,
+      "suppressed": 0
+    },
+    "not_checked": null,
+    "nit_ticket": {
+      "review_id": 61,
+      "status": "none",
+      "ticket_id": null,
+      "finding_seqs": [],
+      "requested_at": null,
+      "filed_at": null
+    },
+    "draft_status": "ready",
+    "timings": {
+      "requested_at": "2026-10-12T14:20:00Z",
+      "draft_ready_at": "2026-10-12T14:20:00Z",
+      "signed_off_at": null,
+      "posted_at": null,
+      "with_the_agent_seconds": 2700,
+      "waiting_on_you_seconds": 900,
+      "last_activity_at": "2026-10-12T14:20:00Z"
+    }
+  },
+  {
+    "review": {
+      "id": 62,
+      "repo": "tc/portal",
+      "pr": 9585,
+      "head_sha": "c3d4e53",
+      "round": 1,
+      "title": "Separate the staff login from the consumer one",
+      "ticket_id": "DEV-958",
+      "ticket_url": "https://linear.app/deverge/issue/DEV-958",
+      "changed_lines": 272,
+      "session_id": "ses_0000003e",
+      "ledger_id": "ledger-2026-10-11-9585-1",
+      "github_review_id": "PRR_tc9585r1",
+      "created_at": "2026-10-11T11:40:00Z",
+      "pr_state": null,
+      "pr_state_at": null,
+      "harvested_at": "2026-10-13T07:45:00Z",
+      "dismissed_at": null,
+      "dismissed_reason": null
+    },
+    "not_for_signing": null,
+    "layers": [
+      {
+        "number": 1,
+        "name": "lint",
+        "state": "done",
+        "detail": "passed",
+        "updated_at": "2026-10-11T11:40:00Z"
+      },
+      {
+        "number": 2,
+        "name": "understand",
+        "state": "done",
+        "detail": "confirmed by you",
+        "updated_at": "2026-10-11T11:40:00Z"
+      },
+      {
+        "number": 3,
+        "name": "alternatives",
+        "state": "done",
+        "detail": "2 options",
+        "updated_at": "2026-10-11T11:40:00Z"
+      },
+      {
+        "number": 4,
+        "name": "solution_map",
+        "state": "done",
+        "detail": "one place to change",
+        "updated_at": "2026-10-11T11:40:00Z"
+      },
+      {
+        "number": 5,
+        "name": "code_review",
+        "state": "done",
+        "detail": "3 findings",
+        "updated_at": "2026-10-11T11:40:00Z"
+      },
+      {
+        "number": 6,
+        "name": "draft",
+        "state": "done",
+        "detail": "posted by you",
+        "updated_at": "2026-10-11T11:40:00Z"
+      },
+      {
+        "number": 7,
+        "name": "harvest",
+        "state": "running",
+        "detail": "1 reply back",
+        "updated_at": "2026-10-11T11:40:00Z"
+      }
+    ],
+    "brief": null,
+    "findings": [
+      {
+        "review_id": 62,
+        "seq": 1,
+        "key": "F1",
+        "lens": "correctness",
+        "severity": "should",
+        "file": "app/Providers/FortifyServiceProvider.php",
+        "line": 72,
+        "claim": "The intended URL is written by the guest redirect",
+        "evidence": null,
+        "disposition": "in_draft",
+        "disposition_reason": null,
+        "rule_id": null,
+        "rule_key": null,
+        "github_comment_id": "RC_tc9585_1",
+        "created_at": "2026-10-11T09:30:00Z"
+      }
+    ],
+    "outcomes": [
+      {
+        "id": 9001,
+        "review_id": 62,
+        "finding_seq": 1,
+        "finding_key": "F1",
+        "kind": "replied",
+        "actor": "author",
+        "occurred_at": "2026-10-12T08:15:00Z",
+        "detail": "{\"comment_id\": \"RC_tc9585_reply\", \"in_reply_to\": \"RC_tc9585_1\", \"login\": \"author\", \"body\": \"Moved it to the staff guard in the next push.\", \"time_basis\": \"github\"}"
+      }
+    ],
+    "finding_severities": {
+      "blocker": 0,
+      "should": 1,
+      "nit": 0,
+      "question": 0
+    },
+    "finding_dispositions": {
+      "in_draft": 1,
+      "held_back": 0,
+      "suppressed": 0
+    },
+    "not_checked": null,
+    "nit_ticket": {
+      "review_id": 62,
+      "status": "none",
+      "ticket_id": null,
+      "finding_seqs": [],
+      "requested_at": null,
+      "filed_at": null
+    },
+    "draft_status": "posted",
+    "timings": {
+      "requested_at": "2026-10-11T11:40:00Z",
+      "draft_ready_at": "2026-10-11T11:40:00Z",
+      "signed_off_at": "2026-10-11T11:40:00Z",
+      "posted_at": "2026-10-11T11:40:00Z",
+      "with_the_agent_seconds": 2700,
+      "waiting_on_you_seconds": 900,
+      "last_activity_at": "2026-10-11T11:40:00Z"
+    }
+  },
+  {
+    "review": {
+      "id": 63,
+      "repo": "tc/portal",
+      "pr": 9585,
+      "head_sha": "d4e5f64",
+      "round": 2,
+      "title": "Separate the staff login from the consumer one",
+      "ticket_id": "DEV-958",
+      "ticket_url": "https://linear.app/deverge/issue/DEV-958",
+      "changed_lines": 273,
+      "session_id": "ses_0000003f",
+      "ledger_id": "ledger-2026-10-11-9585-2",
+      "github_review_id": null,
+      "created_at": "2026-10-12T16:10:00Z",
+      "pr_state": null,
+      "pr_state_at": null,
+      "harvested_at": null,
+      "dismissed_at": null,
+      "dismissed_reason": null
+    },
+    "not_for_signing": null,
+    "layers": [
+      {
+        "number": 1,
+        "name": "lint",
+        "state": "done",
+        "detail": "passed",
+        "updated_at": "2026-10-12T16:10:00Z"
+      },
+      {
+        "number": 2,
+        "name": "understand",
+        "state": "done",
+        "detail": "confirmed by you",
+        "updated_at": "2026-10-12T16:10:00Z"
+      },
+      {
+        "number": 3,
+        "name": "alternatives",
+        "state": "done",
+        "detail": "2 options",
+        "updated_at": "2026-10-12T16:10:00Z"
+      },
+      {
+        "number": 4,
+        "name": "solution_map",
+        "state": "done",
+        "detail": "one place to change",
+        "updated_at": "2026-10-12T16:10:00Z"
+      },
+      {
+        "number": 5,
+        "name": "code_review",
+        "state": "done",
+        "detail": "3 findings",
+        "updated_at": "2026-10-12T16:10:00Z"
+      },
+      {
+        "number": 6,
+        "name": "draft",
+        "state": "waiting_on_you",
+        "detail": "waiting on you",
+        "updated_at": "2026-10-12T16:10:00Z"
+      },
+      {
+        "number": 7,
+        "name": "harvest",
+        "state": "pending",
+        "detail": "not started yet",
+        "updated_at": "2026-10-12T16:10:00Z"
+      }
+    ],
+    "brief": null,
+    "findings": [
+      {
+        "review_id": 63,
+        "seq": 1,
+        "key": "F1",
+        "lens": "correctness",
+        "severity": "should",
+        "file": "app/Http/Middleware/RedirectIfGuest.php",
+        "line": 31,
+        "claim": "A guest session survives the redirect to the staff page",
+        "evidence": null,
+        "disposition": "in_draft",
+        "disposition_reason": null,
+        "rule_id": null,
+        "rule_key": null,
+        "github_comment_id": null,
+        "created_at": "2026-10-11T09:30:00Z"
+      }
+    ],
+    "outcomes": [],
+    "finding_severities": {
+      "blocker": 0,
+      "should": 1,
+      "nit": 0,
+      "question": 0
+    },
+    "finding_dispositions": {
+      "in_draft": 1,
+      "held_back": 0,
+      "suppressed": 0
+    },
+    "not_checked": null,
+    "nit_ticket": {
+      "review_id": 63,
+      "status": "none",
+      "ticket_id": null,
+      "finding_seqs": [],
+      "requested_at": null,
+      "filed_at": null
+    },
+    "draft_status": "ready",
+    "timings": {
+      "requested_at": "2026-10-12T16:10:00Z",
+      "draft_ready_at": "2026-10-12T16:10:00Z",
+      "signed_off_at": null,
+      "posted_at": null,
+      "with_the_agent_seconds": 2700,
+      "waiting_on_you_seconds": 900,
+      "last_activity_at": "2026-10-12T16:10:00Z"
+    }
+  },
+  {
+    "review": {
+      "id": 64,
+      "repo": "tc/portal",
+      "pr": 9568,
+      "head_sha": "e5f6a75",
+      "round": 1,
+      "title": "Retry a failed delivery with an idempotency key",
+      "ticket_id": "DEV-968",
+      "ticket_url": "https://linear.app/deverge/issue/DEV-968",
+      "changed_lines": 274,
+      "session_id": "ses_00000040",
+      "ledger_id": "ledger-2026-10-11-9568-1",
+      "github_review_id": "PRR_tc9568r1",
+      "created_at": "2026-10-09T09:15:00Z",
+      "pr_state": "merged",
+      "pr_state_at": "2026-10-11T22:41:00Z",
+      "harvested_at": "2026-10-13T07:45:00Z",
+      "dismissed_at": null,
+      "dismissed_reason": null
+    },
+    "not_for_signing": null,
+    "layers": [
+      {
+        "number": 1,
+        "name": "lint",
+        "state": "done",
+        "detail": "passed",
+        "updated_at": "2026-10-09T09:15:00Z"
+      },
+      {
+        "number": 2,
+        "name": "understand",
+        "state": "done",
+        "detail": "confirmed by you",
+        "updated_at": "2026-10-09T09:15:00Z"
+      },
+      {
+        "number": 3,
+        "name": "alternatives",
+        "state": "done",
+        "detail": "2 options",
+        "updated_at": "2026-10-09T09:15:00Z"
+      },
+      {
+        "number": 4,
+        "name": "solution_map",
+        "state": "done",
+        "detail": "one place to change",
+        "updated_at": "2026-10-09T09:15:00Z"
+      },
+      {
+        "number": 5,
+        "name": "code_review",
+        "state": "done",
+        "detail": "3 findings",
+        "updated_at": "2026-10-09T09:15:00Z"
+      },
+      {
+        "number": 6,
+        "name": "draft",
+        "state": "done",
+        "detail": "posted by you",
+        "updated_at": "2026-10-09T09:15:00Z"
+      },
+      {
+        "number": 7,
+        "name": "harvest",
+        "state": "done",
+        "detail": "merged, nothing back yet",
+        "updated_at": "2026-10-09T09:15:00Z"
+      }
+    ],
+    "brief": null,
+    "findings": [
+      {
+        "review_id": 64,
+        "seq": 1,
+        "key": "F1",
+        "lens": "correctness",
+        "severity": "blocker",
+        "file": "app/Jobs/DeliverWebhook.php",
+        "line": 58,
+        "claim": "A dead delivery is retried without its key",
+        "evidence": null,
+        "disposition": "in_draft",
+        "disposition_reason": null,
+        "rule_id": null,
+        "rule_key": null,
+        "github_comment_id": "RC_tc9568_1",
+        "created_at": "2026-10-11T09:30:00Z"
+      }
+    ],
+    "outcomes": [],
+    "finding_severities": {
+      "blocker": 1,
+      "should": 0,
+      "nit": 0,
+      "question": 0
+    },
+    "finding_dispositions": {
+      "in_draft": 1,
+      "held_back": 0,
+      "suppressed": 0
+    },
+    "not_checked": null,
+    "nit_ticket": {
+      "review_id": 64,
+      "status": "none",
+      "ticket_id": null,
+      "finding_seqs": [],
+      "requested_at": null,
+      "filed_at": null
+    },
+    "draft_status": "posted",
+    "timings": {
+      "requested_at": "2026-10-09T09:15:00Z",
+      "draft_ready_at": "2026-10-09T09:15:00Z",
+      "signed_off_at": "2026-10-09T09:15:00Z",
+      "posted_at": "2026-10-09T09:15:00Z",
+      "with_the_agent_seconds": 2700,
+      "waiting_on_you_seconds": 900,
+      "last_activity_at": "2026-10-09T09:15:00Z"
+    }
+  },
+  {
+    "review": {
+      "id": 65,
+      "repo": "tc/portal",
+      "pr": 9568,
+      "head_sha": "f6a7b86",
+      "round": 2,
+      "title": "Retry a failed delivery with an idempotency key",
+      "ticket_id": "DEV-968",
+      "ticket_url": "https://linear.app/deverge/issue/DEV-968",
+      "changed_lines": 275,
+      "session_id": "ses_00000041",
+      "ledger_id": "ledger-2026-10-11-9568-2",
+      "github_review_id": null,
+      "created_at": "2026-10-10T10:30:00Z",
+      "pr_state": null,
+      "pr_state_at": null,
+      "harvested_at": null,
+      "dismissed_at": null,
+      "dismissed_reason": null
+    },
+    "not_for_signing": null,
+    "layers": [
+      {
+        "number": 1,
+        "name": "lint",
+        "state": "done",
+        "detail": "passed",
+        "updated_at": "2026-10-10T10:30:00Z"
+      },
+      {
+        "number": 2,
+        "name": "understand",
+        "state": "done",
+        "detail": "confirmed by you",
+        "updated_at": "2026-10-10T10:30:00Z"
+      },
+      {
+        "number": 3,
+        "name": "alternatives",
+        "state": "done",
+        "detail": "2 options",
+        "updated_at": "2026-10-10T10:30:00Z"
+      },
+      {
+        "number": 4,
+        "name": "solution_map",
+        "state": "done",
+        "detail": "one place to change",
+        "updated_at": "2026-10-10T10:30:00Z"
+      },
+      {
+        "number": 5,
+        "name": "code_review",
+        "state": "done",
+        "detail": "3 findings",
+        "updated_at": "2026-10-10T10:30:00Z"
+      },
+      {
+        "number": 6,
+        "name": "draft",
+        "state": "waiting_on_you",
+        "detail": "waiting on you",
+        "updated_at": "2026-10-10T10:30:00Z"
+      },
+      {
+        "number": 7,
+        "name": "harvest",
+        "state": "pending",
+        "detail": "not started yet",
+        "updated_at": "2026-10-10T10:30:00Z"
+      }
+    ],
+    "brief": {
+      "review_id": 65,
+      "problem": "The retry reads its key from the job rather than from the delivery, so a rebuilt payload gets a new one.",
+      "diagram": null,
+      "options": [],
+      "approach_verdict": null,
+      "provenance": "from the ticket and the code",
+      "confirmed": false,
+      "confirmed_at": null,
+      "confirmation_required": true,
+      "confirmation_not_required_because": null,
+      "updated_at": "2026-10-11T09:40:00Z"
+    },
+    "findings": [
+      {
+        "review_id": 65,
+        "seq": 1,
+        "key": "F1",
+        "lens": "correctness",
+        "severity": "should",
+        "file": "app/Jobs/DeliverWebhook.php",
+        "line": 58,
+        "claim": "The key is read from the job and not from the delivery",
+        "evidence": null,
+        "disposition": "in_draft",
+        "disposition_reason": null,
+        "rule_id": null,
+        "rule_key": null,
+        "github_comment_id": null,
+        "created_at": "2026-10-11T09:30:00Z"
+      }
+    ],
+    "outcomes": [],
+    "finding_severities": {
+      "blocker": 0,
+      "should": 1,
+      "nit": 0,
+      "question": 0
+    },
+    "finding_dispositions": {
+      "in_draft": 1,
+      "held_back": 0,
+      "suppressed": 0
+    },
+    "not_checked": null,
+    "nit_ticket": {
+      "review_id": 65,
+      "status": "none",
+      "ticket_id": null,
+      "finding_seqs": [],
+      "requested_at": null,
+      "filed_at": null
+    },
+    "draft_status": "ready",
+    "timings": {
+      "requested_at": "2026-10-10T10:30:00Z",
+      "draft_ready_at": "2026-10-10T10:30:00Z",
+      "signed_off_at": null,
+      "posted_at": null,
+      "with_the_agent_seconds": 2700,
+      "waiting_on_you_seconds": 900,
+      "last_activity_at": "2026-10-10T10:30:00Z"
+    }
+  },
+  {
+    "review": {
+      "id": 66,
+      "repo": "tc/portal",
+      "pr": 9568,
+      "head_sha": "a7b8c97",
+      "round": 3,
+      "title": "Retry a failed delivery with an idempotency key",
+      "ticket_id": "DEV-968",
+      "ticket_url": "https://linear.app/deverge/issue/DEV-968",
+      "changed_lines": 276,
+      "session_id": "ses_00000042",
+      "ledger_id": "ledger-2026-10-11-9568-3",
+      "github_review_id": null,
+      "created_at": "2026-10-10T17:05:00Z",
+      "pr_state": null,
+      "pr_state_at": null,
+      "harvested_at": null,
+      "dismissed_at": null,
+      "dismissed_reason": null
+    },
+    "not_for_signing": null,
+    "layers": [
+      {
+        "number": 1,
+        "name": "lint",
+        "state": "done",
+        "detail": "passed",
+        "updated_at": "2026-10-10T17:05:00Z"
+      },
+      {
+        "number": 2,
+        "name": "understand",
+        "state": "done",
+        "detail": "confirmed by you",
+        "updated_at": "2026-10-10T17:05:00Z"
+      },
+      {
+        "number": 3,
+        "name": "alternatives",
+        "state": "done",
+        "detail": "2 options",
+        "updated_at": "2026-10-10T17:05:00Z"
+      },
+      {
+        "number": 4,
+        "name": "solution_map",
+        "state": "done",
+        "detail": "one place to change",
+        "updated_at": "2026-10-10T17:05:00Z"
+      },
+      {
+        "number": 5,
+        "name": "code_review",
+        "state": "done",
+        "detail": "3 findings",
+        "updated_at": "2026-10-10T17:05:00Z"
+      },
+      {
+        "number": 6,
+        "name": "draft",
+        "state": "waiting_on_you",
+        "detail": "waiting on you",
+        "updated_at": "2026-10-10T17:05:00Z"
+      },
+      {
+        "number": 7,
+        "name": "harvest",
+        "state": "pending",
+        "detail": "not started yet",
+        "updated_at": "2026-10-10T17:05:00Z"
+      }
+    ],
+    "brief": null,
+    "findings": [
+      {
+        "review_id": 66,
+        "seq": 1,
+        "key": "F1",
+        "lens": "correctness",
+        "severity": "should",
+        "file": "app/Jobs/DeliverWebhook.php",
+        "line": 58,
+        "claim": "A retry after the window still writes the delivery as sent",
+        "evidence": null,
+        "disposition": "in_draft",
+        "disposition_reason": null,
+        "rule_id": null,
+        "rule_key": null,
+        "github_comment_id": null,
+        "created_at": "2026-10-11T09:30:00Z"
+      }
+    ],
+    "outcomes": [],
+    "finding_severities": {
+      "blocker": 0,
+      "should": 1,
+      "nit": 0,
+      "question": 0
+    },
+    "finding_dispositions": {
+      "in_draft": 1,
+      "held_back": 0,
+      "suppressed": 0
+    },
+    "not_checked": null,
+    "nit_ticket": {
+      "review_id": 66,
+      "status": "none",
+      "ticket_id": null,
+      "finding_seqs": [],
+      "requested_at": null,
+      "filed_at": null
+    },
+    "draft_status": "ready",
+    "timings": {
+      "requested_at": "2026-10-10T17:05:00Z",
+      "draft_ready_at": "2026-10-10T17:05:00Z",
+      "signed_off_at": null,
+      "posted_at": null,
+      "with_the_agent_seconds": 2700,
+      "waiting_on_you_seconds": 900,
+      "last_activity_at": "2026-10-10T17:05:00Z"
+    }
+  },
+  {
+    "review": {
+      "id": 67,
+      "repo": "tc/portal",
+      "pr": 9568,
+      "head_sha": "b8c9d08",
+      "round": 4,
+      "title": "Retry a failed delivery with an idempotency key",
+      "ticket_id": "DEV-968",
+      "ticket_url": "https://linear.app/deverge/issue/DEV-968",
+      "changed_lines": 277,
+      "session_id": "ses_00000043",
+      "ledger_id": "ledger-2026-10-11-9568-4",
+      "github_review_id": null,
+      "created_at": "2026-10-11T12:50:00Z",
+      "pr_state": null,
+      "pr_state_at": null,
+      "harvested_at": null,
+      "dismissed_at": null,
+      "dismissed_reason": null
+    },
+    "not_for_signing": null,
+    "layers": [
+      {
+        "number": 1,
+        "name": "lint",
+        "state": "done",
+        "detail": "passed",
+        "updated_at": "2026-10-11T12:50:00Z"
+      },
+      {
+        "number": 2,
+        "name": "understand",
+        "state": "done",
+        "detail": "confirmed by you",
+        "updated_at": "2026-10-11T12:50:00Z"
+      },
+      {
+        "number": 3,
+        "name": "alternatives",
+        "state": "done",
+        "detail": "2 options",
+        "updated_at": "2026-10-11T12:50:00Z"
+      },
+      {
+        "number": 4,
+        "name": "solution_map",
+        "state": "done",
+        "detail": "one place to change",
+        "updated_at": "2026-10-11T12:50:00Z"
+      },
+      {
+        "number": 5,
+        "name": "code_review",
+        "state": "done",
+        "detail": "3 findings",
+        "updated_at": "2026-10-11T12:50:00Z"
+      },
+      {
+        "number": 6,
+        "name": "draft",
+        "state": "waiting_on_you",
+        "detail": "waiting on you",
+        "updated_at": "2026-10-11T12:50:00Z"
+      },
+      {
+        "number": 7,
+        "name": "harvest",
+        "state": "pending",
+        "detail": "not started yet",
+        "updated_at": "2026-10-11T12:50:00Z"
+      }
+    ],
+    "brief": null,
+    "findings": [
+      {
+        "review_id": 67,
+        "seq": 1,
+        "key": "F1",
+        "lens": "correctness",
+        "severity": "should",
+        "file": "app/Jobs/DeliverWebhook.php",
+        "line": 58,
+        "claim": "The key is regenerated when the payload is rebuilt",
+        "evidence": null,
+        "disposition": "in_draft",
+        "disposition_reason": null,
+        "rule_id": null,
+        "rule_key": null,
+        "github_comment_id": null,
+        "created_at": "2026-10-11T09:30:00Z"
+      }
+    ],
+    "outcomes": [],
+    "finding_severities": {
+      "blocker": 0,
+      "should": 1,
+      "nit": 0,
+      "question": 0
+    },
+    "finding_dispositions": {
+      "in_draft": 1,
+      "held_back": 0,
+      "suppressed": 0
+    },
+    "not_checked": null,
+    "nit_ticket": {
+      "review_id": 67,
+      "status": "none",
+      "ticket_id": null,
+      "finding_seqs": [],
+      "requested_at": null,
+      "filed_at": null
+    },
+    "draft_status": "ready",
+    "timings": {
+      "requested_at": "2026-10-11T12:50:00Z",
+      "draft_ready_at": "2026-10-11T12:50:00Z",
+      "signed_off_at": null,
+      "posted_at": null,
+      "with_the_agent_seconds": 2700,
+      "waiting_on_you_seconds": 900,
+      "last_activity_at": "2026-10-11T12:50:00Z"
     }
   }
 ]

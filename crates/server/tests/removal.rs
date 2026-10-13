@@ -9,7 +9,7 @@
 
 mod common;
 
-use review_desk_store::{DismissedReviews, DraftStatus, NewDraft};
+use review_desk_store::{DraftStatus, NewDraft, ReviewsShown};
 
 /// A review nobody has started, as the Locus dispatcher records a review request.
 fn requested(harness: &common::Harness, pr: i64, head: &str) -> i64 {
@@ -186,22 +186,31 @@ fn the_reviews_list_leaves_dismissed_reviews_out_until_they_are_asked_for() {
         "the default view is the reviews in play: {default:?}"
     );
 
-    let only = listed(&harness, "?dismissed=only");
+    let only = listed(&harness, "?show=dismissed");
     assert_eq!(only, vec![stray], "and the filter is the dismissed ones");
 
-    let included = listed(&harness, "?dismissed=included");
+    let included = listed(&harness, "?show=everything");
     assert!(
         included.contains(&seeded.review_id) && included.contains(&stray),
         "or the whole record on one page: {included:?}"
     );
 
+    // **And a dismissed review is not under Finished**, which is the one place the two
+    // ways off the desk could be confused: nothing has merged here, and a view that
+    // answered with the dismissed row would be calling a developer's act an outcome.
+    assert_eq!(
+        listed(&harness, "?show=finished"),
+        Vec::<i64>::new(),
+        "no pull request here has merged"
+    );
+
     // The choice is echoed back, as the repository is, so the page's filter reads what it
     // was given rather than trusting its own state.
-    let answer = harness.api("GET", "/reviews?dismissed=only", None);
-    assert_eq!(answer.json()["dismissed"], "only");
+    let answer = harness.api("GET", "/reviews?show=dismissed", None);
+    assert_eq!(answer.json()["show"], "dismissed");
     assert_eq!(
-        harness.api("GET", "/reviews", None).json()["dismissed"],
-        "excluded",
+        harness.api("GET", "/reviews", None).json()["show"],
+        "in_play",
         "and a caller that asked for nothing is told what it got"
     );
 
@@ -215,23 +224,50 @@ fn the_reviews_list_leaves_dismissed_reviews_out_until_they_are_asked_for() {
 }
 
 #[test]
-fn a_dismissed_choice_that_is_not_one_is_refused_rather_than_ignored() {
+fn a_choice_of_which_reviews_to_show_that_is_not_one_is_refused_rather_than_ignored() {
     // A mistyped filter answering with the default view would read as "there are no
     // dismissed reviews", which is the one wrong answer this parameter can give.
     let harness = common::start_with_no_github();
     common::seed(&harness.store);
 
-    let answer = harness.api("GET", "/reviews?dismissed=yes", None);
+    let answer = harness.api("GET", "/reviews?show=yes", None);
     assert_eq!(answer.status, 400, "{}", answer.text());
     assert_eq!(answer.error_code(), "invalid_value");
-    assert_eq!(answer.json()["field"], "dismissed");
+    assert_eq!(answer.json()["field"], "show");
     assert!(
         answer.json()["expected"]
             .as_str()
-            .is_some_and(|expected| expected.contains("only")),
+            .is_some_and(|expected| expected.contains("finished")),
         "and it says what it would have taken: {}",
         answer.text()
     );
+
+    // **The old spelling is refused by name.** `?dismissed=only` was this parameter until
+    // DEV-957, and an unknown parameter is ignored by this server — so a bookmark or a saved
+    // client sending it would have been answered with the in-play view, which is the very
+    // failure the paragraph above is about, reached through the rename rather than through a
+    // typo.
+    //
+    // An earlier version of this asserted the 200 was *fine* because the answer echoes
+    // `show`. A review of this branch pointed out that a client reading rows does not read
+    // the echo, and it was right.
+    for stale in [
+        "/reviews?dismissed=only",
+        "/reviews?dismissed=",
+        "/reviews?dismissed",
+    ] {
+        let answer = harness.api("GET", stale, None);
+        assert_eq!(answer.status, 400, "{stale}: {}", answer.text());
+        assert_eq!(answer.error_code(), "invalid_value", "{stale}");
+        assert_eq!(answer.json()["field"], "dismissed", "{stale}");
+        assert!(
+            answer.json()["expected"]
+                .as_str()
+                .is_some_and(|expected| expected.contains("show")),
+            "{stale}: and it names the parameter that replaced it: {}",
+            answer.text()
+        );
+    }
 }
 
 #[test]
@@ -256,7 +292,7 @@ fn deleting_a_review_nobody_started_removes_it() {
 
     // And it is gone from the Reviews list in every view, which is the difference between
     // a delete and a dismissal.
-    for query in ["", "?dismissed=only", "?dismissed=included"] {
+    for query in ["", "?show=dismissed", "?show=everything"] {
         assert!(
             !listed(&harness, query).contains(&stray),
             "a deleted review is in no view, and {query:?} had it"
@@ -387,7 +423,7 @@ fn every_screen_that_reads_a_review_can_tell_it_is_dismissed() {
 
     let row = harness
         .store
-        .reviews_at_step(None, DismissedReviews::Only)
+        .reviews_at_step(None, ReviewsShown::Dismissed)
         .expect("the dismissed reviews")
         .remove(0);
     assert_eq!(row.review.id, seeded.review_id);

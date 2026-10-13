@@ -31,13 +31,13 @@ use review_desk_store::{
     finding_heading, now, Actor, BlindPassState, Brief, BriefBlindPass, BriefDisagreement,
     BriefFlowBox, BriefFlowRow, BriefOpenChoice, BriefOption, BriefOptionVerdict, BriefPart,
     BriefPartFile, BriefProblem, BriefSupportTable, CriterionStatus, Decision,
-    DescriptionLintStatus, DismissedReviews, Disposition, Draft, DraftLint, DraftSection,
-    FileCheck, Finding, FindingDecision, FindingHunk, FindingRef, HunkLine, HunkLineMarker,
+    DescriptionLintStatus, Disposition, Draft, DraftLint, DraftSection, FileCheck, Finding,
+    FindingDecision, FindingHunk, FindingRef, HunkLine, HunkLineMarker, LeftTheDesk,
     NewAcceptanceCriterion, NewBrief, NewDescriptionLintResult, NewDraft, NewFileChange,
-    NewFinding, NewOutcome, NewReview, NewReviewSource, NewRule, NitTicket, OptionProposer,
-    Outcome, OutcomeKind, ProblemStatement, ProblemVerdict, Review, ReviewEvent, ReviewFacts,
-    ReviewLayer, ReviewLayerName, ReviewLayerRun, ReviewProvenance, ReviewTimings, Rule, RuleScope,
-    RuleStage, Severity, SourceKind, Store, Verification,
+    NewFinding, NewOutcome, NewReview, NewReviewSource, NewRule, NitTicket, NotForSigning,
+    OptionProposer, Outcome, OutcomeKind, ProblemStatement, ProblemVerdict, Review, ReviewEvent,
+    ReviewFacts, ReviewLayer, ReviewLayerName, ReviewLayerRun, ReviewProvenance, ReviewTimings,
+    ReviewsShown, Rule, RuleScope, RuleStage, Severity, SourceKind, Store, Verification,
 };
 use serde_json::{json, Map, Value};
 
@@ -1104,6 +1104,7 @@ fn review_document(review: &Review) -> Value {
         "github_review_id": review.github_review_id,
         "created_at": review.created_at,
         "pr_state": review.pr_state.map(|state| state.as_str()),
+        "pr_state_at": review.pr_state_at,
         "harvested_at": review.harvested_at,
         "dismissed_at": review.dismissed_at,
         "dismissed_reason": review.dismissed_reason,
@@ -1407,14 +1408,14 @@ fn review_timing_rows(store: &Store) -> Value {
 
 /// `GET /reviews`: every review, newest first, with the step it has reached.
 fn review_list(store: &Store) -> Value {
-    let dismissed = DismissedReviews::default();
+    let shown = ReviewsShown::default();
     json!({
         // The repository asked about, echoed back. `None` here, for every repository.
         "repo": Value::Null,
         // The choice this answer was composed for, echoed back the same way.
-        "dismissed": dismissed.as_str(),
+        "show": shown.as_str(),
         "reviews": store
-            .reviews_at_step(None, dismissed)
+            .reviews_at_step(None, shown)
             .expect("every review")
             .iter()
             .map(|at| {
@@ -1423,6 +1424,15 @@ fn review_list(store: &Store) -> Value {
                     "rounds_on_pr": at.rounds_on_pr,
                     "steps_total": ReviewLayerName::COUNT,
                     "last_activity_at": at.review.last_activity_at,
+                    // How it left the desk, and when its pull request ended. Null on a
+                    // row in play, which every row of the seeded record is.
+                    "left_the_desk": at.left_the_desk.map(|left| match left {
+                        LeftTheDesk::Dismissed => "dismissed",
+                        LeftTheDesk::Finished => "finished",
+                        LeftTheDesk::Superseded => "superseded",
+                    }),
+                    "finished_how": at.finished_how.map(|state| state.as_str()),
+                    "finished_at": at.finished_at,
                 });
                 // Absent together, for a review nothing has reported on at all: a step
                 // number of 1 would say the lint is pending, which is a different claim.
@@ -1437,6 +1447,23 @@ fn review_list(store: &Store) -> Value {
             })
             .collect::<Vec<_>>(),
     })
+}
+
+/// The contract's `NotForSigning`, or null.
+fn not_for_signing_document(why: Option<NotForSigning>) -> Value {
+    match why {
+        None => Value::Null,
+        Some(NotForSigning::Dismissed) => json!({ "reason": "dismissed" }),
+        Some(NotForSigning::Finished { how, at }) => json!({
+            "reason": "finished",
+            "how": how.as_str(),
+            "at": at,
+        }),
+        Some(NotForSigning::Superseded { by_round }) => json!({
+            "reason": "superseded",
+            "by_round": by_round,
+        }),
+    }
 }
 
 fn nit_ticket_document(ticket: &NitTicket) -> Value {
@@ -1616,6 +1643,12 @@ fn review_detail(store: &Store, review_id: i64) -> Value {
     let full = store.full_review(review_id).expect("the whole review");
     let mut document = Map::new();
     document.insert("review".to_string(), review_document(&full.review));
+    // Why nothing on it may be signed off, or null. The One review screen offers the
+    // brief's confirmation, which is one of the four acts a review off the desk refuses.
+    document.insert(
+        "not_for_signing".to_string(),
+        not_for_signing_document(store.not_for_signing(review_id).expect("the standing")),
+    );
     document.insert(
         "layers".to_string(),
         Value::Array(full.layers.iter().map(layer_document).collect()),
@@ -1804,6 +1837,11 @@ fn draft_detail(store: &Store, review_id: i64) -> Value {
     json!({
         "draft": draft_document(&draft),
         "review": review_document(&review),
+        // Why this draft may not be signed off, or null when it may. The store answers
+        // it and the page draws it, so a screen cannot offer a sign-off the API refuses.
+        "not_for_signing": not_for_signing_document(
+            store.not_for_signing(review_id).expect("the standing"),
+        ),
         "lint": lint_document(&draft.lint),
         "sections": store
             .draft_sections(review_id)
@@ -1867,6 +1905,9 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
                 "pull_request": pull_request(review),
                 "ticket_id": review.ticket_id,
                 "ticket_url": review.ticket_url,
+                // Which round this brief belongs to; every item that makes a queue row
+                // carries one.
+                "round": review.round,
                 "brief_ready_at": brief.updated_at,
                 "blocks_later_layers": layer
                     == Some(review_desk_store::ReviewLayerState::WaitingOnYou),
@@ -1920,6 +1961,9 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
                 "pull_request": pull_request(review),
                 "ticket_id": review.ticket_id,
                 "ticket_url": review.ticket_url,
+                // Which round was replied to: the queue draws one row per pull request,
+                // and a reply is on the round that was posted.
+                "round": review.round,
                 "events": outcomes.iter().filter(|outcome| {
                     matches!(outcome.actor, Actor::Author | Actor::Harvester)
                 }).map(|outcome| json!({
@@ -1949,6 +1993,8 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
                 "pull_request": pull_request(&at.review),
                 "ticket_id": at.review.ticket_id,
                 "ticket_url": at.review.ticket_url,
+                // Which round the session is working on; the fourth and last array with one.
+                "round": at.review.round,
                 "layer_number": at.layer.number,
                 "layer_name": at.layer.name,
                 "layers_total": ReviewLayerName::COUNT,

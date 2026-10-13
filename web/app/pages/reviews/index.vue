@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { DismissedReviews, ReviewListItem } from '~/types/desk'
+import type { ReviewListItem, ReviewsShown } from '~/types/desk'
 
 /**
  * The Reviews list: **every review the record holds, whatever became of it.**
@@ -31,18 +31,33 @@ import type { DismissedReviews, ReviewListItem } from '~/types/desk'
  * step it has *left* when the state is `done`, so a posted review would read "Draft" and
  * tell a reader it still needs signing off — while the queue says it is with the author.
  *
- * ## The dismissed reviews are here, and not in the default view
+ * ## The reviews that have left the desk are here, and not in the default view
  *
- * A review the developer has dismissed is out of the queue and out of this page's default
- * view — DEV-945 — and this is the one page that can still find it. The second picker is
- * what asks for them, and it has three positions rather than two so that the page's own
- * promise still holds: "every review the record holds, whatever became of it" is
+ * **Two ways of leaving, and they are told apart on every row.** A review the developer
+ * dismissed is out of the queue and out of this page's default view — DEV-945 — and a
+ * review whose pull request merged or closed is **finished**, which is DEV-957 and is not
+ * a dismissal: nobody decided it, it happened, and no round of that pull request can be
+ * posted afterwards. This is the one page that can still find either.
+ *
+ * The second picker is what asks for them, and it has four positions so that the page's
+ * own promise still holds: "every review the record holds, whatever became of it" is
  * **Everything**, and the default is the narrower claim it makes in the line under the
  * heading.
  *
- * Each dismissed row says when and why, under the title, because a reader of this view is
- * asking exactly that. The reason is the developer's own words, so it is drawn as text —
- * not through `TickedText`, which is for prose a session wrote.
+ * Each row that has left says so under the title, because a reader of either view is
+ * asking exactly that. A dismissal says when and why; the reason is the developer's own
+ * words, so it is drawn as text — not through `TickedText`, which is for prose a session
+ * wrote. A finish says how the pull request ended and, when the record holds a date, when:
+ * the two sentences are different because the facts are, and a row that said "dismissed"
+ * over a merge would be putting words in the developer's mouth.
+ *
+ * ## And a third row that is nobody's turn, which stays in play
+ *
+ * A **superseded** round — an unposted round the author has pushed past — is not off the
+ * desk in the filter's sense: its pull request is in play and so is its own record, so it is
+ * under **In play** and there is no position for it. What it is not is anybody's turn, and
+ * the step column would otherwise read "Draft · waiting on you" over a round the store
+ * refuses every act on. So it reads in the past tense like the other two and says why.
  *
  * ## Where the record has no answer
  *
@@ -69,24 +84,27 @@ const handedOver = ref(takeHandOver())
 const repo = ref(ALL_REPOSITORIES)
 
 /**
- * Which of the dismissed reviews to show. The contract's three positions, as they are
- * sent: the page holds the API's own word for the filter rather than a word of its own,
- * so there is nothing to translate and nothing to disagree about.
+ * Which reviews to show. The contract's four positions, as they are sent: the page holds
+ * the API's own word for the filter rather than a word of its own, so there is nothing to
+ * translate and nothing to disagree about.
  */
-const dismissed = ref<DismissedReviews>('excluded')
+const show = ref<ReviewsShown>('in_play')
 
-const dismissedTabs: Array<{ value: DismissedReviews, label: string }> = [
-  { value: 'excluded', label: 'In play' },
-  { value: 'only', label: 'Dismissed' },
-  { value: 'included', label: 'Everything' },
+const showTabs: Array<{ value: ReviewsShown, label: string }> = [
+  { value: 'in_play', label: 'In play' },
+  { value: 'dismissed', label: 'Dismissed' },
+  { value: 'finished', label: 'Finished' },
+  { value: 'everything', label: 'Everything' },
 ]
 
 /**
  * The read follows both pickers, server-side, as the repository picker already did: a
- * dismissed view filtered in the page would be the page deciding what a dismissal is,
- * and the record is where that is decided.
+ * filtered view computed in the page would be the page deciding what a dismissal or a
+ * finish is, and the record is where that is decided. **Finished especially**: it is
+ * derived from whichever round of the pull request a harvest last reached, which a page
+ * holding one row has not got.
  */
-const reviews = desk.reviews(repo, dismissed)
+const reviews = desk.reviews(repo, show)
 
 /**
  * The repositories to pick from, read the way the Rules screen reads them.
@@ -123,10 +141,13 @@ const repoTabs = computed(() => [
  *
  * It is a state, not a mark: this page says where a review is and never how it went.
  *
- * **The ticket stays on this line even though the row now links it.** The line is what the
- * page is read by — a review is found by scanning it — and a review whose record holds an
- * id and no address has no link to be found by. Saying it twice for the reviews that have
- * both is cheaper than saying it inconsistently.
+ * **The ticket is not here, and the reasoning it used to carry has been answered.** This
+ * said the id twice for a review with an address — once here and once as the row's link —
+ * on the ground that a review with an id and *no* address would otherwise have no ticket on
+ * its row at all. DEV-957 put the link inline in this very line, which made the repetition
+ * read as a mistake, and `QueueRow` now draws the id either way: a link when the record
+ * holds an address, plain text when it does not. The line is still what the page is read
+ * by; the ticket on it is written by the component rather than by this.
  */
 function about(row: ReviewListItem): string {
   const parts = [row.review.repo]
@@ -136,16 +157,18 @@ function about(row: ReviewListItem): string {
       : `round ${row.review.round}`,
   )
   if (row.review.github_review_id) parts.push('posted')
-  if (row.review.ticket_id) parts.push(row.review.ticket_id)
   return parts.join(' · ')
 }
 
 /** What this view holds, said in the line under the heading. */
-const VIEW_LINES: Record<DismissedReviews, string> = {
-  excluded: 'Every review in play. The ones you have dismissed are under Dismissed.',
-  only: 'The reviews you have dismissed, each with when and why.',
-  included: 'Every review the record holds, whatever became of it — the dismissed ones '
-    + 'among them.',
+const VIEW_LINES: Record<ReviewsShown, string> = {
+  in_play: 'Every review in play. The ones that have left the desk are under Dismissed '
+    + 'and Finished.',
+  dismissed: 'The reviews you have dismissed, each with when and why.',
+  finished: 'The reviews whose pull request merged or closed. Nobody dismissed these — '
+    + 'no round of them can be posted now.',
+  everything: 'Every review the record holds, whatever became of it — the dismissed and '
+    + 'the finished ones among them.',
 }
 
 /**
@@ -157,8 +180,35 @@ const VIEW_LINES: Record<DismissedReviews, string> = {
  * still the previous view's for as long as the read is in flight, which is one sentence
  * describing another view's rows.
  */
-function viewLine(answer: { dismissed: DismissedReviews }): string {
-  return VIEW_LINES[answer.dismissed]
+function viewLine(answer: { show: ReviewsShown }): string {
+  return VIEW_LINES[answer.show]
+}
+
+/**
+ * What a finished row says under its title.
+ *
+ * **The pull request's own word, and the day only when the record holds one.**
+ * `finished_how` is `merged` or `closed` on a finished row; `finished_at` is null when
+ * GitHub gave no time, and the sentence then stops after the word rather than inventing a
+ * date. `row.review.pr_state` is deliberately **not** read here — it is the column of this
+ * one round, null for three of the four rounds of a merged pull request, and the server
+ * serves `finished_how` precisely so a row does not have to know that.
+ */
+function finishedLine(row: ReviewListItem): string {
+  const day = dayLabel(row.finished_at)
+  const when = day ? ` on ${day}` : ''
+  /*
+   * **No default word.** `?? 'merged'` was here, and on the one page whose whole point is
+   * telling the two ways off the desk apart it would have stated a fact the record did not:
+   * a finished row served without `finished_how` would read "merged" whether its pull
+   * request merged or closed. `finished_at` already handles its own absence by leaving the
+   * day out; this leaves the word out the same way. Found by a review of this branch.
+   */
+  const how = row.finished_how
+  if (how == null) {
+    return `Finished${when}. No round of this pull request can be posted.`
+  }
+  return `Finished — the pull request ${how}${when}. No round of it can be posted.`
 }
 
 /** Whether any row has no activity time, which the caption then says. */
@@ -180,11 +230,11 @@ const someTimesMissing = computed(
  */
 function isEmpty(answer: {
   repo: string | null
-  dismissed: DismissedReviews
+  show: ReviewsShown
   reviews: ReviewListItem[]
 }): boolean {
   return answer.repo == null
-    && answer.dismissed === 'excluded'
+    && answer.show === 'in_play'
     && answer.reviews.length === 0
 }
 
@@ -196,15 +246,18 @@ function isEmpty(answer: {
  * and "no review has been dismissed" is not either of them. One sentence for each, said
  * inside the default slot so the pickers stay on the page to get back out with.
  */
-function nothingHere(answer: { repo: string | null, dismissed: DismissedReviews }): string {
+function nothingHere(answer: { repo: string | null, show: ReviewsShown }): string {
   const where = answer.repo == null ? '' : ` on ${answer.repo}`
-  const lines: Record<DismissedReviews, string> = {
-    only: `No review${where} has been dismissed. A review you dismiss leaves the queue `
-      + 'and turns up here.',
-    included: `No review${where} yet.`,
-    excluded: `No review${where} is in play. Any you have dismissed are under Dismissed.`,
+  const lines: Record<ReviewsShown, string> = {
+    dismissed: `No review${where} has been dismissed. A review you dismiss leaves the `
+      + 'queue and turns up here.',
+    finished: `No review${where} has finished. A review whose pull request merges or `
+      + 'closes leaves the queue and turns up here.',
+    everything: `No review${where} yet.`,
+    in_play: `No review${where} is in play. Any that have left the desk are under `
+      + 'Dismissed and Finished.',
   }
-  return lines[answer.dismissed]
+  return lines[answer.show]
 }
 </script>
 
@@ -257,9 +310,9 @@ function nothingHere(answer: { repo: string | null, dismissed: DismissedReviews 
             :disabled="repos.pending.value && !repos.loaded.value"
           />
           <DecisionTrack
-            v-model="dismissed"
+            v-model="show"
             label="Which reviews to show"
-            :options="dismissedTabs"
+            :options="showTabs"
           />
           <!--
             **The sort, said out loud**, the way the queue says "Oldest first". Newest
@@ -329,11 +382,33 @@ function nothingHere(answer: { repo: string | null, dismissed: DismissedReviews 
               it is not.
             -->
             <span
-              v-if="row.review.dismissed_at"
-              class="rd-meta dismissed"
+              v-if="row.left_the_desk === 'dismissed' && row.review.dismissed_at"
+              class="rd-meta left"
             >Dismissed {{ sinceLabel(row.review.dismissed_at) }}<template
               v-if="row.review.dismissed_reason"
             > — {{ row.review.dismissed_reason }}</template></span>
+            <!--
+              **A finish, in the words of the thing that happened.** Not "dismissed", which
+              would put a decision in the developer's mouth about a merge nobody made — the
+              two are told apart on every row, which is DEV-957's criterion. The date is
+              drawn only when the record holds one: GitHub does not always give a time, and
+              a row must then say the pull request merged without naming the day.
+            -->
+            <span
+              v-else-if="row.left_the_desk === 'finished'"
+              class="rd-meta left"
+            >{{ finishedLine(row) }}</span>
+            <!--
+              **A superseded round, which is in play and is still nobody's turn.** It stays
+              under In play — the pull request is in play and so is this round's record — and
+              the row says why nothing is waiting on it, because the step beside it reads
+              "was waiting on you" and a reader is owed the reason.
+            -->
+            <span
+              v-else-if="row.left_the_desk === 'superseded'"
+              class="rd-meta left"
+            >Superseded by round {{ row.rounds_on_pr }}. The author pushed past the commit
+              this round was written against, so it can never be the review that posts.</span>
           </QueueRow>
         </DeskSection>
       </template>
@@ -369,9 +444,9 @@ function nothingHere(answer: { repo: string | null, dismissed: DismissedReviews 
           </p>
           <DeskButton
             kind="secondary"
-            @click="dismissed = 'only'"
+            @click="show = 'everything'"
           >
-            Look at the dismissed reviews
+            Look at the reviews that have left the desk
           </DeskButton>
         </DeskCard>
       </template>
@@ -423,11 +498,15 @@ function nothingHere(answer: { repo: string | null, dismissed: DismissedReviews 
 }
 
 /*
- * The dismissal takes the row's whole width and wraps, because the reason is a sentence
- * somebody typed rather than a label. Its own colour, so the row reads as a review that
- * has left the desk without the words having to say it twice.
+ * **The line a row that has left the desk carries**, either way. It takes the row's whole
+ * width and wraps, because a dismissal's reason is a sentence somebody typed rather than a
+ * label. Its own colour, so the row reads as a review that has left the desk without the
+ * words having to say it twice.
+ *
+ * **`left`, and it was `dismissed`.** One class for both lines rather than two identical
+ * ones: what it styles is "this row has left the desk", and the sentence says which way.
  */
-.dismissed {
+.left {
   display: block;
   flex: 1 1 100%;
   overflow-wrap: break-word;

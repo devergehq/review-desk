@@ -207,8 +207,13 @@ pub fn harvest(store: &Store, github: &dyn GitHub, selection: Selection) -> Resu
         reviews: Vec::with_capacity(reviews.len()),
     };
 
+    // Whether this is the unnarrowed sweep. A run the developer narrowed with `--review` is
+    // a direct request and reads the review whatever state it is in.
+    let sweeping = selection.review.is_none();
     for review in reviews {
-        report.reviews.push(harvest_one(store, github, &review)?);
+        report
+            .reviews
+            .push(harvest_one(store, github, &review, sweeping)?);
     }
 
     Ok(report)
@@ -245,9 +250,85 @@ fn select(store: &Store, selection: &Selection) -> Result<Vec<Review>> {
 }
 
 /// Harvest one review.
-fn harvest_one(store: &Store, github: &dyn GitHub, review: &Review) -> Result<ReviewReport> {
+///
+/// **A sweep that finds a settled pull request unchanged stops after the first call**,
+/// which is what makes DEV-957's re-read of a closed pull request affordable. That
+/// change keeps the newest round of a `closed` pull request in the sweep so a reopen can be
+/// seen at all — and without this, seeing it cost the *whole* harvest every quarter of an
+/// hour: the pull request, then every review thread whenever any finding carries a comment
+/// id, then a commit comparison and a commit read per finding whose file moved. Three calls
+/// and more, for ever, on a pull request nobody is going to touch again.
+///
+/// The question that re-read exists to ask is "has it changed", and the first call answers
+/// it. Everything after it reads what came back *on* the review, and a pull request whose
+/// state has not moved has nothing new to say. So an unchanged settled read returns; a read
+/// that finds it open again — or merged after being closed — falls through and harvests it
+/// properly.
+///
+/// **Two things this must not be, both found by a review of this branch.** It is not a test
+/// of *settledness*: `closed` read back as `merged` is a change, and treating it as "still
+/// settled" left the record saying closed for ever, because every later sweep took the same
+/// branch. And it is not applied to `--review`: that is the developer asking for one review,
+/// which `select` already answers for, and a merged pull request can still be replied to and
+/// have its threads resolved — the narrowed run is the only thing that can record those.
+///
+/// **It also stops the sweep touching a review nobody touched.** `set_review_pr_state` and
+/// `mark_review_harvested` both move `last_activity_at`, so the quarter-hourly re-read had a
+/// row in the Finished view reading "last written to just now" beside "No round of it can be
+/// posted". Writing the same state twice is already a no-op for the columns; what was not a
+/// no-op was the stamp. Found by a review of this branch.
+fn harvest_one(
+    store: &Store,
+    github: &dyn GitHub,
+    review: &Review,
+    sweeping: bool,
+) -> Result<ReviewReport> {
     let pull_request = github.pull_request(&review.repo, review.pr)?;
-    store.set_review_pr_state(review.id, pull_request.state, pull_request.state_at)?;
+
+    // **Sameness, not settledness.** The first version of this asked whether the review was
+    // settled and still settled, which is true of `closed` read back as `merged` — a pull
+    // request reopened and merged between two sweeps, which GitHub permits and
+    // `reviews_to_harvest` deliberately keeps reading for. The state write was then skipped
+    // and the record kept `closed` with the close date for ever, because every later sweep
+    // took the same branch: the Finished row read "the pull request closed on" about a
+    // merged one, permanently. Found by a review of this branch.
+    //
+    // `pr_state_at` is compared too, because a time can arrive on a state already recorded.
+    let unchanged =
+        review.pr_state == Some(pull_request.state) && review.pr_state_at == pull_request.state_at;
+    if !unchanged {
+        store.set_review_pr_state(review.id, pull_request.state, pull_request.state_at)?;
+    }
+
+    // **Only the sweep stops here, and that is the second half of the same correction.**
+    // `--review` means the developer asked for this one, which `select` already answers with
+    // "answering no to a direct request would be worse than the call it saves" — and a
+    // merged pull request can still be replied to and have its threads resolved, so the
+    // narrowed run is the only thing that can record them. The early return applied to it
+    // too, which took that away and left the flag's own help promising it.
+    if sweeping && unchanged && pull_request.state.is_settled() {
+        return Ok(ReviewReport {
+            review_id: review.id,
+            repo: review.repo.clone(),
+            pr: review.pr,
+            round: review.round,
+            pr_state: pull_request.state,
+            pr_state_at: pull_request.state_at,
+            was_settled: true,
+            reviewed_head: review.head_sha.clone(),
+            current_head: pull_request.head_sha.clone(),
+            findings: 0,
+            findings_without_comment: 0,
+            findings_with_missing_thread: 0,
+            replies_recorded: 0,
+            threads_resolved_recorded: 0,
+            code_changed_recorded: 0,
+            already_recorded: 0,
+            // Step 7 is not rewritten either. The last harvest that read this pull request
+            // while it was open wrote it, and nothing has happened since.
+            step_seven: None,
+        });
+    }
 
     let findings = store.list_findings(review.id)?;
     let linked: Vec<&Finding> = findings

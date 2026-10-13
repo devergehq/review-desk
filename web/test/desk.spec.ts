@@ -70,26 +70,75 @@ beforeEach(async () => {
 })
 
 describe('the inbox', () => {
-  it('groups nine waiting items across two repositories', async () => {
+  it('groups twelve waiting items across three repositories', async () => {
     const inbox = await settled(desk().inbox())
     /*
-     * Nine, and one review is two of them: #412 has a brief to confirm *and* a draft to
-     * approve, because its session wrote the draft without waiting for the confirmation.
-     * Both are waiting on the developer, so both are items — which is what the server
-     * counts, and what this counted differently until DEV-862's end-to-end test caught it.
+     * **`items` counts items, not rows, and that has not changed.** One review can be two
+     * of them: #412 has a brief to confirm *and* a draft to approve, because its session
+     * wrote the draft without waiting for the confirmation. Both are waiting on the
+     * developer, so both are items — which is what the server counts, and what this
+     * counted differently until DEV-862's end-to-end test caught it. The queue's *heading*
+     * counts pull requests and reads the merged rows instead; see
+     * `screens.nuxt.spec.ts`.
      *
-     * It was eight until DEV-878 gave the real-length review a draft. That review's own
-     * layer trail already said step 6 was waiting on the developer, with no draft behind it
-     * to wait on; the ninth item is the fixture being made to agree with itself.
+     * It was eight until DEV-878 gave the real-length review a draft, and nine until
+     * DEV-957 added the fixtures in the shape of Patrick's own queue: `tc/portal#9541`
+     * round 2's draft, `#9585` round 2's draft, and `#9585` round 1's author reply. Three
+     * more items, on a third repository. The four rounds of merged `#9568` add none — a
+     * finished review is in no group, which is that issue.
      */
-    expect(inbox.totals).toEqual({ items: 9, repos: 2 })
+    expect(inbox.totals).toEqual({ items: 12, repos: 3 })
+  })
+
+  it('leaves every round of a merged pull request out of every group', async () => {
+    /*
+     * **The record this is built from is Patrick's own**, from DEV-957: four rounds of
+     * `tc/portal#9568`, one posted and three not, on a pull request that merged on 11
+     * October. Every one of those three drafts was in "drafts to approve" and none of them
+     * could ever be posted.
+     *
+     * Note which round the fixture harvested: **round 1 only**, because that is the round
+     * that was posted and the harvest reads what it was posted on. Rounds 2, 3 and 4 hold
+     * no `pr_state` of their own at all, so this is the derivation being asserted rather
+     * than a column being read.
+     */
+    const inbox = await settled(desk().inbox())
+    const merged = [64, 65, 66, 67]
+
+    for (const group of [
+      inbox.briefs_to_confirm,
+      inbox.drafts_to_approve,
+      inbox.author_replies,
+      inbox.in_progress,
+      inbox.posted_awaiting_author,
+    ]) {
+      const found = group
+        .map(item => item.review_id)
+        .filter(id => merged.includes(id))
+      expect(found, 'a round of a merged pull request is in no group').toEqual([])
+    }
+  })
+
+  it('leaves an unposted round a newer round supersedes out of the queue', async () => {
+    /*
+     * `tc/portal#9541` drew two rows on Patrick's screen, round 1 and round 2, both "Draft
+     * ready". Round 1 can never be the review that posts — the author pushed past the
+     * commit it was written against — so it is in no group, and round 2 is.
+     */
+    const inbox = await settled(desk().inbox())
+    const drafts = inbox.drafts_to_approve.map(item => item.review_id)
+
+    expect(drafts, 'round 1 of #9541 is superseded').not.toContain(60)
+    expect(drafts, 'and round 2 is the one waiting').toContain(61)
   })
 
   it('has all five groups filled', async () => {
     const inbox = await settled(desk().inbox())
     expect(inbox.briefs_to_confirm).toHaveLength(1)
-    expect(inbox.drafts_to_approve).toHaveLength(4)
-    expect(inbox.author_replies).toHaveLength(1)
+    /* Four, plus round 2 of each of `tc/portal#9541` and `#9585` — see DEV-957's shape. */
+    expect(inbox.drafts_to_approve).toHaveLength(6)
+    /* The one on review 12, plus `#9585` round 1's, which its author answered. */
+    expect(inbox.author_replies).toHaveLength(2)
     expect(inbox.own_prs_without_reviewer).toHaveLength(2)
     expect(inbox.proposed_rules).toHaveLength(1)
   })
@@ -196,8 +245,13 @@ describe('the reviews list', () => {
   it('names every review, newest first, with the step it reached', async () => {
     const answer = await settled(desk().reviews(ref(ALL_REPOSITORIES)))
     expect(answer.repo).toBeNull()
-    /* Every review the fixtures hold, including the two that were posted. */
-    expect(answer.reviews.map(row => row.review.id)).toEqual([43, 41, 19, 18, 17, 16, 15, 12])
+    /*
+     * Every review in play, including the two that were posted — and **not** the four
+     * rounds of merged `tc/portal#9568`, which are under Finished. This is the default
+     * view, and DEV-957 is what the four absences are.
+     */
+    expect(answer.reviews.map(row => row.review.id))
+      .toEqual([63, 62, 61, 60, 43, 41, 19, 18, 17, 16, 15, 12])
 
     /*
      * **A posted review nothing has harvested reports step 6, not step 7.** Posting
@@ -233,7 +287,7 @@ describe('confirming a brief', () => {
      * you confirm" means — the draft can be looked at, and approving it is a second act.
      */
     expect(before.drafts_to_approve.map(item => item.review_id)).toContain(WEBHOOKS)
-    expect(before.totals.items).toBe(9)
+    const items = before.totals.items
 
     const result = await api.confirmBrief(WEBHOOKS)
     expect(result.ok).toBe(true)
@@ -241,7 +295,13 @@ describe('confirming a brief', () => {
     const after = await settled(inbox)
     expect(after.briefs_to_confirm).toHaveLength(0)
     expect(after.drafts_to_approve.map(item => item.review_id)).toContain(WEBHOOKS)
-    expect(after.totals.items).toBe(8)
+    /*
+     * **One fewer, taken from whatever it was.** The figure itself is asserted by the
+     * totals test above; what this one is about is that confirming a brief removes exactly
+     * the brief's item, so it reads the before and the after rather than two literals that
+     * both have to be edited whenever a fixture is added.
+     */
+    expect(after.totals.items).toBe(items - 1)
   })
 
   it('sets the confirmation and leaves the layer rows alone', async () => {

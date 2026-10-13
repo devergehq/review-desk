@@ -14,10 +14,10 @@
 use std::sync::{Arc, Mutex};
 
 use review_desk_store::{
-    Actor, Brief, Decision, DecisionMade, DismissedReviews, Disposition, Draft, DraftSection,
-    DraftThread, Finding, FindingInRound, FullReview, NewDraft, NewOutcome, NitTicket,
-    OpenedReview, PostedReview, ProblemStatement, RepoSummary, Review, ReviewAtLayer, ReviewAtStep,
-    ReviewEvent, ReviewFacts, ReviewLayer, ReviewProvenance, ReviewTimings, RoundCommit,
+    Actor, Brief, Decision, DecisionMade, Disposition, Draft, DraftSection, DraftThread, Finding,
+    FindingInRound, FullReview, NewDraft, NewOutcome, NitTicket, NotForSigning, OpenedReview,
+    PostedReview, ProblemStatement, RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewEvent,
+    ReviewFacts, ReviewLayer, ReviewProvenance, ReviewTimings, ReviewsShown, RoundCommit,
     RoundSummary, Rule, RuleCounts, RuleStage, RulesSummary, Store, StoreError,
     TicketedAndApproved, Timestamp,
 };
@@ -220,9 +220,17 @@ impl Records {
     pub fn reviews_at_step(
         &self,
         repo: Option<&str>,
-        dismissed: DismissedReviews,
+        shown: ReviewsShown,
     ) -> Result<Vec<ReviewAtStep>, ApiError> {
-        self.with(|store| store.reviews_at_step(repo, dismissed))
+        self.with(|store| store.reviews_at_step(repo, shown))
+    }
+
+    /// Why nothing on this review may be signed off, or `None` when it may.
+    ///
+    /// The draft screen draws its sentence from this and the store's own guard refuses
+    /// from it, which is what stops the page offering a sign-off the API would refuse.
+    pub fn not_for_signing(&self, id: i64) -> Result<Option<NotForSigning>, ApiError> {
+        self.with(|store| store.not_for_signing(id))
     }
 
     /// Nit tickets filed since a time, for the Inbox's "handled without you".

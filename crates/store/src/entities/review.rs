@@ -4,8 +4,8 @@ use rusqlite::{params, Connection, OptionalExtension, Row, Transaction, Transact
 
 use crate::error::{Result, StoreError};
 use crate::model::{
-    Disposition, NewReview, NitTicket, NitTicketStatus, OpenedReview, PrState, Review, ReviewFacts,
-    ReviewLayerState, ReviewLinks, ReviewWork, Timestamp,
+    Disposition, NewReview, NitTicket, NitTicketStatus, NotForSigning, OpenedReview, PrState,
+    Review, ReviewFacts, ReviewLayerState, ReviewLinks, ReviewWork, Timestamp,
 };
 use crate::{is_unique_violation, normalise, Store};
 
@@ -788,10 +788,116 @@ impl Store {
     /// that is — answering a question about the record to a caller who was not allowed to
     /// ask it. Who you are is settled before what you asked about.
     pub(crate) fn refuse_if_dismissed(&self, review_id: i64, act: &'static str) -> Result<()> {
-        if self.get_review(review_id)?.is_dismissed() {
-            return Err(StoreError::DismissedReview { review_id, act });
+        match self.not_for_signing(review_id)? {
+            None => Ok(()),
+            Some(NotForSigning::Dismissed) => Err(StoreError::DismissedReview { review_id, act }),
+            // **Both added by DEV-957, through the function that already held the rule.**
+            // The four acts are the same four — the ones whose completion is somebody
+            // else's — and the reason generalises exactly: approving the draft of a merged
+            // pull request, or of a round the author has pushed past, is the developer
+            // signing something off that nothing will ever act on, with the dashboard
+            // telling them "the review session posts it". The name is now narrower than
+            // what it does and is left alone deliberately: renaming it touches every
+            // caller and the thing worth having is one guard rather than three.
+            Some(NotForSigning::Finished { how, .. }) => Err(StoreError::FinishedReview {
+                review_id,
+                how: how.as_str(),
+                act,
+            }),
+            Some(NotForSigning::Superseded { by_round }) => Err(StoreError::SupersededRound {
+                review_id,
+                round: self.get_review(review_id)?.round,
+                by_round,
+                act,
+            }),
         }
-        Ok(())
+    }
+
+    /// Why nothing on this review may be signed off, or `None` when it may.
+    ///
+    /// **The guard above and the draft page read this same answer**, which is what stops
+    /// the page offering a sign-off the API refuses. It is the whole of DEV-957's
+    /// "an unposted draft on a finished review says so and cannot be signed off": the
+    /// cannot and the says-so are one value.
+    ///
+    /// **A posted round is never superseded**, and that is the condition rather than a
+    /// consequence. A round that posted *did* post — its review is on GitHub — so a newer
+    /// round does not make it a thing that never happened. What a newer round supersedes
+    /// is a round whose draft is still waiting, which can no longer be the review that
+    /// posts. Posted is asked the way `posted_reviews_awaiting_author` asks it: the
+    /// draft's own `posted_at`, or a `github_review_id` on the review for a review posted
+    /// by `review link` with no draft at all.
+    ///
+    /// **An *approved* round that a newer round supersedes is refused too, and that is
+    /// deliberate rather than an oversight.** It means a draft the developer signed off and
+    /// no session posted before the author pushed can no longer be sent back: it is stuck
+    /// at `approved`, which is the shape DEV-929 removed elsewhere on the ground that "a
+    /// stuck review is worse than the thing the refusal prevents".
+    ///
+    /// The difference is what the screen says. DEV-929's stuck draft was announcing that it
+    /// was *waiting to be posted* while nothing could post it; this one says "Not posted —
+    /// superseded by round N" and offers nothing, so the record and the page agree and no
+    /// developer is left waiting for an event that will not come. `approved` is also still
+    /// true: they did sign it off, and the author moving past that round does not unmake
+    /// it. Sending it back would ask a session to rewrite a round the work list no longer
+    /// offers, which is the thing this guard exists to refuse.
+    ///
+    /// Raised as "confirm intent" by a review of this branch, and confirmed rather than
+    /// changed.
+    ///
+    /// The three questions in one read, because every caller needs all of them and the
+    /// order between them is a decision [`NotForSigning`] states rather than one each
+    /// caller makes.
+    pub fn not_for_signing(&self, review_id: i64) -> Result<Option<NotForSigning>> {
+        let review = self.get_review(review_id)?;
+        if review.is_dismissed() {
+            return Ok(Some(NotForSigning::Dismissed));
+        }
+
+        let (state, state_at, newest_round, is_posted) = self.conn.query_row(
+            "SELECT
+                 (SELECT settled.pr_state FROM reviews settled
+                  WHERE settled.repo = ?2 AND settled.pr = ?3
+                    AND settled.pr_state IS NOT NULL
+                  ORDER BY settled.round DESC LIMIT 1)       AS pr_state,
+                 (SELECT settled.pr_state_at FROM reviews settled
+                  WHERE settled.repo = ?2 AND settled.pr = ?3
+                    AND settled.pr_state IS NOT NULL
+                  ORDER BY settled.round DESC LIMIT 1)       AS pr_state_at,
+                 (SELECT MAX(round) FROM reviews
+                  WHERE repo = ?2 AND pr = ?3)               AS newest_round,
+                 EXISTS (
+                     SELECT 1 FROM drafts
+                     WHERE review_id = ?1 AND posted_at IS NOT NULL
+                 )
+                 OR EXISTS (
+                     SELECT 1 FROM reviews
+                     WHERE id = ?1 AND github_review_id IS NOT NULL
+                 )                                           AS is_posted",
+            params![review.id, review.repo, review.pr],
+            |row| {
+                Ok((
+                    row.get::<_, Option<PrState>>("pr_state")?,
+                    row.get::<_, Option<Timestamp>>("pr_state_at")?,
+                    row.get::<_, Option<i64>>("newest_round")?,
+                    row.get::<_, bool>("is_posted")?,
+                ))
+            },
+        )?;
+
+        if let Some(how) = state.filter(PrState::is_settled) {
+            return Ok(Some(NotForSigning::Finished { how, at: state_at }));
+        }
+
+        // `newest_round` cannot be null — this review is one of the rows it maxes over —
+        // and falling back to this round's own number says "nothing newer" rather than
+        // turning a database this build does not understand into a panic.
+        let by_round = newest_round.unwrap_or(review.round);
+        if by_round > review.round && !is_posted {
+            return Ok(Some(NotForSigning::Superseded { by_round }));
+        }
+
+        Ok(None)
     }
 
     /// Read a review by id. Fails with [`StoreError::NotFound`] if it is not there.
@@ -988,12 +1094,27 @@ impl Store {
         self.get_review(id)
     }
 
-    /// The reviews whose pull request was open at their last harvest, oldest first.
+    /// The reviews a sweep is to read, oldest first.
     ///
     /// A review never harvested qualifies: its state is unknown, so it has to be
-    /// looked at. A review whose pull request was merged or closed does not — there is
-    /// nothing further to learn, and fetching it again would cost a GitHub call per
-    /// run for ever.
+    /// looked at. A review whose pull request was **merged** does not — there is nothing
+    /// further to learn, and fetching it again would cost a GitHub call per run for ever.
+    ///
+    /// **A closed pull request is read again, and only its newest round.** DEV-957 asks
+    /// that a reopened pull request return its latest round to play at the next harvest,
+    /// and nothing can notice a reopen without reading it: a state nobody reads is a state
+    /// that never changes. The set is bounded by a fact rather than by a window — **GitHub
+    /// cannot reopen a merged pull request**, so `merged` is genuinely terminal and only
+    /// `closed` can come back. The newest round only, because that is the round a reopen
+    /// would put back in play and the only one whose reading the derived state is taken from.
+    ///
+    /// **The cost, said plainly: one GitHub call per sweep per closed-and-unmerged pull
+    /// request, where before it was none.** One, and that is a property of
+    /// `harvest::run::harvest_one` rather than of this list: it stops after reading the pull
+    /// request when the review was already settled and still is. Without that it would be
+    /// three calls and more — the review threads and a commit comparison follow the state
+    /// read — on a pull request nobody is going to touch again, for ever. Found by a review
+    /// of this branch, which priced the first version of this sentence and found it wrong.
     ///
     /// **Nor does a dismissed review**, for the same reason read a different way: the
     /// developer has said they will not act on it again, so a quarter-hourly read of
@@ -1011,11 +1132,19 @@ impl Store {
         let repo = repo.map(normalise::repo);
 
         let mut statement = self.conn.prepare(&format!(
-            "SELECT {COLUMNS} FROM reviews
-             WHERE (pr_state IS NULL OR pr_state = 'open')
-               AND dismissed_at IS NULL
-               AND (?1 IS NULL OR repo = ?1)
-             ORDER BY id ASC"
+            "SELECT {COLUMNS} FROM reviews v
+             WHERE (
+                     v.pr_state IS NULL
+                     OR v.pr_state = 'open'
+                     OR (
+                       v.pr_state = 'closed'
+                       AND v.round = (SELECT MAX(round) FROM reviews
+                                      WHERE repo = v.repo AND pr = v.pr)
+                     )
+                   )
+               AND v.dismissed_at IS NULL
+               AND (?1 IS NULL OR v.repo = ?1)
+             ORDER BY v.id ASC"
         ))?;
         let rows = statement.query_map(params![repo], row_to_review)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)

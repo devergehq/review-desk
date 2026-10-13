@@ -29,6 +29,8 @@ const {
   waivedReviewId,
   structuredReviewId,
   heldBackReviewId,
+  mergedReviewIds,
+  supersededReviewIds,
 } = addresses
 
 const INTO = resolve('../docs/screenshots')
@@ -55,7 +57,9 @@ test.describe.configure({ mode: 'serial' })
 test.describe('a seeded database', () => {
   test('the four pages', async ({ page }) => {
     await page.goto(seeded)
-    await expect(page.getByRole('heading', { name: '3 reviews need you' })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: '4 pull requests need you' }),
+    ).toBeVisible()
     await shot(page, 'seeded-1-queue')
 
     /*
@@ -102,7 +106,9 @@ test.describe('a seeded database', () => {
      */
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto(seeded)
-    await expect(page.getByRole('heading', { name: '3 reviews need you' })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: '4 pull requests need you' }),
+    ).toBeVisible()
     await shot(page, 'seeded-6-queue-390')
     await page.setViewportSize({ width: 1440, height: 900 })
 
@@ -605,4 +611,43 @@ test.describe('waiting for the session that posts it', () => {
     /* Nothing in this state carries a figure, so there is no clock to pin. */
     await bothWidths(page, 'dev-932-4-sent-back')
   })
+})
+
+/*
+ * **What DEV-957 changed, at both widths.**
+ *
+ * Four pictures: the queue with one row per pull request and the links in each row's
+ * repository line; the Reviews list's Finished view, which is where the four rounds of a
+ * merged pull request now live; and the draft page of a round nothing can post, which says
+ * so where the sign-off used to be.
+ */
+test.describe('a finished review, and a row’s links', () => {
+  for (const { suffix, width, height } of [
+    { suffix: '', width: 1440, height: 900 },
+    { suffix: '-390', width: 390, height: 844 },
+  ]) {
+    test(`the queue, the finished view and a draft nothing can post at ${width}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height })
+
+      await page.goto(seeded)
+      await expect(page.locator('.queue-line').filter({ hasText: '#9541' })).toHaveCount(1)
+      await shot(page, `dev-957-1-queue${suffix}`)
+
+      await page.goto(`${seeded}reviews`)
+      await page.getByRole('radio').filter({ hasText: 'Finished' }).click()
+      await expect(page.locator('.queue-line').filter({ hasText: '#9568' }))
+        .toHaveCount(mergedReviewIds.length)
+      await shot(page, `dev-957-2-finished${suffix}`)
+
+      await page.goto(`${seeded}reviews/${mergedReviewIds[1]}/draft`)
+      await expect(page.getByText('Nothing to sign off')).toBeVisible()
+      await shot(page, `dev-957-3-merged-draft${suffix}`)
+
+      await page.goto(`${seeded}reviews/${supersededReviewIds[0]}/draft`)
+      await expect(page.getByText('Nothing to sign off')).toBeVisible()
+      await shot(page, `dev-957-4-superseded-draft${suffix}`)
+    })
+  }
 })

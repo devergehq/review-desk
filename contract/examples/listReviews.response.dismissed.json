@@ -1,6 +1,6 @@
 {
   "repo": null,
-  "dismissed": "only",
+  "show": "dismissed",
   "reviews": [
     {
       "review": {
@@ -18,13 +18,17 @@
         "github_review_id": null,
         "created_at": "2026-10-11T23:14:00Z",
         "pr_state": null,
+        "pr_state_at": null,
         "harvested_at": null,
         "dismissed_at": "2026-10-12T09:14:00Z",
         "dismissed_reason": "a build session recorded this by accident; nobody asked for it"
       },
       "rounds_on_pr": 1,
       "steps_total": 7,
-      "last_activity_at": "2026-10-12T09:14:00Z"
+      "last_activity_at": "2026-10-12T09:14:00Z",
+      "left_the_desk": "dismissed",
+      "finished_how": null,
+      "finished_at": null
     },
     {
       "review": {
@@ -42,6 +46,7 @@
         "github_review_id": null,
         "created_at": "2026-10-04T09:05:00Z",
         "pr_state": "closed",
+        "pr_state_at": null,
         "harvested_at": "2026-10-10T06:00:00Z",
         "dismissed_at": "2026-10-10T08:31:00Z",
         "dismissed_reason": "the pull request was closed unmerged in favour of ABC-402"
@@ -52,7 +57,10 @@
       "step_state": "done",
       "step_detail": "14 findings, 9 in the draft",
       "steps_total": 7,
-      "last_activity_at": "2026-10-10T08:31:00Z"
+      "last_activity_at": "2026-10-10T08:31:00Z",
+      "left_the_desk": "dismissed",
+      "finished_how": null,
+      "finished_at": null
     }
   ]
 }

@@ -300,25 +300,22 @@ fn code_changed_after_tells_the_findings_own_lines_from_the_file_around_them() {
 fn a_second_harvest_over_the_same_responses_writes_no_new_rows() {
     let (_dir, store, review) = a_posted_review();
 
-    let first = harvest(&store, &recording(), Selection::everything()).unwrap();
+    // **Both runs read the pull request as still open**, which is the case that actually
+    // repeats: the sweep re-reads an open pull request every quarter of an hour, and the
+    // claim being made is that `add_harvested_outcome` writes each fact once. It used to
+    // use the merged recording and name the review explicitly, which stopped working when
+    // DEV-957 gave `harvest_one` an early-out for a review that was settled and still is —
+    // the second run no longer reads the threads at all, so it proved nothing about them.
+    // That early-out has a test of its own below.
+    let first = harvest(&store, &still_open(), Selection::everything()).unwrap();
     assert!(first.recorded_anything());
     let after_first = store.list_outcomes(review.id).unwrap();
 
-    // The same review, named explicitly: the sweep would skip it now that its pull
-    // request is settled, and a run that fetched nothing would prove nothing.
-    let second = harvest(
-        &store,
-        &recording(),
-        Selection {
-            repo: None,
-            review: Some(review.id),
-        },
-    )
-    .unwrap();
+    let second = harvest(&store, &still_open(), Selection::everything()).unwrap();
 
     assert!(
-        second.reviews[0].was_settled,
-        "the second run really did re-read a settled pull request"
+        !second.reviews[0].was_settled,
+        "both runs read an open pull request, which is the state a sweep repeats on"
     );
     assert_eq!(second.reviews[0].replies_recorded, 0);
     assert_eq!(second.reviews[0].threads_resolved_recorded, 0);
@@ -394,6 +391,184 @@ fn a_review_whose_pull_request_was_merged_is_not_fetched_again() {
 
     assert!(report.reviews.is_empty(), "nothing was up for harvest");
     assert_eq!(github.calls(), 0, "GitHub was not asked anything");
+}
+
+/// A recording of this pull request **closed and not merged**, written for the test that
+/// needs one.
+///
+/// The fixtures hold the capture (merged) and one derived open response; the sweep's
+/// early return needs the third state, because the sweep keeps reading a `closed` pull
+/// request and leaves a `merged` one alone. Derived the way `pull_request-open.json` was and
+/// for the same stated reason: the real pull request merged in September and a closed
+/// response for it cannot be captured, now or ever.
+fn still_closed(dir: &TempDir) -> (Recorded, PathBuf) {
+    let captured = std::fs::read_to_string(fixtures().join("pull_request.json")).unwrap();
+    let mut document: serde_json::Value = serde_json::from_str(&captured).unwrap();
+    document["state"] = serde_json::json!("closed");
+    document["merged"] = serde_json::json!(false);
+    document["merged_at"] = serde_json::Value::Null;
+
+    let path = dir.path().join("pull_request-closed.json");
+    std::fs::write(&path, serde_json::to_string(&document).unwrap()).unwrap();
+    (
+        Recorded::from_dir(fixtures()).with("pull_request", path.clone()),
+        path,
+    )
+}
+
+/// **A sweep that re-reads a closed pull request and finds it unchanged asks GitHub once.**
+///
+/// DEV-957 keeps the newest round of a `closed` pull request in the sweep so a reopen can
+/// be seen at all. Without this early-out that cost the whole harvest every quarter of an
+/// hour — the pull request, then every review thread, then a commit comparison and a commit
+/// read per finding whose file moved — for ever, on a pull request nobody will touch again.
+///
+/// The question the re-read exists to ask is "has it changed", and the first call answers
+/// it. Measured on `Recorded::calls`, because "it makes one request" is the claim.
+///
+/// **The sweep, not `--review`.** A run the developer narrowed is a direct request and reads
+/// the review in full; `naming_a_review_reads_its_settled_pull_request_in_full` is that half.
+#[test]
+fn a_sweep_re_reading_an_unchanged_closed_pull_request_asks_github_once() {
+    let (dir, store, review) = a_posted_review();
+    let (closed, _) = still_closed(&dir);
+
+    harvest(&store, &closed, Selection::everything()).unwrap();
+    assert_eq!(
+        store.get_review(review.id).unwrap().pr_state,
+        Some(PrState::Closed),
+        "the first run recorded the close"
+    );
+
+    let (again, _) = still_closed(&dir);
+    let report = harvest(&store, &again, Selection::everything()).unwrap();
+
+    assert_eq!(again.calls(), 1, "the pull request, and nothing else");
+    assert!(report.reviews[0].was_settled);
+    assert_eq!(
+        report.reviews[0].pr_state,
+        PrState::Closed,
+        "and it says so"
+    );
+    assert!(!report.recorded_anything());
+
+    // **And it does not touch the review.** `set_review_pr_state` and
+    // `mark_review_harvested` both move `last_activity_at`, so a quarter-hourly re-read had
+    // a finished row reading "last written to just now" beside "No round of it can be
+    // posted". Writing the same state twice was already a no-op for the columns; the stamp
+    // was not.
+    let before = store.get_review(review.id).unwrap().last_activity_at;
+    let (once_more, _) = still_closed(&dir);
+    harvest(&store, &once_more, Selection::everything()).unwrap();
+    assert_eq!(
+        store.get_review(review.id).unwrap().last_activity_at,
+        before,
+        "a sweep that learned nothing wrote nothing"
+    );
+}
+
+/// **A pull request closed and then merged is recorded as merged.**
+///
+/// The early return asks whether the state *changed*, not whether it is settled. Asking the
+/// second question treated `closed` read back as `merged` as nothing to do — and because
+/// every later sweep asked it again, the record kept `closed` and the close date for ever,
+/// with the Finished row saying "the pull request closed on" about a merged one. GitHub
+/// cannot un-merge, but it can merge a pull request that was closed and reopened, and
+/// `reviews_to_harvest` keeps reading a closed one precisely so that is seen. Found by a
+/// review of this branch.
+#[test]
+fn a_closed_pull_request_read_back_as_merged_is_recorded_as_merged() {
+    let (_dir, store, review) = a_posted_review();
+
+    // Closed first, through the derived-from-capture open response with the state moved.
+    store
+        .set_review_pr_state(review.id, PrState::Closed, Some(1_790_000_000))
+        .unwrap();
+    assert!(store.get_review(review.id).unwrap().is_settled());
+
+    // The capture itself is the merged one, which is what the next sweep reads.
+    let report = harvest(&store, &recording(), Selection::everything()).unwrap();
+
+    assert_eq!(report.reviews[0].pr_state, PrState::Merged);
+    let after = store.get_review(review.id).unwrap();
+    assert_eq!(
+        after.pr_state,
+        Some(PrState::Merged),
+        "a settled state that moved is still a state that moved"
+    );
+    assert_ne!(
+        after.pr_state_at,
+        Some(1_790_000_000),
+        "and the time moved with it"
+    );
+}
+
+/// **`--review` reads a settled pull request in full, which the sweep does not.**
+///
+/// The early return is the sweep's. A merged pull request can still be replied to and have
+/// its threads resolved, and the narrowed run is the only thing that can record them —
+/// `reviews_to_harvest` leaves a merged review alone altogether. Applying the early return
+/// to `--review` took that away and left the flag's own help promising it. Found by a
+/// review of this branch.
+#[test]
+fn naming_a_review_reads_its_settled_pull_request_in_full() {
+    let (_dir, store, review) = a_posted_review();
+
+    // The first run records the merge and everything that came back with it.
+    harvest(&store, &recording(), Selection::everything()).unwrap();
+    assert!(store.get_review(review.id).unwrap().is_settled());
+
+    let again = recording();
+    let report = harvest(
+        &store,
+        &again,
+        Selection {
+            repo: None,
+            review: Some(review.id),
+        },
+    )
+    .unwrap();
+
+    assert!(
+        again.calls() > 1,
+        "the threads were read, which is the point of asking for one review"
+    );
+    assert!(report.reviews[0].was_settled);
+    assert!(
+        report.reviews[0].already_recorded > 0,
+        "and every fact it found was already on the record"
+    );
+    assert!(!report.recorded_anything());
+}
+
+/// **A reopen is still seen, which is the whole reason the re-read exists.**
+#[test]
+fn a_settled_pull_request_read_as_open_again_is_harvested_properly() {
+    let (_dir, store, review) = a_posted_review();
+
+    harvest(&store, &recording(), Selection::everything()).unwrap();
+    assert!(store.get_review(review.id).unwrap().is_settled());
+
+    let reopened = still_open();
+    let report = harvest(
+        &store,
+        &reopened,
+        Selection {
+            repo: None,
+            review: Some(review.id),
+        },
+    )
+    .unwrap();
+
+    assert_eq!(report.reviews[0].pr_state, PrState::Open);
+    assert!(
+        !store.get_review(review.id).unwrap().is_settled(),
+        "and the record says it is open again"
+    );
+    assert!(
+        reopened.calls() > 1,
+        "a read that found it open falls through and harvests it properly"
+    );
 }
 
 #[test]

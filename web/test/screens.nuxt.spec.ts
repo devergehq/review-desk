@@ -171,15 +171,321 @@ describe('the queue', () => {
     expect(row.text()).not.toContain('Read and sign off')
   })
 
-  it('leads with how many reviews need the developer, counting each once', async () => {
+  it('leads with how many pull requests need the developer, counting each once', async () => {
     const page = await shown(Inbox)
     /*
-     * 17 (brief and draft), 15 (draft), 16 (draft), 41 (draft), 12 (the author replied).
-     * Five, and 17 is counted once rather than twice.
+     * **The heading counts the rows it draws, and the assertion is that identity rather
+     * than a number.** DEV-957's comment: "The queue heading counts pull requests, not
+     * rounds" — Patrick's screen read "12 reviews need you" over a list naming #9541
+     * twice, #9585 twice and #9568 at least twice. Taken from the rows, the claim survives
+     * a fixture being added, which is what a literal here does not: this number moved
+     * three times in two issues.
      */
-    expect(page.text()).toContain('5 reviews need you')
+    const drawn = needsYouRows(page)
+    expect(drawn.length, 'the Needs you group has rows').toBeGreaterThan(0)
+    expect(page.text()).toContain(
+      drawn.length === 1 ? '1 pull request needs you' : `${drawn.length} pull requests need you`,
+    )
     expect(page.text()).toContain('2 with the agent')
     expect(page.text()).toContain('2 of your own')
+
+    /*
+     * **And each pull request once**, which is the half the number alone cannot say: five
+     * rows and five pull requests is the same count as five rows and three pull requests.
+     * #412 is the one that earns it — a brief to confirm *and* a draft to approve.
+     */
+    const numbers = drawn.map(row => row.text().match(/#(\d+)/)?.[1])
+    expect(numbers.filter(Boolean)).toHaveLength(drawn.length)
+    expect(new Set(numbers).size, 'no pull request twice').toBe(numbers.length)
+    expect(numbers).toContain('412')
+  })
+
+  it('draws one row for a pull request with two unposted rounds', async () => {
+    /*
+     * **`tc/portal#9541`, which is Patrick's own record from DEV-957's comment**: rounds 1
+     * and 2, both "Draft ready", two rows. Round 1's draft can never be the review that
+     * posts, so the store no longer offers it and one row is left — round 2's, which is
+     * where its link goes.
+     */
+    const page = await shown(Inbox)
+    const rows = needsYouRows(page).filter(row => row.text().includes('#9541'))
+    expect(rows, 'one row for #9541').toHaveLength(1)
+    expect(rows[0]!.text()).toContain('round 2')
+    expect(rows[0]!.find('.row').attributes('href')).toBe('/reviews/61/understand')
+  })
+
+  it('draws one row for a pull request whose posted round was replied to', async () => {
+    /*
+     * **`tc/portal#9585`**, which drew two rows: its posted round 1, where the author had
+     * replied, and its round 2 draft. One row now, numbered for round 2 — and the reply is
+     * still on it, with the round it was left on, because the author answering is a real
+     * thing the developer has to read and the row it is drawn on is numbered differently.
+     */
+    const page = await shown(Inbox)
+    const rows = needsYouRows(page).filter(row => row.text().includes('#9585'))
+    expect(rows, 'one row for #9585').toHaveLength(1)
+    expect(rows[0]!.text()).toContain('round 2')
+    expect(rows[0]!.text()).toContain('the author has replied to round 1')
+  })
+
+  it('keeps the newest round’s reply when two rounds have author activity', async () => {
+    /*
+     * **The one inbox query with no newest-round restriction**, deliberately — a reply on a
+     * posted round is a real thing the developer has to read — so a pull request can be in
+     * `author_replies` twice. The merge took whichever arrived last, which the store serves
+     * newest id *first*, so the row held the **older** round's events and, through the row's
+     * age, the older round's time. Nothing said the newer one had been dropped. Found by a
+     * review of this branch.
+     */
+    const source = loadSource()
+    await resetDesk({
+      reviews: source.reviews.map((detail) => {
+        /* An outcome on round 2 of #9585, beside the one its round 1 already carries. */
+        if (detail.review.id !== 63) return detail
+        return {
+          ...detail,
+          outcomes: [{
+            id: 9100,
+            review_id: 63,
+            finding_seq: 1,
+            finding_key: 'F1',
+            kind: 'code_changed_after',
+            actor: 'harvester',
+            occurred_at: '2026-10-13T06:00:00Z',
+            detail: null,
+          }],
+        }
+      }) as typeof source.reviews,
+    })
+
+    const page = await shown(Inbox)
+    const row = needsYouRows(page).find(one => one.text().includes('#9585'))
+    expect(row, 'one row for #9585').toBeDefined()
+    /*
+     * Round 2 is the row's own round, so its reply is the row's reply — and the row says
+     * nothing about an earlier round, because the reply it holds is this round's.
+     */
+    expect(row!.text()).toContain('round 2')
+    expect(row!.text()).not.toContain('replied to round 1')
+  })
+
+  it('says the newest round’s session on a row a session is working two rounds of', async () => {
+    /*
+     * **Which round's session the row describes.** `reviews_in_progress` has no newest-round
+     * restriction and serves newest id first, so joining it with a plain assignment left the
+     * row holding the *oldest* round's item — and the row then printed "a session is on step
+     * 4 of 7" about round 1 under a number saying round 2. Keyed on the review it could not
+     * happen; keying on the pull request is what made it possible. Found by a review of this
+     * branch.
+     */
+    const source = loadSource()
+    const running = (id: number, number: number, detail: string) => ({
+      number,
+      name: number === 4 ? ('solution_map' as const) : ('code_review' as const),
+      state: 'running' as const,
+      detail,
+      updated_at: '2026-10-13T06:00:00Z',
+      review_id: id,
+    })
+    await resetDesk({
+      reviews: source.reviews.map((detail) => {
+        /* Round 1 on step 4, round 2 on step 5 — two different sessions, two steps. */
+        if (detail.review.id === 60) {
+          return { ...detail, layers: detail.layers.map(layer =>
+            layer.number === 4 ? { ...layer, ...running(60, 4, 'solution map') } : layer) }
+        }
+        if (detail.review.id === 61) {
+          return { ...detail, layers: detail.layers.map(layer =>
+            layer.number === 5 ? { ...layer, ...running(61, 5, 'code review') } : layer) }
+        }
+        return detail
+      }) as typeof source.reviews,
+    })
+
+    const page = await shown(Inbox)
+    const row = needsYouRows(page).find(one => one.text().includes('#9541'))
+    expect(row, 'one row for #9541').toBeDefined()
+    expect(row!.text(), 'the round the row is about').toContain('round 2')
+    expect(row!.text(), 'and that round’s session').toContain('step 5 of 7')
+    expect(row!.text(), 'not the older round’s').not.toContain('step 4 of 7')
+  })
+
+  it('says nothing about a session on a round the row is not about', async () => {
+    /*
+     * **The other direction, and the one the first fix for this could not answer.** It took
+     * the highest review id, which is a guess at the newest round; a session running on an
+     * *older* round only — round 2's own work finished, round 1's never did — would still
+     * have been drawn on round 2's row. `InboxInProgressItem` carries a round now, so the
+     * row says nothing rather than something about the wrong round. Found by a review of
+     * this branch.
+     */
+    const source = loadSource()
+    await resetDesk({
+      reviews: source.reviews.map((detail) => {
+        if (detail.review.id !== 60) return detail
+        return { ...detail, layers: detail.layers.map(layer =>
+          layer.number === 4
+            ? { ...layer, state: 'running' as const, detail: 'solution map' }
+            : layer) }
+      }) as typeof source.reviews,
+    })
+
+    const page = await shown(Inbox)
+    const row = needsYouRows(page).find(one => one.text().includes('#9541'))
+    expect(row, 'one row for #9541').toBeDefined()
+    expect(row!.text()).toContain('round 2')
+    expect(row!.text(), 'round 1’s session is not this row’s').not.toContain('step 4 of 7')
+  })
+
+  it('draws one row for a pull request a session is working two rounds of', async () => {
+    /*
+     * `reviews_in_progress` asks only whether a layer is `running` and says nothing about
+     * which round — the group's own comment says so — so two rounds of one pull request can
+     * both be in it. "With the agent" drew them as two rows and its note counted rounds,
+     * which is the defect this issue names, in the one group the needs-you merge does not
+     * reach. Found by a review of this branch.
+     */
+    const source = loadSource()
+    const running = (id: number) => ({
+      number: 5,
+      name: 'code_review' as const,
+      state: 'running' as const,
+      detail: 'code review',
+      updated_at: '2026-10-13T06:00:00Z',
+      review_id: id,
+    })
+    const twoRounds = [60, 61]
+    await resetDesk({
+      reviews: source.reviews.map((detail) => {
+        /* Rounds 1 and 2 of #9541, each with a layer running. */
+        if (!twoRounds.includes(detail.review.id)) return detail
+        return {
+          ...detail,
+          brief: null,
+          draft_status: null,
+          layers: detail.layers.map(layer =>
+            layer.number === 5 ? { ...layer, ...running(detail.review.id) } : layer),
+        }
+      }) as typeof source.reviews,
+      /*
+       * **And no draft on either**, or they are waiting on the developer and the merge
+       * above subtracts them from this group before it can be measured. What is being
+       * measured is the group's own deduplication.
+       */
+      drafts: source.drafts.filter(one => !twoRounds.includes(one.draft.review_id)),
+    })
+
+    const page = await shown(Inbox)
+    const group = page.findAll('section').find(one => one.text().startsWith('With the agent'))
+    expect(group, 'the With the agent group is on the page').toBeDefined()
+    expect(
+      group!.findAll('.queue-line').filter(one => one.text().includes('#9541')),
+      'one row for two rounds',
+    ).toHaveLength(1)
+  })
+
+  it('takes the row’s ticket from the newest round that offered one', async () => {
+    /*
+     * **The guard's own blind spot, found by a review of the commit that added it.** It
+     * asked whether the *row's* round differed, and `row.round` is set only by
+     * `drafts_to_approve` — so a row made by a brief has none, the guard never fired, and an
+     * older round's reply decided the ticket. The question is which round the ticket came
+     * from.
+     *
+     * The shape: #9585's round 2 has an unconfirmed brief (so it is in `briefs_to_confirm`,
+     * which carries no round) and round 1 is posted with the author's reply on it. The two
+     * rounds are given different tickets here, which is what makes the fault visible — on
+     * the real record they are usually the same, which is why it was invisible.
+     */
+    const source = loadSource()
+    await resetDesk({
+      reviews: source.reviews.map((detail) => {
+        if (detail.review.id === 62) {
+          /* Round 1: posted, replied to, and carrying the *old* ticket. */
+          return { ...detail, review: {
+            ...detail.review,
+            ticket_id: 'DEV-OLD',
+            ticket_url: 'https://linear.app/deverge/issue/DEV-OLD',
+          } }
+        }
+        if (detail.review.id === 63) {
+          /* Round 2: the row's own round, with a brief waiting and the current ticket. */
+          return {
+            ...detail,
+            review: { ...detail.review, ticket_id: 'DEV-NEW' },
+            brief: {
+              review_id: 63,
+              problem: 'A guest session survives the redirect to the staff page.',
+              diagram: null,
+              options: [],
+              approach_verdict: null,
+              provenance: 'from the ticket and the code',
+              confirmed: false,
+              confirmed_at: null,
+              confirmation_required: true,
+              confirmation_not_required_because: null,
+              updated_at: '2026-10-12T16:10:00Z',
+            },
+          }
+        }
+        return detail
+      }) as typeof source.reviews,
+      /* No draft on round 2, so the row's own round is unknown — the case that failed. */
+      drafts: source.drafts.filter(one => one.draft.review_id !== 63),
+    })
+
+    const page = await shown(Inbox)
+    const row = needsYouRows(page).find(one => one.text().includes('#9585'))
+    expect(row, 'one row for #9585').toBeDefined()
+    expect(row!.text(), 'the newer round’s ticket').toContain('DEV-NEW')
+    expect(row!.text(), 'and not the posted round’s').not.toContain('DEV-OLD')
+  })
+
+  it('drops the author’s figures rather than showing a newer round’s on an older row', async () => {
+    /*
+     * **The join that could attach the wrong round's measurement.**
+     * `posted_awaiting_author` serves a pull request's newest round only, which rules out
+     * attaching an older round's posting to a newer row — and not the reverse. A row's
+     * round comes from the three slotting arrays, and `author_replies` has no newest-round
+     * restriction, so a pull request whose round 1 was posted and replied to and whose
+     * round 2 is posted with nothing back yet draws one row numbered round 1 and took round
+     * 2's counts. The row then read "The author replied to F1 · No reply yet". Found by a
+     * review of this branch.
+     *
+     * Dropping the figures is the right failure: a measurement about the wrong round is
+     * worse than none.
+     */
+    const source = loadSource()
+    await resetDesk({
+      reviews: source.reviews.map((detail) => {
+        /* Round 2 of #9585: posted, nothing back, and nothing waiting on the developer. */
+        if (detail.review.id !== 63) return detail
+        return {
+          ...detail,
+          review: { ...detail.review, github_review_id: 'PRR_tc9585r2' },
+          brief: null,
+        }
+      }) as typeof source.reviews,
+      /* No draft on round 2, so only round 1's reply can give the row its round. */
+      drafts: source.drafts.filter(one => one.draft.review_id !== 63),
+    })
+
+    const page = await shown(Inbox)
+    const row = needsYouRows(page).find(one => one.text().includes('#9585'))
+    expect(row, 'one row for #9585').toBeDefined()
+    expect(row!.text(), 'the round the reply is on').toContain('round 1')
+    expect(row!.text()).toContain('The author replied to')
+    expect(row!.text(), 'and not a newer round’s measurement').not.toContain('No reply yet')
+  })
+
+  it('draws no row for any round of a merged pull request', async () => {
+    /*
+     * **The four rounds of `tc/portal#9568`**, one posted and three not, on a pull request
+     * that merged on 11 October. Five of the ten drafts in Patrick's "drafts to approve"
+     * were rounds like these, and none of them could ever be posted.
+     */
+    const page = await shown(Inbox)
+    expect(page.text(), 'no group draws a merged pull request').not.toContain('#9568')
   })
 
   it('draws the board’s five groups, and hides a group with nothing in it', async () => {
@@ -331,7 +637,7 @@ describe('the queue', () => {
     await billing.trigger('click')
     await settle(page)
 
-    expect(page.text()).toContain('1 review needs you')
+    expect(page.text()).toContain('1 pull request needs you')
     expect(page.text()).not.toContain('#412')
     expect(page.text()).toContain('#88')
   })
@@ -408,12 +714,17 @@ describe('the queue', () => {
      * Confirmed from the data layer rather than from this screen, which has no control for
      * it — and then the screen re-reads itself, because a write refreshes every open read.
      */
+    const before = needsYouRows(page).length
     await useReviewDesk().confirmBrief(17)
     await settle(page)
 
     expect(page.text()).not.toContain('Problem brief ready')
-    /* Still five rows: #412's next action is now the draft its session had written. */
-    expect(page.text()).toContain('5 reviews need you')
+    /*
+     * **The same rows as before, which is the claim** — #412's next action is now the draft
+     * its session had written, so the row stays and only its words change. Read from before
+     * and after rather than written as a number, for the reason the heading test gives.
+     */
+    expect(needsYouRows(page)).toHaveLength(before)
     const row = page.findAll('.row').find(one => one.text().includes('#412'))!
     expect(row.text()).toContain('Draft ready')
     expect(row.text()).toContain('Read and sign off')
@@ -517,6 +828,20 @@ describe('the queue', () => {
     }
   })
 
+  /**
+   * The rows of the "Needs you" group, and only that group's.
+   *
+   * `page.findAll('.queue-line')` is every row on the screen — needs-you, with the agent,
+   * waiting on the author, and the developer's own pull requests — so a count taken from it
+   * would answer a different question from the heading's. The group's own `DeskSection` is
+   * the scope.
+   */
+  function needsYouRows(page: VueWrapper) {
+    const group = page.findAll('section').find(one => one.text().startsWith('Needs you'))
+    expect(group, 'the Needs you group is on the page').toBeDefined()
+    return group!.findAll('.queue-line')
+  }
+
   /* ------------- The two ways out of a row (DEV-936) ------------- */
 
   /**
@@ -529,7 +854,18 @@ describe('the queue', () => {
   function lines(page: VueWrapper) {
     return page.findAll('.queue-line').map(line => ({
       row: line.find('.row'),
+      /*
+       * **The repository line, which left the anchor in DEV-957.** The links moved into it
+       * — "it belongs inline with the repository and ticket line under the title" — and the
+       * line had to leave `.row` to take them: an anchor inside an anchor is the thing the
+       * component's own note forbids. So a test asking what the row *says* about its
+       * repository, its round or its ticket asks this, and one asking where the row *goes*
+       * asks `row`.
+       */
+      meta: line.find('.row-meta'),
       out: line.findAll('.row-out-link'),
+      /* Everything on the line, for an assertion that does not care which half said it. */
+      text: () => line.text(),
     }))
   }
 
@@ -668,7 +1004,7 @@ describe('the queue', () => {
     /* Review 19 is `acme/billing-api#93`, step 3 running, ticket ABC-246 and no address. */
     const row = lines(page).find(line => line.row.text().includes('#93'))
     expect(row, 'the With the agent row for #93').toBeDefined()
-    expect(row!.row.text(), 'the id is named on the row').toContain('ABC-246')
+    expect(row!.meta.text(), 'the id is named on the row').toContain('ABC-246')
     expect(
       row!.out.map(link => link.attributes('href')),
       'and the pull request is the only link',
@@ -699,7 +1035,7 @@ describe('the queue', () => {
     const page = await shown(Inbox)
     const row = lines(page).find(line => line.row.text().includes('#403'))
     expect(row, 'the Waiting on the author row for #403').toBeDefined()
-    expect(row!.row.text(), 'the id is named on the row').toContain('ABC-238')
+    expect(row!.meta.text(), 'the id is named on the row').toContain('ABC-238')
     expect(
       row!.out.map(link => link.attributes('href')),
       'and the pull request is the only link',
@@ -715,7 +1051,7 @@ describe('the queue', () => {
     /* The pull request alone, and the ticket still named on the row's own meta line. */
     expect(row!.out).toHaveLength(1)
     expect(row!.out[0]!.attributes('href')).toBe('https://github.com/acme/portal/pull/514')
-    expect(row!.row.text()).toContain('ABC-402')
+    expect(row!.meta.text()).toContain('ABC-402')
   })
 
   it('does not offer to open a pull request it cannot build a link to', async () => {
@@ -736,7 +1072,7 @@ describe('the queue', () => {
     })
 
     const page = await shown(Inbox)
-    const row = lines(page).find(line => line.row.text().includes('acme/portal#x'))
+    const row = lines(page).find(line => line.text().includes('acme/portal#x'))
     expect(row, 'the row for the unlinkable name').toBeDefined()
     expect(row!.row.element.tagName.toLowerCase(), 'it is not an anchor').toBe('div')
     expect(row!.row.text()).not.toContain('Open on GitHub')

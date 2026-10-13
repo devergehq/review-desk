@@ -20,10 +20,10 @@ use review_desk_store::{
     BriefFlowBox, BriefFlowRow, BriefOpenChoice, BriefOption, BriefOptionVerdict, BriefPart,
     BriefPartFile, BriefProblem, BriefSupportTable, DescriptionLintResult, Disposition, Draft,
     DraftLint, DraftSection, DraftThread, FileChange, Finding, FindingHunk, FindingInRound,
-    LayerFact, NitTicket, Outcome, PostedReview, ProblemStatement, RepoSummary, Review,
-    ReviewAtStep, ReviewLayer, ReviewLayerName, ReviewLayerRun, ReviewProvenance, ReviewSource,
-    ReviewTimings, RoundCommit, RoundStatusCounts, RoundSummary, Rule, RuleCounts, RuleScope,
-    RuleStage, RulesSummary, Severity, Timestamp,
+    LayerFact, LeftTheDesk, NitTicket, NotForSigning, Outcome, PostedReview, ProblemStatement,
+    RepoSummary, Review, ReviewAtStep, ReviewLayer, ReviewLayerName, ReviewLayerRun,
+    ReviewProvenance, ReviewSource, ReviewTimings, RoundCommit, RoundStatusCounts, RoundSummary,
+    Rule, RuleCounts, RuleScope, RuleStage, RulesSummary, Severity, Timestamp,
 };
 use serde_json::{json, Value};
 
@@ -81,9 +81,11 @@ pub fn finding_key(seq: i64) -> String {
 
 /// The contract's `Review`.
 ///
-/// `pr_state` and `harvested_at` are here and `pr_state_at` is not, which the contract
-/// states and argues: the first two are read by the posted-reviews group and the Reviews
-/// list, and nothing draws the third.
+/// **`pr_state_at` is here since DEV-957, and it was deliberately absent before.** The
+/// argument for leaving it out was that nothing drew it; the draft page now does — "Not
+/// posted — the pull request merged on 11 October 2026" is that column and nothing else
+/// can date it. It is still only a date when GitHub gave one, and the sentence says the
+/// pull request merged without naming the day when it did not.
 pub fn review(review: &Review) -> Value {
     json!({
         "id": review.id,
@@ -100,6 +102,7 @@ pub fn review(review: &Review) -> Value {
         "github_review_id": review.github_review_id,
         "created_at": rfc3339(review.created_at),
         "pr_state": review.pr_state.map(|state| state.as_str()),
+        "pr_state_at": rfc3339_or_null(review.pr_state_at),
         "harvested_at": rfc3339_or_null(review.harvested_at),
         // When and why the developer dismissed it, both null while it is in play. On the
         // review itself rather than on the list item, because every screen that can draw
@@ -187,6 +190,22 @@ pub fn review_list_item(at: &ReviewAtStep) -> Value {
         "rounds_on_pr": at.rounds_on_pr,
         "steps_total": ReviewLayerName::COUNT,
         "last_activity_at": rfc3339_or_null(at.review.last_activity_at),
+        // **How it left the desk, or null while it is in play**, and the row says which.
+        // DEV-957 asks that dismissed and finished be told apart everywhere a review is
+        // listed, and the row cannot work this out for itself: a dismissal is a column on
+        // the review, but a finish is a fact about the pull request read off whichever
+        // round of it a harvest last reached — which a page holding one row has not got.
+        "left_the_desk": at.left_the_desk.map(|left| match left {
+            LeftTheDesk::Dismissed => "dismissed",
+            LeftTheDesk::Finished => "finished",
+            LeftTheDesk::Superseded => "superseded",
+        }),
+        // Which way it ended and when, on a finished row only. Read off the pull request
+        // rather than off this round's own column, which holds nothing for three of the
+        // four rounds of a merged pull request. Null when GitHub gave no time, and the row
+        // then says it merged without naming the day.
+        "finished_how": at.finished_how.map(|state| state.as_str()),
+        "finished_at": rfc3339_or_null(at.finished_at),
     });
 
     // `if let`, not `as_object_mut().expect(...)`: `finding_in_round` below grows a
@@ -202,6 +221,28 @@ pub fn review_list_item(at: &ReviewAtStep) -> Value {
     }
 
     item
+}
+
+/// The contract's `NotForSigning`: why a draft may not be signed off, or null.
+///
+/// **The page's sentence and the API's refusal come off one value**, which is what stops
+/// a screen offering a sign-off the API refuses. The three reasons carry what the sentence
+/// needs and nothing more: the merge needs the word GitHub used and the day, and a
+/// supersession needs the round that can still post.
+pub fn not_for_signing(why: Option<NotForSigning>) -> Value {
+    match why {
+        None => Value::Null,
+        Some(NotForSigning::Dismissed) => json!({ "reason": "dismissed" }),
+        Some(NotForSigning::Finished { how, at }) => json!({
+            "reason": "finished",
+            "how": how.as_str(),
+            "at": rfc3339_or_null(at),
+        }),
+        Some(NotForSigning::Superseded { by_round }) => json!({
+            "reason": "superseded",
+            "by_round": by_round,
+        }),
+    }
 }
 
 /// The contract's `BriefOption`.

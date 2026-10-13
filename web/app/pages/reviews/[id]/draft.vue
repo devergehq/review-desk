@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { DraftDetail, ReviewEvent } from '~/types/desk'
+import type { DraftDetail, NotForSigning, ReviewEvent } from '~/types/desk'
 import type { WriteResult } from '~/composables/useReviewDesk'
 import type { DeskNotice } from '~/utils/format'
 
@@ -46,8 +46,16 @@ useHead({
 const heading = computed(() => {
   if (detail.error.value?.code === 'not_found') return 'No draft yet.'
   const status = detail.data.value?.draft.status
-  if (status === 'approved') return 'Signed off.'
   if (status === 'posted') return 'Posted.'
+  /*
+   * **Before the status, because it outranks it.** "Read it, then sign it off." is an
+   * instruction to do the one thing this page is refusing, and "Signed off." over a draft
+   * that merged says it is on its way to GitHub when nothing is going to take it there.
+   * DEV-957's screenshots showed the first of those over "Not posted — the pull request
+   * merged". A posted draft is exempt and is answered above: it did post.
+   */
+  if (detail.data.value && notForSigning(detail.data.value)) return 'Nothing left to do.'
+  if (status === 'approved') return 'Signed off.'
   if (status === 'sent_back') return 'Sent back.'
   if (status === 'drafting') return 'Still being written.'
   return 'Read it, then sign it off.'
@@ -123,6 +131,65 @@ const heldRows = computed(() =>
 
 function decided(data: DraftDetail): boolean {
   return data.draft.status !== 'ready'
+}
+
+/**
+ * Why nothing on this review may be signed off, or null when it may.
+ *
+ * **Served, not worked out here**, which is the point of the field: whether the pull
+ * request has finished is read off whichever round of it a harvest last reached, and this
+ * page holds one review. `review.pr_state` is this round's own column and is null for
+ * three of the four rounds of a merged pull request.
+ *
+ * **Null for a posted draft**, whatever the pull request did. A review that posted did
+ * post; the sentence DEV-957 asks for is about a draft that never will, and "not posted"
+ * over a posted review would be the page contradicting the record. The sign-off is not
+ * offered on a posted draft anyway — `decided` is already true of it.
+ *
+ * **So this answers "what does the page say", and `offTheDesk` below answers "what will
+ * the API refuse".** They are not the same question and treating them as one put a live
+ * button on a posted review: `request_nit_ticket` has no posted exemption — a posted round
+ * can still hold back nits nobody has ticketed, and the store refuses the ask on a merged
+ * pull request whatever the draft did. Found by a review of this branch.
+ */
+function notForSigning(data: DraftDetail): NotForSigning | null {
+  if (data.draft.status === 'posted') return null
+  return data.not_for_signing ?? null
+}
+
+/**
+ * Whether the API will refuse the four acts on this review, posted or not.
+ *
+ * The record's own answer, read straight. Every control for one of those four is gated on
+ * **this**; what the page *says* is `notForSigning` above, which exempts a posted draft
+ * because the sentence it draws would be false of one.
+ */
+function offTheDesk(data: DraftDetail): boolean {
+  return data.not_for_signing != null
+}
+
+/**
+ * The sentence a draft that cannot be signed off carries, in place of the status line.
+ *
+ * Three reasons, three sentences, each naming the thing that happened and what follows
+ * from it. **The merge names the day when the record holds one** and stops after the word
+ * when it does not: GitHub does not always give a time, and a date nobody holds must not
+ * be invented — `dayLabel` returns null and the clause is left out.
+ */
+function notForSigningLine(why: NotForSigning): string {
+  if (why.reason === 'dismissed') {
+    return 'Not posted — you dismissed this review. Bring it back from the Reviews list '
+      + 'if it should be posted after all.'
+  }
+  if (why.reason === 'superseded') {
+    return `Not posted — superseded by round ${why.by_round}. The author pushed past the `
+      + 'commit this was written against, so this draft can never be the review that '
+      + 'posts; round ' + `${why.by_round}` + ' is the one that can.'
+  }
+  const day = dayLabel(why.at ?? null)
+  const when = day ? ` on ${day}` : ''
+  return `Not posted — the pull request ${why.how}${when}. No round of it can be posted `
+    + 'now, so this draft stays as it is on the record.'
 }
 
 /**
@@ -291,6 +358,15 @@ const openFindings = computed(
 
 function statusLine(data: DraftDetail): string {
   const draft = data.draft
+  /*
+   * **First, because it outranks every other thing this line could say.** A draft on a
+   * merged pull request may be `ready`, or signed off and waiting for a session to post
+   * it, and neither sentence is true any more: nothing is going to post it. DEV-957 asks
+   * the page to say so where the status goes, and the sign-off is taken off the screen in
+   * the same breath — see the panel below.
+   */
+  const why = notForSigning(data)
+  if (why) return notForSigningLine(why)
   if (draft.status === 'approved' && data.body_is_stale) {
     /*
      * **The one state the session cannot post**, and the page has to say so: this body was
@@ -612,6 +688,20 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                     </p>
                   </DeskCard>
 
+                  <!--
+                    **Gated like the sign-off panel, because it is the fourth of the same
+                    four acts.** "File as one ticket for an agent" is `POST …/nit-ticket`,
+                    which `request_nit_ticket` refuses on a review that has left the desk
+                    for the reason the other three are refused: it asks an agent to file a
+                    ticket, and no agent is coming. The contract names it in
+                    `NotForSigning`'s own description. It lives in its own card, which is
+                    how it was missed when the panel below was gated — found by a review of
+                    the commit that gated the panel.
+
+                    **The rows stay; only the button goes.** What the review held back is
+                    part of the record, and a reader of a finished review still wants to see
+                    it. What they cannot do is ask for a ticket.
+                  -->
                   <DeskCard
                     v-if="data.held_back.length"
                     class="panel"
@@ -624,7 +714,15 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                       or the contract changed to allow it.
                     -->
                     <HeldBackRows :rows="heldRows" />
+                    <p
+                      v-if="offTheDesk(data)"
+                      class="rd-meta foot"
+                    >
+                      These stay on the record. There is no ticket to ask for: nothing will
+                      act on this review.
+                    </p>
                     <button
+                      v-else
                       type="button"
                       class="rd-btn"
                       :disabled="data.nit_ticket.status !== 'none' || working"
@@ -640,7 +738,40 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                     </button>
                   </DeskCard>
 
-                  <DeskCard class="panel">
+                  <!--
+                    **No sign-off at all when nothing can post this draft**, which is
+                    DEV-957's "an unposted draft on a finished review says so and cannot be
+                    signed off". Not a disabled button: the panel is the three acts that
+                    each ask a session to do something afterwards — post it, file a ticket
+                    and post it, send it back to be rewritten — and on a merged pull request
+                    there is no session coming for any of them. A greyed-out "Sign off and
+                    post" would still be offering the act, and the API refuses it; the
+                    status line above says what happened instead.
+
+                    The card in its place is not a refusal notice. Nothing was refused and
+                    nothing is wrong: the record simply says what became of the pull request,
+                    and the draft stays on it to be read.
+                  -->
+                  <DeskCard
+                    v-if="notForSigning(data)"
+                    class="panel"
+                  >
+                    <p class="rd-label">
+                      Nothing to sign off
+                    </p>
+                    <p class="rd-note">
+                      {{ notForSigningLine(notForSigning(data)!) }}
+                    </p>
+                    <p class="rd-meta foot">
+                      The draft, the findings and your decisions are all still on the
+                      record. Nothing has been removed.
+                    </p>
+                  </DeskCard>
+
+                  <DeskCard
+                    v-else
+                    class="panel"
+                  >
                     <label
                       class="rd-label"
                       for="event"

@@ -16,8 +16,8 @@
 //! methods and no write in it.
 
 use review_desk_store::{
-    Actor, Decision, DismissedReviews, Disposition, DraftSectionKind, DraftStatus, FindingDecision,
-    NewDraft, NewDraftSection, NewOutcome, OutcomeKind, ReviewEvent, ReviewFacts, RuleStage,
+    Actor, Decision, Disposition, DraftSectionKind, DraftStatus, FindingDecision, NewDraft,
+    NewDraftSection, NewOutcome, OutcomeKind, ReviewEvent, ReviewFacts, ReviewsShown, RuleStage,
     Severity, DEVELOPER_DECISIONS,
 };
 use serde::Deserialize;
@@ -187,11 +187,18 @@ impl Api {
                 Ok(json!({
                     "review_id": review.id,
                     "pull_request": wire::inbox_pr(review),
+                    // Which round this brief belongs to. Every item that makes a queue row
+                    // carries one since DEV-957: the row is one pull request, assembled from
+                    // items that may be about different rounds, and one with no round cannot
+                    // be told from one about the row's own.
+                    "round": review.round,
                     // The ticket and its address, so the queue's row can link the ticket
                     // without the review being opened first. On all three arrays that make
                     // a row — this one, `drafts_to_approve` and `author_replies` — because
-                    // the queue draws one row per review and reads the ticket from
-                    // whichever of the three put it there. See `Inbox`'s own description.
+                    // the queue draws **one row per pull request** and reads the ticket
+                    // from the newest round that offered one. (Both halves of that sentence
+                    // changed in DEV-957: the key was the review, and the ticket came from
+                    // whichever array touched the row last.) See `Inbox`'s own description.
                     "ticket_id": review.ticket_id,
                     "ticket_url": review.ticket_url,
                     "brief_ready_at": wire::rfc3339_or_null(ready_at),
@@ -223,6 +230,11 @@ impl Api {
                 Ok(json!({
                     "review_id": review.id,
                     "pull_request": wire::inbox_pr(review),
+                    // Which round this brief belongs to. Every item that makes a queue row
+                    // carries one since DEV-957: the row is one pull request, assembled from
+                    // items that may be about different rounds, and one with no round cannot
+                    // be told from one about the row's own.
+                    "round": review.round,
                     // The same pair the brief item carries, and for the same reason: a
                     // review whose brief is confirmed and whose draft is waiting reaches
                     // the queue through this array and no other.
@@ -282,6 +294,11 @@ impl Api {
                         // The third array that makes a row, so it carries the pair too.
                         "ticket_id": review.ticket_id,
                         "ticket_url": review.ticket_url,
+                        // **Which round was replied to**, since DEV-957: the queue draws
+                        // one row per pull request, and a reply is on the round that was
+                        // posted — which can be older than the round the row is numbered
+                        // for. Without it the row cannot say which review the reply is on.
+                        "round": review.round,
                         "events": events,
                         "replied_at": wire::rfc3339_or_null(replied_at),
                     })
@@ -319,6 +336,10 @@ impl Api {
                     // describes; "can be in no other array" would say the opposite of that.
                     "ticket_id": at.review.ticket_id,
                     "ticket_url": at.review.ticket_url,
+                    // Which round the session is working on. The fourth and last array to
+                    // carry one: this query says nothing about rounds, so two rounds of one
+                    // pull request can both be here and the queue draws one row for them.
+                    "round": at.review.round,
                     "layer_number": at.layer.number,
                     "layer_name": at.layer.name.as_str(),
                     "layers_total": 7,
@@ -436,41 +457,65 @@ impl Api {
             }
         }
 
-        // **The dismissed ones are left out unless they are asked for.** The default is
-        // the exclusion rather than everything, for the reason `DismissedReviews`'s own
-        // doc gives: a caller that has never heard of a dismissal must not be handed a
-        // review the developer took out of play. A value that is not one of the three is
+        // **A review off the desk is left out unless it is asked for.** The default is
+        // the narrow view rather than everything, for the reason `ReviewsShown`'s own doc
+        // gives: a caller that has never heard of a dismissal or of a finish must not be
+        // handed a review that has left the desk. A value that is not one of the four is
         // refused by name rather than falling back to the default — a mistyped filter
         // answering with the default view would read as "there are no dismissed reviews".
-        // **An empty value is a value.** `query_value` drops one, so `?dismissed=` arrived
+        //
+        // **The parameter is `show`, and it was `dismissed` until DEV-957.** That issue
+        // adds a fourth position, Finished, and `dismissed=finished` would have been a
+        // parameter whose name said the opposite of its value. Renamed rather than
+        // extended, and nothing outside this dashboard reads it.
+        //
+        // **An empty value is a value.** `query_value` drops one, so `?show=` arrived
         // as "nothing was asked" and answered with the default view — which is what this
         // paragraph says must not happen, for a client that serialises its filters
         // whether or not they are set: the page reads its view line off this field, so it
         // would have said "Every review in play" under a picker set to Dismissed.
+        // **The name this parameter had until DEV-957 is refused by name.** An unknown
+        // parameter is ignored by this server, so `?dismissed=only` from a bookmark or a
+        // saved client would have answered with the in-play view — which is exactly the
+        // failure the paragraph above forbids, reached through the rename rather than
+        // through a typo. Found by a review of this branch.
+        if query
+            .split('&')
+            .any(|pair| pair == "dismissed" || pair.starts_with("dismissed="))
+        {
+            return Err(ApiError::invalid_value(
+                "dismissed",
+                "`dismissed` was renamed to `show` in DEV-957, when it gained a value \
+                 called `finished`"
+                    .to_string(),
+                format!("show, one of: {}", ReviewsShown::valid_values()),
+            ));
+        }
+
         let asked_blank = query
             .split('&')
-            .any(|pair| pair == "dismissed=" || pair == "dismissed");
-        let dismissed = match query_value(query, "dismissed") {
+            .any(|pair| pair == "show=" || pair == "show");
+        let shown = match query_value(query, "show") {
             None if asked_blank => {
                 return Err(ApiError::invalid_value(
-                    "dismissed",
-                    "\"\" is not a choice about dismissed reviews".to_string(),
-                    DismissedReviews::valid_values(),
+                    "show",
+                    "\"\" is not a choice about which reviews to show".to_string(),
+                    ReviewsShown::valid_values(),
                 ))
             }
-            None => DismissedReviews::default(),
-            Some(asked) => asked.parse::<DismissedReviews>().map_err(|_| {
+            None => ReviewsShown::default(),
+            Some(asked) => asked.parse::<ReviewsShown>().map_err(|_| {
                 ApiError::invalid_value(
-                    "dismissed",
-                    format!("{asked:?} is not a choice about dismissed reviews"),
-                    DismissedReviews::valid_values(),
+                    "show",
+                    format!("{asked:?} is not a choice about which reviews to show"),
+                    ReviewsShown::valid_values(),
                 )
             })?,
         };
 
         let reviews: Vec<Value> = self
             .records
-            .reviews_at_step(repo.as_deref(), dismissed)?
+            .reviews_at_step(repo.as_deref(), shown)?
             .iter()
             .map(wire::review_list_item)
             .collect();
@@ -479,7 +524,7 @@ impl Api {
             200,
             json!({
                 "repo": repo,
-                "dismissed": dismissed.as_str(),
+                "show": shown.as_str(),
                 "reviews": reviews,
             }),
         ))
@@ -696,6 +741,13 @@ impl Api {
             200,
             json!({
                 "review": wire::review(&full.review),
+                // **Why nothing on it may be signed off, or null.** The same value the draft
+                // page reads, one step earlier: confirming a brief is one of the four acts
+                // the store refuses on a review that has left the desk, so the screen that
+                // offers it needs the answer or it offers a button the API refuses.
+                "not_for_signing": wire::not_for_signing(
+                    self.records.not_for_signing(review_id)?,
+                ),
                 "layers": full.layers.iter().map(wire::review_layer).collect::<Vec<_>>(),
                 "brief": full.brief.as_ref().map_or(Value::Null, wire::brief),
                 "findings": findings.iter().map(wire::finding_in_round).collect::<Vec<_>>(),
@@ -868,6 +920,11 @@ impl Api {
             // is stuck. False on every draft this build wrote; true of one approved before
             // the composition changed shape.
             "body_is_stale": self.records.draft_body_is_stale(review_id)?,
+            // **Why this draft may not be signed off, or null.** The screen draws its
+            // sentence from this and the store refuses from the same value, so the page
+            // cannot offer a sign-off the API would refuse — DEV-957's "an unposted draft
+            // on a finished review says so and cannot be signed off" is one field.
+            "not_for_signing": wire::not_for_signing(self.records.not_for_signing(review_id)?),
             "edits": edits,
             "held_back": held_back,
             "nit_ticket": wire::nit_ticket(&ticket),

@@ -99,6 +99,17 @@ const props = defineProps<{
   active: ReviewLayerName
   /** Which round the second group is. */
   round: number
+  /**
+   * Whether this review has left the desk, so no step still waits on anybody.
+   *
+   * **It changes the tense a step is read in and nothing else.** A step that is
+   * `waiting_on_you` on a review whose pull request has merged says "was waiting on you":
+   * the record is not wrong — step 6 really is waiting, and nothing should rewrite it —
+   * but "waiting on you" is a claim about *now*, and this page's own headline two lines
+   * above says "Nothing left to do." The Reviews list took the same correction for the
+   * same reason; DEV-957.
+   */
+  offTheDesk?: boolean
 }>()
 
 /**
@@ -172,7 +183,14 @@ const steps = computed<Step[]>(() =>
   [...props.layers]
     .sort((one, two) => one.number - two.number)
     .map((layer) => {
-      const said = layerOutcome(layer)
+      /*
+       * **The past tense on a review that has left the desk**, and only for the one state
+       * that claims whose turn it is. A step that finished says what it found, and a review
+       * leaving does not make that less true.
+       */
+      const said = props.offTheDesk && layer.state === 'waiting_on_you'
+        ? 'was waiting on you'
+        : layerOutcome(layer)
       /*
        * **Read once.** The line, the title and the card all say this, and
        * `harvestReadLabel` defaults to the clock: called three times it would answer from

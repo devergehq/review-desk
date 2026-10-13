@@ -46,7 +46,7 @@
 
 use rusqlite::{params, Row};
 
-use crate::entities::inbox::{row_to_review, IN_PLAY, REVIEW_COLUMNS};
+use crate::entities::inbox::{row_to_review, IN_PLAY, NEWEST_ROUND, REVIEW_COLUMNS};
 use crate::error::Result;
 use crate::model::{
     DraftStatus, NitTicketStatus, Review, SignOff, Timestamp, WorkFilter, WorkItem, WorkKind,
@@ -70,6 +70,12 @@ impl Store {
     /// one.** DEV-945: the developer dismisses a review they will not act on, and this is
     /// the list a dispatcher reads, so the exclusion here is the whole mechanism — an
     /// item for a dismissed review would be a session started on a review nobody wants.
+    ///
+    /// **Nor does a finished one**, which is the same sentence read off the pull request:
+    /// DEV-957, where a merged pull request's rounds were still being offered. Both come
+    /// through [`IN_PLAY`], which is the one place either fact is spelled out — and a
+    /// session dispatched for a merged pull request would write a review that can never be
+    /// posted, which is worse than the wasted run.
     ///
     /// **Dismissing the newest round does not bring an earlier one back.** The round
     /// subquery counts every round, dismissed or not, so the newest round of a pull
@@ -97,10 +103,7 @@ impl Store {
              FROM reviews v
              LEFT JOIN briefs b ON b.review_id = v.id
              LEFT JOIN drafts d ON d.review_id = v.id
-             WHERE v.round = (
-                     SELECT MAX(round) FROM reviews
-                     WHERE repo = v.repo AND pr = v.pr
-                   )
+             WHERE {NEWEST_ROUND}
                AND {IN_PLAY}
                AND (?1 IS NULL OR v.id = ?1)
                AND (?2 IS NULL OR v.repo = ?2)"

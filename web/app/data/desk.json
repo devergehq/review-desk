@@ -19,6 +19,11 @@
       "repo": "acme/billing-api",
       "open_reviews": 2,
       "active_rules": 2
+    },
+    {
+      "repo": "tc/portal",
+      "open_reviews": 3,
+      "active_rules": 0
     }
   ],
   "own_prs": [

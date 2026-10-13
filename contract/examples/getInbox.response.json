@@ -13,6 +13,7 @@
       },
       "ticket_id": "ABC-231",
       "ticket_url": "https://linear.app/acme/issue/ABC-231",
+      "round": 1,
       "brief_ready_at": "2026-10-08T10:54:00Z",
       "blocks_later_layers": true
     }
@@ -69,6 +70,7 @@
       },
       "ticket_id": "ABC-187",
       "ticket_url": null,
+      "round": 1,
       "events": [
         {
           "finding_seq": 2,
@@ -134,6 +136,7 @@
       },
       "ticket_id": "ABC-244",
       "ticket_url": "https://linear.app/acme/issue/ABC-244",
+      "round": 1,
       "layer_number": 5,
       "layer_name": "code_review",
       "layers_total": 7,
@@ -151,6 +154,7 @@
       },
       "ticket_id": "ABC-246",
       "ticket_url": null,
+      "round": 1,
       "layer_number": 3,
       "layer_name": "alternatives",
       "layers_total": 7,

@@ -919,26 +919,23 @@ fn a_repository_filter_answers_for_the_spelling_the_record_holds() {
 }
 
 #[test]
-fn an_empty_choice_about_dismissed_reviews_is_refused_rather_than_ignored() {
+fn an_empty_choice_about_which_reviews_to_show_is_refused_rather_than_ignored() {
     // **An empty value is a value**, and a client that serialises its filters whether or
     // not they are set sends one. Dropped, it answered with the in-play view and echoed
-    // `excluded` — and the page reads its heading off that field, so it would have said
+    // `in_play` — and the page reads its heading off that field, so it would have said
     // "Every review in play" under a picker set to Dismissed, with no error anywhere.
     let harness = common::start_with_no_github();
     common::seed(&harness.store);
 
-    for query in [
-        "/reviews?dismissed=",
-        "/reviews?repo=acme/portal&dismissed=",
-    ] {
+    for query in ["/reviews?show=", "/reviews?repo=acme/portal&show="] {
         let answer = harness.api("GET", query, None);
         assert_eq!(answer.status, 400, "{query}: {}", answer.text());
         assert_eq!(answer.error_code(), "invalid_value", "{query}");
-        assert_eq!(answer.json()["field"], "dismissed", "{query}");
+        assert_eq!(answer.json()["field"], "show", "{query}");
     }
 
     // And asking for nothing at all is still the default view.
     let default = harness.api("GET", "/reviews", None);
     assert_eq!(default.status, 200, "{}", default.text());
-    assert_eq!(default.json()["dismissed"], "excluded");
+    assert_eq!(default.json()["show"], "in_play");
 }

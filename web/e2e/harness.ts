@@ -11,7 +11,7 @@
 
 import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import type { Page } from '@playwright/test'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -163,6 +163,25 @@ export interface Addresses {
    * for.
    */
   requestedReviewId: number
+  /**
+   * **Four rounds of one merged pull request**, in the order they were opened: `tc/portal
+   * #9568`, round 1 posted and rounds 2 to 4 each holding a draft nobody signed off.
+   *
+   * It is the record DEV-957 was raised from, and every one of these four is **finished**:
+   * in no group of the queue, in no work list, under Finished on the Reviews list, and with
+   * no sign-off offered on any of the three unposted drafts. So it moves none of this
+   * suite's needs-you counts — which is the assertion, not a convenience.
+   */
+  mergedReviewIds: number[]
+  /**
+   * **Two rounds of one open pull request, both unposted drafts**: `tc/portal#9541`, in
+   * the order they were opened.
+   *
+   * Round 1 is superseded — the author pushed past its commit — so the queue draws one row
+   * for this pull request and it is round 2's. Round 1's draft page says so and offers no
+   * sign-off. It is **one** of the queue's needs-you rows, so it moves that count by one.
+   */
+  supersededReviewIds: number[]
 }
 
 /** The addresses, as the setup wrote them. */
@@ -625,6 +644,221 @@ function seedPosted(directory: string, database: string): number {
   return reviewId
 }
 
+/**
+ * **Four rounds of one merged pull request, one posted and three not** — the record
+ * DEV-957 was raised from, in the browser.
+ *
+ * On 13 October Patrick's queue held ten drafts to approve, five of them rounds of pull
+ * requests that had already merged. `tc-portal #9568` was four of those five: round 1 had
+ * been posted and the author's three later pushes each opened a round whose draft was
+ * never signed off. None of those three could ever be posted, and all three sat in "drafts
+ * to approve".
+ *
+ * **The state is written by a harvest, because the harvest is the only thing that writes
+ * it.** Nothing on the command line records a pull request's state, and the issue says
+ * that is right — what sets finished is the harvest, when it reads `merged`. So this runs
+ * `harvest --review <round 1> --from <dir>`, which replays a recorded response through
+ * exactly the path a live harvest takes: the same `harvest`, the same writes, the same step
+ * 7. **Nothing leaves the machine**, which is the rule this suite keeps everywhere.
+ *
+ * The recording is one file, and that is deliberate. The harvest reads the pull request
+ * always; it reads the threads only when a finding carries a GitHub comment id, and it
+ * compares commits only when the pull request's head differs from the one the review read.
+ * So a recording whose head *is* round 1's head, on findings nobody linked, needs
+ * `pull_request.json` and nothing else — and the run makes no request it has no answer for.
+ *
+ * **Only round 1 is harvested, which is the whole point.** Rounds 2, 3 and 4 hold no
+ * `pr_state` of their own, exactly as they do on Patrick's record, because a harvest reads
+ * the round a review was posted on. A dashboard that read the round's own column would show
+ * three of these four rounds as open on a pull request that merged a week ago.
+ */
+function seedMerged(directory: string, database: string): number[] {
+  const repo = 'tc/portal'
+  const pr = '9568'
+  const rounds: number[] = []
+  const heads = ['e5f6a75', 'f6a7b86', 'a7b8c97', 'b8c9d08']
+
+  heads.forEach((head, index) => {
+    const opened = cli(database, [
+      'review',
+      'open',
+      '--repo',
+      repo,
+      '--pr',
+      pr,
+      '--head',
+      head,
+      '--title',
+      'Retry a failed delivery with an idempotency key',
+      '--ticket',
+      'DEV-968',
+      '--ticket-url',
+      'https://linear.app/deverge/issue/DEV-968',
+      '--changed-lines',
+      String(120 + index * 18),
+    ])
+    const reviewId = Number(opened.match(/\d+/)?.[0])
+    if (!Number.isInteger(reviewId)) {
+      throw new Error(`review open printed no id: ${opened}`)
+    }
+
+    /*
+     * **A finding on each round, and it is load-bearing rather than decoration.**
+     * `review open` moves an *unstarted* round's head rather than opening a round beside
+     * it — DEV-945 — so without something on the round, the next head in this list would
+     * move this one instead of becoming round 2. A finding is what makes the round started.
+     */
+    const finding = join(directory, `merged-finding-${index + 1}.json`)
+    writeFileSync(
+      finding,
+      JSON.stringify({
+        lens: 'correctness',
+        severity: index === 0 ? 'blocker' : 'should',
+        claim: index === 0
+          ? 'A dead delivery is retried without its key'
+          : 'The key is read from the job rather than from the delivery',
+        file: 'jobs/DeliverWebhook.php',
+        line: 58 + index,
+        disposition: 'in_draft',
+      }),
+    )
+    cli(database, ['finding', 'add', '--review', String(reviewId), '--file', finding])
+
+    const body = join(directory, `merged-body-${index + 1}.json`)
+    writeFileSync(
+      body,
+      JSON.stringify([{
+        kind: 'prose',
+        text: 'One finding on the key the retry carries. Nothing else changed in this '
+          + 'round.',
+      }]),
+    )
+    cli(database, ['draft', 'put', '--review', String(reviewId), '--sections', body])
+
+    rounds.push(reviewId)
+  })
+
+  /* Round 1 is the one that posted, which is the round a harvest reads. */
+  cli(database, [
+    'review',
+    'link',
+    '--review',
+    String(rounds[0]),
+    '--github-review',
+    'PRR_tc9568r1',
+  ])
+
+  const recording = join(directory, 'recorded-9568')
+  mkdirSync(recording, { recursive: true })
+  writeFileSync(
+    join(recording, 'pull_request.json'),
+    JSON.stringify({
+      number: Number(pr),
+      title: 'Retry a failed delivery with an idempotency key',
+      /*
+       * **GitHub's own shape for a merged pull request**, which is what `wire::pull_request`
+       * parses: `state` is `closed` and `merged` is what tells the two apart. A hand-written
+       * `"state": "merged"` would be a shape GitHub never sends.
+       */
+      state: 'closed',
+      merged: true,
+      merged_at: '2026-10-11T22:41:00Z',
+      closed_at: '2026-10-11T22:41:00Z',
+      additions: 96,
+      deletions: 24,
+      /* Round 1's own head, so the run needs no commit comparison. */
+      head: { sha: heads[0] },
+      user: { login: 'author' },
+    }),
+  )
+
+  cli(database, [
+    'harvest',
+    '--review',
+    String(rounds[0]),
+    '--from',
+    recording,
+  ])
+
+  return rounds
+}
+
+/**
+ * **Two rounds of one open pull request, both unposted drafts** — the other half of
+ * DEV-957's comment.
+ *
+ * `tc-portal #9541` drew two rows on Patrick's screen, round 1 and round 2, both "Draft
+ * ready". Round 1 can never be the review that posts: the author pushed past the commit it
+ * was written against. So the queue draws one row, for round 2, and the heading counts one
+ * pull request rather than two rounds.
+ *
+ * **Nothing in the acceptance path touches it**, which is deliberate. That path confirms a
+ * brief and signs a draft off on `acme/portal#412`, so a measurement named against #412 is
+ * a measurement whose subject depends on the order the tests ran in. This pull request is
+ * in play from the first test to the last.
+ */
+function seedSuperseded(directory: string, database: string): number[] {
+  const rounds: number[] = []
+
+  for (const [index, head] of ['a1b2c31', 'b2c3d42'].entries()) {
+    const opened = cli(database, [
+      'review',
+      'open',
+      '--repo',
+      'tc/portal',
+      '--pr',
+      '9541',
+      '--head',
+      head,
+      '--title',
+      'Give a scheduled export its own context',
+      '--ticket',
+      'DEV-941',
+      '--ticket-url',
+      'https://linear.app/deverge/issue/DEV-941',
+      '--changed-lines',
+      String(188 + index * 12),
+    ])
+    const reviewId = Number(opened.match(/\d+/)?.[0])
+    if (!Number.isInteger(reviewId)) {
+      throw new Error(`review open printed no id: ${opened}`)
+    }
+
+    /* A finding, so the round is started and the next head opens a round beside it. */
+    const finding = join(directory, `superseded-finding-${index + 1}.json`)
+    writeFileSync(
+      finding,
+      JSON.stringify({
+        lens: 'correctness',
+        severity: index === 0 ? 'blocker' : 'should',
+        claim: index === 0
+          ? 'The export holds the request\'s tenant after it returns'
+          : 'A retried export re-reads the context it was given',
+        file: 'app/Exports/ScheduledExport.php',
+        line: 48 + index * 13,
+        disposition: 'in_draft',
+      }),
+    )
+    cli(database, ['finding', 'add', '--review', String(reviewId), '--file', finding])
+
+    const sections = join(directory, `superseded-body-${index + 1}.json`)
+    writeFileSync(
+      sections,
+      JSON.stringify([{
+        kind: 'prose',
+        text: index === 0
+          ? 'The export still runs inside the request. One blocker on the tenant it holds.'
+          : 'The context is passed explicitly now. One finding is left on the retry path.',
+      }]),
+    )
+    cli(database, ['draft', 'put', '--review', String(reviewId), '--sections', sections])
+
+    rounds.push(reviewId)
+  }
+
+  return rounds
+}
+
 export function seed(
   directory: string,
 ): {
@@ -635,6 +869,8 @@ export function seed(
   heldBackReviewId: number
   postedReviewId: number
   requestedReviewId: number
+  mergedReviewIds: number[]
+  supersededReviewIds: number[]
 } {
   const database = join(directory, 'seeded.db')
 
@@ -880,6 +1116,8 @@ Ran the job twice against a local endpoint that 500s once, and counted the deliv
     heldBackReviewId: seedHeldBack(directory, database),
     postedReviewId: seedPosted(directory, database),
     requestedReviewId: seedRequested(database),
+    mergedReviewIds: seedMerged(directory, database),
+    supersededReviewIds: seedSuperseded(directory, database),
   }
 }
 

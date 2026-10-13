@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Brief } from '~/types/desk'
+import type { Brief, NotForSigning } from '~/types/desk'
 import type { DeskNotice } from '~/utils/format'
 
 /**
@@ -38,17 +38,64 @@ import type { DeskNotice } from '~/utils/format'
  * text — where "problem half only" reads as the session's own note rather than as the
  * page's claim.
  */
-const props = defineProps<{ brief: Brief, reviewId: number }>()
+const props = defineProps<{
+  brief: Brief
+  reviewId: number
+  /**
+   * Why nothing on this review may be signed off, or null when it may.
+   *
+   * **Confirming a brief is a sign-off, and the four acts the store refuses include it.**
+   * DEV-957 widened that guard to a review whose pull request has merged or closed and to a
+   * round a newer round supersedes, and this card went on offering the button: the one
+   * failure the issue's own invariant — "a page cannot offer a sign-off the API refuses" —
+   * exists to prevent. Found by a review of the branch that widened it.
+   *
+   * It is served on `GET /reviews/{reviewId}` for this, beside the copy the draft page
+   * reads, so the two screens answer from one value.
+   */
+  notForSigning?: NotForSigning | null
+}>()
 
 const desk = useReviewDesk()
 
 const working = ref(false)
 const notice = ref<DeskNotice | null>(null)
 
-/** Which of the three states the record is in. */
-const state = computed<'asking' | 'confirmed' | 'not required'>(() => {
+/**
+ * Which of the four states the record is in.
+ *
+ * **`confirmed` is asked first, and `off the desk` before the remaining two.** A brief that
+ * was confirmed keeps saying so: that happened, and a review leaving the desk does not
+ * unmake it. After that, a brief on a merged pull request may be unconfirmed and
+ * confirmation may be required, and neither is a reason to ask for an act nothing will act
+ * on — so the question "has this review left" outranks both.
+ *
+ * (The first version of this said `off the desk` came before all three and the code asked
+ * `confirmed` first. The code was right and the sentence was not; found by a review of this
+ * branch.)
+ */
+const state = computed<'asking' | 'confirmed' | 'not required' | 'off the desk'>(() => {
   if (props.brief.confirmed) return 'confirmed'
+  if (props.notForSigning) return 'off the desk'
   return props.brief.confirmation_required ? 'asking' : 'not required'
+})
+
+/** What this card says in place of the ask, in the words the draft page uses. */
+const whyNot = computed(() => {
+  const why = props.notForSigning
+  if (!why) return ''
+  if (why.reason === 'dismissed') {
+    return 'You dismissed this review, so no session will act on a confirmation. Bring it '
+      + 'back from the Reviews list if it should be reviewed after all.'
+  }
+  if (why.reason === 'superseded') {
+    return `Round ${why.by_round} of this pull request is newer, and it is the round a `
+      + 'session is working on. Confirming this one would ask for work on a commit the '
+      + 'author has pushed past.'
+  }
+  const day = dayLabel(why.at ?? null)
+  return `The pull request ${why.how}${day ? ` on ${day}` : ''}. Nothing more will be `
+    + 'posted on it, so there is nothing for a confirmation to let through.'
 })
 
 async function confirm() {
@@ -82,6 +129,25 @@ async function confirm() {
       >
         Confirm the problem
       </DeskButton>
+    </DeskCard>
+
+    <!--
+      **No button, rather than a disabled one.** Confirming asks a session to carry on past
+      layer 2, and on a review that has left the desk no session is coming — the store
+      refuses the act, so a button here would be one the API answers with a 409. The card
+      says which of the three reasons it is, in the words the draft page uses for the same
+      value.
+    -->
+    <DeskCard
+      v-else-if="state === 'off the desk'"
+      as="section"
+      pad="tight"
+      class="settled waived"
+    >
+      <span class="rd-note">
+        <strong>Nothing to confirm.</strong>
+        {{ whyNot }}
+      </span>
     </DeskCard>
 
     <DeskCard

@@ -12,9 +12,9 @@ mod common;
 
 use common::{new_review, temp_store};
 use review_desk_store::{
-    Actor, DismissedReviews, Disposition, DraftStatus, FileCheck, FindingRef, NewBrief, NewDraft,
-    NewFileChange, NewFinding, NewOutcome, NewReviewSource, NitTicketStatus, OutcomeKind, Review,
-    ReviewEvent, ReviewFacts, ReviewLayerState, ReviewLinks, Severity, SourceKind, Store,
+    Actor, Disposition, DraftStatus, FileCheck, FindingRef, NewBrief, NewDraft, NewFileChange,
+    NewFinding, NewOutcome, NewReviewSource, NitTicketStatus, OutcomeKind, Review, ReviewEvent,
+    ReviewFacts, ReviewLayerState, ReviewLinks, ReviewsShown, Severity, SourceKind, Store,
     WorkFilter,
 };
 
@@ -49,7 +49,7 @@ fn work_ids(store: &Store) -> Vec<i64> {
 }
 
 /// The ids the Reviews list draws for one choice about dismissed reviews.
-fn listed(store: &Store, dismissed: DismissedReviews) -> Vec<i64> {
+fn listed(store: &Store, dismissed: ReviewsShown) -> Vec<i64> {
     store
         .reviews_at_step(None, dismissed)
         .expect("the reviews list")
@@ -499,20 +499,20 @@ fn the_reviews_list_leaves_dismissed_reviews_out_until_they_are_asked_for() {
         .expect("dismiss it");
 
     assert_eq!(
-        listed(&store, DismissedReviews::default()),
+        listed(&store, ReviewsShown::default()),
         vec![in_play.id],
         "the default view is the reviews in play"
     );
     assert_eq!(
-        listed(&store, DismissedReviews::Only),
+        listed(&store, ReviewsShown::Dismissed),
         vec![gone.id],
         "and the filter is the dismissed ones on their own"
     );
-    let both = listed(&store, DismissedReviews::Included);
+    let both = listed(&store, ReviewsShown::Everything);
     assert_eq!(both.len(), 2, "or the whole record on one page: {both:?}");
 
     let row = store
-        .reviews_at_step(None, DismissedReviews::Only)
+        .reviews_at_step(None, ReviewsShown::Dismissed)
         .unwrap()
         .remove(0);
     assert!(
@@ -778,12 +778,19 @@ fn what_a_review_holds_is_the_same_question_for_a_delete_and_for_a_moved_head() 
 }
 
 #[test]
-fn every_query_that_lists_reviews_says_what_it_does_about_dismissed_ones() {
-    // **The structural half of "a dismissed review is in front of nobody".** The tests
+fn every_query_that_lists_reviews_says_what_it_does_about_the_ones_that_have_left() {
+    // **The structural half of "a review off the desk is in front of nobody".** The tests
     // above check the queries that exist today; this one is against the next one, written
     // by somebody who does not know there is a clause to paste. A list that forgot it
     // would put a dismissed review back in the developer's queue and nothing anywhere
     // would fail.
+    //
+    // **Two ways off the desk since DEV-957, and one clause.** A merged or closed pull
+    // request leaves the queue the same way a dismissal does, and `IN_PLAY` carries both
+    // — so this check needs no second pass, and a query that pastes the clause gets the
+    // finish with the dismissal. That is the point of putting it there: finishing is
+    // *derived* rather than stored, so a query spelling it out for itself would be a
+    // second definition of when a review is over.
     //
     // Written over the source the way `the_work_query_contains_no_write_statement` is,
     // and for the same reason: "every list carries the clause" is a claim about code, and

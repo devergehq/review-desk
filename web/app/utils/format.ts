@@ -554,6 +554,52 @@ export function authorResponseLabel(item: InboxPostedItem): string {
 }
 
 /**
+ * An ISO instant as a day: "11 October 2026".
+ *
+ * **A day rather than an elapsed phrase, which is a deliberate exception on this desk.**
+ * Every other time here is worded as "6 min ago" by `sinceLabel`, because what a reader
+ * wants of a draft waiting or a session running is how long it has been. A merge is not
+ * that: the sentence a finished review's draft page draws — "Not posted — the pull request
+ * merged on 11 October 2026" — is a fact about a day, and "merged 2 days ago" would be a
+ * figure that goes stale while the page is open and reads as news.
+ *
+ * **Written out rather than left to `toLocaleDateString`, and the reason is not
+ * aesthetics.** The browser's locale was the first answer and it is the wrong one twice
+ * over. It is **not reproducible**: the same record reads "11 October 2026" under
+ * `en-AU` and "October 11, 2026" under `en-US`, so the sentence a developer is shown
+ * depends on a setting nothing on this desk declares — and a measurement of it in
+ * Chromium disagreed with the same assertion in the unit tests, which is how this was
+ * found. And it is **not the house style**: every date written in this project, including
+ * the issue this came from, is day-month-year.
+ *
+ * So the format is this app's, stated here, in English like every other word it writes.
+ *
+ * **No time of day.** The record holds the instant and the hour is not what the sentence is
+ * about: "merged on 11 October 2026" is what a reader wants, and 22:41 is noise.
+ *
+ * **The developer's own day, not UTC's.** `getDate` and its two neighbours read local time,
+ * which is the same basis `sinceLabel` works on and the right one: a pull request merged at
+ * 22:41 UTC merged on the 12th for somebody in Sydney, and telling them the 11th would be
+ * telling them about a day they did not have.
+ *
+ * `null` for no instant, so a caller can leave the day out of its sentence rather than
+ * writing "on an unrecorded date" — the pull request merged either way, and the day is
+ * what the record may not hold. `null` for an instant that is not one, too: a column this
+ * app cannot parse is the absence of a date rather than `Invalid Date` on the page.
+ */
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+] as const
+
+export function dayLabel(at: Instant | null | undefined): string | null {
+  if (!at) return null
+  const when = new Date(at)
+  if (Number.isNaN(when.getTime())) return null
+  return `${when.getDate()} ${MONTHS[when.getMonth()]} ${when.getFullYear()}`
+}
+
+/**
  * What the record knows of a posted pull request's state.
  *
  * `null` is not "open": it is the harvester never having looked, which is every review
@@ -612,10 +658,31 @@ export function stepLabel(row: ReviewListItem, now: Date = new Date()): string {
   if (row.step_number == null || row.step_name == null || row.step_state == null) {
     return 'Not started'
   }
-  const said = `${layerLabel(row.step_name)} · ${layerOutcome({
-    state: row.step_state,
-    detail: row.step_detail,
-  })}`
+  /*
+   * **A row that has left the desk does not claim anything is waiting on anybody.**
+   * "Draft · waiting on you" is a statement about now, and on a review whose pull request
+   * merged the line beside it says "No round of it can be posted" — one row saying two
+   * contradictory things, which DEV-957's screenshots showed. It was true of a dismissed
+   * row too and had been since DEV-945; both are fixed here, because both are the same
+   * sentence: the step *was* waiting, and then the review left.
+   *
+   * **And of a superseded round, which is the third case and was missed.** `left_the_desk`
+   * had two values and a superseded round got neither, so the Reviews list's default view
+   * still read "Draft · waiting on you" over the one row DEV-957's comment is actually
+   * about — `tc/portal#9541` round 1 — while its own draft page said "Nothing left to do".
+   * Found by a review of this branch; the field grew the case rather than this growing a
+   * second source.
+   *
+   * **The past tense rather than a different step.** The record is not wrong — step 6 of
+   * that review really is `waiting_on_you`, and nothing should rewrite it — so what changes
+   * is the tense the row reads it in. The detail is dropped with it: it is the stored
+   * phrase "waiting on you", which is the claim being corrected.
+   */
+  const outcome = row.left_the_desk != null && row.step_state === 'waiting_on_you'
+    ? 'was waiting on you'
+    : layerOutcome({ state: row.step_state, detail: row.step_detail })
+
+  const said = `${layerLabel(row.step_name)} · ${outcome}`
   const read = harvestReadLabel({
     name: row.step_name,
     state: row.step_state,

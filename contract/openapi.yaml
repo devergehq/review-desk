@@ -116,21 +116,27 @@ paths:
           required: false
           description: One repository, as `owner/repo`. Omit it for every repository.
           schema: { $ref: '#/components/schemas/RepoName' }
-        - name: dismissed
+        - name: show
           in: query
           required: false
           description: |
-            Which of the dismissed reviews to include. **Omitting it leaves them out**,
-            which is the page's default view and the only safe default: a caller that has
-            never heard of a dismissal must not be handed a review the developer has taken
-            out of play.
+            Which reviews to list. **Omitting it gives the ones in play**, which is the
+            page's default view and the only safe default: a caller that has never heard
+            of a dismissal or of a finish must not be handed a review that has left the
+            desk.
 
-            `only` is the filter DEV-945 asks for — the dismissed reviews on their own,
-            each saying when and why — and `included` is the whole record on one page. A
-            value that is none of the three is refused by name rather than falling back to
+            `dismissed` is the filter DEV-945 asks for — the reviews the developer
+            dismissed, each saying when and why. `finished` is DEV-957's — the ones whose
+            pull request merged or closed. `everything` is the whole record on one page. A
+            value that is none of the four is refused by name rather than falling back to
             the default, because a mistyped filter answering with the default view would
             read as "there are no dismissed reviews".
-          schema: { $ref: '#/components/schemas/DismissedReviews' }
+
+            **It was `dismissed=excluded|only|included` until DEV-957.** That issue adds
+            the fourth position, and `dismissed=finished` would have been a parameter whose
+            name said the opposite of its value. Renamed rather than extended; nothing
+            outside this dashboard reads it.
+          schema: { $ref: '#/components/schemas/ReviewsShown' }
       responses:
         '200':
           description: Every review, newest first.
@@ -139,10 +145,10 @@ paths:
               schema:
                 type: object
                 additionalProperties: false
-                required: [repo, dismissed, reviews]
+                required: [repo, show, reviews]
                 properties:
-                  dismissed:
-                    $ref: '#/components/schemas/DismissedReviews'
+                  show:
+                    $ref: '#/components/schemas/ReviewsShown'
                     description: |
                       The choice this answer was composed for, echoed back as `repo` is,
                       so the page's filter reads what it was given rather than trusting
@@ -1332,7 +1338,16 @@ components:
         open_reviews:
           type: integer
           minimum: 0
-          description: Reviews on this repository not yet posted.
+          description: |
+            Reviews on this repository that are **still on the desk and not yet posted** —
+            no GitHub review recorded, not dismissed, and on a pull request that has not
+            merged or closed.
+
+            The last of those three is DEV-957 and it made this number smaller: a review on
+            a merged pull request was counted as not yet posted, which is true and reads as
+            work outstanding. The repository is still **listed** when every review it has
+            has left the desk, or the Finished and Dismissed views could not be reached
+            for it.
         active_rules:
           type: integer
           minimum: 0
@@ -1342,8 +1357,8 @@ components:
       type: object
       additionalProperties: false
       required:
-        [id, repo, pr, head_sha, round, created_at, pr_state, harvested_at, ticket_url,
-         dismissed_at, dismissed_reason]
+        [id, repo, pr, head_sha, round, created_at, pr_state, pr_state_at, harvested_at,
+         ticket_url, dismissed_at, dismissed_reason]
       description: One review of one pull request at one head commit.
       properties:
         id: { type: integer, format: int64, minimum: 1 }
@@ -1454,10 +1469,26 @@ components:
             **Null is what makes every figure about the author unmeasured** — see
             `InboxPostedItem`, whose three counts are null exactly when this is.
 
-            The store also holds `pr_state_at` — when a pull request was merged or
-            closed — and this document does not serve it, because no screen draws it.
-            A field with no reader is the kind that goes stale unnoticed; the store
-            keeps it and `review-desk review show` prints it.
+            `pr_state_at` beside it is when the pull request reached that state, and it
+            had no reader until DEV-957. It has one now: the draft page of a finished
+            review says "Not posted — the pull request merged on 11 October 2026", and
+            nothing else can date that sentence.
+
+        pr_state_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When the pull request reached `pr_state` — merged at, or closed at — and null
+            while it is open or while nothing has looked. **Null is also a settled pull
+            request GitHub gave no time for**, and a reader must then say it merged
+            without naming the day rather than invent one.
+
+            It is a fact about the pull request and the record keeps a copy per round:
+            only the round a harvest read gets its copy written. So a reader asking
+            whether the *pull request* has finished must not read one round's column —
+            `GET /reviews` answers that for a whole row in `left_the_desk`, and
+            `GET /reviews/{reviewId}/draft` answers it for one review in
+            `not_for_signing`.
 
         # -- the dismissal (DEV-945) -------------------------------------------------
         #
@@ -1799,10 +1830,12 @@ components:
     ReviewListItem:
       type: object
       additionalProperties: false
-      required: [review, rounds_on_pr, steps_total, last_activity_at]
+      required:
+        [review, rounds_on_pr, steps_total, last_activity_at, left_the_desk, finished_how,
+         finished_at]
       description: |
-        One row of `GET /reviews`: the review, the step it has reached, and when it last
-        moved.
+        One row of `GET /reviews`: the review, the step it has reached, whether it has left
+        the desk, and when it last moved.
 
         **The step is the furthest one that has started**, which is to say the
         highest-numbered of the seven whose state is not `pending`. `step_number` and the
@@ -1880,6 +1913,118 @@ components:
             — null means nothing has written since the record began keeping it, which is
             every review from before DEV-890, and the row says so rather than drawing a
             figure.
+
+        # -- off the desk (DEV-957) ---------------------------------------------------
+        left_the_desk:
+          oneOf:
+            - $ref: '#/components/schemas/LeftTheDesk'
+            - type: 'null'
+          description: |
+            How this review left the desk, or null while it is in play. **The two are told
+            apart on every row, which is DEV-957's own criterion**, and a row cannot work
+            the second one out for itself: a dismissal is a column on the review, but
+            whether the pull request is finished is read off whichever round of it a
+            harvest last reached — a fact about the pull request that a row holding one
+            review has not got.
+
+            **Dismissed outranks finished.** A review the developer dismissed and whose
+            pull request later merged says `dismissed`: the dismissal is an act somebody
+            took and the merge is something that happened to it, and the issue settles it
+            that way. The `show` filter agrees, so such a review is under **Dismissed**
+            and not under **Finished**.
+        finished_how:
+          oneOf:
+            - $ref: '#/components/schemas/PrState'
+            - type: 'null'
+          description: |
+            Which way the pull request ended, on a row whose `left_the_desk` is `finished`:
+            `merged` or `closed`. Null otherwise, and never `open`.
+
+            **Read off the pull request, not off `review.pr_state`.** That column is this
+            one round's last harvest, and three of the four rounds of a merged pull request
+            hold nothing in it — so a row wording itself from the review would say "merged"
+            about a pull request that closed, or say nothing at all.
+        finished_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When the pull request merged or closed, on a row whose `left_the_desk` is
+            `finished`. Null otherwise, and null for a finished review GitHub gave no time
+            for — a row must then say it merged without naming the day.
+
+    LeftTheDesk:
+      type: string
+      enum: [dismissed, finished, superseded]
+      description: |
+        How a review left the desk. **Three different facts, deliberately not one.**
+
+        `dismissed` is the developer's act: they will not act on this review again, and
+        the reason is in their own words on the review. `finished` is the record saying
+        the pull request merged or closed, which nobody decided — it happened, and no
+        round of that pull request can be posted afterwards. `superseded` is an unposted
+        round a newer round of the same pull request has replaced: the author pushed past
+        the commit it was written against, so it can never be the review that posts.
+
+        Before DEV-957 only the first existed, and the queue consequently held five drafts
+        on pull requests that had already merged. Patrick asked whether they should be
+        dismissed or gone; ruled: neither — finished.
+
+        **The third was added late and for one reason: a row has to be able to say that
+        nothing is waiting on anybody.** The Reviews list words a step in the past tense
+        when a review has left the desk, and a superseded round is as unactionable as the
+        other two — the store refuses all four acts on it and the queue does not list it —
+        so without this case its row went on reading "Draft · waiting on you" while its own
+        draft page said "Nothing left to do". Found by a review of this branch.
+
+        **It is not a filter position.** `show=` has four and they are about where a review
+        *is*; a superseded round is in play on a pull request that is in play, and the view
+        it belongs to is **In play**. What this field does is let the row say so honestly.
+        The order is the order `NotForSigning` asks in: dismissed, then finished, then
+        superseded.
+
+    NotForSigning:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      description: |
+        Why nothing on this review may be signed off. **The page's sentence and the API's
+        refusal come off this one value**, which is what stops a screen offering a sign-off
+        the API refuses: `POST …/draft/approve`, `POST …/draft/send-back`,
+        `POST …/brief/confirm` and `POST …/nit-ticket` all answer `409` for exactly the
+        reviews this is non-null for.
+
+        The three reasons carry what the sentence needs and nothing more.
+      properties:
+        reason:
+          type: string
+          enum: [dismissed, finished, superseded]
+          description: |
+            `dismissed` — the developer took it out of play. `finished` — its pull request
+            merged or closed. `superseded` — a newer round of the same pull request exists
+            and this round was never posted, so it can never be the review that posts.
+
+            **The order they are asked in is the order they are listed in**, and each
+            ordering is a decision. Dismissed before finished: a dismissed review that
+            then merges stays dismissed. Finished before superseded: once the pull request
+            is over, which round is newest no longer matters.
+        how:
+          $ref: '#/components/schemas/PrState'
+          description: |
+            Merged or closed, present only when `reason` is `finished`. Never `open`: an
+            open pull request is not a reason to refuse a sign-off.
+        at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When it merged or closed, present only when `reason` is `finished`. Null when
+            GitHub gave no time, and the sentence then names no day.
+        by_round:
+          type: integer
+          format: int64
+          minimum: 2
+          description: |
+            The newest round of the pull request, present only when `reason` is
+            `superseded`. At least 2: round 1 can be superseded and cannot supersede.
 
     BriefOption:
       type: object
@@ -2810,9 +2955,24 @@ components:
         - criteria
         - coverage
         - timings
+        - not_for_signing
       description: Everything the One review screen shows.
       properties:
         review: { $ref: '#/components/schemas/Review' }
+        not_for_signing:
+          oneOf:
+            - $ref: '#/components/schemas/NotForSigning'
+            - type: 'null'
+          description: |
+            Why nothing on this review may be signed off, or null when it may — the same
+            value `GET /reviews/{reviewId}/draft` carries, and for the same reason one step
+            earlier.
+
+            **Confirming a brief is a sign-off too.** It is one of the four acts refused on
+            a review that has left the desk, because each of them asks a session to do
+            something afterwards; so the screen that offers it needs the same answer the
+            draft page has, or it offers a button the API refuses. Found by a review of the
+            branch that widened the guard.
         layers:
           type: array
           minItems: 7
@@ -3177,11 +3337,26 @@ components:
       type: object
       additionalProperties: false
       required:
-        [draft, review, lint, sections, threads, body_is_stale, edits, held_back, nit_ticket]
+        [draft, review, lint, sections, threads, body_is_stale, edits, held_back, nit_ticket,
+         not_for_signing]
       description: Everything the Draft preview screen shows.
       properties:
         draft: { $ref: '#/components/schemas/Draft' }
         review: { $ref: '#/components/schemas/Review' }
+        not_for_signing:
+          oneOf:
+            - $ref: '#/components/schemas/NotForSigning'
+            - type: 'null'
+          description: |
+            Why this draft may not be signed off, or null when it may. **A screen with a
+            non-null value here draws the reason and offers no sign-off**, which is
+            DEV-957's "an unposted draft on a finished review says so and cannot be signed
+            off" — the saying-so and the cannot are one field, so a page cannot offer a
+            button the API refuses.
+
+            It is not about the draft's status. A `ready` draft on a merged pull request is
+            ready and unsignable, and the two facts are served separately so the screen can
+            say which it is up against.
         lint:
           oneOf:
             - $ref: '#/components/schemas/DraftLint'
@@ -3672,13 +3847,18 @@ components:
       properties:
         to_stage: { $ref: '#/components/schemas/RuleStage' }
 
-    DismissedReviews:
+    ReviewsShown:
       type: string
-      enum: [excluded, only, included]
-      default: excluded
+      enum: [in_play, dismissed, finished, everything]
+      default: in_play
       description: |
-        Which of the dismissed reviews a list of reviews is being asked for: the ones in
-        play only, the dismissed ones only, or both.
+        Which reviews a list of reviews is being asked for: the ones in play, the ones the
+        developer dismissed, the ones whose pull request merged or closed, or all of them.
+
+        **Four positions because there are two ways off the desk**, and they are told
+        apart everywhere a review is listed. A review that is both — dismissed, and its
+        pull request later merged — is under `dismissed`: it stays dismissed, which is
+        what `LeftTheDesk` says too.
 
     DismissReviewRequest:
       type: object
@@ -3753,11 +3933,25 @@ components:
       type: object
       additionalProperties: false
       required:
-        [review_id, pull_request, blocks_later_layers, ticket_id, ticket_url]
+        [review_id, pull_request, round, blocks_later_layers, ticket_id, ticket_url]
       description: A brief waiting to be confirmed. Layer 2.
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }
+        round:
+          type: integer
+          format: int64
+          minimum: 1
+          description: |
+            Which round of the pull request this brief belongs to.
+
+            **Every item that makes a queue row now carries one**, and that is the point of
+            adding it here. The queue draws one row per pull request, so a row is assembled
+            from items that may be about different rounds — and an item with no round of its
+            own cannot be told apart from one about the row's own. Without it the row's
+            ticket was decided by whichever item arrived last whenever the row had no draft
+            to take a round from. `drafts_to_approve` has carried one since DEV-876,
+            `author_replies` gained one in DEV-957, and this closes the set.
         ticket_id:
           allOf:
             - $ref: '#/components/schemas/ForeignId'
@@ -3852,13 +4046,33 @@ components:
     InboxReplyItem:
       type: object
       additionalProperties: false
-      required: [review_id, pull_request, events, ticket_id, ticket_url]
+      required: [review_id, pull_request, round, events, ticket_id, ticket_url]
       description: |
         An author has acted on a posted review. Built from outcomes with actor `author`
         or `harvester`.
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }
+        round:
+          type: integer
+          format: int64
+          minimum: 1
+          description: |
+            Which round of the pull request the author replied to.
+
+            **Here because the queue draws one row per pull request.** A reply is always on
+            the round that was *posted*, which can be an earlier round than the one the row
+            is numbered for — `tc/portal#9585` had its round 1 posted and replied to while
+            round 2 was still a draft, which is DEV-957's own record. A row saying "the
+            author has replied too" under the number of a different round leaves a reader
+            to work out which review the reply was on; with this it says "replied to
+            round 1".
+
+            `drafts_to_approve` has carried a round since DEV-876 for the same kind of
+            reason, and `briefs_to_confirm` gained one in the same issue — **every item that
+            makes a row carries one**, which is what lets the queue tell an item about the
+            row's own round from one about an older round without special-casing the
+            groups that happen to have it.
         ticket_id:
           allOf:
             - $ref: '#/components/schemas/ForeignId'
@@ -4093,12 +4307,25 @@ components:
       type: object
       additionalProperties: false
       required:
-        [review_id, pull_request, layer_number, layer_name, layers_total, ticket_id,
+        [review_id, pull_request, round, layer_number, layer_name, layers_total, ticket_id,
          ticket_url]
       description: A review a session is still working on.
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }
+        round:
+          type: integer
+          format: int64
+          minimum: 1
+          description: |
+            Which round of the pull request the session is working on.
+
+            **The fourth and last array to carry one.** `reviews_in_progress` asks only
+            whether a layer is `running` and says nothing about which round, so two rounds
+            of one pull request can both be here — and the queue draws one row per pull
+            request. Without this the row said "a session is on step 4 of 7" about a round
+            other than the one it is numbered for, which is the fault the other three rounds
+            were added to prevent.
         ticket_id:
           allOf:
             - $ref: '#/components/schemas/ForeignId'
