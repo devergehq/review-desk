@@ -994,7 +994,7 @@ impl Store {
     /// the ones asking what to do next.
     pub fn list_reviews(&self, repo: &str, pr: i64) -> Result<Vec<Review>> {
         // **The one that was wrong, and the Locus half found it on a real repository.**
-        // `review find --repo Trilogy-Care/tc-portal` answered "no reviews" while
+        // `review find --repo Globex/portal` answered "no reviews" while
         // `review open` and `work list` found them, because those two normalise and this
         // did not — and the answer echoed the query back, so the two spellings never
         // appeared side by side for anybody to notice.

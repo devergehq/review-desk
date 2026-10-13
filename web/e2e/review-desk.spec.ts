@@ -149,9 +149,9 @@ test.describe('the whole path, on a seeded database', () => {
      * developer, so it is in this count.
      *
      * **Four since DEV-957, and the noun changed with the count.** The fourth is
-     * `tc/portal#9541`, which has *two* rounds with unposted drafts and draws **one** row:
+     * `globex/portal#9541`, which has *two* rounds with unposted drafts and draws **one** row:
      * a row is one pull request, and the heading counts rows. The four rounds of merged
-     * `tc/portal#9568` add nothing at all — a finished review is in no group, which is that
+     * `globex/portal#9568` add nothing at all — a finished review is in no group, which is that
      * issue and is asserted below.
      */
     await expect(
@@ -204,7 +204,7 @@ test.describe('the whole path, on a seeded database', () => {
 
     /*
      * **And the row opens the review, which starts at Understand** — Patrick on
-     * tc-portal #9584, "when we click a review, we want to go to the review, not to the
+     * a review, "when we click a review, we want to go to the review, not to the
      * draft". Every row lands here however much is waiting behind it; the trail is what
      * says which step that is, and it says it about all seven at once.
      */
@@ -347,7 +347,7 @@ test.describe('the whole path, on a seeded database', () => {
     /*
      * **A row goes to the review, and the draft is one click along the trail.**
      *
-     * Patrick, on tc-portal #9584: "when we click a review, we want to go to the review,
+     * Patrick, on a review: "when we click a review, we want to go to the review,
      * not to the draft." In a page-per-step review the review starts at Understand, so
      * that is where every row lands however much is waiting behind it — and the trail,
      * which says which step is waiting, is what carries you on.
@@ -2064,11 +2064,11 @@ async function draftPage(page: Page, width = 1440) {
 /*
  * **What GitHub receives, in a real browser, at both widths.**
  *
- * DEV-929. The review posted to tc-portal#9585 was 309 lines with no index, no severity
- * glyph and two inline threads, because the posted body *was* the blocks joined. The seeded
- * structured review is the contract's real-length example — twelve posted findings, nine of
- * them with a line inside the diff — so this is the volume the complaint was about rather
- * than a two-finding draft that proves nothing about an index.
+ * DEV-929. A real review was 309 lines with no index, no severity glyph and two inline
+ * threads, because the posted body *was* the blocks joined. The seeded structured review is
+ * the contract's real-length example — twelve posted findings, nine of them with a line
+ * inside the diff — so this is the volume the complaint was about rather than a two-finding
+ * draft that proves nothing about an index.
  *
  * The page never scrolling sideways is asserted for every step, at both widths, in "no page
  * of a review scrolls sideways"; this is what the two halves of the preview say.
@@ -2766,8 +2766,8 @@ test.describe('a drawing opens larger', () => {
  * Its own group because it is the one screen that is not about a review needing something:
  * the queue is what is waiting and `GET /timings` is what has finished, so a review that
  * was posted and has not been replied to was in neither. "The actual review itself has
- * disappeared… I can't even get to the review page if I wanted to go back" — Patrick, on
- * tc-portal #9585, which is the sentence this page deletes.
+ * disappeared… I can't even get to the review page if I wanted to go back" — Patrick, on a
+ * review, which is the sentence this page deletes.
  */
 test.describe('the list of every review', () => {
   test('is in the header, lists every review, and reaches a posted one in two clicks', async ({
@@ -3732,7 +3732,7 @@ test.describe('a merged pull request finishes its review', () => {
  * **A round a newer round supersedes, in a browser.**
  *
  * DEV-957's comment: "The older round's draft page says it is superseded, and its draft
- * cannot be signed off." `tc/portal#9541` round 1 is that round — its pull request is open,
+ * cannot be signed off." `globex/portal#9541` round 1 is that round — its pull request is open,
  * so this is the supersession on its own rather than the merge.
  */
 test.describe('a superseded round', () => {
@@ -3773,7 +3773,7 @@ test.describe('a queue row’s links and its edges', () => {
     test(`the GitHub link is in the repository line at ${name}`, async ({ page }) => {
       await page.setViewportSize({ width, height })
       /*
-       * **`tc/portal#9541`, on the queue.** This block runs after the acceptance path,
+       * **`globex/portal#9541`, on the queue.** This block runs after the acceptance path,
        * which signs `#412`'s draft off and takes it out of the queue — so a row named
        * there is a row whose presence depends on the order these tests ran in. Nothing in
        * this suite touches #9541, so its row is on the queue from the first test to the
@@ -3791,11 +3791,11 @@ test.describe('a queue row’s links and its edges', () => {
        */
       const line = row.locator('.row-meta')
       await expect(line).toBeVisible()
-      await expect(line).toContainText('tc/portal')
+      await expect(line).toContainText('globex/portal')
       const github = line.getByRole('link', { name: /pull request #9541/ })
       await expect(github).toHaveAttribute(
         'href',
-        'https://github.com/tc/portal/pull/9541',
+        'https://github.com/globex/portal/pull/9541',
       )
       await expect(row.locator('.row').locator('.row-out-link')).toHaveCount(0)
 

@@ -10,7 +10,7 @@ import type { ReviewListItem, ReviewsShown } from '~/types/desk'
  * and `GET /timings` is what has finished, so a review that was posted and has not been
  * replied to was in neither — and the navigation's "Reviews" pointed at whichever review
  * happened to be waiting, which is not a place a particular review can be found. Patrick,
- * on tc-portal #9585, after posting review 2: "the actual review itself has disappeared… I
+ * on a review, after posting review 2: "the actual review itself has disappeared… I
  * can't even get to the review page if I wanted to go back." This is the page that answers
  * that, and the queue's new "Waiting on the author" group is the shortcut to it.
  *

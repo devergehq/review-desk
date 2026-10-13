@@ -760,7 +760,7 @@ fn a_session_that_opens_a_review_with_its_id_is_the_one_working_on_it() {
 
 #[test]
 fn review_find_answers_for_the_repository_however_it_was_typed() {
-    // **The Locus half found this against `Trilogy-Care/tc-portal`.** `review open` and
+    // **The Locus half found this against a real repository.** `review open` and
     // `work list` normalise the slug and found the rows; `review find` did not and said
     // "no reviews" — and its answer echoed the argument back, so the stored spelling and
     // the typed one never appeared together for anybody to notice.
@@ -769,7 +769,7 @@ fn review_find_answers_for_the_repository_however_it_was_typed() {
         "review",
         "open",
         "--repo",
-        "Trilogy-Care/TC-Portal",
+        "Globex/Portal",
         "--pr",
         "9585",
         "--head",
@@ -778,45 +778,24 @@ fn review_find_answers_for_the_repository_however_it_was_typed() {
         "A review",
     ]);
 
-    let found = desk.json(&[
-        "review",
-        "find",
-        "--repo",
-        "Trilogy-Care/tc-portal",
-        "--pr",
-        "9585",
-    ]);
+    let found = desk.json(&["review", "find", "--repo", "Globex/portal", "--pr", "9585"]);
     assert_eq!(
         found["reviews"].as_array().expect("reviews").len(),
         1,
         "the repository is the same repository however it is spelled: {found}"
     );
     assert_eq!(
-        found["repo"], "trilogy-care/tc-portal",
+        found["repo"], "globex/portal",
         "and the answer carries the spelling the record holds"
     );
 
-    let plain = desk.run(&[
-        "review",
-        "find",
-        "--repo",
-        "TRILOGY-CARE/TC-PORTAL",
-        "--pr",
-        "9585",
-    ]);
+    let plain = desk.run(&["review", "find", "--repo", "GLOBEX/PORTAL", "--pr", "9585"]);
     assert!(plain.starts_with("1 round 1 head abc1234"), "{plain}");
 
     // And an empty answer names what was searched rather than what was typed, which is
     // the half that hid the fault.
-    let none = desk.run(&[
-        "review",
-        "find",
-        "--repo",
-        "Trilogy-Care/Nothing",
-        "--pr",
-        "9585",
-    ]);
-    assert_eq!(none, "no reviews of trilogy-care/nothing#9585");
+    let none = desk.run(&["review", "find", "--repo", "Globex/Nothing", "--pr", "9585"]);
+    assert_eq!(none, "no reviews of globex/nothing#9585");
 }
 
 #[test]

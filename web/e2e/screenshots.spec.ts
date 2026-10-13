@@ -281,10 +281,10 @@ test.describe('the code review page and the draft', () => {
 /*
  * **What GitHub receives, in two pictures at each width.**
  *
- * DEV-929: the review on tc-portal#9585 went out as 309 lines with no index and two threads.
- * The thing that changed is the shape of what posts, so the pictures are of the two halves
- * of the preview — the body, where the index now sits under the verdict line and
- * `### Problem fit`, and the threads, which are not in the body at all.
+ * DEV-929: a real review went out as 309 lines with no index and two threads. The thing
+ * that changed is the shape of what posts, so the pictures are of the two halves of the
+ * preview — the body, where the index now sits under the verdict line and `### Problem
+ * fit`, and the threads, which are not in the body at all.
  *
  * The real-length example is twelve posted findings with nine of them anchored, so the index
  * is at a length a reader has to scan rather than read.

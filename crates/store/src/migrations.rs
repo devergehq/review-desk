@@ -65,7 +65,7 @@
 //! is the rule above being used rather than quoted.
 //!
 //! Version 16 is the one thing a review could not say about its ticket: where the ticket
-//! is. The record has held `ticket_id` since version 1, and nothing can turn `DUC-2045`
+//! is. The record has held `ticket_id` since version 1, and nothing can turn `ACME-2045`
 //! into an address — the tracker and its workspace are the session's knowledge, not the
 //! record's — so a header could print the id and not link it.
 
@@ -1350,7 +1350,7 @@ ALTER TABLE brief_parts ADD COLUMN one_line TEXT;
 -- already records.
 --
 -- **Review Desk cannot work this out from the id.** `ticket_id` is a `ForeignId` -- opaque,
--- never parsed -- and turning `DUC-2045` into an address needs the tracker and the
+-- never parsed -- and turning `ACME-2045` into an address needs the tracker and the
 -- workspace, which the session knows from its dispatch and the record does not. So the
 -- address is given or there is none; nothing here derives it and nothing fetches it.
 --

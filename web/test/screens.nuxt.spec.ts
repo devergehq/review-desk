@@ -202,7 +202,7 @@ describe('the queue', () => {
 
   it('draws one row for a pull request with two unposted rounds', async () => {
     /*
-     * **`tc/portal#9541`, which is Patrick's own record from DEV-957's comment**: rounds 1
+     * **`globex/portal#9541`, which is Patrick's own record from DEV-957's comment**: rounds 1
      * and 2, both "Draft ready", two rows. Round 1's draft can never be the review that
      * posts, so the store no longer offers it and one row is left — round 2's, which is
      * where its link goes.
@@ -216,7 +216,7 @@ describe('the queue', () => {
 
   it('draws one row for a pull request whose posted round was replied to', async () => {
     /*
-     * **`tc/portal#9585`**, which drew two rows: its posted round 1, where the author had
+     * **`globex/portal#9585`**, which drew two rows: its posted round 1, where the author had
      * replied, and its round 2 draft. One row now, numbered for round 2 — and the reply is
      * still on it, with the round it was left on, because the author answering is a real
      * thing the developer has to read and the row it is drawn on is numbered differently.
@@ -480,7 +480,7 @@ describe('the queue', () => {
 
   it('draws no row for any round of a merged pull request', async () => {
     /*
-     * **The four rounds of `tc/portal#9568`**, one posted and three not, on a pull request
+     * **The four rounds of `globex/portal#9568`**, one posted and three not, on a pull request
      * that merged on 11 October. Five of the ten drafts in Patrick's "drafts to approve"
      * were rounds like these, and none of them could ever be posted.
      */
@@ -755,7 +755,7 @@ describe('the queue', () => {
     expect(row.text()).toContain('Read and sign off')
     expect(page.findAll('.row').filter(one => one.text().includes('#412'))).toHaveLength(1)
     /*
-     * **And it still goes to the review, not to the draft.** Patrick, on tc-portal #9584:
+     * **And it still goes to the review, not to the draft.** Patrick, on a review:
      * "when we click a review, we want to go to the review, not to the draft." In a
      * page-per-step review the review starts at Understand, and the draft is one click
      * along the trail — which is also the click that walks past the alternatives and the
@@ -1269,11 +1269,11 @@ describe('the draft preview', () => {
   })
 
   /*
-   * **The body is an index, and the threads are the rest of what posts.** DEV-929: the
-   * review on tc-portal#9585 went out as 309 lines with no index and two threads because
-   * the posted body *was* the blocks joined. The page's own job did not change — nothing is
-   * posted unread — but what it has to draw did: a finding with a line inside the diff is a
-   * row in the body and a comment on the code.
+   * **The body is an index, and the threads are the rest of what posts.** DEV-929: a real
+   * review went out as 309 lines with no index and two threads because the posted body
+   * *was* the blocks joined. The page's own job did not change — nothing is posted unread —
+   * but what it has to draw did: a finding with a line inside the diff is a row in the body
+   * and a comment on the code.
    *
    * Review 41 is the real-length example: twelve posted findings, nine of them anchored.
    */

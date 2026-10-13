@@ -277,8 +277,8 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
 
             // **The stored spelling, not the one that was typed.** The record holds a
             // repository canonically and the lookup now normalises to match — so echoing
-            // the argument back would show `Trilogy-Care/tc-portal` beside rows that are
-            // all `trilogy-care/tc-portal`, which is the shape of the fault this answer
+            // the argument back would show `Globex/portal` beside rows that are
+            // all `globex/portal`, which is the shape of the fault this answer
             // hid: when the lookup missed, the empty answer repeated the caller's own
             // words and the two spellings never appeared together. Taken from the rows
             // where there are any, and from the same helper the store keys on where

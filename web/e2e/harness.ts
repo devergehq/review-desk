@@ -164,7 +164,7 @@ export interface Addresses {
    */
   requestedReviewId: number
   /**
-   * **Four rounds of one merged pull request**, in the order they were opened: `tc/portal
+   * **Four rounds of one merged pull request**, in the order they were opened: `globex/portal
    * #9568`, round 1 posted and rounds 2 to 4 each holding a draft nobody signed off.
    *
    * It is the record DEV-957 was raised from, and every one of these four is **finished**:
@@ -174,7 +174,7 @@ export interface Addresses {
    */
   mergedReviewIds: number[]
   /**
-   * **Two rounds of one open pull request, both unposted drafts**: `tc/portal#9541`, in
+   * **Two rounds of one open pull request, both unposted drafts**: `globex/portal#9541`, in
    * the order they were opened.
    *
    * Round 1 is superseded — the author pushed past its commit — so the queue draws one row
@@ -649,7 +649,7 @@ function seedPosted(directory: string, database: string): number {
  * DEV-957 was raised from, in the browser.
  *
  * On 13 October Patrick's queue held ten drafts to approve, five of them rounds of pull
- * requests that had already merged. `tc-portal #9568` was four of those five: round 1 had
+ * requests that had already merged. `globex/portal#9568` was four of those five: round 1 had
  * been posted and the author's three later pushes each opened a round whose draft was
  * never signed off. None of those three could ever be posted, and all three sat in "drafts
  * to approve".
@@ -673,7 +673,7 @@ function seedPosted(directory: string, database: string): number {
  * three of these four rounds as open on a pull request that merged a week ago.
  */
 function seedMerged(directory: string, database: string): number[] {
-  const repo = 'tc/portal'
+  const repo = 'globex/portal'
   const pr = '9568'
   const rounds: number[] = []
   const heads = ['e5f6a75', 'f6a7b86', 'a7b8c97', 'b8c9d08']
@@ -787,7 +787,7 @@ function seedMerged(directory: string, database: string): number[] {
  * **Two rounds of one open pull request, both unposted drafts** — the other half of
  * DEV-957's comment.
  *
- * `tc-portal #9541` drew two rows on Patrick's screen, round 1 and round 2, both "Draft
+ * `globex/portal#9541` drew two rows on Patrick's screen, round 1 and round 2, both "Draft
  * ready". Round 1 can never be the review that posts: the author pushed past the commit it
  * was written against. So the queue draws one row, for round 2, and the heading counts one
  * pull request rather than two rounds.
@@ -805,7 +805,7 @@ function seedSuperseded(directory: string, database: string): number[] {
       'review',
       'open',
       '--repo',
-      'tc/portal',
+      'globex/portal',
       '--pr',
       '9541',
       '--head',
