@@ -538,7 +538,8 @@ fn an_anchored_finding_is_a_row_and_a_thread_and_not_a_section() {
             "| 🔴 Blocker · F1 | [`ColumnPolicy.php:52`]\
              (https://github.com/acme/portal/blob/d41c8e2/app/Reporting/ColumnPolicy.php#L52)"
         ),
-        "and its row links to the line the thread sits on:\n{}",
+        "and its row links to the line. No session measured this one, so the commit is \
+         the review's head — see the DEV-978 tests below for the case where it is not:\n{}",
         draft.body
     );
 
@@ -1341,5 +1342,158 @@ fn a_sign_off_taken_back_while_a_session_is_mid_post_stops_the_post() {
     assert_eq!(
         store.get_review(review).expect("review").github_review_id,
         None
+    );
+}
+
+// -- which commit a row links at (DEV-978) ---------------------------------------------
+
+/// A review of round two at `e4f5a6b`, holding one finding whose line was measured on
+/// round one's `a1b2c3d` and one measured on this round's own head.
+fn two_commits_in_one_round(store: &Store) -> i64 {
+    let review = store
+        .create_review(new_review("globex/portal", 731, "e4f5a6b", 2))
+        .expect("review");
+
+    let anchored = |file: &str, line: i64, measured: Option<&str>| NewFinding {
+        file: Some(file.to_string()),
+        line: Some(line),
+        line_sha: measured.map(str::to_string),
+        hunk: Some(diff_hunk(file, line - 3)),
+        flagged_line: Some(line),
+        ..Default::default()
+    };
+
+    store
+        .add_finding(
+            review.id,
+            NewFinding {
+                lens: "correctness".to_string(),
+                severity: Severity::Blocker,
+                claim: "the export is unbounded".to_string(),
+                title: Some("The export is unbounded".to_string()),
+                ..anchored("app/Export.php", 40, Some("a1b2c3d"))
+            },
+        )
+        .expect("the carried finding's line, measured in round one");
+
+    store
+        .add_finding(
+            review.id,
+            NewFinding {
+                lens: "error handling".to_string(),
+                severity: Severity::Should,
+                claim: "the retry has no ceiling".to_string(),
+                title: Some("The retry has no ceiling".to_string()),
+                ..anchored("app/Retry.php", 58, Some("e4f5a6b"))
+            },
+        )
+        .expect("a line read on this round's head");
+
+    store
+        .add_finding(
+            review.id,
+            NewFinding {
+                lens: "naming".to_string(),
+                severity: Severity::Nit,
+                claim: "the helper is named for its direction".to_string(),
+                title: Some("The helper is named for its direction".to_string()),
+                ..anchored("app/Shape.php", 18, None)
+            },
+        )
+        .expect("a finding written before the column existed");
+
+    store
+        .put_draft(
+            review.id,
+            NewDraft {
+                body: String::new(),
+                status: DraftStatus::Ready,
+                lint: None,
+                sections: Some(vec![
+                    NewDraftSection::finding(1, "The export is unbounded", "**What** · it is."),
+                    NewDraftSection::finding(2, "The retry has no ceiling", "**What** · it is."),
+                    NewDraftSection::finding(
+                        3,
+                        "The helper is named for its direction",
+                        "**What** · it is.",
+                    ),
+                ]),
+            },
+        )
+        .expect("the draft");
+
+    review.id
+}
+
+#[test]
+fn a_row_links_at_the_commit_its_line_was_measured_on_and_not_at_the_head() {
+    let (_dir, store) = temp_store();
+    let review = two_commits_in_one_round(&store);
+    let body = store.get_draft(review).expect("draft").body;
+
+    assert!(
+        body.contains(
+            "[`Export.php:40`]\
+             (https://github.com/globex/portal/blob/a1b2c3d/app/Export.php#L40)"
+        ),
+        "line 40 was counted on a1b2c3d, so that is where the row sends a reader. \
+         The review's head is e4f5a6b, and line 40 there is something else:\n{body}"
+    );
+    assert!(
+        !body.contains("blob/e4f5a6b/app/Export.php"),
+        "and the head appears nowhere near this finding:\n{body}"
+    );
+}
+
+#[test]
+fn a_row_whose_line_was_measured_on_this_head_links_at_this_head() {
+    let (_dir, store) = temp_store();
+    let review = two_commits_in_one_round(&store);
+    let body = store.get_draft(review).expect("draft").body;
+
+    assert!(
+        body.contains(
+            "[`Retry.php:58`]\
+             (https://github.com/globex/portal/blob/e4f5a6b/app/Retry.php#L58)"
+        ),
+        "a line read on this round's head links to this round's head, which is the \
+         ordinary case and the one that must not change:\n{body}"
+    );
+}
+
+#[test]
+fn a_row_with_no_measured_commit_links_exactly_as_it_did_before() {
+    let (_dir, store) = temp_store();
+    let review = two_commits_in_one_round(&store);
+    let body = store.get_draft(review).expect("draft").body;
+
+    assert!(
+        body.contains(
+            "[`Shape.php:18`]\
+             (https://github.com/globex/portal/blob/e4f5a6b/app/Shape.php#L18)"
+        ),
+        "a finding written before the column existed has no commit of its own, and nothing \
+         invents one for it: the link is the review's head, character for character what \
+         it was. What says the line was never measured is the page, not this:\n{body}"
+    );
+}
+
+#[test]
+fn a_thread_hands_over_the_commit_its_line_was_measured_on() {
+    let (_dir, store) = temp_store();
+    let review = two_commits_in_one_round(&store);
+    let threads = store.draft_threads(review).expect("threads");
+
+    let measured: Vec<(i64, Option<&str>)> = threads
+        .iter()
+        .map(|thread| (thread.finding_seq, thread.line_sha.as_deref()))
+        .collect();
+
+    assert_eq!(
+        measured,
+        vec![(1, Some("a1b2c3d")), (2, Some("e4f5a6b")), (3, None)],
+        "GitHub anchors a comment against the pull request's head, so the session \
+         posting these is the one thing in the loop that can tell F1's line was counted \
+         somewhere else. Review Desk states it and posts nothing"
     );
 }

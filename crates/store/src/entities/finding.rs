@@ -11,7 +11,8 @@ use crate::error::{Result, StoreError};
 use crate::model::{Disposition, DraftStatus, Finding, NewFinding};
 use crate::{is_foreign_key_violation, Store};
 
-pub(super) const COLUMNS: &str = "review_id, seq, lens, severity, file, line, claim, title, \
+pub(super) const COLUMNS: &str = "review_id, seq, lens, severity, file, line, line_sha, \
+                       claim, title, \
                        evidence, \
                        disposition, disposition_reason, rule_id, github_comment_id, \
                        flagged_line, inline_comment, why_it_matters, proof, proof_note, \
@@ -102,15 +103,33 @@ impl Store {
             |row| row.get(0),
         )?;
 
+        // The commit this finding's line was measured on, checked like the one above and
+        // for the same reason: the API serves it as `^[0-9a-f]{7,40}$`, and `--line-sha
+        // HEAD` is a plausible thing to type.
+        //
+        // **Taken from the caller and never defaulted to the review's head, which is the
+        // one decision in this column worth arguing.** The head is where the review *is*,
+        // not where this line was *counted* — and the two come apart inside a single
+        // session: the dispatcher opens a round at `a1b2c3d`, the session reads the diff
+        // there and raises findings over some minutes, the author pushes, and DEV-962
+        // moves the round onto `e4f5a6b` under it. Defaulting would stamp the findings
+        // written after that push with a commit nobody measured them on, and the page
+        // would then say "measured at e4f5a6b" in as many words. A wrong answer stated
+        // confidently is worse than no answer, which is this record's rule everywhere else
+        // — `title` is null until something writes one, and `late` is three-valued rather
+        // than guess `false`. So this is null until a session says, exactly as
+        // `introduced_by_commit` beside it is.
+        let line_sha = super::round::commit_sha_for("line_sha", new.line_sha.as_deref())?;
+
         let created_at = self.now();
         tx.execute(
             "INSERT INTO findings
-                 (review_id, seq, lens, severity, file, line, claim, title, evidence,
-                  disposition, disposition_reason, rule_id, flagged_line, inline_comment,
-                  why_it_matters, proof, proof_note, verification, suggested_fix,
-                  introduced_by_commit, introduced_by_seq, created_at)
+                 (review_id, seq, lens, severity, file, line, line_sha, claim, title,
+                  evidence, disposition, disposition_reason, rule_id, flagged_line,
+                  inline_comment, why_it_matters, proof, proof_note, verification,
+                  suggested_fix, introduced_by_commit, introduced_by_seq, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                     ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
+                     ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
             params![
                 review_id,
                 seq,
@@ -118,6 +137,7 @@ impl Store {
                 new.severity,
                 new.file,
                 new.line,
+                line_sha,
                 new.claim,
                 new.title,
                 new.evidence,
@@ -356,6 +376,7 @@ pub(super) fn row_to_finding(row: &Row<'_>) -> rusqlite::Result<Finding> {
         severity: row.get("severity")?,
         file: row.get("file")?,
         line: row.get("line")?,
+        line_sha: row.get("line_sha")?,
         claim: row.get("claim")?,
         title: row.get("title")?,
         evidence: row.get("evidence")?,

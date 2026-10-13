@@ -1302,6 +1302,21 @@ pub struct Finding {
     pub severity: Severity,
     pub file: Option<String>,
     pub line: Option<i64>,
+    /// The commit [`Finding::line`] was measured on — and with it the flagged line and the
+    /// hunk, which are counted against the same commit and carried together.
+    ///
+    /// **A line number without its commit is not an address.** The permalink a review
+    /// composes is `blob/{sha}/{path}#L{line}`, and until DEV-978 the `{sha}` was the
+    /// review's current head — which drifts from the line two ways. A carry copies a
+    /// round-one line into round two by design, and since DEV-962 an unposted round's head
+    /// moves without a new round opening. Either way line 40 of one commit is a different
+    /// line of a different file at the next, and the link said nothing about it.
+    ///
+    /// **`None` is a row written before the column existed**, and nothing invents a value for
+    /// one: its link is composed from the review's head exactly as it is today, and the
+    /// page says the line was never measured rather than letting that fallback read as a
+    /// measurement.
+    pub line_sha: Option<String>,
     /// What is claimed to be wrong.
     pub claim: String,
     /// The one line a row of the code review page carries — "A retried delivery carries
@@ -1437,6 +1452,14 @@ pub struct NewFinding {
     pub file: Option<String>,
     #[serde(default)]
     pub line: Option<i64>,
+    /// The commit `line` — and `flagged_line`, and the hunk — were measured on.
+    ///
+    /// **The session's to state, and null when it does not.** A line number is an address
+    /// only against the commit it was counted on, and nothing in the store can work out
+    /// which commit that was: the review's head is where the review *is*, and since
+    /// DEV-962 it moves under a session that is still reading. See [`Finding::line_sha`].
+    #[serde(default)]
+    pub line_sha: Option<String>,
     pub claim: String,
     /// The one line the code review page's row carries. Optional, and blank is refused
     /// rather than stored: see [`Finding::title`].
@@ -1518,6 +1541,7 @@ impl Default for NewFinding {
             severity: Severity::Should,
             file: None,
             line: None,
+            line_sha: None,
             claim: String::new(),
             title: None,
             evidence: None,
@@ -2286,6 +2310,16 @@ pub struct DraftThread {
     pub path: String,
     /// The line the comment sits on, in the new file's numbering.
     pub line: i64,
+    /// The commit the path and the line above were measured on, or `None` for a finding
+    /// written before the column existed.
+    ///
+    /// **Handed over because the session posting this comment is the one that can act on
+    /// it.** GitHub anchors a review comment against the pull request's *current* head, so
+    /// a thread whose line was measured on an earlier commit is a comment that may land on
+    /// the wrong line — and the session reading this handover is the only thing in the
+    /// loop that can re-read the diff. Review Desk states the fact and posts nothing; what
+    /// to do about it is the session's, as every other thing in this handover is.
+    pub line_sha: Option<String>,
     /// Which side of the diff, and it is always `RIGHT` — see [`FindingAnchor::SIDE`].
     pub side: String,
     /// The comment as it will post, GitHub-flavoured markdown.

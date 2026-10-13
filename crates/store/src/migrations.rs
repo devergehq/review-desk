@@ -75,6 +75,13 @@
 //! is. The record has held `ticket_id` since version 1, and nothing can turn `ACME-2045`
 //! into an address — the tracker and its workspace are the session's knowledge, not the
 //! record's — so a header could print the id and not link it.
+//!
+//! Version 20 is the one fact a finding's line was missing: which commit it was measured
+//! on. A permalink was composed from the review's *current* head and the finding's own
+//! line, and the two are not a pair — a carry copies the line into a later round, and
+//! since version 18 a moved head keeps the same round — so the link landed on line 40 of
+//! a file that had moved on. The column is nullable with no backfill, because a row
+//! written before it cannot be asked.
 
 use rusqlite::Connection;
 
@@ -1653,6 +1660,49 @@ ALTER TABLE reviews ADD COLUMN out_of_play_at INTEGER;
 -- `(repo, pr, round)`. So it was a second structure to keep in step, bought with a sentence
 -- that was wrong about its own query. Found by a review of this branch, and this is migration
 -- 17's reasoning for its own missing index applied to a column that invited one.
+"#,
+    },
+    Migration {
+        version: 20,
+        name: "finding-line-commit",
+        sql: r#"
+-- The commit a finding's line was measured on.
+--
+-- **A line number and a commit are a pair, and the record held only one of them.** A
+-- finding's permalink is `blob/{sha}/{path}#L{line}`, and the `{sha}` was the review's
+-- *current* `head_sha` — which is not the commit the line was counted against. Two things
+-- pull them apart. `carry_finding` copies a round-one line into round two by design, so a
+-- round-two link has always paired round two's commit with round one's numbering; and
+-- migration 18 added a second way in, because an unposted round's head now moves rather
+-- than a new round opening, so the two drift without a round boundary to notice it at.
+-- The failure is silent and it is not a near miss: line 40 of `app/Export.php` at one
+-- commit is a different line of a different file at the next.
+--
+-- **The one column covers the line, the flagged line and the hunk**, because one
+-- `add_finding` writes all three against one commit and one carry copies them together —
+-- `CARRIED_TABLES` in `crates/store/tests/rounds.rs` already says the hunk is "the code as
+-- it stood at the earlier round's head commit". Three columns would be three chances for
+-- them to disagree about a measurement that was taken once.
+--
+-- **Nullable, and nothing is backfilled.** Every finding already on the record was written
+-- without this, and the only values available to guess from are wrong: the review's head
+-- has moved since for exactly the rows this is about, and `created_at` plus the move log
+-- cannot tell a line written at the old head from one an agent rewrote at the new one. So
+-- a row from before this migration says it does not know, its link is composed as it is
+-- today, and the page marks it unmeasured rather than letting a fallback read as a
+-- measurement. That is migration 13's rule — nullable is the honest default — applied to
+-- the one case where a default would be a quiet lie about where a reader is being sent.
+--
+-- **No CHECK on the shape.** SQLite cannot add one to a table that already exists, which
+-- is migration 17's reasoning and 19's; the `^[0-9a-f]{7,40}$` the contract serves is
+-- enforced on the way in by `commit_sha_for`, the same function that guards
+-- `introduced_by_commit` and `round_status_commit`.
+--
+-- **And no index.** Nothing filters or joins on it: every reader already has the finding
+-- in hand and is composing one link from it. Migration 19's argument for its own absent
+-- index, which is that an index bought with a sentence about a query nobody makes is a
+-- second structure to keep in step for nothing.
+ALTER TABLE findings ADD COLUMN line_sha TEXT;
 "#,
     },
 ];

@@ -24,10 +24,27 @@
 //! **A row links to the code, not to its thread.** `house-style.md`'s Mechanics link each
 //! row to its thread's `html_url`, which needs the thread to exist first — and the worker
 //! posts the body and the threads in one call, on characters the developer has already
-//! signed off, so no thread URL can be in the approved body. The link is to the line at
-//! the head commit reviewed, and the thread sits on that same line. A finding with no file
-//! links to the pull request: `review_lint.py`'s `index.rows_linked` fails a row with no
-//! link at all.
+//! signed off, so no thread URL can be in the approved body. A finding with no file links
+//! to the pull request: `review_lint.py`'s `index.rows_linked` fails a row with no link at
+//! all.
+//!
+//! **And it links at the commit the line was measured on, which is not always the commit
+//! the thread lands on.** This said "the line at the head commit reviewed, and the thread
+//! sits on that same line" until DEV-978, and the two halves of that sentence were held
+//! together by an assumption that is false: that a finding's line was counted against the
+//! review's current head. A carry copies a round-one line into round two, and since
+//! DEV-962 an unposted round's head moves under findings nobody has re-read — so the row
+//! was linking line 40 at a commit where line 40 is something else.
+//!
+//! What is true now is narrower and worth stating exactly. The row links
+//! `blob/{line_sha}/{path}#L{line}`, which is the code the finding is actually about.
+//! The thread is posted by the session at `(path, line, RIGHT)` and GitHub resolves that
+//! against the pull request's head, wherever that has got to. **The two name one commit
+//! whenever the line has been measured against the head**, which is every finding raised
+//! in a round whose head has not moved; they come apart exactly where the row used to be
+//! wrong, and there the row is now right and the thread is where GitHub puts it. The
+//! handover gives the session `line_sha` per thread so it can tell which case it is in —
+//! see [`crate::DraftThread::line_sha`] — and Review Desk still posts nothing.
 //!
 //! **Which side, and whose line numbers.** Always GitHub's `RIGHT`, always the new file's
 //! numbering. A removed line carries no number in this record — see
@@ -95,6 +112,9 @@ pub(crate) struct Place {
 pub(crate) struct Posting {
     pub file: Option<String>,
     pub line: Option<i64>,
+    /// The commit `line` — and the anchor's line, and the hunk under it — were measured
+    /// on. `None` for a finding written before the column existed.
+    pub line_sha: Option<String>,
     pub status: RoundStatus,
     pub anchor: Option<FindingAnchor>,
 }
@@ -187,19 +207,17 @@ impl Store {
 
 /// Where the review's pull request is, for the links a row carries.
 ///
-/// **The head commit is the review's current one, and a finding's line may have been
-/// measured on another. Stated here because it predates DEV-962 and that issue makes it more
-/// frequent.** `code_link` builds `blob/{head_sha}/{path}#L{line}` from this, and the line
-/// comes from the finding — which `carry_finding` copies into a later round unchanged, so a
-/// round-two review has always linked round two's commit with round one's line numbers.
-/// DEV-962 adds a second way in: an unposted round's head moves, and until the session
-/// re-reads and rewrites its findings, their lines are the commit the round was opened on.
+/// **The head commit here is the review's current one, and it is no longer what a code link
+/// is built from.** DEV-978: a finding's line is measured on one commit and the review's
+/// head moves off it two ways — a carry copies a round-one line into round two, and since
+/// DEV-962 an unposted round's head moves without a new round opening — so pairing this
+/// head with that line sent a reader to line 40 of a file that had moved on. Migration 20
+/// gave the finding `line_sha`, and [`code_link`] takes the commit from the finding.
 ///
-/// Not fixed here, deliberately. The record cannot say which commit a finding's line was
-/// measured on — `findings` holds no commit, and inferring one from `created_at` and the move
-/// log would be wrong the moment a session updated an anchor in place. What it needs is a
-/// column, and that belongs with the anchors (DEV-873's) rather than in the tail of this
-/// change. Raised for Patrick with this pull request.
+/// So what this still owns is the repository and the pull request, which are the review's
+/// identity and cannot be a finding's, and the head commit for the **one** link that is
+/// about the review rather than about a line: the fallback for a finding written before the
+/// commit column, which has none of its own and is composed exactly as it was before.
 pub(crate) fn place(conn: &Connection, review_id: i64) -> Result<Place> {
     Ok(conn.query_row(
         "SELECT repo, pr, head_sha FROM reviews WHERE id = ?1",
@@ -258,13 +276,15 @@ pub(crate) fn postings(conn: &Connection, review_id: i64) -> Result<BTreeMap<i64
     }
 
     let mut findings = conn.prepare(
-        "SELECT seq, file, line, flagged_line, round_status FROM findings WHERE review_id = ?1",
+        "SELECT seq, file, line, line_sha, flagged_line, round_status
+         FROM findings WHERE review_id = ?1",
     )?;
     let rows = findings.query_map(params![review_id], |row| {
         Ok((
             row.get::<_, i64>("seq")?,
             row.get::<_, Option<String>>("file")?,
             row.get::<_, Option<i64>>("line")?,
+            row.get::<_, Option<String>>("line_sha")?,
             row.get::<_, Option<i64>>("flagged_line")?,
             row.get::<_, RoundStatus>("round_status")?,
         ))
@@ -272,13 +292,14 @@ pub(crate) fn postings(conn: &Connection, review_id: i64) -> Result<BTreeMap<i64
 
     let mut held = BTreeMap::new();
     for row in rows {
-        let (seq, file, line, flagged_line, status) = row?;
+        let (seq, file, line, line_sha, flagged_line, status) = row?;
         let anchor = anchor(file.as_deref(), flagged_line, hunks.get(&seq));
         held.insert(
             seq,
             Posting {
                 file,
                 line,
+                line_sha,
                 status,
                 anchor,
             },
@@ -433,10 +454,11 @@ fn index(
 /// own — a fifth column is the one that leaves the page.
 fn row(place: &Place, severity: Severity, seq: i64, title: &str, posting: &Posting) -> String {
     let severity_cell = format!("{} {} · F{seq}", severity.glyph(), severity.label());
+    let measured = posting.line_sha.as_deref();
     let where_cell = match &posting.anchor {
-        Some(anchor) => code_link(place, &anchor.path, Some(anchor.line)),
+        Some(anchor) => code_link(place, measured, &anchor.path, Some(anchor.line)),
         None => match &posting.file {
-            Some(file) => code_link(place, file, posting.line),
+            Some(file) => code_link(place, measured, file, posting.line),
             // Nothing in the code to point at: a correction to the description, a missing
             // ticket, a wrong figure. The pull request is where such a finding is about.
             None => format!(
@@ -468,11 +490,34 @@ fn standing(status: RoundStatus) -> &'static str {
     }
 }
 
-/// A link to the line at the head commit reviewed, with `basename:line` as its text.
-fn code_link(place: &Place, path: &str, line: Option<i64>) -> String {
+/// A link to the line **at the commit that line was measured on**, with `basename:line` as
+/// its text.
+///
+/// **The commit is the finding's and not the review's, which is DEV-978.** A line number
+/// means something only against the commit it was counted on, and the review's head moves
+/// away from it: a carried finding keeps round one's numbering into round two, and since
+/// DEV-962 an unposted round's head moves under findings nobody has re-read. Composing
+/// `blob/{head_sha}/…#L{line}` from the two halves made a link that was confidently wrong —
+/// it resolves, it looks right, and it points at whatever is on line 40 now.
+///
+/// **`None` falls back to the review's head**, and that is the one case where the old
+/// pairing is still the right answer: a finding written before the commit column has none
+/// of its own, every value this could invent for it would be a guess, and composing it any
+/// other way would change links that are already out there. What says the commit was not
+/// recorded is the page; this composes the same characters it always did.
+fn code_link(place: &Place, line_sha: Option<&str>, path: &str, line: Option<i64>) -> String {
+    // **Blank is absent, and it is checked here as well as at the write.** `commit_sha_for`
+    // refuses an empty commit on the way in, so no row this build writes can hold one —
+    // but `reviews.head_sha` shipped with no constraint and was storable blank until
+    // DEV-936, and `links.ts` makes the same argument for its own field in as many words:
+    // a column is not a promise about every row in it. The one thing this value does is
+    // reach an `href`, and a blank here composes `blob//path`, which is a link to nothing.
+    let measured = line_sha.filter(|sha| !sha.is_empty());
     let base = format!(
         "https://github.com/{}/blob/{}/{}",
-        place.repo, place.head_sha, path
+        place.repo,
+        measured.unwrap_or(&place.head_sha),
+        path
     );
     let name = path.rsplit('/').next().unwrap_or(path);
     let (target, text) = match line {
@@ -600,6 +645,14 @@ pub(crate) fn threads(
                 title,
                 path: anchor.path,
                 line: anchor.line,
+                // **Handed over with the anchor, because the anchor is only true against
+                // it.** GitHub positions a review comment on the pull request's current
+                // head, and this line was counted on whatever commit the session read — so
+                // a handover that gave the path and the line and kept the commit to itself
+                // would be asking the session to post an anchor it cannot check. Review
+                // Desk states the fact; what to do about it is the session's, as the rest
+                // of this handover is.
+                line_sha: posting.line_sha.clone(),
                 side: FindingAnchor::SIDE.to_string(),
             })
         })

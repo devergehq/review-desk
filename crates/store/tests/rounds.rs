@@ -862,6 +862,12 @@ const CARRIED: &[&str] = &[
     "severity",
     "file",
     "line",
+    // **The commit that line was measured on, and it is carried for the same reason the
+    // line is.** DEV-978: a carry copies a number, and a number is an address only
+    // against the commit it was counted on — so carrying one without the other is what
+    // made a round-two link point at round two's commit with round one's numbering.
+    // Nothing here re-measures, so nothing here may re-stamp.
+    "line_sha",
     "claim",
     // The one line the code review page's row carries. A carried finding that lost it
     // would read as a different finding in round 2 — the row would fall back to the
@@ -1559,4 +1565,132 @@ fn a_finding_with_no_hunk_carries_without_one() {
     assert_eq!(carried.proof, None);
     assert_eq!(carried.verification, Verification::Unknown);
     assert!(carried.fix_references.is_empty());
+}
+
+// -- the commit a line was measured on (DEV-978) ---------------------------------------
+
+/// A finding with a line and the commit that line was counted on.
+fn raise_measured(store: &Store, review: i64, claim: &str, line: i64, line_sha: &str) -> i64 {
+    store
+        .add_finding(
+            review,
+            NewFinding {
+                lens: "sibling diff".to_string(),
+                severity: Severity::Should,
+                file: Some("app/Export.php".to_string()),
+                line: Some(line),
+                line_sha: Some(line_sha.to_string()),
+                claim: claim.to_string(),
+                ..Default::default()
+            },
+        )
+        .expect("raise a finding")
+        .seq
+}
+
+#[test]
+fn a_carried_finding_keeps_the_commit_its_line_was_measured_on() {
+    let (_dir, store) = temp_store();
+    let first = round(&store, "a1b2c3d");
+    let f1 = raise_measured(&store, first, "the export is unbounded", 40, "a1b2c3d");
+
+    let second = round(&store, "e4f5a6b");
+    let carried = store
+        .carry_finding(first, second, f1, &as_(RoundStatus::StillOpen))
+        .expect("carry it forward");
+
+    assert_eq!(
+        carried.line,
+        Some(40),
+        "the carry copies the line, which it always did"
+    );
+    assert_eq!(
+        carried.line_sha.as_deref(),
+        Some("a1b2c3d"),
+        "and the commit that line was counted on goes with it. Round two's head is \
+         e4f5a6b, and pairing it with round one's line 40 is the whole of DEV-978"
+    );
+}
+
+#[test]
+fn a_finding_measured_on_the_new_head_says_so_rather_than_inheriting_the_old_one() {
+    let (_dir, store) = temp_store();
+    let first = round(&store, "a1b2c3d");
+    raise_measured(&store, first, "the export is unbounded", 40, "a1b2c3d");
+
+    let second = round(&store, "e4f5a6b");
+    let f2 = raise_measured(&store, second, "the retry has no ceiling", 58, "e4f5a6b");
+    let raised = store.get_finding(second, f2).expect("read it back");
+
+    assert_eq!(
+        raised.line_sha.as_deref(),
+        Some("e4f5a6b"),
+        "a line read on this round's head is measured on this round's head"
+    );
+}
+
+#[test]
+fn a_finding_whose_line_nobody_measured_says_nothing_rather_than_guessing() {
+    let (_dir, store) = temp_store();
+    let only = round(&store, "a1b2c3d");
+    let f1 = raise(&store, only, "the description is wrong", None);
+
+    assert_eq!(
+        store.get_finding(only, f1).expect("read it back").line_sha,
+        None,
+        "the review's head is where the review is, not where a line was counted. \
+         DEV-962 moves it under a session that is still reading, so defaulting to it \
+         would have the record assert a commit nobody measured anything on"
+    );
+}
+
+#[test]
+fn a_measured_commit_that_is_a_word_is_refused() {
+    let (_dir, store) = temp_store();
+    let only = round(&store, "a1b2c3d");
+
+    let refused = store.add_finding(
+        only,
+        NewFinding {
+            lens: "sibling diff".to_string(),
+            severity: Severity::Should,
+            file: Some("app/Export.php".to_string()),
+            line: Some(40),
+            line_sha: Some("HEAD".to_string()),
+            claim: "the export is unbounded".to_string(),
+            ..Default::default()
+        },
+    );
+
+    let message = refused.expect_err("`--line-sha HEAD` is a plausible thing to type");
+    assert!(
+        message.to_string().contains("line_sha"),
+        "the refusal names the field: {message}"
+    );
+}
+
+#[test]
+fn a_blank_measured_commit_is_nothing_rather_than_a_link_to_nowhere() {
+    let (_dir, store) = temp_store();
+    let only = round(&store, "a1b2c3d");
+
+    let raised = store
+        .add_finding(
+            only,
+            NewFinding {
+                lens: "sibling diff".to_string(),
+                severity: Severity::Should,
+                file: Some("app/Export.php".to_string()),
+                line: Some(40),
+                line_sha: Some("   ".to_string()),
+                claim: "the export is unbounded".to_string(),
+                ..Default::default()
+            },
+        )
+        .expect("whitespace is nothing said, not a refusal");
+
+    assert_eq!(
+        raised.line_sha, None,
+        "an empty commit would compose `blob//app/Export.php`, which is a link to nothing"
+    );
 }

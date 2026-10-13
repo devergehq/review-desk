@@ -112,21 +112,21 @@ impl Store {
         // resolves it.
         tx.execute(
             "INSERT INTO findings
-                 (review_id, seq, lens, severity, file, line, claim, title, evidence,
-                  disposition, disposition_reason, rule_id, flagged_line, inline_comment,
-                  why_it_matters, proof, proof_note, verification, suggested_fix,
-                  introduced_by_commit, introduced_by_seq, continues_review_id,
-                  round_status, round_status_by, round_status_checked, round_status_at,
-                  round_status_commit, created_at)
+                 (review_id, seq, lens, severity, file, line, line_sha, claim, title,
+                  evidence, disposition, disposition_reason, rule_id, flagged_line,
+                  inline_comment, why_it_matters, proof, proof_note, verification,
+                  suggested_fix, introduced_by_commit, introduced_by_seq,
+                  continues_review_id, round_status, round_status_by,
+                  round_status_checked, round_status_at, round_status_commit, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
-                     ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)
+                     ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)
              ON CONFLICT (review_id, seq) DO UPDATE SET
-                 continues_review_id  = ?22,
-                 round_status         = ?23,
-                 round_status_by      = ?24,
-                 round_status_checked = ?25,
-                 round_status_at      = ?26,
-                 round_status_commit  = ?27",
+                 continues_review_id  = ?23,
+                 round_status         = ?24,
+                 round_status_by      = ?25,
+                 round_status_checked = ?26,
+                 round_status_at      = ?27,
+                 round_status_commit  = ?28",
             params![
                 into_review_id,
                 seq,
@@ -134,6 +134,14 @@ impl Store {
                 earlier.severity,
                 earlier.file,
                 earlier.line,
+                // **The line's commit goes with the line, and that is the whole of
+                // DEV-978.** Carrying the number and leaving the commit behind is what the
+                // link did before: round two's head with round one's numbering, pointing
+                // at line 40 of a file that had moved on. Nothing here re-measures — a
+                // carry copies what the earlier round found — so the commit it was found
+                // at is copied with it, and the page says it was measured there rather
+                // than here.
+                earlier.line_sha,
                 earlier.claim,
                 // The title too: a row of the code review page is the title, so a carried
                 // finding that lost it would read as a different finding in round 2.
