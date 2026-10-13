@@ -172,19 +172,41 @@ describe('the threads the draft hands over', () => {
     expect(rows[1]!.text()).not.toContain('measured at')
   })
 
-  it('says the commit was not recorded rather than that the line was not measured', async () => {
+  /*
+   * **Said once for the list, not once per thread.** Every finding written before the
+   * record held the commit carries none, so a real-length review would otherwise print
+   * the identical sentence under all nine threads — the repetition the card's rule 2 and
+   * `HeldBackRows` both exist to undo.
+   */
+  it('says the commit was not recorded once, when it is true of every thread', async () => {
+    const threads = [1, 3, 5].map(seq => thread(seq, { line_sha: null }))
+    const panel = await mountSuspended(DraftThreads, { props: { headSha: HEAD, threads } })
+
+    expect(panel.text()).toContain('None of these records which commit its line was measured on')
+    for (const row of panel.findAll('.thread')) {
+      expect(row.text()).not.toContain('was measured on was not recorded')
+    }
+    /*
+     * The line *was* measured — its number is printed on the row — and what is missing is
+     * which commit on. "Not measured" beside a line number contradicts itself.
+     */
+    expect(panel.text()).not.toContain('not measured')
+  })
+
+  /*
+   * A mixed draft is the other case: there the absence is about that one anchor rather
+   * than about the review, and saying it over the list would say it of threads it is not
+   * true of.
+   */
+  it('says it on the one thread when the others do record a commit', async () => {
     const panel = await mountSuspended(DraftThreads, {
-      props: { headSha: HEAD, threads: [thread(1, { line_sha: null })] },
+      props: { headSha: HEAD, threads: [thread(1, { line_sha: null }), thread(2)] },
     })
 
-    const text = panel.find('.thread').text()
-    expect(text).toContain('the commit this line was measured on was not recorded')
-    /*
-     * The line *was* measured — its number is printed on the same line of the same row —
-     * and what is missing is which commit on. "Not measured" beside a line number
-     * contradicts itself.
-     */
-    expect(text).not.toContain('not measured')
+    expect(panel.text()).not.toContain('None of these records')
+    const rows = panel.findAll('.thread')
+    expect(rows[0]!.text()).toContain('the commit it was measured on was not recorded')
+    expect(rows[1]!.text()).not.toContain('was not recorded')
   })
 
   it('reads a head written at full length as the same commit', async () => {

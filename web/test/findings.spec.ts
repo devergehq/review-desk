@@ -397,13 +397,42 @@ describe('which commit a line was measured on', () => {
     expect(said).not.toContain('not measured')
   })
 
-  it('says nothing about a finding with no line for a commit to be about', () => {
+  it('says nothing about a finding with no file, whose row links the pull request', () => {
     expect(
       measuredAt(
         finding({ seq: 1, file: null, line: null, flagged_line: null, line_sha: null }),
         reviewAt('e4f5a6b'),
       ),
     ).toBeNull()
+  })
+
+  /*
+   * **A file with no line still carries a link at a commit.** `composeRow` falls back to
+   * the pull request only when `file` is null, so a file-level finding links
+   * `blob/{line_sha}/{file}` — and a guard keyed on the line went quiet on exactly that
+   * row. Found by a review of this branch.
+   */
+  it('speaks for a file-level finding, which has a commit even with no line', () => {
+    const said = measuredAt(
+      finding({ seq: 1, file: 'app/Export.php', line: null, flagged_line: null, line_sha: 'a1b2c3d' }),
+      reviewAt('e4f5a6b'),
+    )
+
+    expect(said).toContain('Measured at a1b2c3d')
+  })
+
+  /*
+   * **The page draws no link, so the sentence must not mention one.** The row's place is
+   * text; the links are in the composed body the author reads on GitHub. An earlier
+   * wording ended "…which the link goes to" and sent a reader looking for nothing.
+   */
+  it('promises no link, because this page has none', () => {
+    const states = [
+      measuredAt(finding({ seq: 1, line: 40, line_sha: 'a1b2c3d' }), reviewAt('e4f5a6b')),
+      measuredAt(finding({ seq: 1, line: 40, line_sha: null }), reviewAt('e4f5a6b')),
+    ]
+
+    for (const said of states) expect(said).not.toContain('link')
   })
 
   /*

@@ -443,7 +443,7 @@
       "severity": "should",
       "file": null,
       "line": null,
-      "line_sha": "3f9c2ab",
+      "line_sha": null,
       "claim": "No way to replay a delivery after the retry window",
       "evidence": null,
       "disposition": "in_draft",

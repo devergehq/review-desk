@@ -453,6 +453,11 @@ export function severitiesOf(findings: Finding[]): SeverityCounts {
  * bargain every abbreviated sha on these pages already makes — `commitLabel` slices to
  * seven — and the other error, calling two spellings of one commit a difference, is the one
  * a reader cannot check.
+ *
+ * **`same_commit` in `crates/cli/src/commands/draft.rs` is this rule again**, for the
+ * hand-over's plain output, and two is the right number for the reason `links.ts` gives
+ * about `is_repo_name`: this side cannot call into the binary, so the rule is stated once
+ * on each side of the boundary rather than once and assumed.
  */
 export function sameCommit(one: string, two: string): boolean {
   const shortest = Math.min(one.length, two.length)
@@ -461,33 +466,41 @@ export function sameCommit(one: string, two: string): boolean {
 }
 
 /**
- * Where this finding's line was measured, as a sentence, or null when there is nothing to
- * say. DEV-978.
+ * Where this finding was measured, as a sentence, or null when there is nothing to say.
+ * DEV-978.
  *
  * **Three states, and the third is the one that is easy to get wrong.**
  *
  * | The record | What the page says |
  * | -- | -- |
- * | the commit is this review's head | nothing. The line describes the code the review is of, which is what a reader already assumes |
- * | the commit is an earlier one | which commit, and that the line has not been re-read against the head — the link goes to the first and the pull request is at the second |
+ * | the commit is this review's head | nothing. The place describes the code the review is of, which is what a reader already assumes |
+ * | the commit is an earlier one | which commit, and that it has not been re-read against the head |
  * | there is no commit | that it was not recorded. **Not "not measured"**: the line was measured, and what is missing is which commit on. Saying the line was never measured, beside the line number printed on the same row, would contradict itself |
  *
- * A finding with no line at all gets null: there is nothing in the code for a commit to be
- * about, and its row links the pull request rather than a line.
+ * **It keys on the file, not on the line**, because the file is what decides whether there
+ * is a commit for the sentence to be about. A row's link is composed from the finding's
+ * commit whenever the finding names a file — `composeRow` falls back to the pull request
+ * only when `file` is null — so a file-level finding with no line still carries a link at
+ * a commit, and keying on the line would have gone quiet on exactly that row.
+ *
+ * **It promises no link.** An earlier wording ended "…which the link goes to", and there
+ * is no link on this page: the row draws its place as text, and the links are in the
+ * composed body the author reads on GitHub. A sentence that sends a reader looking for
+ * something that is not there says less than one that stays quiet about it.
  *
  * Both commits are named, which is `withdrawnLine`'s rule in `utils/rounds`: a sentence
  * that names one of two commits leaves the reader to find the other.
  */
 export function measuredAt(finding: Finding, review: Review): string | null {
-  if (finding.line == null && finding.flagged_line == null) return null
+  if (finding.file == null) return null
 
   const measured = finding.line_sha
   if (measured == null || measured.length === 0) {
-    return 'The commit this line was measured on was not recorded, so the link goes to '
-      + `${commitLabel(review.head_sha)}, where the pull request is now.`
+    return 'The commit this was measured on was not recorded. The pull request is at '
+      + `${commitLabel(review.head_sha)}.`
   }
   if (sameCommit(measured, review.head_sha)) return null
 
-  return `Measured at ${commitLabel(measured)}, which the link goes to. The pull request `
-    + `is at ${commitLabel(review.head_sha)}, and this line has not been re-read against it.`
+  return `Measured at ${commitLabel(measured)}. The pull request is at `
+    + `${commitLabel(review.head_sha)}, and this has not been re-read against it.`
 }

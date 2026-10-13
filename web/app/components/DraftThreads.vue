@@ -53,22 +53,42 @@ const props = defineProps<{
 const heading = computed(() => count(props.threads.length, 'thread'))
 
 /**
+ * Whether **every** thread here is missing its commit, which is said once rather than
+ * nine times. DEV-978.
+ *
+ * **Rule 2, applied to the sentence this change adds.** Nothing is printed twice, and
+ * until sessions start recording the commit they measured a line on, every finding on a
+ * record carries none — so the per-thread version of this would print the identical
+ * sentence under all nine threads of a real-length review, which is the repetition
+ * `HeldBackRows` exists to undo and which the card's own first draft was corrected for.
+ * A fact true of the whole list belongs to the list.
+ *
+ * A *mixed* draft is the other case and keeps the per-thread sentence: there the absence
+ * is about that one anchor and not about the review, and saying it on the list would be
+ * saying it of threads it is not true of.
+ */
+const noneRecorded = computed(() =>
+  props.threads.length > 0
+  && props.threads.every(thread => thread.line_sha == null || thread.line_sha.length === 0),
+)
+
+/**
  * Which commit this thread's line was counted on, where that is not where the pull request
  * is now — and nothing when it is. DEV-978.
  *
  * **The one fact about an anchor the card could not previously show.** GitHub positions a
  * review comment against the pull request's head, and the line beside it may have been
  * counted somewhere else: a carried finding keeps the earlier round's numbering, and since
- * DEV-962 a head moves under findings nobody has re-read. The card's own rule 2 is that
- * nothing is printed twice, so this is said only on the thread it is true of.
+ * DEV-962 a head moves under findings nobody has re-read.
  *
- * `measuredAt` is the same three states in the code review page's words; this is the
- * thread's shorter version, because what the developer is checking here is the place.
+ * `measuredAt` is the same states in the code review page's words; this is the thread's
+ * shorter version, because what the developer is checking here is the place.
  */
 function measuredElsewhere(thread: DraftThread): string | null {
   const measured = thread.line_sha
   if (measured == null || measured.length === 0) {
-    return 'the commit this line was measured on was not recorded'
+    // Said once above the list when it is true of all of them — see `noneRecorded`.
+    return noneRecorded.value ? null : 'the commit it was measured on was not recorded'
   }
   return sameCommit(measured, props.headSha)
     ? null
@@ -108,6 +128,20 @@ function measuredElsewhere(thread: DraftThread): string | null {
       Nothing here is in the body. Each ends with a line GitHub does not draw — it is how
       the session matches the comment it gets back to the finding, which the line alone
       cannot do when two findings sit on one.
+    </p>
+
+    <!--
+      **Said once, because it is true of the whole list.** Every finding written before the
+      record held the commit carries none, so the per-thread version of this would print
+      the same sentence under all nine threads of a real-length review.
+    -->
+    <p
+      v-if="noneRecorded"
+      class="rd-meta help"
+    >
+      None of these records which commit its line was measured on. The pull request is at
+      <code>{{ commitLabel(headSha) }}</code>, and whether each line still means what it
+      did there is not something the record can say.
     </p>
 
     <ol

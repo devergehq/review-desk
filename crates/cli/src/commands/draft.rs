@@ -357,8 +357,22 @@ fn handover_lines(handover: &DraftHandover) -> String {
 /// Two different commits sharing a seven-character prefix read as one. That is the same
 /// bargain every abbreviated sha in this tool makes, and the alternative — calling two
 /// spellings of one commit a difference — is the error a reader cannot check.
+///
+/// **`sameCommit` in `web/app/utils/findings.ts` is this rule again, and two is the right
+/// number.** It is the same boundary `links.ts` describes for `is_repo_name`: the
+/// dashboard draws the same sentence from the same two fields and cannot call into this
+/// binary, so the rule is stated once on each side rather than once and assumed.
 fn same_commit(one: &str, two: &str) -> bool {
     let shortest = one.len().min(two.len());
+    // **Blank matches nothing, including another blank.** Without this the comparison is
+    // over zero characters and answers `true`, so a review whose `head_sha` is the empty
+    // string — storable until DEV-936, which is the population `code_link` defends
+    // against by name — would have every thread reported as measured on the head. That is
+    // the one direction this must not get wrong: it would tell the posting session an
+    // anchor is current where the record cannot say so.
+    if shortest == 0 {
+        return false;
+    }
     one.get(..shortest)
         .zip(two.get(..shortest))
         .is_some_and(|(one, two)| one.eq_ignore_ascii_case(two))
@@ -384,4 +398,40 @@ fn lint_line(lint: &DraftLint) -> String {
         parts.push(format!("errors: {errors}"));
     }
     parts.join(", ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::same_commit;
+
+    /// **A head and a measured commit are the same commit written at two lengths.**
+    ///
+    /// The contract calls a head "full or abbreviated" and a finding's commit is 7 to 40
+    /// characters, so an equality here would report a move that never happened and put a
+    /// notice under every thread.
+    #[test]
+    fn two_spellings_of_one_commit_are_one_commit() {
+        assert!(same_commit(
+            "d41c8e2",
+            "d41c8e2f6b1904a7c3e8d2b5f0a9c1e4d7b63a28"
+        ));
+        assert!(same_commit("D41C8E2", "d41c8e2"));
+        assert!(!same_commit("d41c8e2", "a1b2c3d"));
+    }
+
+    /// **A blank commit matches nothing, including another blank.**
+    ///
+    /// Without the guard the comparison runs over zero characters and answers yes, so a
+    /// review whose `head_sha` is the empty string — storable until DEV-936, and the
+    /// population `code_link` defends against by name — would have every thread reported
+    /// as measured on the head. That is the one direction this must not get wrong: it
+    /// tells the posting session an anchor is current where the record cannot say so.
+    /// `sameCommit` in `web/app/utils/findings.ts` has the same guard, and the two were
+    /// out of step until a review of this branch.
+    #[test]
+    fn a_blank_commit_is_not_the_same_as_anything() {
+        assert!(!same_commit("", "d41c8e2"));
+        assert!(!same_commit("d41c8e2", ""));
+        assert!(!same_commit("", ""));
+    }
 }

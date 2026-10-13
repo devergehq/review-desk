@@ -211,8 +211,8 @@ impl Store {
 /// is built from.** DEV-978: a finding's line is measured on one commit and the review's
 /// head moves off it two ways — a carry copies a round-one line into round two, and since
 /// DEV-962 an unposted round's head moves without a new round opening — so pairing this
-/// head with that line sent a reader to line 40 of a file that had moved on. Migration 20
-/// gave the finding `line_sha`, and [`code_link`] takes the commit from the finding.
+/// head with that line sent a reader to line 40 of a file that had moved on. The finding
+/// carries `line_sha` now, and [`code_link`] takes the commit from there.
 ///
 /// So what this still owns is the repository and the pull request, which are the review's
 /// identity and cannot be a finding's, and the head commit for the **one** link that is

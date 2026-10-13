@@ -979,10 +979,10 @@
     },
     "lint": {
       "passes": true,
-      "visible_words": 14,
+      "visible_words": 54,
       "word_budget": 150,
-      "findings_in_body": 0,
-      "findings_expected": 0,
+      "findings_in_body": 1,
+      "findings_expected": 1,
       "raised_before_on_pr": 0,
       "errors": null,
       "checked_at": "2026-10-12T14:20:00Z"
