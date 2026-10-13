@@ -371,12 +371,24 @@ export function briefWrittenEarlier(
     round: wrote.round,
     to: `/reviews/${wrote.review_id}/${page}`,
     /*
-     * **The last brief, which is the whole of what is measured.** "Last" carries "no round
-     * since has written another" without saying it twice: the round named is the latest
-     * earlier one with `brief_written`, so every round between it and this one has none.
+     * **"Before this round", because that is the whole of what was searched.** The filter
+     * above looks only at earlier rounds, and the first wording — "the last brief on this
+     * pull request" — promoted that scoped answer into an absolute one. A third review of
+     * this branch named the case: round 1 writes a brief, round 2's session writes none,
+     * round 3 writes one, and a reader who uses this very switcher to open round 2 was told
+     * the newest brief was behind them when it was ahead of them.
+     *
+     * Scoped, the word still carries "no round since has written another" without saying it
+     * twice: the round named is the latest earlier one with `brief_written`, so every round
+     * between it and this one has none.
+     *
+     * **And the line under it is about the record, not about the page.** It read "so this
+     * page draws nothing", which is false on Understand: its no-brief branch draws
+     * `RemoveReview`, whose card is unconditional, so the sentence sat directly above a
+     * heading and a button. Same review.
      */
-    headline: `The last brief on this pull request was written in round ${wrote.round}.`,
+    headline: `The last brief before this round was written in round ${wrote.round}.`,
     sub: `Round ${detail.review.round} wrote none of its own, and nothing carries a brief `
-      + `from one round to the next — so this page draws nothing.`,
+      + `from one round to the next.`,
   }
 }

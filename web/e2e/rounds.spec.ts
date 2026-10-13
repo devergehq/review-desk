@@ -373,10 +373,10 @@ for (const at of [1, 2]) {
        * It claims a brief rather than a step, which is all `brief_written` measures.
        */
       await expect(page.locator('h1'), step)
-        .toHaveText('The last brief on this pull request was written in round 1.')
+        .toHaveText('The last brief before this round was written in round 1.')
       await expect(page.locator('main'), step).toContainText(
         `Round ${at + 1} wrote none of its own, and nothing carries a brief from one round `
-        + 'to the next — so this page draws nothing.',
+        + 'to the next.',
       )
 
       /* The notice under it is a destination, and nothing the heading already said. */
@@ -397,7 +397,7 @@ test('no later step claims to have been written in another round', async ({ page
   for (const { step, suffix } of ITS_OWN) {
     await page.goto(`${serving.url}reviews/${rounds[2]}/${suffix}`)
     await expect(page.locator('nav.rounds'), `${step} still draws the switcher`).toBeVisible()
-    await expect(page.locator('main'), step).not.toContainText('The last brief on this pull request')
+    await expect(page.locator('main'), step).not.toContainText('The last brief before this round')
     await expect(page.locator('main'), step).not.toContainText('Open round 1’s')
   }
 })
@@ -407,7 +407,7 @@ test('the round that wrote the brief says nothing about another round', async ({
   for (const { step, suffix } of FROM_THE_BRIEF) {
     await page.goto(`${serving.url}reviews/${rounds[0]}/${suffix}`)
     await expect(page.locator('nav.rounds'), step).toBeVisible()
-    await expect(page.locator('main'), step).not.toContainText('The last brief on this pull request')
+    await expect(page.locator('main'), step).not.toContainText('The last brief before this round')
   }
 })
 

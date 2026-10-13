@@ -75,6 +75,18 @@ const THREE: RoundSummary[] = [
   round({ review_id: 703, round: 3, head_sha: '3333333cccc' }),
 ]
 
+/**
+ * What the server answers for round 2 of these three, and so what a fixture of it must say.
+ *
+ * `Store::not_for_signing` returns `Superseded` for an **unposted** round a newer round
+ * exists beside, so a round 2 carrying `null` is a response the API cannot produce. It
+ * changes no assertion below — `inPlay` is true for `superseded` as well — and it keeps one
+ * standard in the file: a fixture the server could not serve is a measurement against a
+ * record that cannot arrive, whichever way it is wrong. Both halves found by reviews of this
+ * branch.
+ */
+const SUPERSEDED = { reason: 'superseded', by_round: 3 } as const
+
 describe('which round this is of how many', () => {
   it('counts the rounds of the pull request, not the reviews on the desk', () => {
     expect(roundsLabel(detail(41, { review: { ...detail(41).review, round: 2 }, rounds: THREE })))
@@ -103,12 +115,20 @@ describe('which round this is of how many', () => {
 
 describe('the links to the other rounds', () => {
   const here = (step: Parameters<typeof roundLinks>[1] = 'alternatives') =>
-    roundLinks(detail(41, { review: { ...detail(41).review, id: 702, round: 2 }, rounds: THREE }), step)
+    roundLinks(detail(41, {
+      review: { ...detail(41).review, id: 702, round: 2 },
+      rounds: THREE,
+      not_for_signing: SUPERSEDED,
+    }), step)
 
   it('is oldest first, whatever order the rounds arrived in', () => {
     const backwards = [...THREE].reverse()
     const links = roundLinks(
-      detail(41, { review: { ...detail(41).review, id: 702, round: 2 }, rounds: backwards }),
+      detail(41, {
+        review: { ...detail(41).review, id: 702, round: 2 },
+        rounds: backwards,
+        not_for_signing: SUPERSEDED,
+      }),
       'understand',
     )
     expect(links.map(one => one.round)).toEqual([1, 2, 3])
@@ -204,7 +224,7 @@ describe('the links to the other rounds', () => {
       const earlier = detail(41, {
         review: { ...detail(41).review, id: 702, round: 2 },
         rounds: THREE,
-        not_for_signing: { reason: 'superseded', by_round: 3 },
+        not_for_signing: SUPERSEDED,
       })
       expect(roundLinks(earlier, 'understand')[2]!.standing).toBe('being worked on')
     })
@@ -221,6 +241,7 @@ describe('the links to the other rounds', () => {
       const live = detail(41, {
         review: { ...detail(41).review, id: 702, round: 2 },
         rounds: [THREE[0]!, THREE[1]!, dismissed],
+        not_for_signing: SUPERSEDED,
       })
       expect(roundLinks(live, 'understand')[2]!.standing).toBe('not posted')
     })
@@ -338,10 +359,36 @@ describe('where a step was written, when it was not written here', () => {
   it('words the heading and the line under it for the page to use', () => {
     const later = detail(43, { review: { ...detail(43).review, id: 703, round: 3 }, rounds: THREE })
     expect(briefWrittenEarlier(later, 'understand')?.headline)
-      .toBe('The last brief on this pull request was written in round 1.')
+      .toBe('The last brief before this round was written in round 1.')
     expect(briefWrittenEarlier(later, 'alternatives')?.sub)
       .toBe('Round 3 wrote none of its own, and nothing carries a brief from one round to '
-        + 'the next — so this page draws nothing.')
+        + 'the next.')
+  })
+
+  /**
+   * **"Before this round", because only earlier rounds were searched.** A third review of
+   * this branch found the first wording — "the last brief on this pull request" — claiming
+   * more than the filter looked at: round 1 writes one, round 2's session writes none, round
+   * 3 writes one, and a reader who opens round 2 was told the newest brief was behind them
+   * when it was ahead.
+   *
+   * **And the line under it says nothing about the page.** It read "so this page draws
+   * nothing", which is false on Understand: its no-brief branch draws `RemoveReview`, whose
+   * card is unconditional.
+   */
+  it('claims only what it searched, and nothing about the page', () => {
+    const rewritten = [THREE[0]!, THREE[1]!, { ...THREE[2]!, brief_written: true }]
+    const middle = detail(43, {
+      review: { ...detail(43).review, id: 702, round: 2 },
+      rounds: rewritten,
+      not_for_signing: SUPERSEDED,
+    })
+    const said = briefWrittenEarlier(middle, 'understand')!
+    expect(said.round, 'the latest earlier round, with round 3 ahead of it').toBe(1)
+    expect(said.headline).toBe('The last brief before this round was written in round 1.')
+    expect(said.headline, 'and not a claim about the whole pull request')
+      .not.toContain('on this pull request')
+    expect(said.sub, 'nor about what the page draws').not.toContain('page')
   })
 
   /**

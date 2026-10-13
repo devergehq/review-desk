@@ -259,10 +259,10 @@ describe('where a step was written, when this round did not write it', () => {
        * "None was recorded" — the ambiguity inverted. Found by a review of this branch.
        */
       expect(mounted.find('h1').text(), `${page.step} heading`)
-        .toBe('The last brief on this pull request was written in round 2.')
-      expect(mounted.text(), `${page.step} says why this page draws nothing`)
+        .toBe('The last brief before this round was written in round 2.')
+      expect(mounted.text(), `${page.step} says what this round wrote`)
         .toContain('Round 3 wrote none of its own, and nothing carries a brief from one '
-          + 'round to the next — so this page draws nothing.')
+          + 'round to the next.')
 
       /* The notice under it is a destination, and nothing the heading already said. */
       const link = mounted.findAll('a')
@@ -278,7 +278,7 @@ describe('where a step was written, when this round did not write it', () => {
   it('says nothing on the round that wrote the brief', async () => {
     for (const page of FROM_THE_BRIEF) {
       const mounted = await shown(page, SECOND_OF_FOUR)
-      expect(mounted.text(), `${page.step}`).not.toContain('The last brief on this pull request')
+      expect(mounted.text(), `${page.step}`).not.toContain('The last brief before this round')
     }
   })
 
@@ -286,21 +286,21 @@ describe('where a step was written, when this round did not write it', () => {
   it('says nothing on a first round', async () => {
     for (const page of FROM_THE_BRIEF) {
       const mounted = await shown(page, FIRST_OF_FOUR)
-      expect(mounted.text(), `${page.step}`).not.toContain('The last brief on this pull request')
+      expect(mounted.text(), `${page.step}`).not.toContain('The last brief before this round')
     }
   })
 
   it('says nothing where no round of the pull request wrote one', async () => {
     for (const page of FROM_THE_BRIEF) {
       const mounted = await shown(page, NEITHER_WROTE_ONE)
-      expect(mounted.text(), `${page.step}`).not.toContain('The last brief on this pull request')
+      expect(mounted.text(), `${page.step}`).not.toContain('The last brief before this round')
     }
   })
 
   it('points a two-round pull request’s second round back at its first', async () => {
     const mounted = await shown(PAGES[0], SECOND_OF_TWO)
     expect(mounted.find('h1').text())
-      .toBe('The last brief on this pull request was written in round 1.')
+      .toBe('The last brief before this round was written in round 1.')
     const link = mounted.findAll('a').find(one => one.text().includes('Open round 1’s Understand'))
     expect(link).toBeDefined()
     expect(link!.attributes('href')).toBe('/reviews/60/understand')
@@ -316,7 +316,7 @@ describe('where a step was written, when this round did not write it', () => {
     for (const page of ITS_OWN) {
       const mounted = await shown(page, THIRD_OF_FOUR)
       expect(switcher(mounted), `${page.step} still draws the switcher`).not.toBeNull()
-      expect(mounted.text(), `${page.step}`).not.toContain('The last brief on this pull request')
+      expect(mounted.text(), `${page.step}`).not.toContain('The last brief before this round')
       expect(mounted.text(), `${page.step}`).not.toContain('wrote the last one')
     }
   })
