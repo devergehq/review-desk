@@ -770,7 +770,7 @@ function seedMerged(directory: string, database: string): number[] {
         '--review',
         String(reviewId),
         '--github-review',
-        `PRR_acme9568r${index + 1}`,
+        `PRR_globex9568r${index + 1}`,
       ])
     }
 

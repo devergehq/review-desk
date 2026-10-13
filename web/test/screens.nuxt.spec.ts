@@ -462,7 +462,7 @@ describe('the queue', () => {
         if (detail.review.id !== 63) return detail
         return {
           ...detail,
-          review: { ...detail.review, github_review_id: 'PRR_tc9585r2' },
+          review: { ...detail.review, github_review_id: 'PRR_globex9585r2' },
           brief: null,
         }
       }) as typeof source.reviews,
