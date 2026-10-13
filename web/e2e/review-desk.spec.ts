@@ -3948,6 +3948,7 @@ test.describe('a round whose head moved', () => {
       element => getComputedStyle(element).textDecorationLine,
     )
     expect(struck, 'the round number is struck through').toContain('line-through')
+  })
 
   /**
    * **A review nobody can sign off still has somewhere to say what a write did.**
@@ -3990,7 +3991,6 @@ test.describe('a round whose head moved', () => {
       draft: { body: string }
     }
     expect(saved.draft.body).toContain('nobody can sign off')
-  })
   })
 
   test('the tidy says there is nothing to tidy on a record written under this rule',
