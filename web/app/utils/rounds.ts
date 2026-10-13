@@ -218,7 +218,7 @@ export function roundLinks(detail: ReviewDetail, step: ReviewLayerName): RoundLi
         reviewId: round.review_id,
         to: here ? null : `/reviews/${round.review_id}/${page}`,
         here,
-        standing: standingOf(round, rounds),
+        standing: standingOf(round, rounds, finished(detail)),
         dismissed: roundDismissed(round),
         /* `commitLabel`, the one abbreviation of a commit this file has. */
         head: commitLabel(round.head_sha),
@@ -233,13 +233,32 @@ export function roundLinks(detail: ReviewDetail, step: ReviewLayerName): RoundLi
  * round is one the author pushed past: nobody is working on it and nobody can post it, which
  * is DEV-957's whole subject, so calling it "being worked on" would promise something that
  * is never coming. It reads "not posted", which is what it is.
+ *
+ * **And nothing is being worked on once the pull request is over**, which is the same
+ * correction `StepTrail` makes to a step's tense: a round of a merged pull request that was
+ * never posted will not be now. DEV-957's record is exactly this shape —
+ * `globex/portal#9568` merged with three unposted rounds behind it.
  */
-function standingOf(round: RoundSummary, rounds: RoundSummary[]): string {
+function standingOf(round: RoundSummary, rounds: RoundSummary[], over: boolean): string {
   const posted = dayLabel(round.posted_at)
   if (posted) return `posted ${posted}`
+  if (over) return 'not posted'
 
   const newest = rounds.reduce((high, one) => Math.max(high, one.round), 0)
   return round.round === newest ? 'being worked on' : 'not posted'
+}
+
+/**
+ * Whether this review's pull request is over — merged or closed.
+ *
+ * **`finished` alone of the three reasons.** It is the only one that is a fact about the
+ * *pull request*, so it is the only one true of every round of it. `dismissed` is this
+ * review's own, and a newer round of a pull request whose earlier round was dismissed may
+ * well be being worked on; `superseded` says a newer round exists, and that round is then
+ * the newest one, so the rule above already answers it.
+ */
+function finished(detail: ReviewDetail): boolean {
+  return detail.not_for_signing?.reason === 'finished'
 }
 
 /** Which round this is of how many, or `null` where there is only the one. */

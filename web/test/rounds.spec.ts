@@ -64,3 +64,279 @@ function round(over: Partial<RoundSummary> & { review_id: number, round: number 
     threads_resolved: 0,
     statuses: { new: 0, fixed: 0, still_open: 0, accepted: 0, withdrawn: 0, ticketed: 0 },
     brief_written: false,
+    ...over,
+  }
+}
+
+/** Three rounds of one pull request: round 1 posted, round 2 pushed past, round 3 open. */
+const THREE: RoundSummary[] = [
+  round({ review_id: 701, round: 1, head_sha: '1111111aaaa', posted_at: '2026-10-09T08:40:00Z', event: 'request_changes', brief_written: true }),
+  round({ review_id: 702, round: 2, head_sha: '2222222bbbb' }),
+  round({ review_id: 703, round: 3, head_sha: '3333333cccc' }),
+]
+
+describe('which round this is of how many', () => {
+  it('counts the rounds of the pull request, not the reviews on the desk', () => {
+    expect(roundsLabel(detail(41, { review: { ...detail(41).review, round: 2 }, rounds: THREE })))
+      .toBe('Round 2 of 3')
+  })
+
+  /*
+   * **The whole switcher turns on this.** Every review is a round, so a timeline of one
+   * restates the page's own header; the acceptance criterion is that a single-round review
+   * shows none.
+   */
+  it('says nothing where the pull request has one round', () => {
+    expect(roundsLabel(detail(41, { rounds: [THREE[0]!] }))).toBeNull()
+  })
+
+  /**
+   * `rounds` is not in `ReviewDetail`'s required list, so a response may carry none — and
+   * the fixtures in `app/data/reviews.json` carry none. "Nothing served" and "one round"
+   * are the same answer here, which is what lets the component ask one question.
+   */
+  it('says nothing where no rounds were served at all', () => {
+    expect(roundsLabel(detail(41))).toBeNull()
+    expect(roundsLabel(detail(41, { rounds: [] }))).toBeNull()
+  })
+})
+
+describe('the links to the other rounds', () => {
+  const here = (step: Parameters<typeof roundLinks>[1] = 'alternatives') =>
+    roundLinks(detail(41, { review: { ...detail(41).review, id: 702, round: 2 }, rounds: THREE }), step)
+
+  it('is oldest first, whatever order the rounds arrived in', () => {
+    const backwards = [...THREE].reverse()
+    const links = roundLinks(
+      detail(41, { review: { ...detail(41).review, id: 702, round: 2 }, rounds: backwards }),
+      'understand',
+    )
+    expect(links.map(one => one.round)).toEqual([1, 2, 3])
+  })
+
+  /**
+   * **The acceptance criterion: each link opens the same step of the linked round.** A
+   * reader on Alternatives in round 3 wants Alternatives in round 1, not the top of round 1.
+   */
+  it('links each other round to the same step', () => {
+    expect(here('alternatives').map(one => one.to))
+      .toEqual(['/reviews/701/alternatives', null, '/reviews/703/alternatives'])
+    expect(here('solution_map').map(one => one.to))
+      .toEqual(['/reviews/701/solution', null, '/reviews/703/solution'])
+    expect(here('code_review').map(one => one.to))
+      .toEqual(['/reviews/701/code-review', null, '/reviews/703/code-review'])
+    expect(here('draft').map(one => one.to))
+      .toEqual(['/reviews/701/draft', null, '/reviews/703/draft'])
+    expect(here('harvest').map(one => one.to))
+      .toEqual(['/reviews/701/what-happened', null, '/reviews/703/what-happened'])
+  })
+
+  /** The round being read is not a link: a link to the page you are on does nothing. */
+  it('leaves the round being read without a link', () => {
+    const [one, two, three] = here()
+    expect(two!.here).toBe(true)
+    expect(two!.to).toBeNull()
+    expect([one!.here, three!.here]).toEqual([false, false])
+  })
+
+  /**
+   * Step 1 has no page — the trail links six of the seven — so it has nowhere to send
+   * anybody. Links to somewhere else would be worse than none.
+   */
+  it('answers no links for the one step that has no page', () => {
+    expect(here('lint')).toEqual([])
+  })
+
+  it('shortens every head commit to seven characters', () => {
+    expect(here().map(one => one.head)).toEqual(['1111111', '2222222', '3333333'])
+  })
+
+  describe('what it says about where each round stands', () => {
+    it('gives a posted round the day it was posted', () => {
+      expect(here()[0]!.standing).toBe('posted 9 October 2026')
+    })
+
+    /**
+     * **The newest unposted round is the one being worked on, and only that one.** An older
+     * unposted round is one the author pushed past: nobody can post it, which is DEV-957's
+     * whole subject, so "being worked on" would promise something never coming.
+     */
+    it('calls the newest unposted round the one being worked on', () => {
+      expect(here()[2]!.standing).toBe('being worked on')
+    })
+
+    it('calls an unposted round a newer round supersedes not posted', () => {
+      expect(here()[1]!.standing).toBe('not posted')
+    })
+
+    /**
+     * **Nothing is being worked on once the pull request is over**, which is the same
+     * correction `StepTrail` makes to a step's tense. DEV-957's record is exactly this
+     * shape: a pull request merged with unposted rounds behind it, and three of them sat
+     * in "drafts to approve" for a week.
+     */
+    it('says nothing is being worked on once the pull request is over', () => {
+      const over = detail(41, {
+        review: { ...detail(41).review, id: 702, round: 2 },
+        rounds: THREE,
+        not_for_signing: { reason: 'finished', how: 'merged', at: '2026-10-11T22:41:00Z' },
+      })
+      expect(roundLinks(over, 'understand').map(one => one.standing))
+        .toEqual(['posted 9 October 2026', 'not posted', 'not posted'])
+    })
+
+    /**
+     * A dismissal is **this review's own** and says nothing about a newer round, so it does
+     * not suppress the wording. `superseded` cannot reach the branch at all: it means a
+     * newer round exists, and that round is then the newest one.
+     */
+    it('still says so where this round alone was dismissed', () => {
+      const dismissed = detail(41, {
+        review: { ...detail(41).review, id: 701, round: 1 },
+        rounds: THREE,
+        not_for_signing: { reason: 'dismissed' },
+      })
+      expect(roundLinks(dismissed, 'understand')[2]!.standing).toBe('being worked on')
+    })
+  })
+
+  describe('a dismissed round', () => {
+    /**
+     * **The seam for DEV-962.** DEV-954's `dismissed` on `RoundSummary` is not on master, so
+     * `roundDismissed` answers null for every round master serves and the switcher marks
+     * none. These two assertions are the whole of what has to keep working when it lands.
+     */
+    it('is marked where the wire says it is dismissed', () => {
+      const dismissed = { ...THREE[0]!, dismissed: true } as RoundSummary
+      expect(roundDismissed(dismissed)).toBe(true)
+      const links = roundLinks(
+        detail(41, { review: { ...detail(41).review, id: 702, round: 2 }, rounds: [dismissed, THREE[1]!, THREE[2]!] }),
+        'understand',
+      )
+      expect(links[0]!.dismissed).toBe(true)
+    })
+
+    it('is marked not dismissed only where the wire says so', () => {
+      expect(roundDismissed({ ...THREE[0]!, dismissed: false } as RoundSummary)).toBe(false)
+    })
+
+    /*
+     * **Null rather than false for "nothing said".** A review's own `dismissed_at` is
+     * served and another round's is not, so answering false would turn "I was not told"
+     * into "it is not dismissed" — a claim the reader would act on.
+     */
+    it('answers null where the wire does not say, which is every round today', () => {
+      expect(roundDismissed(THREE[0]!)).toBeNull()
+      expect(here().map(one => one.dismissed)).toEqual([null, null, null])
+    })
+  })
+})
+
+describe('where a step was written, when it was not written here', () => {
+  /** This round holds a brief, so it wrote its own and there is nothing to point at. */
+  it('says nothing where this round wrote a brief of its own', () => {
+    const own = detail(41, { review: { ...detail(41).review, id: 702, round: 2 }, rounds: THREE })
+    expect(own.brief, 'review 41 is the real-length brief').not.toBeNull()
+    expect(briefWrittenEarlier(own, 'understand')).toBeNull()
+  })
+
+  /**
+   * **The acceptance criterion: a step carried unchanged says so and links to the round that
+   * wrote it.** Nothing carries a brief between rounds — `briefs` is keyed by the review id
+   * and opening a round copies none of it — so the state the record actually has is "this
+   * round wrote none and an earlier round did".
+   */
+  it('names the earlier round that wrote one, and the same step of it', () => {
+    const later = detail(43, { review: { ...detail(43).review, id: 703, round: 3 }, rounds: THREE })
+    expect(later.brief, 'review 43 has no brief').toBeNull()
+    expect(briefWrittenEarlier(later, 'understand'))
+      .toEqual({ round: 1, to: '/reviews/701/understand' })
+    expect(briefWrittenEarlier(later, 'alternatives'))
+      .toEqual({ round: 1, to: '/reviews/701/alternatives' })
+    expect(briefWrittenEarlier(later, 'solution_map'))
+      .toEqual({ round: 1, to: '/reviews/701/solution' })
+  })
+
+  /**
+   * **The latest earlier round that wrote one, which is why the field exists.** Guessing the
+   * first round is wrong the moment a round after the first rewrites the brief — and it is
+   * also what makes "and no round since has written another" true in the sentence the page
+   * shows: a round in between that had written one would have been named instead.
+   */
+  it('names the latest earlier round, not the first', () => {
+    const rewritten = [
+      THREE[0]!,
+      { ...THREE[1]!, brief_written: true },
+      THREE[2]!,
+    ]
+    const later = detail(43, { review: { ...detail(43).review, id: 703, round: 3 }, rounds: rewritten })
+    expect(briefWrittenEarlier(later, 'understand'))
+      .toEqual({ round: 2, to: '/reviews/702/understand' })
+  })
+
+  it('says nothing where no earlier round wrote one either', () => {
+    const none = THREE.map(one => ({ ...one, brief_written: false }))
+    const later = detail(43, { review: { ...detail(43).review, id: 703, round: 3 }, rounds: none })
+    expect(briefWrittenEarlier(later, 'understand')).toBeNull()
+  })
+
+  it('says nothing on the first round, which has nothing before it', () => {
+    const first = detail(43, { review: { ...detail(43).review, id: 701, round: 1 }, rounds: THREE })
+    expect(briefWrittenEarlier(first, 'understand')).toBeNull()
+  })
+
+  /**
+   * **Steps 5 to 7 are never said to have been written in another round, and that is the
+   * point of the allowlist.** A round's findings, its draft and its harvest are its own,
+   * written against its own head commit; "written in round 1" would be false about the one
+   * thing rounds exist to separate.
+   */
+  it('never says a later step was written in another round', () => {
+    const later = detail(43, { review: { ...detail(43).review, id: 703, round: 3 }, rounds: THREE })
+    for (const step of ['code_review', 'draft', 'harvest', 'lint'] as const) {
+      expect(briefWrittenEarlier(later, step), `step ${step}`).toBeNull()
+    }
+  })
+})
+
+describe('the rounds the fixtures already hold', () => {
+  /*
+   * **Read through the sample backend's own derivation**, not through a literal: the
+   * fixtures hold every round of `globex/portal#9568` as a review of its own, and
+   * `roundsOf` is what turns that into the array the wire carries. A test that built the
+   * array here would be testing a copy.
+   */
+  const rounds = (pr: number): RoundSummary[] =>
+    loadSource().reviews
+      .filter(one => one.review.pr === pr)
+      .sort((one, two) => one.review.round - two.review.round)
+      .map(one => round({
+        review_id: one.review.id,
+        round: one.review.round,
+        head_sha: one.review.head_sha,
+        brief_written: one.brief != null,
+      }))
+
+  /**
+   * The case that justifies the contract field, and it is in the fixtures already: round 1
+   * of `#9568` wrote no brief and round 2 did, so round 3 points at round 2.
+   */
+  it('points round 3 of the four-round pull request at round 2', () => {
+    const four = rounds(9568)
+    expect(four.map(one => one.brief_written)).toEqual([false, true, false, false])
+    const third = detail(66, { rounds: four })
+    expect(briefWrittenEarlier(third, 'understand')?.round).toBe(2)
+  })
+
+  it('points round 2 of the two-round pull request at round 1', () => {
+    const two = rounds(9541)
+    expect(two.map(one => one.brief_written)).toEqual([true, false])
+    expect(briefWrittenEarlier(detail(61, { rounds: two }), 'understand')?.round).toBe(1)
+  })
+
+  it('points nowhere where no round of the pull request wrote one', () => {
+    const two = rounds(9585)
+    expect(two.map(one => one.brief_written)).toEqual([false, false])
+    expect(briefWrittenEarlier(detail(63, { rounds: two }), 'understand')).toBeNull()
+  })
+})

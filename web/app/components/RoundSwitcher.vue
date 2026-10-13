@@ -99,10 +99,19 @@ const step = computed(() => layerLabel(props.step))
           :class="{ 'round--here': round.here }"
           :aria-current="round.here ? 'page' : undefined"
         >
-          <span class="which">
-            Round {{ round.round }}
-            <span class="rd-visually-hidden"><template v-if="round.here">, the round you are reading</template><template v-else>, {{ step }}</template></span>
-          </span>
+          <!--
+            **The round's number, and the part of it only a screen reader hears.** "Round 1"
+            does not say where it goes and six of these pages differ by nothing else, so the
+            step is said inside the link — a screen reader reading a page's links reads them
+            out of their surroundings.
+
+            **Written hard against the number with no line break**, because Vue's
+            `whitespace: 'condense'` condenses the whitespace around an interpolation into a
+            single space rather than deleting it: `Round 2\n  <span>, Understand` reaches
+            the browser as "Round 2 , Understand". Measured in `e2e/rounds.spec.ts`, which
+            asserts the accessible name through the real build.
+          -->
+          <span class="which">Round {{ round.round }}<span class="rd-visually-hidden"><template v-if="round.here">, the round you are reading</template><template v-else>, {{ step }}</template></span></span>
           <span class="standing">{{ round.standing }}</span>
           <span class="shas">
             <span class="rd-mono head">{{ round.head }}</span>
@@ -226,8 +235,21 @@ a.round .which {
     width: 100%;
   }
 
+  /*
+   * **And the chip reads across rather than down**, which is the whole reason for the
+   * breakpoint doing two things. Three stacked lines each in a full-width box put 270
+   * pixels of switcher — 360 on a pull request with four rounds — between the header and
+   * the trail on a phone, so the step a reader came to read starts below the fold. Across,
+   * each round is one line or two.
+   *
+   * The children stay flex items, so they stay blockified and the accessible name is the
+   * same one `e2e/rounds.spec.ts` asserts at both widths.
+   */
   .round {
     width: 100%;
+    flex-flow: row wrap;
+    align-items: baseline;
+    column-gap: 10px;
   }
 }
 </style>

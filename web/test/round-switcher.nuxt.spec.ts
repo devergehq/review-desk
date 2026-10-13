@@ -177,12 +177,27 @@ describe('every step page of a multi-round review', () => {
   })
 
   describe('what each round says about where it stands', () => {
-    it('gives the posted round its day, and the newest unposted one its state', async () => {
+    /*
+     * **`#9568` merged**, which is why its newest unposted round reads "not posted" rather
+     * than "being worked on": nothing is being worked on once the pull request is over, and
+     * three rounds of this very pull request sitting in "drafts to approve" was DEV-957.
+     * The open pull request's wording is asserted below.
+     */
+    it('gives the posted round its day, and the rest of a merged one no promise', async () => {
       const drawn = chips(await shown(PAGES[0], THIRD_OF_FOUR)).map(one => one.text)
       expect(drawn[0], 'round 1 posted').toContain('posted 9 October 2026')
       expect(drawn[1], 'round 2 was pushed past').toContain('not posted')
       expect(drawn[2], 'round 3 was pushed past').toContain('not posted')
-      expect(drawn[3], 'round 4 is the newest').toContain('being worked on')
+      expect(drawn[3], 'round 4 of a merged pull request').toContain('not posted')
+      expect(drawn.join(' '), 'and none of them claims to be in hand')
+        .not.toContain('being worked on')
+    })
+
+    /** The newest unposted round of a pull request still open is the one in hand. */
+    it('calls the newest unposted round of an open pull request the one in hand', async () => {
+      const drawn = chips(await shown(PAGES[0], SECOND_OF_TWO)).map(one => one.text)
+      expect(drawn).toHaveLength(2)
+      expect(drawn[1]).toContain('being worked on')
     })
 
     it('carries each round’s head commit at seven characters', async () => {
