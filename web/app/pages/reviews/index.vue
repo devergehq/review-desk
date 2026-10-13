@@ -187,9 +187,19 @@ function viewLine(answer: { show: ReviewsShown }): string {
  * serves `finished_how` precisely so a row does not have to know that.
  */
 function finishedLine(row: ReviewListItem): string {
-  const how = row.finished_how ?? 'merged'
   const day = dayLabel(row.finished_at)
   const when = day ? ` on ${day}` : ''
+  /*
+   * **No default word.** `?? 'merged'` was here, and on the one page whose whole point is
+   * telling the two ways off the desk apart it would have stated a fact the record did not:
+   * a finished row served without `finished_how` would read "merged" whether its pull
+   * request merged or closed. `finished_at` already handles its own absence by leaving the
+   * day out; this leaves the word out the same way. Found by a review of this branch.
+   */
+  const how = row.finished_how
+  if (how == null) {
+    return `Finished${when}. No round of this pull request can be posted.`
+  }
   return `Finished — the pull request ${how}${when}. No round of it can be posted.`
 }
 

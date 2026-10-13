@@ -144,12 +144,28 @@ function decided(data: DraftDetail): boolean {
  * **Null for a posted draft**, whatever the pull request did. A review that posted did
  * post; the sentence DEV-957 asks for is about a draft that never will, and "not posted"
  * over a posted review would be the page contradicting the record. The sign-off is not
- * offered on a posted draft anyway — `decided` is already true of it — so nothing is
- * unguarded by this.
+ * offered on a posted draft anyway — `decided` is already true of it.
+ *
+ * **So this answers "what does the page say", and `offTheDesk` below answers "what will
+ * the API refuse".** They are not the same question and treating them as one put a live
+ * button on a posted review: `request_nit_ticket` has no posted exemption — a posted round
+ * can still hold back nits nobody has ticketed, and the store refuses the ask on a merged
+ * pull request whatever the draft did. Found by a review of this branch.
  */
 function notForSigning(data: DraftDetail): NotForSigning | null {
   if (data.draft.status === 'posted') return null
   return data.not_for_signing ?? null
+}
+
+/**
+ * Whether the API will refuse the four acts on this review, posted or not.
+ *
+ * The record's own answer, read straight. Every control for one of those four is gated on
+ * **this**; what the page *says* is `notForSigning` above, which exempts a posted draft
+ * because the sentence it draws would be false of one.
+ */
+function offTheDesk(data: DraftDetail): boolean {
+  return data.not_for_signing != null
 }
 
 /**
@@ -699,7 +715,7 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                     -->
                     <HeldBackRows :rows="heldRows" />
                     <p
-                      v-if="notForSigning(data)"
+                      v-if="offTheDesk(data)"
                       class="rd-meta foot"
                     >
                       These stay on the record. There is no ticket to ask for: nothing will

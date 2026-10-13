@@ -236,6 +236,64 @@ describe('the draft page of a review that cannot be posted', () => {
     expect(page.text()).toContain('There is no ticket to ask for')
   })
 
+  it('offers no ticket on a round that posted either, once its pull request merged', async () => {
+    /*
+     * **A posted draft is exempt from the page's *sentence* and not from the API's
+     * refusal**, and conflating the two put a live button on this page.
+     * `request_nit_ticket` has no posted exemption — a round that posted can still hold
+     * back nits nobody has ticketed, and the store refuses the ask once the pull request
+     * has merged whatever the draft did. Found by a review of this branch.
+     *
+     * So the page still reads "Posted." — it did post, and saying otherwise would
+     * contradict the record — and the button is gone all the same.
+     */
+    const source = loadSource()
+    await resetDesk({
+      /*
+       * Held back on the **review**, which is where the record keeps it: the draft's
+       * `held_back` is what the page draws, and `request_nit_ticket` reads the findings'
+       * dispositions. Both, so the page and the refusal are about the same nit.
+       */
+      reviews: source.reviews.map(detail =>
+        detail.review.id === MERGED.posted
+          ? {
+              ...detail,
+              findings: detail.findings.map(one => ({
+                ...one,
+                disposition: 'held_back' as const,
+                disposition_reason: 'a nit; it goes in the ticket',
+              })),
+              finding_dispositions: { in_draft: 0, held_back: 1, suppressed: 0 },
+            }
+          : detail) as typeof source.reviews,
+      drafts: source.drafts.map(detail =>
+        detail.draft.review_id === MERGED.posted
+          ? {
+              ...detail,
+              held_back: [{
+                finding_seq: 1,
+                finding_key: 'F1',
+                claim: 'A dead delivery is retried without its key',
+                severity: 'nit' as const,
+                reason: 'a nit; it goes in the ticket',
+              }],
+            }
+          : detail) as typeof source.drafts,
+    })
+
+    const page = await draftOf(MERGED.posted)
+    expect(page.text(), 'it did post, and the page says so').toContain('Posted.')
+    expect(page.text(), 'and not that it was never posted').not.toContain('Not posted —')
+    expect(page.findAll('button').map(one => one.text()))
+      .not.toContain('File as one ticket for an agent')
+    expect(page.text()).toContain('There is no ticket to ask for')
+
+    /* And the API refuses it, which is what the button would have run into. */
+    const refused = await useReviewDesk().requestNitTicket(MERGED.posted)
+    expect(refused.ok).toBe(false)
+    expect(refused.error?.message).toContain('merged')
+  })
+
   it('offers no sign-off, and no way to send it back either', async () => {
     /*
      * **Not a disabled button.** Each of the three acts the panel offers asks a session to

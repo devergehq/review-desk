@@ -23,6 +23,15 @@
 //!
 //! It is the same code path in every other respect: the same `harvest`, the same writes,
 //! the same step 7. Only where the four reads come from is chosen.
+//!
+//! **`--from` requires `--review`, and that is a safety rule rather than a convenience.** A
+//! recording is **one pull request's** — `Recorded` answers `pull_request` from one file
+//! whatever repository and number it is asked about — so an unnarrowed sweep with `--from`
+//! would read every in-play review from the same recording and write that pull request's
+//! state onto all of them. One command could mark a whole desk "merged on 11 October 2026",
+//! and `IN_PLAY` would then take every one of those reviews off the queue and out of the
+//! work list. Caught by a review of this branch; `clap`'s `requires` makes it unexpressible
+//! rather than merely unwise.
 
 use std::path::PathBuf;
 
@@ -46,8 +55,9 @@ pub struct HarvestArgs {
     review: Option<i64>,
 
     /// Read GitHub's answers from a directory of recorded responses instead of calling
-    /// `gh`. Nothing leaves the machine. For tests and for seeding a record.
-    #[arg(long, value_name = "DIR")]
+    /// `gh`. Nothing leaves the machine. Requires --review: a recording is one pull
+    /// request's. For tests and for seeding a record.
+    #[arg(long, value_name = "DIR", requires = "review")]
     from: Option<PathBuf>,
 }
 

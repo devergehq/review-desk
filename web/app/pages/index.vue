@@ -321,7 +321,19 @@ function needingYou(data: Inbox): Waiting[] {
   }
   for (const item of data.in_progress) {
     const row = byPullRequest.get(keyOf(item.pull_request))
-    if (row) row.agent = item
+    /*
+     * **The newest round's session, not whichever arrived last.** `reviews_in_progress` has
+     * no newest-round restriction — its own comment says it asks only whether a layer is
+     * `running` — and serves newest id first, so a plain assignment left the row holding the
+     * *oldest* round's item and `alsoWaiting` printed "a session is on step 4 of 7" about
+     * round 1 on a row numbered round 3. Keyed on the review it was keyed on, this could not
+     * happen; keying on the pull request is what made it possible. Found by a review of this
+     * branch, which also noticed it disagreed with `byNewestRound` about the same array.
+     *
+     * The `posted_awaiting_author` loop below needs no such test: that query serves a pull
+     * request's newest round only, which is a restriction this one does not have.
+     */
+    if (row && (row.agent == null || item.review_id > row.agent.review_id)) row.agent = item
   }
 
   /*

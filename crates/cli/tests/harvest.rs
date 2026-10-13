@@ -329,6 +329,29 @@ fn harvest_from_a_recording_records_the_merge_with_no_network() {
     assert_eq!(shown["review"]["pr_state"], "merged", "{shown}");
 }
 
+/// **`--from` without `--review` is refused before anything is read.**
+///
+/// A recording is one pull request's — `Recorded` answers `pull_request` from one file
+/// whatever it is asked about — so an unnarrowed sweep with `--from` would read every
+/// in-play review from it and write that pull request's state onto all of them. One command
+/// could mark a whole desk merged, and `IN_PLAY` would then take every one of those reviews
+/// off the queue and out of the work list. Found by a review of this branch.
+///
+/// Refused by `clap`, so it costs exit 2 and a usage message rather than a check somebody
+/// has to remember to write.
+#[test]
+fn harvest_from_without_a_review_is_refused() {
+    let desk = Desk::new();
+    let empty = TempDir::new().unwrap();
+    let recording = concat!(env!("CARGO_MANIFEST_DIR"), "/../harvest/tests/fixtures");
+
+    without_gh(&desk, &empty)
+        .args(["harvest", "--from", recording])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--review"));
+}
+
 /// A directory with no recording in it is a refusal that names what it wanted, not a run
 /// that found nothing.
 #[test]

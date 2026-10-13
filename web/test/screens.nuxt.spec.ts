@@ -269,6 +269,47 @@ describe('the queue', () => {
     expect(row!.text()).not.toContain('replied to round 1')
   })
 
+  it('says the newest round’s session on a row a session is working two rounds of', async () => {
+    /*
+     * **Which round's session the row describes.** `reviews_in_progress` has no newest-round
+     * restriction and serves newest id first, so joining it with a plain assignment left the
+     * row holding the *oldest* round's item — and the row then printed "a session is on step
+     * 4 of 7" about round 1 under a number saying round 2. Keyed on the review it could not
+     * happen; keying on the pull request is what made it possible. Found by a review of this
+     * branch.
+     */
+    const source = loadSource()
+    const running = (id: number, number: number, detail: string) => ({
+      number,
+      name: number === 4 ? ('solution_map' as const) : ('code_review' as const),
+      state: 'running' as const,
+      detail,
+      updated_at: '2026-10-13T06:00:00Z',
+      review_id: id,
+    })
+    await resetDesk({
+      reviews: source.reviews.map((detail) => {
+        /* Round 1 on step 4, round 2 on step 5 — two different sessions, two steps. */
+        if (detail.review.id === 60) {
+          return { ...detail, layers: detail.layers.map(layer =>
+            layer.number === 4 ? { ...layer, ...running(60, 4, 'solution map') } : layer) }
+        }
+        if (detail.review.id === 61) {
+          return { ...detail, layers: detail.layers.map(layer =>
+            layer.number === 5 ? { ...layer, ...running(61, 5, 'code review') } : layer) }
+        }
+        return detail
+      }) as typeof source.reviews,
+    })
+
+    const page = await shown(Inbox)
+    const row = needsYouRows(page).find(one => one.text().includes('#9541'))
+    expect(row, 'one row for #9541').toBeDefined()
+    expect(row!.text(), 'the round the row is about').toContain('round 2')
+    expect(row!.text(), 'and that round’s session').toContain('step 5 of 7')
+    expect(row!.text(), 'not the older round’s').not.toContain('step 4 of 7')
+  })
+
   it('draws one row for a pull request a session is working two rounds of', async () => {
     /*
      * `reviews_in_progress` asks only whether a layer is `running` and says nothing about

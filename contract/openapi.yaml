@@ -4054,9 +4054,10 @@ components:
             round 1".
 
             `drafts_to_approve` has carried a round since DEV-876 for the same kind of
-            reason. `briefs_to_confirm` has none and needs none: a brief is only ever
-            confirmed on the round the row is about, because an unposted superseded round
-            is in no group at all.
+            reason, and `briefs_to_confirm` gained one in the same issue — **every item that
+            makes a row carries one**, which is what lets the queue tell an item about the
+            row's own round from one about an older round without special-casing the
+            groups that happen to have it.
         ticket_id:
           allOf:
             - $ref: '#/components/schemas/ForeignId'
