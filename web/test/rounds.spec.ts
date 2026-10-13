@@ -17,7 +17,6 @@ import {
   updatedLine,
   withdrawnLine,
   briefWrittenEarlier,
-  roundDismissed,
   roundLinks,
   roundsLabel,
 } from '~/utils/rounds'
@@ -41,6 +40,122 @@ function updates(over: Partial<HeadUpdates> = {}): HeadUpdates {
     commits: null,
     last_at: null,
     updates: [],
+    ...over,
+  }
+}
+
+function move(from: string, to: string, at: string): HeadUpdate {
+  return { kind: 'moved', from_sha: from, to_sha: to, at }
+}
+
+describe('what a page says about a head that moved', () => {
+  it('says nothing at all when the head has never moved', () => {
+    expect(updatedLine(updates())).toBeNull()
+    expect(baseOnlyLine(updates())).toBeNull()
+    expect(foldedLine(updates())).toBeNull()
+  })
+
+  it('counts the commits when the record knows them', () => {
+    expect(updatedLine(updates({ moved: 1, since_sha: '4d9464f', commits: 3 })))
+      .toBe('Updated for 3 commits since 4d9464f')
+  })
+
+  it('says one commit in the singular', () => {
+    expect(updatedLine(updates({ moved: 1, since_sha: '4d9464f', commits: 1 })))
+      .toBe('Updated for 1 commit since 4d9464f')
+  })
+
+  it('drops the count rather than printing a nought', () => {
+    // A null count is a round whose commits nobody recorded. "Updated for 0 commits" would
+    // read as "nothing changed", which is the one thing a moved head is not.
+    expect(updatedLine(updates({ moved: 2, since_sha: '4d9464f', commits: null })))
+      .toBe('Updated since 4d9464f')
+    expect(updatedLine(updates({ moved: 2, since_sha: '4d9464f', commits: 0 })))
+      .toBe('Updated since 4d9464f')
+  })
+
+  it('abbreviates a full commit to the seven characters a reader quotes', () => {
+    expect(commitLabel('4d9464f1b7c4e0aa41c9e2c7730bd9d02e713f9c')).toBe('4d9464f')
+    expect(commitLabel('4d9464f')).toBe('4d9464f')
+  })
+
+  it('says a base-branch merge changed nothing', () => {
+    expect(baseOnlyLine(updates({ base_only: 1 })))
+      .toBe('1 push brought the base branch in and changed nothing')
+    expect(baseOnlyLine(updates({ base_only: 2 })))
+      .toBe('2 pushes brought the base branch in and changed nothing')
+  })
+
+  it('says how many earlier rounds the tidy folded in', () => {
+    expect(foldedLine(updates({ folded: 1 }))).toBe('An earlier round was folded into this one')
+    expect(foldedLine(updates({ folded: 3 }))).toBe('3 earlier rounds were folded into this one')
+  })
+})
+
+describe('what changed since the draft was written', () => {
+  const held = updates({
+    moved: 2,
+    since_sha: '4d9464f',
+    commits: 3,
+    updates: [
+      move('4d9464f', 'a41c9e2', '2026-10-10T09:00:00Z'),
+      { kind: 'base_only', from_sha: 'a41c9e2', to_sha: '7e2a9d3', at: '2026-10-10T10:00:00Z' },
+      move('a41c9e2', '1b7c4e0', '2026-10-11T08:00:00Z'),
+    ],
+  })
+
+  it('takes the moves after the draft was last written', () => {
+    const since = movesSince(held, '2026-10-10T12:00:00Z')
+    expect(since.map(update => update.to_sha)).toEqual(['1b7c4e0'])
+  })
+
+  it('leaves out the pushes that only brought the base branch in', () => {
+    // Neither changed the pull request's own diff, so neither is something the draft is
+    // out of date about.
+    expect(movesSince(held, null).every(update => update.kind === 'moved')).toBe(true)
+    expect(movesSince(held, null)).toHaveLength(2)
+  })
+
+  it('takes every move when there is no draft to date from', () => {
+    expect(movesSince(held, null)).toHaveLength(2)
+  })
+
+  it('keeps the move that withdrew the sign-off, which is written in the same second', () => {
+    /*
+     * **The case the section exists for.** Withdrawing a sign-off writes the draft in the
+     * same transaction as the move, and the record keeps whole seconds — so the draft's
+     * `updated_at` equals the move's time, and a strict comparison left the page silent
+     * about the one push that took a developer's sign-off away.
+     */
+    const withdrawn = updates({
+      moved: 1,
+      since_sha: '4d9464f',
+      commits: 2,
+      updates: [move('4d9464f', 'a41c9e2', '2026-10-11T08:00:00Z')],
+    })
+    expect(movesSince(withdrawn, '2026-10-11T08:00:00Z')).toHaveLength(1)
+  })
+})
+
+describe('why a sign-off went', () => {
+  const review = { head_sha: 'a41c9e2' } as Review
+
+  it('says which commit was approved and where the pull request is now', () => {
+    const draft = {
+      signoff_withdrawn_at: '2026-10-11T08:00:00Z',
+      signoff_withdrawn_head: '4d9464f',
+    } as Draft
+    const line = withdrawnLine(draft, review)
+    expect(line).toContain('4d9464f')
+    expect(line).toContain('a41c9e2')
+    expect(line).toContain('withdrawn')
+  })
+
+  it('says nothing about a draft nobody signed off', () => {
+    const draft = { signoff_withdrawn_at: null, signoff_withdrawn_head: null } as Draft
+    expect(withdrawnLine(draft, review)).toBeNull()
+  })
+})
 
 /* ================== Where the pull request's other rounds are ================= */
 
@@ -63,6 +178,7 @@ function round(over: Partial<RoundSummary> & { review_id: number, round: number 
     replies: 0,
     threads_resolved: 0,
     statuses: { new: 0, fixed: 0, still_open: 0, accepted: 0, withdrawn: 0, ticketed: 0 },
+    dismissed: false,
     brief_written: false,
     ...over,
   }
@@ -230,14 +346,12 @@ describe('the links to the other rounds', () => {
     })
 
     /**
-     * **And a round the wire says was dismissed is not in hand either.** `roundDismissed`
-     * answers null on master, so nothing changes until DEV-962 lands DEV-954's flag — but it
-     * is the half of the problem that per-round dismissal actually solves, and the reader it
-     * protects is the one on *another* round, whose page would otherwise promise that a
-     * dismissed round was being worked on.
+     * **And a dismissed round is not in hand either.** This is the half of the problem that
+     * per-round dismissal solves, and the reader it protects is the one on *another* round,
+     * whose page would otherwise promise that a round nobody will touch again is in hand.
      */
-    it('promises nothing about a round the wire says was dismissed', () => {
-      const dismissed = { ...THREE[2]!, dismissed: true } as RoundSummary
+    it('promises nothing about a round the developer dismissed', () => {
+      const dismissed = { ...THREE[2]!, dismissed: true }
       const live = detail(41, {
         review: { ...detail(41).review, id: 702, round: 2 },
         rounds: [THREE[0]!, THREE[1]!, dismissed],
@@ -265,34 +379,34 @@ describe('the links to the other rounds', () => {
     })
   })
 
+  /*
+   * **`RoundSummary.dismissed`, read straight.** It was reached through a seam while DEV-962
+   * was in flight and was three-valued, because the absence of a flag is not the absence of
+   * a dismissal. The field is required now, so there is no third answer left to hold open
+   * and no cast between the wire and the chip.
+   */
   describe('a dismissed round', () => {
-    /**
-     * **The seam for DEV-962.** DEV-954's `dismissed` on `RoundSummary` is not on master, so
-     * `roundDismissed` answers null for every round master serves and the switcher marks
-     * none. These two assertions are the whole of what has to keep working when it lands.
-     */
-    it('is marked where the wire says it is dismissed', () => {
-      const dismissed = { ...THREE[0]!, dismissed: true } as RoundSummary
-      expect(roundDismissed(dismissed)).toBe(true)
+    it('is marked, and keeps its link', () => {
+      const dismissed = { ...THREE[0]!, dismissed: true }
       const links = roundLinks(
-        detail(41, { review: { ...detail(41).review, id: 702, round: 2 }, rounds: [dismissed, THREE[1]!, THREE[2]!] }),
+        detail(41, {
+          review: { ...detail(41).review, id: 702, round: 2 },
+          rounds: [dismissed, THREE[1]!, THREE[2]!],
+          not_for_signing: SUPERSEDED,
+        }),
         'understand',
       )
       expect(links[0]!.dismissed).toBe(true)
+      /*
+       * **Still a link.** A dismissed round's pages are all still there and everything on it
+       * was kept, so what the word changes is what a reader expects of the round, not where
+       * the chip goes.
+       */
+      expect(links[0]!.to).toBe('/reviews/701/understand')
     })
 
-    it('is marked not dismissed only where the wire says so', () => {
-      expect(roundDismissed({ ...THREE[0]!, dismissed: false } as RoundSummary)).toBe(false)
-    })
-
-    /*
-     * **Null rather than false for "nothing said".** A review's own `dismissed_at` is
-     * served and another round's is not, so answering false would turn "I was not told"
-     * into "it is not dismissed" — a claim the reader would act on.
-     */
-    it('answers null where the wire does not say, which is every round today', () => {
-      expect(roundDismissed(THREE[0]!)).toBeNull()
-      expect(here().map(one => one.dismissed)).toEqual([null, null, null])
+    it('is not marked where the round was not dismissed', () => {
+      expect(here().map(one => one.dismissed)).toEqual([false, false, false])
     })
   })
 })

@@ -144,8 +144,9 @@ export function withdrawnLine(draft: Draft, review: Review): string | null {
   return `You signed this off on ${approved}, and the pull request has moved to ${now}. `
     + 'The sign-off was withdrawn because the code you approved is not the code that '
     + 'would post.'
-/* ================== Where the pull request's other rounds are ================= */
+}
 
+/* ================== Where the pull request's other rounds are ================= */
 
 /** One round of the pull request, as the switcher draws it. */
 export interface RoundLink {
@@ -163,33 +164,16 @@ export interface RoundLink {
    */
   standing: string
   /**
-   * Whether the round was dismissed — `null` when nothing served the answer.
+   * Whether the developer has dismissed this round.
    *
-   * See [`roundDismissed`]. Three-valued on purpose: a switcher that drew `false` as "not
-   * dismissed" would be saying something it has not been told.
+   * **`RoundSummary.dismissed`, which the wire now always carries.** It was read through a
+   * seam while DEV-962 was in flight, and three-valued because the absence of a flag is not
+   * the absence of a dismissal; the field is required now, so there is no third answer left
+   * to hold open.
    */
-  dismissed: boolean | null
+  dismissed: boolean
   /** The head commit, at the seven characters a commit is read by. */
   head: string
-}
-
-
-/**
- * Whether a round was dismissed. `null` when the wire does not say.
- *
- * **This is the seam for DEV-962, and it is one function on purpose.** DEV-954's dismissed
- * flag on `RoundSummary` arrives with DEV-962, which is in progress on another branch; it is
- * not on master, so today this answers `null` for every round and the switcher marks none.
- * The moment the field lands, this reads it and nothing else changes — the component already
- * draws the tag, and `test/rounds.spec.ts` already asserts both answers against a round
- * carrying the field.
- *
- * `null` rather than `false` for "nothing said", because a review's own `dismissed_at` is
- * served and an *other* round's is not: answering `false` would turn "I was not told" into
- * "it is not dismissed", which is the claim a reader would act on.
- */
-export function roundDismissed(round: RoundSummary): boolean | null {
-  return (round as RoundSummary & { dismissed?: boolean | null }).dismissed ?? null
 }
 
 /**
@@ -219,7 +203,7 @@ export function roundLinks(detail: ReviewDetail, step: ReviewLayerName): RoundLi
         to: here ? null : `/reviews/${round.review_id}/${page}`,
         here,
         standing: standingOf(round, rounds, inPlay(detail)),
-        dismissed: roundDismissed(round),
+        dismissed: round.dismissed,
         /* `commitLabel`, the one abbreviation of a commit this file has. */
         head: commitLabel(round.head_sha),
       }
@@ -245,13 +229,12 @@ function standingOf(round: RoundSummary, rounds: RoundSummary[], live: boolean):
   if (!live) return 'not posted'
 
   /*
-   * **And nothing is being worked on about a round the wire says was dismissed.** It answers
-   * null on master, so this changes nothing until DEV-962 lands the flag; it is here because
-   * it is the half of `inPlay`'s problem that per-round dismissal actually solves, and a
-   * reader on another round is the one who would otherwise be told a dismissed round is in
-   * hand.
+   * **And nothing is being worked on about a round the developer dismissed.** This is the
+   * half of `inPlay`'s problem that per-round dismissal solves, and the reader it protects
+   * is the one on *another* round, whose page would otherwise be told that a round nobody
+   * will touch again is in hand.
    */
-  if (roundDismissed(round) === true) return 'not posted'
+  if (round.dismissed) return 'not posted'
 
   const newest = rounds.reduce((high, one) => Math.max(high, one.round), 0)
   return round.round === newest ? 'being worked on' : 'not posted'
@@ -291,10 +274,10 @@ function standingOf(round: RoundSummary, rounds: RoundSummary[], live: boolean):
  * worth stating plainly.** This is read from the review being *viewed*, so on a pull request
  * whose round 3 is dismissed, round 3's own page reads "not posted" for round 3 while round
  * 1's page reads "being worked on" for it. A second review of this branch named it. The
- * disagreement is a symptom of the wire carrying no per-round dismissal — `RoundSummary` has
- * none until DEV-962 — rather than of this rule: with that flag, neither page promises
- * anything about a dismissed round, which is what the clause in `standingOf` is already
- * written for. Until then the conservative half is the one that cannot mislead.
+ * disagreement is narrow now that `RoundSummary.dismissed` is on the wire: `standingOf`
+ * refuses to promise anything about a dismissed round from either page, so what is left is
+ * only a round nobody has dismissed, on a pull request this page cannot tell has merged.
+ * There, the conservative half is the one that cannot mislead.
  */
 function inPlay(detail: ReviewDetail): boolean {
   const reason = detail.not_for_signing?.reason

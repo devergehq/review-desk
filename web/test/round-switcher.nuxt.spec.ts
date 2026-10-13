@@ -209,12 +209,12 @@ describe('every step page of a multi-round review', () => {
     })
 
     /*
-     * `RoundSummary` carries no dismissed flag on master — DEV-954's arrives with DEV-962 —
-     * so nothing is marked, and nothing is marked "not dismissed" either. The seam is
-     * `roundDismissed`, and `test/rounds.spec.ts` asserts both answers against a round that
-     * carries the field.
+     * No round of `#9568` is dismissed in the fixtures, so no chip carries the word. That a
+     * dismissed one *does* is measured in a real browser — `e2e/rounds.spec.ts` dismisses a
+     * round through the dashboard's own API, which is the only path to it — and the rule
+     * behind it in `test/rounds.spec.ts`.
      */
-    it('marks no round dismissed while the wire carries no such flag', async () => {
+    it('marks no round where none of them is dismissed', async () => {
       const mounted = await shown(PAGES[0], THIRD_OF_FOUR)
       expect(mounted.findAll('nav.rounds .tag')).toHaveLength(0)
     })

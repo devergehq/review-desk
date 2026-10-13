@@ -40,10 +40,11 @@ import type { ReviewDetail, ReviewLayerName } from '~/types/desk'
  * which is DEV-957's whole subject — so it reads "not posted". `standingOf` in
  * `utils/rounds.ts` owns that rule.
  *
- * **A dismissed round is marked only where the wire says so.** `RoundSummary` does not carry
- * the flag on master; DEV-954's arrives with DEV-962, and `roundDismissed` is the one reader
- * waiting for it. Until then no round is marked, and none is marked "not dismissed" either:
- * the answer is three-valued because "I was not told" is not "it is fine".
+ * **A dismissed round is marked, and that is the one fact here that is not a count.** Every
+ * other thing a round carries looks the same for a round the developer took out of play as
+ * for a live one, which is DEV-954 — so a timeline without it draws a dismissed round as
+ * live. It stays *in* the list rather than being hidden: a hole where round 2 was would read
+ * as a gap in the record, so the word goes on the round instead.
  *
  * ## The shape
  *
@@ -120,8 +121,9 @@ const stepName = computed(() => layerLabel(props.step))
           <span class="shas">
             <span class="rd-mono head">{{ round.head }}</span>
             <!--
-              Only where the wire said so. See `roundDismissed`: the absence of the flag is
-              not the absence of a dismissal, so nothing is drawn for "not told".
+              `RoundSummary.dismissed`, read straight. A dismissed round keeps its link —
+              its pages are all still there and its findings and decisions were kept — so
+              what the word changes is what the reader expects of it, not where it goes.
             -->
             <span
               v-if="round.dismissed"

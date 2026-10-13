@@ -277,6 +277,13 @@ function roundsOf(detail: ReviewDetail): RoundSummary[] {
         round: one.review.round,
         head_sha: one.review.head_sha,
         created_at: one.review.created_at,
+        /*
+         * **Derived from the round's own `dismissed_at`, as `Store::rounds` derives it.** A
+         * dismissed round stays in this list — a hole where round 2 was would read as a gap
+         * in the record — so the flag is what tells it from a live one, and every other
+         * field on a summary is a count that looks the same either way (DEV-954).
+         */
+        dismissed: one.review.dismissed_at != null,
         posted_at: draft?.draft.posted_at ?? null,
         event: draft?.draft.event ?? null,
         findings: one.findings.length,

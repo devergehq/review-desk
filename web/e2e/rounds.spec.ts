@@ -47,19 +47,20 @@ import { cli, scratch, serve, stop, type Serving } from './harness'
  *
  * ## What this seed cannot do, said rather than worked around
  *
- * **It cannot post a round, so no round here carries a posted date.** A round's `posted_at`
- * is its draft's; `Store::post_draft` refuses anything but an **approved** draft; and only
- * the developer approves one, through the dashboard and never the command line — which is
- * the rule, not a gap. So "posted 9 October 2026" is asserted in
- * `test/round-switcher.nuxt.spec.ts`, whose records hold a posted draft, and what is
- * measured here is the other two wordings. The same division `what-happened.spec.ts` makes
- * about `pr_state`.
+ * **It cannot give a round a posted date, so none here carries one.** `review link` records
+ * the GitHub review, which is what `review_is_posted` asks and so what opens the next round;
+ * but `RoundSummary.posted_at` is the *draft's* posting, `Store::post_draft` refuses anything
+ * but an **approved** draft, and only the developer approves one — through the dashboard and
+ * never the command line. That is the rule, not a gap, and `seedMerged`'s round 1 has the
+ * same shape. So the first two rounds here read "not posted" although the record calls them
+ * posted, "posted 9 October 2026" is asserted in `test/round-switcher.nuxt.spec.ts` whose
+ * records hold a posted draft, and what the browser measures here is the other two wordings.
+ * The same division `what-happened.spec.ts` makes about `pr_state`.
  *
- * **And no round can be marked dismissed**, because `RoundSummary` carries no such flag on
- * master: DEV-954's arrives with DEV-962. `roundDismissed` is the one reader waiting for it
- * and `test/rounds.spec.ts` asserts both of its answers against a round that carries the
- * field. What is measured here is that nothing is marked meanwhile, which is the honest
- * state and not a silent "not dismissed".
+ * **A round *can* be dismissed, and one test below does it** — but only through the
+ * dashboard's own API, because dismissing is the developer's act and the contract says there
+ * is no command line path to it. The seed prepares no dismissed round; the test makes one and
+ * undoes it in a `finally`.
  */
 
 /** The two widths the issue names: the boards' own width, and a phone. */
@@ -181,6 +182,23 @@ test.beforeAll(async () => {
         ? 'One blocker on the tenant the scheduled export reads.'
         : `Round ${at + 1}. The tenant is passed now; one finding is left on the retry path.`,
     )
+
+    /*
+     * **Posted, which is the only thing that opens the next round.** Since DEV-962 a new
+     * commit on an *unposted* round moves that round's head in place rather than opening one
+     * beside it — `Store::open_review` asks `review_is_posted`, which is a posted draft or a
+     * recorded GitHub review id. Without this the three heads below collapse into one round
+     * and there is no switcher to measure. The last round is left unposted on purpose: it is
+     * the round being worked on.
+     */
+    if (at < heads.length - 1) {
+      cli(database, [
+        'review', 'link',
+        '--review', String(reviewId),
+        '--github-review', `PRR_acme631r${at + 1}`,
+      ])
+    }
+
     rounds.push(reviewId)
   }
 
@@ -350,10 +368,79 @@ for (const { name, width, height } of WIDTHS) {
 
 /* ============================= Where it stands, and where it was written ========== */
 
-test('no round is marked dismissed while the wire carries no such flag', async ({ page }) => {
+test('no round is marked while none of them is dismissed', async ({ page }) => {
   await page.goto(`${serving.url}reviews/${rounds[1]}/understand`)
   await expect(page.locator('nav.rounds .round')).toHaveCount(3)
   await expect(page.locator('nav.rounds .tag')).toHaveCount(0)
+})
+
+/**
+ * **A dismissed round is marked as dismissed, and keeps its link.** DEV-954's criterion,
+ * through `RoundSummary.dismissed` — the field this branch read through a seam until DEV-962
+ * landed it.
+ *
+ * **Dismissed through the dashboard's own API, never the command line.** It is the
+ * developer's act: `POST /reviews/{id}/dismiss` is the only path to it and the contract says
+ * in as many words that there is no command line for it. So this is the one thing in this
+ * file the seed cannot prepare, and it is done the way the dashboard does it.
+ *
+ * **From inside the page**, as `review-desk.spec.ts` does and for its reason: the server's
+ * guard accepts the dashboard's own origin, and a request from Playwright's own context
+ * carries no origin the guard knows.
+ *
+ * **Undone in a `finally`**, because this file is serial over one database and the tests
+ * around it read round 3 as the one being worked on. A round left dismissed would make the
+ * rest of the file depend on the order it ran in.
+ */
+test('a dismissed round is marked as dismissed and still links', async ({ page }) => {
+  const call = (reviewId: number, path: string, body: unknown) =>
+    page.evaluate(async ({ base, reviewId, path, body }) => {
+      const answer = await fetch(`${base}api/v1/reviews/${reviewId}/${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      return { status: answer.status, body: await answer.text() }
+    }, { base: serving.url, reviewId, path, body })
+
+  await page.goto(`${serving.url}reviews/${rounds[1]}/understand`)
+  const dismissed = await call(rounds[2]!, 'dismiss', {
+    reason: 'A duplicate of round 2; the author pushed twice.',
+  })
+  expect(dismissed.status, dismissed.body).toBe(200)
+
+  try {
+    /* Read from round 2, so what is asserted is the switcher and not the page's own notice. */
+    await page.goto(`${serving.url}reviews/${rounds[1]}/understand`)
+    const chips = page.locator('nav.rounds .round')
+    await expect(chips).toHaveCount(3)
+
+    const third = chips.nth(2)
+    await expect(third, 'round 3 carries the word').toContainText('dismissed')
+    await expect(third.locator('.tag')).toHaveText('dismissed')
+    await expect(page.locator('nav.rounds .tag'), 'and it is the only one').toHaveCount(1)
+
+    /*
+     * **And nothing is being worked on about it.** Round 3 is still the newest unposted
+     * round, so without the dismissal it reads "being worked on"; the word is what stops
+     * this page promising that a round nobody will touch again is in hand.
+     */
+    await expect(third).toContainText('not posted')
+    await expect(third).not.toContainText('being worked on')
+
+    /*
+     * **Still a link.** Its pages are all still there and everything on it was kept, so what
+     * the word changes is what a reader expects of the round, not where the chip goes.
+     */
+    await expect(third).toHaveAttribute('href', `/reviews/${rounds[2]}/understand`)
+    await third.click()
+    await expect(page).toHaveURL(`${serving.url}reviews/${rounds[2]}/understand`)
+    await expect(page.locator('.face--here .name')).toContainText('Understand')
+  }
+  finally {
+    const restored = await call(rounds[2]!, 'restore', {})
+    expect(restored.status, restored.body).toBe(200)
+  }
 })
 
 /**
