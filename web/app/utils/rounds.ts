@@ -322,7 +322,14 @@ export interface WrittenEarlier {
    * inverted, not removed.
    */
   headline: string
-  /** The line under it: why this page draws nothing, without repeating who wrote it. */
+  /**
+   * The line under it: what this round wrote, without repeating who wrote the last brief.
+   *
+   * **About the record, never about the page**, which is also the rule for whatever a page
+   * puts in the `??` branch beside this. It read "so this page draws nothing" until a review
+   * of this branch found that false on Understand: its no-brief branch draws `RemoveReview`,
+   * whose card is unconditional, so the sentence sat directly above a heading and a button.
+   */
   sub: string
 }
 
