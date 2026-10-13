@@ -213,10 +213,15 @@ const stepName = computed(() => layerLabel(props.step))
       can appear on take their `headline` and `sub` from the same answer, so the state is
       stated once. DEV-892's sixth defect was the Solution page saying one sentence twice,
       as its headline and again as a notice under it.
+
+      **A destination, not a claim about what is there.** "Open round 2's Alternatives" says
+      where it goes; "read it as round 2 wrote it" said round 2 wrote one, which is more than
+      `brief_written` measures — round 2 may hold a brief with no options at all, and the
+      fixtures have exactly that. A second review of this branch caught it.
     -->
     <DeskNotice v-if="writtenEarlier">
       <NuxtLink :to="writtenEarlier.to">
-        Read {{ stepName.toLowerCase() }} as round {{ writtenEarlier.round }} wrote it
+        Open round {{ writtenEarlier.round }}’s {{ stepName }}
       </NuxtLink>.
     </DeskNotice>
 

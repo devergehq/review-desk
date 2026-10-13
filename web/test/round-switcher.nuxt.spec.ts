@@ -242,10 +242,9 @@ describe('where a step was written, when this round did not write it', () => {
    * Round 2 rather than round 1, which is the case the contract field exists for: round 1 of
    * `#9568` wrote no brief and round 2 did, so guessing the first round would be wrong here.
    */
-  it('says so in the heading, and links to the round that wrote it', async () => {
+  it('says so in the heading, and links to the round that wrote the last brief', async () => {
     for (const page of FROM_THE_BRIEF) {
       const mounted = await shown(page, THIRD_OF_FOUR)
-      const label = page.step.toLowerCase()
 
       /*
        * **The heading is the answer, not an absence.** It used to read "Nothing has been
@@ -253,16 +252,21 @@ describe('where a step was written, when this round did not write it', () => {
        * back — which is the ambiguity the issue was raised to remove rather than a smaller
        * version of it. Asserted as the `h1` rather than as page text, because the whole
        * point is which sentence is read first.
+       *
+       * **And it claims a brief rather than a step**, which is all `brief_written` measures.
+       * Review 65 is round 2 here and its brief holds `options: []`, so a heading reading
+       * "Round 2 wrote this pull request's alternatives" sent the reader to a page saying
+       * "None was recorded" — the ambiguity inverted. Found by a review of this branch.
        */
       expect(mounted.find('h1').text(), `${page.step} heading`)
-        .toBe(`Round 2 wrote this pull request’s ${label}.`)
-      expect(mounted.text(), `${page.step} says why this round holds none`)
-        .toContain('No round since has written another, and nothing carries a brief from one '
-          + `round to the next — so round 3 holds no ${label} of its own.`)
+        .toBe('The last brief on this pull request was written in round 2.')
+      expect(mounted.text(), `${page.step} says why this page draws nothing`)
+        .toContain('Round 3 wrote none of its own, and nothing carries a brief from one '
+          + 'round to the next — so this page draws nothing.')
 
-      /* And the notice under it carries the link and nothing the heading already said. */
+      /* The notice under it is a destination, and nothing the heading already said. */
       const link = mounted.findAll('a')
-        .find(one => one.text().includes(`Read ${label} as round 2 wrote it`))
+        .find(one => one.text().includes(`Open round 2’s ${page.step}`))
       expect(link, `${page.step} links to round 2`).toBeDefined()
       expect(link!.attributes('href')).toBe(`/reviews/${SECOND_OF_FOUR}/${page.suffix}`)
       expect(mounted.text(), `${page.step} does not say it twice`)
@@ -274,7 +278,7 @@ describe('where a step was written, when this round did not write it', () => {
   it('says nothing on the round that wrote the brief', async () => {
     for (const page of FROM_THE_BRIEF) {
       const mounted = await shown(page, SECOND_OF_FOUR)
-      expect(mounted.text(), `${page.step}`).not.toContain('wrote this pull request’s')
+      expect(mounted.text(), `${page.step}`).not.toContain('The last brief on this pull request')
     }
   })
 
@@ -282,22 +286,22 @@ describe('where a step was written, when this round did not write it', () => {
   it('says nothing on a first round', async () => {
     for (const page of FROM_THE_BRIEF) {
       const mounted = await shown(page, FIRST_OF_FOUR)
-      expect(mounted.text(), `${page.step}`).not.toContain('wrote this pull request’s')
+      expect(mounted.text(), `${page.step}`).not.toContain('The last brief on this pull request')
     }
   })
 
   it('says nothing where no round of the pull request wrote one', async () => {
     for (const page of FROM_THE_BRIEF) {
       const mounted = await shown(page, NEITHER_WROTE_ONE)
-      expect(mounted.text(), `${page.step}`).not.toContain('wrote this pull request’s')
+      expect(mounted.text(), `${page.step}`).not.toContain('The last brief on this pull request')
     }
   })
 
   it('points a two-round pull request’s second round back at its first', async () => {
     const mounted = await shown(PAGES[0], SECOND_OF_TWO)
-    expect(mounted.find('h1').text()).toBe('Round 1 wrote this pull request’s understand.')
-    const link = mounted.findAll('a')
-      .find(one => one.text().includes('Read understand as round 1 wrote it'))
+    expect(mounted.find('h1').text())
+      .toBe('The last brief on this pull request was written in round 1.')
+    const link = mounted.findAll('a').find(one => one.text().includes('Open round 1’s Understand'))
     expect(link).toBeDefined()
     expect(link!.attributes('href')).toBe('/reviews/60/understand')
   })
@@ -312,7 +316,7 @@ describe('where a step was written, when this round did not write it', () => {
     for (const page of ITS_OWN) {
       const mounted = await shown(page, THIRD_OF_FOUR)
       expect(switcher(mounted), `${page.step} still draws the switcher`).not.toBeNull()
-      expect(mounted.text(), `${page.step}`).not.toContain('wrote this pull request’s')
+      expect(mounted.text(), `${page.step}`).not.toContain('The last brief on this pull request')
       expect(mounted.text(), `${page.step}`).not.toContain('wrote the last one')
     }
   })

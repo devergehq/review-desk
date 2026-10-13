@@ -21,7 +21,7 @@
  * Pure functions over the contract's own shapes, so they are unit-tested without a browser.
  */
 
-import { dayLabel, layerLabel } from './format'
+import { dayLabel } from './format'
 import { PAGE_OF_STEP } from './steps'
 
 import type {
@@ -244,6 +244,15 @@ function standingOf(round: RoundSummary, rounds: RoundSummary[], live: boolean):
   if (posted) return `posted ${posted}`
   if (!live) return 'not posted'
 
+  /*
+   * **And nothing is being worked on about a round the wire says was dismissed.** It answers
+   * null on master, so this changes nothing until DEV-962 lands the flag; it is here because
+   * it is the half of `inPlay`'s problem that per-round dismissal actually solves, and a
+   * reader on another round is the one who would otherwise be told a dismissed round is in
+   * hand.
+   */
+  if (roundDismissed(round) === true) return 'not posted'
+
   const newest = rounds.reduce((high, one) => Math.max(high, one.round), 0)
   return round.round === newest ? 'being worked on' : 'not posted'
 }
@@ -265,9 +274,16 @@ function standingOf(round: RoundSummary, rounds: RoundSummary[], live: boolean):
  * found: it is asked *first*, so a dismissed round of a **merged** pull request answers
  * `dismissed` and never reaches the state check. Reading `reason === 'finished'` alone had
  * that page promise that the newest unposted round of a merged pull request was in hand —
- * the exact false promise this function exists to stop. Unknown reads as not in play: the
- * cost is a dismissed round's page saying "not posted" where "being worked on" would have
- * been true, which is a fact it loses rather than a promise it breaks.
+ * the exact false promise this function exists to stop.
+ *
+ * **What it costs is a disagreement between two pages of one pull request, and that is
+ * worth stating plainly.** This is read from the review being *viewed*, so on a pull request
+ * whose round 3 is dismissed, round 3's own page reads "not posted" for round 3 while round
+ * 1's page reads "being worked on" for it. A second review of this branch named it. The
+ * disagreement is a symptom of the wire carrying no per-round dismissal — `RoundSummary` has
+ * none until DEV-962 — rather than of this rule: with that flag, neither page promises
+ * anything about a dismissed round, which is what the clause in `standingOf` is already
+ * written for. Until then the conservative half is the one that cannot mislead.
  */
 function inPlay(detail: ReviewDetail): boolean {
   const reason = detail.not_for_signing?.reason
@@ -295,9 +311,18 @@ export interface WrittenEarlier {
    * It replaces a heading that was false here as well as duplicated: "Nothing has been
    * written about this problem yet", over a round whose pull request has a brief, is the
    * very ambiguity DEV-976 was raised to remove. Found by a review of this branch.
+   *
+   * **And it is about the brief, not about the step — which a second review of this branch
+   * caught it claiming.** `brief_written` says a `briefs` row exists for that round and
+   * nothing more. It had been promoted into "Round 2 wrote this pull request's
+   * alternatives", which the fixtures themselves falsify: review 65 is round 2 of
+   * `globex/portal#9568` and its brief holds `options: []` and no parts, so round 3's
+   * Alternatives page claimed round 2 wrote some and linked to a page reading "None was
+   * recorded". A positive claim pointing at a page that contradicts it is the ambiguity
+   * inverted, not removed.
    */
   headline: string
-  /** The line under it: why this round holds none, without repeating who wrote it. */
+  /** The line under it: why this page draws nothing, without repeating who wrote it. */
   sub: string
 }
 
@@ -342,12 +367,16 @@ export function briefWrittenEarlier(
     .sort((one, two) => two.round - one.round)[0]
   if (wrote == null) return null
 
-  const label = layerLabel(step)
   return {
     round: wrote.round,
     to: `/reviews/${wrote.review_id}/${page}`,
-    headline: `Round ${wrote.round} wrote this pull request’s ${label.toLowerCase()}.`,
-    sub: `No round since has written another, and nothing carries a brief from one round to `
-      + `the next — so round ${detail.review.round} holds no ${label.toLowerCase()} of its own.`,
+    /*
+     * **The last brief, which is the whole of what is measured.** "Last" carries "no round
+     * since has written another" without saying it twice: the round named is the latest
+     * earlier one with `brief_written`, so every round between it and this one has none.
+     */
+    headline: `The last brief on this pull request was written in round ${wrote.round}.`,
+    sub: `Round ${detail.review.round} wrote none of its own, and nothing carries a brief `
+      + `from one round to the next — so this page draws nothing.`,
   }
 }

@@ -193,12 +193,36 @@ describe('the links to the other rounds', () => {
      * for, a reader on an earlier round of a live pull request.
      */
     it('says so from an earlier round of a pull request still in play', () => {
+      /*
+       * **Round 2, not round 1, and that is a reachable record rather than a tidier one.**
+       * `Store::not_for_signing` answers `Superseded` only when `by_round > review.round`
+       * *and the round was never posted*, and round 1 of this fixture is posted — so a
+       * posted round carrying that reason is a response the API cannot produce. The same
+       * defect as a fixture short of a required field, in the other direction; named by a
+       * review of this branch.
+       */
       const earlier = detail(41, {
-        review: { ...detail(41).review, id: 701, round: 1 },
+        review: { ...detail(41).review, id: 702, round: 2 },
         rounds: THREE,
         not_for_signing: { reason: 'superseded', by_round: 3 },
       })
       expect(roundLinks(earlier, 'understand')[2]!.standing).toBe('being worked on')
+    })
+
+    /**
+     * **And a round the wire says was dismissed is not in hand either.** `roundDismissed`
+     * answers null on master, so nothing changes until DEV-962 lands DEV-954's flag — but it
+     * is the half of the problem that per-round dismissal actually solves, and the reader it
+     * protects is the one on *another* round, whose page would otherwise promise that a
+     * dismissed round was being worked on.
+     */
+    it('promises nothing about a round the wire says was dismissed', () => {
+      const dismissed = { ...THREE[2]!, dismissed: true } as RoundSummary
+      const live = detail(41, {
+        review: { ...detail(41).review, id: 702, round: 2 },
+        rounds: [THREE[0]!, THREE[1]!, dismissed],
+      })
+      expect(roundLinks(live, 'understand')[2]!.standing).toBe('not posted')
     })
 
     /**
@@ -314,12 +338,30 @@ describe('where a step was written, when it was not written here', () => {
   it('words the heading and the line under it for the page to use', () => {
     const later = detail(43, { review: { ...detail(43).review, id: 703, round: 3 }, rounds: THREE })
     expect(briefWrittenEarlier(later, 'understand')?.headline)
-      .toBe('Round 1 wrote this pull request’s understand.')
-    expect(briefWrittenEarlier(later, 'solution_map')?.headline)
-      .toBe('Round 1 wrote this pull request’s solution map.')
+      .toBe('The last brief on this pull request was written in round 1.')
     expect(briefWrittenEarlier(later, 'alternatives')?.sub)
-      .toBe('No round since has written another, and nothing carries a brief from one round '
-        + 'to the next — so round 3 holds no alternatives of its own.')
+      .toBe('Round 3 wrote none of its own, and nothing carries a brief from one round to '
+        + 'the next — so this page draws nothing.')
+  })
+
+  /**
+   * **And it claims a brief, never a step.** `brief_written` says a `briefs` row exists for
+   * that round and nothing more. Worded as "Round 2 wrote this pull request's alternatives"
+   * it was falsified by the fixtures themselves — review 65 is round 2 of
+   * `globex/portal#9568` and its brief holds `options: []` — so round 3's Alternatives page
+   * claimed options that the page it linked to reads "None was recorded" for. Found by a
+   * review of this branch.
+   */
+  it('says the same thing on all three pages, because it is one record', () => {
+    const later = detail(43, { review: { ...detail(43).review, id: 703, round: 3 }, rounds: THREE })
+    const said = (['understand', 'alternatives', 'solution_map'] as const)
+      .map(step => briefWrittenEarlier(later, step)!)
+    expect(new Set(said.map(one => one.headline)).size, 'one heading, about the brief').toBe(1)
+    expect(new Set(said.map(one => one.sub)).size, 'one line under it').toBe(1)
+    for (const one of said) {
+      expect(one.headline, 'no step is named as something a round wrote')
+        .not.toMatch(/alternatives|solution|understand/i)
+    }
   })
 
   it('says nothing on the first round, which has nothing before it', () => {

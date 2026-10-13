@@ -365,22 +365,22 @@ for (const at of [1, 2]) {
   test(`round ${at + 1} says where its understanding was written`, async ({ page }) => {
     for (const { step, suffix } of FROM_THE_BRIEF) {
       await page.goto(`${serving.url}reviews/${rounds[at]}/${suffix}`)
-      const label = step.toLowerCase()
 
       /*
        * **The heading is the answer rather than an absence**, and it is asserted as the `h1`
        * because the point is which sentence is read first. It used to read "Nothing has been
        * written about this problem yet" over a pull request whose brief is one round back.
+       * It claims a brief rather than a step, which is all `brief_written` measures.
        */
       await expect(page.locator('h1'), step)
-        .toHaveText(`Round 1 wrote this pull request’s ${label}.`)
+        .toHaveText('The last brief on this pull request was written in round 1.')
       await expect(page.locator('main'), step).toContainText(
-        'No round since has written another, and nothing carries a brief from one round to '
-        + `the next — so round ${at + 1} holds no ${label} of its own.`,
+        `Round ${at + 1} wrote none of its own, and nothing carries a brief from one round `
+        + 'to the next — so this page draws nothing.',
       )
 
-      /* The notice under it carries the link and nothing the heading already said. */
-      const back = page.getByRole('link', { name: `Read ${label} as round 1 wrote it` })
+      /* The notice under it is a destination, and nothing the heading already said. */
+      const back = page.getByRole('link', { name: `Open round 1’s ${step}` })
       await expect(back, step).toBeVisible()
       await expect(back, step).toHaveAttribute('href', `/reviews/${rounds[0]}/${suffix}`)
       await expect(page.locator('main'), step).not.toContainText('Nothing has been written')
@@ -397,8 +397,8 @@ test('no later step claims to have been written in another round', async ({ page
   for (const { step, suffix } of ITS_OWN) {
     await page.goto(`${serving.url}reviews/${rounds[2]}/${suffix}`)
     await expect(page.locator('nav.rounds'), `${step} still draws the switcher`).toBeVisible()
-    await expect(page.locator('main'), step).not.toContainText('wrote this pull request’s')
-    await expect(page.locator('main'), step).not.toContainText('as round 1 wrote it')
+    await expect(page.locator('main'), step).not.toContainText('The last brief on this pull request')
+    await expect(page.locator('main'), step).not.toContainText('Open round 1’s')
   }
 })
 
@@ -407,7 +407,7 @@ test('the round that wrote the brief says nothing about another round', async ({
   for (const { step, suffix } of FROM_THE_BRIEF) {
     await page.goto(`${serving.url}reviews/${rounds[0]}/${suffix}`)
     await expect(page.locator('nav.rounds'), step).toBeVisible()
-    await expect(page.locator('main'), step).not.toContainText('wrote this pull request’s')
+    await expect(page.locator('main'), step).not.toContainText('The last brief on this pull request')
   }
 })
 
