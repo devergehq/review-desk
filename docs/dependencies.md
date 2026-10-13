@@ -116,7 +116,7 @@ written.
 
 | Trigger | Why |
 | -- | -- |
-| Pull request touching a manifest, a lockfile, the allowlist or `tools/` | A dependency arriving through any of the four files it can arrive through |
+| A **ready** pull request touching a manifest, a lockfile, the allowlist or `tools/` | A dependency arriving through any of the four files it can arrive through. A draft runs nothing, here as everywhere — see the README |
 | Weekly, Monday 07:17 UTC, on `master` | Both checks' inputs change with nobody pushing: a new advisory lands against an untouched lockfile, and a dependency passes a year by the calendar moving |
 | By hand (`workflow_dispatch`) | See below |
 

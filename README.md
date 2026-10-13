@@ -41,6 +41,55 @@ cargo clippy --all-targets -- -D warnings
 SQLite is compiled in through `rusqlite`'s `bundled` feature, so a clean clone needs
 nothing on the machine but a Rust toolchain.
 
+**The checks run once a pull request is ready, not on every push to a draft.** A push to a
+draft runs nothing; marking it ready runs every check whose path filter matches, as does
+each push after that; a merge to `master` runs nothing; and any workflow can still be
+started by hand from the Actions tab on any branch that carries these workflows. So run the
+checks above locally while a
+pull request is a draft — DEV-961: at about 13 billed minutes a push, 146 pushes over 11
+and 12 October 2026 came to roughly 1,900 minutes, most of a 3,000-minute month, spent on
+drafts nobody was ready to read.
+
+**Those checks run on Ubicloud's runners, not GitHub's.** Every job is
+`runs-on: ubicloud-standard-2` — x64, Ubuntu 24.04, 2 vCPU, 8 GB — served by the Ubicloud
+Managed Runners app the organisation installed on 13 October 2026 and scoped to this
+repository alone. The minutes are Ubicloud's rather than GitHub's: 1,250 free a month, then
+about $0.0012 a minute. Switching back is the label alone.
+
+Two consequences worth knowing, because neither is obvious from the rule.
+
+**A green pull request is not a statement about `master`.** A `pull_request` run tests the
+head merged with `master` *as it stood when the event fired*, and GitHub does not re-run
+when `master` moves underneath. The only thing that still runs against `master` is the
+weekly dependency watch, and no branch here has protection rules to require an up-to-date
+branch — so two pull requests that both went green can merge in turn and leave a `master`
+tree that nothing ever built. When `master` has moved under a ready pull request and the
+change is not plainly independent, **merge `master` in and push**. Re-running the checks
+does not do it: a re-run replays the original commit and event payload, so it re-tests the
+same stale merge, and a `workflow_dispatch` run checks out the branch head without merging
+`master` at all. A push is the only thing that makes GitHub compute a new merge commit.
+
+**The build caches are no longer refreshed on `master`.** Cache access runs from base to
+descendant: a run restores caches written by its own ref, by the base branch and by the
+default branch — never the other way about, so a cache a `pull_request` run writes into
+`refs/pull/N/merge` is readable by nothing else. The push-to-`master` runs used to leave
+entries every pull request could restore, and nothing writes a `master`-scoped entry now.
+
+What that costs, measured on 13 October 2026. The expensive miss is Playwright's browser,
+about **25 seconds** paid once per pull request open when `web/pnpm-lock.yaml` changes; it
+has no `restore-keys`, and neither do `actions/setup-node`'s built-in `cache: pnpm` and
+`cache: npm`, though those entries are 3-4MB here against the browser's 279MB. The cargo
+caches do have `restore-keys`, so a new lockfile still prefix-matches the previous entry —
+**a point-in-time figure that decays.** The `master` entry is now frozen at whatever the
+last push-triggered run left, and as `Cargo.lock` drifts away from it the prefix match
+restores a less and less useful `target/`. Reading a cache resets its seven-day expiry, so
+pull-request traffic keeps `master`'s copies from lapsing, but nothing refreshes them.
+
+A weekly restore-build-save job on `master` would fix all of it and was measured as not
+worth building: roughly 20 minutes a month against about 8 saved. **Revisit it when the
+first run of a ready pull request is more than about three minutes slower than a later
+one** — that is the point the sum turns over.
+
 **Before adding a dependency, read [docs/dependencies.md](docs/dependencies.md).** The bar
 is that a dependency is active, maintained and popular, and it is checked before adopting
 rather than after. Two checks enforce it in CI, and both run locally:
@@ -1233,7 +1282,7 @@ the brief's `confirmed_by` and the draft's `approved_by` are both `developer`, w
 sign-off boundary this project rests on.
 
 Forty-four tests, about half a minute of browser once the build is warm.
-`.github/workflows/e2e.yml` runs it on every pull request.
+`.github/workflows/e2e.yml` runs it on every ready pull request.
 
 Two of them are measurements rather than assertions about words: the queue and the Reviews
 list are opened at 1440 and at 390 pixels wide, and nothing may scroll sideways or draw a

@@ -2,20 +2,25 @@
 # common, and a Rust change should not wait on a Node install to find out it compiles.
 name: Web
 
+# **Checks run once a pull request is ready.** The types below add `ready_for_review` and
+# `converted_to_draft`, every job is gated on the pull request not being a draft, and
+# `workflow_dispatch` keeps any branch checkable by hand. DEV-961; the README states the rule
+# under "Build and test".
+#
+# `converted_to_draft` is here to STOP work, not to start it: its jobs skip like any draft's,
+# and because the run joins the concurrency group below with `cancel-in-progress`, it cancels
+# whatever is still running from when the pull request was ready. Without it, converting back
+# to a draft left an in-flight job billing to its timeout.
 on:
   pull_request:
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
     paths:
       - 'web/**'
       # The dashboard's types are generated from the contract and a test regenerates them
       # to compare, so a contract change can fail this workflow without touching `web/`.
       - 'contract/openapi.yaml'
       - '.github/workflows/web.yml'
-  push:
-    branches: [master]
-    paths:
-      - 'web/**'
-      - 'contract/openapi.yaml'
-      - '.github/workflows/web.yml'
+  workflow_dispatch:
 
 concurrency:
   group: web-${{ github.ref }}
@@ -28,7 +33,8 @@ defaults:
 jobs:
   check:
     name: Lint, types, tests and a static build
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-2
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v7
 

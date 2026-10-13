@@ -13,6 +13,18 @@
 # catches that, a week later. `docs/dependencies.md` says so out loud rather than leaving
 # it as a property nobody wrote down.
 #
+# **The pull-request trigger waits for the pull request to be ready**, like every other check
+# here: the types below add `ready_for_review` and `converted_to_draft`, and each job is gated
+# on the pull request not being a draft. DEV-961, and the README states the rule.
+# `converted_to_draft` exists to stop work: its jobs skip, and the run cancels whatever the
+# ready pull request still had in flight. The schedule and
+# `workflow_dispatch` are unaffected — the gate only looks at a `pull_request` event — so the
+# authoritative weekly run on `master` is exactly what it was — and it is now the only thing
+# that runs against `master` at all, which makes it worth more than it was. There is no
+# longer a push-to-`master` trigger: a merge runs nothing anywhere. The README says what
+# that costs, because a pull request's run covers the base as it stood when the event fired
+# and not the tree the merge actually produces.
+#
 # **A note on the schedule, which is a real weakness and not a hypothetical one.** GitHub
 # disables scheduled workflows after 60 days with no repository activity, and this is a
 # one-developer repository whose history arrives in bursts. The quiet stretch after a burst
@@ -23,27 +35,11 @@ name: Dependencies
 
 on:
   pull_request:
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
     paths:
       # Every file through which a dependency can arrive or be excused, plus the tools that
       # do the judging and this workflow itself. A narrower filter would be a list of the
       # places a dependency can come from, which is the thing nobody writes down correctly.
-      - '**/Cargo.toml'
-      - 'Cargo.lock'
-      - '**/package.json'
-      - 'web/pnpm-lock.yaml'
-      - '**/pnpm-workspace.yaml'
-      - 'contract/package-lock.json'
-      - 'dependency-allowlist.toml'
-      # The native suppression surfaces. A pull request whose only change is silencing an
-      # advisory has to run the scan that refuses it, or the refusal never happens.
-      - '.cargo/audit.toml'
-      - 'audit.toml'
-      - 'tools/**'
-      - '.github/workflows/dependencies.yml'
-      - '.github/dependabot.yml'
-  push:
-    branches: [master]
-    paths:
       - '**/Cargo.toml'
       - 'Cargo.lock'
       - '**/package.json'
@@ -85,7 +81,8 @@ jobs:
   # is broken there is no point asking two registries about thirty-five dependencies.
   logic:
     name: The checks' own logic, offline
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-2
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v7
 
@@ -101,8 +98,9 @@ jobs:
 
   advisories:
     name: Known vulnerabilities, Rust and npm
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-2
     needs: logic
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v7
 
@@ -151,8 +149,9 @@ jobs:
 
   release-age:
     name: No direct dependency over a year old
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-2
     needs: logic
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v7
 

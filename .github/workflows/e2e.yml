@@ -6,16 +6,25 @@
 # Node install to find out it compiles. This one needs Rust, Node and a browser, so it is
 # the slowest of the three and is kept apart rather than making the other two slower.
 #
-# It runs on every pull request and on master, with no path filter. The point of an
-# end-to-end test is that it fails when any of the pieces stops fitting the others, and a
-# filter would be a list of the places a break can come from — which is the thing nobody can
-# write down correctly.
+# It runs on every ready pull request, with no path filter. The point of an end-to-end test
+# is that it fails when any of the pieces stops fitting the others, and a filter would be a
+# list of the places a break can come from — which is the thing nobody can write down
+# correctly.
 name: End to end
 
+# **Checks run once a pull request is ready.** The types below add `ready_for_review` and
+# `converted_to_draft`, every job is gated on the pull request not being a draft, and
+# `workflow_dispatch` keeps any branch checkable by hand. DEV-961; the README states the rule
+# under "Build and test".
+#
+# `converted_to_draft` is here to STOP work, not to start it: its jobs skip like any draft's,
+# and because the run joins the concurrency group below with `cancel-in-progress`, it cancels
+# whatever is still running from when the pull request was ready. Without it, converting back
+# to a draft left an in-flight job billing to its timeout.
 on:
   pull_request:
-  push:
-    branches: [master]
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
+  workflow_dispatch:
 
 concurrency:
   group: e2e-${{ github.ref }}
@@ -27,7 +36,8 @@ env:
 jobs:
   e2e:
     name: A review, through the binary, in a browser
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-2
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     timeout-minutes: 20
 
     defaults:
@@ -66,6 +76,11 @@ jobs:
       # Chromium only. The dashboard is served from loopback to one developer who chose
       # their own browser, so running the suite three times over would cost three times as
       # much to learn nothing about this app.
+      # No `restore-keys`, deliberately: a browser build from another lockfile need not match
+      # the Playwright that drives it. That makes this the one cache a miss costs in full —
+      # about 25 seconds — and since DEV-961 removed the push-to-`master` run, the miss is
+      # paid once per open pull request after a `web/pnpm-lock.yaml` change rather than once
+      # on `master`. Measured as too small to be worth a warming job; the README has the sum.
       - name: Cache the browser
         id: browser
         uses: actions/cache@v6
