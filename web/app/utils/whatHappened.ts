@@ -120,8 +120,20 @@ export interface RoundRow {
   here: boolean
   /** "14 findings · 2 replies · 1 thread resolved", from the round's own counts. */
   said: string
-  /** "4 carried from an earlier round", or null for a round that carried none. */
-  carried: string | null
+  /**
+   * How that round's findings stood — "2 fixed, 1 still open" — or null where nothing has
+   * been decided about any of them.
+   *
+   * **Not "4 carried in", which this cannot know.** `RoundStatusCounts` counts statuses,
+   * and a status is not a carry: `to_ticket`, `accept_reason` and `withdraw` write
+   * `ticketed`, `accepted` and `withdrawn` on a finding *raised in that round*, with no
+   * carried guard — `FindingDecision`'s own table says so and `entities/decision.rs`
+   * applies it unconditionally. So a first round in which one nit went to a ticket read
+   * "1 finding carried in" about the round that carries nothing by definition. Which
+   * findings were carried is on the rows, where `isCarried` answers it from
+   * `continues_review_id`, which is the field that means it.
+   */
+  stood: string | null
 }
 
 /** Everything the page draws. */
@@ -130,8 +142,23 @@ export interface WhatHappened {
   headline: string
   /** The line under it: when it was last read, and what came back, counted. */
   sub: string
-  /** Whether any harvest has read this review at all. */
+  /**
+   * Whether a harvest has read this review *through* — `harvested_at`, which it writes
+   * last. It is what "the harvest found no reply" rests on, and that may not be said of a
+   * run that stopped half way.
+   */
   harvested: boolean
+  /**
+   * Whether **nothing has looked at all**, which is narrower and is what the page's notice
+   * is about.
+   *
+   * `harvest_one` writes `pr_state` first and `harvested_at` last, with no transaction
+   * across them — so a run whose thread read fails leaves a pull-request state behind and
+   * no read time. Keyed on `harvested_at` alone the page drew "The pull request was merged"
+   * over a notice saying no harvest has read this review: two statements about one record
+   * that cannot both be true.
+   */
+  nothingLooked: boolean
   /** The posted findings something came back on, most serious first. */
   answered: FindingRow[]
   /** The posted findings nothing came back on, most serious first. Folded by the page. */
@@ -142,8 +169,15 @@ export interface WhatHappened {
   anyObserved: boolean
   /** Whether any posted finding was raised in the body alone. Footnoted once. */
   anyWithoutComment: boolean
-  /** Whether any finding's comment is recorded under an id no address can be built from. */
-  anyUnaddressable: boolean
+  /**
+   * How many findings' comments are recorded under an id no address can be built from.
+   *
+   * A count rather than a flag, because the footnote it feeds says how many — and said
+   * "one of these findings" while being drawn for any number. `links.ts` records that a
+   * node id is what every record written before anyone checked holds, so on such a review
+   * it is every posted finding.
+   */
+  unaddressable: number
   /** Whether this review's own repository name is one no GitHub address can be built from. */
   noPullRequestAddress: boolean
   /**
@@ -265,23 +299,33 @@ function roundRow(summary: RoundSummary, here: number): RoundRow {
   ].filter(Boolean).join(' · ')
 
   /*
-   * **What a later round carried, which is the part of the issue's table this answers.**
-   * `RoundStatusCounts` holds the statuses of that round's own findings, and every status
-   * but `new` is a finding it carried — a finding raised in a round is `new` there by
-   * definition. So "4 carried, 2 of them still open" is readable from the counts without
-   * reading that round's findings, which is a second request this page does not make.
+   * **The statuses, as statuses.** An earlier version added every status but `new`
+   * together and called the total "carried in", on the argument that a finding raised in a
+   * round is `new` there by definition. It is not: `to_ticket`, `accept_reason` and
+   * `withdraw` write `ticketed`, `accepted` and `withdrawn` on a finding raised in that
+   * same round, so a first round in which one nit went to a ticket read "1 finding carried
+   * in" about a round that carries nothing.
+   *
+   * `new` is left out: a round where nothing has been decided is every finding saying the
+   * same thing, and the count beside it already says how many there are.
    */
   const statuses = summary.statuses
-  const carried = statuses.fixed + statuses.still_open + statuses.accepted
-    + statuses.withdrawn + statuses.ticketed
+  const stood = ([
+    ['fixed', statuses.fixed],
+    ['still open', statuses.still_open],
+    ['their reason accepted', statuses.accepted],
+    ['withdrawn', statuses.withdrawn],
+    ['moved to a ticket', statuses.ticketed],
+  ] as const)
+    .filter(([, how]) => how > 0)
+    .map(([word, how]) => `${how} ${word}`)
+    .join(', ')
 
   return {
     round: summary.round,
     here: summary.round === here,
     said,
-    carried: carried === 0
-      ? null
-      : `${count(carried, 'finding')} carried in, ${statuses.still_open} still open`,
+    stood: stood === '' ? null : stood,
   }
 }
 
@@ -383,6 +427,7 @@ export function whatHappened(detail: ReviewDetail, now: Date = new Date()): What
     sub: subLine(answered, rows.length, detail.review.harvested_at, now),
     elsewhere: fromOthers(detail.outcomes).filter(one => !drawn.has(one.finding_seq)).length,
     harvested: detail.review.harvested_at != null,
+    nothingLooked: detail.review.harvested_at == null && detail.review.pr_state == null,
     answered,
     silent,
     /*
@@ -400,9 +445,9 @@ export function whatHappened(detail: ReviewDetail, now: Date = new Date()): What
      * so blaming the id would be the page stating as a fact something the record
      * contradicts.
      */
-    anyUnaddressable: rows.some(
+    unaddressable: rows.filter(
       row => row.postedAsComment && row.comment == null && row.addressable,
-    ),
+    ).length,
     /*
      * **Off the review, not off the rows.** It is the same answer on every row — `prUrl`
      * takes the review's `repo` and `pr` and nothing else — and derived from `rows.some`

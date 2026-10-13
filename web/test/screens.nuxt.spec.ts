@@ -557,6 +557,31 @@ describe('the queue', () => {
     expect(row.text()).toContain('1 finding with code changed since')
   })
 
+  /**
+   * **The row's button says what the outcome was, not always "Read the reply".**
+   *
+   * The group is built from outcomes by the author *or the harvester*, and `events[0]` is
+   * whichever is first by finding number then time — so a `code_changed_after` heads the
+   * row whenever the author pushed a fix and wrote nothing. The heading was worded from the
+   * kind and the button was not, so the row read "The code under F1 changed · Read the
+   * reply", offering an act that did not happen.
+   */
+  it('offers what the outcome really was, not a reply that was never written', async () => {
+    const source = loadSource()
+    const twelve = source.reviews.find(one => one.review.id === 12)!
+    const changed = twelve.outcomes.find(one => one.kind === 'code_changed_after')!
+    await resetDesk({
+      reviews: source.reviews.map(one =>
+        one.review.id === 12 ? { ...one, outcomes: [changed] } : one),
+    })
+
+    const page = await shown(Inbox)
+    const row = page.findAll('.row').find(one => one.text().includes('#398'))!
+    expect(row.text()).toContain('The code under F1 changed')
+    expect(row.text()).toContain('See what changed')
+    expect(row.text()).not.toContain('Read the reply')
+  })
+
   /*
    * **The same rule, one group earlier.** Review 12 is posted, its author has replied, and
    * a session is back on its code review step working those replies — so `GET /inbox`

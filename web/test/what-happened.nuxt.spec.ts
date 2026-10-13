@@ -586,6 +586,22 @@ describe('the states a posted review can be in', () => {
     expect(page.find('h1').text()).toBe('The pull request was closed without being merged')
   })
 
+  /**
+   * **A state with no read time is a harvest that stopped half way, not one that never
+   * ran.** `harvest_one` writes `pr_state` first and `harvested_at` last with no
+   * transaction across them, so a failed thread read leaves one and not the other — and
+   * the page drew "The pull request was merged" over a notice saying no harvest has read
+   * this review, which cannot both be true of one record.
+   */
+  it('does not say nothing has looked over a state only a harvest could know', async () => {
+    await withDense(dense({ prState: 'merged', harvestedAt: null }))
+    const page = await shown(REVIEW)
+    expect(page.find('h1').text()).toBe('The pull request was merged')
+    expect(page.find('.notice').exists()).toBe(false)
+    /* And it does not claim the harvest found nothing, because it did not finish. */
+    expect(page.text()).not.toContain('found no reply, no resolved thread')
+  })
+
   /*
    * **A review nothing has read is not an open pull request.** `pr_state` and
    * `harvested_at` are written by the same harvest, so both are null until one runs — and
@@ -798,20 +814,39 @@ describe('the rounds of the pull request', () => {
     expect(page.text()).not.toContain('The rounds of this pull request')
   })
 
-  it('say what each round held and what it carried in', async () => {
+  it('say what each round held and how its findings stood', async () => {
     await withDense(dense({ round: 2, rounds: ROUNDS }))
     const page = await shown(REVIEW)
     expect(page.text()).toContain('The rounds of this pull request')
     const rows = page.findAll('.row').map(one => one.text())
     expect(rows.some(one => one.includes('Round 1') && one.includes('11 findings'))).toBe(true)
     expect(rows.some(one => one.includes('Round 2') && one.includes('· this one'))).toBe(true)
-    /*
-     * **What a round carried, from its own status counts.** Every status but `new` is a
-     * finding the round carried in — a finding raised in a round is `new` there by
-     * definition — so round 2's 2 fixed, 1 still open and 1 accepted is 4 carried.
-     */
-    expect(rows.some(one => one.includes('4 findings carried in, 1 still open'))).toBe(true)
-    expect(rows.some(one => one.includes('nothing — every finding was raised in it'))).toBe(true)
+    /* Round 2's own counts, as statuses rather than as a total called something else. */
+    expect(rows.some(one => one.includes('2 fixed, 1 still open, 1 their reason accepted')))
+      .toBe(true)
+    expect(rows.some(one => one.includes('nothing decided about any of them'))).toBe(true)
+  })
+
+  /**
+   * **A status is not a carry**, which is what the column said before.
+   *
+   * `to_ticket`, `accept_reason` and `withdraw` write `ticketed`, `accepted` and
+   * `withdrawn` on a finding *raised in that round* — `FindingDecision`'s table says so and
+   * `entities/decision.rs` applies it with no carried guard. Adding every status but `new`
+   * together and calling it "carried in" therefore reported a carry for a first round,
+   * which carries nothing by definition.
+   */
+  it('does not call a first round’s ticketed nit a finding carried in', async () => {
+    const first = {
+      ...ROUNDS[0]!,
+      statuses: { new: 10, fixed: 0, still_open: 0, accepted: 0, withdrawn: 0, ticketed: 1 },
+    }
+    await withDense(dense({ round: 2, rounds: [first, ROUNDS[1]!] }))
+    const page = await shown(REVIEW)
+    const rows = page.findAll('.row').map(one => one.text())
+    const round1 = rows.find(one => one.includes('Round 1'))!
+    expect(round1).toContain('1 moved to a ticket')
+    expect(round1).not.toContain('carried in')
   })
 
   it('name the round a carried finding came from, on its own row', async () => {
@@ -903,7 +938,7 @@ describe('it describes and does not grade', () => {
     expect(links).toHaveLength(1)
     expect(links[0]!.text()).toContain('The finding')
     expect(links[0]!.attributes('href')).toBe(`/reviews/${REVIEW}/code-review#F1`)
-    expect(page.find('.notes').text()).toContain('A comment with no address')
+    expect(page.find('.notes').text()).toContain('14 comments with no address')
     expect(page.find('.notes').text()).not.toContain('raised in the body alone')
 
     await page.find('.fold').trigger('click')

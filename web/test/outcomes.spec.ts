@@ -3,6 +3,7 @@ import { join, relative, resolve, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import {
+  cameBackAction,
   cameBackHeadline,
   freeDetail,
   outcomeLine,
@@ -729,5 +730,51 @@ describe('a code change that does not say whether the lines moved', () => {
     const no = JSON.stringify({ file: 'a.php', line: 93, lines_changed: false, commit: 'abc1234' })
     expect(outcomeSaid({ kind: 'code_changed_after', detail: no }).sentence)
       .toBe('the file changed in abc1234, but not line 93')
+  })
+})
+
+describe('a resolution recorded by hand', () => {
+  /**
+   * **A detail with no `time_basis` is not an observation.** The harvester writes
+   * `time_basis: "observed"` on every resolution it records, because GitHub does not
+   * timestamp one; a resolution recorded by hand carries no basis, and the time it was
+   * given is the time it was given. Written as `!== 'github'`, any hand-recorded detail
+   * took the harvester's reading — the row said "seen 2 days ago" and the page drew the
+   * footnote about GitHub not timestamping a resolution, over an outcome GitHub never saw.
+   */
+  it('is not marked as seen', () => {
+    const detail = JSON.stringify({ resolved_by: 'patrick-d' })
+    expect(outcomeSaid({ kind: 'thread_resolved', detail }).observed).toBe(false)
+  })
+
+  it('is still marked as seen where the harvester said so', () => {
+    expect(outcomeSaid({ kind: 'thread_resolved', detail: RESOLVED }).observed).toBe(true)
+  })
+})
+
+describe('what the queue offers to do about an outcome', () => {
+  /**
+   * **Worded from the kind, like the heading.** The row said "Read the reply" over a
+   * `code_changed_after` — an act that did not happen — and `events[0]` is one whenever
+   * the lowest-numbered finding's first outcome is a code change, which is every author
+   * who pushed a fix and never wrote anything.
+   */
+  it.each([
+    ['replied', 'Read the reply'],
+    ['thread_resolved', 'Read the thread'],
+    ['code_changed_after', 'See what changed'],
+    ['rejected', 'Read their reason'],
+  ] as const)('%s', (kind, said) => {
+    expect(cameBackAction(kind)).toBe(said)
+  })
+
+  it('never offers a reply over something that is not one', () => {
+    for (const kind of KINDS.filter(one => one !== 'replied')) {
+      expect(cameBackAction(kind), `${kind} offered a reply`).not.toContain('reply')
+    }
+  })
+
+  it('answers for a kind this build has never heard of', () => {
+    expect(cameBackAction('escalated_to_a_human' as OutcomeKind)).toBe('Read what came back')
   })
 })

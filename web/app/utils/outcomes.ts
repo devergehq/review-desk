@@ -378,11 +378,14 @@ function saidOfResolution(held: HarvestFacts, actor: Actor | null | undefined): 
     commit: null,
     file: null,
     /*
-     * Unless the detail says otherwise. `time_basis` is `"observed"` on every resolution
-     * the harvester writes; an outcome recorded by hand carries no basis, and the time it
-     * was given is then the time it was given.
+     * **`=== 'observed'`, which is what the sentence beside it always said.** The harvester
+     * writes `time_basis: "observed"` on every resolution; an outcome recorded by hand
+     * carries no basis, and the time it was given is then the time it was given. Written as
+     * `!== 'github'`, a hand-recorded resolution with any JSON detail took the harvester's
+     * reading — the row said "seen 2 days ago" and the page drew the footnote explaining
+     * that GitHub does not timestamp a resolution, about an outcome GitHub never saw.
      */
-    observed: text(held.time_basis) !== 'github',
+    observed: text(held.time_basis) === 'observed',
   }
 }
 
@@ -536,6 +539,37 @@ const HEADLINE: Record<OutcomeKind, (key: string) => string> = {
   kept: key => `${key} was kept as it was written`,
   ticketed: key => `${key} was moved to a ticket`,
   withdrawn: key => `${key} was withdrawn`,
+}
+
+/**
+ * What the queue's row offers to do about one outcome.
+ *
+ * **Worded with the heading, because it was left behind by it.** `cameBackHeadline` tells a
+ * `code_changed_after` from a reply; the row's button went on saying "Read the reply" over
+ * both, offering an act that did not happen — and `events[0]` is a code change whenever the
+ * lowest-numbered finding's first outcome is one, which is every author who pushed a fix
+ * and never wrote anything.
+ *
+ * All of them go to the same place: the review, at the step it has got to. What changes is
+ * what the developer is told they will find there.
+ */
+const ACTION: Record<OutcomeKind, string> = {
+  replied: 'Read the reply',
+  thread_resolved: 'Read the thread',
+  code_changed_after: 'See what changed',
+  rejected: 'Read their reason',
+  raised_again: 'Read what came back',
+  cut: 'Read what came back',
+  regraded: 'Read what came back',
+  rewritten: 'Read what came back',
+  kept: 'Read what came back',
+  ticketed: 'Read what came back',
+  withdrawn: 'Read what came back',
+}
+
+/** The row's button for one outcome. Falls back for the reason the heading does. */
+export function cameBackAction(kind: OutcomeKind): string {
+  return ACTION[kind] ?? 'Read what came back'
 }
 
 /**

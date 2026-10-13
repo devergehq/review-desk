@@ -486,7 +486,12 @@ function nextAction(row: Waiting) {
       ? `${outcomeLine({ kind: first.kind, detail: first.detail })} · ${
         authorResponseLabel(row.posted)}`
       : outcomeLine({ kind: first.kind, detail: first.detail }),
-    action: 'Read the reply',
+    /*
+     * **Worded from the kind, like the heading above it.** It said "Read the reply" over a
+     * row whose outcome was the harvester noticing the code had changed — an act that did
+     * not happen, offered to a developer who would go looking for it.
+     */
+    action: cameBackAction(first.kind),
     to: stepFor(row),
     at: row.reply!.replied_at ?? null,
     atUnknown: 'no outcome on this review carries a time',

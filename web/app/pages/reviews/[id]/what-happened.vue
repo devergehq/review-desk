@@ -21,8 +21,8 @@
  *  NOTHING CAME BACK · the other 7 of 14 findings            [ Open the 7 … ]
  *
  *  THE ROUNDS OF THIS PULL REQUEST
- *  Round 1   11 findings · 3 replies · 2 threads resolved
- *  Round 2   14 findings · 2 replies · 1 thread resolved   4 carried in, 1 still open
+ *  Round 1   11 findings · 3 replies · 2 threads resolved   nothing decided yet
+ *  Round 2   14 findings · 2 replies · 1 thread resolved   2 fixed, 1 still open
  * ```
  *
  * The figures are the fixture's — `test/what-happened.nuxt.spec.ts` and
@@ -89,12 +89,13 @@ const page = computed(() => {
 const headline = computed(() => page.value?.headline ?? '')
 const sub = computed(() => page.value?.sub ?? '')
 const harvested = computed(() => page.value?.harvested ?? false)
+const nothingLooked = computed(() => page.value?.nothingLooked ?? false)
 const answered = computed(() => page.value?.answered ?? [])
 const silent = computed(() => page.value?.silent ?? [])
 const rounds = computed(() => page.value?.rounds ?? [])
 const anyObserved = computed(() => page.value?.anyObserved ?? false)
 const anyWithoutComment = computed(() => page.value?.anyWithoutComment ?? false)
-const anyUnaddressable = computed(() => page.value?.anyUnaddressable ?? false)
+const unaddressable = computed(() => page.value?.unaddressable ?? 0)
 const noPullRequestAddress = computed(() => page.value?.noPullRequestAddress ?? false)
 const elsewhere = computed(() => page.value?.elsewhere ?? 0)
 
@@ -187,8 +188,14 @@ function detailId(seq: number): string {
           `problem`: nobody has done anything wrong, and the harvest is a sweep rather than
           something the developer runs.
         -->
+        <!--
+          **`nothingLooked`, not `!harvested`.** A harvest writes the pull request's state
+          first and its read time last with no transaction across them, so a run that fails
+          part way leaves a state and no time — and this notice then sat under a headline
+          saying the pull request had merged, which only a harvest could have found out.
+        -->
         <DeskNotice
-          v-if="!harvested"
+          v-if="nothingLooked"
           tone="plain"
         >
           <strong>No harvest has read this review back from GitHub.</strong>
@@ -520,9 +527,9 @@ function detailId(seq: number): string {
           :note="`${rounds.length} rounds`"
         >
           <DeskTable
-            :columns="['Round', 'What it held', 'Carried in']"
+            :columns="['Round', 'What it held', 'How they stood']"
             template="minmax(0, 1fr) minmax(0, 3fr) minmax(0, 2fr)"
-            label="Every round of this pull request, and what each carried from the one before"
+            label="Every round of this pull request, what each held, and how its findings stood"
           >
             <tr
               v-for="line in rounds"
@@ -551,15 +558,15 @@ function detailId(seq: number): string {
               <td
                 role="cell"
                 class="td"
-                data-label="Carried in"
+                data-label="How they stood"
               >
-                <template v-if="line.carried">
-                  {{ line.carried }}
+                <template v-if="line.stood">
+                  {{ line.stood }}
                 </template>
                 <span
                   v-else
                   class="rd-meta"
-                >nothing — every finding was raised in it</span>
+                >nothing decided about any of them</span>
               </td>
             </tr>
           </DeskTable>
@@ -572,7 +579,7 @@ function detailId(seq: number): string {
           gives rather than of any one finding.
         -->
         <footer
-          v-if="anyObserved || anyWithoutComment || anyUnaddressable || noPullRequestAddress"
+          v-if="anyObserved || anyWithoutComment || unaddressable > 0 || noPullRequestAddress"
           class="notes"
         >
           <p
@@ -620,15 +627,27 @@ function detailId(seq: number): string {
             Nothing is missing from the record; what is missing is somewhere on GitHub to
             point at.
           </p>
+          <!--
+            **Counted, because it is drawn for any number of them.** It said "one of these
+            findings", and `links.ts` says a node id is what every record written before
+            anyone checked holds — so on such a review it is every posted finding, and the
+            page was stating a figure it had not counted. Everything else on this page that
+            states a number counts it.
+          -->
           <p
-            v-if="anyUnaddressable"
+            v-if="unaddressable > 0"
             class="rd-meta"
           >
-            <strong>A comment with no address.</strong>
+            <!--
+              No `sentence()` here: it would close the count with a full stop in the middle
+              of the phrase — "14 comments. with no address." A figure needs no capital.
+            -->
+            <strong>{{ count(unaddressable, 'comment') }} with no address.</strong>
             A comment is linked where the record holds GitHub's own numeric comment id for
-            it. One of these findings was posted as a comment under an id of another kind,
-            which names no place on the pull request — so the comment exists and this page
-            does not link it rather than linking somewhere else.
+            it. {{ unaddressable === 1 ? 'One of these findings was' : 'These findings were' }}
+            posted as a comment under an id of another kind, which names no place on the
+            pull request — so the comment exists and this page does not link it rather than
+            linking somewhere else.
           </p>
         </footer>
       </ReviewStepPage>

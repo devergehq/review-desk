@@ -1035,6 +1035,34 @@ describe('what the author said', () => {
     expect(page.find('.reply').text()).not.toContain('comment_id')
   })
 
+  /**
+   * **Who acted, where the sentence does not already say it.**
+   *
+   * A reply and a resolution name their login inside the sentence, composed from the
+   * detail. Every other kind does not — so replacing `by the {{ outcome.actor }}` with the
+   * time alone took the actor off the page for all of them, and an agent's `raised_again`
+   * read "Raised again. 3 days ago" with nobody in it.
+   */
+  it('names who acted for a kind whose sentence does not', async () => {
+    const detail = fixture(POSTED)
+    const changed = detail.outcomes.find(one => one.kind === 'code_changed_after')!
+    await withReview({
+      ...detail,
+      outcomes: [{ ...changed, kind: 'raised_again', actor: 'harvester', detail: null }],
+    })
+    const page = await codeReview(POSTED)
+    await openFinding(page, changed.finding_key)
+    expect(page.find('.reply').text()).toContain('by the harvester')
+  })
+
+  it('does not name the actor twice where the sentence already does', async () => {
+    const page = await codeReview(POSTED)
+    const replied = fixture(POSTED).outcomes.find(one => one.kind === 'replied')!
+    await openFinding(page, replied.finding_key)
+    expect(page.find('.reply').text()).toContain('A reply from dana-okoye')
+    expect(page.find('.reply').text()).not.toContain('by the author')
+  })
+
   it('does not replay the developer’s own decisions at them', async () => {
     const page = await codeReview(REAL)
     await openFinding(page, 'F10')

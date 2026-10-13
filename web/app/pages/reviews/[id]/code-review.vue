@@ -371,6 +371,14 @@ function saidByOthers(data: ReviewDetail, finding: Finding) {
         id: outcome.id,
         sentence: sentence(said.sentence),
         quote: said.quote,
+        /*
+         * **Who acted, where the sentence does not already say.** A reply and a resolution
+         * name their login inside the sentence — `outcomeSaid` composes them from the
+         * detail — and every other kind does not, so replacing `by the {{ outcome.actor }}`
+         * with the time alone took the actor off the page for all of them: an agent's
+         * `raised_again` read "Raised again. 3 days ago" with nobody in it.
+         */
+        by: said.by == null ? `by the ${outcome.actor}` : null,
         when: outcomeWhen(said, outcome.occurred_at),
       }
     })
@@ -690,7 +698,9 @@ function coverage(data: ReviewDetail): string | null {
                           class="rd-recorded reply"
                         >
                           <span class="reply-kind">{{ outcome.sentence }}</span>
-                          <span class="rd-note">{{ outcome.when }}</span>
+                          <span class="rd-note">
+                            <template v-if="outcome.by">{{ outcome.by }} · </template>{{ outcome.when }}
+                          </span>
                           <!--
                             The author's words, where the outcome carries them, and
                             interpolated rather than handed to the browser as markup —
