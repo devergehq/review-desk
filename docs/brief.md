@@ -28,7 +28,7 @@ It is not a list of pull requests. GitHub and Linear already do that. **Its unit
 
 | Decision | Date | By |
 |---|---|---|
-| Standalone app, not an Allele feature. Prove it first; decide later whether it moves into Allele or stays its own product. | 8 Oct 2026 | Patrick |
+| Standalone app, not an Allele feature. | 8 Oct 2026 | Patrick |
 | Named Review Desk | 8 Oct 2026 | Patrick |
 | Rust for the store, the command line and the local server; one binary; SQLite | 8 Oct 2026 | Proposed by Claude, confirmed by Patrick |
 | The interface is a browser app in Vue, built with Nuxt in static mode and embedded in the binary. Nuxt's server features are not used. | 8 Oct 2026 | Patrick |
@@ -126,4 +126,3 @@ State on 9 October 2026.
 
 - **Approval delivery.** How an approved draft reaches the review session that posts it. The Locus dispatcher's watcher is the candidate.
 - **Sharing.** How much is shared with a team. Proposed: the baseline lives in CI, and personal rules export as a plain file in the repository.
-- **Review Center.** Allele has a planned project of that name that overlaps with the dashboard. If Review Desk earns its place, Review Center becomes a view onto this store.

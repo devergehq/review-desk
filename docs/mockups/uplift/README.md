@@ -2,8 +2,7 @@
 
 **The designs DEV-876 and the issues after it are built from.** Patrick approved the
 control set and these two screens on 10 October 2026; of the controls he said
-"Everything's perfect". They are kept here so the reference outlives the link:
-[claude.ai/artifact/HRuDVtNJvdCJnYCwcHj3qu](https://claude.ai/artifact/HRuDVtNJvdCJnYCwcHj3qu).
+"Everything's perfect".
 
 | File | Board | Built as |
 | -- | -- | -- |
@@ -17,8 +16,7 @@ control set and these two screens on 10 October 2026; of the controls he said
 
 **The boards the review's own pages were built from are not here.** A5 to A8 — Understand,
 Alternatives, Solution and Code review — were drawn on a real review of a client's private
-repository, so neither they nor anything copied from them is in this repository. They live in
-`~/.locus/data/review-desk-reference/`, which says the same thing in its own README. The pages
+repository, so neither they nor anything copied from them is in this repository. The pages
 are `web/app/pages/reviews/[id]/{understand,alternatives,solution,code-review}.vue`, and their
 invented example is `contract/examples/getReview.response.code-review.json` — written at the
 lengths those boards were measured at, which is why it was invented rather than copied.
