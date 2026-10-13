@@ -336,6 +336,10 @@ impl Api {
                     // describes; "can be in no other array" would say the opposite of that.
                     "ticket_id": at.review.ticket_id,
                     "ticket_url": at.review.ticket_url,
+                    // Which round the session is working on. The fourth and last array to
+                    // carry one: this query says nothing about rounds, so two rounds of one
+                    // pull request can both be here and the queue draws one row for them.
+                    "round": at.review.round,
                     "layer_number": at.layer.number,
                     "layer_name": at.layer.name.as_str(),
                     "layers_total": 7,

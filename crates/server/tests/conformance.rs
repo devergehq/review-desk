@@ -552,15 +552,16 @@ fn the_contract_says_step_seven_is_never_with_the_agent() {
     // and not a session working — so "in progress" leaves it out, and a contract that
     // still allowed 7 here would let the server regress with nothing to catch it.
     //
-    // **The ticket pair is on both bodies below, including the one asserted invalid.**
-    // DEV-936 made the two fields required, and a body missing them is invalid for *that*
-    // reason — so without them the refusal below would pass while saying nothing about
-    // step 7, which is the only thing it exists to say.
+    // **Every required field is on both bodies below, including the one asserted invalid.**
+    // DEV-936 made the ticket pair required and DEV-957 added `round`, and a body missing
+    // any of them is invalid for *that* reason — so without them the refusal below would
+    // pass while saying nothing about step 7, which is the only thing it exists to say.
     let at_the_harvest = json!({
         "review_id": 1,
         "pull_request": { "repo": "acme/portal", "pr": 412 },
         "ticket_id": "ABC-231",
         "ticket_url": "https://linear.app/acme/issue/ABC-231",
+        "round": 1,
         "layer_number": 7,
         "layer_name": "harvest",
         "layers_total": 7,
@@ -580,6 +581,7 @@ fn the_contract_says_step_seven_is_never_with_the_agent() {
             "pull_request": { "repo": "acme/portal", "pr": 412 },
             "ticket_id": "ABC-231",
             "ticket_url": "https://linear.app/acme/issue/ABC-231",
+            "round": 1,
             "layer_number": 5,
             "layer_name": "code_review",
             "layers_total": 7,

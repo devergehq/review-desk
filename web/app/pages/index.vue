@@ -337,18 +337,18 @@ function needingYou(data: Inbox): Waiting[] {
   for (const item of data.in_progress) {
     const row = byPullRequest.get(keyOf(item.pull_request))
     /*
-     * **The newest round's session, not whichever arrived last.** `reviews_in_progress` has
-     * no newest-round restriction — its own comment says it asks only whether a layer is
-     * `running` — and serves newest id first, so a plain assignment left the row holding the
-     * *oldest* round's item and `alsoWaiting` printed "a session is on step 4 of 7" about
-     * round 1 on a row numbered round 3. Keyed on the review it was keyed on, this could not
-     * happen; keying on the pull request is what made it possible. Found by a review of this
-     * branch, which also noticed it disagreed with `byNewestRound` about the same array.
+     * **Only the session on the round this row is**, which is the same guard the three
+     * loops above and the posted join already apply. `reviews_in_progress` asks only whether
+     * a layer is `running` and says nothing about which round, so two rounds of one pull
+     * request can both be here — and the row then said "a session is on step 4 of 7" about a
+     * round other than the one it is numbered for.
      *
-     * The `posted_awaiting_author` loop below needs no such test: that query serves a pull
-     * request's newest round only, which is a restriction this one does not have.
+     * The first fix for this took the highest review id instead, which is a guess at the
+     * newest round rather than an answer; a review of this branch pointed out that it still
+     * had no round to compare and that the posted join one line group below had been given
+     * one. `InboxInProgressItem` carries a round now, so this asks the question directly.
      */
-    if (row && (row.agent == null || item.review_id > row.agent.review_id)) row.agent = item
+    if (row && item.round === row.round) row.agent = item
   }
 
   /*
@@ -661,19 +661,20 @@ const alsoWithAgent = computed(() => {
  * DEV-957 names, in the one group the merge above does not reach: a needs-you row is built
  * by `needingYou`, and these items are drawn as they come.
  *
- * **The newest round, which is the same choice the merge makes.** An item has a round only
- * through its review, and `in_progress` does not carry one — so the tie is broken on the
- * review id, which rises with the round for a pull request whose rounds this record opened
- * in order. It is a weaker guarantee than the merge's and it is the one the answer supports;
- * what matters is that it is *a* choice rather than whichever arrived last.
+ * **On the round, since `InboxInProgressItem` carries one.** The first version broke the tie
+ * on the review id, which rises with the round for a pull request whose rounds this record
+ * opened in order — a guess at the newest round rather than an answer. A review of this
+ * branch pointed out that the same array had no round while the other three had been given
+ * one; now it has, and this asks the question directly.
  */
-function byNewestRound<T extends { review_id: number, pull_request: { repo: string, pr: number } }>(
-  items: T[],
-): T[] {
+function byNewestRound<T extends {
+  round: number
+  pull_request: { repo: string, pr: number }
+}>(items: T[]): T[] {
   const byPr = new Map<string, T>()
   for (const item of items) {
     const held = byPr.get(prKey(item))
-    if (held == null || item.review_id > held.review_id) byPr.set(prKey(item), item)
+    if (held == null || item.round > held.round) byPr.set(prKey(item), item)
   }
   return [...byPr.values()]
 }

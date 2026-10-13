@@ -1993,6 +1993,8 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
                 "pull_request": pull_request(&at.review),
                 "ticket_id": at.review.ticket_id,
                 "ticket_url": at.review.ticket_url,
+                // Which round the session is working on; the fourth and last array with one.
+                "round": at.review.round,
                 "layer_number": at.layer.number,
                 "layer_name": at.layer.name,
                 "layers_total": ReviewLayerName::COUNT,

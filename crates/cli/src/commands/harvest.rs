@@ -49,8 +49,9 @@ pub struct HarvestArgs {
     #[arg(long, value_name = "OWNER/REPO")]
     repo: Option<String>,
 
-    /// Only this review. It is read whatever state its pull request is in, while the
-    /// unnarrowed run leaves a merged pull request alone.
+    /// Only this review, read whatever state its pull request is in and read in full — a
+    /// merged pull request can still be replied to. The unnarrowed run leaves a merged one
+    /// alone, and stops after one call on a closed one it finds unchanged.
     #[arg(long, value_name = "ID")]
     review: Option<i64>,
 

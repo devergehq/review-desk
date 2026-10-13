@@ -310,6 +310,33 @@ describe('the queue', () => {
     expect(row!.text(), 'not the older round’s').not.toContain('step 4 of 7')
   })
 
+  it('says nothing about a session on a round the row is not about', async () => {
+    /*
+     * **The other direction, and the one the first fix for this could not answer.** It took
+     * the highest review id, which is a guess at the newest round; a session running on an
+     * *older* round only — round 2's own work finished, round 1's never did — would still
+     * have been drawn on round 2's row. `InboxInProgressItem` carries a round now, so the
+     * row says nothing rather than something about the wrong round. Found by a review of
+     * this branch.
+     */
+    const source = loadSource()
+    await resetDesk({
+      reviews: source.reviews.map((detail) => {
+        if (detail.review.id !== 60) return detail
+        return { ...detail, layers: detail.layers.map(layer =>
+          layer.number === 4
+            ? { ...layer, state: 'running' as const, detail: 'solution map' }
+            : layer) }
+      }) as typeof source.reviews,
+    })
+
+    const page = await shown(Inbox)
+    const row = needsYouRows(page).find(one => one.text().includes('#9541'))
+    expect(row, 'one row for #9541').toBeDefined()
+    expect(row!.text()).toContain('round 2')
+    expect(row!.text(), 'round 1’s session is not this row’s').not.toContain('step 4 of 7')
+  })
+
   it('draws one row for a pull request a session is working two rounds of', async () => {
     /*
      * `reviews_in_progress` asks only whether a layer is `running` and says nothing about

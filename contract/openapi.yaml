@@ -4307,12 +4307,25 @@ components:
       type: object
       additionalProperties: false
       required:
-        [review_id, pull_request, layer_number, layer_name, layers_total, ticket_id,
+        [review_id, pull_request, round, layer_number, layer_name, layers_total, ticket_id,
          ticket_url]
       description: A review a session is still working on.
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }
+        round:
+          type: integer
+          format: int64
+          minimum: 1
+          description: |
+            Which round of the pull request the session is working on.
+
+            **The fourth and last array to carry one.** `reviews_in_progress` asks only
+            whether a layer is `running` and says nothing about which round, so two rounds
+            of one pull request can both be here — and the queue draws one row per pull
+            request. Without this the row said "a session is on step 4 of 7" about a round
+            other than the one it is numbered for, which is the fault the other three rounds
+            were added to prevent.
         ticket_id:
           allOf:
             - $ref: '#/components/schemas/ForeignId'

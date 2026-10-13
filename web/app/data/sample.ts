@@ -593,6 +593,8 @@ function inbox(): Inbox {
       review_id: detail.review.id,
       pull_request: prOf(detail),
       ...ticketOf(detail),
+      /* Which round the session is working on; the fourth and last array with one. */
+      round: detail.review.round,
       layer_number: running!.number,
       layer_name: running!.name,
       layers_total: LAYERS_TOTAL,

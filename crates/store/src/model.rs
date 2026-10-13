@@ -621,7 +621,7 @@ string_enum! {
     /// the absence of a choice is the narrow view rather than "everything".
     ///
     /// **Four positions rather than three, because there are two ways off the desk.** It
-    /// was [`DismissedReviews`] with `excluded`, `only` and `included` until DEV-957, and
+    /// was `DismissedReviews` with `excluded`, `only` and `included` until DEV-957, and
     /// a fourth value named `finished` on a filter named `dismissed` would have been the
     /// parameter's own name telling the reader something untrue. The two are told apart
     /// everywhere a review is listed, which is that issue's own criterion, and a filter
@@ -655,8 +655,9 @@ impl Default for ReviewsShown {
 /// **One answer, read by the guard and by the page.** The four acts that need an agent
 /// afterwards are refused on exactly the reviews this names, and the draft page draws its
 /// sentence from the same value — so a page cannot offer a sign-off the API refuses, which
-/// is the failure [`Store::refuse_if_dismissed`]'s own comment describes from the other
-/// side.
+/// is the failure `Store::refuse_if_dismissed`'s own comment describes from the other
+/// side. (Plain, not a link: that guard is `pub(crate)`, so a link to it does not resolve
+/// and `cargo doc` says so.)
 ///
 /// **The order of the variants is the order they are asked in**, and each ordering is a
 /// decision:
