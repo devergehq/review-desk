@@ -103,6 +103,22 @@ describe('what changed since the draft was written', () => {
   it('takes every move when there is no draft to date from', () => {
     expect(movesSince(held, null)).toHaveLength(2)
   })
+
+  it('keeps the move that withdrew the sign-off, which is written in the same second', () => {
+    /*
+     * **The case the section exists for.** Withdrawing a sign-off writes the draft in the
+     * same transaction as the move, and the record keeps whole seconds — so the draft's
+     * `updated_at` equals the move's time, and a strict comparison left the page silent
+     * about the one push that took a developer's sign-off away.
+     */
+    const withdrawn = updates({
+      moved: 1,
+      since_sha: '4d9464f',
+      commits: 2,
+      updates: [move('4d9464f', 'a41c9e2', '2026-10-11T08:00:00Z')],
+    })
+    expect(movesSince(withdrawn, '2026-10-11T08:00:00Z')).toHaveLength(1)
+  })
 })
 
 describe('why a sign-off went', () => {

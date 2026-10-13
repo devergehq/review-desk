@@ -89,11 +89,22 @@ export function foldedLine(updates: HeadUpdates): string | null {
  *
  * `base_only` and `folded` rows are left out: neither changed the pull request's own diff, so
  * neither is something the draft is out of date about.
+ *
+ * **`>=`, not `>`, and the one case it is the whole of.** A move that withdraws a sign-off
+ * writes the draft in the same transaction — the status goes back to `drafting` and
+ * `updated_at` moves with it — and the record keeps whole seconds, so the draft's time is
+ * never *less* than the move's. With a strict comparison the section was empty for exactly
+ * the review it exists for: the signed-off draft whose head moved under it. Found by a
+ * review of this branch.
+ *
+ * What `>=` costs is a move in the same second as an ordinary draft write being shown as
+ * since it, which is the safe direction: the page says the body may be out of date, and it
+ * is better to say so a second early than to go silent on the case that matters.
  */
 export function movesSince(updates: HeadUpdates, when: string | null): HeadUpdate[] {
   const moves = updates.updates.filter(update => update.kind === 'moved')
   if (!when) return moves
-  return moves.filter(update => update.at > when)
+  return moves.filter(update => update.at >= when)
 }
 
 /**

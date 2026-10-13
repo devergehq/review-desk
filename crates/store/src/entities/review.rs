@@ -227,12 +227,16 @@ impl Store {
         // commits to leave unchanged, so the call falls through and opens the first round:
         // a first review has to exist before anything can be said to be unchanged about it.
         if let (DiffAtHead::Unchanged, Some(newest)) = (diff, newest.as_ref()) {
-            self.record_head_update(
-                newest.id,
-                HeadUpdateKind::BaseOnly,
-                &newest.head_sha,
-                &head_sha,
-            )?;
+            // **Said twice is said once, because the caller is a poller.** Every other path
+            // through this function dedupes on the head commit — a commit already reviewed
+            // is found and handed back — and this one cannot, because it deliberately does
+            // not move `head_sha` onto the commit it is about. So a dispatcher that keeps
+            // asserting "the base branch came in and changed nothing" every tick, which is
+            // exactly the caller this flag is for, would add a row each time and the page
+            // would read "12 pushes brought the base branch in" for one push. Found by a
+            // review of this branch. `set_pr_out_of_play` is idempotent for the same caller
+            // and for the same reason; this is that rule applied to the other half.
+            self.record_base_only_once(newest.id, &newest.head_sha, &head_sha)?;
             let review = self.get_review(newest.id)?;
             tx.commit()?;
             return Ok(OpenedReview {
@@ -380,6 +384,38 @@ impl Store {
             params![review_id],
             |row| row.get(0),
         )?)
+    }
+
+    /// Record that the base branch came in, unless this round already says so about these
+    /// two commits.
+    ///
+    /// **Idempotent, because what writes it is a poll.** The counts this feeds are what the
+    /// page says out loud — "2 pushes brought the base branch in and changed nothing" — so a
+    /// repeated assertion of one fact has to stay one row. The pair is the whole identity:
+    /// the commit the round is of and the commit the caller is reporting, which is what one
+    /// base-branch merge is. A *second* base merge reports a different `to_sha` and is a
+    /// second row, which is right.
+    pub(crate) fn record_base_only_once(
+        &self,
+        review_id: i64,
+        from_sha: &str,
+        to_sha: &str,
+    ) -> Result<()> {
+        let (from_sha, to_sha) = (normalise::head_sha(from_sha), normalise::head_sha(to_sha));
+        let said: bool = self.conn.query_row(
+            "SELECT EXISTS (
+                 SELECT 1 FROM round_head_updates
+                  WHERE review_id = ?1 AND kind = ?2 AND from_sha = ?3 AND to_sha = ?4
+             )",
+            params![review_id, HeadUpdateKind::BaseOnly, from_sha, to_sha],
+            |row| row.get(0),
+        )?;
+        if said {
+            return Ok(());
+        }
+
+        self.record_head_update(review_id, HeadUpdateKind::BaseOnly, &from_sha, &to_sha)?;
+        Ok(())
     }
 
     /// Record one thing that happened to a round's head.

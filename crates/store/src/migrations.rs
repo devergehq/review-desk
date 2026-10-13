@@ -1644,11 +1644,15 @@ ALTER TABLE drafts ADD COLUMN signoff_withdrawn_head TEXT;
 ALTER TABLE reviews ADD COLUMN out_of_play    TEXT;
 ALTER TABLE reviews ADD COLUMN out_of_play_at INTEGER;
 
--- Partial, because a pull request out of play is the rare row and every query that lists
--- reviews now asks this column about every row it considers.
-CREATE INDEX reviews_out_of_play
-    ON reviews (repo, pr)
-    WHERE out_of_play IS NOT NULL;
+-- **And no index, which is a decision rather than an omission.** A partial index over the
+-- rows that are out of play was written here first, justified by "every query that lists
+-- reviews now asks this column" — and it could never have served one of them: they ask
+-- `out_of_play IS NULL`, and an index restricted to the rows where it is *not* null is never
+-- a candidate for that. The one reader whose predicate it matched, `set_pr_out_of_play`,
+-- filters on `repo` and `pr` and is already served by the unique index migration 1 put on
+-- `(repo, pr, round)`. So it was a second structure to keep in step, bought with a sentence
+-- that was wrong about its own query. Found by a review of this branch, and this is migration
+-- 17's reasoning for its own missing index applied to a column that invited one.
 "#,
     },
 ];

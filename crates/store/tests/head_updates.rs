@@ -216,6 +216,51 @@ fn commits_that_only_bring_the_base_branch_in_change_nothing() {
 }
 
 #[test]
+fn saying_the_same_base_branch_merge_again_is_one_row() {
+    // **The caller is a poller.** A dispatcher that re-asserts "the base branch came in and
+    // changed nothing" on every tick must not make the page read "12 pushes brought the base
+    // branch in" for one push — and this is the one path that cannot dedupe on the head
+    // commit, because it deliberately does not move it. Found by a review of this branch.
+    let (_dir, store) = temp_store();
+
+    let review = store
+        .open_review(REPO, 56, "4d9464f")
+        .expect("the request")
+        .review
+        .id;
+    for _ in 0..3 {
+        store
+            .open_review_with(
+                REPO,
+                56,
+                "9d02e71",
+                &ReviewFacts::default(),
+                DiffAtHead::Unchanged,
+            )
+            .expect("the same base merge, reported again");
+    }
+
+    let updates = store.head_updates(review).expect("the updates");
+    assert_eq!(updates.base_only, 1, "three polls, one base-branch merge");
+    assert_eq!(updates.updates.len(), 1);
+
+    // A *second* base merge is a different commit, and is a second row.
+    store
+        .open_review_with(
+            REPO,
+            56,
+            "7e2a9d3",
+            &ReviewFacts::default(),
+            DiffAtHead::Unchanged,
+        )
+        .expect("another one");
+    assert_eq!(
+        store.head_updates(review).expect("the updates").base_only,
+        2
+    );
+}
+
+#[test]
 fn a_base_branch_merge_after_a_post_opens_no_round_either() {
     // The same word in both columns of the issue's table: nothing. Without this, a base
     // merge after a post would spend a round on a change nobody made.

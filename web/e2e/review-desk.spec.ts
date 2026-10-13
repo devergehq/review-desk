@@ -3868,6 +3868,18 @@ test.describe('a round whose head moved', () => {
         page.getByRole('button', { name: 'Sign off and post' }),
         'and it is theirs to sign off again, on the code that would post',
       ).toBeVisible()
+
+      /*
+       * **And the code review shows the push that did it**, which is the other half of the
+       * issue's criterion. It was silent here until a review of this branch: the withdrawal
+       * writes the draft in the same transaction as the move, so the draft's time equalled
+       * the move's and a strict comparison filtered out the one move the section is for.
+       */
+      await page.goto(`${seeded}reviews/${reviewId}/code-review`)
+      const since = page.locator('.since-draft')
+      await expect(since).toBeVisible()
+      await expect(since).toContainText('e1f2a31')
+      await expect(since).toContainText('f2a3b42')
     })
 
   test('the round timeline draws a dismissed round as dismissed', async ({ page }) => {

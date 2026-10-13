@@ -457,3 +457,80 @@ fn the_tidy_can_be_asked_about_one_repository_and_refuses_a_filter_that_is_not_o
     assert_eq!(refused.status, 400, "{}", refused.text());
     assert_eq!(refused.error_code(), "invalid_value");
 }
+
+#[test]
+fn pasting_the_link_of_a_pull_request_that_moved_does_not_invent_a_line_count() {
+    // **The Inbox's own entry point reaches the move path now**, which DEV-962 made true:
+    // `POST /reviews` resolves the head from GitHub when none is given, so a developer
+    // pasting the link of a pull request the author has pushed to moves the unposted round.
+    // The move clears `changed_lines`, because a figure measured on the commit the review has
+    // stopped being of is a wrong answer — and the gap-filling below it would then write the
+    // *whole pull request's* additions plus deletions into a round that is about a delta.
+    // Found by a review of this branch.
+    let harness = common::start(common::recorded_github());
+    let store = &harness.store;
+
+    // Round 1 of the recorded pull request, opened on an earlier commit with the delta the
+    // session actually reviewed, and posted — so the next commit is a round of its own.
+    let one = store
+        .open_review_with(
+            "devergehq/locus",
+            64,
+            "4d9464f",
+            &ReviewFacts {
+                changed_lines: Some(180),
+                ..Default::default()
+            },
+            DiffAtHead::Unsaid,
+        )
+        .expect("round 1")
+        .review
+        .id;
+    store
+        .set_review_links(
+            one,
+            review_desk_store::ReviewLinks {
+                github_review_id: Some("PRR_round_one".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("round 1 posted");
+
+    // Round 2, opened by a session on the commit it read, with its own delta.
+    let two = store
+        .open_review_with(
+            "devergehq/locus",
+            64,
+            "a41c9e2",
+            &ReviewFacts {
+                changed_lines: Some(31),
+                ..Default::default()
+            },
+            DiffAtHead::Unsaid,
+        )
+        .expect("round 2")
+        .review
+        .id;
+
+    // The developer pastes the link. The server resolves the pull request's head, which is a
+    // commit round 2 has not seen, and round 2's head moves to it.
+    let answer = harness.api(
+        "POST",
+        "/reviews",
+        Some(r#"{"pr_url":"https://github.com/devergehq/locus/pull/64"}"#),
+    );
+    assert_eq!(answer.status, 201, "{}", answer.text());
+    let review = answer.json();
+    assert_eq!(review["id"], two, "the same round, moved");
+    assert_eq!(review["head_sha"], common::RECORDED_HEAD_SHA);
+    assert_eq!(
+        review["changed_lines"],
+        serde_json::Value::Null,
+        "and no figure is invented for it: {review}"
+    );
+    assert_ne!(
+        review["changed_lines"],
+        common::RECORDED_CHANGED_LINES,
+        "least of all the whole pull request's, on a round that is about a delta"
+    );
+}
