@@ -528,9 +528,16 @@ function coverage(data: ReviewDetail): string | null {
             Changed since the draft was written
           </h2>
           <ul class="rd-stack">
+            <!--
+              **Keyed on the three facts together, because none of them is unique alone.**
+              `at` is seconds and the record refuses nothing for sharing one — migration 18
+              says two updates inside one second are ordered rather than refused — so two
+              pushes in the same second would give Vue one key twice. Raised by a review of
+              this branch.
+            -->
             <li
               v-for="move in sinceTheDraft"
-              :key="move.at"
+              :key="`${move.at}-${move.from_sha}-${move.to_sha}`"
               class="rd-note"
             >
               <span class="rd-mono">{{ commitLabel(move.from_sha) }}</span>

@@ -534,3 +534,94 @@ fn pasting_the_link_of_a_pull_request_that_moved_does_not_invent_a_line_count() 
         "least of all the whole pull request's, on a round that is about a delta"
     );
 }
+
+#[test]
+fn a_later_round_is_never_given_the_whole_pull_requests_line_count() {
+    // **The same wrong figure, through the door the first fix left open.** Round 2 opened on
+    // the pull request's *current* commit takes no move at all — `POST /reviews` finds it by
+    // head and hands it back — so a gate on "did the head move" let the gap-fill through and
+    // wrote the whole pull request's additions plus deletions onto a round that is about a
+    // delta. Measured by a review of that fix, in a probe against this server.
+    let harness = common::start(common::recorded_github());
+    let store = &harness.store;
+
+    let one = store
+        .open_review_with(
+            "devergehq/locus",
+            64,
+            "4d9464f",
+            &ReviewFacts {
+                changed_lines: Some(180),
+                ..Default::default()
+            },
+            DiffAtHead::Unsaid,
+        )
+        .expect("round 1")
+        .review
+        .id;
+    store
+        .set_review_links(
+            one,
+            review_desk_store::ReviewLinks {
+                github_review_id: Some("PRR_round_one".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("round 1 posted");
+
+    // Round 2, opened by a session on the commit the pull request is actually on, stating no
+    // count — the session has not measured the delta yet.
+    let two = store
+        .open_review("devergehq/locus", 64, common::RECORDED_HEAD_SHA)
+        .expect("round 2")
+        .review
+        .id;
+
+    let answer = harness.api(
+        "POST",
+        "/reviews",
+        Some(r#"{"pr_url":"https://github.com/devergehq/locus/pull/64"}"#),
+    );
+    assert_eq!(answer.status, 201, "{}", answer.text());
+    let review = answer.json();
+    assert_eq!(review["id"], two, "the same round, found by its head");
+    assert_eq!(
+        review["changed_lines"],
+        serde_json::Value::Null,
+        "no move happened, and the figure is still not this round's to hold: {review}"
+    );
+}
+
+#[test]
+fn a_first_round_still_gets_the_count_the_read_resolved_even_after_a_move() {
+    // **The other half, and the reason the condition is the round rather than the move.** A
+    // first round *is* about the whole pull request, so the resolved figure is its subject —
+    // suppressing it because the head moved threw away a correct answer. Also measured by the
+    // review of the first fix.
+    let harness = common::start(common::recorded_github());
+    let store = &harness.store;
+
+    let one = store
+        .open_review("devergehq/locus", 64, "4d9464f")
+        .expect("a request, with no count stated")
+        .review
+        .id;
+
+    let answer = harness.api(
+        "POST",
+        "/reviews",
+        Some(r#"{"pr_url":"https://github.com/devergehq/locus/pull/64"}"#),
+    );
+    assert_eq!(answer.status, 201, "{}", answer.text());
+    let review = answer.json();
+    assert_eq!(
+        review["id"], one,
+        "the same round, moved to the resolved head"
+    );
+    assert_eq!(review["head_sha"], common::RECORDED_HEAD_SHA);
+    assert_eq!(
+        review["changed_lines"],
+        common::RECORDED_CHANGED_LINES,
+        "and round 1 keeps the figure the read resolved, which is what it is about: {review}"
+    );
+}

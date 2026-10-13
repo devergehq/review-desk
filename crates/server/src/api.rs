@@ -604,22 +604,25 @@ impl Api {
         // Only a field the record has no answer for is filled, which is also the only case
         // the read was widened for.
         //
-        // **And a line count is not filled on a call that moved the head**, which DEV-962
-        // made necessary. Moving an unposted round's head clears `changed_lines`, because a
-        // figure measured on the commit the review has stopped being of is a wrong answer
-        // rather than an old one — so without this, a developer pasting the link of a pull
-        // request the author had pushed to would move the head and then have the gap filled
-        // with the *whole pull request's* additions plus deletions. On round 2 that is not
-        // the delta the round is about, which is the overwrite the paragraph above exists to
-        // prevent, arriving by another door. The store's own rule is that the next caller
-        // which knows the figure writes it; a caller that has only read the pull request
-        // does not know it. Found by a review of this branch.
+        // **And a line count is filled only on a first round, because that is the round the
+        // figure is about.** What this read resolves is the pull request's own additions plus
+        // deletions; round 1 reviews the whole pull request, so the figure is its subject,
+        // and every later round is about the delta since the round before it — for which a
+        // whole-pull-request count is a wrong answer rather than a missing one. It is the
+        // figure the draft's word budget is computed from, so the difference is not cosmetic.
         //
-        // **The move, not the creation.** Gating on `created` instead was the first attempt
-        // and it broke the rule's other half: pasting the link of a review opened with no
-        // title and no count is the case the read was widened for, and that call creates
-        // nothing. The title is filled either way — it is a fact about the pull request
-        // rather than about the commit, which is why the move leaves it alone too.
+        // **Two wrong answers, one condition.** This gated on "did the head move" first,
+        // which DEV-962 made newly reachable: the Inbox's own paste resolves the head, so a
+        // pull request the author had pushed to moved the round and the cleared count was
+        // refilled with the whole pull request's. But the move was never what made the figure
+        // wrong — a *round 2* opened on the pull request's current commit takes no move at
+        // all, and was filled with the same wrong number; and a *round 1* whose head moved
+        // had a correct figure thrown away. Both measured by a review of the fix, in probes
+        // against this server. The round is the question, and asking it answers both.
+        //
+        // The title is filled on any round, which is right: it is a fact about the pull
+        // request rather than about a commit or a round, which is also why a move leaves it
+        // alone.
         let gaps = ReviewFacts {
             title: resolved
                 .as_ref()
@@ -633,9 +636,7 @@ impl Api {
             changed_lines: resolved
                 .as_ref()
                 .and_then(|read| read.changed_lines)
-                .filter(|_| {
-                    opened.head_moved_from.is_none() && opened.review.changed_lines.is_none()
-                }),
+                .filter(|_| opened.review.round == 1 && opened.review.changed_lines.is_none()),
             not_checked: None,
         };
 

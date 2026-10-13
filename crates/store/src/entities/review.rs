@@ -287,12 +287,26 @@ impl Store {
                 "UPDATE reviews SET head_sha = ?2, changed_lines = NULL WHERE id = ?1",
                 params![unposted.id, head_sha],
             )?;
-            self.record_head_update(unposted.id, HeadUpdateKind::Moved, &moved_from, &head_sha)?;
+            let moved = self.record_head_update(
+                unposted.id,
+                HeadUpdateKind::Moved,
+                &moved_from,
+                &head_sha,
+            )?;
             // **A sign-off given before the move is withdrawn.** DEV-962's criterion: the
             // developer approved different code, so the record stops saying they approved
             // this. Inside the same transaction as the move, because a head that moved over
             // a draft still marked `approved` is a draft a session may post.
-            self.withdraw_signoff(unposted.id, &moved_from)?;
+            //
+            // **Stamped with the move's own time, not a second reading of the clock.** The
+            // code review shows the moves since the draft was last written, by comparing the
+            // draft's `updated_at` with each move's `at` — and the withdrawal *is* a write to
+            // the draft, so two clock reads straddling a second boundary would date the draft
+            // one second after the move that caused it and the page would go silent about it.
+            // Microseconds of window per second, and free to close: the row this just wrote
+            // carries the time. Found by a review of the fix that made that comparison
+            // inclusive.
+            self.withdraw_signoff(unposted.id, &moved_from, moved.at)?;
             self.mark_review_active(unposted.id)?;
             let review = self.get_review(unposted.id)?;
             tx.commit()?;
@@ -561,7 +575,10 @@ impl Store {
     ///
     /// Answers whether anything was withdrawn, which is what a caller needs in order to say
     /// so and nothing more.
-    fn withdraw_signoff(&self, review_id: i64, approved_head: &str) -> Result<bool> {
+    ///
+    /// `at` is the move's own time rather than a reading of the clock here: the draft's
+    /// `updated_at` and the move are one event, and the code review compares the two.
+    fn withdraw_signoff(&self, review_id: i64, approved_head: &str, at: Timestamp) -> Result<bool> {
         let withdrawn = self.conn.execute(
             "UPDATE drafts
                 SET status = ?2,
@@ -574,7 +591,7 @@ impl Store {
             params![
                 review_id,
                 DraftStatus::Drafting,
-                self.now(),
+                at,
                 normalise::head_sha(approved_head),
                 DraftStatus::Approved,
             ],

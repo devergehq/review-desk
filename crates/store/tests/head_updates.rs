@@ -665,3 +665,33 @@ fn whether_anybody_has_begun_is_a_fact_a_caller_can_read() {
         .expect("a finding");
     assert!(store.review_started(review).expect("started?"));
 }
+
+#[test]
+fn the_withdrawal_is_stamped_with_the_move_that_caused_it() {
+    // **One event, one time.** The code review shows the moves since the draft was last
+    // written by comparing the draft's `updated_at` with each move's `at` — and the
+    // withdrawal is a write to the draft. Two readings of a second-resolution clock could
+    // date the draft one second after the move that caused it, and the page would then go
+    // silent about the one push that took a sign-off away. Raised by a review of the fix that
+    // made that comparison inclusive.
+    let (_dir, store) = temp_store();
+
+    let review = signed_off(&store, "4d9464f");
+    store
+        .open_review(REPO, PR, "a41c9e2")
+        .expect("the author pushed");
+
+    let draft = store.get_draft(review).expect("the draft");
+    let updates = store.head_updates(review).expect("the updates");
+    let moved = updates
+        .updates
+        .iter()
+        .find(|update| update.kind == HeadUpdateKind::Moved)
+        .expect("the move");
+
+    assert_eq!(
+        draft.updated_at, moved.at,
+        "the draft is dated from the move, not from a second reading of the clock"
+    );
+    assert_eq!(draft.signoff_withdrawn_at, Some(moved.at));
+}
