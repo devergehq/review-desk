@@ -760,7 +760,7 @@ fn a_session_that_opens_a_review_with_its_id_is_the_one_working_on_it() {
 
 #[test]
 fn review_find_answers_for_the_repository_however_it_was_typed() {
-    // **The Locus half found this against `Trilogy-Care/tc-portal`.** `review open` and
+    // **The Locus half found this against a real repository.** `review open` and
     // `work list` normalise the slug and found the rows; `review find` did not and said
     // "no reviews" — and its answer echoed the argument back, so the stored spelling and
     // the typed one never appeared together for anybody to notice.
@@ -769,7 +769,7 @@ fn review_find_answers_for_the_repository_however_it_was_typed() {
         "review",
         "open",
         "--repo",
-        "Trilogy-Care/TC-Portal",
+        "Acme-Corp/Web-Portal",
         "--pr",
         "9585",
         "--head",
@@ -782,7 +782,7 @@ fn review_find_answers_for_the_repository_however_it_was_typed() {
         "review",
         "find",
         "--repo",
-        "Trilogy-Care/tc-portal",
+        "Acme-Corp/web-portal",
         "--pr",
         "9585",
     ]);
@@ -792,7 +792,7 @@ fn review_find_answers_for_the_repository_however_it_was_typed() {
         "the repository is the same repository however it is spelled: {found}"
     );
     assert_eq!(
-        found["repo"], "trilogy-care/tc-portal",
+        found["repo"], "acme-corp/web-portal",
         "and the answer carries the spelling the record holds"
     );
 
@@ -800,7 +800,7 @@ fn review_find_answers_for_the_repository_however_it_was_typed() {
         "review",
         "find",
         "--repo",
-        "TRILOGY-CARE/TC-PORTAL",
+        "ACME-CORP/WEB-PORTAL",
         "--pr",
         "9585",
     ]);
@@ -812,11 +812,11 @@ fn review_find_answers_for_the_repository_however_it_was_typed() {
         "review",
         "find",
         "--repo",
-        "Trilogy-Care/Nothing",
+        "Acme-Corp/Nothing",
         "--pr",
         "9585",
     ]);
-    assert_eq!(none, "no reviews of trilogy-care/nothing#9585");
+    assert_eq!(none, "no reviews of acme-corp/nothing#9585");
 }
 
 #[test]

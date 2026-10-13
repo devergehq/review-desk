@@ -4062,7 +4062,7 @@ components:
 
             **Here because the queue draws one row per pull request.** A reply is always on
             the round that was *posted*, which can be an earlier round than the one the row
-            is numbered for — `tc/portal#9585` had its round 1 posted and replied to while
+            is numbered for — `globex/portal#9585` had its round 1 posted and replied to while
             round 2 was still a draft, which is DEV-957's own record. A row saying "the
             author has replied too" under the number of a different round leaves a reader
             to work out which review the reply was on; with this it says "replied to

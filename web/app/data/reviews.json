@@ -3812,7 +3812,7 @@
   {
     "review": {
       "id": 60,
-      "repo": "tc/portal",
+      "repo": "globex/portal",
       "pr": 9541,
       "head_sha": "a1b2c31",
       "round": 1,
@@ -3949,7 +3949,7 @@
   {
     "review": {
       "id": 61,
-      "repo": "tc/portal",
+      "repo": "globex/portal",
       "pr": 9541,
       "head_sha": "b2c3d42",
       "round": 2,
@@ -4074,7 +4074,7 @@
   {
     "review": {
       "id": 62,
-      "repo": "tc/portal",
+      "repo": "globex/portal",
       "pr": 9585,
       "head_sha": "c3d4e53",
       "round": 1,
@@ -4210,7 +4210,7 @@
   {
     "review": {
       "id": 63,
-      "repo": "tc/portal",
+      "repo": "globex/portal",
       "pr": 9585,
       "head_sha": "d4e5f64",
       "round": 2,
@@ -4335,7 +4335,7 @@
   {
     "review": {
       "id": 64,
-      "repo": "tc/portal",
+      "repo": "globex/portal",
       "pr": 9568,
       "head_sha": "e5f6a75",
       "round": 1,
@@ -4460,7 +4460,7 @@
   {
     "review": {
       "id": 65,
-      "repo": "tc/portal",
+      "repo": "globex/portal",
       "pr": 9568,
       "head_sha": "f6a7b86",
       "round": 2,
@@ -4597,7 +4597,7 @@
   {
     "review": {
       "id": 66,
-      "repo": "tc/portal",
+      "repo": "globex/portal",
       "pr": 9568,
       "head_sha": "a7b8c97",
       "round": 3,
@@ -4722,7 +4722,7 @@
   {
     "review": {
       "id": 67,
-      "repo": "tc/portal",
+      "repo": "globex/portal",
       "pr": 9568,
       "head_sha": "b8c9d08",
       "round": 4,

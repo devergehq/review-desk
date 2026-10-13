@@ -45,8 +45,8 @@ import { cli, scratch, serve, stop, type Serving } from './harness'
 const LONG_REPO = 'devergehq/reviewdeskdashboardandcontractfixtures'
 
 /** The ticket, and the address the session was given for it. */
-const TICKET = 'DUC-2045'
-const TICKET_URL = 'https://linear.app/deverge/issue/DUC-2045'
+const TICKET = 'ACME-2045'
+const TICKET_URL = 'https://linear.app/deverge/issue/ACME-2045'
 
 /** The two widths the criterion names: the boards' own width, and a phone. */
 const WIDTHS = [

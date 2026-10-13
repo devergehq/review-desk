@@ -27,7 +27,7 @@ use review_desk_store::{
     ReviewLinks, ReviewsShown, Severity, Store, WorkFilter,
 };
 
-const REPO: &str = "tc/portal";
+const REPO: &str = "globex/portal";
 
 fn a_finding(claim: &str) -> NewFinding {
     NewFinding {
