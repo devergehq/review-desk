@@ -253,5 +253,12 @@ describe('the threads the draft hands over', () => {
     const said = panel.find('.none-recorded').text()
     expect(said).toContain('None of these records which commit its line was measured on')
     expect(said).not.toContain('The pull request is at')
+    /*
+     * **And the caveat still names no place.** The head sentence is what a word like
+     * "there" would point at, and it is not drawn here — so the sentence after it must
+     * read on its own. An earlier pass fixed that word by moving the head sentence to
+     * the end, which left it unanchored; this is the other half.
+     */
+    expect(said).not.toContain('still means there')
   })
 })

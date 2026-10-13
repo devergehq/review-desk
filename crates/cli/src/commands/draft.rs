@@ -327,20 +327,6 @@ fn handover_lines(handover: &DraftHandover) -> String {
     // version would print this nine times under a real-length review, burying the lines a
     // reader came for. A draft where only some are missing keeps it per thread, because
     // there the absence is about that one anchor rather than about the review.
-    //
-    // **Blank counts as absent here too**, which is `code_link`'s rule for the same value
-    // — "a column is not a promise about every row in it" — and the rule `measuredElsewhere`
-    // follows in the dashboard. Nothing can write one today, because `commit_sha_for` maps
-    // an empty commit to none; testing only `is_none` would have let one both defeat this
-    // sentence and fall through to `— measured at ` with nothing after it, which is the
-    // blank rendering the rest of this change removes.
-    let measured_on = |thread: &DraftThread| -> Option<String> {
-        thread
-            .line_sha
-            .as_deref()
-            .filter(|sha: &&str| !sha.is_empty())
-            .map(str::to_string)
-    };
     let none_recorded = !handover.threads.is_empty()
         && handover
             .threads
@@ -357,7 +343,7 @@ fn handover_lines(handover: &DraftHandover) -> String {
         // since DEV-962 this head moves under findings nobody has re-read. Said only when
         // it differs, because on the ordinary round it is the head on the line above and
         // repeating it on every thread would bury the one that does not match.
-        let measured = match measured_on(thread).as_deref() {
+        let measured = match measured_on(thread) {
             Some(sha) if !same_commit(sha, &handover.review.head_sha) => {
                 format!(" — measured at {sha}")
             }
@@ -374,6 +360,22 @@ fn handover_lines(handover: &DraftHandover) -> String {
     lines.push(String::new());
     lines.push(handover.draft.body.clone());
     lines.join("\n")
+}
+
+/// The commit a thread's line was measured on, with blank read as absent.
+///
+/// **Blank counts as absent, which is `code_link`'s rule for the same value** — "a column
+/// is not a promise about every row in it" — and the rule `measuredElsewhere` follows in
+/// the dashboard. Nothing can write one today, because `commit_sha_for` maps an empty
+/// commit to none on the way in; what this stops is a blank both defeating the
+/// once-per-list sentence and falling through to `— measured at ` with nothing after it,
+/// which is the rendering this change removed from the web side.
+///
+/// A free function rather than a closure, so it can hand back a borrow: the two callers
+/// only read it, and a closure that returned `Option<&str>` could not be written without
+/// naming a lifetime the inference will not supply.
+fn measured_on(thread: &DraftThread) -> Option<&str> {
+    thread.line_sha.as_deref().filter(|sha| !sha.is_empty())
 }
 
 /// Whether two commits are the same one, when either may be abbreviated.

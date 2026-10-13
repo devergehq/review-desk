@@ -148,18 +148,23 @@ function measuredElsewhere(thread: DraftThread): string | null {
       v-if="noneRecorded"
       class="rd-meta help none-recorded"
     >
-      None of these records which commit its line was measured on. Whether each line
-      still means what it meant where it was counted is not something the record can say.
+      None of these records which commit its line was measured on.
       <!--
-        **Its own sentence, and only where there is a head to name.** A head was storable
-        blank until DEV-936 and `commitLabel('')` is the empty string, so a clause welded
-        into the sentence above rendered as "at ." and left the "there" in it pointing at
-        nothing. The commit keeps the monospace face the places below it have, because it
-        is a value a reader copies.
+        **Its own sentence, and before the caveat rather than after it.** A head was
+        storable blank until DEV-936 and `commitLabel('')` is the empty string, so a
+        clause welded into one string rendered as "at ." — but moved to the end it named
+        a commit with no stated relation to the sentence before it. Here it gives the
+        caveat that follows the commit it is about. **And the caveat still names no
+        place**, because this sentence is drawn only where there is a head: "still means
+        *there*" would point at nothing again on a review that has none, which is the
+        defect this ordering was meant to finish rather than move. The commit keeps the
+        monospace face the places below it have, because it is a value a reader copies.
       -->
       <span v-if="headSha.length > 0">
         The pull request is at <code class="place">{{ commitLabel(headSha) }}</code>.
       </span>
+      Whether each line still means what it meant where it was counted is not something
+      the record can say.
     </p>
 
     <ol
