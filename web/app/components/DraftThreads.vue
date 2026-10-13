@@ -43,9 +43,37 @@ import type { DraftThread } from '~/types/desk'
  *    diagram the developer must *see* belongs under `### Problem fit` or under a finding
  *    with no thread, both of which the body preview draws.
  */
-const props = defineProps<{ threads: DraftThread[], posted?: boolean }>()
+const props = defineProps<{
+  threads: DraftThread[]
+  /** Where the pull request is, to say which anchors were not measured against it. */
+  headSha: string
+  posted?: boolean
+}>()
 
 const heading = computed(() => count(props.threads.length, 'thread'))
+
+/**
+ * Which commit this thread's line was counted on, where that is not where the pull request
+ * is now — and nothing when it is. DEV-978.
+ *
+ * **The one fact about an anchor the card could not previously show.** GitHub positions a
+ * review comment against the pull request's head, and the line beside it may have been
+ * counted somewhere else: a carried finding keeps the earlier round's numbering, and since
+ * DEV-962 a head moves under findings nobody has re-read. The card's own rule 2 is that
+ * nothing is printed twice, so this is said only on the thread it is true of.
+ *
+ * `measuredAt` is the same three states in the code review page's words; this is the
+ * thread's shorter version, because what the developer is checking here is the place.
+ */
+function measuredElsewhere(thread: DraftThread): string | null {
+  const measured = thread.line_sha
+  if (measured == null || measured.length === 0) {
+    return 'the commit this line was measured on was not recorded'
+  }
+  return sameCommit(measured, props.headSha)
+    ? null
+    : `measured at ${commitLabel(measured)}, not at ${commitLabel(props.headSha)}`
+}
 </script>
 
 <template>
@@ -102,6 +130,14 @@ const heading = computed(() => count(props.threads.length, 'thread'))
             <span class="rd-visually-hidden">Severity:</span>{{ ' ' }}{{ thread.severity }}
           </span>
           <code class="place">{{ thread.path }}:{{ thread.line }}</code>
+          <!--
+            Interpolated as text, as every other value on this card is. The commit is a
+            value a reader copies, so it takes the monospace face the place does.
+          -->
+          <span
+            v-if="measuredElsewhere(thread)"
+            class="measured rd-meta"
+          >{{ measuredElsewhere(thread) }}</span>
         </p>
         <div class="comment">
           <MarkdownView :source="thread.body" />
@@ -179,6 +215,16 @@ const heading = computed(() => count(props.threads.length, 'thread'))
   min-width: 0;
   font-family: var(--rd-font-mono);
   font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * Quiet, and on the caption line with the place it is about. It is not a grade and not a
+ * problem: it says which commit the line beside it came from, which is rule 1's
+ * "describes, does not grade" applied to the one fact an anchor could not carry.
+ */
+.measured {
+  font-family: var(--rd-font-mono);
   overflow-wrap: anywhere;
 }
 

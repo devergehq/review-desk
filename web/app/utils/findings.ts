@@ -17,12 +17,14 @@ import type {
   BriefPart,
   Finding,
   FindingHunk,
+  Review,
   RoundStatus,
   Severity,
   SeverityCounts,
 } from '~/types/desk'
 
 import { count } from './format'
+import { commitLabel } from './rounds'
 
 /**
  * Most serious first, and then by number.
@@ -437,4 +439,55 @@ export function severitiesOf(findings: Finding[]): SeverityCounts {
   const counts: SeverityCounts = { blocker: 0, should: 0, nit: 0, question: 0 }
   for (const finding of findings) counts[finding.severity] += 1
   return counts
+}
+
+/**
+ * Whether two commits are the same one, when either may be abbreviated.
+ *
+ * **A prefix match and not an equality, because the record holds both lengths.** A review's
+ * head is "full or abbreviated" by the contract's own words, and a finding's `line_sha` is
+ * 7 to 40 characters — so the same commit reaches this comparison written two ways, and
+ * `===` would report a move that never happened and put a notice on every row.
+ *
+ * Two different commits that share a seven-character prefix read as one. That is the
+ * bargain every abbreviated sha on these pages already makes — `commitLabel` slices to
+ * seven — and the other error, calling two spellings of one commit a difference, is the one
+ * a reader cannot check.
+ */
+export function sameCommit(one: string, two: string): boolean {
+  const shortest = Math.min(one.length, two.length)
+  if (shortest === 0) return false
+  return one.slice(0, shortest).toLowerCase() === two.slice(0, shortest).toLowerCase()
+}
+
+/**
+ * Where this finding's line was measured, as a sentence, or null when there is nothing to
+ * say. DEV-978.
+ *
+ * **Three states, and the third is the one that is easy to get wrong.**
+ *
+ * | The record | What the page says |
+ * | -- | -- |
+ * | the commit is this review's head | nothing. The line describes the code the review is of, which is what a reader already assumes |
+ * | the commit is an earlier one | which commit, and that the line has not been re-read against the head — the link goes to the first and the pull request is at the second |
+ * | there is no commit | that it was not recorded. **Not "not measured"**: the line was measured, and what is missing is which commit on. Saying the line was never measured, beside the line number printed on the same row, would contradict itself |
+ *
+ * A finding with no line at all gets null: there is nothing in the code for a commit to be
+ * about, and its row links the pull request rather than a line.
+ *
+ * Both commits are named, which is `withdrawnLine`'s rule in `utils/rounds`: a sentence
+ * that names one of two commits leaves the reader to find the other.
+ */
+export function measuredAt(finding: Finding, review: Review): string | null {
+  if (finding.line == null && finding.flagged_line == null) return null
+
+  const measured = finding.line_sha
+  if (measured == null || measured.length === 0) {
+    return 'The commit this line was measured on was not recorded, so the link goes to '
+      + `${commitLabel(review.head_sha)}, where the pull request is now.`
+  }
+  if (sameCommit(measured, review.head_sha)) return null
+
+  return `Measured at ${commitLabel(measured)}, which the link goes to. The pull request `
+    + `is at ${commitLabel(review.head_sha)}, and this line has not been re-read against it.`
 }

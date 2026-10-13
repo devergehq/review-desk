@@ -251,6 +251,45 @@ describe('the code review page', () => {
     expect(row.text()).toContain('Fixed')
   })
 
+  /*
+   * **DEV-978.** The link under a finding goes to the commit its line was measured on, and
+   * the pull request may have moved past it — a carried finding keeps the earlier round's
+   * numbering, and since DEV-962 a head moves without a new round opening. The row says
+   * so, naming both commits, and says nothing on the ordinary finding measured here.
+   */
+  it('says which commit a line was measured on, where that is not the head', async () => {
+    const detail = fixture(REAL)
+    detail.findings = detail.findings.map(finding =>
+      finding.seq === 1 ? { ...finding, line_sha: 'a1b2c3d' } : finding)
+    await withReview(detail)
+
+    const page = await codeReview(REAL)
+    const said = (await openFinding(page, 'F1')).text()
+    expect(said).toContain('Measured at a1b2c3d')
+    expect(said, 'and where the pull request is now, so the reader has both')
+      .toContain(detail.review.head_sha.slice(0, 7))
+
+    /* And F3, measured on this head like every other finding of this review, says none. */
+    expect((await openFinding(page, 'F3')).text()).not.toContain('Measured at')
+  })
+
+  /*
+   * **The line was measured; which commit on was not recorded.** Saying "not measured"
+   * beside the line number printed on the same row would contradict itself, which is why
+   * `NotMeasured` — whose words are "Not measured yet" — is not the component for this.
+   */
+  it('says the commit was not recorded for a finding written before the column', async () => {
+    const detail = fixture(REAL)
+    detail.findings = detail.findings.map(finding =>
+      finding.seq === 1 ? { ...finding, line_sha: null } : finding)
+    await withReview(detail)
+
+    const page = await codeReview(REAL)
+    const row = await openFinding(page, 'F1')
+    expect(row.text()).toContain('was not recorded')
+    expect(row.text()).not.toContain('not measured')
+  })
+
   it('tallies the three lists at the foot, and leads on to the draft', async () => {
     const page = await codeReview(REAL)
     expect(page.find('.tally').text()).toBe('12 to post, 1 for a ticket, 2 set aside')

@@ -194,9 +194,9 @@ function composeRow(
 ): string {
   const anchor = anchorOf(finding)
   const where = anchor != null
-    ? codeLink(place, anchor.path, anchor.line)
+    ? codeLink(place, finding.line_sha, anchor.path, anchor.line)
     : finding.file != null
-      ? codeLink(place, finding.file, finding.line)
+      ? codeLink(place, finding.line_sha, finding.file, finding.line)
       /*
        * Nothing in the code to point at: a correction to the description, a missing
        * ticket, a wrong figure. The pull request is where such a finding is about.
@@ -208,9 +208,37 @@ function composeRow(
     + `| ${standing(finding)} · ${anchor != null ? 'on the code' : 'in the body'} |`
 }
 
-/** A link to the line at the head commit reviewed, with `basename:line` as its text. */
-function codeLink(place: Place, path: string, line: number | null | undefined): string {
-  const base = `https://github.com/${place.repo}/blob/${place.head_sha}/${path}`
+/**
+ * A link to the line **at the commit that line was measured on**, with `basename:line` as
+ * its text.
+ *
+ * **The commit is the finding's and not the review's, which is DEV-978.** A line number
+ * means something only against the commit it was counted on, and the review's head moves
+ * away from it: a carried finding keeps the earlier round's numbering, and since DEV-962 an
+ * unposted round's head moves under findings nobody has re-read. Composing the two halves
+ * made a link that was confidently wrong — it resolves, it looks right, and it points at
+ * whatever is on line 40 now.
+ *
+ * **Null falls back to the review's head**, which is the one case where the old pairing is
+ * still right: a finding written before the commit column has none of its own, and
+ * composing it any other way would change links that are already out there.
+ *
+ * Blank is absent too. The store refuses an empty commit on the way in, but `head_sha`
+ * shipped with no constraint and `links.ts` makes the same argument for its own field: a
+ * column is not a promise about every row in it, and a blank here composes `blob//path`.
+ *
+ * This is `house_style::code_link` in `crates/store`, and the two have to compose the same
+ * characters. `example-fixtures.spec.ts` is what holds them together: it compares a
+ * fixture's stored body — which came out of the binary — with what this composes.
+ */
+function codeLink(
+  place: Place,
+  lineSha: string | null | undefined,
+  path: string,
+  line: number | null | undefined,
+): string {
+  const measured = lineSha != null && lineSha.length > 0 ? lineSha : place.head_sha
+  const base = `https://github.com/${place.repo}/blob/${measured}/${path}`
   const name = path.split('/').pop() ?? path
   const target = line == null ? base : `${base}#L${line}`
   const text = line == null ? name : `${name}:${line}`
@@ -290,6 +318,12 @@ export function composeThreads(
         title: section.title,
         path: anchor.path,
         line: anchor.line,
+        /*
+         * **Handed over with the anchor, because the anchor is only true against it.**
+         * GitHub positions a review comment on the pull request's current head, and this
+         * line was counted on whatever commit the session read. Not a `commit_id`.
+         */
+        line_sha: finding.line_sha ?? null,
         side: 'RIGHT' as const,
         body: threadBody(
           section.severity,

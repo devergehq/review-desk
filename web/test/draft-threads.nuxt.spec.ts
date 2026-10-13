@@ -21,6 +21,9 @@ import type { DraftThread } from '../app/types/desk'
  * nine threads the real-length example composes.
  */
 
+/** Where the pull request is in these tests, and where most lines were counted. */
+const HEAD = 'd41c8e2'
+
 function thread(seq: number, over: Partial<DraftThread> = {}): DraftThread {
   return {
     finding_seq: seq,
@@ -29,6 +32,7 @@ function thread(seq: number, over: Partial<DraftThread> = {}): DraftThread {
     title: `what F${seq} says is wrong`,
     path: 'app/Reporting/ScheduleToExportContext.php',
     line: 40 + seq,
+    line_sha: HEAD,
     side: 'RIGHT',
     body: `> [!WARNING]\n> **Should · F${seq}** — what F${seq} says is wrong · \`Open\`\n>\n`
       + '> **in diff** · `Open — needs a decision`\n>\n> **What** · the mechanism.'
@@ -40,7 +44,7 @@ function thread(seq: number, over: Partial<DraftThread> = {}): DraftThread {
 describe('the threads the draft hands over', () => {
   it('lists every thread with the line it sits on', async () => {
     const threads = [1, 3, 5, 6, 9, 11, 12, 13, 14].map(seq => thread(seq))
-    const panel = await mountSuspended(DraftThreads, { props: { threads } })
+    const panel = await mountSuspended(DraftThreads, { props: { threads, headSha: HEAD } })
     const text = panel.text()
 
     expect(panel.findAll('.thread')).toHaveLength(9)
@@ -54,6 +58,7 @@ describe('the threads the draft hands over', () => {
   it('draws the comment as GitHub will, markdown and all', async () => {
     const panel = await mountSuspended(DraftThreads, {
       props: {
+        headSha: HEAD,
         threads: [thread(9, {
           severity: 'blocker',
           body: '> [!CAUTION]\n> **Blocker · F9** — the policy is skipped · `Open`\n>\n'
@@ -87,7 +92,7 @@ describe('the threads the draft hands over', () => {
   })
 
   it('shows the line GitHub does not draw, because it is posted all the same', async () => {
-    const panel = await mountSuspended(DraftThreads, { props: { threads: [thread(9)] } })
+    const panel = await mountSuspended(DraftThreads, { props: { threads: [thread(9)], headSha: HEAD } })
 
     /*
      * The marker renders as nothing inside the comment — it is an HTML comment, which is
@@ -102,7 +107,7 @@ describe('the threads the draft hands over', () => {
 
   it('speaks of a posted review in the past, and says what has moved since', async () => {
     const panel = await mountSuspended(DraftThreads, {
-      props: { threads: [thread(9)], posted: true },
+      props: { threads: [thread(9)], headSha: HEAD, posted: true },
     })
 
     /*
@@ -118,7 +123,7 @@ describe('the threads the draft hands over', () => {
   })
 
   it('says what it means for a review with nothing to anchor', async () => {
-    const panel = await mountSuspended(DraftThreads, { props: { threads: [] } })
+    const panel = await mountSuspended(DraftThreads, { props: { threads: [], headSha: HEAD } })
 
     expect(panel.findAll('.thread')).toHaveLength(0)
     expect(panel.find('.rd-empty').text())
@@ -128,7 +133,7 @@ describe('the threads the draft hands over', () => {
 
   it('names the severity as the record’s own word, and grades nothing', async () => {
     const panel = await mountSuspended(DraftThreads, {
-      props: { threads: [thread(9, { severity: 'blocker' })] },
+      props: { threads: [thread(9, { severity: 'blocker' })], headSha: HEAD },
     })
 
     expect(panel.find('.severity').text()).toContain('blocker')
@@ -142,5 +147,54 @@ describe('the threads the draft hands over', () => {
      */
     expect(panel.find('.severity').element.textContent).toBe('Severity: blocker')
     expect(panel.find('.tag').exists()).toBe(false)
+  })
+
+  /*
+   * **DEV-978.** GitHub anchors a comment against the pull request's head, and a thread's
+   * line may have been counted on an earlier commit — a carried finding keeps the earlier
+   * round's numbering, and since DEV-962 a head moves under findings nobody has re-read.
+   * The card says which, on the thread it is true of and on no other: rule 2 is that
+   * nothing is printed twice, and nine threads repeating this head would bury the one.
+   */
+  it('says which commit a line was measured on, where that is not the head', async () => {
+    const panel = await mountSuspended(DraftThreads, {
+      props: {
+        headSha: HEAD,
+        threads: [
+          thread(1, { line_sha: 'a1b2c3d' }),
+          thread(2),
+        ],
+      },
+    })
+
+    const rows = panel.findAll('.thread')
+    expect(rows[0]!.text()).toContain('measured at a1b2c3d, not at d41c8e2')
+    expect(rows[1]!.text()).not.toContain('measured at')
+  })
+
+  it('says the commit was not recorded rather than that the line was not measured', async () => {
+    const panel = await mountSuspended(DraftThreads, {
+      props: { headSha: HEAD, threads: [thread(1, { line_sha: null })] },
+    })
+
+    const text = panel.find('.thread').text()
+    expect(text).toContain('the commit this line was measured on was not recorded')
+    /*
+     * The line *was* measured — its number is printed on the same line of the same row —
+     * and what is missing is which commit on. "Not measured" beside a line number
+     * contradicts itself.
+     */
+    expect(text).not.toContain('not measured')
+  })
+
+  it('reads a head written at full length as the same commit', async () => {
+    const panel = await mountSuspended(DraftThreads, {
+      props: {
+        headSha: 'd41c8e2f6b1904a7c3e8d2b5f0a9c1e4d7b63a28',
+        threads: [thread(1, { line_sha: 'd41c8e2' })],
+      },
+    })
+
+    expect(panel.find('.thread').text()).not.toContain('measured at')
   })
 })

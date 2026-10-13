@@ -651,6 +651,7 @@
         "title": "The column policy is skipped entirely when the definition names no columns",
         "path": "app/Reporting/ColumnPolicy.php",
         "line": 52,
+        "line_sha": "d41c8e2",
         "side": "RIGHT",
         "body": "> [!CAUTION]\n> **Blocker \u00b7 F9** \u2014 The column policy is skipped entirely when the definition names no columns \u00b7 `Open`\n>\n> Two decisions compose here. The array cast answers `[]` for a null column, and this early return reads `[]` as \u201cno policy\u201d \u2014 so a definition older than the migration exports every column, including the two its tenant's policy hides. Eleven definitions in staging are in that state with an active schedule.\n\n<!-- review-desk:F9 -->"
       },
@@ -661,6 +662,7 @@
         "title": "An empty allowed-columns list means every column, not none",
         "path": "app/Reporting/ExportContext.php",
         "line": 47,
+        "line_sha": "d41c8e2",
         "side": "RIGHT",
         "body": "> [!WARNING]\n> **Should \u00b7 F1** \u2014 An empty allowed-columns list means every column, not none \u00b7 `Open`\n>\n> `allowed_columns` arrives here as `[]` for any definition whose column was never written, and every reader downstream treats an empty list as \u201cnothing to narrow\u201d. `ColumnPolicy::for()` already draws the distinction the web path needs; this path could call it.\n\n<!-- review-desk:F1 -->"
       },
@@ -671,6 +673,7 @@
         "title": "A schedule whose tenant row has gone is dispatched anyway",
         "path": "app/Console/Commands/DispatchScheduledExports.php",
         "line": 61,
+        "line_sha": "d41c8e2",
         "side": "RIGHT",
         "body": "> [!WARNING]\n> **Should \u00b7 F3** \u2014 A schedule whose tenant row has gone is dispatched anyway \u00b7 `Open`\n>\n> A schedule whose tenant row is gone is dispatched and then fails inside `ExportContext::forSchedule` with a null dereference, four frames deep. Filtering the dispatch query on the tenant's existence makes the same failure readable.\n\n<!-- review-desk:F3 -->"
       },
@@ -681,6 +684,7 @@
         "title": "The policy is applied after the query is built, so a hidden column is still selected",
         "path": "app/Reporting/ColumnPolicy.php",
         "line": 31,
+        "line_sha": "d41c8e2",
         "side": "RIGHT",
         "body": "> [!WARNING]\n> **Should \u00b7 F6** \u2014 The policy is applied after the query is built, so a hidden column is still selected \u00b7 `Open`\n>\n> The policy narrows rows that are already in memory, so the hidden columns are selected and read before they are dropped. `ReportBuilder::withPolicy()` narrows the `select` instead.\n\n<!-- review-desk:F6 -->"
       },
@@ -691,6 +695,7 @@
         "title": "The web path builds its context from the request with no tenant check",
         "path": "app/Http/Controllers/ExportController.php",
         "line": 41,
+        "line_sha": "d41c8e2",
         "side": "RIGHT",
         "body": "> [!WARNING]\n> **Should \u00b7 F11** \u2014 The web path builds its context from the request with no tenant check \u00b7 `Open`\n>\n> The removed branch called `ReportPolicy::view()` before building the context, and the call went with it. `download()` still authorises; `stream()`, reachable from the signed-URL route added in #496, does not.\n\n<!-- review-desk:F11 -->"
       },
@@ -701,6 +706,7 @@
         "title": "A soft-deleted tenant is exported; only a hard-deleted one is skipped",
         "path": "app/Jobs/RunScheduledExport.php",
         "line": 116,
+        "line_sha": "d41c8e2",
         "side": "RIGHT",
         "body": "> [!WARNING]\n> **Should \u00b7 F13** \u2014 A soft-deleted tenant is exported; only a hard-deleted one is skipped \u00b7 `Open`\n>\n> The guard skips the job and not the schedule: `next_run_at` is advanced before the job runs, so a trashed tenant's schedule is dispatched and skipped every night. Schedule 118 has done that 39 times since September with no audit row to show for it.\n\n<!-- review-desk:F13 -->"
       },
@@ -711,6 +717,7 @@
         "title": "Two schedules for one tenant at once would write the audit entry twice",
         "path": "app/Reporting/ExportPipeline.php",
         "line": 71,
+        "line_sha": "d41c8e2",
         "side": "RIGHT",
         "body": "> [!NOTE]\n> **Question \u00b7 F5** \u2014 Two schedules for one tenant at once would write the audit entry twice \u00b7 `Open`\n>\n> Can two schedules for one tenant be due in the same minute? Both would write an audit row keyed on the tenant and the date, and the unique index on that pair was dropped in #502.\n\n<!-- review-desk:F5 -->"
       },
@@ -721,6 +728,7 @@
         "title": "Nothing says what happens to a schedule whose definition was deleted",
         "path": "app/Jobs/RunScheduledExport.php",
         "line": 94,
+        "line_sha": "d41c8e2",
         "side": "RIGHT",
         "body": "> [!NOTE]\n> **Question \u00b7 F7** \u2014 Nothing says what happens to a schedule whose definition was deleted \u00b7 `Open`\n>\n> A schedule whose definition has been deleted releases back to the queue and is retried until the attempt limit, then dispatched again the next night. Is deactivating it the intended answer?\n\n<!-- review-desk:F7 -->"
       },
@@ -731,6 +739,7 @@
         "title": "The removed branch leaves a comment describing it",
         "path": "app/Reporting/ReportBuilder.php",
         "line": 28,
+        "line_sha": "d41c8e2",
         "side": "RIGHT",
         "body": "\u26aa **Nit \u00b7 F10** \u2014 The removed branch leaves a comment describing it \u00b7 `Open`\nThe branch this comment describes was removed four lines above.\n\n<!-- review-desk:F10 -->"
       }
@@ -935,7 +944,7 @@
   {
     "draft": {
       "review_id": 61,
-      "body": "The context is passed explicitly now. One finding is left about the retry path.\n",
+      "body": "The context is passed explicitly now. One finding is left about the retry path.\n\n### Open \u2014 needs a decision\n\n| | Where | Finding | Status |\n| -- | -- | -- | -- |\n| \ud83d\udd34 Blocker \u00b7 F1 | [`ScheduledExport.php:48`](https://github.com/globex/portal/blob/a1b2c31/app/Exports/ScheduledExport.php#L48) | The export holds the request's tenant after it returns | Still open \u00b7 in the body |\n\n### Blocker \u00b7 F1 \u00b7 The export holds the request's tenant after it returns\n\n**What** \u00b7 the tenant is read once and held, so a retry on another tenant exports the first one's rows.\n",
       "status": "ready",
       "event": null,
       "approved_at": null,
@@ -991,6 +1000,20 @@
         "text": "The context is passed explicitly now. One finding is left about the retry path.",
         "agent_title": null,
         "agent_text": "The context is passed explicitly now. One finding is left about the retry path.",
+        "posted": true
+      },
+      {
+        "review_id": 61,
+        "position": 2,
+        "kind": "finding",
+        "finding_seq": 1,
+        "finding_key": "F1",
+        "severity": "blocker",
+        "heading": "### Blocker \u00b7 F1 \u00b7 The export holds the request's tenant after it returns",
+        "title": "The export holds the request's tenant after it returns",
+        "text": "**What** \u00b7 the tenant is read once and held, so a retry on another tenant exports the first one's rows.",
+        "agent_title": "The export holds the request's tenant after it returns",
+        "agent_text": "**What** \u00b7 the tenant is read once and held, so a retry on another tenant exports the first one's rows.",
         "posted": true
       }
     ],

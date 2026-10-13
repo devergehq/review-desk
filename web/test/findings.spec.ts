@@ -5,6 +5,7 @@ import {
   inPart,
   isCarried,
   listOf,
+  measuredAt,
   mostSeriousFirst,
   partOf,
   partTiles,
@@ -12,13 +13,14 @@ import {
   reasoningWords,
   reproducedLine,
   roundStatusLabel,
+  sameCommit,
   tally,
   whereOf,
   whyNoCode,
   willPost,
 } from '../app/utils/findings'
 
-import type { Brief, Finding, Severity } from '../app/types/desk'
+import type { Brief, Finding, Review, Severity } from '../app/types/desk'
 
 /*
  * The derivations the code review page makes, each checked on its own.
@@ -38,6 +40,7 @@ function finding(over: Partial<Finding> & { seq: number }): Finding {
     severity: 'should' as Severity,
     file: 'app/Thing.php',
     line: 10,
+    line_sha: null,
     claim: 'something is wrong',
     title: null,
     evidence: null,
@@ -348,5 +351,79 @@ describe('the three lists, and a finding across rounds', () => {
     expect(roundStatusLabel(carried)).toBe('Still open')
     expect(roundStatusLabel(finding({ seq: 3, continues_review_id: 40, round_status: 'fixed' })))
       .toBe('Fixed')
+  })
+})
+
+/** A review at a head commit, for the one comparison `measuredAt` makes. */
+function reviewAt(head: string): Review {
+  return { id: 1, repo: 'globex/portal', pr: 731, head_sha: head, round: 2 } as Review
+}
+
+describe('which commit a line was measured on', () => {
+  /*
+   * **DEV-978.** The row's link goes to the commit the line was counted on, and the pull
+   * request may have moved past it. The sentence names both, which is `withdrawnLine`'s
+   * rule: naming one of two leaves the reader to find the other.
+   */
+  it('names both commits when the line was measured on an earlier one', () => {
+    const said = measuredAt(
+      finding({ seq: 1, line: 40, line_sha: 'a1b2c3d' }),
+      reviewAt('e4f5a6b'),
+    )
+
+    expect(said).toContain('Measured at a1b2c3d')
+    expect(said).toContain('e4f5a6b')
+    expect(said).toContain('has not been re-read')
+  })
+
+  it('says nothing when the line was measured on the head the review is at', () => {
+    expect(
+      measuredAt(finding({ seq: 1, line: 40, line_sha: 'e4f5a6b' }), reviewAt('e4f5a6b')),
+    ).toBeNull()
+  })
+
+  /*
+   * **Not "the line was not measured", which is a different and untrue claim.** The line
+   * was measured — its number is on the same row — and what the record is missing is which
+   * commit on. This is also why `NotMeasured` is not the component for it: its words
+   * default to "Not measured yet", and nothing is going to come along and measure a row
+   * written before the column existed.
+   */
+  it('says the commit was not recorded when the record has none', () => {
+    const said = measuredAt(finding({ seq: 1, line: 40, line_sha: null }), reviewAt('e4f5a6b'))
+
+    expect(said).toContain('was not recorded')
+    expect(said).toContain('e4f5a6b')
+    expect(said).not.toContain('not measured')
+  })
+
+  it('says nothing about a finding with no line for a commit to be about', () => {
+    expect(
+      measuredAt(
+        finding({ seq: 1, file: null, line: null, flagged_line: null, line_sha: null }),
+        reviewAt('e4f5a6b'),
+      ),
+    ).toBeNull()
+  })
+
+  /*
+   * A head is "full or abbreviated" by the contract's own words and a finding's commit is
+   * 7 to 40 characters, so the same commit arrives written two ways. Equality would put a
+   * notice on a row where nothing moved.
+   */
+  it('reads two spellings of one commit as one commit', () => {
+    expect(sameCommit('d41c8e2', 'd41c8e2f6b1904a7c3e8d2b5f0a9c1e4d7b63a28')).toBe(true)
+    expect(sameCommit('D41C8E2', 'd41c8e2')).toBe(true)
+    expect(sameCommit('d41c8e2', 'a1b2c3d')).toBe(false)
+    expect(sameCommit('', 'd41c8e2')).toBe(false)
+  })
+
+  it('draws no notice where a full head and an abbreviated commit are the same one', () => {
+    expect(
+      measuredAt(
+        finding({ seq: 1, line: 40, line_sha: 'd41c8e2' }),
+        reviewAt('d41c8e2f6b1904a7c3e8d2b5f0a9c1e4d7b63a28'),
+      ),
+    ).toBeNull()
   })
 })
