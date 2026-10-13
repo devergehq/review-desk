@@ -9,7 +9,9 @@ import {
   draftStamps,
   pinClockAt,
   readAddresses,
+  scratch,
   seedReadyDraft,
+  seedStructuredReview,
   serversUnderTest,
   stillServing,
   STRUCTURED_LONG_NOTE,
@@ -3887,4 +3889,407 @@ test.describe('a queue row’s links and its edges', () => {
       expect(measured, 'some rows were measured, so this is not vacuous').toBeGreaterThan(0)
     })
   }
+})
+
+/*
+ * **Unsaved edits, and an open row, belong to the review they were made on.** DEV-960.
+ *
+ * ## What is actually wrong, which is not what the issue says
+ *
+ * The issue's mechanism is that Nuxt reuses a page component when only the review in the
+ * address changes, so five step pages draw one review's state over another's — and on the
+ * draft page a save then writes one review's prose into another review's draft.
+ *
+ * **It does not happen, and that was measured rather than argued.** `<NuxtPage />` without a
+ * `pageKey` keys a page by its own path with the parameters interpolated, so changing the
+ * review changes the key and Vue mounts a fresh component. Against these pages as they stood
+ * before this change: unsaved text typed on one review's draft, a history jump to another
+ * review's draft, and the arriving page had the Edit tab unselected and the text nowhere on
+ * it. Four of the tests below pass against those pages for that reason, and say so.
+ *
+ * **What was wrong is that the typing was destroyed without a word.** An unsaved draft is on
+ * no record, the component goes either way, and nothing asked. That is what the two route
+ * guards fix, and what the tests with teeth are about.
+ *
+ * ## How a test reaches a change of the parameter at all
+ *
+ * **A typed address is not one.** `ssr: false` and history-mode routing make it a new
+ * document: the page is built again and the editor starts empty. The issue lists it beside
+ * browser history, and a test below says what actually happens.
+ *
+ * **Nor is any link in the app**, today: none goes from one review's step page to another's.
+ *
+ * What is left is the browser's own history, and not one step of it — Back from a draft page
+ * is the step before it, which is another page of the same review. It is a jump of *more
+ * than one entry*, which is what the back button's own menu does: pick the entry two or
+ * three back and the router changes only the parameter. So each test here builds a real
+ * history — the queue, the list, a review, its page, the list again, another review, its
+ * page — and jumps. The router sees that as an **update**, which is the route
+ * `onBeforeRouteUpdate` is on and the one a guard has to answer.
+ *
+ * ## Its reviews are its own
+ *
+ * As the sign-off block above, and for its reason: everything before this asserts how many
+ * reviews the queue and the list hold, so a review opened here would move those counts. This
+ * block runs last in the file.
+ */
+test.describe('state that belongs to one review', () => {
+  /** The two reviews, of the same shape so that one review's row numbers exist on the other. */
+  let first = 0
+  let second = 0
+  /** Each review's draft body as the record holds it, which is what the editor must show. */
+  let firstBody = ''
+  let secondBody = ''
+
+  /** A sentence typed into the editor and never saved. */
+  const TYPED = 'A sentence the developer typed and did not save.'
+
+  /** The draft body the record holds, which is what the editor is seeded from. */
+  function bodyOf(id: number): string {
+    return (
+      cliJson(seededDatabase, ['draft', 'show', '--review', String(id)]) as unknown as {
+        draft: { body: string }
+      }
+    ).draft.body
+  }
+
+  /**
+   * Give a review a draft whose body says which review it is.
+   *
+   * **The two bodies have to differ**, or "shows that review's own body" is an assertion
+   * about nothing: two drafts composed from the same blocks are the same string, and the
+   * editor would pass it holding either one.
+   */
+  function draftSaying(id: number, sentence: string): void {
+    const file = resolve(scratch(), `dev-960-draft-${id}.json`)
+    writeFileSync(file, JSON.stringify([{ kind: 'prose', text: sentence }]))
+    cli(seededDatabase, ['draft', 'put', '--review', String(id), '--sections', file])
+  }
+
+  test.beforeAll(() => {
+    first = seedStructuredReview(seededDatabase, 'Give the webhook retry its own context').reviewId
+    second = seedStructuredReview(seededDatabase, 'Carry the delivery window on the job').reviewId
+    draftSaying(first, 'The first of the two drafts, written against the first review.')
+    draftSaying(second, 'The second of the two drafts, written against the second review.')
+    firstBody = bodyOf(first)
+    secondBody = bodyOf(second)
+    /* A seed that produced two equal bodies would make four assertions below vacuous. */
+    expect(firstBody).not.toBe(secondBody)
+  })
+
+  /**
+   * Reach a review's step page the way a developer does, and say how many entries that took.
+   *
+   * The count is what the jump is measured in: from the second review's page, that many
+   * entries back is the *same page of the first review*, which is the parameter-only change
+   * the whole block is about.
+   */
+  async function byTheTrail(page: Page, id: number, step: string): Promise<number> {
+    await page.getByRole('navigation', { name: 'Review Desk' })
+      .getByRole('link', { name: 'Reviews' })
+      .click()
+    await expect(page).toHaveURL(/\/reviews$/)
+    await page.locator(`a[href="/reviews/${id}/understand"]`).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${id}/understand`)
+    if (step === 'understand') return 2
+
+    await page.locator(`.trail a[href="/reviews/${id}/${step}"]`).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${id}/${step}`)
+    return 3
+  }
+
+  /** The back button's own menu: this many entries up, in one navigation. */
+  async function jump(page: Page, entries: number): Promise<void> {
+    await page.evaluate(delta => history.go(delta), entries)
+  }
+
+  /**
+   * Open the first row on the page and hand back the id of what it opened.
+   *
+   * By `aria-controls` rather than by the row's words, so that one test covers four pages
+   * whose rows are a problem, a part, an option and a finding.
+   */
+  async function openTheFirstRow(page: Page, prefix: string): Promise<string> {
+    const row = page.locator(`button[aria-controls^="${prefix}"]`).first()
+    await expect(row).toHaveAttribute('aria-expanded', 'false')
+    const controls = (await row.getAttribute('aria-controls'))!
+    await row.click()
+    await expect(page.locator(`#${controls}`)).toBeVisible()
+    await expect(row).toHaveAttribute('aria-expanded', 'true')
+    return controls
+  }
+
+  for (const [step, prefix, what] of [
+    ['code-review', 'finding-', 'a finding'],
+    ['understand', 'problem-', 'a problem'],
+    ['solution', 'part-', 'a part'],
+    ['alternatives', 'option-', 'an option'],
+  ] as const) {
+    test(`${what} left open is closed on the next review’s ${step} page`, async ({ page }) => {
+      await page.goto(seeded)
+      await byTheTrail(page, first, step)
+      const entries = await byTheTrail(page, second, step)
+
+      const controls = await openTheFirstRow(page, prefix)
+
+      await jump(page, -entries)
+      await expect(page).toHaveURL(`${seeded}reviews/${first}/${step}`)
+
+      /*
+       * **And this row exists here**, so the assertion is about something: both reviews carry
+       * the same brief and the same findings, and the row the second review had open is a row
+       * of this one too.
+       *
+       * **This passes against the pages before the change**, and is kept for what it holds
+       * rather than for what it caught. The criterion is the issue's own — a row left open on
+       * one review is closed on the next — and it holds today because `NuxtPage` mounts a
+       * fresh component per review, not because anything resets the row. Both halves of that
+       * are worth locking down: a `pageKey` added later would make this the test that fails,
+       * and the `watch(reviewId, …)` on each page is what would keep it passing.
+       */
+      await expect(page.locator(`button[aria-controls="${controls}"]`)).toHaveCount(1)
+      await expect(page.locator(`button[aria-controls="${controls}"]`))
+        .toHaveAttribute('aria-expanded', 'false')
+      await expect(page.locator(`#${controls}`)).toHaveCount(0)
+    })
+  }
+
+  /**
+   * **The draft page, by history**, which is the defect the issue was raised for.
+   *
+   * One test for the whole choice, because the three things it asserts are three states of
+   * one navigation and splitting them would mean building the history three times: the page
+   * asks before it moves, Keep editing leaves everything as it was, and Discard moves and
+   * arrives at the other review's own body with nothing unsaved.
+   */
+  test('moving to another review’s draft with unsaved edits asks, in the page', async ({
+    page,
+  }) => {
+    /*
+     * **No browser dialog, ever.** The issue's own words, and the reason this is a card and
+     * not `beforeunload`. Collected rather than thrown from the listener, so the failure is
+     * an assertion at the end of the test rather than an error inside Playwright's event.
+     */
+    const dialogs: string[] = []
+    page.on('dialog', async (dialog) => {
+      dialogs.push(dialog.message())
+      await dialog.dismiss()
+    })
+
+    await page.goto(seeded)
+    await byTheTrail(page, first, 'draft')
+    const entries = await byTheTrail(page, second, 'draft')
+
+    await page.getByRole('tab', { name: 'Edit' }).click()
+    const editor = page.locator('textarea#draft-body')
+    await expect(editor).toHaveValue(secondBody)
+    await editor.fill(`${secondBody}\n\n${TYPED}`)
+
+    /* The back menu, three entries up: the same page, the first review. */
+    await jump(page, -entries)
+
+    /*
+     * **The page asks, and it has not moved.** The address bar has — a history navigation
+     * moves it before any guard runs, and the router puts it back when the guard refuses —
+     * so what is asserted here is the page, which is still the second review's draft with
+     * the typed sentence in it.
+     *
+     * Before the change there was no card and the typing was gone without a word, which is
+     * this test's teeth and the defect that was really there.
+     */
+    await expect(
+      page.getByText('You have unsaved edits to this review’s draft'),
+    ).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Keep editing' })).toBeFocused()
+    await expect(editor).toHaveValue(`${secondBody}\n\n${TYPED}`)
+
+    /* Keep editing: the address comes back, and not a character is lost. */
+    await page.getByRole('button', { name: 'Keep editing' }).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${second}/draft`)
+    await expect(page.getByRole('button', { name: 'Keep editing' })).toHaveCount(0)
+    await expect(editor).toHaveValue(`${secondBody}\n\n${TYPED}`)
+
+    /* Nothing has been written to either review. The sentence was never saved. */
+    expect(bodyOf(first)).toBe(firstBody)
+    expect(bodyOf(second)).toBe(secondBody)
+
+    /* Discard: the navigation goes through. */
+    await jump(page, -entries)
+    await page.getByRole('button', { name: 'Discard the edits' }).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${first}/draft`)
+
+    /*
+     * **The first review's own body, and nothing unsaved**, which is the acceptance
+     * criterion. True before the change as well, for the reason the block comment gives:
+     * this page is mounted again per review. What is new is that it took a choice to get
+     * here rather than silence.
+     */
+    await page.getByRole('tab', { name: 'Edit' }).click()
+    await expect(editor).toHaveValue(firstBody)
+    await expect(editor).not.toHaveValue(new RegExp(TYPED))
+    await expect(page.getByText('Save or discard your changes before signing off.'))
+      .toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Save the draft' })).toBeDisabled()
+
+    expect(dialogs).toEqual([])
+  })
+
+  /** The same, forward: the entry a developer came back from is reached the same way. */
+  test('going forward to another review’s draft with unsaved edits asks too', async ({
+    page,
+  }) => {
+    await page.goto(seeded)
+    await byTheTrail(page, first, 'draft')
+    const entries = await byTheTrail(page, second, 'draft')
+
+    /* Back to the first review's draft with nothing unsaved, so there is a forward entry. */
+    await jump(page, -entries)
+    await expect(page).toHaveURL(`${seeded}reviews/${first}/draft`)
+
+    await page.getByRole('tab', { name: 'Edit' }).click()
+    const editor = page.locator('textarea#draft-body')
+    await expect(editor).toHaveValue(firstBody)
+    await editor.fill(`${firstBody}\n\n${TYPED}`)
+
+    await jump(page, entries)
+    await expect(
+      page.getByText('You have unsaved edits to this review’s draft'),
+    ).toBeVisible()
+
+    await page.getByRole('button', { name: 'Keep editing' }).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${first}/draft`)
+    await expect(editor).toHaveValue(`${firstBody}\n\n${TYPED}`)
+
+    await jump(page, entries)
+    await page.getByRole('button', { name: 'Discard the edits' }).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${second}/draft`)
+    await page.getByRole('tab', { name: 'Edit' }).click()
+    await expect(editor).toHaveValue(secondBody)
+    await expect(page.getByRole('button', { name: 'Save the draft' })).toBeDisabled()
+
+    expect(bodyOf(first)).toBe(firstBody)
+    expect(bodyOf(second)).toBe(secondBody)
+  })
+
+  /**
+   * **A save writes to the review in the address and to no other**, which is the harm.
+   *
+   * The sentence typed on the second review is discarded on the way out, a different one is
+   * typed on the first review and saved, and then both records are read: the first holds
+   * what was typed on it, and neither holds what was typed on the other.
+   */
+  test('a save after moving reaches the review in the address, and no other', async ({
+    page,
+  }) => {
+    await page.goto(seeded)
+    await byTheTrail(page, first, 'draft')
+    const entries = await byTheTrail(page, second, 'draft')
+
+    await page.getByRole('tab', { name: 'Edit' }).click()
+    const editor = page.locator('textarea#draft-body')
+    await editor.fill(`${secondBody}\n\n${TYPED}`)
+
+    await jump(page, -entries)
+    await page.getByRole('button', { name: 'Discard the edits' }).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${first}/draft`)
+
+    const saved = `${firstBody}\n\nTyped on the first review, and saved there.`
+    await page.getByRole('tab', { name: 'Edit' }).click()
+    await expect(editor).toHaveValue(firstBody)
+    await editor.fill(saved)
+    await page.getByRole('button', { name: 'Save the draft' }).click()
+
+    /*
+     * **The preview, back on Rendered, is what a save that succeeded leaves behind** — the
+     * page flips the view itself and only on success, so the editor going is the signal and
+     * an assertion on the Save button's state is an assertion about a button that is no
+     * longer drawn. Said in the notice too, which is what the developer reads.
+     */
+    await expect(editor).toHaveCount(0)
+    await expect(page.getByText(/^Saved\./)).toBeVisible()
+
+    /*
+     * The record, read through the command line, which is how a review session reads it.
+     * `trimEnd`, because the store ends a saved body with a newline and the editor's value
+     * does not carry one — which is a fact about the store and not about this change.
+     */
+    expect(bodyOf(first).trimEnd()).toBe(saved)
+    expect(bodyOf(first)).not.toContain(TYPED)
+    expect(bodyOf(second)).toBe(secondBody)
+    expect(bodyOf(second)).not.toContain(TYPED)
+
+    /* Put it back, so a later run of this block starts where this one did. */
+    draftSaying(first, 'The first of the two drafts, written against the first review.')
+    firstBody = bodyOf(first)
+  })
+
+  /**
+   * **Typing an address is a new document, and that is the whole answer for it.**
+   *
+   * The issue lists a typed address beside browser history as a way to reach the defect. It
+   * is not one: `ssr: false` and history-mode routing mean the browser fetches the page
+   * again, so the component is built from nothing, the editor is seeded from the review in
+   * the address, and the unsaved sentence went with the document that held it.
+   *
+   * **So nothing is asked, and nothing should be.** A guard cannot run — the page it is on
+   * is gone — and the only tool that can speak before a document is replaced is
+   * `beforeunload`, which is the browser dialog this change exists to avoid. What matters is
+   * what the issue actually asks for, and it holds: no text typed on one review reaches
+   * another review's draft.
+   */
+  test('a typed address is a new document, so nothing is carried and nothing is asked', async ({
+    page,
+  }) => {
+    await page.goto(`${seeded}reviews/${first}/draft`)
+    await page.getByRole('tab', { name: 'Edit' }).click()
+    const editor = page.locator('textarea#draft-body')
+    await expect(editor).toHaveValue(firstBody)
+    await editor.fill(`${firstBody}\n\n${TYPED}`)
+
+    /* Typed into the address bar, which is a request for the page rather than a route. */
+    await page.goto(`${seeded}reviews/${second}/draft`)
+
+    await expect(page.getByRole('button', { name: 'Keep editing' })).toHaveCount(0)
+    await page.getByRole('tab', { name: 'Edit' }).click()
+    await expect(editor).toHaveValue(secondBody)
+    await expect(page.getByRole('button', { name: 'Save the draft' })).toBeDisabled()
+
+    expect(bodyOf(first)).toBe(firstBody)
+    expect(bodyOf(second)).toBe(secondBody)
+  })
+
+  /**
+   * **Leaving the draft for another step of the same review asks as well.**
+   *
+   * The other guard: another page is a *leave*, not an update, and the edits are as lost
+   * going there as they are going to another review — the component is taken down either
+   * way. One review is involved, so nothing here can be written to the wrong draft; what is
+   * being asserted is that the developer is asked before their typing is thrown away.
+   */
+  test('leaving the draft for another step of the review asks before it goes', async ({
+    page,
+  }) => {
+    await page.goto(seeded)
+    await byTheTrail(page, first, 'draft')
+
+    await page.getByRole('tab', { name: 'Edit' }).click()
+    const editor = page.locator('textarea#draft-body')
+    await editor.fill(`${firstBody}\n\n${TYPED}`)
+
+    const codeReview = page.locator(`.trail a[href="/reviews/${first}/code-review"]`)
+    await codeReview.click()
+    await expect(page.getByRole('button', { name: 'Keep editing' })).toBeVisible()
+    await expect(page).toHaveURL(`${seeded}reviews/${first}/draft`)
+
+    await page.getByRole('button', { name: 'Keep editing' }).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${first}/draft`)
+    await expect(editor).toHaveValue(`${firstBody}\n\n${TYPED}`)
+
+    await codeReview.click()
+    await page.getByRole('button', { name: 'Discard the edits' }).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${first}/code-review`)
+
+    /* And the draft is as the session left it. */
+    expect(bodyOf(first)).toBe(firstBody)
+  })
 })

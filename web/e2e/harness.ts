@@ -1807,6 +1807,68 @@ export function seedReadyDraft(
   return { reviewId, pr }
 }
 
+/**
+ * Another review carrying the same structured brief and findings as the seeded one.
+ *
+ * **Two reviews of the same shape is what DEV-960 has to be tested against**, and a second
+ * review of a *different* shape would hide the defect instead of showing it. The defect is a
+ * page keeping one review's open row and drawing it over the next review's, and a row is a
+ * problem's number, a part's index, an option's key or a finding's sequence number — so
+ * arriving somewhere with none of those numbers on the page draws nothing open and passes
+ * against the bug. These two match row for row, because both are the contract's one invented
+ * example.
+ *
+ * **`seed()`'s own structured review is not used as the second one.** Everything above the
+ * DEV-960 block asserts on how many reviews the queue and the list hold, so a review opened
+ * here is one more of them — these are the block's own, as the sign-off block's are.
+ *
+ * No draft, and that is not an omission: the four pages this is for draw the brief and the
+ * findings, and `GET …/draft` refusing is a state the code review page is built to carry.
+ * The two reviews the draft page is tested on come from `seedReadyDraft` instead.
+ */
+export function seedStructuredReview(
+  database: string,
+  title: string,
+): { reviewId: number, pr: number } {
+  const directory = scratch()
+  const { reviewId, pr } = openAFreshReview(database, title)
+
+  /* The order `seedStructured` states and for its reason: the brief points at findings. */
+  structuredFindings().forEach((finding, index) => {
+    const path = join(directory, `another-finding-${index}.json`)
+    writeFileSync(path, JSON.stringify(finding))
+    cli(database, ['finding', 'add', '--review', String(reviewId), '--file', path])
+  })
+
+  const brief = join(directory, 'another-brief.json')
+  writeFileSync(brief, JSON.stringify(structuredBrief()))
+  cli(database, ['brief', 'put', '--review', String(reviewId), '--file', brief])
+
+  /*
+   * **Every step, because the trail is how the test reaches the other three pages.** A step
+   * the record holds no layer for is not on the trail at all, so a seed that set none would
+   * leave Alternatives, Solution and the code review reachable only by typing an address —
+   * which is a full page load, and a full page load is the one route that cannot carry the
+   * state this is testing.
+   */
+  for (let number = 1; number <= 7; number += 1) {
+    cli(database, [
+      'layer',
+      'set',
+      '--review',
+      String(reviewId),
+      '--layer',
+      String(number),
+      '--state',
+      number === 6 ? 'waiting_on_you' : 'done',
+      '--detail',
+      number === 6 ? 'waiting on you' : 'done',
+    ])
+  }
+
+  return { reviewId, pr }
+}
+
 /** The draft's two stamps, as the record holds them: whole seconds, or null. */
 export function draftStamps(
   database: string,
