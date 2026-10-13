@@ -184,6 +184,98 @@ fn review_open_still_prints_the_id_and_nothing_else() {
 }
 
 #[test]
+fn review_open_says_whether_anybody_has_begun_on_the_round_it_hands_back() {
+    // What a dispatcher does next turns on it: on `head_moved` it either wakes the session
+    // already at work or dispatches one, and a second call to find that out is a second
+    // thing that can fail between them.
+    let desk = Desk::new();
+    let review = open_review(&desk, "acme/portal", "52", "4d9464f");
+    begin(&desk, &review);
+
+    let moved = desk.json(&[
+        "review",
+        "open",
+        "--repo",
+        "acme/portal",
+        "--pr",
+        "52",
+        "--head",
+        "a41c9e2",
+    ]);
+    assert_eq!(moved["action"], "head_moved");
+    assert_eq!(
+        moved["started"], true,
+        "somebody is reading this round: wake them, do not dispatch a second worker"
+    );
+
+    let fresh = desk.json(&[
+        "review",
+        "open",
+        "--repo",
+        "acme/portal",
+        "--pr",
+        "53",
+        "--head",
+        "4d9464f",
+    ]);
+    assert_eq!(fresh["action"], "created");
+    assert_eq!(fresh["started"], false);
+}
+
+#[test]
+fn a_round_of_a_pull_request_out_of_play_is_out_of_play_too() {
+    // The poller records a request on sight, so it reaches `review open` while the pull
+    // request is still a draft on GitHub. The round it opens must not put the request back
+    // in front of a session.
+    let desk = Desk::new();
+    let first = open_review(&desk, "acme/portal", "54", "4d9464f");
+    post_round(&desk, &first);
+    desk.run(&[
+        "review",
+        "out-of-play",
+        "--repo",
+        "acme/portal",
+        "--pr",
+        "54",
+        "--reason",
+        "draft",
+    ]);
+
+    let opened = desk.json(&[
+        "review",
+        "open",
+        "--repo",
+        "acme/portal",
+        "--pr",
+        "54",
+        "--head",
+        "a41c9e2",
+    ]);
+    assert_eq!(opened["action"], "created");
+    assert_eq!(
+        opened["review"]["out_of_play"], "draft",
+        "the round inherits the pull request's state: {opened}"
+    );
+    assert_eq!(
+        desk.json(&["work", "list"])["work"]
+            .as_array()
+            .expect("the work list")
+            .len(),
+        0
+    );
+
+    desk.run(&["review", "in-play", "--repo", "acme/portal", "--pr", "54"]);
+    assert_eq!(
+        desk.json(&["work", "list"])["work"]
+            .as_array()
+            .expect("the work list")
+            .len(),
+        1,
+        "and one call brings every round back"
+    );
+}
+
+#[test]
 fn review_find_says_whether_anybody_has_begun() {
     let desk = Desk::new();
     let review = open_review(&desk, "acme/portal", "46", "4d9464f");

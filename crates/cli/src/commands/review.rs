@@ -67,7 +67,9 @@ pub enum ReviewCommand {
     /// **`action` in the `--json` answer says which of four things happened** —
     /// `created`, `head_moved`, `unchanged` or `diff_unchanged` — and it is the field to
     /// branch on. `created` and `head_moved_from` still mean exactly what they meant, for
-    /// callers written before it existed.
+    /// callers written before it existed. `started` is beside it, so a caller deciding
+    /// whether to wake the session already at work or dispatch one does not need a second
+    /// call to find out.
     ///
     /// **`--session` is how a session says on its first call that it is the one working.**
     /// It no longer pins the head — that is the behaviour DEV-962 removes — and it is what
@@ -328,6 +330,14 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
                     // dispatcher does next. DEV-962 asks for the answer to be explicit
                     // enough to branch on, and this is it.
                     "action": opened.action,
+                    // **Whether anybody has begun on the round this call hands back**, the
+                    // same question `review find`'s rows answer. It is here because of what
+                    // a caller does next: on `head_moved` a dispatcher either wakes the
+                    // session already at work or dispatches one, and that is this field —
+                    // without it the branch needs a second call, and a dispatcher that
+                    // skipped it would dispatch a second worker for a round somebody is
+                    // reading.
+                    "started": store.review_started(review.id)?,
                     "carryable": carryable,
                 }),
                 // The id alone, so `ID=$(review-desk review open ...)` is the whole of

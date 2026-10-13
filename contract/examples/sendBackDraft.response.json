@@ -8,6 +8,8 @@
     "sent_back_note": "F2 is the option map talking, not the diff. Either tie it to a line in this PR or move it to the ticket.",
     "sent_back_at": "2026-10-08T11:33:00Z",
     "posted_at": null,
+    "signoff_withdrawn_at": null,
+    "signoff_withdrawn_head": null,
     "updated_at": "2026-10-08T11:33:00Z"
   },
   "review": {
@@ -28,7 +30,9 @@
     "pr_state_at": null,
     "harvested_at": null,
     "dismissed_at": null,
-    "dismissed_reason": null
+    "dismissed_reason": null,
+    "out_of_play": null,
+    "out_of_play_at": null
   },
   "lint": {
     "passes": true,

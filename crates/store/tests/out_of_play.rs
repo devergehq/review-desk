@@ -9,11 +9,27 @@
 
 mod common;
 
-use common::temp_store;
+use common::{db_path, temp_store};
 use review_desk_store::{
-    Disposition, LeftTheDesk, NewBrief, NewFinding, OutOfPlay, PrState, ReviewsShown, Severity,
-    Store, WorkFilter,
+    Clock, Disposition, LeftTheDesk, NewBrief, NewFinding, OutOfPlay, PrState, ReviewsShown,
+    Severity, Store, Timestamp, WorkFilter,
 };
+use tempfile::TempDir;
+
+/// A Friday afternoon in October 2026, as seconds since the epoch — `tests/timings.rs`'s
+/// constant, for the same reason it gives: a real instant keeps a failure message readable.
+const START: Timestamp = 1_760_000_000;
+
+/// A store whose clock the test holds, for the two assertions about *when* a pull request
+/// went out of play. Seconds is the record's resolution, so two calls in one real second are
+/// indistinguishable on the system clock — and "the time did not move" is exactly what one of
+/// these tests has to prove.
+fn stopped_store() -> (TempDir, Store, Clock) {
+    let dir = TempDir::new().expect("temporary directory");
+    let clock = Clock::fixed(START);
+    let store = Store::open_with_clock(db_path(&dir), clock.clone()).expect("open store");
+    (dir, store, clock)
+}
 
 const REPO: &str = "acme/portal";
 
@@ -182,26 +198,110 @@ fn every_round_of_the_pull_request_carries_it() {
 }
 
 #[test]
-fn a_round_opened_while_the_pull_request_is_out_of_play_is_in_play_until_it_is_said_again() {
-    // Stated rather than silently true: `review open` writes no `out_of_play`, so a round
-    // created while the pull request is a draft is in play. The caller watching GitHub says
-    // so again, which is the same call it made the first time — and in practice nothing
-    // opens a round for a pull request it has just taken out of play.
+fn a_round_opened_while_the_pull_request_is_out_of_play_inherits_it() {
+    // **The one case that could have made "no round holds one" false.** The poller records
+    // a request on sight, so it reaches `review open` on any tick GitHub still shows the
+    // request — and a round opened without the state would put a pull request the author has
+    // pulled back back in front of a session, which is the thing the column exists to stop.
     let (_dir, store) = temp_store();
 
     let one = store.open_review(REPO, 65, "4d9464f").expect("round 1");
     common::posted(&store, one.review.id);
-    store
+    let out = store
         .set_pr_out_of_play(REPO, 65, Some(OutOfPlay::Draft))
         .expect("out of play");
+    let since = out[0].out_of_play_at;
 
     let two = store.open_review(REPO, 65, "a41c9e2").expect("round 2");
-    assert!(!two.review.is_out_of_play());
+    assert_eq!(
+        two.review.out_of_play,
+        Some(OutOfPlay::Draft),
+        "the round inherits the pull request's state"
+    );
+    assert_eq!(
+        two.review.out_of_play_at, since,
+        "and since when, because the request has been out of play since the caller said so"
+    );
+    assert_eq!(
+        work_ids(&store),
+        Vec::<i64>::new(),
+        "so no session is offered it"
+    );
 
-    let rounds = store
-        .set_pr_out_of_play(REPO, 65, Some(OutOfPlay::Draft))
-        .expect("said again");
-    assert!(rounds.iter().all(|round| round.is_out_of_play()));
+    store
+        .set_pr_out_of_play(REPO, 65, None)
+        .expect("ready for review again");
+    assert!(
+        !store
+            .get_review(two.review.id)
+            .expect("the row")
+            .is_out_of_play(),
+        "and one call clears every round"
+    );
+}
+
+#[test]
+fn saying_the_same_reason_again_does_not_move_when_it_went_out_of_play() {
+    // The caller is a poller. Re-asserting `draft` every tick must not reset "out of play
+    // since", or a page would say "a draft since 2 minutes ago" about a pull request pulled
+    // back last week. Measured on a clock the test moves, because the two calls would
+    // otherwise land in the same second and prove nothing.
+    let (_dir, store, clock) = stopped_store();
+    requested(&store, 72, "4d9464f");
+
+    let first = store
+        .set_pr_out_of_play(REPO, 72, Some(OutOfPlay::Draft))
+        .expect("out of play");
+    assert_eq!(first[0].out_of_play_at, Some(START));
+
+    clock.advance(15 * 60);
+    let again = store
+        .set_pr_out_of_play(REPO, 72, Some(OutOfPlay::Draft))
+        .expect("the next tick says the same thing");
+    assert_eq!(
+        again[0].out_of_play_at,
+        Some(START),
+        "fifteen minutes later, and it has been out of play since the first tick"
+    );
+    assert_eq!(again[0].out_of_play, Some(OutOfPlay::Draft));
+}
+
+#[test]
+fn a_different_reason_replaces_the_one_held() {
+    // A pull request can go draft and have its review request withdrawn, in either order.
+    // The newer assertion is the one that is true, and it is a different fact, so it takes
+    // its own time.
+    let (_dir, store, clock) = stopped_store();
+    requested(&store, 73, "4d9464f");
+
+    store
+        .set_pr_out_of_play(REPO, 73, Some(OutOfPlay::Draft))
+        .expect("converted to a draft");
+    clock.advance(15 * 60);
+    let changed = store
+        .set_pr_out_of_play(REPO, 73, Some(OutOfPlay::Withdrawn))
+        .expect("and then the request was withdrawn");
+
+    assert_eq!(changed[0].out_of_play, Some(OutOfPlay::Withdrawn));
+    assert_eq!(
+        changed[0].out_of_play_at,
+        Some(START + 15 * 60),
+        "a different reason is a different fact, so it takes its own time"
+    );
+}
+
+#[test]
+fn putting_a_pull_request_in_play_that_already_is_changes_nothing_and_is_not_an_error() {
+    // The caller cannot always know whether it has already said so, and asking first would
+    // be a read it should not need.
+    let (_dir, store) = temp_store();
+    let review = requested(&store, 74, "4d9464f");
+
+    let back = store
+        .set_pr_out_of_play(REPO, 74, None)
+        .expect("it is already in play");
+    assert_eq!(back[0].out_of_play, None);
+    assert_eq!(work_ids(&store), vec![review]);
 }
 
 #[test]

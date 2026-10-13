@@ -8,6 +8,8 @@
     "sent_back_note": null,
     "sent_back_at": null,
     "posted_at": null,
+    "signoff_withdrawn_at": null,
+    "signoff_withdrawn_head": null,
     "updated_at": "2026-10-08T11:25:00Z"
   },
   "review": {
@@ -28,7 +30,9 @@
     "pr_state_at": null,
     "harvested_at": null,
     "dismissed_at": null,
-    "dismissed_reason": null
+    "dismissed_reason": null,
+    "out_of_play": null,
+    "out_of_play_at": null
   },
   "lint": null,
   "sections": [],

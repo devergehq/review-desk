@@ -174,6 +174,9 @@ Everything else on the five screens is below.
 | "acme/portal · #412" as a link in the header | `review.repo` and `review.pr`, built into `https://github.com/{repo}/pull/{pr}` — never taken from a stored string |
 | "round 1" | `review.round` |
 | "head 3f9c2ab" | `review.head_sha` |
+| "Updated for 3 commits since 4d9464f" | `head_updates.commits` and `.since_sha` — the sentence drops the count when `commits` is null, which is a round whose commits nobody recorded |
+| "2 commits brought the base branch in" | `head_updates.base_only` |
+| "Paused — the pull request is a draft" | `review.out_of_play`, with `.out_of_play_at` for since when |
 | "214 changed lines" | `review.changed_lines` |
 | the seven layer chips | `layers[].number`, `.name`, `.state`, `.detail` |
 | the card of facts beside a step | `layers[].facts[]` — `label`, `value` |
@@ -569,6 +572,97 @@ every `round_status` is `new`, which is true: nothing before migration 7 could c
 inferring a link from a matching number would join two findings that have nothing to do with
 each other.
 
+### A round is a posted review
+
+**A new commit opens a round only when the newest round has posted.** Before it, the same
+round's head moves and the move is recorded. DEV-962, Patrick on 13 October 2026: "it
+shouldn't create a whole new record because that doesn't make any sense… If changes happen
+after our post, that's a new review. That's another round." His queue showed one pull
+request twice, round 1 and round 2 both offering "changes since your last review", over a
+round 1 he had never posted — and the only new commits were the author merging the base
+branch in.
+
+| Event on the pull request | Before a post | After a post |
+|---|---|---|
+| New commits that change the pull request's own diff | **the same round**: the head moves, `head_updates` records it, and the page says "Updated for 3 commits since `4d9464f`" | **a new round**, as before |
+| Commits that only bring the base branch in | **nothing**: no round, no moved head, no session woken, and a `base_only` row saying they arrived | nothing, and the same row |
+| Converted to draft, or the review request withdrawn | **out of play** with the reason, and back when the pull request is | the same |
+| Merged or closed | **finished**, which is DEV-957's | the same |
+
+**Posted is `drafts.posted_at`, or a `github_review_id` on the review** — the second is a
+review posted through `review link --github-review`, which has no draft at all. It is one
+function, `Store::review_is_posted`, because the same word decides whether a newer round
+supersedes this one: two spellings would allow a round that can neither move nor be signed
+off.
+
+**It moves whoever is at work on it, and that is the reversal.** DEV-945 refused to move a
+round anybody had *started*, so that a brief computed from one commit could not end up on a
+review the record said was of another. That refusal bought a second unposted round for every
+push during a review. What replaces it is the record: the session re-reads the delta, the
+page says the head moved and for which commits, and a sign-off given before the move is
+withdrawn.
+
+| Fact | Where |
+|---|---|
+| Every move, with its kind, from, to and time | `ReviewDetail.head_updates.updates[]` |
+| The commit the round was opened on | `head_updates.since_sha` — the *first* move's `from_sha`, because the sentence is about the commit the developer last saw |
+| How many commits came after it | `head_updates.commits`, **null** rather than zero when the round's commits were never recorded |
+| Commits that only brought the base branch in | `head_updates.base_only` |
+| Rounds the tidy folded into this one | `head_updates.folded` |
+| Why a sign-off is gone | `Draft.signoff_withdrawn_at` and `.signoff_withdrawn_head` |
+
+**`HeadUpdateKind` names the event rather than describing the diff.** DEV-962 asks the move
+to record "whether the PR's own diff changed", and a `diff_changed` boolean would hold false
+for every move nobody said anything about — an assertion the record was never given. So:
+`moved`, `base_only`, `folded`, and each one is a statement something actually made.
+
+**Review Desk cannot tell a base-branch merge from a real push, and does not guess.**
+It reads no git and no GitHub, so the caller that has compared the pull request's diff
+against its base passes `review open --diff-unchanged`. Omitting it is *not* "the diff
+changed": it is "nobody said", and both move the head, which is the safe default — a move is
+never destructive, and the page states it.
+
+**A withdrawn sign-off goes back to `drafting`, not to `ready`.** An approved draft is what a
+session reads and posts under the developer's name, so one still marked approved over a
+commit they never saw would be a review posted in their name about code they did not read.
+`ready` would leave "waiting on you to sign off" over a draft written for a commit nobody is
+looking at, which is the contradiction DEV-957 removed for a superseded round. `event` is
+kept — what it is to be posted as is still true — and approving again clears the withdrawal,
+because the history of it is in the append-only table.
+
+**No operation in this contract moves a head.** The commits arrive on GitHub, and the thing
+watching GitHub is the Locus dispatcher: `review-desk review open` is where a move is
+recorded, and this API serves it.
+
+### Out of play: draft, withdrawn, and back
+
+**The third way a review leaves the queue, and the only one that undoes itself.** A pull
+request converted to a draft is the author saying "not yet"; a withdrawn review request is
+somebody saying "not you". Neither is a dismissal — the developer's own act on a review they
+decline — and neither is finished, which merged and closed are. So `Review.out_of_play` holds
+`draft` or `withdrawn` with `out_of_play_at`, and the review returns on the round it was on.
+
+| Where it shows | What happens |
+|---|---|
+| The queue and the work list | **gone**, through the one `IN_PLAY` clause a dismissal and a finish already leave by |
+| The Reviews list | **kept, under In play**, with `left_the_desk: "out_of_play"` — the row that explains where the review went must not be the row nobody can find |
+| A sign-off | **still offered**: the pull request is coming back, and refusing would leave a stuck review rather than protect anybody |
+| Everything under the review | untouched: the rounds, the drafts, the sign-offs, the findings |
+
+**It is a fact about the pull request, so every round of it carries the value**, and a round
+opened while the request is out of play inherits it. "No round holds one" is then exactly
+"the request is back" — the alternative, a value on whichever round happened to be newest,
+leaves an early round still saying `draft` after the pull request is ready, and `IN_PLAY`
+would answer from whichever row a query reached first.
+
+**Written by the caller watching GitHub, and by nothing in this document.**
+`review-desk review out-of-play --repo … --pr … --reason draft|withdrawn` records it and
+`review-desk review in-play --repo … --pr …` clears it. Both are safe to re-send: saying the
+same reason again does not move `out_of_play_at` (the caller is a poller, and "out of play
+since 2 minutes ago" about a pull request pulled back last week is a lie), a different reason
+replaces the one held and takes its own time, and putting a pull request in play that already
+is changes nothing.
+
 ### Draft preview — `GET /reviews/{reviewId}/draft`, example `examples/getDraft.response.json`
 
 | On the mockup | Field |
@@ -587,6 +681,7 @@ each other.
 | "F4 · Backoff schedule repeated in two files" | `held_back[].finding_key`, `.claim` |
 | the "Post as" options | the `ReviewEvent` enum — `comment`, `request_changes`, `approve` |
 | whether the approve controls are live | `draft.status` |
+| "You approved 4d9464f, and the pull request has moved on" | `draft.signoff_withdrawn_head` and `.signoff_withdrawn_at`, beside `review.head_sha` |
 | that a ticket has already been asked for | `nit_ticket.status`, `.ticket_id` |
 
 The example body carries a mermaid fence and a `<details>` fold, which is what DEV-855's

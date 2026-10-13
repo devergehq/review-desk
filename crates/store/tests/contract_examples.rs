@@ -1109,6 +1109,8 @@ fn review_document(review: &Review) -> Value {
         "harvested_at": review.harvested_at,
         "dismissed_at": review.dismissed_at,
         "dismissed_reason": review.dismissed_reason,
+        "out_of_play": review.out_of_play.map(|why| why.as_str()),
+        "out_of_play_at": review.out_of_play_at,
     })
 }
 
@@ -1312,6 +1314,7 @@ fn round_document(round: &review_desk_store::RoundSummary) -> Value {
         "round": round.round,
         "head_sha": round.head_sha,
         "created_at": round.created_at,
+        "dismissed": round.dismissed,
         "posted_at": round.posted_at,
         "event": round.event,
         "findings": round.findings,
@@ -1489,6 +1492,8 @@ fn draft_document(draft: &Draft) -> Value {
         "sent_back_note": draft.sent_back_note,
         "sent_back_at": draft.sent_back_at,
         "posted_at": draft.posted_at,
+        "signoff_withdrawn_at": draft.signoff_withdrawn_at,
+        "signoff_withdrawn_head": draft.signoff_withdrawn_head,
         "updated_at": draft.updated_at,
     })
 }
@@ -1801,6 +1806,30 @@ fn review_detail(store: &Store, review_id: i64) -> Value {
                 .map(round_document)
                 .collect(),
         ),
+    );
+    // What has happened to this round's head commit. DEV-962, and the fourth question the
+    // round-two page asks.
+    let updates = store.head_updates(review_id).expect("the head updates");
+    document.insert(
+        "head_updates".to_string(),
+        json!({
+            "since_sha": updates.since_sha,
+            "moved": updates.moved,
+            "base_only": updates.base_only,
+            "folded": updates.folded,
+            "commits": updates.commits,
+            "last_at": updates.last_at,
+            "updates": updates
+                .updates
+                .iter()
+                .map(|update| json!({
+                    "kind": update.kind,
+                    "from_sha": update.from_sha,
+                    "to_sha": update.to_sha,
+                    "at": update.at,
+                }))
+                .collect::<Vec<_>>(),
+        }),
     );
     document.insert(
         "commits_since_previous_round".to_string(),

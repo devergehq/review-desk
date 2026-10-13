@@ -121,6 +121,12 @@ impl Store {
     /// deliberately: the alternative is Review Desk deciding that a push means the
     /// developer changed their mind.
     ///
+    /// **A pull request out of play stays out of play, and a round opened on one inherits
+    /// it.** The author pulling the pull request back is not something a push undoes, and a
+    /// round that did not inherit the state would put the request back in front of a session
+    /// the moment a post was followed by a commit. `review in-play` is the way back, and it
+    /// clears every round at once.
+    ///
     /// The round that moved comes back with `created: false`,
     /// [`OpenedReview::head_moved_from`] set and [`OpenedAction::HeadMoved`], so a caller
     /// can say which of the four things happened without comparing commits itself.
@@ -207,6 +213,12 @@ impl Store {
         }
 
         let newest = self.newest_round(&repo, pr)?;
+        // **Kept before the branches consume `newest`.** Out of play is a fact about the
+        // pull request, so a round opened while the request is out of play is out of play
+        // too — see the inherit below.
+        let out_of_play = newest
+            .as_ref()
+            .and_then(|newest| newest.out_of_play.map(|why| (why, newest.out_of_play_at)));
 
         // **The base-only case first, because it is the one that does nothing.** It is
         // recorded against the newest round whether that round has posted or not: after a
@@ -290,6 +302,27 @@ impl Store {
             round,
             ..Default::default()
         })?;
+
+        // **A round of a pull request that is out of play is out of play.** Migration 19's
+        // argument, applied to the one case that could break it: the state is the *pull
+        // request's*, and a round opened without it would make "no round holds one" false
+        // the moment a post was followed by a push — the queue would then offer a session a
+        // round of a pull request the author has pulled back, which is the thing the column
+        // exists to stop. The time comes with it rather than being taken now: this round is
+        // new, but the request has been out of play since the caller said so.
+        //
+        // The caller that polls the pull request need not know the rule. It keeps saying
+        // what GitHub shows it, and `review in-play` clears every round at once.
+        let review = match out_of_play {
+            Some((why, at)) => {
+                self.conn.execute(
+                    "UPDATE reviews SET out_of_play = ?2, out_of_play_at = ?3 WHERE id = ?1",
+                    params![review.id, why, at],
+                )?;
+                self.get_review(review.id)?
+            }
+            None => review,
+        };
 
         tx.commit()?;
         Ok(OpenedReview {
@@ -930,10 +963,27 @@ impl Store {
         // **`out_of_play_at` is written with the reason and cleared with it.** A time
         // without a reason would be a review that went out of play for nothing, which is
         // migration 17's rule for a dismissal's reason read the other way round.
+        //
+        // **And it does not move when the same reason is said again**, which matters
+        // because the caller that says it is a poller: a dispatcher that re-asserts `draft`
+        // every tick would otherwise reset "out of play since" for ever, and a page saying
+        // "a draft since 2 minutes ago" about a pull request pulled back last Tuesday is
+        // the fault `set_review_layer`'s idempotence argument describes. A *different*
+        // reason is a different fact and takes the new time: a pull request that went draft
+        // and then had its request withdrawn is out of play for the newer reason, and the
+        // two can arrive in either order.
+        //
+        // `IS` rather than `=`, which is SQLite's null-safe comparison: `out_of_play = NULL`
+        // is null, so the clearing case would fall to the `ELSE` and write a time against no
+        // reason.
         self.conn.execute(
             "UPDATE reviews
                 SET out_of_play = ?3,
-                    out_of_play_at = CASE WHEN ?3 IS NULL THEN NULL ELSE ?4 END
+                    out_of_play_at = CASE
+                        WHEN ?3 IS NULL         THEN NULL
+                        WHEN out_of_play IS ?3  THEN out_of_play_at
+                        ELSE ?4
+                    END
               WHERE repo = ?1 AND pr = ?2",
             params![repo, pr, why, self.now()],
         )?;

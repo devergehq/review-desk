@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 
 use review_desk_store::{
     Actor, Brief, Decision, DecisionMade, DiffAtHead, Disposition, Draft, DraftSection,
-    DraftThread, Finding, FindingInRound, FullReview, NewDraft, NewOutcome, NitTicket,
+    DraftThread, Finding, FindingInRound, FullReview, HeadUpdates, NewDraft, NewOutcome, NitTicket,
     NotForSigning, OpenedReview, PostedReview, ProblemStatement, RepoSummary, Review,
     ReviewAtLayer, ReviewAtStep, ReviewEvent, ReviewFacts, ReviewLayer, ReviewProvenance,
     ReviewTimings, ReviewsShown, RoundCommit, RoundSummary, Rule, RuleCounts, RuleStage,
@@ -380,6 +380,15 @@ impl Records {
     /// this server has one GitHub read and it is `POST /reviews`.
     pub fn round_commits(&self, review_id: i64) -> Result<Vec<RoundCommit>, ApiError> {
         self.with(|store| store.list_round_commits(review_id))
+    }
+
+    /// What has happened to this round's head commit, with the counts the page reads.
+    ///
+    /// **Read, never computed here.** The moves are written by whatever opened the review
+    /// on a new commit — `review open`, which is the dispatcher's call — and the commit
+    /// count comes from the round's own recorded commits. This server reads no GitHub.
+    pub fn head_updates(&self, review_id: i64) -> Result<HeadUpdates, ApiError> {
+        self.with(|store| store.head_updates(review_id))
     }
 
     /// The findings held back from this review's draft.

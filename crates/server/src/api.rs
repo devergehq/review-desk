@@ -780,6 +780,15 @@ impl Api {
                     .iter()
                     .map(wire::round_commit)
                     .collect::<Vec<_>>(),
+                // **What has happened to this round's head since it was opened.** The
+                // fourth question the round-two page asks, and the one DEV-962 added: the
+                // page says "Updated for 3 commits since `4d9464f`", and the code review
+                // shows what changed since the draft was written. Served with the round
+                // rather than fetched on its own, which is this contract's rule that each
+                // screen is one GET.
+                "head_updates": wire::head_updates(
+                    &self.records.head_updates(review_id)?,
+                ),
             }),
         ))
     }

@@ -17,7 +17,9 @@
     "pr_state_at": null,
     "harvested_at": null,
     "dismissed_at": null,
-    "dismissed_reason": null
+    "dismissed_reason": null,
+    "out_of_play": null,
+    "out_of_play_at": null
   },
   "not_for_signing": null,
   "layers": [
@@ -775,6 +777,7 @@
       "round": 1,
       "head_sha": "3f9c2ab",
       "created_at": "2026-10-08T10:31:00Z",
+      "dismissed": false,
       "posted_at": null,
       "event": null,
       "findings": 6,
@@ -791,6 +794,15 @@
       }
     }
   ],
+  "head_updates": {
+    "since_sha": null,
+    "moved": 0,
+    "base_only": 0,
+    "folded": 0,
+    "commits": null,
+    "last_at": null,
+    "updates": []
+  },
   "commits_since_previous_round": [],
   "sources": [
     {

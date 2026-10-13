@@ -16,5 +16,7 @@
   "pr_state_at": null,
   "harvested_at": null,
   "dismissed_at": "2026-10-12T09:12:00Z",
-  "dismissed_reason": "the pull request was closed unmerged, so there is nothing left to act on"
+  "dismissed_reason": "the pull request was closed unmerged, so there is nothing left to act on",
+  "out_of_play": null,
+  "out_of_play_at": null
 }
