@@ -1,8 +1,7 @@
 # The Review Desk mockups
 
 Five screens with sample data, drawn on 8 October 2026 and the reference DEV-855 built
-`web/` from. They are kept here so the reference outlives the link:
-[claude.ai/artifact/MbzJCUfZeTeSQhZ4rBeYM6](https://claude.ai/artifact/MbzJCUfZeTeSQhZ4rBeYM6).
+`web/` from.
 
 | File | Screen | Built as |
 | -- | -- | -- |
