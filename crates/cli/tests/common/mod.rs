@@ -7,7 +7,11 @@
 //! of them does not use is dead code there. That is what the allow is for.
 #![allow(dead_code)]
 
+use std::io::{Read, Write};
+use std::net::TcpStream;
 use std::path::{Path, PathBuf};
+use std::process::{Child, Stdio};
+use std::time::{Duration, Instant};
 
 use assert_cmd::Command;
 use review_desk_store::Store;
@@ -136,4 +140,147 @@ pub fn start_review(desk: &Desk, review: &str) {
         )
         .assert()
         .success();
+}
+
+/* ------------------------------- A served desk ------------------------------- */
+
+/// A running `review-desk serve`, and the first line it printed.
+///
+/// **Here rather than in `tests/serve.rs`, because two test files need a server now.**
+/// That file tests the *command* — what it prints, and that the address it printed answers
+/// — and `stale_code_changed.rs` tests an *answer* the server gives over a database the
+/// command line seeded. One spawn helper, because a second copy is a second set of
+/// decisions about pipes and deadlines to keep identical.
+///
+/// **Its output goes to a file, not a pipe, and that is not a style choice.** The first
+/// version of this piped stdout, read one line and dropped the reader — which closes the
+/// read end, so the child's *next* `println!` fails with `EPIPE` and panics, killing the
+/// server the test had just started. `serve` prints two lines with a front end embedded
+/// and three without, so the window was narrow on a developer's machine and wide on CI: it
+/// failed once locally in about twenty runs, and then on CI, where there is no front end.
+/// A file has no reader to close.
+#[derive(Debug)]
+pub struct Served {
+    child: Child,
+    /// The first line it printed, which is where it says it is.
+    pub line: String,
+    /// Holds the file its output went to. Dropping it removes the file.
+    _output: TempDir,
+}
+
+impl Drop for Served {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+impl Served {
+    /// The address it is answering on, as `host:port`.
+    ///
+    /// Read out of the line it printed, in either form: `--json` prints one document
+    /// carrying `serve.address`, and without it the line names the URL in prose. A test
+    /// that wants the address should not also have to know which form it asked for.
+    pub fn address(&self) -> String {
+        if let Ok(document) = serde_json::from_str::<Value>(&self.line) {
+            if let Some(address) = document["serve"]["address"].as_str() {
+                return address.to_string();
+            }
+        }
+        self.line
+            .trim()
+            .rsplit("http://")
+            .next()
+            .expect("a URL in the line serve printed")
+            .trim_end_matches('/')
+            .to_string()
+    }
+}
+
+/// Start `review-desk serve` on a free port and read the line it prints.
+pub fn serve(desk: &Desk, json: bool) -> Served {
+    let output = TempDir::new().expect("a directory for the child's output");
+    let path = output.path().join("serve.out");
+    let file = std::fs::File::create(&path).expect("the child's output file");
+
+    let binary = assert_cmd::cargo::cargo_bin("review-desk");
+    let mut command = std::process::Command::new(binary);
+    command
+        .env("REVIEW_DESK_DB", desk.db())
+        // Port 0 so two runs of the test suite cannot collide on a port.
+        .args(["serve", "--port", "0"])
+        .stdout(Stdio::from(file))
+        .stderr(Stdio::piped());
+    if json {
+        command.arg("--json");
+    }
+
+    let child = command.spawn().expect("starting review-desk serve");
+
+    // Wait for the first line to land. The file is written by the child and read here;
+    // nothing the test does can interrupt the child's writing.
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let mut line = String::new();
+    while Instant::now() < deadline {
+        let printed = std::fs::read_to_string(&path).unwrap_or_default();
+        if let Some((first, _)) = printed.split_once('\n') {
+            line = first.to_string();
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    assert!(
+        !line.is_empty(),
+        "serve printed nothing in 20 seconds; it should say where it is before it serves"
+    );
+
+    Served {
+        child,
+        line,
+        _output: output,
+    }
+}
+
+/// Wait until the address *answers*, or give up.
+///
+/// A full request, not a bare connect. Connecting and dropping the socket leaves a worker
+/// reading a request that never arrives, which on a loaded machine is one of four workers
+/// tied up for no reason — and "something accepted the connection" is a weaker claim than
+/// "the server answered" anyway.
+pub fn wait_for(address: &str) -> bool {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while Instant::now() < deadline {
+        if TcpStream::connect(address).is_ok() && get(address, "/api/v1/health").contains("200 OK")
+        {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    false
+}
+
+/// One GET, returning the whole answer: status line, headers and body.
+pub fn get(address: &str, path: &str) -> String {
+    let mut socket = TcpStream::connect(address).expect("connecting to the served address");
+    let request = format!("GET {path} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n");
+    socket.write_all(request.as_bytes()).expect("the request");
+    let mut answer = String::new();
+    socket.read_to_string(&mut answer).expect("the answer");
+    answer
+}
+
+/// One GET that must answer 200 with one JSON document, and hand that document back.
+pub fn get_json(address: &str, path: &str) -> Value {
+    let answer = get(address, path);
+    assert!(
+        answer.contains("200 OK"),
+        "GET {path} should answer 200: {answer}"
+    );
+    let body = answer
+        .split_once("\r\n\r\n")
+        .map(|(_, body)| body)
+        .unwrap_or_else(|| panic!("GET {path} answered with no body: {answer}"));
+    serde_json::from_str(body)
+        .unwrap_or_else(|error| panic!("GET {path} did not answer one document: {error}\n{body}"))
 }
