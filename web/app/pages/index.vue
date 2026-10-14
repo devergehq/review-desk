@@ -288,8 +288,14 @@ function needingYou(data: Inbox): Waiting[] {
      * no newest round for its own pull request — found by a review of the third fix batch,
      * which pointed out that an object carrying the ticket for the row's round and not the
      * title is an object a reader has to remember an exception about.
+     *
+     * **A round recorded with no title says so**, rather than keeping an earlier round's.
+     * This skipped a null, which made "the title of the round the row is" true except when
+     * that round had none — and the contract says the row then says it has none. Written the
+     * way `slot` writes it, so one spelling of "no title" reaches the page. Found by a
+     * review of the fourth fix batch.
      */
-    if (item.title != null) row.title = item.title
+    row.title = item.title ?? 'no title recorded'
   }
 
   /*
@@ -585,7 +591,17 @@ function nextAction(row: Waiting) {
      * are about — the review is here rather than in that group precisely because something
      * has come back on it, so drawing them there would have meant drawing them nowhere.
      */
-    detail: row.posted
+    /*
+     * **And only when the figures are about the round the reply is on.** The guard that
+     * used to stop a posted item attaching to a row of another round was the thing keeping
+     * these apart — "round 1's reply beside round 2's counts", which it names — and
+     * renumbering the row to the newest round makes that guard pass, so the two met on one
+     * line: "The author replied to F1 · Not harvested yet", which is a reply beside a
+     * measurement saying nothing has come back. `replyRound` is null exactly when the reply
+     * and the posting are the same round, and `alsoWaiting` says which round it was on
+     * otherwise. Found by a review of the fourth fix batch.
+     */
+    detail: row.posted && row.replyRound == null
       ? `${outcomeLine({ kind: first.kind, detail: first.detail })} · ${
         authorResponseLabel(row.posted)}`
       : outcomeLine({ kind: first.kind, detail: first.detail }),
@@ -670,6 +686,31 @@ function alsoWaiting(row: Waiting): string[] {
  */
 function alsoAbout(item: { pull_request: { repo: string } }): string {
   return item.pull_request.repo
+}
+
+/**
+ * The line under the title of a row "With the agent": the repository, and which round.
+ *
+ * **That group draws its rows from `in_progress` directly**, not through `needingYou`, so
+ * the rule that a pull request's row is its newest round has to reach it on its own. A
+ * session running on round 1 while round 2 has been opened and not yet written to is the
+ * shape that needs it: round 2 is in no array at all, `reviews_in_progress` has no
+ * newest-round restriction, and the row was numbered for and linked to round 1 — DEV-983's
+ * second fault, in the one group its merge does not touch. Found by a review of the fourth
+ * fix batch.
+ *
+ * The step the row draws is still the session's own round, which is what the session is
+ * doing; the row is still the pull request's newest. Where they differ the line says so,
+ * because "a session is on step 4 of 7" under a number saying round 2 is the detail a
+ * reader would otherwise have to guess at — the same sentence `alsoWaiting` says about a
+ * reply.
+ */
+function aboutAgent(item: InboxInProgressItem): string {
+  const parts = [item.pull_request.repo, `round ${item.newest_round.round}`]
+  if (item.round !== item.newest_round.round) {
+    parts.push(`a session is on round ${item.round}`)
+  }
+  return parts.join(' · ')
 }
 
 /**
@@ -1217,18 +1258,18 @@ function handledLine(data: Inbox): string {
         >
           <QueueRow
             v-for="item in rows.withAgent"
-            :key="item.review_id"
+            :key="item.newest_round.review_id"
             :pr="item.pull_request.pr"
-            :title="item.pull_request.title ?? 'no title recorded'"
-            :meta="alsoAbout(item)"
-            :to="`/reviews/${item.review_id}/understand`"
+            :title="item.newest_round.title ?? 'no title recorded'"
+            :meta="aboutAgent(item)"
+            :to="`/reviews/${item.newest_round.review_id}/understand`"
             :action="sessionAction(item)"
             :action-tone="item.session_alive === false ? 'warn' : 'quiet'"
             :age="item.in_state_since ? sinceLabel(item.in_state_since) : null"
             age-unknown-because="this review was recorded before Review Desk kept when a step started"
             :pr-href="prUrl(item.pull_request.repo, item.pull_request.pr)"
-            :ticket-href="ticketUrl(item.ticket_url)"
-            :ticket-id="item.ticket_id"
+            :ticket-href="ticketUrl(item.newest_round.ticket_url)"
+            :ticket-id="item.newest_round.ticket_id"
           >
             <SegmentBar
               :segments="layerSegments(item)"

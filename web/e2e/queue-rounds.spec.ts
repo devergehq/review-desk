@@ -316,6 +316,13 @@ test('draws an earlier round’s reply on the newest round’s row, saying which
     )
     await expect(row).toContainText('The author replied to')
     await expect(row).toContainText('replied to round 1')
+    /*
+     * **And no measurement about the round the reply is not on.** The guard this change
+     * removed was what kept these apart — "round 1's reply beside round 2's counts", in its
+     * own words — and renumbering the row makes that guard pass. Found by a review of the
+     * fourth fix batch.
+     */
+    await expect(row).not.toContainText('Not harvested yet')
     /* And the ticket, read from the item about the round the row is. */
     await expect(row).toContainText('ABC-753')
   })

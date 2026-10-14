@@ -376,8 +376,14 @@ impl Api {
 
         let in_progress: Vec<Value> = in_progress
             .iter()
-            .map(|at| {
-                json!({
+            .map(|at| -> Result<Value, ApiError> {
+                // The round the queue's row for this pull request is, for the reason
+                // `author_replies` carries one: "With the agent" draws its rows from this
+                // array directly, and `reviews_in_progress` has no newest-round
+                // restriction — so a session running on round 1 while round 2 has been
+                // opened and not yet written to drew a row numbered for round 1.
+                let newest = self.records.newest_round(&at.review.repo, at.review.pr)?;
+                Ok(json!({
                     "review_id": at.review.id,
                     "pull_request": wire::inbox_pr(&at.review),
                     // The ticket and its address, like the three arrays that wait on the
@@ -406,9 +412,30 @@ impl Api {
                     // unknown" — a fact the record holds, rather than a guess at Allele's.
                     "in_state_since": wire::rfc3339_or_null(at.layer.in_state_since()),
                     "last_activity_at": wire::rfc3339_or_null(at.review.last_activity_at),
-                })
+                    "newest_round": {
+                        "review_id": newest
+                            .as_ref()
+                            .map_or(at.review.id, |newest| newest.id),
+                        "round": newest
+                            .as_ref()
+                            .map_or(at.review.round, |newest| newest.round),
+                        "title": newest
+                            .as_ref()
+                            .map_or(at.review.title.clone(), |newest| newest.title.clone()),
+                        "ticket_id": newest
+                            .as_ref()
+                            .map_or(at.review.ticket_id.clone(), |newest| {
+                                newest.ticket_id.clone()
+                            }),
+                        "ticket_url": newest
+                            .as_ref()
+                            .map_or(at.review.ticket_url.clone(), |newest| {
+                                newest.ticket_url.clone()
+                            }),
+                    },
+                }))
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
 
         // Posted, and with the author. **Not a group that is waiting on the developer**,
         // which is why it is absent from `totals_items` below — and why the screen has to

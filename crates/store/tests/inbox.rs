@@ -1233,3 +1233,31 @@ fn text_that_merely_contains_three_dots_is_not_a_comparison() {
         "a basis has to say it is a comparison to be read as one"
     );
 }
+
+#[test]
+fn a_basis_spelled_in_capitals_is_not_a_comparison() {
+    let (_dir, store) = temp_store();
+    let (one, _two, seq) = two_posted_rounds(&store);
+
+    // SQLite's `LIKE` is case-insensitive over ASCII, so a clause written with it accepted
+    // `COMPARE …` — which the dashboard's sample backend rejects, because `startsWith` is
+    // not. The two backends disagreeing in the direction that hides is the fault; `=` over
+    // `substr` compares with the binary collation.
+    code_changed(
+        &store,
+        one.id,
+        seq,
+        serde_json::json!({
+            "file": "app/Exports/ScheduledExport.php",
+            "commit": "9a8b7c6",
+            "basis": "COMPARE c1d2e31...d2e3f42",
+        })
+        .to_string(),
+        1_000,
+    );
+
+    assert!(
+        ids(&store.reviews_with_author_activity(None, None).unwrap()).contains(&one.id),
+        "the prefix the harvester writes is lower case, and so is the one this reads"
+    );
+}

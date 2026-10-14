@@ -4670,8 +4670,8 @@ components:
       type: object
       additionalProperties: false
       required:
-        [review_id, pull_request, round, layer_number, layer_name, layers_total, ticket_id,
-         ticket_url]
+        [review_id, pull_request, round, newest_round, layer_number, layer_name,
+         layers_total, ticket_id, ticket_url]
       description: A review a session is still working on.
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
@@ -4689,6 +4689,19 @@ components:
             request. Without this the row said "a session is on step 4 of 7" about a round
             other than the one it is numbered for, which is the fault the other three rounds
             were added to prevent.
+        newest_round:
+          allOf:
+            - $ref: '#/components/schemas/InboxNewestRound'
+          description: |
+            The round the queue's row for this pull request is, when the row is drawn from
+            this array.
+
+            **"With the agent" draws its rows from here directly**, rather than through the
+            needs-you merge, so the same rule has to reach it: the row is always the pull
+            request's newest round. A session running on round 1 while round 2 has been
+            opened and not yet written to is the shape that needs it — round 2 is in no
+            array of its own, and `reviews_in_progress` has no newest-round restriction, so
+            the row was numbered for and linked to round 1. DEV-983.
         ticket_id:
           allOf:
             - $ref: '#/components/schemas/ForeignId'

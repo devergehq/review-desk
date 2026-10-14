@@ -205,6 +205,12 @@ macro_rules! changed_at {
 /// commit. Null when the field is missing, is not JSON, is not a string, or is not written
 /// this way — and [`changed_at!`] carries the argument for asking the type.
 ///
+/// **`substr(…) = 'compare '` rather than `LIKE 'compare %'`, and the difference is not
+/// cosmetic.** SQLite's `LIKE` is case-insensitive over ASCII, so `COMPARE a...b` passed it
+/// — and the sample backend's `startsWith('compare ')` does not, so the two backends
+/// disagreed about that document in the direction that hides. `=` compares with the binary
+/// collation. Found by a review of this branch.
+///
 /// **And the field has to be a comparison, not merely text with `...` in it.** `detail` is
 /// free text; `{"basis": "annotation...d2e3f42"}` is a legal document and its tail is a
 /// commit this clause would then take as the end of a comparison, hiding a change on the
@@ -220,7 +226,7 @@ macro_rules! compared_to {
         "CASE
              WHEN json_valid(o.detail)
               AND json_type(o.detail, '$.basis') = 'text'
-              AND json_extract(o.detail, '$.basis') LIKE 'compare %'
+              AND substr(json_extract(o.detail, '$.basis'), 1, 8) = 'compare '
               AND instr(json_extract(o.detail, '$.basis'), '...') > 0
              THEN substr(
                  json_extract(o.detail, '$.basis'),

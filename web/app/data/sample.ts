@@ -792,6 +792,11 @@ function inbox(): Inbox {
       ...ticketOf(detail),
       /* Which round the session is working on; the fourth and last array with one. */
       round: detail.review.round,
+      /*
+       * And the round the queue's row for this pull request is. "With the agent" draws its
+       * rows from this array directly, so the newest-round rule has to reach it too.
+       */
+      newest_round: newestRoundOf(detail),
       layer_number: running!.number,
       layer_name: running!.name,
       layers_total: LAYERS_TOTAL,
