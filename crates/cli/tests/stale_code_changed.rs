@@ -500,12 +500,22 @@ fn the_item_names_the_newest_round_even_when_nothing_else_mentions_it() {
     let reply = item(&inbox, "author_replies", one);
     assert_eq!(reply["round"], 1, "the reply is on round 1");
     assert_eq!(
-        reply["rounds_on_pr"], 2,
+        reply["newest_round"]["round"], 2,
         "and the item says which round the row is: {reply}"
     );
     assert_eq!(
-        reply["newest_round_review_id"], two,
+        reply["newest_round"]["review_id"], two,
         "with the review to link, because a number over the wrong link is worse than the \
          fault it replaced"
+    );
+    assert_eq!(
+        reply["newest_round"]["ticket_id"], "ABC-741",
+        "and that round's ticket, which is the ticket the row draws: the pair beside it is \
+         the replied-to round's, and a row takes a ticket only from an item about the round \
+         it is numbered for"
+    );
+    assert_eq!(
+        reply["newest_round"]["ticket_url"],
+        "https://linear.app/acme/issue/ABC-741"
     );
 }

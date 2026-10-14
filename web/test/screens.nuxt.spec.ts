@@ -1352,6 +1352,13 @@ describe('a pull request whose later round has posted', () => {
     expect(rows[0]!.text()).toContain('round 2')
     expect(rows[0]!.text()).toContain('replied to round 1')
     expect(rows[0]!.find('.row').attributes('href')).toBe(`/reviews/${ROUND_TWO}/understand`)
+    /*
+     * **And the ticket, which the first fix lost here.** No item above the reply is about
+     * round 2, and a row takes a ticket only from something about the round it is numbered
+     * for — DEV-957 — so the row had a ticket on the record and nothing to reach it with.
+     * Found by a review of the first fix batch.
+     */
+    expect(rows[0]!.text()).toContain('DEV-958')
   })
 
   it('counts the row it draws, in the heading and in the repository chip', async () => {

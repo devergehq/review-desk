@@ -357,6 +357,14 @@ test('numbers the row for a newest round nothing else in the answer mentions',
       'href',
       `/reviews/${fixture.two}/understand`,
     )
+    /*
+     * **And the ticket is still there.** No item above the reply is about round 2, and a
+     * row takes a ticket only from something about the round it is numbered for — DEV-957 —
+     * so the first fix left this row with a ticket on the record and nothing on the page to
+     * reach it with. The reply item carries the newest round's ticket now. Found by a
+     * review of the first fix batch.
+     */
+    await expect(row).toContainText('ABC-754')
   })
 
 test('the heading and the repository chip count the rows drawn', async ({ page }) => {

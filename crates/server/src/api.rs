@@ -321,17 +321,33 @@ impl Api {
                         // posted — which can be older than the round the row is numbered
                         // for. Without it the row cannot say which review the reply is on.
                         "round": review.round,
-                        // And which round the row itself is, with the review to link. Both
-                        // fall back to this review when the record somehow holds no newest
-                        // round for its own pull request — which is this review, so the row
-                        // is then exactly what it was before DEV-983 rather than a row with
-                        // no number at all.
-                        "rounds_on_pr": newest
-                            .as_ref()
-                            .map_or(review.round, |newest| newest.round),
-                        "newest_round_review_id": newest
-                            .as_ref()
-                            .map_or(review.id, |newest| newest.id),
+                        // And the round the row itself is: its number, the review to
+                        // link, and the ticket it draws. The ticket is here because the
+                        // pair above belongs to the round that was *replied to*, and
+                        // DEV-957's rule is that a row takes a ticket only from an item
+                        // about the round it is numbered for — so a row numbered for a
+                        // round no other item mentions had nowhere to take one from.
+                        //
+                        // **Falling back to this review**, for a record that somehow holds
+                        // no newest round for its own pull request. This review is one, so
+                        // the row is then exactly what it was before DEV-983 rather than a
+                        // row with no number at all.
+                        "newest_round": {
+                            "review_id": newest.as_ref().map_or(review.id, |newest| newest.id),
+                            "round": newest
+                                .as_ref()
+                                .map_or(review.round, |newest| newest.round),
+                            "ticket_id": newest
+                                .as_ref()
+                                .map_or(review.ticket_id.clone(), |newest| {
+                                    newest.ticket_id.clone()
+                                }),
+                            "ticket_url": newest
+                                .as_ref()
+                                .map_or(review.ticket_url.clone(), |newest| {
+                                    newest.ticket_url.clone()
+                                }),
+                        },
                         "events": events,
                         "replied_at": wire::rfc3339_or_null(replied_at),
                     })

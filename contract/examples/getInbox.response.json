@@ -71,8 +71,12 @@
       "ticket_id": "ABC-187",
       "ticket_url": null,
       "round": 1,
-      "rounds_on_pr": 1,
-      "newest_round_review_id": 12,
+      "newest_round": {
+        "review_id": 12,
+        "round": 1,
+        "ticket_id": "ABC-187",
+        "ticket_url": null
+      },
       "events": [
         {
           "finding_seq": 2,

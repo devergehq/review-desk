@@ -59,6 +59,7 @@ import type {
   FindingDecision,
   FindingDecisionMade,
   Inbox,
+  InboxNewestRound,
   InboxPr,
   LeftTheDesk,
   NitTicket,
@@ -582,14 +583,17 @@ function newestRoundByPr(): Map<string, number> {
  * number that fell back to an earlier round the moment the newest was dismissed would name
  * a round the record would not open next.
  */
-function newestRoundOf(detail: ReviewDetail): { round: number, reviewId: number } {
-  const rounds = source.reviews.filter(other =>
-    other.review.repo === detail.review.repo && other.review.pr === detail.review.pr)
-  const newest = rounds.reduce(
-    (top, other) => (other.review.round > top.review.round ? other : top),
-    detail,
-  )
-  return { round: newest.review.round, reviewId: newest.review.id }
+function newestRoundOf(detail: ReviewDetail): InboxNewestRound {
+  const newest = source.reviews
+    .filter(other =>
+      other.review.repo === detail.review.repo && other.review.pr === detail.review.pr)
+    .reduce((top, other) => (other.review.round > top.review.round ? other : top), detail)
+  return {
+    review_id: newest.review.id,
+    round: newest.review.round,
+    ticket_id: newest.review.ticket_id ?? null,
+    ticket_url: newest.review.ticket_url ?? null,
+  }
 }
 
 /** The whole Inbox, recomputed from the desk — the shape `GET /inbox` serves. */
@@ -694,11 +698,10 @@ function inbox(): Inbox {
        */
       round: detail.review.round,
       /*
-       * **And which round the row itself is, with the review to link.** The server reads
-       * this off `Store::newest_round`; see `newestRoundOf` for why the item carries it.
+       * **And the round the row itself is**: its number, the review to link and the ticket
+       * it draws. The server reads this off `Store::newest_round`; see `newestRoundOf`.
        */
-      rounds_on_pr: newestRoundOf(detail).round,
-      newest_round_review_id: newestRoundOf(detail).reviewId,
+      newest_round: newestRoundOf(detail),
       /*
        * **What is still the developer's to read**, which since DEV-983 is not every act the
        * author or the harvester recorded: a code change a later posted round has already

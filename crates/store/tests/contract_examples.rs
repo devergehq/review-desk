@@ -2042,8 +2042,12 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
                 // Which round was replied to: the queue draws one row per pull request,
                 // and a reply is on the round that was posted.
                 "round": review.round,
-                "rounds_on_pr": newest.round,
-                "newest_round_review_id": newest.id,
+                "newest_round": {
+                    "review_id": newest.id,
+                    "round": newest.round,
+                    "ticket_id": newest.ticket_id,
+                    "ticket_url": newest.ticket_url,
+                },
                 "events": outcomes.iter().filter(|outcome| {
                     matches!(outcome.actor, Actor::Author | Actor::Harvester)
                 }).map(|outcome| json!({

@@ -4305,6 +4305,61 @@ components:
             and `posted_at`, and had no time for the one state the developer is waiting in.
             Null for a review from before DEV-890.
 
+    InboxNewestRound:
+      type: object
+      additionalProperties: false
+      required: [review_id, round, ticket_id, ticket_url]
+      description: |
+        **The round the queue's single row for a pull request *is*.** DEV-983.
+
+        The queue draws one row per pull request and numbers it for the newest round, and
+        `author_replies` is the one array that can be about an older one: a reply is on the
+        round that was *posted*. The other two arrays that make a row are served for the
+        newest round only, and the two that merely join onto a row carry their own round.
+        So a pull request whose round 1 was replied to and whose round 2 has been opened and
+        not yet written to is in the answer through that item alone — round 2 has no brief,
+        no draft at a status, no running step and nothing posted. Without this the page
+        cannot know round 2 exists: the row says "round 1" and opens round 1, which is the
+        fault DEV-983 reports, in the one shape the already-reviewed rule does not reach.
+
+        **Everything the row takes from the round it is**, rather than a number on its own.
+        The number alone would let the row say "round 2" over a link to round 1, which is
+        worse than the fault it replaced; and the ticket is here because the row draws it,
+        while the `ticket_id` beside this field belongs to the round that was *replied to*.
+        DEV-957 settled that a row may only take a ticket from an item about the round it is
+        numbered for — two rounds of a pull request usually carry the same ticket, and where
+        they differ the row linked the wrong one — so with the row numbered for a round no
+        other item mentions, the ticket had nowhere to come from and vanished from a row
+        that had been showing it.
+
+        Every field equals the reply item's own whenever the reply is on the newest round,
+        which is the ordinary case.
+      properties:
+        review_id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: The review that round is, so the row can link it.
+        round:
+          type: integer
+          format: int64
+          minimum: 1
+          description: |
+            The highest round this pull request has reached, counting every round whatever
+            became of it — `Store::newest_round`'s own rule, because a number that fell back
+            to an earlier round the moment the newest was dismissed would name a round the
+            record would not open next. `InboxPostedItem.rounds_on_pr` is the same number.
+        ticket_id:
+          allOf:
+            - $ref: '#/components/schemas/ForeignId'
+          description: That round's ticket, which is the ticket the row draws.
+        ticket_url:
+          allOf:
+            - $ref: '#/components/schemas/TicketUrl'
+          description: |
+            Where that ticket is. Null for a round with an id and no address, which the row
+            then names on its own line and does not link.
+
     InboxReplyEvent:
       type: object
       additionalProperties: false
@@ -4319,8 +4374,7 @@ components:
       type: object
       additionalProperties: false
       required:
-        [review_id, pull_request, round, rounds_on_pr, newest_round_review_id, events,
-         ticket_id, ticket_url]
+        [review_id, pull_request, round, newest_round, events, ticket_id, ticket_url]
       description: |
         An author has acted on a posted review. Built from outcomes with actor `author`
         or `harvester`.
@@ -4364,35 +4418,8 @@ components:
             makes a row carries one**, which is what lets the queue tell an item about the
             row's own round from one about an older round without special-casing the
             groups that happen to have it.
-        rounds_on_pr:
-          type: integer
-          format: int64
-          minimum: 1
-          description: |
-            The highest round this pull request has reached, counting every round whatever
-            became of it.
-
-            **Here because the queue's single row for a pull request is always its newest
-            round** — DEV-983 — and this is the one array that can be about an older one.
-            The other two that make a row are served for the newest round only, and the two
-            that merely join onto a row carry their own. So without this, a pull request
-            whose round 1 was replied to and whose round 2 has been opened and not yet
-            written to is in the answer *only* through this item: the page cannot know round
-            2 exists, and the row says "round 1" and opens round 1. That is the second fault
-            DEV-983 reports, in the one shape the first fix does not reach.
-
-            `InboxPostedItem` carries a field of this name and this meaning.
-        newest_round_review_id:
-          type: integer
-          format: int64
-          minimum: 1
-          description: |
-            The review that `rounds_on_pr` is, so the row can link it.
-
-            The number alone would let the row say "round 2" over a link to round 1, which
-            is worse than the fault it replaced: a row that names one review and opens
-            another. Equal to `review_id` whenever the reply is on the newest round, which
-            is the ordinary case.
+        newest_round:
+          $ref: '#/components/schemas/InboxNewestRound'
         ticket_id:
           allOf:
             - $ref: '#/components/schemas/ForeignId'

@@ -241,6 +241,14 @@ export type InboxTotals = Schema['InboxTotals']
 export type InboxBriefItem = Schema['InboxBriefItem']
 export type InboxDraftItem = Schema['InboxDraftItem']
 export type InboxReplyEvent = Schema['InboxReplyEvent']
+/**
+ * The round the queue's single row for a pull request is: its number, its review and its
+ * ticket.
+ *
+ * `author_replies` is the one array that can be about an older round, so the item carries
+ * this and the row takes all of it. DEV-983.
+ */
+export type InboxNewestRound = Schema['InboxNewestRound']
 export type InboxReplyItem = Schema['InboxReplyItem']
 export type DescriptionLint = Schema['DescriptionLint']
 export type InboxOwnPrItem = Schema['InboxOwnPrItem']

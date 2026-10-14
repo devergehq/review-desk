@@ -326,7 +326,12 @@ function needingYou(data: Inbox): Waiting[] {
      * both. Found by a review of this branch, which is also why the raise below is kept:
      * see its own comment.
      */
-    raise(row, item.newest_round_review_id, item.rounds_on_pr, item.pull_request.title)
+    raise(
+      row,
+      item.newest_round.review_id,
+      item.newest_round.round,
+      item.pull_request.title,
+    )
   }
 
   /*
@@ -423,6 +428,19 @@ function needingYou(data: Inbox): Waiting[] {
   ]) {
     const row = byPullRequest.get(keyOf(item.pull_request))
     if (row) ticket(row, item.round, item)
+  }
+  /*
+   * **And a reply item's newest round, which is the one source for a row no other item is
+   * about.** The loop above offers each item's own round, and a reply's is the round that
+   * was *replied to* — so a pull request whose round 2 has only been opened draws a row
+   * numbered round 2 that no item above is about, and the row lost a ticket it had been
+   * showing. The rule is unchanged and is DEV-957's: a row takes a ticket only from
+   * something about the round it is numbered for. What changed is that the reply item now
+   * carries that something. Found by a review of the first fix batch.
+   */
+  for (const item of data.author_replies) {
+    const row = byPullRequest.get(keyOf(item.pull_request))
+    if (row) ticket(row, item.newest_round.round, item.newest_round)
   }
 
   /*
