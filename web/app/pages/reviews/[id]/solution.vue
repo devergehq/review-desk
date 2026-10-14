@@ -241,12 +241,23 @@ function inNoPart(data: ReviewDetail, brief: Brief): Finding[] {
         have a step 4 under way, and a heading that said "being worked on now" here would be
         reporting on a step that has nothing to work from.
       -->
+      <!--
+          **And where an earlier round wrote it, this page's heading says so instead.**
+          Nothing carries a brief between rounds, so a later round whose session wrote none
+          draws nothing here — and "nothing has been written about this problem yet", over a
+          pull request that has a brief one round back, is the ambiguity DEV-976 was raised
+          to remove rather than a smaller version of it. `briefWrittenEarlier` answers null
+          on a first round and wherever no earlier round wrote one, which is when the
+          sentences below are the true ones.
+        -->
       <ReviewStepPage
         v-if="!data.brief"
         :detail="data"
         step="solution_map"
-        headline="Nothing has been written about this change yet."
-        sub="Step 4 is where a session says what was built, as the parts the change divides into. There is no brief to hold it."
+        :headline="briefWrittenEarlier(data, 'solution_map')?.headline
+          ?? 'Nothing has been written about this change yet.'"
+        :sub="briefWrittenEarlier(data, 'solution_map')?.sub
+          ?? 'Step 4 is where a session says what was built, as the parts the change divides into. There is no brief to hold it.'"
       />
 
       <!--

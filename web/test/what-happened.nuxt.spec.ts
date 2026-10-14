@@ -266,6 +266,7 @@ const ROUNDS: RoundSummary[] = [
     review_id: 12,
     round: 1,
     head_sha: '633e04a',
+    dismissed: false,
     created_at: '2026-10-06T11:00:00Z',
     posted_at: '2026-10-07T09:00:00Z',
     event: 'request_changes',
@@ -274,11 +275,13 @@ const ROUNDS: RoundSummary[] = [
     replies: 3,
     threads_resolved: 2,
     statuses: { new: 11, fixed: 0, still_open: 0, accepted: 0, withdrawn: 0, ticketed: 0 },
+    brief_written: true,
   },
   {
     review_id: REVIEW,
     round: 2,
     head_sha: '65eff63',
+    dismissed: false,
     created_at: '2026-10-09T07:00:00Z',
     posted_at: '2026-10-09T18:00:00Z',
     event: 'request_changes',
@@ -287,6 +290,7 @@ const ROUNDS: RoundSummary[] = [
     replies: 2,
     threads_resolved: 1,
     statuses: { new: 10, fixed: 2, still_open: 1, accepted: 1, withdrawn: 0, ticketed: 0 },
+    brief_written: true,
   },
 ]
 
@@ -469,6 +473,25 @@ describe('the density fixture against the contract', () => {
     const names = requiredOf('Review')
     expect(names).toContain('pr_state_at')
     expect(Object.keys(dense().review)).toEqual(expect.arrayContaining(names))
+  })
+
+  /**
+   * **And every round of the timeline carries what `RoundSummary` requires.**
+   *
+   * The two checks above reach `dense()` and its `review`; the rounds hang off `rounds` and
+   * were reached by neither. DEV-976 added `brief_written` to the schema's required list and
+   * this literal went short of it with lint, typecheck and the whole suite green — because
+   * `web/tsconfig.json` references only the generated app, server, shared and node projects,
+   * so `nuxt typecheck` never sees `test/`, and vitest does not typecheck at all. Found by a
+   * review of that branch, and this is the check that would have found it first.
+   */
+  it('carries every field RoundSummary requires, on every round', () => {
+    const names = requiredOf('RoundSummary')
+    expect(names).toContain('brief_written')
+    expect(ROUNDS.length).toBeGreaterThan(1)
+    for (const round of ROUNDS) {
+      expect(Object.keys(round), `round ${round.round}`).toEqual(expect.arrayContaining(names))
+    }
   })
 
   /*

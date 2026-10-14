@@ -1,17 +1,40 @@
 /*
- * What a round's head has done, in the words the pages say it in.
+ * A review's rounds, as the pages ask about them — **two questions, one file.**
  *
- * **One copy of each sentence, because three screens say them.** Since DEV-962 a new commit
- * on an unposted round moves that round instead of opening the next one, so a page has to be
- * able to say the round is no longer of the commit the developer was shown — Understand says
- * it as a notice, the code review says it over the findings, and the draft page says why a
- * sign-off went. Three spellings of one fact is how two screens come to disagree about the
- * record in front of them.
+ * **What this round's head has done** (DEV-962): since a new commit on an unposted round
+ * moves that round instead of opening the next one, a page has to be able to say the round
+ * is no longer of the commit the developer was shown — Understand says it as a notice, the
+ * code review says it over the findings, and the draft page says why a sign-off went.
+ *
+ * **Where the pull request's other rounds are** (DEV-976): a review is one round and that
+ * was a dead end. Patrick, 14 October 2026: "there's no way for me to actually go back to
+ * the previous round… especially when I go and look at the understand, the alternatives,
+ * the solution map, and even the code review. It's really important to be able to see where
+ * we've come from, not just this specific point in time."
+ *
+ * **One copy of each sentence, because several screens say them**, which is also why the two
+ * halves share a file rather than sitting in `rounds.ts` and a second file named almost the
+ * same thing: three spellings of one fact is how two screens come to disagree about the
+ * record in front of them, and a reader who finds one file does not know to look for the
+ * other. `commitLabel` below is the one abbreviation of a commit either half uses.
  *
  * Pure functions over the contract's own shapes, so they are unit-tested without a browser.
  */
 
-import type { Draft, HeadUpdate, HeadUpdates, Review } from '~/types/desk'
+import { dayLabel } from './format'
+import { PAGE_OF_STEP } from './steps'
+
+import type {
+  Draft,
+  HeadUpdate,
+  HeadUpdates,
+  Review,
+  ReviewDetail,
+  ReviewLayerName,
+  RoundSummary,
+} from '~/types/desk'
+
+/* ===================== What this round's head has done ====================== */
 
 /**
  * Nothing has happened to this round's head.
@@ -121,4 +144,263 @@ export function withdrawnLine(draft: Draft, review: Review): string | null {
   return `You signed this off on ${approved}, and the pull request has moved to ${now}. `
     + 'The sign-off was withdrawn because the code you approved is not the code that '
     + 'would post.'
+}
+
+/* ================== Where the pull request's other rounds are ================= */
+
+/** One round of the pull request, as the switcher draws it. */
+export interface RoundLink {
+  round: number
+  reviewId: number
+  /** Where it goes, or `null` for the round being read — which is not a link. */
+  to: string | null
+  /** Whether this is the round being read. */
+  here: boolean
+  /**
+   * The posting fact, in words: "posted 9 October 2026", "being worked on", "not posted".
+   *
+   * One of three rather than a date or nothing, because an unposted round that is the
+   * newest one is not the same thing as an unposted round somebody pushed past.
+   */
+  standing: string
+  /**
+   * Whether the developer has dismissed this round.
+   *
+   * **`RoundSummary.dismissed`, which the wire now always carries.** It was read through a
+   * seam while DEV-962 was in flight, and three-valued because the absence of a flag is not
+   * the absence of a dismissal; the field is required now, so there is no third answer left
+   * to hold open.
+   */
+  dismissed: boolean
+  /** The head commit, at the seven characters a commit is read by. */
+  head: string
+}
+
+/**
+ * The rounds of this pull request, oldest first, as links to this same step.
+ *
+ * Empty for a review whose pull request the record holds one round of, and empty when
+ * `rounds` was not served at all — `ReviewDetail` does not require it. Both mean there is no
+ * switcher to draw, and the component asks that question of the length rather than of the
+ * server.
+ *
+ * **The same step, which is the whole point.** A reader looking at Alternatives in round 3
+ * wants Alternatives in round 1, not the top of round 1. A step with no page of its own —
+ * step 1 — answers no links at all rather than links to somewhere else.
+ */
+export function roundLinks(detail: ReviewDetail, step: ReviewLayerName): RoundLink[] {
+  const page = PAGE_OF_STEP[step]
+  const rounds = detail.rounds ?? []
+  if (page == null || rounds.length < 2) return []
+
+  return [...rounds]
+    .sort((one, two) => one.round - two.round)
+    .map((round) => {
+      const here = round.review_id === detail.review.id
+      return {
+        round: round.round,
+        reviewId: round.review_id,
+        to: here ? null : `/reviews/${round.review_id}/${page}`,
+        here,
+        standing: standingOf(round, rounds, inPlay(detail)),
+        dismissed: round.dismissed,
+        /* `commitLabel`, the one abbreviation of a commit this file has. */
+        head: commitLabel(round.head_sha),
+      }
+    })
+}
+
+/**
+ * The posting fact about one round, in words.
+ *
+ * **"Being worked on" is the newest unposted round and only that one.** An older unposted
+ * round is one the author pushed past: nobody is working on it and nobody can post it, which
+ * is DEV-957's whole subject, so calling it "being worked on" would promise something that
+ * is never coming. It reads "not posted", which is what it is.
+ *
+ * **And it is said only where the record positively says the pull request is still in
+ * play**, which is the same correction `StepTrail` makes to a step's tense: a round of a
+ * merged pull request that was never posted will not be now. DEV-957's record is exactly
+ * that shape — `globex/portal#9568` merged with three unposted rounds behind it.
+ */
+function standingOf(round: RoundSummary, rounds: RoundSummary[], live: boolean): string {
+  /*
+   * **Branched on the instant, not on the label it formats to.** `dayLabel` answers null for
+   * a value `Date` cannot parse as well as for an absent one, so asking it first let a round
+   * the record says *was* posted fall through to "being worked on" — a posted round described
+   * as in hand, which is the one false promise this function exists to prevent. The server
+   * cannot send it (the contract pins `posted_at` to `date-time`) but a hand-written fixture
+   * can, and `RoundTimeline` already guards the same case this way, so the two screens now
+   * say the same thing about one record. Found by a review of the rebase.
+   */
+  if (round.posted_at) {
+    const day = dayLabel(round.posted_at)
+    return day ? `posted ${day}` : 'posted'
+  }
+  if (!live) return 'not posted'
+
+  /*
+   * **And nothing is being worked on about a round the developer dismissed.** This is the
+   * half of `inPlay`'s problem that per-round dismissal solves, and the reader it protects
+   * is the one on *another* round, whose page would otherwise be told that a round nobody
+   * will touch again is in hand.
+   */
+  if (round.dismissed) return 'not posted'
+
+  const newest = rounds.reduce((high, one) => Math.max(high, one.round), 0)
+  return round.round === newest ? 'being worked on' : 'not posted'
+}
+
+/**
+ * Whether the record says this review's pull request is still in play.
+ *
+ * **The same answer the rest of Review Desk gives**, which is what "being worked on" needs
+ * and the other two wordings do not: "not posted" and a posted day are true whatever became
+ * of the pull request, and this one is a claim about now.
+ *
+ * **Null is "the record knows of no reason it is not", not "somebody looked".** A review no
+ * harvest has run over has a null `pr_state`, and `prStateLabel` is emphatic that null is
+ * not "open" — so a pull request that merged on GitHub and was never harvested reads as live
+ * here. A review of this branch raised that as a false promise and it is the same answer
+ * every other screen gives: `IN_PLAY` coalesces an unharvested `pr_state` to `'open'`, so
+ * that review is in the queue, in the work list, and its draft can be signed off. Gating
+ * this on `review.pr_state` instead would make the switcher stricter than the queue and
+ * would silence the wording almost everywhere, because only the round a harvest read carries
+ * a state at all — DEV-957's own lesson. The staleness is Review Desk's, not this
+ * function's, and the fix for it is a harvest.
+ *
+ * `not_for_signing` is the answer because its three reasons are asked in a fixed order
+ * (`Store::not_for_signing`): **dismissed first, then finished, then superseded.** So null
+ * means none of the three, and `superseded` means the first two were asked and refused — a
+ * newer round exists on a pull request that has not merged, closed or been dismissed. Both
+ * say the pull request is live.
+ *
+ * `dismissed` says nothing either way, and that is the correction a review of this branch
+ * found: it is asked *first*, so a dismissed round of a **merged** pull request answers
+ * `dismissed` and never reaches the state check. Reading `reason === 'finished'` alone had
+ * that page promise that the newest unposted round of a merged pull request was in hand —
+ * the exact false promise this function exists to stop.
+ *
+ * **What it costs is a disagreement between two pages of one pull request, and that is
+ * worth stating plainly.** This is read from the review being *viewed*, so on a pull request
+ * whose round 3 is dismissed, round 3's own page reads "not posted" for round 3 while round
+ * 1's page reads "being worked on" for it. A second review of this branch named it. The
+ * disagreement is narrow now that `RoundSummary.dismissed` is on the wire: `standingOf`
+ * refuses to promise anything about a dismissed round from either page, so what is left is
+ * only a round nobody has dismissed, on a pull request this page cannot tell has merged.
+ * There, the conservative half is the one that cannot mislead.
+ */
+function inPlay(detail: ReviewDetail): boolean {
+  const reason = detail.not_for_signing?.reason
+  return reason == null || reason === 'superseded'
+}
+
+/** Which round this is of how many, or `null` where there is only the one. */
+export function roundsLabel(detail: ReviewDetail): string | null {
+  const rounds = detail.rounds ?? []
+  if (rounds.length < 2) return null
+  return `Round ${detail.review.round} of ${rounds.length}`
+}
+
+/** An earlier round's step, where to read it, and how the page says so. */
+export interface WrittenEarlier {
+  round: number
+  to: string
+  /**
+   * The page's own heading, which is the answer rather than an absence.
+   *
+   * **The page says this once.** DEV-892's sixth defect was the Solution page saying the
+   * same sentence twice, once as its headline and once as a notice under it — so where this
+   * is the state, the heading carries it and the notice carries only the link.
+   *
+   * It replaces a heading that was false here as well as duplicated: "Nothing has been
+   * written about this problem yet", over a round whose pull request has a brief, is the
+   * very ambiguity DEV-976 was raised to remove. Found by a review of this branch.
+   *
+   * **And it is about the brief, not about the step — which a second review of this branch
+   * caught it claiming.** `brief_written` says a `briefs` row exists for that round and
+   * nothing more. It had been promoted into "Round 2 wrote this pull request's
+   * alternatives", which the fixtures themselves falsify: review 65 is round 2 of
+   * `globex/portal#9568` and its brief holds `options: []` and no parts, so round 3's
+   * Alternatives page claimed round 2 wrote some and linked to a page reading "None was
+   * recorded". A positive claim pointing at a page that contradicts it is the ambiguity
+   * inverted, not removed.
+   */
+  headline: string
+  /**
+   * The line under it: what this round wrote, without repeating who wrote the last brief.
+   *
+   * **About the record, never about the page**, which is also the rule for whatever a page
+   * puts in the `??` branch beside this. It read "so this page draws nothing" until a review
+   * of this branch found that false on Understand: its no-brief branch draws `RemoveReview`,
+   * whose card is unconditional, so the sentence sat directly above a heading and a button.
+   */
+  sub: string
+}
+
+/**
+ * The three steps the brief feeds, and so the three a later round can be holding none of.
+ *
+ * Steps 5 to 7 are not among them and must not be: a round's findings, its draft and its
+ * harvest are its own, written against its own head commit, and a page saying one of them
+ * was "written in round 1" would be false about the one thing rounds exist to separate.
+ */
+const FROM_THE_BRIEF: ReviewLayerName[] = ['understand', 'alternatives', 'solution_map']
+
+/**
+ * Which earlier round wrote the brief this round has none of, and where that step is.
+ *
+ * `null` when this round wrote one of its own, when the step is not one the brief feeds, and
+ * when no earlier round wrote one either — a pull request whose first round has no brief has
+ * nowhere to send anybody.
+ *
+ * **Measured, not inferred, and that is what the contract field is for.** Nothing carries a
+ * brief forward: `briefs` is keyed by the review id, as is every record behind steps 1 to 4,
+ * and opening a round copies none of it. So a step page on a later round draws nothing, and
+ * before `brief_written` the only thing a page could have said was "round 1", which is wrong
+ * the moment a round after the first rewrites the brief.
+ *
+ * **The latest earlier round that wrote one**, which is also what makes "and no round since"
+ * true in the sentence the page shows: every round between the one named and this one has
+ * `brief_written` false, or it would have been named instead.
+ */
+export function briefWrittenEarlier(
+  detail: ReviewDetail,
+  step: ReviewLayerName,
+): WrittenEarlier | null {
+  if (!FROM_THE_BRIEF.includes(step)) return null
+  if (detail.brief != null) return null
+
+  const page = PAGE_OF_STEP[step]
+  if (page == null) return null
+
+  const wrote = (detail.rounds ?? [])
+    .filter(round => round.brief_written && round.round < detail.review.round)
+    .sort((one, two) => two.round - one.round)[0]
+  if (wrote == null) return null
+
+  return {
+    round: wrote.round,
+    to: `/reviews/${wrote.review_id}/${page}`,
+    /*
+     * **"Before this round", because that is the whole of what was searched.** The filter
+     * above looks only at earlier rounds, and the first wording — "the last brief on this
+     * pull request" — promoted that scoped answer into an absolute one. A third review of
+     * this branch named the case: round 1 writes a brief, round 2's session writes none,
+     * round 3 writes one, and a reader who uses this very switcher to open round 2 was told
+     * the newest brief was behind them when it was ahead of them.
+     *
+     * Scoped, the word still carries "no round since has written another" without saying it
+     * twice: the round named is the latest earlier one with `brief_written`, so every round
+     * between it and this one has none.
+     *
+     * **And the line under it is about the record, not about the page.** It read "so this
+     * page draws nothing", which is false on Understand: its no-brief branch draws
+     * `RemoveReview`, whose card is unconditional, so the sentence sat directly above a
+     * heading and a button. Same review.
+     */
+    headline: `The last brief before this round was written in round ${wrote.round}.`,
+    sub: `Round ${detail.review.round} wrote none of its own, and nothing carries a brief `
+      + `from one round to the next.`,
+  }
 }

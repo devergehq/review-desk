@@ -280,13 +280,24 @@ function matrixLabel(brief: Brief): string {
         while the trail two inches above it drew step 3 as running. A page that contradicts
         the record it is drawn from is worse than a page with nothing on it.
       -->
+      <!--
+          **And where an earlier round wrote it, this page's heading says so instead.**
+          Nothing carries a brief between rounds, so a later round whose session wrote none
+          draws nothing here — and "nothing has been written about this problem yet", over a
+          pull request that has a brief one round back, is the ambiguity DEV-976 was raised
+          to remove rather than a smaller version of it. `briefWrittenEarlier` answers null
+          on a first round and wherever no earlier round wrote one, which is when the
+          sentences below are the true ones.
+        -->
       <ReviewStepPage
         v-if="!data.brief || !options(data.brief).length"
         :detail="data"
         step="alternatives"
-        :headline="sentence(nothingYet(data.layers, 'alternatives'))"
-        :sub="`Step 3 is where a session writes down the ways it considered solving the `
-          + `problem, before it reads the diff. ${whyNothingYet(data.layers)}`"
+        :headline="briefWrittenEarlier(data, 'alternatives')?.headline
+          ?? sentence(nothingYet(data.layers, 'alternatives'))"
+        :sub="briefWrittenEarlier(data, 'alternatives')?.sub
+          ?? `Step 3 is where a session writes down the ways it considered solving the `
+            + `problem, before it reads the diff. ${whyNothingYet(data.layers)}`"
       />
 
       <ReviewStepPage

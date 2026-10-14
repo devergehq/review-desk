@@ -4991,7 +4991,7 @@ components:
       additionalProperties: false
       required:
         [review_id, round, head_sha, created_at, dismissed, findings, commits, replies,
-         threads_resolved, statuses]
+         threads_resolved, statuses, brief_written]
       description: |
         One round of a pull request, as the timeline across the top of the round-two page
         reads it: when it was posted, as which event, how many findings it held, and what
@@ -5052,6 +5052,24 @@ components:
           type: integer
           minimum: 0
         statuses: { $ref: '#/components/schemas/RoundStatusCounts' }
+        brief_written:
+          type: boolean
+          description: |
+            Whether a brief was written **for this round**, which is how a step page says
+            where the understanding it is drawing came from.
+
+            **A round holds its own brief or it holds none; nothing is carried.** A round is
+            a `reviews` row with its own id, and every record behind steps 1 to 4 is keyed
+            by that id — the brief, its problems, its options, its flows, its parts, the
+            step rows, their facts, and the provenance. Opening a round copies none of it,
+            and `GET /reviews/{reviewId}` serves this round's brief with no fallback to an
+            earlier one. The only thing carried between rounds is a finding.
+
+            So a later round whose session wrote no brief shows nothing at Understand,
+            Alternatives and Solution — and without this field a page could not say which
+            round did write one. It could only guess the first, which is wrong the moment a
+            round after the first rewrites the brief. Measured, so the sentence the page
+            shows is a fact rather than an inference.
     # ---------------------------------------------------------------------------------
     # Where a review's understanding came from. DEV-875, board A2 sections 1 to 4.
     #

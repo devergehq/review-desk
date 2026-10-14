@@ -222,12 +222,23 @@ function sources(data: ReviewDetail) {
         No brief at all. Step 2 has not run, which is a different thing from a brief
         written the old way and a different thing again from one waiting to be confirmed.
       -->
+      <!--
+          **And where an earlier round wrote it, this page's heading says so instead.**
+          Nothing carries a brief between rounds, so a later round whose session wrote none
+          draws nothing here — and "nothing has been written about this problem yet", over a
+          pull request that has a brief one round back, is the ambiguity DEV-976 was raised
+          to remove rather than a smaller version of it. `briefWrittenEarlier` answers null
+          on a first round and wherever no earlier round wrote one, which is when the
+          sentences below are the true ones.
+        -->
       <ReviewStepPage
         v-if="!data.brief"
         :detail="data"
         step="understand"
-        headline="Nothing has been written about this problem yet."
-        sub="Step 2 is where a session writes what the change is solving. It has not written one, so there is nothing to confirm and nothing after it can run."
+        :headline="briefWrittenEarlier(data, 'understand')?.headline
+          ?? 'Nothing has been written about this problem yet.'"
+        :sub="briefWrittenEarlier(data, 'understand')?.sub
+          ?? 'Step 2 is where a session writes what the change is solving. It has not written one, so there is nothing to confirm and nothing after it can run.'"
       >
         <!--
           **Said on every one of these three pages, because a moved head is true of the

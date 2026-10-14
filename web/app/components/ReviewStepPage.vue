@@ -70,6 +70,19 @@ const pullRequest = computed(() => prUrl(props.detail.review.repo, props.detail.
  * that is not `https` and so is refused at render as well as at the write.
  */
 const ticket = computed(() => ticketUrl(props.detail.review.ticket_url))
+
+/**
+ * The earlier round that wrote the brief this round has none of, or null.
+ *
+ * Null on steps 5 to 7 whatever the record holds: a round's findings, its draft and its
+ * harvest are its own, written against its own head commit, and saying one of them was
+ * "written in round 1" would be false about the one thing rounds exist to separate.
+ * `briefWrittenEarlier` holds that rule, so every page gets the same answer.
+ */
+const writtenEarlier = computed(() => briefWrittenEarlier(props.detail, props.step))
+
+/** The step's name as the notice above writes it, from the one place that words them. */
+const stepName = computed(() => layerLabel(props.step))
 </script>
 
 <template>
@@ -112,6 +125,19 @@ const ticket = computed(() => ticketUrl(props.detail.review.ticket_url))
           · {{ detail.review.title }}
         </template>
       </p>
+
+      <!--
+        **Which round of the pull request this is, and the same step of every other one.**
+        Here because the three lines of this header descend in scope: which pull request,
+        which round of it, which step of that round. Drawn once for all six step pages, and
+        drawing nothing at all on a review whose pull request has one round.
+
+        Its own component and its own block, because DEV-962 is changing this header too.
+      -->
+      <RoundSwitcher
+        :detail="detail"
+        :step="step"
+      />
 
       <StepTrail
         :layers="detail.layers"
@@ -167,6 +193,42 @@ const ticket = computed(() => ticketUrl(props.detail.review.ticket_url))
         Bring it back
       </NuxtLink>
       on Understand.
+    </DeskNotice>
+
+    <!--
+      **Where this round's understanding was written, when it was not written here.**
+      Nothing carries a brief between rounds: `briefs` is keyed by the review id, as is
+      every record behind steps 1 to 4, and opening a round copies none of it. So a later
+      round whose session wrote no brief draws nothing at Understand, Alternatives and
+      Solution — and a reader meeting an empty page cannot tell "nobody has written this"
+      from "it was written in round 1 and nobody has rewritten it".
+
+      **Both halves of it are measured.** `brief_written` on each round says which rounds
+      wrote one; `briefWrittenEarlier` answers the latest earlier round that did, which is
+      also what makes "no round since" true — any round in between that had written one would
+      have been named instead. Nothing here compares two briefs: a diff between rounds is a
+      thing in its own right and DEV-976 leaves it alone.
+
+      **The link alone, because the heading above has already said it.** The three pages this
+      can appear on take their `headline` and `sub` from the same answer, so the state is
+      stated once. DEV-892's sixth defect was the Solution page saying one sentence twice,
+      as its headline and again as a notice under it.
+
+      **A destination, not a claim about what is there.** "Open round 2's Alternatives" says
+      where it goes; "read it as round 2 wrote it" said round 2 wrote one, which is more than
+      `brief_written` measures — round 2 may hold a brief with no options at all, and the
+      fixtures have exactly that. A second review of this branch caught it.
+    -->
+    <DeskNotice v-if="writtenEarlier">
+      <!--
+        **Closed hard against the full stop**, for the reason `RoundSwitcher`'s own comment
+        gives: Vue's `whitespace: 'condense'` condenses the whitespace around an
+        interpolation rather than deleting it, so a closing tag on its own line leaves a
+        trailing space inside the anchor — and the browser's default underline runs over it.
+        Neither the component nor the browser assertions see it, because both match on the
+        accessible name and that normalises whitespace.
+      -->
+      <NuxtLink :to="writtenEarlier.to">Open round {{ writtenEarlier.round }}’s {{ stepName }}</NuxtLink>.
     </DeskNotice>
 
     <slot />

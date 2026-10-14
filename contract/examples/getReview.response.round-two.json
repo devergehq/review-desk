@@ -710,7 +710,8 @@
         "accepted": 0,
         "withdrawn": 0,
         "ticketed": 0
-      }
+      },
+      "brief_written": true
     },
     {
       "review_id": 20,
@@ -731,7 +732,8 @@
         "accepted": 0,
         "withdrawn": 1,
         "ticketed": 1
-      }
+      },
+      "brief_written": true
     }
   ],
   "head_updates": {

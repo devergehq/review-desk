@@ -1363,6 +1363,7 @@ fn round_document(round: &review_desk_store::RoundSummary) -> Value {
             "withdrawn": round.statuses.withdrawn,
             "ticketed": round.statuses.ticketed,
         },
+        "brief_written": round.brief_written,
     })
 }
 
