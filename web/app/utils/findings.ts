@@ -17,12 +17,14 @@ import type {
   BriefPart,
   Finding,
   FindingHunk,
+  Review,
   RoundStatus,
   Severity,
   SeverityCounts,
 } from '~/types/desk'
 
 import { count } from './format'
+import { commitLabel } from './rounds'
 
 /**
  * Most serious first, and then by number.
@@ -437,4 +439,78 @@ export function severitiesOf(findings: Finding[]): SeverityCounts {
   const counts: SeverityCounts = { blocker: 0, should: 0, nit: 0, question: 0 }
   for (const finding of findings) counts[finding.severity] += 1
   return counts
+}
+
+/**
+ * Whether two commits are the same one, when either may be abbreviated.
+ *
+ * **A prefix match and not an equality, because the record holds both lengths.** A review's
+ * head is "full or abbreviated" by the contract's own words, and a finding's `line_sha` is
+ * 7 to 40 characters — so the same commit reaches this comparison written two ways, and
+ * `===` would report a move that never happened and put a notice on every row.
+ *
+ * Two different commits that share a seven-character prefix read as one. That is the
+ * bargain every abbreviated sha on these pages already makes — `commitLabel` slices to
+ * seven — and the other error, calling two spellings of one commit a difference, is the one
+ * a reader cannot check.
+ *
+ * **`same_commit` in `crates/cli/src/commands/draft.rs` is this rule again**, for the
+ * hand-over's plain output, and two is the right number for the reason `links.ts` gives
+ * about `is_repo_name`: this side cannot call into the binary, so the rule is stated once
+ * on each side of the boundary rather than once and assumed.
+ */
+export function sameCommit(one: string, two: string): boolean {
+  const shortest = Math.min(one.length, two.length)
+  if (shortest === 0) return false
+  return one.slice(0, shortest).toLowerCase() === two.slice(0, shortest).toLowerCase()
+}
+
+/**
+ * Where this finding was measured, as a sentence, or null when there is nothing to say.
+ * DEV-978.
+ *
+ * **Three states, and the third is the one that is easy to get wrong.**
+ *
+ * | The record | What the page says |
+ * | -- | -- |
+ * | the commit is this review's head | nothing. The place describes the code the review is of, which is what a reader already assumes |
+ * | the commit is an earlier one | which commit, and where the pull request is now |
+ * | there is no commit | that it was not recorded. **Not "not measured"**: the line was measured, and what is missing is which commit on. Saying the line was never measured, beside the line number printed on the same row, would contradict itself |
+ *
+ * **It keys on the file, not on the line**, because the file is what decides whether there
+ * is a commit for the sentence to be about. A row's link is composed from the finding's
+ * commit whenever the finding names a file — `composeRow` falls back to the pull request
+ * only when `file` is null — so a file-level finding with no line still carries a link at
+ * a commit, and keying on the line would have gone quiet on exactly that row.
+ *
+ * **It promises no link.** An earlier wording ended "…which the link goes to", and there
+ * is no link on this page: the row draws its place as text, and the links are in the
+ * composed body the author reads on GitHub.
+ *
+ * **And it does not say the line has not been re-read**, which an earlier wording did.
+ * Nothing in the record supports that: a session that re-reads the diff after a head move
+ * and confirms the line records `round_status_commit`, and the page would have gone on
+ * calling it un-re-read for ever, because nothing can rewrite `line_sha`. The two facts
+ * the record does hold are the commit the place was measured on and the commit the pull
+ * request is at, so those are the two the sentence states.
+ *
+ * Both commits are named, which is `withdrawnLine`'s rule in `utils/rounds`: a sentence
+ * that names one of two commits leaves the reader to find the other. **A blank head names
+ * none** — it was storable until DEV-936 — so the clause about it is dropped rather than
+ * rendered as "the pull request is at ." around an empty string.
+ */
+export function measuredAt(finding: Finding, review: Review): string | null {
+  if (finding.file == null) return null
+
+  const head = review.head_sha.length > 0
+    ? ` The pull request is at ${commitLabel(review.head_sha)}.`
+    : ''
+
+  const measured = finding.line_sha
+  if (measured == null || measured.length === 0) {
+    return `The commit this was measured on was not recorded.${head}`
+  }
+  if (sameCommit(measured, review.head_sha)) return null
+
+  return `Measured at ${commitLabel(measured)}.${head}`
 }

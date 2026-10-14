@@ -530,6 +530,11 @@ pub fn finding(finding: &Finding) -> Value {
         "severity": finding.severity.as_str(),
         "file": finding.file,
         "line": finding.line,
+        // The commit that line was counted on, which is what a link is built from. Null
+        // where no session said, and then a client links from the review's head as it
+        // always did and says the commit was not recorded — not that the line was never
+        // measured, which is a different and untrue claim.
+        "line_sha": finding.line_sha,
         "claim": finding.claim,
         // Null when nothing has titled this finding, which is every finding written before
         // migration 11. The page clamps the claim to two lines instead; a title defaulted
@@ -937,6 +942,11 @@ pub fn draft_thread(thread: &DraftThread) -> Value {
         "title": thread.title,
         "path": thread.path,
         "line": thread.line,
+        // **Not a `commit_id`.** The review call takes one commit for every comment in
+        // it, and this is a fact about where the line came from: equal to the review's
+        // head and the anchor is current, different and the session re-reads the diff
+        // before it posts. Review Desk posts nothing either way.
+        "line_sha": thread.line_sha,
         "side": thread.side,
         "body": thread.body,
     })

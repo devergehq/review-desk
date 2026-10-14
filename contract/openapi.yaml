@@ -2784,7 +2784,7 @@ components:
       additionalProperties: false
       required:
         [review_id, seq, key, lens, severity, claim, disposition, created_at,
-         github_comment_id]
+         github_comment_id, line_sha]
       description: |
         One thing the review found. Never deleted, only dispositioned.
 
@@ -2822,6 +2822,38 @@ components:
         severity: { $ref: '#/components/schemas/Severity' }
         file: { type: [string, 'null'] }
         line: { type: [integer, 'null'], minimum: 1 }
+        line_sha:
+          type: [string, 'null']
+          pattern: '^[0-9a-f]{7,40}$'
+          description: |
+            **The commit `line` was measured on** — and with it `flagged_line` and the
+            `hunk`, which are counted against the same commit, written in one call and
+            carried together.
+
+            **A link is built from this and not from `review.head_sha`.** A line number is
+            an address only against the commit it was counted on, and the review's head
+            moves away from it two ways: a carried finding keeps the earlier round's
+            numbering, and since DEV-962 an unposted round's head moves without a new
+            round opening. Pairing the two composed a link that resolved, looked right and
+            sent the reader to whatever is on line 40 now.
+
+            **Null is the record saying it does not know, and it is the normal state for
+            now.** The commit is the writing session's to state; nothing is derived from
+            the review's head, because the head is where the review *is* and not where a
+            line was *counted* — a session reads for some minutes while the author pushes.
+            A finding whose commit is null links from `review.head_sha` exactly as it did
+            before, and a client says the commit was not recorded rather than calling the
+            line unmeasured: the line was measured, and what is missing is which commit
+            on. The same shape as `title`, which is null until something writes one.
+
+            **Required and nullable**, for the reason `github_comment_id` below gives for
+            itself: it is the input to a link three implementations build — this server,
+            the dashboard's own composition, and the store's example test — and optional
+            is how such a field comes to have three answers with every check green.
+
+            **Comparing it with `review.head_sha` is a prefix match, not equality.** A head
+            may be full or abbreviated and this may be either, so the same commit can be
+            written two lengths; compare on the shorter of the two, lowercased.
         claim: { type: string, minLength: 1 }
         title:
           type: [string, 'null']
@@ -3361,7 +3393,7 @@ components:
     DraftThread:
       type: object
       additionalProperties: false
-      required: [finding_seq, finding_key, severity, title, path, line, side, body]
+      required: [finding_seq, finding_key, severity, title, path, line, line_sha, side, body]
       description: |
         One inline thread the draft hands over: a finding with a line inside the diff,
         composed from its block and ready to post on that line.
@@ -3371,8 +3403,18 @@ components:
         its comment attaches to, it carries a hunk, and that hunk is one `git diff -U3`
         drew and draws that line. A hunk whose every entry is `unchanged` came from
         `git show` and is a line the change does not touch, so such a finding keeps its
-        section in the body. Either way it has one row in the body's index, and **that row
-        links to the line, which is the line the thread sits on**.
+        section in the body. Either way it has one row in the body's index.
+
+        **That row links the line at the commit the line was measured on, which is not
+        always the commit the thread lands on.** This said "that row links to the line,
+        which is the line the thread sits on" until DEV-978, and the two halves were held
+        together by an assumption that is false: that a line was counted against the
+        review's current head. The row now links `blob/{line_sha}/{path}#L{line}`, which is
+        the code the finding is about; the thread is posted at `(path, line, RIGHT)` and
+        GitHub resolves that against the pull request's head. **The two name one commit
+        whenever the line was measured against the head** — every finding raised in a round
+        whose head has not moved — and they come apart exactly where the row used to be
+        wrong.
 
         **Review Desk posts nothing.** The session puts these in the `comments` array of
         its one `POST /repos/{owner}/{repo}/pulls/{number}/reviews` call, with the body
@@ -3413,6 +3455,30 @@ components:
           description: |
             The line the comment sits on, **in the new file's numbering** — the right-hand
             side of the diff.
+        line_sha:
+          type: [string, 'null']
+          pattern: '^[0-9a-f]{7,40}$'
+          description: |
+            The commit `path` and `line` above were measured on — the finding's own
+            `line_sha`. Null for a finding written before that column existed.
+
+            **Handed over because the session posting this is the only thing in the loop
+            that can act on it.** GitHub anchors a review comment against the pull
+            request's head, and this line may have been counted on an earlier commit: a
+            carried finding keeps the earlier round's numbering, and since DEV-962 a
+            round's head moves under findings nobody has re-read. A hand-over that gave
+            the path and the line and kept the commit to itself would be asking the
+            session to post an anchor it has no way to check.
+
+            **It is not a `commit_id`.** `POST /pulls/{number}/reviews` takes one commit
+            for the whole review, and passing this one would anchor every comment at a
+            commit the pull request has moved past. It is a fact about where the line came
+            from: equal to the review's head, and the anchor is current; different, and
+            the session re-reads the diff before it posts.
+
+            **One per thread, not one for the hand-over.** Two threads of one draft can
+            have two different measured commits — a carried finding and a new one — and a
+            single value could not say so.
         side:
           type: string
           const: RIGHT

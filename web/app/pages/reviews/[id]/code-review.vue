@@ -720,6 +720,22 @@ function coverage(data: ReviewDetail): string | null {
                     <TickedText :text="finding.title ?? finding.claim" />
                   </h3>
 
+                  <!--
+                    **Which commit this line was measured on, where that is not the head.**
+                    DEV-978: the link under this finding goes to the commit the line was
+                    counted on, and the pull request may have moved past it — a carried
+                    finding keeps the earlier round's numbering, and since DEV-962 a head
+                    moves without a new round opening. The sentence names both commits,
+                    which is `withdrawnLine`'s rule: naming one of two leaves the reader to
+                    find the other. Interpolated as text, never as markup.
+                  -->
+                  <p
+                    v-if="measuredAt(finding, data.review)"
+                    class="rd-note measured"
+                  >
+                    {{ measuredAt(finding, data.review) }}
+                  </p>
+
                   <p
                     v-if="isCarried(finding) && finding.continues_round"
                     class="rd-note carried"
@@ -1245,6 +1261,15 @@ function coverage(data: ReviewDetail): string | null {
 .claim {
   margin: 0;
   max-width: 820px;
+}
+
+/*
+ * The same quiet weight as the carried note above it, and no colour: it is a fact about
+ * where the link points, not a problem the developer has to deal with.
+ */
+.measured {
+  margin: 0 0 12px;
+  max-width: var(--rd-measure);
 }
 
 .carried {

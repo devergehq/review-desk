@@ -292,6 +292,37 @@ text is a URL is a link a reader has to parse, and the id is the thing they came
 A review with `ticket_id` and no `ticket_url` draws the id as text. That is every review
 opened before the field existed, and a client must not treat it as a broken link.
 
+### Which commit a finding's link points at
+
+**The review's head is where the review *is*. A finding's line was counted somewhere, and
+until DEV-978 nothing said where.** A permalink is `blob/{sha}/{path}#L{line}`, and the
+`{sha}` was `review.head_sha` — which drifts away from the line two ways. A carried finding
+keeps the earlier round's numbering by design, and since DEV-962 an unposted round's head
+moves without a new round opening. The two halves stopped being a pair and nothing said so:
+the link resolved, looked right, and sent the reader to whatever is on line 40 now.
+
+| What | Which commit |
+|---|---|
+| a finding's code link, and the index row in the posted body | `finding.line_sha` — the commit that line was measured on |
+| a finding whose `line_sha` is null | `review.head_sha`, exactly as before. **Nothing is invented for it**: a client says the commit was not recorded, and does not say the line was never measured — the line was measured, and what is missing is which commit on |
+| a finding that names **no file** | neither. There is nothing in the code to point at, so the row links the pull request. **The condition is the file and not the line**: a finding with a file and no line still links `blob/{sha}/{path}`, so it still has a commit |
+| where the inline thread lands | GitHub's. It anchors `path` + `line` + `RIGHT` against the pull request's head, which is why `DraftThread.line_sha` is handed over — **as a fact, not as a `commit_id`** |
+
+`line_sha` is **the writing session's to state and is never derived**. The head is not a
+safe default for it: a session reads the diff at one commit for some minutes while the
+author pushes, DEV-962 moves the round under it, and a derived value would then assert a
+commit nobody measured anything on. The same reason nothing is backfilled — a row written
+before the column says it does not know, and that is the honest answer rather than a
+reconstruction of one. `title` is null until something writes one for exactly this reason.
+
+**One commit covers `line`, `flagged_line` and the `hunk`.** All three are written in one
+call and carried together, so they share one measurement; a second commit on the hunk would
+be a second chance for them to disagree about a thing that happened once.
+
+**Compare it with a head by prefix, not by equality.** `head_sha` may be full or
+abbreviated and so may this, so the same commit can be written two lengths. Compare on the
+shorter of the two, lowercased.
+
 **"A short outcome line per layer" needed no new field.** DEV-875 lists it among what a
 review gains; `layers[].detail` has been exactly that line since DEV-854, is written by
 `review-desk layer set --detail`, and is served here. A second field for one fact is the

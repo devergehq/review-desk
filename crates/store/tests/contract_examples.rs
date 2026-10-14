@@ -275,6 +275,9 @@ fn seed(store: &Store) -> Seeded {
             severity,
             file: Some("jobs/DeliverWebhook.php".to_string()),
             line: Some(58),
+            // The commit that line was counted on. Stated by the session, as every
+            // finding's is — the store derives none of it.
+            line_sha: Some("3f9c2ab".to_string()),
             claim: claim.to_string(),
             evidence: Some("throwaway test, 2 deliveries for 1 event".to_string()),
             disposition,
@@ -1292,6 +1295,7 @@ fn finding_document(store: &Store, finding: &Finding) -> Value {
         "severity": finding.severity,
         "file": finding.file,
         "line": finding.line,
+        "line_sha": finding.line_sha,
         "claim": finding.claim,
         "title": finding.title,
         "evidence": finding.evidence,
@@ -1889,6 +1893,7 @@ fn draft_thread_document(thread: &review_desk_store::DraftThread) -> Value {
         "title": thread.title,
         "path": thread.path,
         "line": thread.line,
+        "line_sha": thread.line_sha,
         "side": thread.side,
         "body": thread.body,
     })

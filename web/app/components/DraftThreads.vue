@@ -43,9 +43,66 @@ import type { DraftThread } from '~/types/desk'
  *    diagram the developer must *see* belongs under `### Problem fit` or under a finding
  *    with no thread, both of which the body preview draws.
  */
-const props = defineProps<{ threads: DraftThread[], posted?: boolean }>()
+const props = defineProps<{
+  threads: DraftThread[]
+  /** Where the pull request is, to say which anchors were not measured against it. */
+  headSha: string
+  posted?: boolean
+}>()
 
 const heading = computed(() => count(props.threads.length, 'thread'))
+
+/**
+ * Whether **every** thread here is missing its commit, which is said once rather than
+ * nine times. DEV-978.
+ *
+ * **Rule 2, applied to the sentence this change adds.** Nothing is printed twice, and
+ * until sessions start recording the commit they measured a line on, every finding on a
+ * record carries none — so the per-thread version of this would print the identical
+ * sentence under all nine threads of a real-length review, which is the repetition
+ * `HeldBackRows` exists to undo and which the card's own first draft was corrected for.
+ * A fact true of the whole list belongs to the list.
+ *
+ * A *mixed* draft is the other case and keeps the per-thread sentence: there the absence
+ * is about that one anchor and not about the review, and saying it on the list would be
+ * saying it of threads it is not true of.
+ */
+const noneRecorded = computed(() =>
+  props.threads.length > 0
+  && props.threads.every(thread => thread.line_sha == null || thread.line_sha.length === 0),
+)
+
+/**
+ * Which commit this thread's line was counted on, where that is not where the pull request
+ * is now — and nothing when it is. DEV-978.
+ *
+ * **The one fact about an anchor the card could not previously show.** GitHub positions a
+ * review comment against the pull request's head, and the line beside it may have been
+ * counted somewhere else: a carried finding keeps the earlier round's numbering, and since
+ * DEV-962 a head moves under findings nobody has re-read.
+ *
+ * `measuredAt` is the same states in the code review page's words; this is the thread's
+ * shorter version, because what the developer is checking here is the place.
+ */
+function measuredElsewhere(thread: DraftThread): string | null {
+  const measured = thread.line_sha
+  if (measured == null || measured.length === 0) {
+    // Said once above the list when it is true of all of them — see `noneRecorded`.
+    return noneRecorded.value ? null : 'the commit it was measured on was not recorded'
+  }
+  if (sameCommit(measured, props.headSha)) return null
+
+  /*
+   * **A blank head is named as nothing at all, not as an empty string.** It was storable
+   * until DEV-936, `sameCommit` answers false for it by design, and `commitLabel('')` is
+   * `''` — so the unguarded sentence read "measured at a1b2c3d, not at " on every thread.
+   * Where there is no head to compare against, what is true is only where this was
+   * measured.
+   */
+  return props.headSha.length > 0
+    ? `measured at ${commitLabel(measured)}, not at ${commitLabel(props.headSha)}`
+    : `measured at ${commitLabel(measured)}`
+}
 </script>
 
 <template>
@@ -82,6 +139,34 @@ const heading = computed(() => count(props.threads.length, 'thread'))
       cannot do when two findings sit on one.
     </p>
 
+    <!--
+      **Said once, because it is true of the whole list.** Every finding written before the
+      record held the commit carries none, so the per-thread version of this would print
+      the same sentence under all nine threads of a real-length review.
+    -->
+    <p
+      v-if="noneRecorded"
+      class="rd-meta help none-recorded"
+    >
+      None of these records which commit its line was measured on.
+      <!--
+        **Its own sentence, and before the caveat rather than after it.** A head was
+        storable blank until DEV-936 and `commitLabel('')` is the empty string, so a
+        clause welded into one string rendered as "at ." — but moved to the end it named
+        a commit with no stated relation to the sentence before it. Here it gives the
+        caveat that follows the commit it is about. **And the caveat still names no
+        place**, because this sentence is drawn only where there is a head: "still means
+        *there*" would point at nothing again on a review that has none, which is the
+        defect this ordering was meant to finish rather than move. The commit keeps the
+        monospace face the places below it have, because it is a value a reader copies.
+      -->
+      <span v-if="headSha.length > 0">
+        The pull request is at <code class="place">{{ commitLabel(headSha) }}</code>.
+      </span>
+      Whether each line still means what it meant where it was counted is not something
+      the record can say.
+    </p>
+
     <ol
       v-if="threads.length > 0"
       class="list"
@@ -102,6 +187,14 @@ const heading = computed(() => count(props.threads.length, 'thread'))
             <span class="rd-visually-hidden">Severity:</span>{{ ' ' }}{{ thread.severity }}
           </span>
           <code class="place">{{ thread.path }}:{{ thread.line }}</code>
+          <!--
+            Interpolated as text, as every other value on this card is. The commit is a
+            value a reader copies, so it takes the monospace face the place does.
+          -->
+          <span
+            v-if="measuredElsewhere(thread)"
+            class="measured rd-meta"
+          >{{ measuredElsewhere(thread) }}</span>
         </p>
         <div class="comment">
           <MarkdownView :source="thread.body" />
@@ -179,6 +272,16 @@ const heading = computed(() => count(props.threads.length, 'thread'))
   min-width: 0;
   font-family: var(--rd-font-mono);
   font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * Quiet, and on the caption line with the place it is about. It is not a grade and not a
+ * problem: it says which commit the line beside it came from, which is rule 1's
+ * "describes, does not grade" applied to the one fact an anchor could not carry.
+ */
+.measured {
+  font-family: var(--rd-font-mono);
   overflow-wrap: anywhere;
 }
 

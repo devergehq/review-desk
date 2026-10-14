@@ -899,3 +899,58 @@ fn a_title_left_blank_by_the_old_writer_becomes_absent() {
         "and a title somebody wrote is left exactly as it was"
     );
 }
+
+/// **A finding written before the commit column is not given a commit it never had.**
+///
+/// DEV-978's fourth criterion, and the one a backfill would quietly break. The tempting
+/// repair is `line_sha = reviews.head_sha` for a review whose head has never moved — and
+/// it is wrong for the same reason the column is not defaulted at the write: the head is
+/// where the review *is*, not where a line was counted, and a session reads for minutes
+/// while the author pushes. A derived value here would be indistinguishable afterwards
+/// from one a session actually measured, on exactly the long-running multi-round pull
+/// requests this feature exists for.
+///
+/// So the row says it does not know, its link is composed from the review's head exactly
+/// as it was before, and the page says the commit was not recorded rather than calling the
+/// line unmeasured — the line was measured, and what is missing is which commit on.
+#[test]
+fn a_finding_from_before_the_migration_has_no_measured_commit() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+
+    const FROM: i64 = 19;
+    assert!(newest_version() > FROM, "this test needs the commit column");
+
+    {
+        let old = Store::open_at_version(&path, FROM).expect("open at 19");
+        assert_eq!(old.schema_version().unwrap(), FROM);
+    }
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "INSERT INTO reviews (id, repo, pr, head_sha, round, created_at)
+                 VALUES (1, 'acme/portal', 412, 'a1b2c3d', 1, 1000);
+             INSERT INTO findings
+                 (review_id, seq, lens, severity, file, line, claim, disposition,
+                  round_status, created_at)
+             VALUES (1, 1, 'correctness', 'blocker', 'app/Export.php', 40,
+                     'the export is unbounded', 'in_draft', 'new', 1000);",
+        )
+        .expect("write the row a released build left");
+    }
+
+    let migrated = Store::open(&path).expect("reopen migrates");
+    assert_eq!(migrated.schema_version().unwrap(), newest_version());
+
+    let finding = migrated.get_finding(1, 1).expect("the finding survived");
+    assert_eq!(
+        finding.line,
+        Some(40),
+        "the line it was written with is untouched"
+    );
+    assert_eq!(
+        finding.line_sha, None,
+        "and nothing invents the commit it was counted on. `a1b2c3d` is where the review \
+         is, which is not the same claim"
+    );
+}

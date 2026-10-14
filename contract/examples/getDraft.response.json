@@ -124,6 +124,7 @@
       "title": "A retried delivery is sent without an idempotency key",
       "path": "jobs/DeliverWebhook.php",
       "line": 58,
+      "line_sha": "3f9c2ab",
       "side": "RIGHT",
       "body": "> [!CAUTION]\n> **Blocker \u00b7 F1** \u2014 A retried delivery is sent without an idempotency key \u00b7 `Open`\n>\n> A retry re-sends the same payload with no key, so a customer whose endpoint accepted the first attempt slowly receives the event twice. See `jobs/DeliverWebhook.php:58`.\n>\n> ```mermaid\n> flowchart LR\n>   A[Attempt 1 times out] --> B[Endpoint still processes it]\n>   B --> C[Attempt 2 sends again]\n>   C --> D[Two events for one]\n> ```\n>\n> <details>\n> <summary>Proof: throwaway test, 2 deliveries for 1 event</summary>\n>\n> ```php\n> $event = Event::factory()->create();\n> Http::fake(['*' => Http::sequence()->pushStatus(504)->pushStatus(200)]);\n> DeliverWebhook::dispatchSync($event);\n> $this->artisan('queue:work --once');\n> // 2 requests, same payload, no Idempotency-Key header on either\n> $this->assertCount(2, Http::recorded());\n> ```\n>\n> </details>\n\n<!-- review-desk:F1 -->"
     }

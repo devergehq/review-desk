@@ -415,6 +415,17 @@ a person quotes. `lens`, `severity` and `claim` are required; the disposition de
 the whole feedback loop runs through: without it a rule cannot be said to be cited, or
 to have gone stale.
 
+**`line_sha` is the commit you measured the line on, and it is worth saying every time.**
+A line number is an address only against the commit it was counted on, and the finding's
+permalink is built from this field — so a finding that omits it falls back to the review's
+head, which is where the review *is* and not where you counted. The two come apart two
+ways: a carried finding keeps the earlier round's numbering, and a new commit on an
+unposted round moves its head under findings nobody has re-read. Nothing defaults it,
+because you read the diff for some minutes while the author pushes, and a commit the store
+inferred from the head afterwards would be a confident wrong answer where the record can
+simply have none. One value covers `line`, `flagged_line` and the hunk — you measured all
+three at once.
+
 **A finding should also carry what it is about**, which is what the dashboard shows and
 what saves the developer working the finding out for themselves: the code, the comment as
 it will be posted, the consequence, the proof and the fix. All of it is optional and none
@@ -428,6 +439,7 @@ SEQ=$(review-desk finding add --review "$REVIEW" --file - <<'JSON'
   "severity": "blocker",
   "file": "crates/cli/src/main.rs",
   "line": 48,
+  "line_sha": "d41c8e2",
   "claim": "a refused request exits 2, which pages whoever treats 2 as broken",
   "evidence": "clap's default exit code is 2 and nothing overrides it",
   "rule_id": 9,
@@ -537,9 +549,17 @@ A finding **with a line inside the diff** is a row and an inline thread, and is 
 section of the body; a finding with nowhere to anchor is a row and a section. Which it is
 comes from the hunk the finding already carries — `git diff -U3` draws a hunk with `added`
 and `removed` markers in it, `git show` draws one where every entry is `unchanged`, and a
-finding with no file or no line carries none. A row links to the line at the head commit
-reviewed, which is the line its thread sits on; a review body resolves no anchor of its
-own, and the thread it would otherwise link to does not exist until the moment of posting.
+finding with no file or no line carries none. A review body resolves no anchor of its own,
+and the thread it would otherwise link to does not exist until the moment of posting, so a
+row links the code directly.
+
+**A row links at the commit its line was measured on, which is not always the commit its
+thread lands on.** This said "the line at the head commit reviewed, which is the line its
+thread sits on" until DEV-978, and the two halves rested on something false: that a line
+was counted against the review's current head. The row links `blob/{line_sha}/{path}#L{line}`
+— the code the finding is about — while the thread is posted at `(path, line, RIGHT)` and
+GitHub resolves that against the pull request's head. They name one commit whenever the line
+was measured against the head, and come apart exactly where the row used to be wrong.
 
 Because the body is composed, `--file` alongside `--sections` is refused: a body written
 whole cannot carry an index nobody wrote. Send the blocks.
@@ -567,7 +587,8 @@ review-desk draft handover --review "$REVIEW" --json
 #  "draft":{"status":"approved","event":"request_changes","approved_at":1760000000},
 #  "body":"…the composed body…",
 #  "threads":[{"finding_seq":9,"finding_key":"F9","severity":"blocker","title":"…",
-#              "path":"app/Reporting/ColumnPolicy.php","line":52,"side":"RIGHT",
+#              "path":"app/Reporting/ColumnPolicy.php","line":52,"line_sha":"d41c8e2",
+#              "side":"RIGHT",
 #              "body":"> [!CAUTION]\n> **Blocker · F9** — … · `Open`\n>\n> **in diff** · …"}]}
 ```
 
@@ -580,6 +601,12 @@ review-desk draft handover --review "$REVIEW" --json \
          body: .body, comments: [.threads[] | {path, line, side, body}]}' \
   | gh api "repos/$REPO/pulls/$PR/reviews" --input -
 ```
+
+`line_sha` is the commit that `path` and `line` were measured on. **It is not a
+`commit_id`** — the review call above takes one commit for every comment in it, and this is
+a fact about where the anchor came from: equal to `review.head_sha` and the anchor is
+current, different and the line was counted somewhere the pull request has moved past, so
+re-read the diff before posting. Null where no session recorded one.
 
 `side` is always `RIGHT` and `line` is always the new file's numbering: a removed line
 carries no number in this record, so a flagged line is always a line still in the file.

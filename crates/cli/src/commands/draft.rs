@@ -24,8 +24,8 @@ use std::path::PathBuf;
 
 use clap::Subcommand;
 use review_desk_store::{
-    Draft, DraftHandover, DraftLint, DraftSectionKind, DraftStatus, NewDraft, NewDraftSection,
-    Store,
+    Draft, DraftHandover, DraftLint, DraftSectionKind, DraftStatus, DraftThread, NewDraft,
+    NewDraftSection, Store,
 };
 use serde_json::json;
 
@@ -320,16 +320,95 @@ fn handover_lines(handover: &DraftHandover) -> String {
     if handover.threads.is_empty() {
         lines.push("  no thread: no finding in this draft has a line inside the diff".to_string());
     }
+
+    // **Said once where it is true of every thread**, which is the rule `DraftThreads.vue`
+    // follows for the same sentence and for the same reason: nothing backfills the column,
+    // so until sessions record it every finding on a record has none — and the per-thread
+    // version would print this nine times under a real-length review, burying the lines a
+    // reader came for. A draft where only some are missing keeps it per thread, because
+    // there the absence is about that one anchor rather than about the review.
+    let none_recorded = !handover.threads.is_empty()
+        && handover
+            .threads
+            .iter()
+            .all(|thread| measured_on(thread).is_none());
+    if none_recorded {
+        lines.push("  none of these records which commit its line was measured on".to_string());
+    }
+
     for thread in &handover.threads {
+        // **And which commit that line was counted on, where it is not this head.** The
+        // line a reader is checking here is a number, and a number is an address only
+        // against a commit: a carried finding keeps the earlier round's numbering, and
+        // since DEV-962 this head moves under findings nobody has re-read. Said only when
+        // it differs, because on the ordinary round it is the head on the line above and
+        // repeating it on every thread would bury the one that does not match.
+        let measured = match measured_on(thread) {
+            Some(sha) if !same_commit(sha, &handover.review.head_sha) => {
+                format!(" — measured at {sha}")
+            }
+            Some(_) => String::new(),
+            None if none_recorded => String::new(),
+            None => " — the commit it was measured on was not recorded".to_string(),
+        };
         lines.push(format!(
-            "  F{} {} on {}:{} ({})",
-            thread.finding_seq, thread.severity, thread.path, thread.line, thread.side
+            "  F{} {} on {}:{} ({}){}",
+            thread.finding_seq, thread.severity, thread.path, thread.line, thread.side, measured
         ));
     }
 
     lines.push(String::new());
     lines.push(handover.draft.body.clone());
     lines.join("\n")
+}
+
+/// The commit a thread's line was measured on, with blank read as absent.
+///
+/// **Blank counts as absent, which is `code_link`'s rule for the same value** — "a column
+/// is not a promise about every row in it" — and the rule `measuredElsewhere` follows in
+/// the dashboard. Nothing can write one today, because `commit_sha_for` maps an empty
+/// commit to none on the way in; what this stops is a blank both defeating the
+/// once-per-list sentence and falling through to `— measured at ` with nothing after it,
+/// which is the rendering this change removed from the web side.
+///
+/// A free function rather than a closure, so it can hand back a borrow: the two callers
+/// only read it, and a closure that returned `Option<&str>` could not be written without
+/// naming a lifetime the inference will not supply.
+fn measured_on(thread: &DraftThread) -> Option<&str> {
+    thread.line_sha.as_deref().filter(|sha| !sha.is_empty())
+}
+
+/// Whether two commits are the same one, when either may be abbreviated.
+///
+/// **A prefix match and not an equality, because the record holds both lengths.** A head
+/// is "full or abbreviated" by the contract's own words and `open_round` checks only that
+/// it is not empty, while a finding's commit is 7 to 40 characters — so the same commit
+/// reaches here written two ways, and `==` would report a move that never happened. The
+/// comparison is on the shorter of the two, which is what `git` itself does with an
+/// abbreviation.
+///
+/// Two different commits sharing a seven-character prefix read as one. That is the same
+/// bargain every abbreviated sha in this tool makes, and the alternative — calling two
+/// spellings of one commit a difference — is the error a reader cannot check.
+///
+/// **`sameCommit` in `web/app/utils/findings.ts` is this rule again, and two is the right
+/// number.** It is the same boundary `links.ts` describes for `is_repo_name`: the
+/// dashboard draws the same sentence from the same two fields and cannot call into this
+/// binary, so the rule is stated once on each side rather than once and assumed.
+fn same_commit(one: &str, two: &str) -> bool {
+    let shortest = one.len().min(two.len());
+    // **Blank matches nothing, including another blank.** Without this the comparison is
+    // over zero characters and answers `true`, so a review whose `head_sha` is the empty
+    // string — storable until DEV-936, which is the population `code_link` defends
+    // against by name — would have every thread reported as measured on the head. That is
+    // the one direction this must not get wrong: it would tell the posting session an
+    // anchor is current where the record cannot say so.
+    if shortest == 0 {
+        return false;
+    }
+    one.get(..shortest)
+        .zip(two.get(..shortest))
+        .is_some_and(|(one, two)| one.eq_ignore_ascii_case(two))
 }
 
 /// `passes, 118 of 150 words, 3 of 3 findings, 0 raised before`, leaving out whatever
@@ -352,4 +431,40 @@ fn lint_line(lint: &DraftLint) -> String {
         parts.push(format!("errors: {errors}"));
     }
     parts.join(", ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::same_commit;
+
+    /// **A head and a measured commit are the same commit written at two lengths.**
+    ///
+    /// The contract calls a head "full or abbreviated" and a finding's commit is 7 to 40
+    /// characters, so an equality here would report a move that never happened and put a
+    /// notice under every thread.
+    #[test]
+    fn two_spellings_of_one_commit_are_one_commit() {
+        assert!(same_commit(
+            "d41c8e2",
+            "d41c8e2f6b1904a7c3e8d2b5f0a9c1e4d7b63a28"
+        ));
+        assert!(same_commit("D41C8E2", "d41c8e2"));
+        assert!(!same_commit("d41c8e2", "a1b2c3d"));
+    }
+
+    /// **A blank commit matches nothing, including another blank.**
+    ///
+    /// Without the guard the comparison runs over zero characters and answers yes, so a
+    /// review whose `head_sha` is the empty string — storable until DEV-936, and the
+    /// population `code_link` defends against by name — would have every thread reported
+    /// as measured on the head. That is the one direction this must not get wrong: it
+    /// tells the posting session an anchor is current where the record cannot say so.
+    /// `sameCommit` in `web/app/utils/findings.ts` has the same guard, and the two were
+    /// out of step until a review of this branch.
+    #[test]
+    fn a_blank_commit_is_not_the_same_as_anything() {
+        assert!(!same_commit("", "d41c8e2"));
+        assert!(!same_commit("d41c8e2", ""));
+        assert!(!same_commit("", ""));
+    }
 }

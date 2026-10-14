@@ -903,8 +903,15 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                     </div>
                   </DeskCard>
 
+                  <!--
+                    **The head goes with the threads.** DEV-978: a thread's line was
+                    counted on some commit, and whether that is the one GitHub will anchor
+                    it against is the fact the developer is signing off on. The card
+                    compares the two; the page is what knows where the pull request is.
+                  -->
                   <DraftThreads
                     :threads="data.threads"
+                    :head-sha="data.review.head_sha"
                     :posted="data.draft.status === 'posted'"
                   />
                 </div>
