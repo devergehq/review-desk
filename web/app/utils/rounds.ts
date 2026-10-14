@@ -224,8 +224,19 @@ export function roundLinks(detail: ReviewDetail, step: ReviewLayerName): RoundLi
  * that shape — `globex/portal#9568` merged with three unposted rounds behind it.
  */
 function standingOf(round: RoundSummary, rounds: RoundSummary[], live: boolean): string {
-  const posted = dayLabel(round.posted_at)
-  if (posted) return `posted ${posted}`
+  /*
+   * **Branched on the instant, not on the label it formats to.** `dayLabel` answers null for
+   * a value `Date` cannot parse as well as for an absent one, so asking it first let a round
+   * the record says *was* posted fall through to "being worked on" — a posted round described
+   * as in hand, which is the one false promise this function exists to prevent. The server
+   * cannot send it (the contract pins `posted_at` to `date-time`) but a hand-written fixture
+   * can, and `RoundTimeline` already guards the same case this way, so the two screens now
+   * say the same thing about one record. Found by a review of the rebase.
+   */
+  if (round.posted_at) {
+    const day = dayLabel(round.posted_at)
+    return day ? `posted ${day}` : 'posted'
+  }
   if (!live) return 'not posted'
 
   /*

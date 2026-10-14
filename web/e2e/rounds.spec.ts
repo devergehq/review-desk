@@ -108,7 +108,16 @@ function openReview(database: string, pr: string, head: string, title: string): 
   return reviewId
 }
 
-/** A finding, which is what makes a round started so the next head opens a round beside it. */
+/**
+ * A finding on the round, so each round of the fixture holds something to draw.
+ *
+ * **It is not what opens the next round, and it used to be.** Before DEV-962 a round had to
+ * be *started* for the next head to open a round beside it, and a finding was what started
+ * it; since DEV-962 an unposted round's head moves in place whatever was written to it, and
+ * the only thing that opens a round beside it is `review_is_posted` — a posted draft or a
+ * recorded GitHub review. The `review link` below is what does that, and deleting it as
+ * redundant would silently collapse these three heads into one round.
+ */
 function addFinding(database: string, directory: string, reviewId: number, at: number) {
   const path = join(directory, `rounds-finding-${reviewId}.json`)
   writeFileSync(

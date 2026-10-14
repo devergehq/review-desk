@@ -293,6 +293,26 @@ describe('the links to the other rounds', () => {
     })
 
     /**
+     * **A posted round the day of which cannot be read still says it was posted.** `dayLabel`
+     * answers null for an unparseable instant exactly as it does for an absent one, so asking
+     * it first let a posted round fall through to "being worked on" — a posted round described
+     * as in hand. The server cannot send it; a hand-written fixture can, and `RoundTimeline`
+     * guards the same case this way.
+     */
+    it('still says a round was posted when the day cannot be read', () => {
+      const unreadable = [{ ...THREE[0]!, posted_at: 'the ninth of October' }, THREE[1]!, THREE[2]!]
+      const links = roundLinks(
+        detail(41, {
+          review: { ...detail(41).review, id: 702, round: 2 },
+          rounds: unreadable,
+          not_for_signing: SUPERSEDED,
+        }),
+        'understand',
+      )
+      expect(links[0]!.standing).toBe('posted')
+    })
+
+    /**
      * **The newest unposted round is the one being worked on, and only that one.** An older
      * unposted round is one the author pushed past: nobody can post it, which is DEV-957's
      * whole subject, so "being worked on" would promise something never coming.
