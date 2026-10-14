@@ -2027,6 +2027,13 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
         .iter()
         .map(|review| {
             let outcomes = store.list_outcomes(review.id).expect("its outcomes");
+            // Which round the pull request has reached, and which review that is. The
+            // queue's single row for a pull request is always its newest round, and this
+            // is the one array that can be about an older one — DEV-983.
+            let newest = store
+                .newest_round(&review.repo, review.pr)
+                .expect("the newest round")
+                .expect("a pull request with a review has a newest round");
             json!({
                 "review_id": review.id,
                 "pull_request": pull_request(review),
@@ -2035,6 +2042,13 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
                 // Which round was replied to: the queue draws one row per pull request,
                 // and a reply is on the round that was posted.
                 "round": review.round,
+                "newest_round": {
+                    "review_id": newest.id,
+                    "round": newest.round,
+                    "title": newest.title,
+                    "ticket_id": newest.ticket_id,
+                    "ticket_url": newest.ticket_url,
+                },
                 "events": outcomes.iter().filter(|outcome| {
                     matches!(outcome.actor, Actor::Author | Actor::Harvester)
                 }).map(|outcome| json!({
@@ -2059,6 +2073,12 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
         .expect("in progress")
         .iter()
         .map(|at| {
+            // Which round the queue's row for this pull request is: "With the agent" draws
+            // its rows from this array directly, so the newest-round rule has to reach it.
+            let newest = store
+                .newest_round(&at.review.repo, at.review.pr)
+                .expect("the newest round")
+                .expect("a pull request with a review has a newest round");
             json!({
                 "review_id": at.review.id,
                 "pull_request": pull_request(&at.review),
@@ -2066,6 +2086,13 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
                 "ticket_url": at.review.ticket_url,
                 // Which round the session is working on; the fourth and last array with one.
                 "round": at.review.round,
+                "newest_round": {
+                    "review_id": newest.id,
+                    "round": newest.round,
+                    "title": newest.title,
+                    "ticket_id": newest.ticket_id,
+                    "ticket_url": newest.ticket_url,
+                },
                 "layer_number": at.layer.number,
                 "layer_name": at.layer.name,
                 "layers_total": ReviewLayerName::COUNT,

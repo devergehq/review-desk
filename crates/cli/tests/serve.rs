@@ -4,115 +4,16 @@
 //! command: that it says where it is before it starts serving, that the address it names
 //! is reachable, and that `--json` keeps its promise of one document.
 //!
-//! This spawns the binary rather than going through `assert_cmd`, because `serve` does
-//! not exit: the test reads what it printed, uses it, and kills it.
-//!
-//! **Its output goes to a file, not a pipe, and that is not a style choice.** The first
-//! version piped stdout, read one line and dropped the reader — which closes the read end,
-//! so the child's *next* `println!` fails with `EPIPE` and panics, killing the server the
-//! test had just started. `serve` prints two lines with a front end embedded and three
-//! without, so the window was narrow on a developer's machine and wide on CI: it failed
-//! once locally in about twenty runs, and then on CI, where there is no front end. A file
-//! has no reader to close.
+//! **The spawn is `common::serve`.** It lived here, and `stale_code_changed.rs` then needed
+//! a server too — over a database the command line had seeded, which is a different
+//! question from this file's. The helper moved rather than being copied, and the argument
+//! for writing the child's output to a file rather than a pipe moved with it.
 
 mod common;
 
-use std::io::{Read, Write};
-use std::net::TcpStream;
-use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use common::Desk;
-use tempfile::TempDir;
-
-/// A running `review-desk serve`, and the first line it printed.
-#[derive(Debug)]
-struct Served {
-    child: Child,
-    line: String,
-    /// Holds the file its output went to. Dropping it removes the file.
-    _output: TempDir,
-}
-
-impl Drop for Served {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
-}
-
-/// Start `review-desk serve` on a free port and read the line it prints.
-fn serve(desk: &Desk, json: bool) -> Served {
-    let output = TempDir::new().expect("a directory for the child's output");
-    let path = output.path().join("serve.out");
-    let file = std::fs::File::create(&path).expect("the child's output file");
-
-    let binary = assert_cmd::cargo::cargo_bin("review-desk");
-    let mut command = Command::new(binary);
-    command
-        .env("REVIEW_DESK_DB", desk.db())
-        // Port 0 so two runs of the test suite cannot collide on a port.
-        .args(["serve", "--port", "0"])
-        .stdout(Stdio::from(file))
-        .stderr(Stdio::piped());
-    if json {
-        command.arg("--json");
-    }
-
-    let child = command.spawn().expect("starting review-desk serve");
-
-    // Wait for the first line to land. The file is written by the child and read here;
-    // nothing the test does can interrupt the child's writing.
-    let deadline = Instant::now() + Duration::from_secs(20);
-    let mut line = String::new();
-    while Instant::now() < deadline {
-        let printed = std::fs::read_to_string(&path).unwrap_or_default();
-        if let Some((first, _)) = printed.split_once('\n') {
-            line = first.to_string();
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    }
-
-    assert!(
-        !line.is_empty(),
-        "serve printed nothing in 20 seconds; it should say where it is before it serves"
-    );
-
-    Served {
-        child,
-        line,
-        _output: output,
-    }
-}
-
-/// Wait until the address *answers*, or give up.
-///
-/// A full request, not a bare connect. Connecting and dropping the socket leaves a
-/// worker reading a request that never arrives, which on a loaded machine is one of four
-/// workers tied up for no reason — and "something accepted the connection" is a weaker
-/// claim than "the server answered" anyway.
-fn wait_for(address: &str) -> bool {
-    let deadline = Instant::now() + Duration::from_secs(20);
-    while Instant::now() < deadline {
-        if TcpStream::connect(address).is_ok() && get(address, "/api/v1/health").contains("200 OK")
-        {
-            return true;
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    false
-}
-
-/// One GET, returning the body.
-fn get(address: &str, path: &str) -> String {
-    let mut socket = TcpStream::connect(address).expect("connecting to the served address");
-    let request = format!("GET {path} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n");
-    socket.write_all(request.as_bytes()).expect("the request");
-    let mut answer = String::new();
-    socket.read_to_string(&mut answer).expect("the answer");
-    answer
-}
+use common::{get, serve, wait_for, Desk};
 
 #[test]
 fn serve_prints_its_url_and_answers_there() {
@@ -125,13 +26,7 @@ fn serve_prints_its_url_and_answers_there() {
         "serve should say where it is; it said {line:?}"
     );
 
-    let address = line
-        .trim()
-        .rsplit("http://")
-        .next()
-        .expect("a URL in the line")
-        .trim_end_matches('/')
-        .to_string();
+    let address = served.address();
 
     assert!(
         wait_for(&address),

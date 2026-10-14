@@ -7,6 +7,7 @@ import {
   useReviewDesk,
   type DeskResource,
 } from '../app/composables/useReviewDesk'
+import { loadSource } from '../app/data/sample'
 import { composeBody, composeThreads } from '../app/utils/houseStyle'
 
 /*
@@ -238,6 +239,185 @@ describe('the inbox', () => {
       + inbox.own_prs_without_reviewer.length
       + inbox.proposed_rules.length,
     )
+  })
+
+  /* ---- a code change a later posted round has already reviewed (DEV-983) ---- */
+
+  /*
+   * **`globex/portal#9585`, with round 2 posted.** Patrick's queue on 14 October 2026 drew
+   * a two-round pull request as "round 1 · The code under F1 changed · See what changed"
+   * and opened round 1, though round 2 had been posted the day before — and the change it
+   * reported was round 2's own head.
+   *
+   * Round 1 is review 62 at `c3d4e53` and round 2 is review 63 at `d4e5f64`, which the
+   * fixtures already hold. What these set is what came back on round 1 and whether round 2
+   * posted: round 63's draft is `ready` in the fixtures, so posting it is also what takes
+   * it out of "drafts to approve" and leaves the pull request waiting on its author.
+   */
+  const ROUND_ONE = 62
+  const ROUND_TWO = 63
+  const ROUND_ONE_HEAD = 'c3d4e53'
+  const ROUND_TWO_HEAD = 'd4e5f64'
+  /** A commit after round 2's head, which no round of the fixture records. */
+  const LATER_HEAD = 'e5f6a75'
+
+  /** The detail the harvester writes for a code change, at this commit and comparison. */
+  const changeDetail = (commit: string, from: string, to: string) => JSON.stringify({
+    file: 'app/Providers/FortifyServiceProvider.php',
+    line: 72,
+    lines_changed: false,
+    file_status: 'modified',
+    commit,
+    basis: `compare ${from}...${to}`,
+  })
+
+  const codeChanged = (review: number, id: number, detail: string) => ({
+    id,
+    review_id: review,
+    finding_seq: 1,
+    finding_key: 'F1' as const,
+    kind: 'code_changed_after' as const,
+    actor: 'harvester' as const,
+    occurred_at: '2026-10-13T06:00:00Z',
+    detail,
+  })
+
+  /**
+   * The desk with round 2 posted, and these outcomes on each round.
+   *
+   * `keepRoundOneReply` is the third fixture: the author answering a round-1 thread after
+   * round 2 posts, which is a thing a person did and is the developer's to read whatever
+   * round it was left on.
+   */
+  async function twoRounds(options: {
+    onRoundOne?: ReturnType<typeof codeChanged>[]
+    onRoundTwo?: ReturnType<typeof codeChanged>[]
+    keepRoundOneReply?: boolean
+  }) {
+    const source = loadSource()
+    await resetDesk({
+      reviews: source.reviews.map((detail) => {
+        if (detail.review.id === ROUND_ONE) {
+          return {
+            ...detail,
+            outcomes: [
+              ...(options.keepRoundOneReply ? detail.outcomes : []),
+              ...(options.onRoundOne ?? []),
+            ],
+          }
+        }
+        if (detail.review.id === ROUND_TWO) {
+          return {
+            ...detail,
+            /* Posted, which is what makes it a round that reviewed its own head. */
+            review: { ...detail.review, github_review_id: 'PRR_globex9585r2' },
+            outcomes: options.onRoundTwo ?? [],
+          }
+        }
+        return detail
+      }) as typeof source.reviews,
+      /* And posted as a draft too, so it leaves "drafts to approve". */
+      drafts: source.drafts.map(detail =>
+        detail.draft.review_id === ROUND_TWO
+          ? {
+              ...detail,
+              draft: {
+                ...detail.draft,
+                status: 'posted' as const,
+                event: 'comment' as const,
+                posted_at: '2026-10-13T05:00:00Z',
+              },
+            }
+          : detail) as typeof source.drafts,
+    })
+  }
+
+  it('leaves out a code change the later posted round read, and waits on the author', async () => {
+    await twoRounds({
+      onRoundOne: [codeChanged(
+        ROUND_ONE,
+        9200,
+        changeDetail(ROUND_TWO_HEAD, ROUND_ONE_HEAD, ROUND_TWO_HEAD),
+      )],
+    })
+
+    const inbox = await settled(desk().inbox())
+    expect(
+      inbox.author_replies.map(item => item.review_id),
+      'round 1 has nothing left that is waiting on anybody',
+    ).not.toContain(ROUND_ONE)
+    expect(inbox.posted_awaiting_author.map(item => item.review_id)).toContain(ROUND_TWO)
+    expect(
+      inbox.posted_awaiting_author.find(item => item.review_id === ROUND_TWO)!.round,
+      'the item the row takes its number from is round 2',
+    ).toBe(2)
+  })
+
+  it('counts a change after the posted round’s head, on the newest round', async () => {
+    await twoRounds({
+      onRoundOne: [codeChanged(
+        ROUND_ONE,
+        9200,
+        changeDetail(LATER_HEAD, ROUND_ONE_HEAD, LATER_HEAD),
+      )],
+      onRoundTwo: [codeChanged(
+        ROUND_TWO,
+        9201,
+        changeDetail(LATER_HEAD, ROUND_TWO_HEAD, LATER_HEAD),
+      )],
+    })
+
+    const inbox = await settled(desk().inbox())
+    const newest = inbox.author_replies.find(item => item.review_id === ROUND_TWO)
+    expect(newest, 'the newest round carries the change nothing has reviewed').toBeDefined()
+    expect(newest!.events.map(event => event.kind)).toEqual(['code_changed_after'])
+    expect(newest!.round).toBe(2)
+  })
+
+  it('keeps an author’s reply on an earlier round after a later round posts', async () => {
+    await twoRounds({
+      keepRoundOneReply: true,
+      onRoundOne: [codeChanged(
+        ROUND_ONE,
+        9200,
+        changeDetail(ROUND_TWO_HEAD, ROUND_ONE_HEAD, ROUND_TWO_HEAD),
+      )],
+    })
+
+    const inbox = await settled(desk().inbox())
+    const reply = inbox.author_replies.find(item => item.review_id === ROUND_ONE)
+    expect(reply, 'the reply is still the developer’s to read').toBeDefined()
+    expect(
+      reply!.events.map(event => event.kind),
+      'the reply survives and the already-reviewed change does not',
+    ).toEqual(['replied'])
+    expect(reply!.round, 'and it says which round it was left on').toBe(1)
+  })
+
+  it('does not hide a change when no round of the record names that commit', async () => {
+    await twoRounds({
+      onRoundOne: [codeChanged(
+        ROUND_ONE,
+        9200,
+        /* Neither commit is a round's head, and ancestry is in no record here. */
+        changeDetail('9a8b7c6', ROUND_ONE_HEAD, '7f6e5d4'),
+      )],
+    })
+
+    const inbox = await settled(desk().inbox())
+    expect(
+      inbox.author_replies.map(item => item.review_id),
+      'an unrecognised commit is shown, not hidden',
+    ).toContain(ROUND_ONE)
+  })
+
+  it('does not hide a change whose detail is not JSON', async () => {
+    await twoRounds({
+      onRoundOne: [codeChanged(ROUND_ONE, 9200, 'the author pushed a fix')],
+    })
+
+    const inbox = await settled(desk().inbox())
+    expect(inbox.author_replies.map(item => item.review_id)).toContain(ROUND_ONE)
   })
 })
 

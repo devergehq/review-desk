@@ -368,7 +368,14 @@ impl Store {
     /// `NEWEST_ROUND` states for the queue and it holds for the same reason: a round number
     /// that fell back to an earlier round the moment the newest one was dismissed would make
     /// the dismissed round's own head the one that moves next.
-    pub(crate) fn newest_round(&self, repo: &str, pr: i64) -> Result<Option<Review>> {
+    ///
+    /// **Public since DEV-983, for the queue's row.** `author_replies` is the one inbox array
+    /// that can be about an older round, and the queue's row for a pull request is always its
+    /// newest round — so the item has to carry which round that is and which review it is,
+    /// and this is the question that answers. Serving it from the same rule the round
+    /// sequence itself uses is the point: a row numbered for a round the record would not open
+    /// next is a row numbered for nothing.
+    pub fn newest_round(&self, repo: &str, pr: i64) -> Result<Option<Review>> {
         // Its callers normalise already; the two lookups below do it again for themselves,
         // which is the rule this crate keeps rather than an argument about who called whom.
         let Some(round) = self.latest_round(repo, pr)? else {

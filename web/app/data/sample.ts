@@ -59,10 +59,12 @@ import type {
   FindingDecision,
   FindingDecisionMade,
   Inbox,
+  InboxNewestRound,
   InboxPr,
   LeftTheDesk,
   NitTicket,
   NotForSigning,
+  Outcome,
   OutcomeKind,
   PrState,
   RepoName,
@@ -388,6 +390,83 @@ function ticketOf(detail: ReviewDetail): { ticket_id: string | null, ticket_url:
   }
 }
 
+/**
+ * Whether a code change on this review is one a later posted round has already reviewed.
+ *
+ * **The sample backend's copy of `ALREADY_REVIEWED`, and it has to have one.** DEV-983:
+ * an earlier round's `code_changed_after` whose commit is the recorded head of a *later*
+ * round of the same pull request that has **posted** is work somebody has done — the round
+ * that posted read that code. Without this the demo mode draws a stale item the real API
+ * does not, which is the one way the two surfaces are allowed to differ and should not.
+ *
+ * Either commit the detail carries will answer: the commit the change is at, or the commit
+ * the `compare A...B` it was read from ends at. The second is what makes "at or before"
+ * decidable — a change at a commit between two rounds has its own sha in neither round's
+ * head, but the comparison it was found in ends at a head that did post.
+ *
+ * **It errs toward showing.** Ancestry is in no record here, so only the rounds' own heads
+ * have a known position; a commit this does not recognise is shown. A detail that is not
+ * JSON is the same answer, which is why the parse is in a `try`: `outcome add --detail`
+ * takes free text and the server's clause guards the same case with `json_valid`.
+ *
+ * **One document the two read differently, said rather than left to be found.** A detail
+ * with the same key twice — `{"commit": "a", "commit": "b"}` — is valid JSON, and
+ * `JSON.parse` keeps the last value where SQLite's `json_extract` returns the first. So the
+ * two backends can disagree about such a document. Nothing in Review Desk writes one: the
+ * harvester builds the detail with `serde_json::json!`, which has one key each. It is
+ * reachable only by hand, through `outcome add --detail`.
+ */
+function alreadyReviewed(detail: ReviewDetail, outcome: Outcome): boolean {
+  if (outcome.kind !== 'code_changed_after') return false
+  if (outcome.detail == null) return false
+
+  let named: unknown
+  try {
+    named = JSON.parse(outcome.detail)
+  }
+  catch {
+    return false
+  }
+  if (named == null || typeof named !== 'object') return false
+
+  const fields = named as { commit?: unknown, basis?: unknown }
+  const commits = new Set<string>()
+  if (typeof fields.commit === 'string') commits.add(fields.commit)
+  /*
+   * **And the basis has to be a comparison, not merely text with `...` in it.** `detail` is
+   * free text, and `{"basis": "annotation...d2e3f42"}` would otherwise hide a change on the
+   * strength of a sentence claiming nothing about what any review read. `compare ` is the
+   * one prefix the harvester writes, so it is the one prefix this reads. The SQL clause asks
+   * the same, and `the_posted_test_here_is_the_one_review_is_posted_makes` is why both are
+   * spelt out rather than shared.
+   */
+  if (typeof fields.basis === 'string' && fields.basis.startsWith('compare ')) {
+    const at = fields.basis.indexOf('...')
+    if (at >= 0) commits.add(fields.basis.slice(at + 3))
+  }
+  if (commits.size === 0) return false
+
+  return source.reviews.some(other =>
+    other.review.repo === detail.review.repo
+    && other.review.pr === detail.review.pr
+    && other.review.round > detail.review.round
+    && isPostedReview(other)
+    && commits.has(other.review.head_sha))
+}
+
+/**
+ * The acts on this review that are still waiting on the developer, in the record's order.
+ *
+ * The author's and the harvester's, minus the code changes a later posted round has
+ * already reviewed. Both halves of the `author_replies` item are built from this one call,
+ * because the item's events and its `replied_at` have to describe the same set.
+ */
+function stillWaiting(detail: ReviewDetail): Outcome[] {
+  return detail.outcomes.filter(
+    outcome => outcome.actor !== 'developer' && !alreadyReviewed(detail, outcome),
+  )
+}
+
 function prOf(detail: ReviewDetail): InboxPr {
   return {
     repo: detail.review.repo,
@@ -506,6 +585,33 @@ function newestRoundByPr(): Map<string, number> {
   return rounds
 }
 
+/**
+ * The newest round of this review's pull request: which round, and which review it is.
+ *
+ * What an `author_replies` item carries so the queue's row can be the newest round —
+ * DEV-983. That array is the one that can be about an older round, so without this a pull
+ * request whose round 1 was replied to and whose round 2 has been opened and not yet
+ * written to is in the answer through that item alone, and the page cannot know round 2
+ * exists.
+ *
+ * **Every round, whatever became of it**, which is `Store::newest_round`'s own rule: a
+ * number that fell back to an earlier round the moment the newest was dismissed would name
+ * a round the record would not open next.
+ */
+function newestRoundOf(detail: ReviewDetail): InboxNewestRound {
+  const newest = source.reviews
+    .filter(other =>
+      other.review.repo === detail.review.repo && other.review.pr === detail.review.pr)
+    .reduce((top, other) => (other.review.round > top.review.round ? other : top), detail)
+  return {
+    review_id: newest.review.id,
+    round: newest.review.round,
+    title: newest.review.title ?? null,
+    ticket_id: newest.review.ticket_id ?? null,
+    ticket_url: newest.review.ticket_url ?? null,
+  }
+}
+
 /** The whole Inbox, recomputed from the desk — the shape `GET /inbox` serves. */
 function inbox(): Inbox {
   /*
@@ -607,17 +713,26 @@ function inbox(): Inbox {
        * round the row is numbered for.
        */
       round: detail.review.round,
-      events: detail.outcomes
-        .filter(outcome => outcome.actor !== 'developer')
-        .map(outcome => ({
-          finding_seq: outcome.finding_seq,
-          finding_key: outcome.finding_key,
-          kind: outcome.kind,
-          detail: outcome.detail ?? null,
-        })),
+      /*
+       * **And the round the row itself is**: its number, the review to link and the ticket
+       * it draws. The server reads this off `Store::newest_round`; see `newestRoundOf`.
+       */
+      newest_round: newestRoundOf(detail),
+      /*
+       * **What is still the developer's to read**, which since DEV-983 is not every act the
+       * author or the harvester recorded: a code change a later posted round has already
+       * reviewed is out. One list, read twice below, because the events and the time have to
+       * be about the same set — the row's age comes off this and a figure dated from an
+       * event the row does not draw is a figure about nothing the reader can see.
+       */
+      events: stillWaiting(detail).map(outcome => ({
+        finding_seq: outcome.finding_seq,
+        finding_key: outcome.finding_key,
+        kind: outcome.kind,
+        detail: outcome.detail ?? null,
+      })),
       /* The newest of those outcomes' own times, which the record has always held. */
-      replied_at: detail.outcomes
-        .filter(outcome => outcome.actor !== 'developer')
+      replied_at: stillWaiting(detail)
         .map(outcome => outcome.occurred_at)
         .sort()
         .at(-1) ?? null,
@@ -677,6 +792,11 @@ function inbox(): Inbox {
       ...ticketOf(detail),
       /* Which round the session is working on; the fourth and last array with one. */
       round: detail.review.round,
+      /*
+       * And the round the queue's row for this pull request is. "With the agent" draws its
+       * rows from this array directly, so the newest-round rule has to reach it too.
+       */
+      newest_round: newestRoundOf(detail),
       layer_number: running!.number,
       layer_name: running!.name,
       layers_total: LAYERS_TOTAL,

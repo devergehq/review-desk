@@ -16,10 +16,10 @@ use std::sync::{Arc, Mutex};
 use review_desk_store::{
     Actor, Brief, Decision, DecisionMade, DiffAtHead, Disposition, Draft, DraftSection,
     DraftThread, DuplicateRounds, Finding, FindingInRound, FoldedRound, FullReview, HeadUpdates,
-    NewDraft, NewOutcome, NitTicket, NotForSigning, OpenedReview, PostedReview, ProblemStatement,
-    RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewEvent, ReviewFacts, ReviewLayer,
-    ReviewProvenance, ReviewTimings, ReviewsShown, RoundCommit, RoundSummary, Rule, RuleCounts,
-    RuleStage, RulesSummary, Store, StoreError, TicketedAndApproved, Timestamp,
+    NewDraft, NewOutcome, NitTicket, NotForSigning, OpenedReview, Outcome, PostedReview,
+    ProblemStatement, RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewEvent, ReviewFacts,
+    ReviewLayer, ReviewProvenance, ReviewTimings, ReviewsShown, RoundCommit, RoundSummary, Rule,
+    RuleCounts, RuleStage, RulesSummary, Store, StoreError, TicketedAndApproved, Timestamp,
 };
 
 use crate::error::{ApiError, Code};
@@ -204,8 +204,33 @@ impl Records {
     }
 
     /// Reviews an author or the harvester has acted on since a posted review.
+    ///
+    /// **A code change a later posted round has already reviewed does not count as having
+    /// been acted on** — DEV-983 — so a review whose every recorded act is one of those is
+    /// not here at all. The store's own doc carries the rule and what it errs toward.
     pub fn reviews_with_author_activity(&self) -> Result<Vec<Review>, ApiError> {
         self.with(|store| store.reviews_with_author_activity(None, None))
+    }
+
+    /// What an author or the harvester did on one review that is still the developer's to
+    /// read, in the order the item lists them.
+    ///
+    /// **The same clause that decided the review belongs in that group decides which of
+    /// its outcomes the item names.** `InboxReplyItem.events` has `minItems: 1`, so a
+    /// second reading here — the actor filter this replaced, which could not ask DEV-983's
+    /// question at all — would serve an item the group counted and the page then had to
+    /// drop.
+    pub fn author_activity(&self, id: i64) -> Result<Vec<Outcome>, ApiError> {
+        self.with(|store| store.author_activity(id))
+    }
+
+    /// The newest round of a pull request, whatever became of it.
+    ///
+    /// What an `author_replies` item needs to say which round the queue's row is: that array
+    /// is the one that can be about an older round, and the row is always the newest. The
+    /// store counts every round, dismissed or finished, and its own doc carries why.
+    pub fn newest_round(&self, repo: &str, pr: i64) -> Result<Option<Review>, ApiError> {
+        self.with(|store| store.newest_round(repo, pr))
     }
 
     /// Reviews a session is still working on, with the layer each is at.

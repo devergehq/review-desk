@@ -260,14 +260,34 @@ impl Api {
             .iter()
             .map(|review| -> Result<Option<Value>, ApiError> {
                 // One read, two answers. The author's acts are read once and both the
-                // list and its newest time come off that: a second `full_review` here
-                // would be a second read of the same review per row of the queue.
-                let full = self.records.full_review(review.id)?;
-                let acted: Vec<_> = full
-                    .outcomes
-                    .iter()
-                    .filter(|outcome| matches!(outcome.actor, Actor::Author | Actor::Harvester))
-                    .collect();
+                // list and its newest time come off that: a second read here would be a
+                // second read of the same review per row of the queue.
+                //
+                // **The store decides which acts those are, since DEV-983.** This filtered
+                // a whole `full_review` by actor, which is a question about who — and the
+                // one it could not ask is whether a later posted round has already reviewed
+                // the change an outcome reports. That is a clause over the review's row and
+                // its pull request's other rounds, so it is asked where the group's own
+                // membership is asked, in one place. The read is narrower as well: the
+                // outcomes rather than the review, its layers, its brief, its findings and
+                // its draft.
+                let acted = self.records.author_activity(review.id)?;
+                // **Which round the pull request has reached, and which review that is.**
+                // DEV-983: the queue's single row for a pull request is always its newest
+                // round, and this is the one array that can be about an older one. The other
+                // two that make a row are served for the newest round only; the two that
+                // join onto a row carry their own round. So a pull request whose round 1 was
+                // replied to and whose round 2 has been opened and not yet written to is in
+                // the answer through this item alone — and without these two fields the page
+                // cannot know round 2 exists at all, so the row says "round 1" and opens
+                // round 1.
+                //
+                // **Read per item rather than joined into the query**, because the query
+                // answers which reviews belong in the group and this is a fact about the
+                // pull request each one is on. One read per row of a queue that already
+                // makes several, against a statement every other group would then carry a
+                // column for.
+                let newest = self.records.newest_round(&review.repo, review.pr)?;
 
                 let events: Vec<Value> = acted
                     .iter()
@@ -301,6 +321,36 @@ impl Api {
                         // posted — which can be older than the round the row is numbered
                         // for. Without it the row cannot say which review the reply is on.
                         "round": review.round,
+                        // And the round the row itself is: its number, the review to
+                        // link, and the ticket it draws. The ticket is here because the
+                        // pair above belongs to the round that was *replied to*, and
+                        // DEV-957's rule is that a row takes a ticket only from an item
+                        // about the round it is numbered for — so a row numbered for a
+                        // round no other item mentions had nowhere to take one from.
+                        //
+                        // **Falling back to this review**, for a record that somehow holds
+                        // no newest round for its own pull request. This review is one, so
+                        // the row is then exactly what it was before DEV-983 rather than a
+                        // row with no number at all.
+                        "newest_round": {
+                            "review_id": newest.as_ref().map_or(review.id, |newest| newest.id),
+                            "round": newest
+                                .as_ref()
+                                .map_or(review.round, |newest| newest.round),
+                            "title": newest
+                                .as_ref()
+                                .map_or(review.title.clone(), |newest| newest.title.clone()),
+                            "ticket_id": newest
+                                .as_ref()
+                                .map_or(review.ticket_id.clone(), |newest| {
+                                    newest.ticket_id.clone()
+                                }),
+                            "ticket_url": newest
+                                .as_ref()
+                                .map_or(review.ticket_url.clone(), |newest| {
+                                    newest.ticket_url.clone()
+                                }),
+                        },
                         "events": events,
                         "replied_at": wire::rfc3339_or_null(replied_at),
                     })
@@ -326,8 +376,14 @@ impl Api {
 
         let in_progress: Vec<Value> = in_progress
             .iter()
-            .map(|at| {
-                json!({
+            .map(|at| -> Result<Value, ApiError> {
+                // The round the queue's row for this pull request is, for the reason
+                // `author_replies` carries one: "With the agent" draws its rows from this
+                // array directly, and `reviews_in_progress` has no newest-round
+                // restriction — so a session running on round 1 while round 2 has been
+                // opened and not yet written to drew a row numbered for round 1.
+                let newest = self.records.newest_round(&at.review.repo, at.review.pr)?;
+                Ok(json!({
                     "review_id": at.review.id,
                     "pull_request": wire::inbox_pr(&at.review),
                     // The ticket and its address, like the three arrays that wait on the
@@ -356,9 +412,30 @@ impl Api {
                     // unknown" — a fact the record holds, rather than a guess at Allele's.
                     "in_state_since": wire::rfc3339_or_null(at.layer.in_state_since()),
                     "last_activity_at": wire::rfc3339_or_null(at.review.last_activity_at),
-                })
+                    "newest_round": {
+                        "review_id": newest
+                            .as_ref()
+                            .map_or(at.review.id, |newest| newest.id),
+                        "round": newest
+                            .as_ref()
+                            .map_or(at.review.round, |newest| newest.round),
+                        "title": newest
+                            .as_ref()
+                            .map_or(at.review.title.clone(), |newest| newest.title.clone()),
+                        "ticket_id": newest
+                            .as_ref()
+                            .map_or(at.review.ticket_id.clone(), |newest| {
+                                newest.ticket_id.clone()
+                            }),
+                        "ticket_url": newest
+                            .as_ref()
+                            .map_or(at.review.ticket_url.clone(), |newest| {
+                                newest.ticket_url.clone()
+                            }),
+                    },
+                }))
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
 
         // Posted, and with the author. **Not a group that is waiting on the developer**,
         // which is why it is absent from `totals_items` below — and why the screen has to
@@ -394,12 +471,24 @@ impl Api {
             // already checks it.
             + own_prs.len()
             + proposed_rules.len();
-        let repos: std::collections::BTreeSet<&str> = briefs
+        // **The repositories the three waiting groups actually hold items for.**
+        //
+        // `author_replies` is read from the items rather than from `replies`, which is the
+        // set of reviews the store returned: an item whose every event turned out to be a
+        // code change a posted round had already reviewed is dropped above, and the two
+        // reads are not one snapshot — so a post landing between them can empty an item
+        // this count had already credited its repository for. Counting what was served
+        // cannot disagree with what was served.
+        let mut repos: std::collections::BTreeSet<&str> = briefs
             .iter()
             .chain(drafts.iter())
-            .chain(replies.iter())
             .map(|review| review.repo.as_str())
             .collect();
+        for item in &author_replies {
+            if let Some(repo) = item["pull_request"]["repo"].as_str() {
+                repos.insert(repo);
+            }
+        }
 
         Ok((
             200,
