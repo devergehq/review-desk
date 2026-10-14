@@ -68,6 +68,10 @@ const THIRD = 'e3f4a53'
 /** The file a finding points at, which is what a code change is recorded against. */
 const FILE = 'app/Exports/ScheduledExport.php'
 
+/** The pull request's title, and the one `#754`'s author renames it to after round 1. */
+const TITLE = 'Hold a scheduled export’s tenant for the whole run'
+const RENAMED = 'Hold the tenant for the whole of a scheduled export'
+
 let serving: Serving
 /** Each fixture's two review ids, by its pull request number. */
 const rounds = new Map<string, { one: number, two: number, oneSeq: string, twoSeq: string }>()
@@ -75,13 +79,13 @@ let directory: string
 let database: string
 
 /** Open a round of this pull request and hand back its review id. */
-function openRound(pr: string, head: string): number {
+function openRound(pr: string, head: string, title = TITLE): number {
   const opened = cli(database, [
     'review', 'open',
     '--repo', 'acme/portal',
     '--pr', pr,
     '--head', head,
-    '--title', 'Hold a scheduled export’s tenant for the whole run',
+    '--title', title,
     '--ticket', `ABC-${pr}`,
     '--ticket-url', `https://linear.app/acme/issue/ABC-${pr}`,
   ])
@@ -211,9 +215,14 @@ test.beforeAll(async () => {
     '--by', 'author',
     '--detail', 'The retry passes the tenant now.',
   ])
+  /*
+   * Renamed between rounds, which is a thing authors do — and the reason the row's title is
+   * chosen by round like its ticket. Round 2 is the only round that carries the new name,
+   * and it is in no inbox array of its own.
+   */
   rounds.set('754', {
     one: unwritten,
-    two: openRound('754', SECOND),
+    two: openRound('754', SECOND, RENAMED),
     oneSeq: unwrittenSeq,
     twoSeq: '-',
   })
@@ -365,6 +374,13 @@ test('numbers the row for a newest round nothing else in the answer mentions',
      * review of the first fix batch.
      */
     await expect(row).toContainText('ABC-754')
+    /*
+     * **And the title round 2 carries, not the one round 1 was opened with.** `#754` is
+     * renamed between its rounds, and the title is chosen by round for the same reason the
+     * ticket is. Found by a review of the third fix batch.
+     */
+    await expect(row).toContainText(RENAMED)
+    await expect(row).not.toContainText(TITLE)
   })
 
 test('the heading and the repository chip count the rows drawn', async ({ page }) => {

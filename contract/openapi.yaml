@@ -4308,7 +4308,7 @@ components:
     InboxNewestRound:
       type: object
       additionalProperties: false
-      required: [review_id, round, ticket_id, ticket_url]
+      required: [review_id, round, title, ticket_id, ticket_url]
       description: |
         **The round the queue's single row for a pull request *is*.** DEV-983.
 
@@ -4324,13 +4324,15 @@ components:
 
         **Everything the row takes from the round it is**, rather than a number on its own.
         The number alone would let the row say "round 2" over a link to round 1, which is
-        worse than the fault it replaced; and the ticket is here because the row draws it,
-        while the `ticket_id` beside this field belongs to the round that was *replied to*.
-        DEV-957 settled that a row may only take a ticket from an item about the round it is
-        numbered for — two rounds of a pull request usually carry the same ticket, and where
-        they differ the row linked the wrong one — so with the row numbered for a round no
-        other item mentions, the ticket had nowhere to come from and vanished from a row
-        that had been showing it.
+        worse than the fault it replaced; and the ticket and the title are here because the
+        row draws them, while `ticket_id` and `pull_request.title` beside this field belong
+        to the round that was *replied to*. DEV-957 settled that a row may only take a
+        ticket from an item about the round it is numbered for — two rounds of a pull
+        request usually carry the same ticket, and where they differ the row linked the
+        wrong one — so with the row numbered for a round no other item mentions, the ticket
+        had nowhere to come from and vanished from a row that had been showing it. The title
+        is the same position, and a pull request renamed between rounds is what makes the
+        two differ.
 
         Every field equals the reply item's own whenever the reply is on the newest round,
         which is the ordinary case.
@@ -4349,6 +4351,11 @@ components:
             became of it — `Store::newest_round`'s own rule, because a number that fell back
             to an earlier round the moment the newest was dismissed would name a round the
             record would not open next. `InboxPostedItem.rounds_on_pr` is the same number.
+        title:
+          type: [string, 'null']
+          description: |
+            The pull request's title as that round recorded it, which is the title the row
+            draws. Null for a round recorded without one, and the row then says it has none.
         ticket_id:
           allOf:
             - $ref: '#/components/schemas/ForeignId'

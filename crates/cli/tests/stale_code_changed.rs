@@ -35,6 +35,10 @@ const THIRD: &str = "e3f4a53";
 /// The file a finding points at, which is what a code change is recorded against.
 const FILE: &str = "app/Exports/ScheduledExport.php";
 
+/// The pull request's title, and the one it is renamed to between rounds.
+const TITLE: &str = "Hold a scheduled export's tenant for the whole run";
+const RENAMED: &str = "Hold the tenant for the whole of a scheduled export";
+
 /// A review's one finding, with the file and line a code change is reported about.
 ///
 /// **Hands back the sequence number it printed, which is not 1 on a later round.** A
@@ -165,6 +169,11 @@ fn two_posted_rounds(desk: &Desk) -> Rounds {
 /// own review and inherits neither, so each round names them for itself. The queue's row
 /// links the ticket, which is what makes them worth seeding.
 fn open_round(desk: &Desk, head: &str) -> String {
+    open_round_titled(desk, head, TITLE)
+}
+
+/// The same, with the title this round records.
+fn open_round_titled(desk: &Desk, head: &str, title: &str) -> String {
     desk.run(&[
         "review",
         "open",
@@ -175,7 +184,7 @@ fn open_round(desk: &Desk, head: &str) -> String {
         "--head",
         head,
         "--title",
-        "Hold a scheduled export's tenant for the whole run",
+        title,
         "--ticket",
         "ABC-741",
         "--ticket-url",
@@ -482,7 +491,9 @@ fn the_item_names_the_newest_round_even_when_nothing_else_mentions_it() {
     // through round 1's reply. Without `rounds_on_pr` and the review beside it the page
     // cannot know round 2 exists, and the row says "round 1" and opens round 1. Found by
     // a review of this branch.
-    let two = open_round(&desk, SECOND);
+    // Renamed between rounds, which is why the row chooses its title by round: only round
+    // 2 carries the new name, and it is in no inbox array of its own.
+    let two = open_round_titled(&desk, SECOND, RENAMED);
 
     let served = serving(&desk);
     let inbox = get_json(&served.address(), "/api/v1/inbox");
@@ -517,5 +528,10 @@ fn the_item_names_the_newest_round_even_when_nothing_else_mentions_it() {
     assert_eq!(
         reply["newest_round"]["ticket_url"],
         "https://linear.app/acme/issue/ABC-741"
+    );
+    assert_eq!(
+        reply["newest_round"]["title"], RENAMED,
+        "and that round's own title: a pull request renamed between rounds is why the row \
+         chooses a title by round rather than taking the one that raised it"
     );
 }

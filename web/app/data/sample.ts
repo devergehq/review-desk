@@ -606,6 +606,7 @@ function newestRoundOf(detail: ReviewDetail): InboxNewestRound {
   return {
     review_id: newest.review.id,
     round: newest.review.round,
+    title: newest.review.title ?? null,
     ticket_id: newest.review.ticket_id ?? null,
     ticket_url: newest.review.ticket_url ?? null,
   }

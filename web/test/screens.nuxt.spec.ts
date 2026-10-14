@@ -1346,6 +1346,12 @@ describe('a pull request whose later round has posted', () => {
           : detail) as typeof source.drafts,
     })
 
+    /* Renamed after round 1, so the title has a round to be chosen by. */
+    for (const detail of currentSource().reviews) {
+      if (detail.review.id === ROUND_ONE) detail.review.title = 'The old name'
+      if (detail.review.id === ROUND_TWO) detail.review.title = 'The name it has now'
+    }
+
     const page = await shown(Inbox)
     const rows = rowsUnder(page, 'Needs you').filter(row => row.text().includes('#9585'))
     expect(rows, 'one row for one pull request').toHaveLength(1)
@@ -1359,6 +1365,14 @@ describe('a pull request whose later round has posted', () => {
      * Found by a review of the first fix batch.
      */
     expect(rows[0]!.text()).toContain('DEV-958')
+    /*
+     * **And round 2's own title.** A pull request renamed between rounds is the case the
+     * title is chosen by round for, and here no item above the reply is about round 2 — so
+     * the title comes off `newest_round` like the ticket beside it. Found by a review of
+     * the third fix batch.
+     */
+    expect(rows[0]!.text()).toContain('The name it has now')
+    expect(rows[0]!.text()).not.toContain('The old name')
   })
 
   it('titles and marks a raised row for the round it is, not the round that raised it',

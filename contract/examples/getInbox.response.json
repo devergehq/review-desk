@@ -74,6 +74,7 @@
       "newest_round": {
         "review_id": 12,
         "round": 1,
+        "title": "Split the export job",
         "ticket_id": "ABC-187",
         "ticket_url": null
       },

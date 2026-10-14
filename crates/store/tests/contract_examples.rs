@@ -2045,6 +2045,7 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
                 "newest_round": {
                     "review_id": newest.id,
                     "round": newest.round,
+                    "title": newest.title,
                     "ticket_id": newest.ticket_id,
                     "ticket_url": newest.ticket_url,
                 },

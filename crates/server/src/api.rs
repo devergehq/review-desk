@@ -337,6 +337,9 @@ impl Api {
                             "round": newest
                                 .as_ref()
                                 .map_or(review.round, |newest| newest.round),
+                            "title": newest
+                                .as_ref()
+                                .map_or(review.title.clone(), |newest| newest.title.clone()),
                             "ticket_id": newest
                                 .as_ref()
                                 .map_or(review.ticket_id.clone(), |newest| {

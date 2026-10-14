@@ -283,7 +283,11 @@ function needingYou(data: Inbox): Waiting[] {
      * **A row with no item about its own round keeps the title it was made with**, which
      * is some round of the same pull request. `slot` sets it, and that is the fallback: a
      * row numbered for a round nothing else mentions still has a name, which "no title
-     * recorded" over a pull request with a title would not be.
+     * recorded" over a pull request with a title would not be. `InboxNewestRound` carries a
+     * title for exactly that case, so the fallback is reached only by a record that holds
+     * no newest round for its own pull request — found by a review of the third fix batch,
+     * which pointed out that an object carrying the ticket for the row's round and not the
+     * title is an object a reader has to remember an exception about.
      */
     if (item.title != null) row.title = item.title
   }
