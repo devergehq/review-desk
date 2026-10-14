@@ -205,9 +205,11 @@ impl Records {
 
     /// Reviews an author or the harvester has acted on since a posted review.
     ///
-    /// **A code change a later posted round has already reviewed does not count as having
-    /// been acted on** — DEV-983 — so a review whose every recorded act is one of those is
-    /// not here at all. The store's own doc carries the rule and what it errs toward.
+    /// **What a later posted round has already answered does not count as having been
+    /// acted on**, so a review whose every recorded act is one of those is not here at all.
+    /// Two halves: a code change at a commit that round read (DEV-983), and anything else
+    /// the author or the harvester recorded before that round opened (DEV-990). The store's
+    /// own doc carries both and what each errs toward.
     pub fn reviews_with_author_activity(&self) -> Result<Vec<Review>, ApiError> {
         self.with(|store| store.reviews_with_author_activity(None, None))
     }
@@ -217,9 +219,9 @@ impl Records {
     ///
     /// **The same clause that decided the review belongs in that group decides which of
     /// its outcomes the item names.** `InboxReplyItem.events` has `minItems: 1`, so a
-    /// second reading here — the actor filter this replaced, which could not ask DEV-983's
-    /// question at all — would serve an item the group counted and the page then had to
-    /// drop.
+    /// second reading here — the actor filter this replaced, which could ask neither
+    /// DEV-983's question nor DEV-990's — would serve an item the group counted and the
+    /// page then had to drop.
     pub fn author_activity(&self, id: i64) -> Result<Vec<Outcome>, ApiError> {
         self.with(|store| store.author_activity(id))
     }

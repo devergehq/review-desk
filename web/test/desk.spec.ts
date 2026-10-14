@@ -283,18 +283,44 @@ describe('the inbox', () => {
   })
 
   /**
-   * The desk with round 2 posted, and these outcomes on each round.
+   * An author's reply on a finding, at this instant.
    *
-   * `keepRoundOneReply` is the third fixture: the author answering a round-1 thread after
-   * round 2 posts, which is a thing a person did and is the developer's to read whatever
-   * round it was left on.
+   * Round 2 of the fixture opened at `2026-10-12T16:10:00Z`, so an instant either side of
+   * that is what decides whether the round that posted was open to read the reply — which
+   * is the whole of DEV-990.
+   */
+  const repliedAt = (review: number, id: number, at: string) => ({
+    id,
+    review_id: review,
+    finding_seq: 1,
+    finding_key: 'F1' as const,
+    kind: 'replied' as const,
+    actor: 'author' as const,
+    occurred_at: at,
+    detail: JSON.stringify({
+      comment_id: 'RC_globex9585_later',
+      in_reply_to: 'RC_globex9585_1',
+      login: 'author',
+      body: 'Moved it to the staff guard in the next push.',
+      time_basis: 'github',
+    }),
+  })
+
+  /**
+   * The desk with these outcomes on each round, and round 2 posted unless asked otherwise.
+   *
+   * `keepRoundOneReply` keeps the fixture's own round-1 reply, which is at
+   * `2026-10-12T08:15:00Z` — before round 2 opened. `postRoundTwo: false` leaves round 2 a
+   * round that has reviewed nothing, which is DEV-990's third case.
    */
   async function twoRounds(options: {
-    onRoundOne?: ReturnType<typeof codeChanged>[]
-    onRoundTwo?: ReturnType<typeof codeChanged>[]
+    onRoundOne?: ReturnType<typeof codeChanged | typeof repliedAt>[]
+    onRoundTwo?: ReturnType<typeof codeChanged | typeof repliedAt>[]
     keepRoundOneReply?: boolean
+    postRoundTwo?: boolean
   }) {
     const source = loadSource()
+    const posts = options.postRoundTwo ?? true
     await resetDesk({
       reviews: source.reviews.map((detail) => {
         if (detail.review.id === ROUND_ONE) {
@@ -310,7 +336,9 @@ describe('the inbox', () => {
           return {
             ...detail,
             /* Posted, which is what makes it a round that reviewed its own head. */
-            review: { ...detail.review, github_review_id: 'PRR_globex9585r2' },
+            review: posts
+              ? { ...detail.review, github_review_id: 'PRR_globex9585r2' }
+              : detail.review,
             outcomes: options.onRoundTwo ?? [],
           }
         }
@@ -318,7 +346,7 @@ describe('the inbox', () => {
       }) as typeof source.reviews,
       /* And posted as a draft too, so it leaves "drafts to approve". */
       drafts: source.drafts.map(detail =>
-        detail.draft.review_id === ROUND_TWO
+        detail.draft.review_id === ROUND_TWO && posts
           ? {
               ...detail,
               draft: {
@@ -374,24 +402,84 @@ describe('the inbox', () => {
     expect(newest!.round).toBe(2)
   })
 
-  it('keeps an author’s reply on an earlier round after a later round posts', async () => {
+  /* ---- a reply a later posted round has already answered (DEV-990) ---- */
+
+  /*
+   * **The same rule, for what the record cannot ask a commit question about.** A pull
+   * request showed "The author replied to F18 · replied to round 2" with "Read the reply",
+   * though round 3 had opened eight minutes after those replies and posted twenty-nine
+   * minutes later. Round 3 is the answer to the reply: its session read round 2's threads,
+   * because they were there to read when it opened.
+   *
+   * The fixture's own shape is that record. Round 1's reply is at `2026-10-12T08:15:00Z`
+   * and round 2 opened at `2026-10-12T16:10:00Z`, so the three cases are the fixture reply
+   * with round 2 posted, a reply recorded after round 2 opened, and round 2 not posted.
+   */
+
+  it('leaves out a reply the later posted round was opened after', async () => {
+    await twoRounds({ keepRoundOneReply: true })
+
+    const inbox = await settled(desk().inbox())
+    expect(
+      inbox.author_replies.map(item => item.review_id),
+      'round 2 opened after the reply and posted, so the reply has been answered',
+    ).not.toContain(ROUND_ONE)
+
+    expect(
+      inbox.posted_awaiting_author.map(item => item.review_id),
+      'and the pull request is waiting on its author, which is the issue’s own criterion',
+    ).toContain(ROUND_TWO)
+
+    const detail = await settled(desk().review(ROUND_ONE))
+    expect(
+      detail.outcomes.map(outcome => outcome.kind),
+      'nothing is deleted: round 1’s What happened page still lists the reply',
+    ).toContain('replied')
+  })
+
+  it('keeps a reply that arrived after the later round opened', async () => {
     await twoRounds({
-      keepRoundOneReply: true,
-      onRoundOne: [codeChanged(
-        ROUND_ONE,
-        9200,
-        changeDetail(ROUND_TWO_HEAD, ROUND_ONE_HEAD, ROUND_TWO_HEAD),
-      )],
+      onRoundOne: [
+        repliedAt(ROUND_ONE, 9300, '2026-10-12T18:00:00Z'),
+        /* And a change round 2 has already read, beside it: both halves at once. */
+        codeChanged(ROUND_ONE, 9200, changeDetail(ROUND_TWO_HEAD, ROUND_ONE_HEAD, ROUND_TWO_HEAD)),
+      ],
     })
 
     const inbox = await settled(desk().inbox())
     const reply = inbox.author_replies.find(item => item.review_id === ROUND_ONE)
-    expect(reply, 'the reply is still the developer’s to read').toBeDefined()
+    expect(
+      reply,
+      'round 2 was already open when the reply landed, so it may never have read it',
+    ).toBeDefined()
     expect(
       reply!.events.map(event => event.kind),
       'the reply survives and the already-reviewed change does not',
     ).toEqual(['replied'])
     expect(reply!.round, 'and it says which round it was left on').toBe(1)
+  })
+
+  it('does not hide a reply when the later round has not posted', async () => {
+    await twoRounds({ keepRoundOneReply: true, postRoundTwo: false })
+
+    const inbox = await settled(desk().inbox())
+    const reply = inbox.author_replies.find(item => item.review_id === ROUND_ONE)
+    expect(reply, 'a round that has not posted has answered nothing').toBeDefined()
+    expect(reply!.events.map(event => event.kind)).toEqual(['replied'])
+  })
+
+  it('does not read a round’s own opening as answering a reply on it', async () => {
+    /*
+     * The round a reply is on always opened before the reply arrived, which is every reply
+     * there is. Only a *later* round can have answered one, and `ROUND_TWO` is the newest
+     * round of this pull request.
+     */
+    await twoRounds({ onRoundTwo: [repliedAt(ROUND_TWO, 9400, '2026-10-13T09:00:00Z')] })
+
+    const inbox = await settled(desk().inbox())
+    const reply = inbox.author_replies.find(item => item.review_id === ROUND_TWO)
+    expect(reply, 'the newest round’s own reply is nobody else’s answer').toBeDefined()
+    expect(reply!.events.map(event => event.kind)).toEqual(['replied'])
   })
 
   it('does not hide a change when no round of the record names that commit', async () => {

@@ -185,7 +185,16 @@ test.beforeAll(async () => {
   codeChanged(further.one, further.oneSeq, THIRD, FIRST, THIRD)
   codeChanged(further.two, further.twoSeq, THIRD, SECOND, THIRD)
 
-  /* #753: the author answers a round-1 thread after round 2 posted. */
+  /*
+   * #753: the author answers a round-1 thread after round 2 posted — and, which is what
+   * DEV-990 turns on, after round 2 *opened*. Round 2's session was never open to read it,
+   * so the reply is still the developer's.
+   *
+   * **The time is spelt out rather than defaulted**, because a reply defaulted to now sits
+   * on the right side of that comparison by accident: the rounds are opened during this run,
+   * so a minute past this clock is after every one of them whatever order the setup above is
+   * written in, and a reordered fixture cannot move the reply with nothing failing.
+   */
   const replied = twoPostedRounds('753')
   codeChanged(replied.one, replied.oneSeq, SECOND, FIRST, SECOND)
   cli(database, [
@@ -195,6 +204,7 @@ test.beforeAll(async () => {
     '--kind', 'replied',
     '--by', 'author',
     '--detail', 'The retry passes the tenant now.',
+    '--at', String(Math.floor(Date.now() / 1000) + 60),
   ])
 
   /*

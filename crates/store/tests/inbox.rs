@@ -3,7 +3,7 @@
 
 mod common;
 
-use common::{new_review, temp_store};
+use common::{db_path, new_review, temp_store};
 use review_desk_store::{
     Actor, Disposition, DraftStatus, FindingRef, NewDraft, NewFinding, NewOutcome, NewRule,
     OutcomeKind, PrState, Review, ReviewEvent, ReviewLayerName, ReviewLayerState, ReviewsShown,
@@ -897,6 +897,42 @@ fn code_changed(store: &Store, review: i64, seq: i64, detail: String, at: i64) {
         .expect("record the code change");
 }
 
+/// Move a round's opened time, in the database's own SQL.
+///
+/// **A test about `replied` needs the reply to land either side of the round that answers
+/// it**, and `NewReview` carries no `created_at`: `create_review` writes `now()`. The store
+/// has no function for moving a review's creation time, and it should not grow one so that
+/// a test can pass — so this does it the way `tests/rules.rs` ages a finding past its
+/// window, in SQL. The round's own facts are untouched; only when it opened moves.
+fn opened_at(dir: &tempfile::TempDir, review: i64, at: i64) {
+    let conn = rusqlite::Connection::open(db_path(dir)).expect("open the database");
+    let moved = conn
+        .execute(
+            "UPDATE reviews SET created_at = ?1 WHERE id = ?2",
+            rusqlite::params![at, review],
+        )
+        .expect("move the round's opened time");
+    assert_eq!(moved, 1, "one round, moved");
+}
+
+/// Record an author's reply on a finding, at this time.
+fn replied(store: &Store, review: i64, seq: i64, at: i64) {
+    store
+        .add_outcome(
+            FindingRef {
+                review_id: review,
+                seq,
+            },
+            NewOutcome {
+                kind: OutcomeKind::Replied,
+                actor: Actor::Author,
+                detail: Some("the retry passes the tenant now".to_string()),
+                occurred_at: Some(at),
+            },
+        )
+        .expect("record the reply");
+}
+
 /// Round 1 posted at `A`, the code changed `A` to `B`, round 2 posted at `B`.
 ///
 /// The issue's first fixture. Both rounds are posted, which is also what lets round 2 exist
@@ -1069,28 +1105,60 @@ fn a_detail_that_is_not_json_keeps_its_item_rather_than_failing_the_query() {
     );
 }
 
-#[test]
-fn a_reply_on_an_earlier_round_is_still_author_activity_after_a_later_round_posts() {
-    let (_dir, store) = temp_store();
-    let (one, _two, seq) = two_posted_rounds(&store);
+/*
+ * A reply a later posted round has already answered (DEV-990)
+ * ----------------------------------------------------------
+ *
+ * The same rule, for what the record cannot ask a commit question about. On 15 October 2026
+ * a pull request showed "The author replied to F18 · replied to round 2" with "Read the
+ * reply", though round 3 had opened eight minutes after those replies and posted
+ * twenty-nine minutes later: round 3 is the answer to the reply.
+ *
+ * Three cases, which are the three the issue asks for, and each turns on *when*: the round
+ * that answers has to have opened after the reply, and it has to have posted.
+ */
 
-    // The issue's third fixture: the author answers a round-1 thread after round 2 posts.
-    // Only a code change can be already reviewed; a reply is a thing a person said.
-    store
-        .add_outcome(
-            FindingRef {
-                review_id: one.id,
-                seq,
-            },
-            NewOutcome {
-                kind: OutcomeKind::Replied,
-                actor: Actor::Author,
-                detail: Some("the retry passes the tenant now".to_string()),
-                occurred_at: Some(3_000),
-            },
-        )
-        .unwrap();
-    // And a code change round 2 has already read, beside it.
+#[test]
+fn a_reply_a_later_posted_round_opened_after_is_not_author_activity() {
+    let (dir, store) = temp_store();
+    let (one, two, seq) = two_posted_rounds(&store);
+
+    // The shape the issue records: the author replies, and then the round that answers the
+    // reply opens and posts. Round 2's session had the reply in front of it, because it was
+    // there to read when the round opened.
+    replied(&store, one.id, seq, 1_000);
+    opened_at(&dir, two.id, 2_000);
+
+    assert!(
+        !ids(&store.reviews_with_author_activity(None, None).unwrap()).contains(&one.id),
+        "round 2 opened after the reply and posted, so the reply has been answered"
+    );
+    assert!(
+        store.author_activity(one.id).unwrap().is_empty(),
+        "and the item would have no event to name"
+    );
+    assert_eq!(
+        store.list_outcomes(one.id).unwrap().len(),
+        1,
+        "nothing is deleted: round 1's What happened page still lists the reply"
+    );
+    assert!(
+        ids_of(&store.posted_reviews_awaiting_author(None).unwrap()).contains(&two.id),
+        "and the pull request is waiting on its author, which is the issue's own criterion"
+    );
+}
+
+#[test]
+fn a_reply_that_arrived_after_the_later_round_opened_is_still_author_activity() {
+    let (dir, store) = temp_store();
+    let (one, two, seq) = two_posted_rounds(&store);
+
+    // The author answers a round-1 thread after round 2 had already opened. That round's
+    // session may never have seen it, so it stays in the queue — the safe direction.
+    opened_at(&dir, two.id, 2_000);
+    replied(&store, one.id, seq, 3_000);
+    // And a code change round 2 has already read, beside it: the two halves of the clause
+    // answer about one review at once.
     code_changed(
         &store,
         one.id,
@@ -1106,13 +1174,93 @@ fn a_reply_on_an_earlier_round_is_still_author_activity_after_a_later_round_post
 
     assert!(
         ids(&store.reviews_with_author_activity(None, None).unwrap()).contains(&one.id),
-        "the reply is the developer's to read whichever round it was left on"
+        "a reply nobody's later round was open to read is the developer's to read"
     );
     let acted = store.author_activity(one.id).unwrap();
     assert_eq!(
         acted.iter().map(|outcome| outcome.kind).collect::<Vec<_>>(),
         vec![OutcomeKind::Replied],
         "the reply survives and the already-reviewed change does not"
+    );
+}
+
+#[test]
+fn an_unposted_later_round_does_not_hide_an_earlier_rounds_reply() {
+    let (dir, store) = temp_store();
+    let one = seed(&store, "acme/portal", 671, "c1d2e31");
+    let seq = finding_on(&store, one.id, "app/Jobs/RunExport.php");
+    post(&store, one.id, ReviewEvent::RequestChanges, "PRR_r1");
+
+    // Round 2 opened after the reply and has posted nothing. A round that has not posted is
+    // a review that has not happened, so it has answered nothing.
+    replied(&store, one.id, seq, 1_000);
+    let two = store
+        .create_review(new_review("acme/portal", 671, "d2e3f42", 2))
+        .unwrap();
+    opened_at(&dir, two.id, 2_000);
+
+    assert!(
+        ids(&store.reviews_with_author_activity(None, None).unwrap()).contains(&one.id),
+        "a round that has not posted has answered nothing"
+    );
+    assert_eq!(
+        store.author_activity(one.id).unwrap().len(),
+        1,
+        "and the reply is the event the item names"
+    );
+}
+
+#[test]
+fn a_thread_the_author_resolved_is_answered_by_a_later_posted_round_too() {
+    let (dir, store) = temp_store();
+    let (one, two, seq) = two_posted_rounds(&store);
+
+    // **Not only `replied`.** The rule is about what the record cannot ask a commit
+    // question of, and resolving a thread is the other thing the harvester writes for the
+    // author. `InboxReplyItem` says so in the contract, so something has to hold it to that.
+    store
+        .add_outcome(
+            FindingRef {
+                review_id: one.id,
+                seq,
+            },
+            NewOutcome {
+                kind: OutcomeKind::ThreadResolved,
+                actor: Actor::Harvester,
+                detail: None,
+                occurred_at: Some(1_000),
+            },
+        )
+        .expect("record the resolution");
+    opened_at(&dir, two.id, 2_000);
+
+    assert!(
+        !ids(&store.reviews_with_author_activity(None, None).unwrap()).contains(&one.id),
+        "round 2 opened after the thread was resolved and posted, so it read that too"
+    );
+    assert_eq!(
+        store.list_outcomes(one.id).unwrap().len(),
+        1,
+        "and nothing is deleted"
+    );
+}
+
+#[test]
+fn a_reply_on_the_newest_round_is_never_already_answered() {
+    let (dir, store) = temp_store();
+    let one = seed(&store, "acme/portal", 681, "c1d2e31");
+    let seq = finding_on(&store, one.id, "app/Jobs/RunExport.php");
+    post(&store, one.id, ReviewEvent::RequestChanges, "PRR_only");
+
+    // The round the reply is on opened before the reply arrived, which is every reply there
+    // is. Nothing may read a round's *own* opening as having answered what came after it;
+    // the clause asks for a round numbered above this one, and there is none.
+    opened_at(&dir, one.id, 2_000);
+    replied(&store, one.id, seq, 3_000);
+
+    assert!(
+        ids(&store.reviews_with_author_activity(None, None).unwrap()).contains(&one.id),
+        "a round's own opening is not a later round answering it"
     );
 }
 
