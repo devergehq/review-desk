@@ -63,6 +63,7 @@ import type {
   LeftTheDesk,
   NitTicket,
   NotForSigning,
+  Outcome,
   OutcomeKind,
   PrState,
   RepoName,
@@ -388,6 +389,68 @@ function ticketOf(detail: ReviewDetail): { ticket_id: string | null, ticket_url:
   }
 }
 
+/**
+ * Whether a code change on this review is one a later posted round has already reviewed.
+ *
+ * **The sample backend's copy of `ALREADY_REVIEWED`, and it has to have one.** DEV-983:
+ * an earlier round's `code_changed_after` whose commit is the recorded head of a *later*
+ * round of the same pull request that has **posted** is work somebody has done — the round
+ * that posted read that code. Without this the demo mode draws a stale item the real API
+ * does not, which is the one way the two surfaces are allowed to differ and should not.
+ *
+ * Either commit the detail carries will answer: the commit the change is at, or the commit
+ * the `compare A...B` it was read from ends at. The second is what makes "at or before"
+ * decidable — a change at a commit between two rounds has its own sha in neither round's
+ * head, but the comparison it was found in ends at a head that did post.
+ *
+ * **It errs toward showing.** Ancestry is in no record here, so only the rounds' own heads
+ * have a known position; a commit this does not recognise is shown. A detail that is not
+ * JSON is the same answer, which is why the parse is in a `try`: `outcome add --detail`
+ * takes free text and the server's clause guards the same case with `json_valid`.
+ */
+function alreadyReviewed(detail: ReviewDetail, outcome: Outcome): boolean {
+  if (outcome.kind !== 'code_changed_after') return false
+  if (outcome.detail == null) return false
+
+  let named: unknown
+  try {
+    named = JSON.parse(outcome.detail)
+  }
+  catch {
+    return false
+  }
+  if (named == null || typeof named !== 'object') return false
+
+  const fields = named as { commit?: unknown, basis?: unknown }
+  const commits = new Set<string>()
+  if (typeof fields.commit === 'string') commits.add(fields.commit)
+  if (typeof fields.basis === 'string') {
+    const at = fields.basis.indexOf('...')
+    if (at >= 0) commits.add(fields.basis.slice(at + 3))
+  }
+  if (commits.size === 0) return false
+
+  return source.reviews.some(other =>
+    other.review.repo === detail.review.repo
+    && other.review.pr === detail.review.pr
+    && other.review.round > detail.review.round
+    && isPostedReview(other)
+    && commits.has(other.review.head_sha))
+}
+
+/**
+ * The acts on this review that are still waiting on the developer, in the record's order.
+ *
+ * The author's and the harvester's, minus the code changes a later posted round has
+ * already reviewed. Both halves of the `author_replies` item are built from this one call,
+ * because the item's events and its `replied_at` have to describe the same set.
+ */
+function stillWaiting(detail: ReviewDetail): Outcome[] {
+  return detail.outcomes.filter(
+    outcome => outcome.actor !== 'developer' && !alreadyReviewed(detail, outcome),
+  )
+}
+
 function prOf(detail: ReviewDetail): InboxPr {
   return {
     repo: detail.review.repo,
@@ -607,17 +670,21 @@ function inbox(): Inbox {
        * round the row is numbered for.
        */
       round: detail.review.round,
-      events: detail.outcomes
-        .filter(outcome => outcome.actor !== 'developer')
-        .map(outcome => ({
-          finding_seq: outcome.finding_seq,
-          finding_key: outcome.finding_key,
-          kind: outcome.kind,
-          detail: outcome.detail ?? null,
-        })),
+      /*
+       * **What is still the developer's to read**, which since DEV-983 is not every act the
+       * author or the harvester recorded: a code change a later posted round has already
+       * reviewed is out. One list, read twice below, because the events and the time have to
+       * be about the same set — the row's age comes off this and a figure dated from an
+       * event the row does not draw is a figure about nothing the reader can see.
+       */
+      events: stillWaiting(detail).map(outcome => ({
+        finding_seq: outcome.finding_seq,
+        finding_key: outcome.finding_key,
+        kind: outcome.kind,
+        detail: outcome.detail ?? null,
+      })),
       /* The newest of those outcomes' own times, which the record has always held. */
-      replied_at: detail.outcomes
-        .filter(outcome => outcome.actor !== 'developer')
+      replied_at: stillWaiting(detail)
         .map(outcome => outcome.occurred_at)
         .sort()
         .at(-1) ?? null,

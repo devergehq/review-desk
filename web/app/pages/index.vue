@@ -164,6 +164,38 @@ function needingYou(data: Inbox): Waiting[] {
   const keyOf = (pull: { repo: string, pr: number }) => `${pull.repo}#${pull.pr}`
 
   /**
+   * Hand this row the identity of a newer round, when that is what it has been shown.
+   *
+   * **The identity moves up, the joined facts do not.** A row first made by round 1's
+   * reply and then reached by round 2's draft becomes round 2's row — its link, its
+   * number, its title — while keeping the reply, which is a real thing the author did and
+   * is still the developer's to read. `alsoWaiting` says which round it was on, because a
+   * reply shown on a row numbered differently from the round it was left on is the kind of
+   * detail a reader would otherwise have to guess at.
+   *
+   * **Split out of `slot` because the arrays that can raise a row are not the arrays that
+   * can make one, and that was DEV-983's second fault.** Only the three needs-you arrays
+   * make a row. But `author_replies` carries the round that was *replied to*, which can be
+   * older than the round the pull request has reached — and the two arrays that do know the
+   * newest round, `posted_awaiting_author` and `in_progress`, could only ever read a row.
+   * So a pull request whose round 1 was replied to and whose round 2 was posted drew one row
+   * saying "round 1" and opening round 1, with round 2's figures dropped because they were
+   * about a round the row was not numbered for. The row is always the newest round in the
+   * answer now, whichever array carries it.
+   */
+  const raise = (
+    row: Waiting,
+    id: number,
+    round: number,
+    title?: string | null,
+  ) => {
+    if (round <= row.round) return
+    row.review_id = id
+    row.round = round
+    row.title = title ?? row.title
+  }
+
+  /**
    * The row for this pull request, taking the newest round's identity.
    *
    * **Keyed on the pull request, and that is DEV-957's first correction.** It was keyed on
@@ -172,13 +204,6 @@ function needingYou(data: Inbox): Waiting[] {
    * request is one thing to deal with, and the row is about the newest round of it: an
    * unposted older round can never be the review that posts, and the store no longer
    * offers one at all.
-   *
-   * **The identity moves up, the joined facts do not.** A row first made by round 1's
-   * reply and then reached by round 2's draft becomes round 2's row — its link, its
-   * number, its title — while keeping the reply, which is a real thing the author did and
-   * is still the developer's to read. `alsoWaiting` says which round it was on, because a
-   * reply shown on a row numbered differently from the round it was left on is the kind of
-   * detail a reader would otherwise have to guess at.
    */
   const slot = (
     id: number,
@@ -188,12 +213,7 @@ function needingYou(data: Inbox): Waiting[] {
     const key = keyOf(pull)
     const held = byPullRequest.get(key)
     if (held) {
-      /* A round newer than the one the row is already about takes it over. */
-      if (round > held.round) {
-        held.review_id = id
-        held.round = round
-        held.title = pull.title ?? held.title
-      }
+      raise(held, id, round, pull.title)
       return held
     }
     const made: Waiting = {
@@ -256,13 +276,15 @@ function needingYou(data: Inbox): Waiting[] {
   }
 
   /*
-   * **Every one of the three carries its round, so the order of these loops decides
-   * nothing.** It used to: the draft was the only item with a round, so it had to go first
-   * or the row had none to take — and the ticket, which is chosen by round, was then
-   * decided by whichever loop ran last. Two schemas gained a `round` to close that.
+   * **The three arrays that make a row.** Every one carries its round, so the order of
+   * these loops decides nothing. It used to: the draft was the only item with a round, so
+   * it had to go first or the row had none to take — and the ticket, which is chosen by
+   * round, was then decided by whichever loop ran last. Two schemas gained a `round` to
+   * close that.
    *
-   * The slot still takes the newest round it is shown, so the row's identity is the newest
-   * round whichever loop reaches it first.
+   * The slot takes the newest round it is shown, so the row's identity is the newest round
+   * whichever loop reaches it first — and the two arrays below raise it further when they
+   * know of a newer one.
    */
   for (const item of data.drafts_to_approve) {
     const row = slot(item.review_id, item.round, item.pull_request)
@@ -295,60 +317,91 @@ function needingYou(data: Inbox): Waiting[] {
   }
 
   /*
-   * **The ticket last, once every row's identity has settled.** It is chosen by round, and
-   * the row's round is only final after all three loops — so choosing it inside them made
-   * the answer depend on the order they ran in, which is the fault a review of the previous
-   * commit found. Each row takes the ticket from whichever item is about the round it is.
-   */
-  for (const item of [...data.drafts_to_approve, ...data.briefs_to_confirm, ...data.author_replies]) {
-    const row = byPullRequest.get(keyOf(item.pull_request))
-    if (row) ticket(row, item.round, item)
-  }
-  /*
-   * **Joined, never slotted.** Neither of these makes a row: a posted review and a review
-   * with a session running are only here if one of the three groups above put them here.
-   * What they add is what the group they are *not* drawn in would have said.
+   * **The row's number, link and title are the newest round in the answer, and that takes
+   * all five arrays rather than the three that make a row.** DEV-983's second fault: the
+   * two arrays that always carry a pull request's newest round — `posted_awaiting_author`,
+   * which serves only that round, and `in_progress` — could join onto a row and never
+   * renumber it. So a pull request with round 1 replied to and round 2 posted drew one row
+   * saying "round 1", opening round 1, and dropping round 2's figures as being about
+   * another round.
    *
-   * **Found by pull request, as the three above are keyed.** By review id, a posted round 1
-   * joined onto its own row and nothing else — and once the rows are one per pull request,
-   * the row for #9585 is round 2's, so the figures about what the author sent back would
-   * have been dropped on the floor. `posted_awaiting_author` serves only a pull request's
-   * newest round, so this can never attach an older round's posting to a newer round's row.
+   * **Raising, never slotting.** Neither of these makes a row: a posted review, and a
+   * review a session is working on, are drawn here only because one of the three groups
+   * above put them here. What they add is what the group they are *not* drawn in would have
+   * said — and, now, which round the row is.
+   *
+   * **Found by pull request, as the three above are keyed.** By review id a posted round 1
+   * joined onto its own row and nothing else, and the row for a pull request is its newest
+   * round's.
+   */
+  for (const item of data.posted_awaiting_author) {
+    const row = byPullRequest.get(keyOf(item.pull_request))
+    if (row) raise(row, item.review_id, item.round, item.pull_request.title)
+  }
+  for (const item of data.in_progress) {
+    const row = byPullRequest.get(keyOf(item.pull_request))
+    if (row) raise(row, item.review_id, item.round, item.pull_request.title)
+  }
+
+  /*
+   * **Then the joins, once every row's number is final.** Each asks whether the item is
+   * about the round the row *is*, so both have to run after every raise above: a posted
+   * item attached while the row was numbered 2 and then renumbered 3 by a session on a
+   * newer round would be a measurement drawn under the wrong number, which is the failure
+   * this guard exists to prevent rather than a case it may make.
    */
   for (const item of data.posted_awaiting_author) {
     const row = byPullRequest.get(keyOf(item.pull_request))
     /*
-     * **Only when it is about the round this row is**, which the first version of this
-     * argued it need not be: `posted_awaiting_author` serves a pull request's newest round
-     * only, so it cannot attach an *older* round's posting to a newer row. The reverse is
-     * reachable and was not ruled out — a row's round comes from the three slotting arrays,
-     * and `author_replies` has no newest-round restriction, so a pull request whose round 1
-     * was posted and replied to and whose round 2 is posted with nothing back yet draws one
-     * row numbered round 1 and took round 2's figures. The row then read "The author replied
-     * to F1 · No reply yet", which is round 1's reply beside round 2's counts. Found by a
-     * review of this branch.
-     *
-     * Dropping the figures is the right failure: they are a measurement about a round, and a
-     * measurement about the wrong round is worse than none. The posted group's own note
-     * already says how many rows it left to the groups above it.
+     * **Only when it is about the round this row is.** `posted_awaiting_author` serves a
+     * pull request's newest round only, so it cannot attach an *older* round's posting to a
+     * newer row; the reverse was reachable and is what the raise above now answers, by
+     * making the row that round rather than dropping the figures. What is left for this
+     * guard is a row a session has raised past the posted round — and there the figures are
+     * a measurement about a round the row is not numbered for, which is worse than none.
+     * The posted group's own note already says how many rows it left to the groups above.
      */
     if (row && item.round === row.round) row.posted = item
   }
   for (const item of data.in_progress) {
     const row = byPullRequest.get(keyOf(item.pull_request))
     /*
-     * **Only the session on the round this row is**, which is the same guard the three
-     * loops above and the posted join already apply. `reviews_in_progress` asks only whether
-     * a layer is `running` and says nothing about which round, so two rounds of one pull
-     * request can both be here — and the row then said "a session is on step 4 of 7" about a
-     * round other than the one it is numbered for.
+     * **Only the session on the round this row is**, which is the same guard the posted
+     * join applies. `reviews_in_progress` asks only whether a layer is `running` and says
+     * nothing about which round, so two rounds of one pull request can both be here — and
+     * the row then said "a session is on step 4 of 7" about a round other than the one it
+     * is numbered for.
      *
      * The first fix for this took the highest review id instead, which is a guess at the
-     * newest round rather than an answer; a review of this branch pointed out that it still
-     * had no round to compare and that the posted join one line group below had been given
-     * one. `InboxInProgressItem` carries a round now, so this asks the question directly.
+     * newest round rather than an answer. `InboxInProgressItem` carries a round, so this
+     * asks the question directly.
      */
     if (row && item.round === row.round) row.agent = item
+  }
+
+  /*
+   * **The ticket last, once every row's identity has settled.** It is chosen by round, and
+   * the row's round is only final after every raise above — so choosing it inside the
+   * slotting loops made the answer depend on the order they ran in, which is the fault a
+   * review of DEV-957's first commit found. Each row takes the ticket from whichever item is
+   * about the round it is.
+   *
+   * **All five arrays, since DEV-983 lets two of them decide the round.** The three that
+   * make a row were enough while they also decided its number. They are not now: a pull
+   * request whose round 1 was replied to and whose round 2 is posted is numbered round 2,
+   * and no item from the three carries round 2 at all — so the row had a ticket on the
+   * record and nothing on the page to reach it with. `posted_awaiting_author` and
+   * `in_progress` both serve the pair, for exactly this.
+   */
+  for (const item of [
+    ...data.drafts_to_approve,
+    ...data.briefs_to_confirm,
+    ...data.author_replies,
+    ...data.posted_awaiting_author,
+    ...data.in_progress,
+  ]) {
+    const row = byPullRequest.get(keyOf(item.pull_request))
+    if (row) ticket(row, item.round, item)
   }
 
   /*
@@ -514,6 +567,20 @@ function alsoWaiting(row: Waiting): string[] {
     : `the author has replied to round ${row.replyRound}`
   if (row.brief && row.reply) also.push(replied)
   else if (row.draft && row.reply) also.push(replied)
+  /*
+   * **And when the reply *is* the next action but was left on an earlier round, which the
+   * two lines above could not say.** They fire only beside a brief or a draft, because
+   * their job is to say what is waiting *behind* the next action. DEV-983 made a third
+   * shape reachable: a pull request whose round 2 is posted with nothing back yet and whose
+   * round 1 has just been replied to is numbered round 2, has no brief and no draft, and
+   * its headline is the reply itself — so the row read "The author replied to F1" under the
+   * number of a round nobody had replied to, and said nothing about round 1 at all.
+   *
+   * Worded as DEV-957 words it, because it is the same sentence about the same fact: the
+   * reply is on a round the row is not numbered for, and a reader should not have to work
+   * out which review it was on.
+   */
+  else if (row.replyRound != null) also.push(`replied to round ${row.replyRound}`)
   /*
    * **And the session, which is why this row is not under "With the agent".** That group
    * draws the step, a bar and how long the step has been running; this review is drawn
