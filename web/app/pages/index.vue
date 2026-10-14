@@ -314,6 +314,19 @@ function needingYou(data: Inbox): Waiting[] {
      */
     const row = slot(item.review_id, item.round, item.pull_request)
     if (row.reply == null || item.round > row.reply.round) row.reply = item
+    /*
+     * **And the row is the newest round, which only this item can say.** DEV-983, in the
+     * shape the two raises below do not reach: a pull request whose round 1 was replied to
+     * and whose round 2 has been opened and not yet written to is in the answer through
+     * this item alone — round 2 has no brief, no ready draft, no running layer and nothing
+     * posted, so no other array mentions it. The page cannot deduce a round nothing told
+     * it about, and the row said "round 1" and opened round 1.
+     *
+     * So the item carries `rounds_on_pr` and the review that round is, and the row takes
+     * both. Found by a review of this branch, which is also why the raise below is kept:
+     * see its own comment.
+     */
+    raise(row, item.newest_round_review_id, item.rounds_on_pr, item.pull_request.title)
   }
 
   /*
@@ -324,6 +337,14 @@ function needingYou(data: Inbox): Waiting[] {
    * renumber it. So a pull request with round 1 replied to and round 2 posted drew one row
    * saying "round 1", opening round 1, and dropping round 2's figures as being about
    * another round.
+   *
+   * **Kept although the reply item now carries `rounds_on_pr`, and that is a decision.**
+   * With that field the reply loop above already raises a row to the highest round the
+   * record holds, so these two can only agree with it. They stay because the invariant is
+   * "the newest round *in the answer*", asked of every source the page has, rather than
+   * "the newest round one array says": which of the five arrays are served for the newest
+   * round only is a property of the store's queries, and a page that trusted one field
+   * from one array would be trusting a promise the contract does not make.
    *
    * **Raising, never slotting.** Neither of these makes a row: a posted review, and a
    * review a session is working on, are drawn here only because one of the three groups

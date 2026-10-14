@@ -224,6 +224,15 @@ impl Records {
         self.with(|store| store.author_activity(id))
     }
 
+    /// The newest round of a pull request, whatever became of it.
+    ///
+    /// What an `author_replies` item needs to say which round the queue's row is: that array
+    /// is the one that can be about an older round, and the row is always the newest. The
+    /// store counts every round, dismissed or finished, and its own doc carries why.
+    pub fn newest_round(&self, repo: &str, pr: i64) -> Result<Option<Review>, ApiError> {
+        self.with(|store| store.newest_round(repo, pr))
+    }
+
     /// Reviews a session is still working on, with the layer each is at.
     pub fn reviews_in_progress(&self) -> Result<Vec<ReviewAtLayer>, ApiError> {
         self.with(|store| store.reviews_in_progress(None))

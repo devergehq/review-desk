@@ -1164,3 +1164,44 @@ fn an_unposted_later_round_does_not_make_an_earlier_rounds_change_reviewed() {
         "a round that has not posted has reviewed nothing"
     );
 }
+
+#[test]
+fn a_commit_written_as_a_number_is_not_taken_for_a_round_head() {
+    let (_dir, store) = temp_store();
+    // A pull request whose round 2 head is all digits, which about one abbreviated commit
+    // in twenty-seven is.
+    let one = store
+        .create_review(new_review("acme/portal", 661, "1234560", 1))
+        .unwrap();
+    let seq = finding_on(&store, one.id, "app/Jobs/RunExport.php");
+    post(&store, one.id, ReviewEvent::RequestChanges, "PRR_r1");
+    let two = store
+        .create_review(new_review("acme/portal", 661, "1234567", 2))
+        .unwrap();
+    post(&store, two.id, ReviewEvent::RequestChanges, "PRR_r2");
+
+    // `outcome add --detail '{"commit": 1234567}'` is a legal call, and `head_sha` has
+    // `TEXT` affinity — so SQLite converts the integer operand to text before comparing and
+    // `'1234567' = 1234567` is true. A number nobody meant as a commit would then hide an
+    // event, which is the one direction this rule must not be wrong in.
+    code_changed(
+        &store,
+        one.id,
+        seq,
+        serde_json::json!({
+            "file": "app/Jobs/RunExport.php",
+            "line": 1122,
+            "commit": 1_234_567,
+            // The basis ends nowhere a round posted, so the only thing that could hide
+            // this event is the number above — which is what the test is about.
+            "basis": "compare 1234560...9f8e7d6",
+        })
+        .to_string(),
+        1_000,
+    );
+
+    assert!(
+        ids(&store.reviews_with_author_activity(None, None).unwrap()).contains(&one.id),
+        "a commit has to be written as a string to name one"
+    );
+}

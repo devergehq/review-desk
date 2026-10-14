@@ -173,9 +173,22 @@ pub(super) const NEWEST_ROUND: &str = "v.round = (SELECT MAX(round) FROM reviews
 /// legal call and writes prose there. SQLite's `json_extract` does not return null over
 /// malformed JSON — it raises an error, which would fail the whole query and empty the
 /// queue rather than leave one item in it.
+///
+/// **And `json_type` must say `text`, which closes a path that hid an event.** A commit is a
+/// string; a hand-written `{"commit": 1234567}` is not, and `json_extract` would hand back an
+/// integer. `head_sha` has `TEXT` affinity, so SQLite converts the integer operand to text
+/// before comparing — `'1234567' = 1234567` is true — and a round head that happened to be
+/// all digits, which about one abbreviated sha in twenty-seven is, would match a number
+/// nobody meant as a commit. Hiding is the one direction this rule must not be wrong in.
+/// `alreadyReviewed` in the dashboard's sample backend tests the type in JavaScript, which is
+/// how the two came to disagree; found by a review of this branch.
 macro_rules! changed_at {
     () => {
-        "CASE WHEN json_valid(o.detail) THEN json_extract(o.detail, '$.commit') END"
+        "CASE
+             WHEN json_valid(o.detail)
+              AND json_type(o.detail, '$.commit') = 'text'
+             THEN json_extract(o.detail, '$.commit')
+         END"
     };
 }
 
@@ -189,12 +202,14 @@ macro_rules! changed_at {
 ///
 /// `instr` is asked before `substr` is taken, because `substr(x, 0 + 3)` over a `basis`
 /// with no `...` in it would hand back the tail of whatever was there and offer it as a
-/// commit. Null when the field is missing, is not JSON, or is not written this way.
+/// commit. Null when the field is missing, is not JSON, is not a string, or is not written
+/// this way — and [`changed_at!`] carries the argument for asking the type.
 macro_rules! compared_to {
     () => {
         "CASE
              WHEN json_valid(o.detail)
-              AND instr(COALESCE(json_extract(o.detail, '$.basis'), ''), '...') > 0
+              AND json_type(o.detail, '$.basis') = 'text'
+              AND instr(json_extract(o.detail, '$.basis'), '...') > 0
              THEN substr(
                  json_extract(o.detail, '$.basis'),
                  instr(json_extract(o.detail, '$.basis'), '...') + 3

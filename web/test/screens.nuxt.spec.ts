@@ -1317,6 +1317,43 @@ describe('a pull request whose later round has posted', () => {
     expect(row.text()).toContain('DEV-958')
   })
 
+  it('numbers the row for a newest round nothing else in the answer mentions', async () => {
+    /*
+     * **Round 2 opened and nothing written to it**, which is what a dispatcher does the
+     * moment GitHub shows a new head after a post. It is then in no array of its own — not
+     * the newest posted round, no draft at a status, no unconfirmed brief and no running
+     * step — so the row is in the answer only through round 1's reply, and the item's
+     * `rounds_on_pr` is the only thing that can say which round the row is. Before that
+     * field the row said "round 1" and the click went to round 1. Found by a review of this
+     * branch.
+     */
+    const source = loadSource()
+    await resetDesk({
+      reviews: source.reviews.map((detail) => {
+        if (detail.review.id !== ROUND_TWO) return detail
+        return {
+          ...detail,
+          review: { ...detail.review, github_review_id: null },
+          outcomes: [],
+          /* Nothing running, so `in_progress` does not mention it either. */
+          layers: detail.layers.map(layer =>
+            layer.state === 'running' ? { ...layer, state: 'pending' as const } : layer),
+        }
+      }) as typeof source.reviews,
+      drafts: source.drafts.map(detail =>
+        detail.draft.review_id === ROUND_TWO
+          ? { ...detail, draft: { ...detail.draft, status: 'drafting' as const } }
+          : detail) as typeof source.drafts,
+    })
+
+    const page = await shown(Inbox)
+    const rows = rowsUnder(page, 'Needs you').filter(row => row.text().includes('#9585'))
+    expect(rows, 'one row for one pull request').toHaveLength(1)
+    expect(rows[0]!.text()).toContain('round 2')
+    expect(rows[0]!.text()).toContain('replied to round 1')
+    expect(rows[0]!.find('.row').attributes('href')).toBe(`/reviews/${ROUND_TWO}/understand`)
+  })
+
   it('counts the row it draws, in the heading and in the repository chip', async () => {
     await twoRounds({
       keepRoundOneReply: true,

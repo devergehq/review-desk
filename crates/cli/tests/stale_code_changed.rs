@@ -449,3 +449,63 @@ fn a_detail_that_is_not_json_does_not_empty_the_queue() {
         "prose says nothing about a commit, so the change is shown: {inbox}"
     );
 }
+
+#[test]
+fn the_item_names_the_newest_round_even_when_nothing_else_mentions_it() {
+    let desk = Desk::new();
+    let one = open_round(&desk, FIRST);
+    let one_seq = finding(&desk, &one);
+    posted(&desk, &one, 1);
+    desk.command()
+        .args([
+            "outcome",
+            "add",
+            "--review",
+            &one,
+            "--finding",
+            &one_seq,
+            "--kind",
+            "replied",
+            "--by",
+            "author",
+            "--detail",
+            "The retry passes the tenant now.",
+        ])
+        .assert()
+        .success();
+
+    // **Round 2 opened, and nothing written to it.** This is what a dispatcher does the
+    // moment GitHub shows a new head after a post: no brief, no finding, no draft, no
+    // layer running and nothing posted. So round 2 is in no inbox array at all — it is
+    // not the newest *posted* round, it has no draft at a status, no unconfirmed brief and
+    // no running step — and the queue's row for this pull request is in the answer only
+    // through round 1's reply. Without `rounds_on_pr` and the review beside it the page
+    // cannot know round 2 exists, and the row says "round 1" and opens round 1. Found by
+    // a review of this branch.
+    let two = open_round(&desk, SECOND);
+
+    let served = serving(&desk);
+    let inbox = get_json(&served.address(), "/api/v1/inbox");
+    let (one, two) = (one.parse::<i64>().unwrap(), two.parse::<i64>().unwrap());
+
+    assert!(
+        !ids(&inbox, "posted_awaiting_author").contains(&one),
+        "round 1 is not the newest round, so it is not in the posted group"
+    );
+    assert!(
+        !ids(&inbox, "in_progress").contains(&two),
+        "and nothing is running on round 2, so it is in no array of its own"
+    );
+
+    let reply = item(&inbox, "author_replies", one);
+    assert_eq!(reply["round"], 1, "the reply is on round 1");
+    assert_eq!(
+        reply["rounds_on_pr"], 2,
+        "and the item says which round the row is: {reply}"
+    );
+    assert_eq!(
+        reply["newest_round_review_id"], two,
+        "with the review to link, because a number over the wrong link is worse than the \
+         fault it replaced"
+    );
+}

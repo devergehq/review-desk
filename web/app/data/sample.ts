@@ -569,6 +569,29 @@ function newestRoundByPr(): Map<string, number> {
   return rounds
 }
 
+/**
+ * The newest round of this review's pull request: which round, and which review it is.
+ *
+ * What an `author_replies` item carries so the queue's row can be the newest round —
+ * DEV-983. That array is the one that can be about an older round, so without this a pull
+ * request whose round 1 was replied to and whose round 2 has been opened and not yet
+ * written to is in the answer through that item alone, and the page cannot know round 2
+ * exists.
+ *
+ * **Every round, whatever became of it**, which is `Store::newest_round`'s own rule: a
+ * number that fell back to an earlier round the moment the newest was dismissed would name
+ * a round the record would not open next.
+ */
+function newestRoundOf(detail: ReviewDetail): { round: number, reviewId: number } {
+  const rounds = source.reviews.filter(other =>
+    other.review.repo === detail.review.repo && other.review.pr === detail.review.pr)
+  const newest = rounds.reduce(
+    (top, other) => (other.review.round > top.review.round ? other : top),
+    detail,
+  )
+  return { round: newest.review.round, reviewId: newest.review.id }
+}
+
 /** The whole Inbox, recomputed from the desk — the shape `GET /inbox` serves. */
 function inbox(): Inbox {
   /*
@@ -670,6 +693,12 @@ function inbox(): Inbox {
        * round the row is numbered for.
        */
       round: detail.review.round,
+      /*
+       * **And which round the row itself is, with the review to link.** The server reads
+       * this off `Store::newest_round`; see `newestRoundOf` for why the item carries it.
+       */
+      rounds_on_pr: newestRoundOf(detail).round,
+      newest_round_review_id: newestRoundOf(detail).reviewId,
       /*
        * **What is still the developer's to read**, which since DEV-983 is not every act the
        * author or the harvester recorded: a code change a later posted round has already

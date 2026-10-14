@@ -42,6 +42,7 @@ import { cli, scratch, serve, stop, type Serving } from './harness'
  * | `#751` | round 1 posted at A, the code changed A to B, round 2 posted at B |
  * | `#752` | the same, and a further change B to C |
  * | `#753` | the same as `#751`, and the author replies to a round-1 thread afterwards |
+ * | `#754` | round 1 posted and replied to, and round 2 opened with nothing written to it |
  *
  * ## What this seed cannot do, said rather than worked around
  *
@@ -192,6 +193,31 @@ test.beforeAll(async () => {
     '--detail', 'The retry passes the tenant now.',
   ])
 
+  /*
+   * #754: round 2 opened and nothing written to it, which is what a dispatcher does the
+   * moment GitHub shows a new head after a post. Round 2 is then in no inbox array at all
+   * — not the newest posted round, no draft at a status, no unconfirmed brief, no running
+   * step — so the row is in the answer only through round 1's reply, and the item's
+   * `rounds_on_pr` is the only thing that can say which round the row is.
+   */
+  const unwritten = openRound('754', FIRST)
+  const unwrittenSeq = addFinding(unwritten, '754')
+  post(unwritten, '754', 1)
+  cli(database, [
+    'outcome', 'add',
+    '--review', String(unwritten),
+    '--finding', unwrittenSeq,
+    '--kind', 'replied',
+    '--by', 'author',
+    '--detail', 'The retry passes the tenant now.',
+  ])
+  rounds.set('754', {
+    one: unwritten,
+    two: openRound('754', SECOND),
+    oneSeq: unwrittenSeq,
+    twoSeq: '-',
+  })
+
   serving = await serve(database)
 })
 
@@ -312,6 +338,27 @@ test('the earlier round’s What happened page still shows the change', async ({
   await expect(page.getByText('changed').first()).toBeVisible()
 })
 
+test('numbers the row for a newest round nothing else in the answer mentions',
+  async ({ page }) => {
+    await queue(page)
+    const fixture = rounds.get('754')!
+
+    const row = rowsUnder(page, 'Needs you').filter({ hasText: '#754' })
+    await expect(row, 'one row for one pull request').toHaveCount(1)
+    /*
+     * **Round 2 is in no array of its own**, so this row exists only because round 1 was
+     * replied to — and the item's `rounds_on_pr` is the only thing that can say the pull
+     * request has reached round 2. Before that field the row said "round 1" and the click
+     * went to round 1, which is the fault in the one shape the first fix does not reach.
+     */
+    await expect(row).toContainText('round 2')
+    await expect(row).toContainText('replied to round 1')
+    await expect(row.locator('.row')).toHaveAttribute(
+      'href',
+      `/reviews/${fixture.two}/understand`,
+    )
+  })
+
 test('the heading and the repository chip count the rows drawn', async ({ page }) => {
   await queue(page)
 
@@ -323,7 +370,7 @@ test('the heading and the repository chip count the rows drawn', async ({ page }
    * gives: a literal here has to move every time a fixture is added.
    */
   const needing = await rowsUnder(page, 'Needs you').count()
-  expect(needing, 'two of the three pull requests need the developer').toBe(2)
+  expect(needing, 'three of the four pull requests need the developer').toBe(3)
   await expect(page.getByRole('heading', { level: 1 }))
     .toHaveText(`${needing} pull requests need you`)
 

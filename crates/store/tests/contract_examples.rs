@@ -2027,6 +2027,13 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
         .iter()
         .map(|review| {
             let outcomes = store.list_outcomes(review.id).expect("its outcomes");
+            // Which round the pull request has reached, and which review that is. The
+            // queue's single row for a pull request is always its newest round, and this
+            // is the one array that can be about an older one — DEV-983.
+            let newest = store
+                .newest_round(&review.repo, review.pr)
+                .expect("the newest round")
+                .expect("a pull request with a review has a newest round");
             json!({
                 "review_id": review.id,
                 "pull_request": pull_request(review),
@@ -2035,6 +2042,8 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
                 // Which round was replied to: the queue draws one row per pull request,
                 // and a reply is on the round that was posted.
                 "round": review.round,
+                "rounds_on_pr": newest.round,
+                "newest_round_review_id": newest.id,
                 "events": outcomes.iter().filter(|outcome| {
                     matches!(outcome.actor, Actor::Author | Actor::Harvester)
                 }).map(|outcome| json!({
