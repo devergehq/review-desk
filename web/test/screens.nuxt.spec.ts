@@ -8,7 +8,7 @@ import {
   useDeskSource,
   useReviewDesk,
 } from '../app/composables/useReviewDesk'
-import { loadSource } from '../app/data/sample'
+import { currentSource, loadSource } from '../app/data/sample'
 
 import Inbox from '../app/pages/index.vue'
 import Reviews from '../app/pages/reviews/index.vue'
@@ -1360,6 +1360,46 @@ describe('a pull request whose later round has posted', () => {
      */
     expect(rows[0]!.text()).toContain('DEV-958')
   })
+
+  it('titles and marks a raised row for the round it is, not the round that raised it',
+    async () => {
+      /*
+       * **A pull request renamed between rounds, with the row raised past the item that
+       * made it.** The title was taken from whichever item did the raising, and a reply
+       * item raising a row to the newest round is an item about the *older* one — so the
+       * row drew round 1's title under round 2's number, and the equal-round posted item
+       * could not correct it because `raise` returns early. And `is_delta` came from the
+       * one array that carries it, so a row with no draft said nothing about being a
+       * review of changes since the last one. Both found by a review of the second fix
+       * batch.
+       */
+      await twoRounds({
+        keepRoundOneReply: true,
+        onRoundOne: [codeChanged(
+          ROUND_ONE,
+          9200,
+          changeDetail(ROUND_TWO_HEAD, ROUND_ONE_HEAD, ROUND_TWO_HEAD),
+        )],
+      })
+      /*
+       * Renamed after round 1, which is a thing authors do. Written onto the live desk
+       * rather than passed to `resetDesk`, because `twoRounds` has already built the
+       * overrides this case needs and a second reset would undo them.
+       */
+      for (const detail of currentSource().reviews) {
+        if (detail.review.id === ROUND_ONE) detail.review.title = 'The old name'
+        if (detail.review.id === ROUND_TWO) detail.review.title = 'The name it has now'
+      }
+
+      const page = await shown(Inbox)
+      const rows = rowsUnder(page, 'Needs you').filter(row => row.text().includes('#9585'))
+      expect(rows, 'one row for one pull request').toHaveLength(1)
+      expect(rows[0]!.text()).toContain('The name it has now')
+      expect(rows[0]!.text(), 'and not the name the round that made the row carries')
+        .not.toContain('The old name')
+      expect(rows[0]!.text(), 'round 2 is a review of changes since round 1')
+        .toContain('changes since your last review')
+    })
 
   it('counts the row it draws, in the heading and in the repository chip', async () => {
     await twoRounds({

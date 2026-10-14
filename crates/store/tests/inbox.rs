@@ -1205,3 +1205,31 @@ fn a_commit_written_as_a_number_is_not_taken_for_a_round_head() {
         "a commit has to be written as a string to name one"
     );
 }
+
+#[test]
+fn text_that_merely_contains_three_dots_is_not_a_comparison() {
+    let (_dir, store) = temp_store();
+    let (one, _two, seq) = two_posted_rounds(&store);
+
+    // `detail` is free text, and this is a legal document. Its tail is round 2's head, so
+    // a clause that took any `...` for a comparison would hide a change on the strength of
+    // a sentence claiming nothing about what any review read. `compare ` is the one prefix
+    // the harvester writes.
+    code_changed(
+        &store,
+        one.id,
+        seq,
+        serde_json::json!({
+            "file": "app/Exports/ScheduledExport.php",
+            "commit": "9a8b7c6",
+            "basis": "annotation...d2e3f42",
+        })
+        .to_string(),
+        1_000,
+    );
+
+    assert!(
+        ids(&store.reviews_with_author_activity(None, None).unwrap()).contains(&one.id),
+        "a basis has to say it is a comparison to be read as one"
+    );
+}

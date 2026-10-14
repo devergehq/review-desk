@@ -408,6 +408,13 @@ function ticketOf(detail: ReviewDetail): { ticket_id: string | null, ticket_url:
  * have a known position; a commit this does not recognise is shown. A detail that is not
  * JSON is the same answer, which is why the parse is in a `try`: `outcome add --detail`
  * takes free text and the server's clause guards the same case with `json_valid`.
+ *
+ * **One document the two read differently, said rather than left to be found.** A detail
+ * with the same key twice — `{"commit": "a", "commit": "b"}` — is valid JSON, and
+ * `JSON.parse` keeps the last value where SQLite's `json_extract` returns the first. So the
+ * two backends can disagree about such a document. Nothing in Review Desk writes one: the
+ * harvester builds the detail with `serde_json::json!`, which has one key each. It is
+ * reachable only by hand, through `outcome add --detail`.
  */
 function alreadyReviewed(detail: ReviewDetail, outcome: Outcome): boolean {
   if (outcome.kind !== 'code_changed_after') return false
@@ -425,7 +432,15 @@ function alreadyReviewed(detail: ReviewDetail, outcome: Outcome): boolean {
   const fields = named as { commit?: unknown, basis?: unknown }
   const commits = new Set<string>()
   if (typeof fields.commit === 'string') commits.add(fields.commit)
-  if (typeof fields.basis === 'string') {
+  /*
+   * **And the basis has to be a comparison, not merely text with `...` in it.** `detail` is
+   * free text, and `{"basis": "annotation...d2e3f42"}` would otherwise hide a change on the
+   * strength of a sentence claiming nothing about what any review read. `compare ` is the
+   * one prefix the harvester writes, so it is the one prefix this reads. The SQL clause asks
+   * the same, and `the_posted_test_here_is_the_one_review_is_posted_makes` is why both are
+   * spelt out rather than shared.
+   */
+  if (typeof fields.basis === 'string' && fields.basis.startsWith('compare ')) {
     const at = fields.basis.indexOf('...')
     if (at >= 0) commits.add(fields.basis.slice(at + 3))
   }

@@ -204,11 +204,23 @@ macro_rules! changed_at {
 /// with no `...` in it would hand back the tail of whatever was there and offer it as a
 /// commit. Null when the field is missing, is not JSON, is not a string, or is not written
 /// this way — and [`changed_at!`] carries the argument for asking the type.
+///
+/// **And the field has to be a comparison, not merely text with `...` in it.** `detail` is
+/// free text; `{"basis": "annotation...d2e3f42"}` is a legal document and its tail is a
+/// commit this clause would then take as the end of a comparison, hiding a change on the
+/// strength of a sentence that claims nothing about what any review read. `compare ` is
+/// the one prefix [`harvest_code_changes`] writes, so it is the one prefix this reads.
+/// Found by a review of this branch.
+///
+/// The first `...` is the one taken, which is also right: `compare A...B` holds exactly
+/// one, and a value holding more yields a tail with `...` in it, which no `head_sha` can
+/// be.
 macro_rules! compared_to {
     () => {
         "CASE
              WHEN json_valid(o.detail)
               AND json_type(o.detail, '$.basis') = 'text'
+              AND json_extract(o.detail, '$.basis') LIKE 'compare %'
               AND instr(json_extract(o.detail, '$.basis'), '...') > 0
              THEN substr(
                  json_extract(o.detail, '$.basis'),
@@ -271,6 +283,26 @@ macro_rules! compared_to {
 /// **Nothing is deleted.** This decides what the queue *draws*; the outcome row is
 /// untouched, so the earlier round's What happened page still lists every event the
 /// harvester recorded, which is the ticket's own requirement.
+///
+/// ## The one case this reads the record wrongly, which is the record's gap and not this
+/// rule's
+///
+/// **A round's `head_sha` is where that round *is*, not where it *posted*.** Those are the
+/// same commit for a round posted through `post_draft`, which writes the posting and the
+/// review id in one transaction — and `Store::open_review` will not move a posted round's
+/// head afterwards. They can differ for a round posted on GitHub and recorded here later
+/// by `review link --github-review`: until that call lands the round reads as unposted, so
+/// a commit arriving in the window moves its head. The round then says it is of a commit
+/// its review never read, and an earlier round's change at that commit is hidden although
+/// nobody reviewed it — the one direction this rule is written not to be wrong in.
+///
+/// **It is not closed here, because closing it needs a column the record has not got.**
+/// Nothing stores the commit a round was posted at; `round_head_updates` holds the moves
+/// and `review link` records no time of its own, so the head at the moment of posting
+/// cannot be reconstructed for the `review link` path. Refusing every round whose head has
+/// ever moved would close it and take most of the fix with it: a round that opened, moved
+/// once and then posted is the ordinary shape, and it would stop covering anything.
+/// Raised with the pull request rather than guessed at. Found by a review of this branch.
 pub(super) const ALREADY_REVIEWED: &str = concat!(
     "o.kind = 'code_changed_after' AND EXISTS (
              SELECT 1 FROM reviews reviewed

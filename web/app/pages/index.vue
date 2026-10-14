@@ -121,7 +121,6 @@ interface Waiting {
    * on its own line and does not link.
    */
   ticketUrl: string | null
-  is_delta: boolean
   brief: InboxBriefItem | null
   draft: InboxDraftItem | null
   reply: InboxReplyItem | null
@@ -167,11 +166,18 @@ function needingYou(data: Inbox): Waiting[] {
    * Hand this row the identity of a newer round, when that is what it has been shown.
    *
    * **The identity moves up, the joined facts do not.** A row first made by round 1's
-   * reply and then reached by round 2's draft becomes round 2's row — its link, its
-   * number, its title — while keeping the reply, which is a real thing the author did and
-   * is still the developer's to read. `alsoWaiting` says which round it was on, because a
-   * reply shown on a row numbered differently from the round it was left on is the kind of
-   * detail a reader would otherwise have to guess at.
+   * reply and then reached by round 2's draft becomes round 2's row — its link and its
+   * number — while keeping the reply, which is a real thing the author did and is still the
+   * developer's to read. `alsoWaiting` says which round it was on, because a reply shown on
+   * a row numbered differently from the round it was left on is the kind of detail a reader
+   * would otherwise have to guess at.
+   *
+   * **The title is not raised here, and it was.** It was taken from whichever item did the
+   * raising — and a reply item raising a row to the newest round is an item about the
+   * *older* one, so a pull request renamed between rounds drew round 1's title under round
+   * 2's number, with the equal-round posted item unable to correct it because this returns
+   * early. The title is chosen by round below, beside the ticket and for the same reason.
+   * Found by a review of the second fix batch.
    *
    * **Split out of `slot` because the arrays that can raise a row are not the arrays that
    * can make one, and that was DEV-983's second fault.** Only the three needs-you arrays
@@ -183,16 +189,10 @@ function needingYou(data: Inbox): Waiting[] {
    * about a round the row was not numbered for. The row is always the newest round in the
    * answer now, whichever array carries it.
    */
-  const raise = (
-    row: Waiting,
-    id: number,
-    round: number,
-    title?: string | null,
-  ) => {
+  const raise = (row: Waiting, id: number, round: number) => {
     if (round <= row.round) return
     row.review_id = id
     row.round = round
-    row.title = title ?? row.title
   }
 
   /**
@@ -213,7 +213,7 @@ function needingYou(data: Inbox): Waiting[] {
     const key = keyOf(pull)
     const held = byPullRequest.get(key)
     if (held) {
-      raise(held, id, round, pull.title)
+      raise(held, id, round)
       return held
     }
     const made: Waiting = {
@@ -224,7 +224,6 @@ function needingYou(data: Inbox): Waiting[] {
       round,
       ticket: null,
       ticketUrl: null,
-      is_delta: false,
       brief: null,
       draft: null,
       reply: null,
@@ -251,10 +250,10 @@ function needingYou(data: Inbox): Waiting[] {
    * they differ, the row drew round 1's ticket under round 2's number and linked a reader
    * to the wrong one.
    */
-  const ticket = (
+  const fromItsOwnRound = (
     row: Waiting,
     round: number,
-    item: { ticket_id?: string | null, ticket_url?: string | null },
+    item: { ticket_id?: string | null, ticket_url?: string | null, title?: string | null },
   ) => {
     /*
      * **Only from an item about the round this row *is*.** The row is one pull request and
@@ -273,6 +272,20 @@ function needingYou(data: Inbox): Waiting[] {
     if (round !== row.round) return
     row.ticket = item.ticket_id ?? null
     row.ticketUrl = ticketUrl(item.ticket_url)
+    /*
+     * **And the title, which is chosen the same way for a weaker version of the same
+     * reason.** A title is a fact about the pull request rather than about a round, so
+     * every round of it usually carries the same one and an older round's is stale rather
+     * than wrong — unlike a ticket, where the row linked a reader to a different ticket.
+     * But a pull request renamed between rounds drew the older title under the newer
+     * number, and an item about the round the row *is* always has the newer one.
+     *
+     * **A row with no item about its own round keeps the title it was made with**, which
+     * is some round of the same pull request. `slot` sets it, and that is the fallback: a
+     * row numbered for a round nothing else mentions still has a name, which "no title
+     * recorded" over a pull request with a title would not be.
+     */
+    if (item.title != null) row.title = item.title
   }
 
   /*
@@ -289,7 +302,6 @@ function needingYou(data: Inbox): Waiting[] {
   for (const item of data.drafts_to_approve) {
     const row = slot(item.review_id, item.round, item.pull_request)
     row.draft = item
-    row.is_delta = item.is_delta
   }
   for (const item of data.briefs_to_confirm) {
     const row = slot(item.review_id, item.round, item.pull_request)
@@ -326,12 +338,7 @@ function needingYou(data: Inbox): Waiting[] {
      * both. Found by a review of this branch, which is also why the raise below is kept:
      * see its own comment.
      */
-    raise(
-      row,
-      item.newest_round.review_id,
-      item.newest_round.round,
-      item.pull_request.title,
-    )
+    raise(row, item.newest_round.review_id, item.newest_round.round)
   }
 
   /*
@@ -362,11 +369,11 @@ function needingYou(data: Inbox): Waiting[] {
    */
   for (const item of data.posted_awaiting_author) {
     const row = byPullRequest.get(keyOf(item.pull_request))
-    if (row) raise(row, item.review_id, item.round, item.pull_request.title)
+    if (row) raise(row, item.review_id, item.round)
   }
   for (const item of data.in_progress) {
     const row = byPullRequest.get(keyOf(item.pull_request))
-    if (row) raise(row, item.review_id, item.round, item.pull_request.title)
+    if (row) raise(row, item.review_id, item.round)
   }
 
   /*
@@ -427,7 +434,7 @@ function needingYou(data: Inbox): Waiting[] {
     ...data.in_progress,
   ]) {
     const row = byPullRequest.get(keyOf(item.pull_request))
-    if (row) ticket(row, item.round, item)
+    if (row) fromItsOwnRound(row, item.round, { ...item, ...item.pull_request })
   }
   /*
    * **And a reply item's newest round, which is the one source for a row no other item is
@@ -440,7 +447,7 @@ function needingYou(data: Inbox): Waiting[] {
    */
   for (const item of data.author_replies) {
     const row = byPullRequest.get(keyOf(item.pull_request))
-    if (row) ticket(row, item.newest_round.round, item.newest_round)
+    if (row) fromItsOwnRound(row, item.newest_round.round, item.newest_round)
   }
 
   /*
@@ -671,7 +678,15 @@ function alsoAbout(item: { pull_request: { repo: string } }): string {
  */
 function about(row: Waiting): string {
   const parts = [row.repo, `round ${row.round}`]
-  if (row.is_delta) parts.push('changes since your last review')
+  /*
+   * **Read off the row's own round, not off the draft item's `is_delta`.** The two agree
+   * wherever both exist — the contract's `is_delta` *is* "the round is above one" — and
+   * only one of them is true of a row with no draft. A row raised to round 2 by a reply on
+   * round 1 is a review of changes since the last one whether or not a draft has been
+   * written, and it said nothing, because `is_delta` was set from the one array that
+   * carries it. Found by a review of the second fix batch.
+   */
+  if (row.round > 1) parts.push('changes since your last review')
   return parts.join(' · ')
 }
 
