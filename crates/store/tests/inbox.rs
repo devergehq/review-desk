@@ -833,3 +833,334 @@ fn the_reviews_list_can_be_asked_about_one_repository() {
         "and a repository with no reviews is empty rather than everything"
     );
 }
+
+/* ------------- a code change a later posted round has already reviewed ------------- */
+
+/*
+ * DEV-983. On 14 October 2026 Patrick's queue drew a two-round pull request as "round 1 ·
+ * The code under F1 changed · See what changed" and opened round 1, though round 2 had been
+ * posted the day before — and the change it reported was round 2's own head. A round that
+ * posted is a review that happened, so the code it read has been looked at.
+ *
+ * The fixtures here are the three the issue asks for, built the way the harvester builds
+ * them: the detail is the JSON `harvest_code_changes` writes, carrying the commit the change
+ * is at and the `compare A...B` the comparison it was read from.
+ */
+
+/// The detail the harvester writes for a code change, at this commit and this comparison.
+fn code_change_detail(file: &str, commit: &str, from: &str, to: &str) -> String {
+    serde_json::json!({
+        "file": file,
+        "line": 1122,
+        "lines_changed": false,
+        "file_status": "modified",
+        "commit": commit,
+        "basis": format!("compare {from}...{to}"),
+    })
+    .to_string()
+}
+
+/// A finding with a file, which is what a code change is recorded against.
+fn finding_on(store: &Store, review: i64, file: &str) -> i64 {
+    store
+        .add_finding(
+            review,
+            NewFinding {
+                lens: "correctness".to_string(),
+                severity: Severity::Should,
+                claim: "the export reads the tenant from the request".to_string(),
+                file: Some(file.to_string()),
+                line: Some(1122),
+                disposition: Disposition::InDraft,
+                ..Default::default()
+            },
+        )
+        .expect("add finding")
+        .seq
+}
+
+/// Record a code change on a finding, with the detail the harvester would have written.
+fn code_changed(store: &Store, review: i64, seq: i64, detail: String, at: i64) {
+    store
+        .add_outcome(
+            FindingRef {
+                review_id: review,
+                seq,
+            },
+            NewOutcome {
+                kind: OutcomeKind::CodeChangedAfter,
+                actor: Actor::Harvester,
+                detail: Some(detail),
+                occurred_at: Some(at),
+            },
+        )
+        .expect("record the code change");
+}
+
+/// Round 1 posted at `A`, the code changed `A` to `B`, round 2 posted at `B`.
+///
+/// The issue's first fixture. Both rounds are posted, which is also what lets round 2 exist
+/// at all: since DEV-962 a new commit on an *unposted* round moves that round's head.
+fn two_posted_rounds(store: &Store) -> (Review, Review, i64) {
+    let one = seed(store, "acme/portal", 631, "c1d2e31");
+    let seq = finding_on(store, one.id, "app/Exports/ScheduledExport.php");
+    post(store, one.id, ReviewEvent::RequestChanges, "PRR_r1");
+
+    let two = store
+        .create_review(new_review("acme/portal", 631, "d2e3f42", 2))
+        .expect("round 2");
+    post(store, two.id, ReviewEvent::RequestChanges, "PRR_r2");
+
+    (one, two, seq)
+}
+
+#[test]
+fn a_code_change_a_later_posted_round_read_is_not_author_activity() {
+    let (_dir, store) = temp_store();
+    let (one, _two, seq) = two_posted_rounds(&store);
+
+    code_changed(
+        &store,
+        one.id,
+        seq,
+        code_change_detail(
+            "app/Exports/ScheduledExport.php",
+            "d2e3f42",
+            "c1d2e31",
+            "d2e3f42",
+        ),
+        1_000,
+    );
+
+    assert!(
+        !ids(&store.reviews_with_author_activity(None, None).unwrap()).contains(&one.id),
+        "round 2 posted at the commit this change is at, so nobody has to look again"
+    );
+    assert!(
+        store.author_activity(one.id).unwrap().is_empty(),
+        "and the item would have no event to name"
+    );
+    assert_eq!(
+        store.list_outcomes(one.id).unwrap().len(),
+        1,
+        "nothing is deleted: the What happened page still has it"
+    );
+}
+
+#[test]
+fn a_change_after_the_posted_rounds_head_is_still_author_activity() {
+    let (_dir, store) = temp_store();
+    let (one, two, seq) = two_posted_rounds(&store);
+    let later = finding_on(&store, two.id, "app/Exports/ScheduledExport.php");
+
+    // The same push, seen from both rounds: round 1 compares its own head to `e3f4a53`,
+    // round 2 compares `d2e3f42` to it. Neither comparison ends at a posted round's head.
+    code_changed(
+        &store,
+        one.id,
+        seq,
+        code_change_detail(
+            "app/Exports/ScheduledExport.php",
+            "e3f4a53",
+            "c1d2e31",
+            "e3f4a53",
+        ),
+        2_000,
+    );
+    code_changed(
+        &store,
+        two.id,
+        later,
+        code_change_detail(
+            "app/Exports/ScheduledExport.php",
+            "e3f4a53",
+            "d2e3f42",
+            "e3f4a53",
+        ),
+        2_000,
+    );
+
+    let acted = ids(&store.reviews_with_author_activity(None, None).unwrap());
+    assert!(
+        acted.contains(&two.id),
+        "a change nothing has reviewed counts, on the newest round"
+    );
+    assert_eq!(
+        store.author_activity(two.id).unwrap().len(),
+        1,
+        "and it is the newest round's own event"
+    );
+}
+
+#[test]
+fn a_change_whose_comparison_ends_at_a_posted_head_is_already_reviewed() {
+    let (_dir, store) = temp_store();
+    let (one, _two, seq) = two_posted_rounds(&store);
+
+    // **The "at or before" case.** The author pushed twice before round 2 opened, so the
+    // commit that touched the file is `9a8b7c6` — a commit no round's head records — while
+    // the comparison it was found in ends at `d2e3f42`, which round 2 was posted on. Every
+    // change in that comparison is inside round 2's reading.
+    code_changed(
+        &store,
+        one.id,
+        seq,
+        code_change_detail(
+            "app/Exports/ScheduledExport.php",
+            "9a8b7c6",
+            "c1d2e31",
+            "d2e3f42",
+        ),
+        1_500,
+    );
+
+    assert!(
+        !ids(&store.reviews_with_author_activity(None, None).unwrap()).contains(&one.id),
+        "the comparison ends at a posted round's head, so the change is at or before it"
+    );
+}
+
+#[test]
+fn a_commit_the_record_does_not_recognise_keeps_its_item() {
+    let (_dir, store) = temp_store();
+    let (one, _two, seq) = two_posted_rounds(&store);
+
+    // Neither commit is a round's head. Ancestry is not in this record, so nothing here can
+    // say whether round 2 contains `9a8b7c6` — and an unknown commit errs toward showing.
+    code_changed(
+        &store,
+        one.id,
+        seq,
+        code_change_detail(
+            "app/Exports/ScheduledExport.php",
+            "9a8b7c6",
+            "c1d2e31",
+            "7f6e5d4",
+        ),
+        1_500,
+    );
+
+    assert!(
+        ids(&store.reviews_with_author_activity(None, None).unwrap()).contains(&one.id),
+        "an unrecognised commit is shown, not hidden"
+    );
+    assert_eq!(store.author_activity(one.id).unwrap().len(), 1);
+}
+
+#[test]
+fn a_detail_that_is_not_json_keeps_its_item_rather_than_failing_the_query() {
+    let (_dir, store) = temp_store();
+    let (one, _two, seq) = two_posted_rounds(&store);
+
+    // `outcome add --detail "the author pushed a fix"` is a legal call. SQLite's
+    // `json_extract` raises an error over malformed JSON rather than returning null, so an
+    // unguarded clause would empty the whole queue over one row of prose.
+    code_changed(
+        &store,
+        one.id,
+        seq,
+        "the author pushed a fix".to_string(),
+        1_500,
+    );
+
+    assert!(
+        ids(&store.reviews_with_author_activity(None, None).unwrap()).contains(&one.id),
+        "prose in detail says nothing about a commit, so the change is shown"
+    );
+}
+
+#[test]
+fn a_reply_on_an_earlier_round_is_still_author_activity_after_a_later_round_posts() {
+    let (_dir, store) = temp_store();
+    let (one, _two, seq) = two_posted_rounds(&store);
+
+    // The issue's third fixture: the author answers a round-1 thread after round 2 posts.
+    // Only a code change can be already reviewed; a reply is a thing a person said.
+    store
+        .add_outcome(
+            FindingRef {
+                review_id: one.id,
+                seq,
+            },
+            NewOutcome {
+                kind: OutcomeKind::Replied,
+                actor: Actor::Author,
+                detail: Some("the retry passes the tenant now".to_string()),
+                occurred_at: Some(3_000),
+            },
+        )
+        .unwrap();
+    // And a code change round 2 has already read, beside it.
+    code_changed(
+        &store,
+        one.id,
+        seq,
+        code_change_detail(
+            "app/Exports/ScheduledExport.php",
+            "d2e3f42",
+            "c1d2e31",
+            "d2e3f42",
+        ),
+        1_000,
+    );
+
+    assert!(
+        ids(&store.reviews_with_author_activity(None, None).unwrap()).contains(&one.id),
+        "the reply is the developer's to read whichever round it was left on"
+    );
+    let acted = store.author_activity(one.id).unwrap();
+    assert_eq!(
+        acted.iter().map(|outcome| outcome.kind).collect::<Vec<_>>(),
+        vec![OutcomeKind::Replied],
+        "the reply survives and the already-reviewed change does not"
+    );
+}
+
+#[test]
+fn a_newest_rounds_own_change_is_never_already_reviewed() {
+    let (_dir, store) = temp_store();
+    let one = seed(&store, "acme/portal", 641, "c1d2e31");
+    let seq = finding_on(&store, one.id, "app/Jobs/RunExport.php");
+    post(&store, one.id, ReviewEvent::RequestChanges, "PRR_only");
+
+    // A detail naming this round's own head. There is no later round, so there is nothing
+    // that could have reviewed it — the clause asks for a round numbered above this one.
+    code_changed(
+        &store,
+        one.id,
+        seq,
+        code_change_detail("app/Jobs/RunExport.php", "c1d2e31", "c1d2e31", "c1d2e31"),
+        1_000,
+    );
+
+    assert!(
+        ids(&store.reviews_with_author_activity(None, None).unwrap()).contains(&one.id),
+        "a round's own head is not a later round's reading"
+    );
+}
+
+#[test]
+fn an_unposted_later_round_does_not_make_an_earlier_rounds_change_reviewed() {
+    let (_dir, store) = temp_store();
+    let one = seed(&store, "acme/portal", 651, "c1d2e31");
+    let seq = finding_on(&store, one.id, "app/Jobs/RunExport.php");
+    post(&store, one.id, ReviewEvent::RequestChanges, "PRR_r1");
+
+    // Round 2 exists at `d2e3f42` and has posted nothing. Nobody has reviewed that commit,
+    // so the change at it is still the developer's to see.
+    store
+        .create_review(new_review("acme/portal", 651, "d2e3f42", 2))
+        .unwrap();
+    code_changed(
+        &store,
+        one.id,
+        seq,
+        code_change_detail("app/Jobs/RunExport.php", "d2e3f42", "c1d2e31", "d2e3f42"),
+        1_000,
+    );
+
+    assert!(
+        ids(&store.reviews_with_author_activity(None, None).unwrap()).contains(&one.id),
+        "a round that has not posted has reviewed nothing"
+    );
+}

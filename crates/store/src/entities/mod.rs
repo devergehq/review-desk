@@ -14,7 +14,7 @@ mod harvest;
 pub(crate) mod house_style;
 pub(crate) mod inbox;
 mod layer;
-mod outcome;
+pub(crate) mod outcome;
 pub(crate) mod provenance;
 pub(crate) mod review;
 mod round;

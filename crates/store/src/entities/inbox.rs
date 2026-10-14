@@ -16,9 +16,9 @@ use rusqlite::{params, Row};
 
 use crate::error::Result;
 use crate::model::{
-    Actor, AuthorResponse, DraftStatus, LeftTheDesk, NitTicket, NitTicketStatus, OutcomeKind,
-    PostedReview, PrState, RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewLayerName,
-    ReviewLayerState, ReviewStep, ReviewsShown, RuleStage, Timestamp,
+    Actor, AuthorResponse, DraftStatus, LeftTheDesk, NitTicket, NitTicketStatus, Outcome,
+    OutcomeKind, PostedReview, PrState, RepoSummary, Review, ReviewAtLayer, ReviewAtStep,
+    ReviewLayerName, ReviewLayerState, ReviewStep, ReviewsShown, RuleStage, Timestamp,
 };
 use crate::{normalise, Store};
 
@@ -159,6 +159,119 @@ pub(super) const IN_PLAY: &str = concat!(
 pub(super) const NEWEST_ROUND: &str = "v.round = (SELECT MAX(round) FROM reviews
                    WHERE repo = v.repo AND pr = v.pr)";
 
+/// The commit a `code_changed_after` outcome says the change is at, as a SQL expression
+/// over an outcome aliased `o`.
+///
+/// The harvester writes this outcome's detail as a JSON document — `harvest_code_changes`
+/// builds it — and two of its fields name a commit. `commit` is the newest commit *inside
+/// the comparison* that touched the finding's file, which is the commit the change is
+/// actually at; it falls back to the pull request's head when no commit could be
+/// identified, so it is always a commit the comparison contains.
+///
+/// **`json_valid` rather than a bare `json_extract`, and that is not defensive tidiness.**
+/// `detail` is a free-text column: `outcome add --detail "the author pushed a fix"` is a
+/// legal call and writes prose there. SQLite's `json_extract` does not return null over
+/// malformed JSON — it raises an error, which would fail the whole query and empty the
+/// queue rather than leave one item in it.
+macro_rules! changed_at {
+    () => {
+        "CASE WHEN json_valid(o.detail) THEN json_extract(o.detail, '$.commit') END"
+    };
+}
+
+/// The commit the comparison that outcome was read from *ends* at, as a SQL expression.
+///
+/// `basis` is written as `compare <the round's head>...<the pull request's head>`, so the
+/// text after the three dots is the commit the whole comparison runs up to. Every change
+/// the comparison reports is therefore at or before it, which is what makes "at or before"
+/// answerable at all: [`changed_at!`] names one commit, and this names the end of the range
+/// that commit came out of.
+///
+/// `instr` is asked before `substr` is taken, because `substr(x, 0 + 3)` over a `basis`
+/// with no `...` in it would hand back the tail of whatever was there and offer it as a
+/// commit. Null when the field is missing, is not JSON, or is not written this way.
+macro_rules! compared_to {
+    () => {
+        "CASE
+             WHEN json_valid(o.detail)
+              AND instr(COALESCE(json_extract(o.detail, '$.basis'), ''), '...') > 0
+             THEN substr(
+                 json_extract(o.detail, '$.basis'),
+                 instr(json_extract(o.detail, '$.basis'), '...') + 3
+             )
+         END"
+    };
+}
+
+/// **Whether an outcome is a code change a later round has already reviewed**, as a SQL
+/// predicate over an outcome aliased `o` and its own review aliased `v`.
+///
+/// DEV-983. On 14 October 2026 Patrick's queue drew a two-round pull request as
+/// "round 1 · The code under F1 changed · See what changed" and opened round 1, though
+/// round 2 had been posted the day before — and the change it reported was round 2's own
+/// head. A round that has posted is a review that happened, so the code it read is code
+/// somebody has looked at; carrying it on an earlier round's row asks the developer to
+/// look again at the thing they have just finished looking at.
+///
+/// **The rule: the commit the outcome names is the recorded head of a *later* round of the
+/// same pull request that has *posted*.** Either of the two commits the detail carries
+/// will do — [`changed_at!`], the commit the change is at, or [`compared_to!`], the commit
+/// the comparison it was read from ends at. The second is what answers the ticket's "at or
+/// *before*": a change at some commit between two rounds has its own sha recorded in
+/// neither round's head, but the comparison it was found in ends at a head that did post,
+/// and everything in that comparison is inside that round's reading.
+///
+/// **Posted is asked the way [`Store::review_is_posted`] asks it** — a draft reported
+/// posted, or a review carrying a GitHub review id — because DEV-962 made that one
+/// definition and two spellings of it would let this rule and the round rule disagree about
+/// whether a round happened. Spelled out in SQL rather than called, because this is a
+/// clause pasted into a query; `the_posted_test_here_is_the_one_review_is_posted_makes`
+/// holds the two to each other.
+///
+/// **A *later* round, which is the guard that keeps a newest round's own events.** Without
+/// it a round whose detail happened to name its own head would hide a change nothing has
+/// reviewed — and a newest round has no later round at all, so its events are never touched
+/// by this.
+///
+/// ## What it errs toward, and why it has to err at all
+///
+/// **Ancestry is not in this record.** Nothing in Review Desk reads git, so there is no way
+/// to ask whether one commit contains another. The only commits whose position is *known*
+/// are the ones the record wrote itself — the rounds' own heads, in the order the rounds
+/// were opened — and the two expressions above are matched against exactly those.
+///
+/// So a commit the record does not recognise is treated as **not** reviewed and its outcome
+/// stays in the queue. A change that really was inside a reviewed head, at a commit that
+/// never became a round's head and whose comparison ended somewhere else, is therefore
+/// still shown. That is the direction to be wrong in: showing a stale item costs the
+/// developer a glance, and hiding a change nobody has reviewed costs them the review.
+///
+/// **The spelling has to match, and that is the record's own rule rather than this one's.**
+/// `normalise::head_sha` says an abbreviated commit is a different commit from its full
+/// form — nothing here can reconcile them without asking git — so a caller passes one
+/// spelling throughout. A round head written `c0ffee1` and a comparison ending at
+/// `c0ffee1234…` do not match here, and the outcome stays in the queue, which is the same
+/// direction as every other unknown.
+///
+/// **Nothing is deleted.** This decides what the queue *draws*; the outcome row is
+/// untouched, so the earlier round's What happened page still lists every event the
+/// harvester recorded, which is the ticket's own requirement.
+pub(super) const ALREADY_REVIEWED: &str = concat!(
+    "o.kind = 'code_changed_after' AND EXISTS (
+             SELECT 1 FROM reviews reviewed
+             LEFT JOIN drafts posted ON posted.review_id = reviewed.id
+             WHERE reviewed.repo = v.repo
+               AND reviewed.pr = v.pr
+               AND reviewed.round > v.round
+               AND (posted.posted_at IS NOT NULL OR reviewed.github_review_id IS NOT NULL)
+               AND reviewed.head_sha IN (",
+    changed_at!(),
+    ", ",
+    compared_to!(),
+    ")
+         )"
+);
+
 impl Store {
     /// Every review whose brief is written, needs confirming, and has not been
     /// confirmed; newest first.
@@ -229,6 +342,25 @@ impl Store {
     /// it arrives: it records the author's reply, the thread being resolved and the
     /// code changing afterwards, and the screen shows all three as the author having
     /// acted. `since` limits it to recent activity; `None` is all of it.
+    ///
+    /// **This is the one query here with no newest-round restriction, and that is
+    /// deliberate**: a reply on a round that was posted is a real thing the developer has
+    /// to read, and the round it was left on can be older than the one the pull request
+    /// has reached. The queue draws it on the newest round's row and says which round it
+    /// was on — DEV-957's "replied to round 1".
+    ///
+    /// **A code change a later posted round has already reviewed is not activity.**
+    /// [`ALREADY_REVIEWED`] carries the rule and what it errs toward. DEV-983: an earlier
+    /// round's `code_changed_after` at a commit a posted later round read is work somebody
+    /// has done, and a review whose every recorded act is one of those is in no group at
+    /// all — which is what takes it out of the header's count as well as off the page,
+    /// because the count is of the items the groups hold.
+    ///
+    /// **Membership and the events the server lists are decided by one clause**, pasted
+    /// here and into [`Store::author_activity`]. Two readings would let this return a
+    /// review whose every event the other then filtered away, and `InboxReplyItem.events`
+    /// has `minItems: 1` — so the item would be dropped after being counted, and the
+    /// queue's heading would say one more than the page drew.
     pub fn reviews_with_author_activity(
         &self,
         repo: Option<&str>,
@@ -244,12 +376,55 @@ impl Store {
                    WHERE o.review_id = v.id
                      AND o.actor IN (?2, ?3)
                      AND (?4 IS NULL OR o.occurred_at >= ?4)
+                     AND NOT ({ALREADY_REVIEWED})
                )
              ORDER BY v.id DESC"
         ))?;
         let rows = statement.query_map(
             params![repo, Actor::Author, Actor::Harvester, since],
             row_to_review,
+        )?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// What an author or the harvester did on this review that is still the developer's to
+    /// read, oldest finding first.
+    ///
+    /// The events one `author_replies` item lists. The server built them by reading the
+    /// whole review and filtering its outcomes by actor, which could not ask the question
+    /// DEV-983 adds: whether a later posted round has already reviewed the change an
+    /// outcome reports. [`ALREADY_REVIEWED`] is that question, and it is a clause over the
+    /// review's own row — so it is asked here, in SQL, rather than reimplemented beside the
+    /// caller that renders the item.
+    ///
+    /// **The same order [`Store::list_outcomes`] serves**, because the item's first event is
+    /// what the queue's row is worded from: finding, then time, then the row's own id. A
+    /// different order here would silently reword rows that had nothing to do with this
+    /// change.
+    ///
+    /// **A review with none is not an item at all**, which the caller enforces and
+    /// [`Store::reviews_with_author_activity`] agrees with by construction: both ask the
+    /// same clause, so a review this answers empty is a review that query does not return.
+    pub fn author_activity(&self, review_id: i64) -> Result<Vec<Outcome>> {
+        // The outcome's own columns, qualified for the join below. Read out of
+        // `entities::outcome`'s list rather than written again, because a second list is
+        // how a column added to the table comes back absent from one reader.
+        let columns = super::outcome::COLUMNS
+            .split(',')
+            .map(|column| format!("o.{}", column.trim()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut statement = self.conn.prepare(&format!(
+            "SELECT {columns} FROM outcomes o
+             JOIN reviews v ON v.id = o.review_id
+             WHERE o.review_id = ?1
+               AND o.actor IN (?2, ?3)
+               AND NOT ({ALREADY_REVIEWED})
+             ORDER BY o.finding_seq ASC, o.occurred_at ASC, o.id ASC"
+        ))?;
+        let rows = statement.query_map(
+            params![review_id, Actor::Author, Actor::Harvester],
+            super::outcome::row_to_outcome,
         )?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
@@ -793,6 +968,61 @@ mod tests {
                 state.as_str()
             );
         }
+    }
+
+    /// **The kind the already-reviewed clause names is the kind the harvester writes.**
+    ///
+    /// [`ALREADY_REVIEWED`] is a `const` the other clauses are concatenated from, so the
+    /// kind has to be a literal — and a variant renamed in [`OutcomeKind`] would leave the
+    /// SQL compiling and matching nothing, which is this whole change quietly undone with
+    /// no test failing. The same argument, and the same remedy, as
+    /// [`the_words_in_the_finished_clause_are_the_settled_states`].
+    #[test]
+    fn the_kind_the_already_reviewed_clause_names_is_the_one_the_harvester_writes() {
+        assert!(
+            ALREADY_REVIEWED.contains(&format!("'{}'", OutcomeKind::CodeChangedAfter.as_str())),
+            "the clause has to name the kind it is about: {ALREADY_REVIEWED}"
+        );
+        for kind in OutcomeKind::ALL
+            .iter()
+            .filter(|kind| **kind != OutcomeKind::CodeChangedAfter)
+        {
+            assert!(
+                !ALREADY_REVIEWED.contains(&format!("'{}'", kind.as_str())),
+                "{} is not a code change and the clause names it: {ALREADY_REVIEWED}",
+                kind.as_str()
+            );
+        }
+    }
+
+    /// **The posted test in the already-reviewed clause is the one `review_is_posted`
+    /// makes.**
+    ///
+    /// DEV-962 made "posted" one definition — a draft reported posted, or a review carrying
+    /// a GitHub review id — because two spellings of it would let the round rule and this
+    /// rule disagree about whether a round happened. This clause cannot call that function:
+    /// it is SQL pasted into a query. So the two columns it has to read are named here, and
+    /// a third column added to the definition would fail this rather than quietly leave the
+    /// queue showing a change a posted round had read.
+    #[test]
+    fn the_posted_test_here_is_the_one_review_is_posted_makes() {
+        for column in [
+            "posted.posted_at IS NOT NULL",
+            "github_review_id IS NOT NULL",
+        ] {
+            assert!(
+                ALREADY_REVIEWED.contains(column),
+                "the clause must ask {column}, which is what posted means: {ALREADY_REVIEWED}"
+            );
+        }
+        assert!(
+            ALREADY_REVIEWED.contains("reviewed.round > v.round"),
+            "only a later round can have reviewed this outcome's commit: {ALREADY_REVIEWED}"
+        );
+        assert!(
+            ALREADY_REVIEWED.contains("json_valid(o.detail)"),
+            "a detail that is not JSON must not fail the query: {ALREADY_REVIEWED}"
+        );
     }
 
     /// A column added to one list and not the other would make a review read through

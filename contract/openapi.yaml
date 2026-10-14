@@ -4322,6 +4322,23 @@ components:
       description: |
         An author has acted on a posted review. Built from outcomes with actor `author`
         or `harvester`.
+
+        **A code change a later posted round has already reviewed is not one of those
+        acts** — DEV-983. An earlier round's `code_changed_after` whose commit is the
+        recorded head of a *later* round of the same pull request that has **posted** is
+        work somebody has done: the round that posted read that code. It is in no group
+        here and outside `totals.items`, and a review whose every recorded act is one of
+        those is not an item at all. Either commit the outcome's detail carries will
+        answer — the commit the change is at, or the commit the `compare A...B` it was
+        read from ends at, which is what makes "at or before" decidable.
+
+        **Nothing is deleted, and the rule errs toward showing.** The outcome row is
+        untouched, so `GET /reviews/{id}` still carries every event the harvester
+        recorded and the earlier round's What happened page still draws them. And nothing
+        in Review Desk reads git, so the only commits whose position is known are the
+        rounds' own heads: a commit the record does not recognise is treated as not
+        reviewed and stays in the queue. Showing a stale item costs a glance; hiding a
+        change nobody reviewed costs the review.
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }
@@ -4408,6 +4425,15 @@ components:
         **Not a group that is waiting on the developer**, which is why it is outside
         `totals.items`. Nothing in it needs an act; it is the record saying where a
         posted review went.
+
+        **It is also what tells the queue which round a pull request's single row is**,
+        since DEV-983. The row is one pull request and is numbered for the newest round
+        in the answer; `author_replies` carries the round that was *replied to*, which can
+        be older. On 14 October 2026 that was the whole of the second fault: a pull request
+        with round 1 replied to and round 2 posted drew one row saying "round 1" and
+        opening round 1, though round 2 had been posted the day before. This item carries
+        the newest round, so the row takes its number and its link from here and says
+        "replied to round 1" beside them.
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }

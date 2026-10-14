@@ -260,14 +260,18 @@ impl Api {
             .iter()
             .map(|review| -> Result<Option<Value>, ApiError> {
                 // One read, two answers. The author's acts are read once and both the
-                // list and its newest time come off that: a second `full_review` here
-                // would be a second read of the same review per row of the queue.
-                let full = self.records.full_review(review.id)?;
-                let acted: Vec<_> = full
-                    .outcomes
-                    .iter()
-                    .filter(|outcome| matches!(outcome.actor, Actor::Author | Actor::Harvester))
-                    .collect();
+                // list and its newest time come off that: a second read here would be a
+                // second read of the same review per row of the queue.
+                //
+                // **The store decides which acts those are, since DEV-983.** This filtered
+                // a whole `full_review` by actor, which is a question about who — and the
+                // one it could not ask is whether a later posted round has already reviewed
+                // the change an outcome reports. That is a clause over the review's row and
+                // its pull request's other rounds, so it is asked where the group's own
+                // membership is asked, in one place. The read is narrower as well: the
+                // outcomes rather than the review, its layers, its brief, its findings and
+                // its draft.
+                let acted = self.records.author_activity(review.id)?;
 
                 let events: Vec<Value> = acted
                     .iter()

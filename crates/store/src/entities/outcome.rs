@@ -6,7 +6,7 @@ use crate::error::{Result, StoreError};
 use crate::model::{now, FindingRef, FullReview, NewOutcome, Outcome};
 use crate::{is_foreign_key_violation, Store};
 
-const COLUMNS: &str = "id, review_id, finding_seq, kind, actor, occurred_at, detail, \
+pub(super) const COLUMNS: &str = "id, review_id, finding_seq, kind, actor, occurred_at, detail, \
                        harvest_key";
 
 impl Store {
@@ -166,7 +166,7 @@ impl Store {
 }
 
 /// Build an outcome from a row selecting [`COLUMNS`].
-fn row_to_outcome(row: &Row<'_>) -> rusqlite::Result<Outcome> {
+pub(super) fn row_to_outcome(row: &Row<'_>) -> rusqlite::Result<Outcome> {
     Ok(Outcome {
         id: row.get("id")?,
         review_id: row.get("review_id")?,
