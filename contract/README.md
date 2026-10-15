@@ -116,6 +116,9 @@ repository" apart from its number), and these fixed sentences —
 - "Saved as feedback when you approve. Three edits of the same kind become a proposed rule."
 - "The review session posts it under your name, with no bot banner."
 - "written before the diff was read"
+- "Waiting for a session" and "no session is working on it", on a row the queue draws under
+  "Requested, not started" — the group is *no other group holds this*, so there is no field
+  for the row to word itself from and none is wanted
 - "Every rule names the failure it prevents. A preference with no consequence does not qualify."
 
 Everything else on the five screens is below.
@@ -150,6 +153,9 @@ Everything else on the five screens is below.
 | "Proposed rule · 1" | length of `proposed_rules` |
 | the rule's sentence | `proposed_rules[].statement` |
 | "You cut this kind of finding from 5 of the last 5 drafts…" | `proposed_rules[].why_proposed` |
+| "Requested, not started · 1" | length of `awaiting_session` |
+| "2 days ago" on a not-started row | `awaiting_session[].requested_at` — when the round was opened, which is never null |
+| the ticket on a not-started row, named and linked | `awaiting_session[].ticket_id`, `.ticket_url` — a row here is drawn nowhere else, so this is the only item it can take a ticket from |
 | "In progress · 2" | length of `in_progress` |
 | "Layer 5 of 7 · code review" | `in_progress[].layer_number`, `.layers_total`, `.layer_name` |
 | the ticket on an agent row, named and linked | `in_progress[].ticket_id`, `.ticket_url` — a review here may be in no other array, so it draws its own row |

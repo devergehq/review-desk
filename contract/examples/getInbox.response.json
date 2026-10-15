@@ -185,6 +185,20 @@
       "last_activity_at": null
     }
   ],
+  "awaiting_session": [
+    {
+      "review_id": 21,
+      "pull_request": {
+        "repo": "acme/portal",
+        "pr": 421,
+        "title": "Stop the importer reading another tenant's rows"
+      },
+      "ticket_id": "ABC-258",
+      "ticket_url": "https://linear.app/acme/issue/ABC-258",
+      "round": 1,
+      "requested_at": "2026-10-13T09:12:00Z"
+    }
+  ],
   "posted_awaiting_author": [
     {
       "review_id": 12,

@@ -182,11 +182,19 @@ test.describe('the whole path, on a seeded database', () => {
      */
     await expect(page.getByText('Retry failed webhook deliveries')).toHaveCount(1)
     /*
-     * **Five rows for four pull requests that need you**, which is not a contradiction: the
-     * fifth is the posted review under "Waiting on the author", and nothing there is
-     * waiting on the developer. The headline counts what is.
+     * **Seven rows for four pull requests that need you**, which is not a contradiction:
+     * the fifth is the posted review under "Waiting on the author", and the sixth and
+     * seventh are under "Requested, not started". Nothing in either group is waiting on the
+     * developer, and the headline counts what is.
+     *
+     * **It was five until DEV-994, and the two it gained were already in this seed.**
+     * `acme/portal#777` is opened with nothing written to it and `#418`'s brief needed no
+     * confirmation, so neither answered any of the five questions the other groups ask and
+     * neither was drawn anywhere — two pull requests on the record and on no page. That is
+     * the defect, live in the seed this suite has been running all along, which is the
+     * strongest thing this count can say about the fix.
      */
-    await expect(page.locator('.row')).toHaveCount(5)
+    await expect(page.locator('.row')).toHaveCount(7)
     await expect(page.getByText('Problem brief ready')).toBeVisible()
     await expect(page.getByText('nothing posts until you confirm')).toBeVisible()
     await expect(page.getByText('a draft is ready behind it')).toBeVisible()
@@ -225,6 +233,28 @@ test.describe('the whole path, on a seeded database', () => {
      */
     await expect(page.getByRole('heading', { name: 'With the agent' })).toHaveCount(0)
     await expect(page.getByRole('heading', { name: 'Your pull requests' })).toHaveCount(0)
+
+    /*
+     * **And the group that was missing until DEV-994, with the two rows it was missing.**
+     * Both are in this seed and neither was on any page: `#777` was opened and never
+     * written to, and `#418`'s brief said it needed no confirmation, so layer 2 was settled
+     * with nothing asked of the developer. The row says what it is waiting for and links the
+     * round; it offers no way to start a session, because Review Desk does not dispatch.
+     */
+    await expect(
+      page.getByRole('heading', { name: 'Requested, not started' }),
+    ).toBeVisible()
+    const unstarted = page.locator('.queue-line').filter({ hasText: '#777' })
+    await expect(unstarted).toHaveCount(1)
+    await expect(unstarted).toContainText('Waiting for a session')
+    await expect(unstarted).toContainText('no session is working on it')
+    await expect(unstarted.locator('.row')).toHaveAttribute(
+      'href',
+      `/reviews/${requestedReviewId}/understand`,
+    )
+    await expect(page.locator('.queue-line').filter({ hasText: '#418' })).toHaveCount(1)
+    /* And the headline still counts only what is waiting on the developer. */
+    await expect(page.getByText('2 not started')).toBeVisible()
 
     /*
      * **The group the board drew and the API could not fill, filled.** It said "not
@@ -335,12 +365,15 @@ test.describe('the whole path, on a seeded database', () => {
      */
     await page.goto(seeded)
     /*
-     * **Still five rows, and the same five.** What moved is this one's next action: from
+     * **Still seven rows, and the same seven.** What moved is this one's next action: from
      * the brief to the draft, because layer 2 is settled and layer 6 is not. That is what
      * "one row showing its next action" buys — a review waiting for two things does not
      * become two rows, and does not stop being a row when one of them is answered.
+     *
+     * Seven rather than five since DEV-994, and the two it gained are the two this seed
+     * had on the record and on no page: see the count in the first test of this file.
      */
-    await expect(page.locator('.row')).toHaveCount(5)
+    await expect(page.locator('.row')).toHaveCount(7)
     const webhooks = page.locator('.row').filter({ hasText: 'Retry failed webhook deliveries' })
     await expect(webhooks).toHaveCount(1)
     await expect(webhooks.getByText('Draft ready')).toBeVisible()
@@ -611,8 +644,21 @@ test.describe('the whole path, on a seeded database', () => {
      */
     await page.goto(seeded)
     await expect(page.getByText('Confirm the problem')).toHaveCount(0)
+    /*
+     * **Not in "Needs you", and since DEV-994 it is under "Requested, not started".** The
+     * claim is unchanged and is the issue's: nothing is asked of the developer, so the
+     * review is in no group that asks them for anything. What changed is that a round
+     * waiting on nobody now has a group of its own — before DEV-994 this review was on no
+     * page at all, which was never the thing DEV-864 wanted and was only indistinguishable
+     * from it because the queue had nowhere to draw it.
+     */
+    const waived = page.locator('.queue-line').filter({ hasText: '#418' })
+    await expect(waived).toHaveCount(1)
+    await expect(waived).toContainText('Waiting for a session')
     await expect(
-      page.getByText('Say "not measured" rather than null in the delivery log'),
+      page.locator('section').filter({ hasText: 'Needs you' })
+        .locator('.queue-line')
+        .filter({ hasText: '#418' }),
     ).toHaveCount(0)
 
     await page.goto(`${seeded}reviews/${waivedReviewId}/understand`)

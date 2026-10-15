@@ -183,6 +183,12 @@ struct Seeded {
     /// item, and the two together are both halves of telling a nought from an absence.
     #[allow(dead_code)]
     answered_review: Review,
+    /// A sixth review that **nothing has touched**: no brief, no draft, no finding, no
+    /// layer and nothing posted. It is the Inbox's `awaiting_session` item, and the group
+    /// has no other way to be non-empty — every other review in this seed is in some group
+    /// already, which is what put this shape in no group at all before DEV-994.
+    #[allow(dead_code)]
+    requested_review: Review,
     proposed_rule: Rule,
     excepted_rule: Rule,
     stale_rule: Rule,
@@ -1040,6 +1046,25 @@ fn seed(store: &Store) -> Seeded {
         )
         .expect("a later citation");
 
+    // **A sixth review, requested and not started.** Opened with what the caller knew and
+    // nothing else written to it, which is what `review-desk review open` leaves behind
+    // before a session reaches it. Every other review above is in some group, so without
+    // this one `getInbox.response.json`'s new array would be empty — and an empty array has
+    // no leaf paths, so `check` would pass over it and assert nothing. DEV-994.
+    let requested_review = store
+        .create_review(NewReview {
+            repo: "acme/portal".to_string(),
+            pr: 421,
+            head_sha: "4f1a9c2".to_string(),
+            round: 1,
+            title: Some("Stop the importer reading another tenant's rows".to_string()),
+            ticket_id: Some("ABC-258".to_string()),
+            ticket_url: Some("https://linear.app/acme/issue/ABC-258".to_string()),
+            changed_lines: Some(147),
+            ..Default::default()
+        })
+        .expect("a review nothing has started");
+
     // A rule in force that nothing has cited lately, for the Rules screen's "Going
     // stale" group. Its times are moved backwards by the caller, because the store has
     // no function for ageing a rule and should not grow one so a test can pass.
@@ -1065,6 +1090,7 @@ fn seed(store: &Store) -> Seeded {
         waiting_review,
         posted_review,
         answered_review,
+        requested_review,
         proposed_rule,
         excepted_rule,
         stale_rule,
@@ -2158,6 +2184,45 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
         })
         .collect::<Vec<_>>();
 
+    // **The group defined by subtraction, built the way the server builds it**: the pull
+    // requests on the desk, less the ones the five arrays above were served for. Read off
+    // the documents rather than off the store's reviews a second time, which is `api.rs`'s
+    // own rule and its reason — counting what was served cannot disagree with what was
+    // served.
+    let drawn: BTreeSet<(String, i64)> = briefs
+        .iter()
+        .chain(drafts.iter())
+        .chain(replies.iter())
+        .chain(in_progress.iter())
+        .chain(posted.iter())
+        .map(|item| {
+            (
+                item["pull_request"]["repo"]
+                    .as_str()
+                    .expect("a repository")
+                    .to_string(),
+                item["pull_request"]["pr"].as_i64().expect("a number"),
+            )
+        })
+        .collect();
+    let awaiting_session = store
+        .newest_rounds_in_play(None)
+        .expect("the pull requests on the desk")
+        .iter()
+        .filter(|review| !drawn.contains(&(review.repo.clone(), review.pr)))
+        .map(|review| {
+            json!({
+                "review_id": review.id,
+                "pull_request": pull_request(review),
+                "ticket_id": review.ticket_id,
+                "ticket_url": review.ticket_url,
+                "round": review.round,
+                // When the round was opened, which is how long it has waited.
+                "requested_at": review.created_at,
+            })
+        })
+        .collect::<Vec<_>>();
+
     let tickets = store.filed_nit_tickets(None, None).expect("filed tickets");
     // **The five waiting groups, and not the other two.** This file held the third answer
     // to that sum — it added the reviews in progress and left out the developer's own pull
@@ -2187,6 +2252,7 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
         "own_prs_without_reviewer": own_prs,
         "proposed_rules": proposals,
         "in_progress": in_progress,
+        "awaiting_session": awaiting_session,
         "posted_awaiting_author": posted,
         "handled_without_you": {
             "window_days": 7,
@@ -2340,6 +2406,24 @@ fn every_response_example_can_be_produced_from_the_store() {
             .is_empty(),
         "review {} should be posted and waiting on its author",
         seeded.answered_review.id
+    );
+    // **And the one group built by subtraction, which is the one that could go vacuous
+    // without any seed being wrong.** The other three above are empty only if their seed
+    // stopped producing the shape; this one is empty the moment some *other* group starts
+    // holding the pull request it is about, which is a change nobody would make here. So
+    // the assertion is on the item rather than only on the array: the array could be
+    // non-empty for a review this test knows nothing about.
+    let awaiting = inbox(&store, &seeded)["awaiting_session"].clone();
+    assert_eq!(
+        awaiting.as_array().map(Vec::len),
+        Some(1),
+        "review {} should be the one pull request no group holds: {awaiting}",
+        seeded.requested_review.id
+    );
+    assert_eq!(
+        awaiting[0]["review_id"].as_i64(),
+        Some(seeded.requested_review.id),
+        "and it should be that review: {awaiting}"
     );
     let page = rules_page(&store, Some("acme/portal"));
     for group in ["proposed", "active", "stale"] {

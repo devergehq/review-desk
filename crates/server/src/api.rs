@@ -146,6 +146,10 @@ impl Api {
         let in_progress = self.records.reviews_in_progress()?;
         let posted = self.records.posted_reviews_awaiting_author()?;
         let proposed = self.records.rules_at_stages(None, &[RuleStage::Proposed])?;
+        // The pull requests on the desk at all, which `awaiting_session` below subtracts
+        // from. Read with the rest rather than later: it is the same kind of fact as the
+        // five above and belongs in the same place as them.
+        let on_the_desk = self.records.newest_rounds_in_play()?;
 
         let briefs_to_confirm = briefs
             .iter()
@@ -445,6 +449,83 @@ impl Api {
         //
         let posted_awaiting_author: Vec<Value> = posted.iter().map(wire::inbox_posted).collect();
 
+        // **The group the queue was missing, and the one defined by subtraction.** DEV-994:
+        // a pull request whose newest round has been opened and not written to answers none
+        // of the five questions above — no brief to confirm, no draft at a status, nothing
+        // an author has said, no layer running, nothing posted — so it was in no array, and
+        // the queue said nothing about a review that had been requested. On 15 October 2026
+        // two of them were on the record and invisible until their sessions started.
+        //
+        // **Subtracted from the items this answer serves, not from five more reads of the
+        // record.** The store could ask those queries again and it deliberately does not:
+        // `author_replies` drops an item whose every event turned out to be answered — its
+        // `events` has `minItems: 1` — and the reads are not one snapshot, so a sixth
+        // reading could subtract a pull request this answer then did not draw anywhere. That
+        // is the silence the group exists to remove, reintroduced by the group. The
+        // repository count below already took this decision once, in its own words:
+        // "counting what was served cannot disagree with what was served."
+        //
+        // So the only thing the store answers is which pull requests are on the desk at all
+        // — `newest_rounds_in_play`, where `IN_PLAY` and `NEWEST_ROUND` carry what is
+        // excluded and why — and the subtraction happens here, after every array above is
+        // final.
+        //
+        // **This makes `awaiting_session` disjoint from the rest of the answer by
+        // construction**, which is what lets the contract promise it, and what makes "a
+        // pull request in play and not dismissed is drawn in exactly one group" a property
+        // of this function rather than a hope about five queries.
+        //
+        // **`own_prs_without_reviewer` is not among the five, and need not be.** It holds a
+        // pull request nobody has reviewed, so Review Desk has no review of it — and every
+        // candidate here *is* a review. The two sets cannot meet. (It is counted on the
+        // other side of the assertion in `tests/requested.rs`, which is the conservative
+        // direction for a test to take.)
+        //
+        // A `fn` rather than a closure, because the key borrows from the item: a closure
+        // cannot say that its return lives as long as its argument, and the alternative is
+        // a `String` cloned once per item and once more per candidate.
+        fn drawn_as(item: &Value) -> Option<(&str, i64)> {
+            let pull = &item["pull_request"];
+            Some((pull["repo"].as_str()?, pull["pr"].as_i64()?))
+        }
+        let drawn: std::collections::HashSet<(&str, i64)> = briefs_to_confirm
+            .iter()
+            .chain(drafts_to_approve.iter())
+            .chain(author_replies.iter())
+            .chain(in_progress.iter())
+            .chain(posted_awaiting_author.iter())
+            .filter_map(drawn_as)
+            .collect();
+        let awaiting_session: Vec<Value> = on_the_desk
+            .iter()
+            .filter(|review| !drawn.contains(&(review.repo.as_str(), review.pr)))
+            .map(|review| {
+                json!({
+                    // **The newest round, so the row needs no `newest_round` of its own.**
+                    // This group holds only that round — `newest_rounds_in_play` is what
+                    // says so — and DEV-983's rule is that the queue's row for a pull
+                    // request is its newest round. The two arrays carrying `newest_round`
+                    // carry it because they can be about an older one.
+                    "review_id": review.id,
+                    "pull_request": wire::inbox_pr(review),
+                    "round": review.round,
+                    // The pair, like the five other arrays about a review: a row drawn here
+                    // is drawn nowhere else, so this is the only item it can take a ticket
+                    // from.
+                    "ticket_id": review.ticket_id,
+                    "ticket_url": review.ticket_url,
+                    // **When the round was opened, which is how long it has waited.** Never
+                    // null: every round is stamped as it is created. It is not when the
+                    // waiting *began* — a draft the developer approved an hour ago sits on
+                    // a round that may have opened a week ago — and nothing in this record
+                    // holds that, because nothing observes a session stopping. Since
+                    // DEV-962 the author pushing again moves an unposted round's head
+                    // rather than opening another, so it is not disturbed by that either.
+                    "requested_at": wire::rfc3339(review.created_at),
+                })
+            })
+            .collect();
+
         let since = now() - WINDOW_DAYS * wire::DAY;
         let filed = self.records.filed_nit_tickets(since)?;
         let nits_filed: i64 = filed
@@ -456,12 +537,15 @@ impl Api {
         // it is GitHub state, nothing lists the developer's own pull requests, and no
         // issue covers it. Empty reads as absent, which is true.
         let own_prs: Vec<Value> = Vec::new();
-        // **The five waiting groups, and deliberately not the other two.** `in_progress`
-        // is with the agent and `posted_awaiting_author` is with the author; neither asks
-        // the developer for anything, and the screen's headline is a count of what does.
-        // The contract's `InboxTotals.items` names the five rather than counting them,
-        // because "the five groups" stopped being a safe way to say it the moment there
-        // were seven arrays.
+        // **The five waiting groups, and deliberately not the other three.** `in_progress`
+        // is with the agent, `awaiting_session` is with nobody and `posted_awaiting_author`
+        // is with the author; none of them asks the developer for anything, and the
+        // screen's headline is a count of what does. `awaiting_session` is the clearest of
+        // the three and DEV-994 says so: it reports that the work has *not* been picked up,
+        // and the one thing the developer cannot do about that is pick it up, because
+        // Review Desk does not dispatch. The contract's `InboxTotals.items` names the five
+        // rather than counting them, because "the five groups" stopped being a safe way to
+        // say it the moment there were eight arrays.
         let totals_items = briefs_to_confirm.len()
             + drafts_to_approve.len()
             + author_replies.len()
@@ -502,6 +586,7 @@ impl Api {
                 "own_prs_without_reviewer": own_prs,
                 "proposed_rules": proposed_rules,
                 "in_progress": in_progress,
+                "awaiting_session": awaiting_session,
                 "posted_awaiting_author": posted_awaiting_author,
                 "handled_without_you": {
                     "window_days": WINDOW_DAYS,

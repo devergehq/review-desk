@@ -517,9 +517,14 @@ describe('the reviews list', () => {
      * Every review in play, including the two that were posted — and **not** the four
      * rounds of merged `globex/portal#9568`, which are under Finished. This is the default
      * view, and DEV-957 is what the four absences are.
+     *
+     * **Review 70 leads it, and it is the one nothing has touched.** DEV-994 added it to
+     * the fixtures so that sample mode can draw the group it is in: a round that has been
+     * requested and not started was in no group on the queue, and a demo record with no
+     * such round could not show the group that holds it.
      */
     expect(answer.reviews.map(row => row.review.id))
-      .toEqual([63, 62, 61, 60, 43, 41, 19, 18, 17, 16, 15, 12])
+      .toEqual([70, 63, 62, 61, 60, 43, 41, 19, 18, 17, 16, 15, 12])
 
     /*
      * **A posted review nothing has harvested reports step 6, not step 7.** Posting

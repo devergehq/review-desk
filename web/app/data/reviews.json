@@ -4924,5 +4924,135 @@
       "waiting_on_you_seconds": 900,
       "last_activity_at": "2026-10-11T12:50:00Z"
     }
+  },
+  {
+    "review": {
+      "id": 70,
+      "repo": "acme/portal",
+      "pr": 421,
+      "head_sha": "4f1a9c2",
+      "round": 1,
+      "title": "Stop the importer reading another tenant\u2019s rows",
+      "ticket_id": "ABC-258",
+      "ticket_url": "https://linear.app/acme/issue/ABC-258",
+      "changed_lines": 147,
+      "session_id": null,
+      "ledger_id": null,
+      "github_review_id": null,
+      "created_at": "2026-10-13T09:12:00Z",
+      "pr_state": null,
+      "pr_state_at": null,
+      "harvested_at": null,
+      "dismissed_at": null,
+      "dismissed_reason": null,
+      "out_of_play": null,
+      "out_of_play_at": null
+    },
+    "not_for_signing": null,
+    "layers": [
+      {
+        "number": 1,
+        "name": "lint",
+        "state": "pending",
+        "detail": "not yet",
+        "updated_at": null,
+        "runs": [],
+        "seconds": null,
+        "facts": []
+      },
+      {
+        "number": 2,
+        "name": "understand",
+        "state": "pending",
+        "detail": "not yet",
+        "updated_at": null,
+        "runs": [],
+        "seconds": null,
+        "facts": []
+      },
+      {
+        "number": 3,
+        "name": "alternatives",
+        "state": "pending",
+        "detail": "not yet",
+        "updated_at": null,
+        "runs": [],
+        "seconds": null,
+        "facts": []
+      },
+      {
+        "number": 4,
+        "name": "solution_map",
+        "state": "pending",
+        "detail": "not yet",
+        "updated_at": null,
+        "runs": [],
+        "seconds": null,
+        "facts": []
+      },
+      {
+        "number": 5,
+        "name": "code_review",
+        "state": "pending",
+        "detail": "not yet",
+        "updated_at": null,
+        "runs": [],
+        "seconds": null,
+        "facts": []
+      },
+      {
+        "number": 6,
+        "name": "draft",
+        "state": "pending",
+        "detail": "not yet",
+        "updated_at": null,
+        "runs": [],
+        "seconds": null,
+        "facts": []
+      },
+      {
+        "number": 7,
+        "name": "harvest",
+        "state": "pending",
+        "detail": "after posting",
+        "updated_at": null,
+        "runs": [],
+        "seconds": null,
+        "facts": []
+      }
+    ],
+    "brief": null,
+    "findings": [],
+    "outcomes": [],
+    "finding_severities": {
+      "blocker": 0,
+      "should": 0,
+      "nit": 0,
+      "question": 0
+    },
+    "finding_dispositions": {
+      "in_draft": 0,
+      "held_back": 0,
+      "suppressed": 0
+    },
+    "not_checked": null,
+    "nit_ticket": {
+      "review_id": 70,
+      "status": "none",
+      "ticket_id": null,
+      "finding_seqs": [],
+      "requested_at": null,
+      "filed_at": null
+    },
+    "draft_status": null,
+    "timings": {
+      "requested_at": "2026-10-13T09:12:00Z",
+      "draft_ready_at": null,
+      "signed_off_at": null,
+      "posted_at": null,
+      "with_the_agent_seconds": null,
+      "waiting_on_you_seconds": null,
+      "last_activity_at": null
+    }
   }
 ]

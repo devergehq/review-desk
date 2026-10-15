@@ -354,6 +354,19 @@ fn the_inbox_validates() {
         group("in_progress") > 0,
         "the seeded record has a session running: {inbox}"
     );
+    // **And `awaiting_session` is outside that sum too, which DEV-994 added.** It is the
+    // clearest of the three: it reports that the work has *not* been picked up, and the one
+    // thing the developer cannot do about that is pick it up, because Review Desk does not
+    // dispatch. The sum above names the five it counts, so a group added to it would fail
+    // this assertion rather than quietly inflate the screen's headline.
+    //
+    // The seeded record happens to hold none — every review in it is in some other group —
+    // so this says only that the array is there and is an array. What the group *holds* is
+    // asserted in `requested.rs`, which seeds the shapes.
+    assert!(
+        inbox["awaiting_session"].is_array(),
+        "the group is served whether or not it is empty: {inbox}"
+    );
 
     harness
         .store

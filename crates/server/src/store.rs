@@ -240,6 +240,16 @@ impl Records {
         self.with(|store| store.reviews_in_progress(None))
     }
 
+    /// The newest round of every pull request still on the desk.
+    ///
+    /// **The candidates for the Inbox's `awaiting_session`, not the group itself.** The
+    /// group is these minus the pull requests the five groups above were served for, and
+    /// that subtraction is made in `api.rs` against the items it has just built — the
+    /// store's own doc carries why it cannot be made against five more reads of the record.
+    pub fn newest_rounds_in_play(&self) -> Result<Vec<Review>, ApiError> {
+        self.with(|store| store.newest_rounds_in_play(None))
+    }
+
     /// Posted reviews whose pull request has not been merged or closed, newest posting
     /// first, with what has come back on each.
     ///

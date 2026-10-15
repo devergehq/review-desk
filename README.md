@@ -681,6 +681,15 @@ do; the dashboard's inbox is the list of what the developer is to do. A brief wr
 not yet confirmed, and a draft at `ready`, are both the developer's turn and appear in
 neither list here.
 
+**The two lists overlap since DEV-994, and before it they did not.** The
+queue's **"Requested, not started"** draws the pull requests no other group holds — a round
+opened and not written to, a draft a stopped session left part-written, a draft the
+developer approved that nothing has posted — which are the same rounds this list offers an
+agent. That is not a double-listing of one thing to do: this list says *what to do* with
+them and the queue says only *that nobody is doing it*, which is what the developer needs
+when a dispatcher has stopped. Before that group existed those rounds were on the record
+and on no page, and recovered only when a session happened to start.
+
 Items come **oldest first**, so a caller serving one at a time serves what has waited
 longest. Ties are broken by review id, which is stable: a list whose order changed between
 two polls of an unchanged record would make a caller's progress look like churn.

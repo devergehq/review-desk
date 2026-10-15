@@ -6,8 +6,8 @@ mod common;
 use common::{db_path, new_review, temp_store};
 use review_desk_store::{
     Actor, Disposition, DraftStatus, FindingRef, NewDraft, NewFinding, NewOutcome, NewRule,
-    OutcomeKind, PrState, Review, ReviewEvent, ReviewLayerName, ReviewLayerState, ReviewsShown,
-    RuleScope, RuleStage, Severity, Store,
+    OutOfPlay, OutcomeKind, PrState, Review, ReviewEvent, ReviewLayerName, ReviewLayerState,
+    ReviewsShown, RuleScope, RuleStage, Severity, Store,
 };
 
 /// A review on a repository, at round 1.
@@ -237,6 +237,131 @@ fn a_review_in_progress_reports_the_layer_it_got_to() {
     assert_eq!(
         in_progress[0].layer.name,
         review_desk_store::ReviewLayerName::CodeReview
+    );
+}
+
+/// The pull requests `newest_rounds_in_play` reports, as `(pr, round)` pairs.
+///
+/// By pull request and round rather than by review id, because what this query answers is
+/// which round of which pull request is the live one — an assertion on ids would pass over
+/// a query that returned the right rows for the wrong reason.
+fn on_the_desk(store: &Store, repo: Option<&str>) -> Vec<(i64, i64)> {
+    let mut found: Vec<(i64, i64)> = store
+        .newest_rounds_in_play(repo)
+        .expect("the pull requests on the desk")
+        .iter()
+        .map(|review| (review.pr, review.round))
+        .collect();
+    found.sort_unstable();
+    found
+}
+
+#[test]
+fn the_desk_holds_one_round_per_pull_request_and_it_is_the_newest() {
+    // **The candidates for "Requested, not started", and the whole of what the store
+    // answers about that group.** DEV-994: the group is these minus the pull requests the
+    // five groups above were served for, and the subtraction is the server's because it
+    // has to be made against what was served.
+    let (_dir, store) = temp_store();
+    let one = seed(&store, "acme/portal", 412, "3f9c2ab");
+    // Round 1 has to post before a new commit opens round 2 rather than moving this head —
+    // DEV-962, which `common::posted` carries.
+    common::posted(&store, one.id);
+    let two = store
+        .open_review("acme/portal", 412, "d4e5f64")
+        .expect("round 2")
+        .review;
+    assert_eq!(two.round, 2, "a posted round is superseded, not moved");
+    seed(&store, "acme/billing-api", 88, "bbbbbbb");
+
+    assert_eq!(
+        on_the_desk(&store, None),
+        vec![(88, 1), (412, 2)],
+        "one round per pull request, and the newest of them"
+    );
+    assert_eq!(
+        on_the_desk(&store, Some("acme/billing-api")),
+        vec![(88, 1)],
+        "and one repository's, for a caller that asked about one"
+    );
+    assert_eq!(
+        on_the_desk(&store, Some("ACME/Billing-API")),
+        vec![(88, 1)],
+        "normalised, so a caller who typed the repository differently is answered"
+    );
+}
+
+#[test]
+fn a_round_the_developer_dismissed_takes_its_pull_request_off_the_desk() {
+    // **The one place the invariant stops, and it stops on purpose.** DEV-994's rule is
+    // "in play *and not dismissed* means exactly one group": a dismissal is the developer
+    // saying they will not act on this round, so a group that put the pull request back in
+    // front of them under another heading would undo their own act.
+    //
+    // **And no earlier round stands in for it**, which is `NEWEST_ROUND` counting every
+    // round whatever became of it. Round 1 is superseded and nothing can move its state
+    // again; promoting it here would put a dead round in a group about work waiting to
+    // start.
+    let (_dir, store) = temp_store();
+    let one = seed(&store, "acme/portal", 412, "3f9c2ab");
+    common::posted(&store, one.id);
+    let two = store
+        .open_review("acme/portal", 412, "d4e5f64")
+        .expect("round 2")
+        .review;
+    assert_eq!(on_the_desk(&store, None), vec![(412, 2)]);
+
+    store
+        .dismiss_review(two.id, "not worth a review")
+        .expect("the developer dismissed the round");
+
+    assert_eq!(
+        on_the_desk(&store, None),
+        Vec::<(i64, i64)>::new(),
+        "the pull request is off the desk, and round 1 is not promoted into its place"
+    );
+
+    store.restore_review(two.id).expect("restored");
+    assert_eq!(
+        on_the_desk(&store, None),
+        vec![(412, 2)],
+        "and it comes back, because a restore is the dismissal taken back"
+    );
+}
+
+#[test]
+fn a_finished_or_out_of_play_pull_request_is_not_on_the_desk() {
+    // The other two ways off, both through `IN_PLAY` and both asserted here rather than
+    // trusted: a query that pasted the clause and a query that spelled half of it compile
+    // the same.
+    //
+    // **Out of play is the one that undoes itself** — DEV-962, a pull request converted to
+    // draft or whose review request was withdrawn — so it is asserted in both directions.
+    let (_dir, store) = temp_store();
+    let merged = seed(&store, "acme/portal", 401, "9d41c0e");
+    seed(&store, "acme/portal", 415, "eeeeeee");
+    seed(&store, "acme/portal", 412, "3f9c2ab");
+
+    store
+        .set_review_pr_state(merged.id, PrState::Merged, None)
+        .expect("the pull request merged");
+    store
+        .set_pr_out_of_play("acme/portal", 415, Some(OutOfPlay::Draft))
+        .expect("converted to a draft");
+
+    assert_eq!(
+        on_the_desk(&store, None),
+        vec![(412, 1)],
+        "a merged pull request is over and one out of play is paused; neither is waiting"
+    );
+
+    store
+        .set_pr_out_of_play("acme/portal", 415, None)
+        .expect("marked ready again");
+    assert_eq!(
+        on_the_desk(&store, None),
+        vec![(412, 1), (415, 1)],
+        "and the paused one returns, which is the only one of the three that does"
     );
 }
 
