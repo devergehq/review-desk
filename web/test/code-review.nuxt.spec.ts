@@ -71,6 +71,24 @@ async function shown(component: Parameters<typeof mountSuspended>[0], route: str
 const codeReview = (id: number) => shown(CodeReview, `/reviews/${id}/code-review`)
 const draftPage = (id: number) => shown(Draft, `/reviews/${id}/draft`)
 
+/**
+ * Take a decision on the finding showing, by the label on its button.
+ *
+ * **Scoped to the call, and that is not fussiness.** Since 16 October the decisions are
+ * named for the three lists they move a finding to, so "Set aside" is a button under *Your
+ * call* and also the segment that filters to the set-aside list. `press` finds the first
+ * button containing the words, which is the filter — so a test that meant to decide
+ * quietly changed the list instead, and then failed three assertions later on a row that
+ * was never going to be there.
+ */
+async function decide(page: VueWrapper, label: string) {
+  const found = page.findAll('.call .item').find(one => one.text().startsWith(label))
+  if (!found) throw new Error(`no decision labelled ${label}`)
+  await found.trigger('click')
+  await settle(page)
+  return found
+}
+
 /** Press the button whose text contains this, and let what it started finish. */
 async function press(page: VueWrapper, within: string) {
   const found = page.findAll('button').find(one => one.text().includes(within))
@@ -80,13 +98,20 @@ async function press(page: VueWrapper, within: string) {
   return found
 }
 
-/** Open the row for one finding, by its key. */
-async function openFinding(page: VueWrapper, key: string) {
+/**
+ * Put one finding on the bench, by its key, and hand back the pane it is drawn in.
+ *
+ * **The pane, not the row.** Since step 1.2 the two are in different halves of the screen:
+ * a row is one line in the list and the finding is drawn beside it. Nearly every caller
+ * wants what the finding says, which is the pane; the handful that want the row's own line
+ * find it themselves.
+ */
+async function showFinding(page: VueWrapper, key: string) {
   const row = page.findAll('.row').find(one => one.find('.key').text() === key)
   if (!row) throw new Error(`no row for ${key}`)
-  await row.find('button.row').trigger('click')
+  await row.trigger('click')
   await settle(page)
-  return row
+  return page.find('.detail')
 }
 
 function fixture(id: number): ReviewDetail {
@@ -264,13 +289,13 @@ describe('the code review page', () => {
     await withReview(detail)
 
     const page = await codeReview(REAL)
-    const said = (await openFinding(page, 'F1')).text()
+    const said = (await showFinding(page, 'F1')).text()
     expect(said).toContain('Measured at a1b2c3d')
     expect(said, 'and where the pull request is now, so the reader has both')
       .toContain(detail.review.head_sha.slice(0, 7))
 
     /* And F3, measured on this head like every other finding of this review, says none. */
-    expect((await openFinding(page, 'F3')).text()).not.toContain('Measured at')
+    expect((await showFinding(page, 'F3')).text()).not.toContain('Measured at')
   })
 
   /*
@@ -285,7 +310,7 @@ describe('the code review page', () => {
     await withReview(detail)
 
     const page = await codeReview(REAL)
-    const row = await openFinding(page, 'F1')
+    const row = await showFinding(page, 'F1')
     expect(row.text()).toContain('was not recorded')
     expect(row.text()).not.toContain('not measured')
   })
@@ -348,12 +373,18 @@ describe('a review with no findings', () => {
 
 /* ================================= Containment ================================== */
 
-describe('a closed row is one line', () => {
+describe('a row in the list is one line', () => {
   beforeEach(async () => {
     await resetDesk()
   })
 
-  it('shows the finding’s title, number, place, method and part — and nothing else', async () => {
+  /*
+   * **Three cells, where the board had five.** Step 1.2 puts the list in a 320px pane, and
+   * how a finding was checked and which part it is in went with the width — to the line
+   * under the finding's name in the pane beside it, which the test below holds. Nothing
+   * left the screen; it left the row.
+   */
+  it('shows the finding’s grade, number, title and place — and nothing else', async () => {
     const page = await codeReview(REAL)
     const row = page.findAll('.row').find(one => one.find('.key').text() === 'F9')!
 
@@ -361,14 +392,22 @@ describe('a closed row is one line', () => {
     expect(row.text()).toContain('F9')
     expect(row.text()).toContain('The column policy is skipped entirely')
     expect(row.text()).toContain('app/Reporting/ColumnPolicy.php:52')
-    expect(row.text()).toContain('Reproduced')
-    expect(row.text()).toContain('Allowed columns on the report definition')
 
-    /* And none of what the open row shows. */
+    /* And none of what the pane beside it shows. */
+    expect(row.text()).not.toContain('Reproduced')
+    expect(row.text()).not.toContain('Allowed columns on the report definition')
     expect(row.text()).not.toContain('Why it matters')
-    expect(row.text()).not.toContain('Suggested fix')
+    expect(row.text()).not.toContain('What I’d do')
     expect(row.text()).not.toContain('The full reasoning')
     expect(row.text()).not.toContain('Your call')
+  })
+
+  it('reads the method and the part on the finding instead', async () => {
+    const page = await codeReview(REAL)
+    const about = (await showFinding(page, 'F9')).find('.about')
+
+    expect(about.text()).toContain('Reproduced')
+    expect(about.text()).toContain('Allowed columns on the report definition')
   })
 
   /*
@@ -396,30 +435,237 @@ describe('a closed row is one line', () => {
     expect(titled.find('.title').classes()).not.toContain('title--clamped')
   })
 
-  it('opens one finding at a time', async () => {
+  it('draws one finding at a time, and the list says which', async () => {
     const page = await codeReview(REAL)
-    await openFinding(page, 'F9')
+    await showFinding(page, 'F9')
     expect(page.findAll('.detail')).toHaveLength(1)
+    expect(page.findAll('.row--picked')).toHaveLength(1)
 
-    await openFinding(page, 'F1')
+    await showFinding(page, 'F1')
     expect(page.findAll('.detail')).toHaveLength(1)
     expect(page.find('.detail').text()).toContain('An empty allowed-columns list')
+    expect(page.find('.row--picked').find('.key').text()).toBe('F1')
+    expect(page.find('.row--picked').attributes('aria-current')).toBe('true')
   })
 
-  it('closes the one that is open when it is pressed again', async () => {
+  /*
+   * **A row chooses; it does not toggle.** The row used to open and close, which on a
+   * bench would leave the right half empty while the reader looked at the thing they had
+   * just chosen to read.
+   */
+  it('leaves a finding on the bench when its own row is pressed again', async () => {
     const page = await codeReview(REAL)
-    await openFinding(page, 'F9')
-    await openFinding(page, 'F9')
-    expect(page.findAll('.detail')).toHaveLength(0)
-  })
+    await showFinding(page, 'F9')
+    await showFinding(page, 'F9')
 
-  it('closes whatever is open when the list or the part changes', async () => {
-    const page = await codeReview(REAL)
-    await openFinding(page, 'F9')
     expect(page.findAll('.detail')).toHaveLength(1)
+    expect(page.find('.row--picked').find('.key').text()).toBe('F9')
+  })
+
+  it('shows the first of the list when the list or the part changes', async () => {
+    const page = await codeReview(REAL)
+    await showFinding(page, 'F9')
 
     await press(page, 'Set aside')
-    expect(page.findAll('.detail')).toHaveLength(0)
+    expect(page.findAll('.detail')).toHaveLength(1)
+    expect(page.find('.row--picked').element)
+      .toBe(page.findAll('.row')[0]!.element)
+  })
+})
+
+/* ================================ The bench ==================================== */
+
+/**
+ * Step 1.2 of the design loop: the list on the left, the finding on the right, J and K to
+ * move, and a key on every decision.
+ *
+ * Patrick, 15 October 2026, on why he accepts and posts every finding: "there's too much
+ * going on". What follows from that is cost, not layout — the decisions he does not take
+ * are the ones that cost more than the one he does — so what is asserted here is that a
+ * finding is always on the bench, that moving between them is a keystroke, and that no
+ * decision is left without one.
+ */
+describe('the bench', () => {
+  beforeEach(async () => {
+    await resetDesk()
+  })
+
+  /** Press a key at the page, as a developer with their hands on the keyboard does. */
+  async function key(page: VueWrapper, pressed: string) {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: pressed }))
+    await settle(page)
+  }
+
+  const picked = (page: VueWrapper) => page.find('.row--picked').find('.key').text()
+
+  it('opens with the first finding on the bench, before anything is pressed', async () => {
+    const page = await codeReview(REAL)
+
+    expect(page.findAll('.detail')).toHaveLength(1)
+    expect(picked(page), 'the most serious, which is what the list is ordered by').toBe('F9')
+  })
+
+  it('moves down with J and back up with K', async () => {
+    const page = await codeReview(REAL)
+    const keys = page.findAll('.row .key').map(one => one.text())
+
+    await key(page, 'j')
+    expect(picked(page)).toBe(keys[1])
+    await key(page, 'j')
+    expect(picked(page)).toBe(keys[2])
+    await key(page, 'k')
+    expect(picked(page)).toBe(keys[1])
+  })
+
+  /*
+   * **It stops rather than wrapping.** A list that wraps takes a reader from the last
+   * finding to the first on a keystroke meant to do nothing, and the one they were
+   * deciding on is then somewhere above with nothing to say it moved.
+   */
+  it('stops at the top and at the end', async () => {
+    const page = await codeReview(REAL)
+    const keys = page.findAll('.row .key').map(one => one.text())
+
+    await key(page, 'k')
+    expect(picked(page), 'already at the top').toBe(keys[0])
+
+    for (let at = 0; at < keys.length + 3; at += 1) await key(page, 'j')
+    expect(picked(page)).toBe(keys[keys.length - 1])
+  })
+
+  it('does not move while the developer is typing', async () => {
+    const page = await codeReview(REAL)
+    await decide(page, 'Edit wording')
+
+    const field = page.find('#rewrite-title')
+    expect(field.exists()).toBe(true)
+    field.element.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true }))
+    await settle(page)
+
+    expect(picked(page), 'J is a letter in most sentences').toBe('F9')
+  })
+
+  /* DEV-876: a key drawn on a control has to work. These two are drawn in the controls. */
+  it('says which keys move', async () => {
+    const page = await codeReview(REAL)
+    expect(page.find('.moves').text()).toContain('J')
+    expect(page.find('.moves').text()).toContain('K')
+    expect(page.find('.moves').text()).toContain('move')
+  })
+
+  /*
+   * **Every decision has one.** The four that read as the default were the four with keys;
+   * moving a finding to a ticket or answering an author took a reach for the pointer, and
+   * a decision that costs more than its neighbour is skipped rather than weighed.
+   */
+  it('gives every decision on an open finding a key', async () => {
+    const page = await codeReview(REAL)
+    await showFinding(page, 'F9')
+
+    const offered = page.findAll('.call .item')
+    expect(offered.length).toBe(5)
+    for (const one of offered) {
+      expect(one.find('.key').exists(), `${one.text()} has no key`).toBe(true)
+    }
+  })
+
+  it('gives every reply on a carried finding a key', async () => {
+    const detail = fixture(REAL)
+    /*
+     * **Carried, which is `continues_review_id` and not the round status.** A finding this
+     * round ticketed or set aside is settled too, and it is offered the four decisions —
+     * the author has not seen it, so there is nothing of theirs to answer. The replies are
+     * for a finding an earlier round raised and this one found fixed.
+     */
+    detail.findings = detail.findings.map(finding =>
+      finding.seq === 9
+        ? {
+            ...finding,
+            continues_review_id: 40,
+            continues_round: 1,
+            round_status: 'fixed' as const,
+          }
+        : finding)
+    await withReview(detail)
+
+    const page = await codeReview(REAL)
+    await showFinding(page, 'F9')
+
+    const offered = page.findAll('.call .item')
+    expect(offered.map(one => one.text().replace(/[A-Z]$/, '')))
+      .toEqual(['Raise it again', 'Accept their reason', 'Withdraw', 'Ticket'])
+    for (const one of offered) {
+      expect(one.find('.key').exists(), `${one.text()} has no key`).toBe(true)
+    }
+  })
+
+  /*
+   * **The call leads the pane.** It was the last thing on an opened row, under the proof
+   * and the folded reasoning — so the decision this screen exists for was the one thing on
+   * it that had to be scrolled to.
+   */
+  it('puts the call above the fields it is taken on', async () => {
+    const page = await codeReview(REAL)
+    const detail = await showFinding(page, 'F9')
+
+    const order = [...detail.element.children].map(child => child.className)
+    expect(order.findIndex(name => name.includes('call')))
+      .toBeLessThan(order.findIndex(name => name.includes('columns')))
+  })
+
+  /*
+   * **One button over two decisions, which is what P had to become.**
+   *
+   * The store refuses `keep` outright on a finding whose round status is not open, and
+   * `to_ticket` writes `Ticketed` — so the way back from a ticket is `raise_again`. Before
+   * 16 October that was a separate button with a separate key, and the developer had to
+   * know which of two words meant *post it* depending on what they had pressed a moment
+   * earlier. Now P means post it, and what it sends is the record's business.
+   */
+  it('posts a ticketed finding back with the same key that ticketed it', async () => {
+    const page = await codeReview(REAL)
+    await showFinding(page, 'F9')
+    await decide(page, 'Ticket')
+    expect(page.find('.notice').text()).toContain('has left the review for the ticket')
+
+    await press(page, 'For a ticket')
+    await showFinding(page, 'F9')
+
+    /* The four decisions, not the author's three replies: the author has not seen this. */
+    const offered = page.findAll('.call .item').map(one => one.text().replace(/[A-Z]$/, ''))
+    expect(offered).toContain('Post')
+    expect(offered).not.toContain('Raise it again')
+
+    await decide(page, 'Post')
+    expect(page.find('.notice').text()).toContain('is in the review again')
+
+    await press(page, 'To post')
+    expect(page.findAll('.row .key').map(one => one.text())).toContain('F9')
+  })
+
+  /* And on a finding the round still holds, the same button sends the other decision. */
+  it('keeps a finding the round still holds, under the same label', async () => {
+    const page = await codeReview(REAL)
+    await showFinding(page, 'F1')
+    await decide(page, 'Post')
+
+    expect(page.find('.notice').text()).toContain('stays in the review')
+  })
+
+  /* Direction B's three labelled fields, in his own words. */
+  it('labels the three fields What, Why it matters and What I’d do', async () => {
+    const page = await codeReview(REAL)
+    /*
+     * **`.fields`, and `FindingCall` is why.** That component calls the session's own
+     * sentence `.said`, and the call now leads the pane — so a column named `.said` here
+     * was two things with one name, and the first one found was the wrong one. The page's
+     * column was renamed rather than the component's sentence: the collision is the page's
+     * own doing, by moving the call above it.
+     */
+    const said = (await showFinding(page, 'F9')).find('.fields')
+
+    expect(said.findAll('.rd-rubric').map(one => one.text()).slice(0, 3))
+      .toEqual(['What', 'Why it matters', 'What I’d do'])
   })
 })
 
@@ -435,7 +681,7 @@ describe('the reasoning', () => {
    */
   it('is folded, behind its own word count', async () => {
     const page = await codeReview(REAL)
-    await openFinding(page, 'F9')
+    await showFinding(page, 'F9')
 
     const fold = page.findAll('button').find(one => one.text().includes('The full reasoning'))!
     expect(fold.text()).toMatch(/The full reasoning · \d+ words/)
@@ -445,7 +691,7 @@ describe('the reasoning', () => {
 
   it('opens as the labelled blocks the record’s own paragraphs name', async () => {
     const page = await codeReview(REAL)
-    await openFinding(page, 'F9')
+    await showFinding(page, 'F9')
     await press(page, 'The full reasoning')
 
     const labels = page.findAll('.block-label').map(one => one.text())
@@ -462,7 +708,7 @@ describe('the reasoning', () => {
    */
   it('counts the words of the text it actually shows', async () => {
     const page = await codeReview(REAL)
-    await openFinding(page, 'F9')
+    await showFinding(page, 'F9')
 
     const fold = page.findAll('button').find(one => one.text().includes('The full reasoning'))!
     const said = Number(/· (\d+) words/.exec(fold.text())![1])
@@ -487,7 +733,7 @@ describe('the reasoning', () => {
     await withReview(detail)
 
     const page = await codeReview(REAL)
-    await openFinding(page, 'F9')
+    await showFinding(page, 'F9')
     expect(page.text()).not.toContain('The full reasoning')
   })
 })
@@ -501,7 +747,7 @@ describe('the code, with the comment on the line', () => {
 
   it('draws the hunk and puts the comment under the flagged line', async () => {
     const page = await codeReview(REAL)
-    await openFinding(page, 'F9')
+    await showFinding(page, 'F9')
 
     const lines = page.findAll('.line')
     expect(lines.length).toBeGreaterThan(5)
@@ -524,7 +770,7 @@ describe('the code, with the comment on the line', () => {
    */
   it('marks the flagged line by more than colour', async () => {
     const page = await codeReview(REAL)
-    await openFinding(page, 'F9')
+    await showFinding(page, 'F9')
 
     const flagged = page.find('.line--flagged')
     expect(flagged.attributes('aria-current')).toBe('true')
@@ -533,7 +779,7 @@ describe('the code, with the comment on the line', () => {
 
   it('numbers an added or unchanged line and gives a removed one none', async () => {
     const page = await codeReview(REAL)
-    await openFinding(page, 'F3')
+    await showFinding(page, 'F3')
 
     const removed = page.findAll('.line').filter(one => one.classes().includes('line--removed'))
     expect(removed.length).toBeGreaterThan(0)
@@ -549,7 +795,7 @@ describe('the code, with the comment on the line', () => {
    */
   it('says in words when the pull request changed none of the lines', async () => {
     const page = await codeReview(REAL)
-    await openFinding(page, 'F12')
+    await showFinding(page, 'F12')
 
     expect(page.find('.code').exists()).toBe(true)
     expect(page.find('.unchanged').text()).toContain(
@@ -559,7 +805,7 @@ describe('the code, with the comment on the line', () => {
 
   it('does not say it of a hunk that draws a change', async () => {
     const page = await codeReview(REAL)
-    await openFinding(page, 'F9')
+    await showFinding(page, 'F9')
     expect(page.find('.unchanged').exists()).toBe(false)
   })
 
@@ -571,7 +817,7 @@ describe('the code, with the comment on the line', () => {
    */
   it('says a finding is about the pull request when it names no file', async () => {
     const page = await codeReview(REAL)
-    await openFinding(page, 'F14')
+    await showFinding(page, 'F14')
 
     expect(page.find('.no-code').text()).toContain('names no file')
     expect(page.find('.no-code').text()).toContain('“description” lens')
@@ -593,7 +839,7 @@ describe('the code, with the comment on the line', () => {
 
   it('says the session recorded no code when it recorded none', async () => {
     const page = await codeReview(REAL)
-    await openFinding(page, 'F4')
+    await showFinding(page, 'F4')
 
     expect(page.find('.no-code').text()).toContain('The session recorded no code')
     expect(page.find('.no-code').text()).toContain('app/Reporting/ScheduleToContext.php')
@@ -606,7 +852,7 @@ describe('the code, with the comment on the line', () => {
     await withReview(detail)
 
     const page = await codeReview(REAL)
-    await openFinding(page, 'F12')
+    await showFinding(page, 'F12')
     expect(page.find('.no-code').text()).toContain('is not part of this change')
   })
 
@@ -622,14 +868,14 @@ describe('the code, with the comment on the line', () => {
     await withReview(detail)
 
     const page = await codeReview(REAL)
-    await openFinding(page, 'F9')
+    await showFinding(page, 'F9')
     expect(page.find('.adrift').text()).toContain('which this hunk draws no line for')
     expect(page.find('.adrift').text()).toContain('This early return makes an empty')
   })
 
   it('shows the proof and its caption, told apart', async () => {
     const page = await codeReview(REAL)
-    await openFinding(page, 'F9')
+    await showFinding(page, 'F9')
 
     expect(page.find('.proof').text()).toContain('php artisan export:run 41')
     expect(page.find('.proof-note').text()).toContain('One local run against a seeded')
@@ -686,7 +932,7 @@ describe('the parts strip', () => {
     await press(page, 'Allowed columns on the report definition')
 
     expect(page.text()).toContain('Only: Allowed columns on the report definition.')
-    const keys = page.findAll('.key').map(one => one.text())
+    const keys = page.findAll('.row .key').map(one => one.text())
     expect(keys).toEqual(['F9', 'F6'])
   })
 
@@ -756,7 +1002,7 @@ describe('the three lists', () => {
   it('shows why the session set a finding aside, on the list it is in', async () => {
     const page = await codeReview(REAL)
     await press(page, 'Set aside')
-    await openFinding(page, 'F8')
+    await showFinding(page, 'F8')
     expect(page.text()).toContain('Why the session set it aside')
     expect(page.text()).toContain('being moved to configuration in ABC-388')
   })
@@ -769,27 +1015,47 @@ describe('the developer’s decisions', () => {
     await resetDesk()
   })
 
-  it('offers keep, cut, regrade, rewrite and to a ticket on an open finding', async () => {
+  /*
+   * **The buttons are the three lists, and each key is its own first letter.** Patrick, 16
+   * October 2026: he has no muscle memory for Y and X, and a key nobody can derive from
+   * what they are reading is a key nobody presses.
+   */
+  it('offers post, set aside, regrade, edit wording and ticket on an open finding', async () => {
     const page = await codeReview(REAL)
-    await openFinding(page, 'F9')
-    expect(page.findAll('.call .item').map(one => one.text().replace(/[YXGE]$/, '')))
-      .toEqual(['Keep', 'Cut', 'Regrade', 'Rewrite', 'To a ticket'])
+    await showFinding(page, 'F9')
+    const offered = page.findAll('.call .item')
+
+    expect(offered.map(one => one.text().replace(/[A-Z]$/, '')))
+      .toEqual(['Post', 'Set aside', 'Regrade', 'Edit wording', 'Ticket'])
+    expect(offered.map(one => one.find('.key').text()))
+      .toEqual(['P', 'S', 'G', 'E', 'T'])
+    /*
+     * **Regrade is the one exception, and it is stated rather than smuggled.** R is the
+     * reply key on a carried finding — "Raise it again" — and a letter cannot mean two
+     * decisions on one page. G it stays.
+     */
+    for (const one of offered) {
+      const label = one.text().replace(/[A-Z]$/, '')
+      if (label === 'Regrade') continue
+      expect(one.find('.key').text(), `${label}'s key is not its first letter`)
+        .toBe(label[0])
+    }
   })
 
   it('keeps the session’s own choice visible beside the developer’s', async () => {
     const page = await codeReview(REAL)
-    await openFinding(page, 'F9')
+    await showFinding(page, 'F9')
     expect(page.find('.call .said').text()).toBe('The session put this in the review.')
 
     await press(page, 'Set aside')
-    await openFinding(page, 'F8')
+    await showFinding(page, 'F8')
     expect(page.find('.call .said').text()).toBe('The session set this aside.')
   })
 
   it('cuts a finding and redraws from the record', async () => {
     const page = await codeReview(REAL)
-    await openFinding(page, 'F10')
-    await press(page, 'Cut')
+    await showFinding(page, 'F10')
+    await decide(page, 'Set aside')
 
     expect(page.find('.notice').text()).toContain('will not be posted')
     /* The row has left the list it was in, because the record says so. */
@@ -800,8 +1066,8 @@ describe('the developer’s decisions', () => {
 
   it('asks which severity before regrading, and will not regrade to the same one', async () => {
     const page = await codeReview(REAL)
-    await openFinding(page, 'F9')
-    await press(page, 'Regrade')
+    await showFinding(page, 'F9')
+    await decide(page, 'Regrade')
 
     expect(page.find('.asking').text()).toContain('Regrade to')
     expect(page.findAll('.severity').map(one => one.text()))
@@ -821,8 +1087,8 @@ describe('the developer’s decisions', () => {
 
   it('opens a rewrite on the words that are there and keeps the session’s beside them', async () => {
     const page = await codeReview(REAL)
-    await openFinding(page, 'F6')
-    await press(page, 'Rewrite')
+    await showFinding(page, 'F6')
+    await decide(page, 'Edit wording')
 
     const title = page.find('#rewrite-title')
     expect((title.element as HTMLInputElement).value)
@@ -848,8 +1114,8 @@ describe('the developer’s decisions', () => {
    */
   it('posts a heading alone when the developer clears the paragraph', async () => {
     const page = await codeReview(REAL)
-    await openFinding(page, 'F6')
-    await press(page, 'Rewrite')
+    await showFinding(page, 'F6')
+    await decide(page, 'Edit wording')
 
     const text = page.find('#rewrite-text')
     const said = (text.element as HTMLTextAreaElement).value
@@ -871,8 +1137,8 @@ describe('the developer’s decisions', () => {
 
   it('will not rewrite with a blank heading', async () => {
     const page = await codeReview(REAL)
-    await openFinding(page, 'F6')
-    await press(page, 'Rewrite')
+    await showFinding(page, 'F6')
+    await decide(page, 'Edit wording')
     await page.find('#rewrite-title').setValue('   ')
     await press(page, 'Post it in my words')
     expect(page.find('.call .notice').text()).toContain('The heading cannot be blank')
@@ -880,8 +1146,8 @@ describe('the developer’s decisions', () => {
 
   it('moves a finding to a ticket, and the record says the developer did', async () => {
     const page = await codeReview(REAL)
-    await openFinding(page, 'F3')
-    await press(page, 'To a ticket')
+    await showFinding(page, 'F3')
+    await decide(page, 'Ticket')
 
     expect(page.find('.notice').text()).toContain('has left the review for the ticket')
     await press(page, 'For a ticket')
@@ -916,9 +1182,9 @@ describe('the developer’s decisions', () => {
     const page = await codeReview(REAL)
 
     /* Carried and still open: the four decisions, as for any open finding. */
-    await openFinding(page, 'F9')
-    expect(page.findAll('.call .item').map(one => one.text().replace(/[YXGE]$/, '')))
-      .toContain('Keep')
+    await showFinding(page, 'F9')
+    expect(page.findAll('.call .item').map(one => one.text().replace(/[A-Z]$/, '')))
+      .toContain('Post')
     expect(page.find('.detail').text()).toContain('Raised in round 1 and carried into this one')
     expect(page.find('.detail').text()).toContain('Open for 2 rounds')
     expect(page.find('.detail').text()).toContain('their new test fails with the fix reverted')
@@ -960,14 +1226,14 @@ describe('the developer’s decisions', () => {
     await withReview(detail)
 
     const page = await codeReview(REAL)
-    await openFinding(page, 'F9')
-    const offered = page.findAll('.call .item').map(one => one.text())
+    await showFinding(page, 'F9')
+    const offered = page.findAll('.call .item').map(one => one.text().replace(/[A-Z]$/, ''))
     expect(offered).toContain('Raise it again')
     expect(offered).toContain('Accept their reason')
     expect(offered).toContain('Withdraw')
     expect(offered, 'the store refuses Keep on a settled finding').not.toContain('Keep')
 
-    await press(page, 'Accept their reason')
+    await decide(page, 'Accept their reason')
     await press(page, 'Accept it')
     expect(page.find('.call .notice').text()).toContain('Say what the author’s reason was')
   })
@@ -978,44 +1244,45 @@ describe('the developer’s decisions', () => {
    */
   it('says once when the draft is one block of markdown', async () => {
     const page = await codeReview(ONE_BLOCK)
-    await openFinding(page, 'F1')
+    await showFinding(page, 'F1')
 
     const said = page.findAll('.notice').filter(one =>
       one.text().includes('one block of markdown'))
     expect(said, 'said once, not once per button').toHaveLength(1)
     /*
-     * **"Post it", not "Keep".** The contract's table is `Keep · Post it`: one decision,
-     * two labels, because the act reads differently depending on where the finding stands.
-     * A draft holding no block for it means pressing this *writes* it one and posts it,
-     * which is what "Keep" says the opposite of.
+     * **Two buttons, because the other three need a block to change.** The label is "Post"
+     * either way now: the contract's `Keep · Post it` pair existed because "Keep" beside
+     * "The session held this back for a ticket" reads as *leave it held back*, and a button
+     * named for the list it moves the finding to cannot be read that way.
      */
-    expect(page.findAll('.call .item').map(one => one.text().replace(/[YXGE]$/, '')))
-      .toEqual(['Post it', 'To a ticket'])
+    expect(page.findAll('.call .item').map(one => one.text().replace(/[A-Z]$/, '')))
+      .toEqual(['Post', 'Ticket'])
   })
 
   /*
-   * The same rule on a held-back nit, which is where the contract's wording comes from: the
-   * panel says "The session held this back for a ticket" and a button beside it reading
-   * "Keep" is read as *leave it held back*, while pressing it posts the finding.
+   * **One word for the act, wherever the finding stands.** This was `Keep · Post it` — one
+   * decision under two labels, so that "Keep" on a held-back nit did not read as *leave it
+   * held back*. The button is named for the list it moves the finding to now, so there is
+   * one label; what varies underneath it is the decision, which the test below holds.
    */
-  it('says "Post it" on a finding the draft holds no block for, and "Keep" when it does', async () => {
+  it('says Post on a held-back finding and on one the draft holds', async () => {
     const page = await codeReview(REAL)
     await press(page, 'For a ticket')
-    await openFinding(page, 'F2')
+    await showFinding(page, 'F2')
 
-    const held = page.findAll('.call .item').map(one => one.text().replace(/[YXGE]$/, ''))
-    expect(held).toContain('Post it')
+    const held = page.findAll('.call .item').map(one => one.text().replace(/[A-Z]$/, ''))
+    expect(held).toContain('Post')
     expect(held).not.toContain('Keep')
 
     await press(page, 'To post')
-    await openFinding(page, 'F9')
-    expect(page.findAll('.call .item').map(one => one.text().replace(/[YXGE]$/, '')))
-      .toContain('Keep')
+    await showFinding(page, 'F9')
+    expect(page.findAll('.call .item').map(one => one.text().replace(/[A-Z]$/, '')))
+      .toContain('Post')
   })
 
   it('disables the controls and says why once the draft is posted', async () => {
     const page = await codeReview(POSTED)
-    await openFinding(page, 'F1')
+    await showFinding(page, 'F1')
 
     expect(page.find('.call .notice').text()).toContain('This review is posted')
     expect(page.findAll('.call .item')).toHaveLength(0)
@@ -1027,7 +1294,7 @@ describe('the developer’s decisions', () => {
     await press(draft, 'Sign off and post')
 
     const again = await codeReview(REAL)
-    await openFinding(again, 'F9')
+    await showFinding(again, 'F9')
     expect(again.find('.call .notice').text()).toContain('You have signed this draft off')
     expect(page.exists()).toBe(true)
   })
@@ -1036,7 +1303,7 @@ describe('the developer’s decisions', () => {
     const page = await codeReview(ONE_BLOCK)
     await resetDesk({ drafts: [] })
     const fresh = await codeReview(ONE_BLOCK)
-    await openFinding(fresh, 'F1')
+    await showFinding(fresh, 'F1')
     expect(fresh.find('.call .notice').text()).toContain('There is no draft yet')
     expect(page.exists()).toBe(true)
   })
@@ -1058,7 +1325,7 @@ describe('what the author said', () => {
   it('shows a harvested reply on the finding it is about', async () => {
     const page = await codeReview(POSTED)
     const replied = fixture(POSTED).outcomes.find(one => one.kind === 'replied')!
-    await openFinding(page, replied.finding_key)
+    await showFinding(page, replied.finding_key)
 
     /*
      * **The author's words, and not the record they were stored in.** The harvester writes
@@ -1093,7 +1360,7 @@ describe('what the author said', () => {
     const page = await codeReview(POSTED)
     const rejected = fixture(POSTED).outcomes.find(one => one.kind === 'rejected')!
     expect(rejected.actor).toBe('author')
-    await openFinding(page, rejected.finding_key)
+    await showFinding(page, rejected.finding_key)
     const said = page.findAll('.reply').map(one => one.text())
     expect(said.some(one => one.includes('by the author'))).toBe(true)
   })
@@ -1123,7 +1390,7 @@ describe('what the author said', () => {
   it('does not run the commit id into the time after it', async () => {
     const page = await codeReview(POSTED)
     const changed = fixture(POSTED).outcomes.find(one => one.kind === 'code_changed_after')!
-    await openFinding(page, changed.finding_key)
+    await showFinding(page, changed.finding_key)
     const said = page.findAll('.reply').map(one => one.text()).find(one => one.includes('changed in'))!
     expect(said).toMatch(/changed in [0-9a-f]{7}\.\s/)
     expect(said).not.toMatch(/[0-9a-f]{7}\.\d/)
@@ -1133,7 +1400,7 @@ describe('what the author said', () => {
     const page = await codeReview(POSTED)
     const changed = fixture(POSTED).outcomes.find(one => one.kind === 'code_changed_after')!
     expect(changed.actor).toBe('harvester')
-    await openFinding(page, changed.finding_key)
+    await showFinding(page, changed.finding_key)
     const said = page.findAll('.reply').map(one => one.text())
     const row = said.find(one => one.includes('changed in'))
     expect(row, 'the code change is drawn').toBeDefined()
@@ -1143,17 +1410,17 @@ describe('what the author said', () => {
   it('does not name the actor twice where the sentence already does', async () => {
     const page = await codeReview(POSTED)
     const replied = fixture(POSTED).outcomes.find(one => one.kind === 'replied')!
-    await openFinding(page, replied.finding_key)
+    await showFinding(page, replied.finding_key)
     expect(page.find('.reply').text()).toContain('A reply from dana-okoye')
     expect(page.find('.reply').text()).not.toContain('by the author')
   })
 
   it('does not replay the developer’s own decisions at them', async () => {
     const page = await codeReview(REAL)
-    await openFinding(page, 'F10')
-    await press(page, 'Cut')
+    await showFinding(page, 'F10')
+    await decide(page, 'Set aside')
     await press(page, 'Set aside')
-    await openFinding(page, 'F10')
+    await showFinding(page, 'F10')
     expect(page.find('.reply').exists()).toBe(false)
   })
 })
@@ -1190,7 +1457,7 @@ describe('every field is interpolated', () => {
     await withReview(detail)
 
     const page = await codeReview(REAL)
-    await openFinding(page, 'F9')
+    await showFinding(page, 'F9')
     await press(page, 'The full reasoning')
 
     expect(page.element.querySelector('img'), 'no element came out of the record').toBeNull()
@@ -1215,12 +1482,12 @@ describe('arriving at a finding named in the hash', () => {
   const at = (id: number, hash: string) =>
     shown(CodeReview, `/reviews/${id}/code-review${hash}`)
 
-  it('opens the finding the hash names', async () => {
+  it('puts the finding the hash names on the bench', async () => {
     const page = await at(REAL, '#F9')
-    expect(page.find('#finding-9').exists(), 'F9 is open').toBe(true)
-    /* Open, not merely present: one row at a time, and it is this one. */
-    expect(page.findAll('li.row--open')).toHaveLength(1)
-    expect(page.find('li.row--open').find('.key').text()).toBe('F9')
+    expect(page.find('#finding-9').exists(), 'F9 is on the bench').toBe(true)
+    /* On the bench, not merely listed: one at a time, and it is this one. */
+    expect(page.findAll('.row--picked')).toHaveLength(1)
+    expect(page.find('.row--picked').find('.key').text()).toBe('F9')
   })
 
   /**
@@ -1230,8 +1497,8 @@ describe('arriving at a finding named in the hash', () => {
    */
   it('chooses the list the finding is in, when it is not the one the page opens on', async () => {
     const page = await at(REAL, '#F2')
-    expect(page.find('#finding-2').exists(), 'F2 is open in the list it belongs to').toBe(true)
-    expect(page.find('li.row--open').find('.key').text()).toBe('F2')
+    expect(page.find('#finding-2').exists(), 'F2 is shown in the list it belongs to').toBe(true)
+    expect(page.find('.row--picked').find('.key').text()).toBe('F2')
   })
 
   it('reaches a finding that was set aside', async () => {
@@ -1239,9 +1506,14 @@ describe('arriving at a finding named in the hash', () => {
     expect(page.find('#finding-8').exists()).toBe(true)
   })
 
-  it('opens nothing when there is no hash, as before', async () => {
+  /*
+   * **The first of the list, where the page used to open on nothing.** A bench with an
+   * empty half is a list with a hole beside it; the hash decides *which* finding is on it,
+   * not whether one is.
+   */
+  it('shows the first of the list when there is no hash', async () => {
     const page = await codeReview(REAL)
-    expect(page.findAll('li.row--open')).toHaveLength(0)
+    expect(page.find('.row--picked').find('.key').text()).toBe('F9')
   })
 
   /**
@@ -1252,37 +1524,38 @@ describe('arriving at a finding named in the hash', () => {
    */
   it('draws the page as usual for a hash naming no finding of this review', async () => {
     const page = await at(REAL, '#F999')
-    expect(page.findAll('li.row--open')).toHaveLength(0)
-    expect(page.findAll('li.row').length, 'and the page is drawn').toBeGreaterThan(0)
+    expect(page.find('.row--picked').find('.key').text(), 'the first, as with no hash')
+      .toBe('F9')
+    expect(page.findAll('li.line').length, 'and the page is drawn').toBeGreaterThan(0)
   })
 
   it('ignores a hash that does not name a finding at all', async () => {
     const page = await at(REAL, '#parts-strip')
-    expect(page.findAll('li.row--open')).toHaveLength(0)
+    expect(page.find('.row--picked').find('.key').text()).toBe('F9')
   })
 
   /**
-   * **The reader's own clicks own what is open once they are here.** The arrival is an
-   * arrival, not a mode: a row folded after following a link stays folded, and a later
-   * re-read of the review must not drag the page back to the finding in the hash.
+   * **The reader's own choices own the bench once they are here.** The arrival is an
+   * arrival, not a mode: another finding chosen after following a link stays chosen, and a
+   * later re-read of the review must not drag the page back to the one in the hash.
    */
-  it('lets the row be folded again, and does not reopen it', async () => {
+  it('lets another finding be chosen, and does not drag the page back', async () => {
     const page = await at(REAL, '#F9')
     expect(page.find('#finding-9').exists()).toBe(true)
 
-    await openFinding(page, 'F9')
-    expect(page.find('#finding-9').exists(), 'folded by its own control').toBe(false)
+    await showFinding(page, 'F1')
+    expect(page.find('#finding-1').exists(), 'chosen by hand').toBe(true)
 
     /* Another read of the same review — the arrival does not happen twice. */
     await withReview(fixture(REAL))
     await settle(page)
-    expect(page.find('#finding-9').exists()).toBe(false)
+    expect(page.find('#finding-1').exists()).toBe(true)
   })
 
   /** Each row carries its key as the anchor, which is what the hash lands on. */
   it('gives every row the anchor a link names it by', async () => {
     const page = await codeReview(REAL)
-    const rows = page.findAll('li.row')
+    const rows = page.findAll('li.line')
     expect(rows.length).toBeGreaterThan(0)
     for (const row of rows) {
       expect(row.attributes('id')).toBe(row.find('.key').text())

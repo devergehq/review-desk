@@ -26,13 +26,10 @@
  * it decides is what the page is about, and reaching for the pointer to press `Y` is the
  * waste the key exists to remove.
  *
- * Four guards, and each is a real way this goes wrong:
- *
- * 1. **The event's target is a field.** An `input`, `textarea`, `select` or anything
- *    `contenteditable`: `G` is a letter in "regrade" and in a reason somebody is typing.
- * 2. **A modifier is held.** `Cmd-E` is the browser's, not ours.
- * 3. **The key is composing.** An IME candidate window is open and these are not keys yet.
- * 4. **The track is disabled.** A write is in flight; the pointer cannot press it either.
+ * Four guards, and each is a real way this goes wrong. Three of them are
+ * `utils/keys.ts`'s, shared with the code review page's J and K: the target is a field, a
+ * modifier is held, or an IME is composing. The fourth is this control's own — **the track
+ * is disabled**, a write is in flight, and the pointer cannot press it either.
  *
  * The listener is added on mount and removed on unmount, so a component that has gone does
  * not keep deciding things.
@@ -87,17 +84,16 @@ function choose(value: string) {
   picked.value = value
 }
 
-/** Whether a keystroke was meant for this control, or for something being typed into. */
+/**
+ * Whether a keystroke was meant for this control, or for something being typed into.
+ *
+ * **The three guards are `keyIsForThePage`'s**, which the code review page's own J and K
+ * read too. The fourth is this control's alone: a disabled track has a write in flight, and
+ * the pointer cannot press it either.
+ */
 function isForUs(event: KeyboardEvent): boolean {
   if (props.disabled) return false
-  if (event.metaKey || event.ctrlKey || event.altKey) return false
-  if (event.isComposing) return false
-
-  const target = event.target as HTMLElement | null
-  if (!target) return true
-  if (target.isContentEditable) return false
-  const tag = target.tagName
-  return tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT'
+  return keyIsForThePage(event)
 }
 
 function onKey(event: KeyboardEvent) {

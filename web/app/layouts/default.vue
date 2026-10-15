@@ -46,6 +46,15 @@ const isCurrent = (to: string, path: string) => path === to
  */
 const isSection = (to: string, path: string) =>
   (to === '/' ? path === '/' : path.startsWith(to))
+
+/**
+ * Whether this page asked for the wider shell.
+ *
+ * The bar above is full-bleed and always has been, so nothing moves out of line with it —
+ * at a 1,440px window the wide page's content starts at the same 40px gutter the app's own
+ * name does, which is closer to the bar than the 1,240px shell ever was.
+ */
+const wide = computed(() => route.meta.wide === true)
 </script>
 
 <template>
@@ -75,9 +84,19 @@ const isSection = (to: string, path: string) =>
       </nav>
       <SampleDataBadge />
     </header>
+    <!--
+      **One page may be wider than the shell, and says so itself.**
+
+      `definePageMeta({ wide: true })` on the code review page and the draft: both are
+      workbenches — a list beside a finding, an outline beside a preview — and at 1,240px
+      the pane with the code in it shows about 45 characters. Read off the route rather
+      than set by the page into a store, so a page that is wide is wide from its first
+      frame and a page that is not never has to say so.
+    -->
     <main
       id="main"
       class="main"
+      :class="{ 'main--wide': wide }"
     >
       <slot />
     </main>
@@ -154,6 +173,14 @@ const isSection = (to: string, path: string) =>
   max-width: var(--rd-shell-max);
   margin: 0 auto;
   padding: 44px 40px 80px;
+}
+
+/*
+ * The workbench screens. Capped rather than unbounded: a review read on a 27-inch monitor
+ * is still read by one pair of eyes, and the cap is what the token's own note argues.
+ */
+.main--wide {
+  max-width: var(--rd-shell-wide);
 }
 
 @media (max-width: 560px) {

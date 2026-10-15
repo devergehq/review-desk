@@ -1875,9 +1875,9 @@ describe('the draft preview', () => {
     const page = await open(17)
     const text = page.text()
     expect(text).toContain('Your edits to this draft')
-    expect(text).toContain('Rewrote F1 · first sentence')
+    expect(text).toContain('Edited F1 · first sentence')
     expect(text).toContain('Regraded F3 · Blocker to Should')
-    expect(text).toContain('Cut F6 · rename suggestion')
+    expect(text).toContain('Set aside F6 · rename suggestion')
     expect(page.findAll('.edit')).toHaveLength(3)
     /* Nothing changed twice here, so nothing claims it did. */
     expect(text).not.toContain('changed')

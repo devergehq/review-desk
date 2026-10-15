@@ -260,9 +260,15 @@ describe('the seven layers', () => {
     })
   })
 
+  /*
+   * **The verb a person reads is the word on the button they pressed.** Three of these
+   * were renamed on 16 October 2026 with the buttons they report on — Set aside, Posted,
+   * Edited — and the record's own kinds, `cut`, `kept` and `rewritten`, did not move.
+   */
   it('names an outcome as a verb about the developer', () => {
-    expect(editVerb('cut')).toBe('Cut')
-    expect(editVerb('rewritten')).toBe('Rewrote')
+    expect(editVerb('cut')).toBe('Set aside')
+    expect(editVerb('kept')).toBe('Posted')
+    expect(editVerb('rewritten')).toBe('Edited')
     expect(editVerb('code_changed_after')).toBe('Code changed after')
   })
 })
