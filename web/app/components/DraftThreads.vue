@@ -50,7 +50,28 @@ const props = defineProps<{
   posted?: boolean
 }>()
 
-const heading = computed(() => count(props.threads.length, 'thread'))
+/**
+ * What this list is, said as where it lands on GitHub.
+ *
+ * **It used to say "On the code · 9 threads", and the count was the only fact in it.** The
+ * Draft page now draws each finding exactly once and labels each part of itself with where
+ * that part posts — the body above says "Posts as the review body" — so the heading over the
+ * threads is the other half of that sentence rather than a section name.
+ *
+ * **Group, not per thread**, which is rule 2 at the top of this file: a fact true of the
+ * whole list belongs to the list. Nine threads would otherwise carry nine identical tags,
+ * and each one already names its own line on the caption beneath.
+ *
+ * Past tense once it is posted, for the reason the sentence below it is: these are composed
+ * from the record every time they are read, and after the post the record moves on.
+ */
+const heading = computed(() => {
+  if (props.threads.length === 0) return 'Nothing in this review posts on the code'
+  const comments = count(props.threads.length, 'comment')
+  return props.posted
+    ? `Posted as ${comments} on the code`
+    : `Posts as ${comments} on the code`
+})
 
 /**
  * Whether **every** thread here is missing its commit, which is said once rather than
@@ -106,12 +127,17 @@ function measuredElsewhere(thread: DraftThread): string | null {
 </script>
 
 <template>
-  <DeskCard
-    as="section"
-    class="threads"
-  >
+  <!--
+    **A plain section, not a card of its own, and that is the change DEV's design loop asked
+    for.** These were in a second, fainter container below the preview, which made the page
+    read as a review and then a separate list of something else — and the index above them
+    was the only thing saying the two were halves of one post. The index is gone, so the
+    threads are drawn inside the preview, under the body, in the one document. The frame is
+    the preview card's; this brings no second edge inside it.
+  -->
+  <section class="threads">
     <div class="rd-label">
-      On the code · {{ heading }}
+      {{ heading }}
     </div>
 
     <!--
@@ -133,10 +159,16 @@ function measuredElsewhere(thread: DraftThread): string | null {
       v-else-if="threads.length > 0"
       class="rd-meta help"
     >
-      Each of these is a row of the index, and posts as a comment on the line it names.
-      Nothing here is in the body. Each ends with a line GitHub does not draw — it is how
-      the session matches the comment it gets back to the finding, which the line alone
-      cannot do when two findings sit on one.
+      <!--
+        **"Each of these is a row of the index" went, though the index did not.** The
+        preview above folds that table to one line, so a sentence sending the reader to it
+        sends them to something closed. What is left is the fact the sentence was really
+        carrying: these are not in the body, and the body is not these.
+      -->
+      Each posts as a comment on the line it names, and nothing here is in the body above.
+      Each ends with a line GitHub does not draw — it is how the session matches the comment
+      it gets back to the finding, which the line alone cannot do when two findings sit on
+      one.
     </p>
 
     <!--
@@ -226,14 +258,22 @@ function measuredElsewhere(thread: DraftThread): string | null {
       review posts as the body. A finding gets a thread when it names a file and a line, and
       the code it carries is a line the change touched.
     </p>
-  </DeskCard>
+  </section>
 </template>
 
 <style scoped>
+/*
+ * Inside the preview card now rather than beside it, so the rule above is what separates
+ * the body from the comments on the code. One document, two parts of one post -- a second
+ * card's edge here would put them back in different containers, which is what the page was
+ * doing before.
+ */
 .threads {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  padding-top: 20px;
+  border-top: 1px solid var(--rd-line);
 }
 
 .help,

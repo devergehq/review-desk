@@ -146,6 +146,37 @@ function render(markdown: string): string {
   align-items: center;
 }
 
+/*
+ * **A fold has to say it is one.** `display: flex` above takes the native disclosure
+ * marker off the summary, so a closed fold was a line of dim text with a border round it
+ * and nothing to say a click opened it. That cost nothing while every fold here was a
+ * session's own proof — a reader who missed it missed a footnote. Since the index is
+ * folded it costs the thing the fold is for: the developer has to be able to see that the
+ * index is there and closed, not gone.
+ *
+ * Drawn rather than typed, so it needs no glyph from the body font and turns with the fold.
+ */
+.rd-md :deep(summary)::before {
+  content: '';
+  flex: none;
+  width: 0;
+  height: 0;
+  margin-right: 8px;
+  border: 5px solid transparent;
+  border-left: 7px solid currentColor;
+  transition: transform 120ms ease;
+}
+
+.rd-md :deep(details[open] summary)::before {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rd-md :deep(summary)::before {
+    transition: none;
+  }
+}
+
 .rd-md :deep(details[open] summary) {
   margin-bottom: 10px;
   border-bottom: 1px solid var(--rd-rail);
