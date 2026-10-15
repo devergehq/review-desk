@@ -164,6 +164,14 @@ export interface Addresses {
    */
   requestedReviewId: number
   /**
+   * The pull request of the one row in this seed with no review behind it: a review GitHub
+   * asked for, recorded by `review requested` and never started. DEV-996.
+   *
+   * A pull request number rather than a review id, because there is no review — which is
+   * the whole of what it is seeded to prove.
+   */
+  reviewRequestPr: number
+  /**
    * **Four rounds of one merged pull request**, in the order they were opened:
    * `globex/portal #9568`, rounds 1 to 3 posted and round 4 holding a draft nobody signed
    * off.
@@ -934,6 +942,7 @@ export function seed(
   heldBackReviewId: number
   postedReviewId: number
   requestedReviewId: number
+  reviewRequestPr: number
   mergedReviewIds: number[]
   movedHeadReviewId: number
 } {
@@ -1181,6 +1190,7 @@ Ran the job twice against a local endpoint that 500s once, and counted the deliv
     heldBackReviewId: seedHeldBack(directory, database),
     postedReviewId: seedPosted(directory, database),
     requestedReviewId: seedRequested(database),
+    reviewRequestPr: seedReviewRequest(database),
     mergedReviewIds: seedMerged(directory, database),
     movedHeadReviewId: seedMovedHead(directory, database),
   }
@@ -1548,6 +1558,39 @@ function seedRequested(database: string): number {
     throw new Error(`review open printed no id: ${opened}`)
   }
   return reviewId
+}
+
+/**
+ * A review GitHub has asked for, with **no round of it at all**. DEV-996.
+ *
+ * `review requested` and nothing else: no `review open`, no head commit, no round, no
+ * review id. It is the state the Locus dispatcher leaves behind the moment it sees a review
+ * request and before a slot frees to start one — hours, or forever if the dispatcher is
+ * down — and until DEV-996 Review Desk could not hold it at all, so the pull request was on
+ * GitHub, in the dispatcher's backlog and on no page here.
+ *
+ * **It is the only row in this seed with nothing behind it**, which is what makes it worth
+ * seeding: every other row the queue draws is a review, so a page that quietly assumed one
+ * would pass the whole suite. The time is the ask's own, a week before this seed runs, so
+ * the row's age is a figure rather than "just now".
+ *
+ * Returns the pull request number, because there is no id to return — which is the whole
+ * point of it.
+ */
+function seedReviewRequest(database: string): number {
+  const pr = 901
+  const aWeekAgo = Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60
+  cli(database, [
+    'review',
+    'requested',
+    '--repo',
+    'acme/portal',
+    '--pr',
+    String(pr),
+    '--requested-at',
+    String(aWeekAgo),
+  ])
+  return pr
 }
 
 /** A database with nothing in it: what the first `review-desk serve` serves. */

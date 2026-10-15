@@ -255,6 +255,58 @@ reconcile `c0ffee1` with `c0ffee1234…` without asking git, so pass the same sp
 time — `git rev-parse HEAD` in one caller and `git rev-parse --short HEAD` in another would
 open two reviews and spend two round numbers.
 
+`review requested` records a review **GitHub has asked for**, before any session opens a
+round of it. It is the one verb here that records no review.
+
+```sh
+review-desk review requested --repo acme/portal --pr 901 --requested-at 1760000000
+# acme/portal#901 requested at 1760000000, no round opened since
+
+review-desk review requested --repo acme/portal --pr 901 --requested-at 1760000000 \
+  --withdrawn --json
+# {"pr":901,"repo":"acme/portal","requested_at":1760000000,
+#  "satisfied_by_review_id":null,"withdrawn":true}
+```
+
+**The gap it closes.** Review Desk learns of a pull request when a session opens a round on
+it; the Locus dispatcher learns of the review request first and queues it until a slot
+frees, which can be hours and is forever if the dispatcher is down. For that whole time the
+request was on GitHub, in the dispatcher's backlog, and nowhere on the queue. On 15 October
+2026 the queue drew 7 pull requests against 9 review requests on GitHub, and the gap was
+exactly this. A recorded request is drawn under **"Requested, not started"** with no round
+to link and the pull request as the way out.
+
+**Idempotent on the repository and the pull request, because the caller is a poller.**
+Recording the same request twice leaves one record. Each call asserts the whole state:
+`--requested-at` replaces the time held before it, and a call without `--withdrawn` reopens
+a request that was withdrawn — which is GitHub dropping a request and asking again, the
+shape the dispatcher watches for.
+
+**`--requested-at` is when GitHub asked, not when the command ran.** Review Desk reads
+nothing from GitHub, so it is the one fact only the caller has, and it is required rather
+than defaulted: a dispatcher passing its own clock on every tick would leave the row
+reading "requested just now" for ever. Whole seconds since the epoch — milliseconds are
+refused, because `Date.now()` in place of `date +%s` is the one mistake this argument
+invites and it lands in the year 57748.
+
+**Nothing records that a request has been answered.** `satisfied_by_review_id` is read at
+the moment of asking: the first round of that pull request opened at or after
+`requested_at`. So a request recorded *after* a round already existed is outstanding, which
+is a review GitHub has asked for again — and the row for it is that pull request's newest
+round, never a second row beside it.
+
+A request is **not** drawn when it has been withdrawn, when a round has answered it, or
+when the record's own answer about the pull request is that it is not to be worked on:
+merged, closed, out of play, or its newest round dismissed. The last is the developer's act
+and this verb does not undo it; `POST /reviews/{id}/restore` does.
+
+**Review Desk reads nothing from GitHub for this, which has a cost worth stating.** A
+request on a pull request Review Desk holds no round of can only be taken down by the
+caller that put it up — so a pull request that merges unreviewed keeps its row until the
+dispatcher calls `--withdrawn`. That is the same arrangement as `review out-of-play`, with
+one difference: there, a harvest reads the pull request's state independently and the
+record has a second witness. Here the caller is the only witness.
+
 `review link` stores the other systems' ids. An id left out is left as it was, so one
 call can set the session without clearing the posted GitHub review.
 
@@ -684,8 +736,10 @@ neither list here.
 **The two lists overlap since DEV-994, and before it they did not.** The
 queue's **"Requested, not started"** draws the pull requests no other group holds — a round
 opened and not written to, a draft a stopped session left part-written, a draft the
-developer approved that nothing has posted — which are the same rounds this list offers an
-agent. That is not a double-listing of one thing to do: this list says *what to do* with
+developer approved that nothing has posted, and since DEV-996 a review GitHub has asked for
+that no round exists of — which are the same rounds this list offers an agent, less the
+last: a request has no review, so `work list` has nothing to offer about it and the
+dispatcher that recorded it is the one that already knows. That is not a double-listing of one thing to do: this list says *what to do* with
 them and the queue says only *that nobody is doing it*, which is what the developer needs
 when a dispatcher has stopped. Before that group existed those rounds were on the record
 and on no page, and recovered only when a session happened to start.

@@ -4781,8 +4781,41 @@ components:
       required:
         [review_id, pull_request, round, requested_at, ticket_id, ticket_url]
       description: |
-        **A pull request's newest round that no other group holds.** The queue's
-        "Requested, not started". DEV-994.
+        **A pull request no other group holds**, either as its newest round or as a review
+        GitHub has asked for and no session has started. The queue's "Requested, not
+        started". DEV-994, widened by DEV-996.
+
+        ## The two kinds, and the one field that tells them apart
+
+        `review_id` is the discriminator: a number is a round the record holds, and `null`
+        is a request recorded before any round of that pull request existed. `round` goes
+        with it and is null in the same case, because a pull request with no review has no
+        round number to draw.
+
+        **A request is the shape this group was missing, and it is the larger half of the
+        gap the group was built for.** DEV-994 closed the case where Review Desk held a
+        round nobody had written to; DEV-996 closes the case where Review Desk had never
+        been told about the pull request at all. The Locus dispatcher sees a GitHub review
+        request first and queues it until a slot frees — hours, or forever if the dispatcher
+        is down — and for that whole time the request was on GitHub, in the dispatcher, and
+        nowhere here. On 15 October 2026 the queue drew 7 pull requests against 9 requests
+        on GitHub.
+
+        **A request row has no round to link and no ticket to name.** The record holds the
+        repository, the number and when GitHub asked, and nothing else: no session has
+        opened a round, so there is no title, no ticket and no review page. The pull request
+        link is the whole of the way out, and a client draws the row with it.
+
+        **A request stops being drawn the moment a round of its pull request opens**, at or
+        after `requested_at` — that round's row is then the row, which is what keeps one
+        pull request to one row. Nor is a request drawn when GitHub has withdrawn it, nor
+        when the record's own answer about the pull request is that it is not to be worked
+        on: merged, closed, out of play, or **its newest round dismissed**. The last is the
+        rule below read for the second kind of row: a dismissal is the developer declining
+        a round, and a request that drew the pull request again under this heading would
+        undo their act — with no round to link and no way to dismiss it a second time.
+        Review Desk takes that back when they do, through `POST /reviews/{id}/restore`,
+        and not when the dispatcher asks again.
 
         **The one group defined by where a pull request is not.** Every other array here
         answers a question — is this brief unconfirmed, is this draft ready, has the author
@@ -4839,46 +4872,63 @@ components:
         group says only that none of them is being done.
       properties:
         review_id:
-          type: integer
+          type: [integer, 'null']
           format: int64
           minimum: 1
           description: |
-            The round the row links. **Always the pull request's newest round**, which is
+            The round the row links, and **`null` for a review GitHub has asked for that no
+            round exists of yet** — DEV-996. This is the field that says which of the two
+            kinds the row is, and a client reads it before it reads anything else here: a
+            request row has no review to link to and `round` is null beside it.
+
+            Where there is one, it is **always the pull request's newest round**, which is
             DEV-983's rule reached by construction rather than by a `newest_round` field:
             this group holds only that round, so the item's own identity is the row's. The
             two arrays that carry `newest_round` do so because they can be about an older
             one.
         pull_request: { $ref: '#/components/schemas/InboxPr' }
         round:
-          type: integer
+          type: [integer, 'null']
           format: int64
           minimum: 1
-          description: The round's number — the highest this pull request has reached.
+          description: |
+            The round's number — the highest this pull request has reached. **Null for a
+            request**, which has no round: a pull request Review Desk has only been told
+            about has no round number, and drawing a `1` for it would say a round had been
+            opened. Null exactly when `review_id` is.
         requested_at:
           type: string
           format: date-time
           description: |
-            **When this round was opened**, which is how long it has waited. Never null: the
-            record stamps every round as it is created.
+            **How long this row has waited.** Never null for either kind.
 
-            **It is when the round opened and not when the waiting began**, and the two
-            differ for the shapes listed above — a draft approved five minutes ago on a
-            round opened a week ago reads as a week. That is the honest answer rather than a
-            convenient one: nothing in this record holds when a session stopped, because
-            nothing observes a session stopping. Since DEV-962 a new commit on an unposted
-            round moves that round's head instead of opening another, so the author pushing
-            again does not disturb it either.
+            For a round it is **when the round was opened**: the record stamps every round
+            as it is created. For a request it is **when GitHub asked**, as the dispatcher
+            watching GitHub reported it — not when Review Desk was told, which can be hours
+            later and is the dispatcher's lateness rather than the request's age.
+
+            **For a round it is when the round opened and not when the waiting began**, and
+            the two differ for the shapes listed above — a draft approved five minutes ago
+            on a round opened a week ago reads as a week. That is the honest answer rather
+            than a convenient one: nothing in this record holds when a session stopped,
+            because nothing observes a session stopping. Since DEV-962 a new commit on an
+            unposted round moves that round's head instead of opening another, so the author
+            pushing again does not disturb it either.
         ticket_id:
           allOf:
             - $ref: '#/components/schemas/ForeignId'
-          description: The ticket the change is for, opaque.
+          description: |
+            The ticket the change is for, opaque. **Always null for a request**: a ticket
+            reaches the record when a session opens a round and says which one it is for,
+            and no session has.
         ticket_url:
           allOf:
             - $ref: '#/components/schemas/TicketUrl'
           description: |
             Where that ticket is, so this row can link it without the review being opened
             first. Null for a review with an id and no address, which the row then names on
-            its own line and does not link.
+            its own line and does not link, and null for a request, which has no ticket at
+            all.
 
     InboxHandled:
       type: object
@@ -4929,9 +4979,10 @@ components:
         difference is worth knowing.** `briefs_to_confirm`, `drafts_to_approve`,
         `author_replies`, `in_progress` and `posted_awaiting_author` each ask a question of
         a review, so a mistake in one of them *hides* a row. `awaiting_session` is the
-        pull requests on the desk that none of those five holds, so a mistake there *draws*
-        a wrong row. That is why it is specified as a subtraction over the items this answer
-        actually serves rather than as a sixth question — see `InboxAwaitingSessionItem`.
+        pull requests on the desk that none of those five holds, plus the review requests
+        nothing on the desk answers, so a mistake there *draws* a wrong row. That is why it
+        is specified as a subtraction over the items this answer actually serves rather than
+        as a sixth question — see `InboxAwaitingSessionItem`.
 
         **One row per review, built from the three arrays that wait on a developer's act**
         — `briefs_to_confirm`, `drafts_to_approve` and `author_replies` — with
@@ -4986,17 +5037,25 @@ components:
           type: array
           items: { $ref: '#/components/schemas/InboxAwaitingSessionItem' }
           description: |
-            A pull request's newest round that no other array here holds, newest review
-            first — the order every array here serves. **Disjoint from every other array in
-            this answer by construction**: it is
-            the pull requests on the desk minus the ones the five groups above were served
-            for, computed after they were built. So a client draws it as a group of its own
-            and needs no subtraction of its own — though the dashboard makes one anyway,
-            because one row per pull request is a property the page owes its reader whatever
-            a server sends.
+            A pull request no other array here holds — its newest round, or a review GitHub
+            has asked for that no round exists of — **most recently requested first**.
+            **Disjoint from every other array in this answer by construction**: it is the
+            pull requests on the desk minus the ones the five groups above were served for,
+            computed after they were built, and then the outstanding requests minus every
+            pull request already named, including the rounds in this same array. So a client
+            draws it as a group of its own and needs no subtraction of its own — though the
+            dashboard makes one anyway, because one row per pull request is a property the
+            page owes its reader whatever a server sends.
+
+            **The order is by `requested_at`, which both kinds carry**, newest first, ties
+            broken by `review_id` so that a round comes before a request recorded in the
+            same second. It was `review_id` alone until DEV-996, which is the same order
+            wherever the ids ascend with the clock and is not an order a request can be put
+            in at all.
 
             **Empty is a claim, and a true one**: every pull request on the desk is in some
-            other group. DEV-994.
+            other group, and nothing has been asked for that nobody has started. DEV-994,
+            widened by DEV-996.
         posted_awaiting_author:
           type: array
           items: { $ref: '#/components/schemas/InboxPostedItem' }

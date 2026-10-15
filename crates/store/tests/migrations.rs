@@ -954,3 +954,73 @@ fn a_finding_from_before_the_migration_has_no_measured_commit() {
          is, which is not the same claim"
     );
 }
+
+/// **A database written before `review_requests` gains the table and keeps its reviews.**
+///
+/// Migration 21 is the first here that adds a table rather than a column, so what there is
+/// to prove is the other way round from the four tests above: nothing is backfilled and
+/// nothing can be, because a review request is a fact only GitHub holds — a released build
+/// could not have recorded one. What a machine upgrading has to get is an empty table it
+/// can write to, with every review it already held still there.
+#[test]
+fn a_database_from_before_review_requests_gains_the_table_and_keeps_its_reviews() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+
+    const FROM: i64 = 20;
+    assert!(
+        newest_version() > FROM,
+        "this test needs the requests table"
+    );
+
+    {
+        let old = Store::open_at_version(&path, FROM).expect("open at 20");
+        assert_eq!(old.schema_version().unwrap(), FROM);
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        assert!(
+            conn.execute_batch("SELECT 1 FROM review_requests").is_err(),
+            "the table is what this migration adds, so it cannot be there yet"
+        );
+    }
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "INSERT INTO reviews (id, repo, pr, head_sha, round, created_at)
+                 VALUES (1, 'acme/portal', 412, 'a1b2c3d', 1, 1000);",
+        )
+        .expect("write the row a released build left");
+    }
+
+    let migrated = Store::open(&path).expect("reopen migrates");
+    assert_eq!(migrated.schema_version().unwrap(), newest_version());
+    assert_eq!(
+        migrated.list_reviews("acme/portal", 412).unwrap().len(),
+        1,
+        "the review it already held is untouched"
+    );
+    assert!(
+        migrated.open_review_requests().unwrap().is_empty(),
+        "and it holds no requests, because nothing could have recorded one"
+    );
+
+    // And the table takes one, which is the half an empty read cannot prove.
+    let recorded = migrated
+        .record_review_request("acme/portal", 901, 1_760_000_000, false)
+        .expect("the table is there and writable");
+    assert_eq!(recorded.pr, 901);
+    assert_eq!(migrated.open_review_requests().unwrap().len(), 1);
+
+    // **And the CHECK the migration carries is enforced**, which a `CREATE TABLE` can do
+    // and an `ALTER TABLE ... ADD COLUMN` cannot — migrations 17, 19 and 20 each say so
+    // about their own missing one. Written against the connection rather than through the
+    // store, because the store refuses it first and this is about the record's own floor.
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    assert!(
+        conn.execute_batch(
+            "INSERT INTO review_requests (repo, pr, requested_at, created_at, updated_at)
+                 VALUES ('acme/portal', 902, 0, 1000, 1000);"
+        )
+        .is_err(),
+        "the epoch is not a moment GitHub asked for a review"
+    );
+}

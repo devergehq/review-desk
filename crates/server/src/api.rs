@@ -146,6 +146,26 @@ impl Api {
         let in_progress = self.records.reviews_in_progress()?;
         let posted = self.records.posted_reviews_awaiting_author()?;
         let proposed = self.records.rules_at_stages(None, &[RuleStage::Proposed])?;
+        // **The reviews GitHub has asked for that nothing on the desk answers, read before
+        // the pull requests that are on it — and the order is the whole of why this is
+        // here rather than below.** DEV-996.
+        //
+        // `Records::with` takes and releases the lock per call, so these are separate
+        // snapshots; the comment on `awaiting_session` below carries what that costs and
+        // DEV-994 paid for it once already. A session opening the first round of a
+        // requested pull request between these two reads is the case: read the requests
+        // *after* and the request comes back satisfied — a round opened at or after it —
+        // while the rounds, read before that write landed, hold no round to draw. The pull
+        // request is then in no group at all, which is the silence this group exists to
+        // remove.
+        //
+        // Read the other way round, as here, the same write is harmless: the request is
+        // still outstanding when it is read, the round is there when the rounds are read,
+        // and the subtraction below drops the request because the round was drawn. The
+        // race is not removed — nothing here can remove it — it is pointed at the side
+        // where it draws a row twice and is then subtracted, rather than the side where it
+        // draws nothing.
+        let outstanding_requests = self.records.open_review_requests()?;
         // The pull requests on the desk at all, which `awaiting_session` below subtracts
         // from. Read with the rest rather than later: it is the same kind of fact as the
         // five above and belongs in the same place as them.
@@ -496,7 +516,7 @@ impl Api {
             .chain(posted_awaiting_author.iter())
             .filter_map(drawn_as)
             .collect();
-        let awaiting_session: Vec<Value> = on_the_desk
+        let mut awaiting_session: Vec<Value> = on_the_desk
             .iter()
             .filter(|review| !drawn.contains(&(review.repo.as_str(), review.pr)))
             .map(|review| {
@@ -526,6 +546,95 @@ impl Api {
             })
             .collect();
 
+        // **The other half of the same group: a review GitHub asked for and no session has
+        // started.** DEV-996. The rounds above are pull requests Review Desk holds a review
+        // of; these are pull requests it has only been *told* about, by the Locus
+        // dispatcher, which sees the request first and then queues it until a slot frees —
+        // hours, or forever if it is down. For that whole time the request was on GitHub,
+        // in the dispatcher, and in no group here. On 15 October 2026 this answer drew 7
+        // pull requests against 9 requests on GitHub.
+        //
+        // **Subtracted against the rounds as well as the five groups, and after both.**
+        // `drawn` is what the five served; `awaiting_session` is what the rounds added. A
+        // request on a pull request either of them already drew is one thing asked about
+        // twice, and it is reachable: GitHub drops a review request when a review is
+        // posted and adds it again when the author pushes, so a request recorded *after*
+        // the newest round opened is outstanding — nothing has opened since the ask — on a
+        // pull request the record already draws a row for. DEV-996 lists that case under
+        // Related, from 15 October 2026. The round's row is the row.
+        //
+        // **So this is the one subtraction that reads its own output**, which is why it is
+        // here and not folded into the set above: the rule is "a pull request this answer
+        // has drawn anywhere", and the rounds are part of what it has drawn.
+        // `own_prs_without_reviewer` is empty, and that is the contract's own position:
+        // it is GitHub state, nothing lists the developer's own pull requests, and no
+        // issue covers it. Empty reads as absent, which is true. **Declared here rather
+        // than beside the totals it is also a term of**, because the subtraction below
+        // reads it — see there for why the array above does not.
+        let own_prs: Vec<Value> = Vec::new();
+
+        let requested_rows: Vec<Value> = {
+            let mut drawn_with_rounds = drawn;
+            drawn_with_rounds.extend(awaiting_session.iter().filter_map(drawn_as));
+            // **And the developer's own pull requests, which the array above deliberately
+            // leaves out.** DEV-994's argument for leaving it out was that every candidate
+            // there *is* a review, and `own_prs_without_reviewer` holds pull requests
+            // nobody has reviewed — so the two sets could not meet. That argument does not
+            // survive this change: a request is not a review, and nothing in the record
+            // stops one being recorded against a pull request that array would hold. It is
+            // empty today, so this subtracts nothing; it is here because the sentence that
+            // made it safe to leave out stopped being true, and a complement that fails
+            // open is the wrong place to leave a lapsed argument.
+            drawn_with_rounds.extend(own_prs.iter().filter_map(drawn_as));
+            outstanding_requests
+                .iter()
+                .filter(|request| !drawn_with_rounds.contains(&(request.repo.as_str(), request.pr)))
+                .map(|request| {
+                    json!({
+                        // **Null, and that is the field a client branches on.** There is no
+                        // round: nobody has opened one, which is the whole of what this row
+                        // reports. A row with a number here is a round the record holds.
+                        "review_id": Value::Null,
+                        // **The repository and the number, and no title.** A title reaches
+                        // the record when a session opens a round and passes one, and none
+                        // has — so the row names the pull request and links it, which the
+                        // contract calls the whole of the way out.
+                        "pull_request": json!({
+                            "repo": request.repo,
+                            "pr": request.pr,
+                            "title": Value::Null,
+                        }),
+                        "round": Value::Null,
+                        // Null for the same reason as the title: a ticket is something a
+                        // session records on a round, and there is no round.
+                        "ticket_id": Value::Null,
+                        "ticket_url": Value::Null,
+                        // **When GitHub asked**, as the dispatcher watching GitHub reported
+                        // it — not when Review Desk was told. The two differ by however long
+                        // the request sat in the backlog, which is the delay this group
+                        // exists to make visible, so reporting the second would hide exactly
+                        // what the row is for.
+                        "requested_at": wire::rfc3339(request.requested_at),
+                    })
+                })
+                .collect()
+        };
+        awaiting_session.extend(requested_rows);
+        // **One order over both kinds, by the one field both carry.** The array has served
+        // `review_id` descending since DEV-994, which is the same order wherever the ids
+        // ascend with the clock and is not an order a request can be put in at all. The
+        // tie-break keeps a round ahead of a request recorded in the same second — a
+        // missing `review_id` reads as 0 — and makes the order total, which a test
+        // asserting a whole array needs. A `fn` for `drawn_as`'s reason: the key borrows
+        // from the item.
+        fn drawn_order(item: &Value) -> (&str, i64) {
+            (
+                item["requested_at"].as_str().unwrap_or_default(),
+                item["review_id"].as_i64().unwrap_or_default(),
+            )
+        }
+        awaiting_session.sort_by(|left, right| drawn_order(right).cmp(&drawn_order(left)));
+
         let since = now() - WINDOW_DAYS * wire::DAY;
         let filed = self.records.filed_nit_tickets(since)?;
         let nits_filed: i64 = filed
@@ -533,10 +642,6 @@ impl Api {
             .map(|ticket| ticket.finding_seqs.len() as i64)
             .sum();
 
-        // `own_prs_without_reviewer` is empty, and that is the contract's own position:
-        // it is GitHub state, nothing lists the developer's own pull requests, and no
-        // issue covers it. Empty reads as absent, which is true.
-        let own_prs: Vec<Value> = Vec::new();
         // **The five waiting groups, and deliberately not the other three.** `in_progress`
         // is with the agent, `awaiting_session` is with nobody and `posted_awaiting_author`
         // is with the author; none of them asks the developer for anything, and the

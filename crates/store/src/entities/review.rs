@@ -1613,37 +1613,13 @@ impl Store {
 /// which is where the argument for that lives. Checking one form and storing another is
 /// the whole bug: it would make `abc ` — or `ABC` — a different commit from `abc`.
 fn validate(new: NewReview) -> Result<NewReview> {
-    let repo = normalise::repo(&new.repo);
+    // **The repository and the pull request go through the one copy of that rule**, which
+    // is in `entities/mod.rs` because DEV-996 added a second record keyed on a pull request
+    // — `review_requests`, which holds no review id at all. The argument for one copy is
+    // written there, and it is this group's argument: a request and a round filed under two
+    // spellings of one repository are two pull requests to the record and one to GitHub.
+    let repo = super::pull_request_on_the_record(&new.repo, new.pr)?;
     let repo = repo.as_str();
-    // **The characters and the segments, through the one copy of that rule.** This checked
-    // only that both halves were non-empty, so `acme/portal#x` was stored — and a header
-    // then built `https://github.com/acme/portal#x/pull/412`, which GitHub serves as the
-    // repository page rather than the pull request: a link whose text and destination name
-    // two different things, which is the defect DEV-936 exists to remove, reached through
-    // the one field nobody thought was free text.
-    //
-    // The first fix for that wrote the character class here and missed `..`, which
-    // `wire::is_repo_name` had refused all along and said why. `normalise::is_repo_name` is
-    // now the only copy, and it carries both the rule and the reason.
-    if !normalise::is_repo_name(repo) {
-        return Err(StoreError::InvalidValue {
-            field: "repo",
-            value: new.repo.clone(),
-            expected: concat!(
-                "a repository as owner/repo, in letters, digits, dot, underscore and ",
-                "hyphen, and neither half `.` nor `..`",
-            )
-            .to_string(),
-        });
-    }
-
-    if new.pr < 1 {
-        return Err(StoreError::InvalidValue {
-            field: "pr",
-            value: new.pr.to_string(),
-            expected: "a pull request number of 1 or more".to_string(),
-        });
-    }
 
     if new.round < 1 {
         return Err(StoreError::InvalidValue {

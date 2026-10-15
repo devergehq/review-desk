@@ -328,6 +328,28 @@ export type ReviewList
  * joins nothing, which is the contract's "each screen is one GET"; this is what the fixtures have
  * to be in order to recompute those four documents in memory as a write patches them.
  */
+/**
+ * A review GitHub has asked for, as the record holds it — **not as the API serves it**.
+ *
+ * The sample backend's copy of the `review_requests` row migration 21 adds: keyed on the
+ * pull request, holding no review id, because the whole point of it is a pull request no
+ * session has opened a round on. DEV-996.
+ *
+ * **Times are ISO strings here and whole seconds in the store**, which is this file's rule
+ * for every fixture: the record keeps integers and the API serves `date-time`, and these
+ * fixtures stand in for what the API would have been given. `sample.ts` compares them as
+ * instants rather than as text, so the two backends answer the same question about the
+ * same two moments.
+ */
+export interface SampleReviewRequest {
+  repo: string
+  pr: number
+  /** When GitHub asked, as the dispatcher watching GitHub reported it. */
+  requested_at: string
+  /** When GitHub stopped listing it, or null for a request still outstanding. */
+  withdrawn_at: string | null
+}
+
 export interface DeskSource {
   reviews: ReviewDetail[]
   drafts: DraftDetail[]
@@ -335,6 +357,12 @@ export interface DeskSource {
   summary: RulesSummary
   repos: RepoSummary[]
   own_prs: InboxOwnPrItem[]
+  /**
+   * The reviews GitHub has asked for that no round exists of. **The one fixture here that
+   * is not a review**, and the second kind of row the queue's "Requested, not started"
+   * holds. DEV-996.
+   */
+  review_requests: SampleReviewRequest[]
   handled_without_you: InboxHandled
   /** What Allele would tell the server about each running session, by review id. */
   session_liveness: Record<string, boolean | null>

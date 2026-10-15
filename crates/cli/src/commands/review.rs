@@ -3,7 +3,7 @@
 use clap::Subcommand;
 use review_desk_store::{
     DiffAtHead, Draft, Finding, FullReview, OutOfPlay, Outcome, Review, ReviewFacts, ReviewLayer,
-    ReviewLinks, Store,
+    ReviewLinks, ReviewRequest, Store,
 };
 use serde_json::json;
 
@@ -187,6 +187,55 @@ pub enum ReviewCommand {
         /// The pull request number.
         #[arg(long, value_name = "N")]
         pr: i64,
+    },
+
+    /// Record a review GitHub has asked for, before any session opens a round of it.
+    ///
+    /// **The one command here that records no review.** DEV-996: Review Desk learns of a
+    /// pull request when a session opens a round on it, and the Locus dispatcher learns of
+    /// the review request first — then queues it until a slot frees, which can be hours and
+    /// is forever if the dispatcher is down. For that whole time the request is on GitHub,
+    /// in the dispatcher's backlog, and nowhere on the queue. On 15 October 2026 the queue
+    /// drew 7 pull requests against 9 requests on GitHub, and the gap was exactly this.
+    ///
+    /// The request is drawn on the queue under "Requested, not started", with no round to
+    /// link to and the GitHub link as the way out. It stops being drawn the moment a round
+    /// of that pull request opens, because that round's row is then the row.
+    ///
+    /// **Idempotent on the repository and the pull request, because the caller is a
+    /// poller.** The dispatcher calls this on every tick for as long as GitHub lists the
+    /// request, and recording the same request twice leaves one record. Each call asserts
+    /// the whole state: `--requested-at` replaces the time held before it, and a call
+    /// without `--withdrawn` reopens a request that was withdrawn — which is GitHub
+    /// dropping a request and asking again, the shape the dispatcher is watching for.
+    ///
+    /// **`--requested-at` is when *GitHub* asked, not when this command ran.** It is the
+    /// one fact Review Desk cannot work out for itself: it reads nothing from GitHub, and
+    /// the dispatcher can be minutes or hours behind. A caller that passes its own clock
+    /// every tick leaves the row reading "requested just now" for ever. It is also the time
+    /// a round is compared against, so a value in the future is a request no round can
+    /// answer.
+    ///
+    /// **Nothing is written when the request is answered.** `satisfied_by_review_id` in the
+    /// `--json` answer is read at the moment of asking — the first round of that pull
+    /// request opened at or after `requested_at` — so a request recorded after a round
+    /// already existed is outstanding, which is a review GitHub has asked for again.
+    ///
+    /// **Review Desk reads nothing from GitHub for this**, as it reads nothing for
+    /// `review out-of-play`. Whatever is watching the pull request says so here.
+    Requested {
+        /// The repository, as owner/repo.
+        #[arg(long, value_name = "OWNER/REPO")]
+        repo: String,
+        /// The pull request number.
+        #[arg(long, value_name = "N")]
+        pr: i64,
+        /// When GitHub asked, in seconds since the epoch.
+        #[arg(long = "requested-at", value_name = "SECONDS")]
+        requested_at: i64,
+        /// GitHub no longer lists the request. The way back is this command without it.
+        #[arg(long)]
+        withdrawn: bool,
     },
 
     /// Record the one ticket this review's held-back findings were filed as.
@@ -438,6 +487,37 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
             ))
         }
 
+        ReviewCommand::Requested {
+            repo,
+            pr,
+            requested_at,
+            withdrawn,
+        } => {
+            let store = Store::open_default()?;
+            let request = store.record_review_request(repo, *pr, *requested_at, *withdrawn)?;
+            // **Read back rather than reasoned about.** Whether a round has already opened
+            // for this request is a comparison the store makes against the record, and a
+            // caller deciding whether to dispatch needs the answer in the same call that
+            // records the request — a second command to ask is a second thing that can fail
+            // between them, which is `review open`'s own argument for `--ledger`.
+            let satisfied = store.review_request_satisfied_by(&request.repo, request.pr)?;
+
+            Ok(Report::new(
+                json!({
+                    // **The stored spelling, which is `review find`'s rule and its reason**:
+                    // the record keys on the canonical form, and an answer echoing the
+                    // caller's own words is how two spellings of one repository stop being
+                    // visible.
+                    "repo": request.repo,
+                    "pr": request.pr,
+                    "requested_at": request.requested_at,
+                    "withdrawn": request.is_withdrawn(),
+                    "satisfied_by_review_id": satisfied,
+                }),
+                requested_line(&request, satisfied),
+            ))
+        }
+
         ReviewCommand::NitTicket { review, ticket } => {
             let store = Store::open_default()?;
             let filed = store.request_nit_ticket(*review, Some(ticket))?;
@@ -570,6 +650,32 @@ impl std::str::FromStr for OutOfPlayReason {
                 )
             })
     }
+}
+
+/// `acme/portal#444 requested at 1760000000` — and what has become of the request.
+///
+/// **Two independent facts, both said.** Whether GitHub has withdrawn the request and
+/// whether a round has answered it are different questions with four answers between them,
+/// and the line carries each where it applies. The time is the integer the record holds,
+/// which is this file's rule for every time it prints — formatting belongs to whatever
+/// displays a record, and a date library earns its place in the dashboard rather than
+/// here.
+fn requested_line(request: &ReviewRequest, satisfied_by: Option<i64>) -> String {
+    let mut line = format!(
+        "{}#{} requested at {}",
+        request.repo, request.pr, request.requested_at
+    );
+    if request.is_withdrawn() {
+        line.push_str(", withdrawn");
+    }
+    // **Said even on a withdrawn request**, because the two are independent facts: a
+    // request can be answered by a round and then dropped from GitHub's list in either
+    // order, and a line that reported only the withdrawal would hide the round.
+    match satisfied_by {
+        Some(review) => line.push_str(&format!(", answered by review {review}")),
+        None => line.push_str(", no round opened since"),
+    }
+    line
 }
 
 /// `3 round 2 head 3f9c2ab — Retry failed webhook deliveries`

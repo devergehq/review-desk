@@ -112,6 +112,31 @@ fn awaiting(inbox: &Value) -> Vec<i64> {
     prs_in(inbox, "awaiting_session")
 }
 
+/// A review request GitHub has made for a pull request this repository holds no round of.
+///
+/// DEV-996's own shape: the dispatcher saw the request and recorded it, and no session has
+/// opened anything.
+fn asked_for(store: &Store, pr: i64) -> i64 {
+    let at = review_desk_store::now();
+    store
+        .record_review_request(REPO, pr, at, false)
+        .expect("a review request");
+    at
+}
+
+/// A review request GitHub has made **after** every round this test has already opened.
+///
+/// A minute ahead of the clock the rounds were stamped from, which is what makes it a new
+/// ask rather than one of them: satisfaction is a round opened at or after the request, and
+/// every round here opened before this instant. GitHub drops a review request when a review
+/// is posted and adds it again when the author pushes, so a request newer than the newest
+/// round is the ordinary shape rather than a contrived one.
+fn asked_again(store: &Store, pr: i64) {
+    store
+        .record_review_request(REPO, pr, review_desk_store::now() + 60, false)
+        .expect("a review request after the rounds");
+}
+
 #[test]
 fn a_round_with_no_session_and_no_layers_is_requested_not_started() {
     // The ticket's second acceptance criterion, and the simplest shape there is: a round
@@ -270,6 +295,19 @@ fn a_dismissed_newest_round_is_in_no_group_at_all() {
         0,
         "the developer took this round off the desk: {inbox}"
     );
+
+    // **And a review request recorded afterwards does not bring it back.** DEV-996 added a
+    // second way into this group, and without this line the test above would keep passing
+    // while the pull request returned under the same heading — with no round to link, no
+    // ticket, and no way to be dismissed a second time, because a request row has no review
+    // id. The way back is the developer's own: restore the review.
+    asked_again(store, 604);
+    let inbox = harness.api("GET", "/inbox", None).json();
+    assert_eq!(
+        drawn_anywhere(&inbox, 604),
+        0,
+        "a request cannot undo a dismissal: {inbox}"
+    );
 }
 
 #[test]
@@ -290,6 +328,14 @@ fn an_out_of_play_or_finished_pull_request_is_not_requested() {
     store
         .set_pr_out_of_play(REPO, 606, Some(OutOfPlay::Withdrawn))
         .expect("the review request was withdrawn");
+
+    // **With a review request standing on each of them**, which is what keeps this test
+    // about the pull request's state rather than about the absence of a second record.
+    // DEV-996: the request is a row of its own, and a merged pull request carrying one is
+    // the state the queue cannot correct by itself — Review Desk reads nothing from GitHub,
+    // so nothing but this clause stops it drawing for ever.
+    asked_again(store, 605);
+    asked_again(store, 606);
 
     let inbox = harness.api("GET", "/inbox", None).json();
     assert_eq!(
@@ -407,6 +453,19 @@ fn every_pull_request_on_the_desk_is_in_some_group_and_the_new_one_overlaps_none
 
     let unstarted = requested(store, 616, "aaaaaa6");
 
+    // **And the two shapes DEV-996 adds**, so the claim below is about a record holding
+    // both kinds of row rather than one where every pull request has a round. #620 is a
+    // review GitHub asked for that nothing on the desk answers — the group's second
+    // member, and the one that is in no store query of rounds at all. #611 already has a
+    // brief waiting on the developer *and* a standing request, which is the state the
+    // invariant is most easily broken by: GitHub drops a review request when a review is
+    // posted and adds it again when the author pushes, so an outstanding request on a pull
+    // request another group holds is ordinary. Both requests are stamped a minute ahead of
+    // the rounds, so no round on the record answers them and the subtraction is what has
+    // to.
+    asked_again(store, 620);
+    asked_again(store, 611);
+
     // And three that are deliberately in no group: the developer dismissed one, one is
     // paused, one is over. They are seeded so that the assertion below is about a record
     // holding both kinds rather than one where every pull request happens to be live.
@@ -455,6 +514,21 @@ fn every_pull_request_on_the_desk_is_in_some_group_and_the_new_one_overlaps_none
             "#{pr} has left the desk, so it is in no group: {inbox}"
         );
     }
+    // **The request-only pull request is drawn, and drawn once.** It is in no query of
+    // rounds, so the loop above cannot reach it, and it is the whole of what DEV-996 adds.
+    assert_eq!(
+        drawn_anywhere(&inbox, 620),
+        1,
+        "#620 was asked for and nothing has started it: {inbox}"
+    );
+    // **And a request on a pull request another group holds adds no second row**, which is
+    // the half of the invariant the new kind of row could break on its own.
+    assert_eq!(
+        drawn_anywhere(&inbox, 611),
+        1,
+        "#611 has a brief waiting and a standing request, and is one thing to deal \
+         with: {inbox}"
+    );
     for pr in awaiting(&inbox) {
         assert_eq!(
             also_drawn_in(&inbox, pr),
@@ -470,7 +544,11 @@ fn every_pull_request_on_the_desk_is_in_some_group_and_the_new_one_overlaps_none
     assert_eq!(prs_in(&inbox, "drafts_to_approve"), vec![612], "{inbox}");
     assert_eq!(prs_in(&inbox, "author_replies"), vec![613], "{inbox}");
     assert_eq!(prs_in(&inbox, "in_progress"), vec![614], "{inbox}");
-    assert_eq!(awaiting(&inbox), vec![unstarted.pr], "{inbox}");
+    assert_eq!(
+        awaiting(&inbox),
+        vec![620, unstarted.pr],
+        "the group holds both kinds, newest ask first: {inbox}"
+    );
 
     // **And #613 is in two arrays, which is the overlap this file's header is about.** It
     // posted and its author replied, so it is the shape the contract's `Inbox` describes as
@@ -500,4 +578,194 @@ fn every_pull_request_on_the_desk_is_in_some_group_and_the_new_one_overlaps_none
         Some(3),
         "the brief, the draft and the reply: {inbox}"
     );
+}
+
+// -- the second kind of row: a review GitHub asked for, DEV-996 -----------------------
+
+#[test]
+fn a_recorded_request_with_no_round_is_requested_not_started() {
+    // **The ticket's first acceptance criterion, and the half of the group DEV-994 could
+    // not reach.** The Locus dispatcher sees a GitHub review request before any session
+    // opens a round and queues it until a slot frees — hours, or forever if it is down —
+    // and for that whole time the pull request was on GitHub, in the dispatcher, and in no
+    // group here. On 15 October 2026 the queue drew 7 pull requests against 9 requests.
+    let harness = common::start_with_no_github();
+    let at = asked_for(&harness.store, 701);
+
+    let inbox = harness.api("GET", "/inbox", None).json();
+
+    assert_eq!(
+        awaiting(&inbox),
+        vec![701],
+        "a review nobody has started is in the group: {inbox}"
+    );
+    let item = &inbox["awaiting_session"][0];
+    // **Null, and that is the field a client branches on.** There is no round: the whole of
+    // what this row reports is that nobody has opened one.
+    assert!(
+        item["review_id"].is_null() && item["round"].is_null(),
+        "a request row links no round: {item}"
+    );
+    assert!(
+        item["ticket_id"].is_null() && item["ticket_url"].is_null(),
+        "and names no ticket, because a ticket reaches the record on a round: {item}"
+    );
+    assert_eq!(item["pull_request"]["repo"], REPO);
+    assert!(
+        item["pull_request"]["title"].is_null(),
+        "and no title, for the same reason: {item}"
+    );
+
+    // **When GitHub asked**, not when the read happened. `is_string()` alone would pass a
+    // server serving `now()`, which is the one way this field can be wrong and look right.
+    assert_eq!(
+        item["requested_at"].as_str(),
+        Some(review_desk_server::wire::rfc3339(at).as_str()),
+        "the row carries the time the dispatcher reported: {item}"
+    );
+}
+
+#[test]
+fn a_request_answered_by_a_later_round_is_drawn_as_that_round_and_not_twice() {
+    // The ticket's fourth acceptance criterion: "A request disappears from the group once a
+    // later round opens." The round's row is then the row.
+    let harness = common::start_with_no_github();
+    let store = &harness.store;
+    asked_for(store, 702);
+    assert_eq!(
+        awaiting(&harness.api("GET", "/inbox", None).json()),
+        vec![702]
+    );
+
+    let round = requested(store, 702, "4f1a9c2");
+
+    let inbox = harness.api("GET", "/inbox", None).json();
+    assert_eq!(
+        awaiting(&inbox),
+        vec![702],
+        "still one row, and still in this group: {inbox}"
+    );
+    assert_eq!(
+        drawn_anywhere(&inbox, 702),
+        1,
+        "and drawn exactly once across the whole answer: {inbox}"
+    );
+    assert_eq!(
+        inbox["awaiting_session"][0]["review_id"].as_i64(),
+        Some(round.id),
+        "the row is the round's now, not the request's: {inbox}"
+    );
+}
+
+#[test]
+fn a_request_on_a_pull_request_another_group_holds_is_not_drawn_twice() {
+    // The ticket's fifth acceptance criterion, and the one the invariant is most easily
+    // broken by: GitHub drops a review request when a review is posted and adds it again
+    // when the author pushes, so a request *newer* than the newest round is ordinary — and
+    // that request is outstanding on a pull request the answer already draws.
+    let harness = common::start_with_no_github();
+    let store = &harness.store;
+    let waiting = requested(store, 703, "4f1a9c2");
+    store
+        .put_brief(
+            waiting.id,
+            NewBrief {
+                problem: "Retried deliveries are sent without an idempotency key.".to_string(),
+                ..Default::default()
+            },
+        )
+        .expect("a brief waiting on the developer");
+
+    asked_again(store, 703);
+
+    let inbox = harness.api("GET", "/inbox", None).json();
+    assert_eq!(
+        prs_in(&inbox, "briefs_to_confirm"),
+        vec![703],
+        "the brief is what the developer is asked for: {inbox}"
+    );
+    assert_eq!(
+        awaiting(&inbox),
+        Vec::<i64>::new(),
+        "and the request is not a second row for the same pull request: {inbox}"
+    );
+}
+
+#[test]
+fn a_withdrawn_request_is_not_drawn() {
+    // The ticket's third acceptance criterion. GitHub stopped listing it, and the
+    // dispatcher said so.
+    let harness = common::start_with_no_github();
+    let store = &harness.store;
+    asked_for(store, 704);
+    assert_eq!(
+        awaiting(&harness.api("GET", "/inbox", None).json()),
+        vec![704]
+    );
+
+    store
+        .record_review_request(REPO, 704, review_desk_store::now(), true)
+        .expect("withdrawn");
+
+    let inbox = harness.api("GET", "/inbox", None).json();
+    assert_eq!(
+        drawn_anywhere(&inbox, 704),
+        0,
+        "nobody is asking for this review any more: {inbox}"
+    );
+}
+
+#[test]
+fn a_request_row_and_a_round_row_are_one_group_ordered_by_when_each_was_asked_for() {
+    // **One order over both kinds, by the one field both carry.** The array served
+    // `review_id` descending until DEV-996, which is the same order wherever the ids ascend
+    // with the clock and is not an order a request can be put in at all.
+    let harness = common::start_with_no_github();
+    let store = &harness.store;
+    let round = requested(store, 705, "4f1a9c2");
+    // A minute ahead of the round, so the request is the newer of the two and must come
+    // first — which is the assertion, rather than "the round happens to sort first".
+    store
+        .record_review_request(REPO, 706, review_desk_store::now() + 60, false)
+        .expect("a newer request");
+
+    let inbox = harness.api("GET", "/inbox", None).json();
+    assert_eq!(
+        awaiting(&inbox),
+        vec![706, 705],
+        "newest ask first, whichever kind it is: {inbox}"
+    );
+    assert_eq!(
+        inbox["awaiting_session"][1]["review_id"].as_i64(),
+        Some(round.id)
+    );
+}
+
+#[test]
+fn every_row_of_the_group_links_a_round_or_names_none_at_all() {
+    // **The pairing the contract states, asserted over a served answer.** `review_id` and
+    // `round` are null exactly together: a row with one and not the other is a page
+    // drawing "round null" under a link to `/reviews/null`, and neither TypeScript nor the
+    // schema can refuse it — both fields are nullable now, so a regression dropping
+    // `review_id` from a *round* row serves a document that validates. This is what catches
+    // it instead.
+    let harness = common::start_with_no_github();
+    let store = &harness.store;
+    requested(store, 707, "4f1a9c2");
+    asked_for(store, 708);
+
+    let inbox = harness.api("GET", "/inbox", None).json();
+    let rows = inbox["awaiting_session"].as_array().expect("the group");
+    assert_eq!(rows.len(), 2, "both kinds are in it: {inbox}");
+    for row in rows {
+        assert_eq!(
+            row["review_id"].is_null(),
+            row["round"].is_null(),
+            "a row has a round and a number, or neither: {row}"
+        );
+        assert!(
+            row["requested_at"].is_string(),
+            "and every row says how long it has waited: {row}"
+        );
+    }
 }

@@ -49,6 +49,14 @@
       "description_lint": null
     }
   ],
+  "review_requests": [
+    {
+      "repo": "acme/billing-api",
+      "pr": 104,
+      "requested_at": "2026-10-12T16:40:00Z",
+      "withdrawn_at": null
+    }
+  ],
   "handled_without_you": {
     "window_days": 7,
     "description_problems_caught": 9,

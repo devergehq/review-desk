@@ -59,10 +59,10 @@ pub use crate::model::{
     NewRule, NitTicket, NitTicketStatus, NotForSigning, OpenedAction, OpenedReview, OutOfPlay,
     Outcome, OutcomeKind, PostedReview, PrState, RepoSummary, Review, ReviewAtLayer, ReviewAtStep,
     ReviewEvent, ReviewFacts, ReviewLayer, ReviewLayerName, ReviewLayerRun, ReviewLayerState,
-    ReviewLinks, ReviewStep, ReviewTimings, ReviewWork, ReviewsShown, RoundCommit, RoundRef,
-    RoundStatus, RoundStatusCounts, RoundSummary, Rule, RuleCounts, RuleException, RuleScope,
-    RuleStage, RulesSummary, Severity, SignOff, TidyAct, Timestamp, Verification, WorkFilter,
-    WorkItem, WorkKind, ACTIVE_RULES_CAP,
+    ReviewLinks, ReviewRequest, ReviewStep, ReviewTimings, ReviewWork, ReviewsShown, RoundCommit,
+    RoundRef, RoundStatus, RoundStatusCounts, RoundSummary, Rule, RuleCounts, RuleException,
+    RuleScope, RuleStage, RulesSummary, Severity, SignOff, TidyAct, Timestamp, Verification,
+    WorkFilter, WorkItem, WorkKind, ACTIVE_RULES_CAP,
 };
 /// Whether a string is a repository name — the one copy of that rule. See
 /// [`normalise::is_repo_name`].
