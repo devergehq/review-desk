@@ -1065,6 +1065,18 @@ fn seed(store: &Store) -> Seeded {
         })
         .expect("a review nothing has started");
 
+    // **And a seventh pull request that is not a review at all**: a review GitHub has asked
+    // for, recorded before any round of it exists. DEV-996. It is the second kind of row
+    // `awaiting_session` holds, and without it the example's `review_id: null` and
+    // `round: null` would have no produced counterpart — `check` walks the example's leaf
+    // paths and would panic on a missing index rather than pass over it.
+    //
+    // A minute behind the round above, so the two sort in the order the example lists them
+    // and the check reads each row against the one it was written for.
+    store
+        .record_review_request("acme/billing-api", 104, now() - 60, false)
+        .expect("a review request nobody has started");
+
     // A rule in force that nothing has cited lately, for the Rules screen's "Going
     // stale" group. Its times are moved backwards by the caller, because the store has
     // no function for ageing a rule and should not grow one so a test can pass.
@@ -2223,6 +2235,45 @@ fn inbox(store: &Store, seeded: &Seeded) -> Value {
         })
         .collect::<Vec<_>>();
 
+    // **The group's second kind of row**, built the way the server builds it: the requests
+    // nothing on the desk answers, less every pull request this answer has already drawn —
+    // the five arrays above *and* the rounds just built. DEV-996.
+    let mut awaiting_session = awaiting_session;
+    let mut drawn = drawn;
+    drawn.extend(awaiting_session.iter().map(|item| {
+        (
+            item["pull_request"]["repo"]
+                .as_str()
+                .expect("a repository")
+                .to_string(),
+            item["pull_request"]["pr"].as_i64().expect("a number"),
+        )
+    }));
+    awaiting_session.extend(
+        store
+            .open_review_requests()
+            .expect("the outstanding review requests")
+            .iter()
+            .filter(|request| !drawn.contains(&(request.repo.clone(), request.pr)))
+            .map(|request| {
+                json!({
+                    // Null, and null together: there is no round, so there is no number
+                    // and no page to link. The one field a client branches on.
+                    "review_id": Value::Null,
+                    "pull_request": {
+                        "repo": request.repo,
+                        "pr": request.pr,
+                        "title": Value::Null,
+                    },
+                    "ticket_id": Value::Null,
+                    "ticket_url": Value::Null,
+                    "round": Value::Null,
+                    // When GitHub asked, as the dispatcher reported it.
+                    "requested_at": request.requested_at,
+                })
+            }),
+    );
+
     let tickets = store.filed_nit_tickets(None, None).expect("filed tickets");
     // **The five waiting groups, and not the other two.** This file held the third answer
     // to that sum — it added the reviews in progress and left out the developer's own pull
@@ -2416,14 +2467,20 @@ fn every_response_example_can_be_produced_from_the_store() {
     let awaiting = inbox(&store, &seeded)["awaiting_session"].clone();
     assert_eq!(
         awaiting.as_array().map(Vec::len),
-        Some(1),
-        "review {} should be the one pull request no group holds: {awaiting}",
-        seeded.requested_review.id
+        Some(2),
+        "one pull request no group holds, and one review GitHub asked for: {awaiting}",
     );
     assert_eq!(
         awaiting[0]["review_id"].as_i64(),
         Some(seeded.requested_review.id),
-        "and it should be that review: {awaiting}"
+        "the first should be review {}: {awaiting}",
+        seeded.requested_review.id
+    );
+    // **And the second is the kind with nothing behind it**, which is the row DEV-996 adds
+    // and the only one that can make the example's null leaves anything but vacuous.
+    assert!(
+        awaiting[1]["review_id"].is_null() && awaiting[1]["round"].is_null(),
+        "the second should be a request, which links no round: {awaiting}"
     );
     let page = rules_page(&store, Some("acme/portal"));
     for group in ["proposed", "active", "stale"] {

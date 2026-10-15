@@ -197,6 +197,18 @@
       "ticket_url": "https://linear.app/acme/issue/ABC-258",
       "round": 1,
       "requested_at": "2026-10-13T09:12:00Z"
+    },
+    {
+      "review_id": null,
+      "pull_request": {
+        "repo": "acme/billing-api",
+        "pr": 104,
+        "title": null
+      },
+      "ticket_id": null,
+      "ticket_url": null,
+      "round": null,
+      "requested_at": "2026-10-12T16:40:00Z"
     }
   ],
   "posted_awaiting_author": [

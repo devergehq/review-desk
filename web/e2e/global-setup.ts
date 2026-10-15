@@ -27,6 +27,7 @@ export default async function globalSetup() {
     heldBackReviewId,
     postedReviewId,
     requestedReviewId,
+    reviewRequestPr,
     mergedReviewIds,
     movedHeadReviewId,
   } = seed(directory)
@@ -47,6 +48,7 @@ export default async function globalSetup() {
     heldBackReviewId,
     postedReviewId,
     requestedReviewId,
+    reviewRequestPr,
     mergedReviewIds,
     movedHeadReviewId,
   }

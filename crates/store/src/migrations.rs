@@ -82,6 +82,12 @@
 //! since version 18 a moved head keeps the same round — so the link landed on line 40 of
 //! a file that had moved on. The column is nullable with no backfill, because a row
 //! written before it cannot be asked.
+//!
+//! Version 21 is the first table here that is not about a review: a review GitHub has
+//! asked for, keyed on the pull request, recorded before any round of it exists. Every
+//! other table hangs off `reviews (id)`, because until it a pull request entered the
+//! record by a session opening a round — and a request waiting in the dispatcher's backlog
+//! was therefore on GitHub, in the dispatcher, and nowhere on the queue.
 
 use rusqlite::Connection;
 
@@ -1704,6 +1710,73 @@ ALTER TABLE reviews ADD COLUMN out_of_play_at INTEGER;
 -- index, which is that an index bought with a sentence about a query nobody makes is a
 -- second structure to keep in step for nothing.
 ALTER TABLE findings ADD COLUMN line_sha TEXT;
+"#,
+    },
+    Migration {
+        version: 21,
+        name: "review-requests",
+        sql: r#"
+-- A review GitHub has asked for, before Review Desk holds a round of it.
+--
+-- **The first record here that is not about a review.** Every other table hangs off
+-- `reviews (id)`, because until now a pull request entered the record by a session opening
+-- a round on it. DEV-996: the Locus dispatcher learns of a GitHub review request first and
+-- queues it until a slot frees, which can be hours and is forever if the dispatcher is
+-- down — and for that whole time the request is on GitHub, in the dispatcher, and nowhere
+-- on the queue. On 15 October 2026 the queue drew 7 pull requests against 9 requests on
+-- GitHub, and the gap was exactly this. So the row is keyed on the pull request rather than
+-- on a review, and it holds no review id at all.
+--
+-- **Review Desk still reads nothing from GitHub.** The dispatcher is the only caller, as it
+-- is for `review out-of-play`, and `review requested` is how it says what it saw.
+--
+-- **One row per pull request, which `UNIQUE (repo, pr)` makes true rather than hoped for.**
+-- The dispatcher calls this on every tick it sees the request, so the verb is an upsert and
+-- the uniqueness is what makes recording a request twice leave one record. `repo` is stored
+-- through `normalise::repo` like every other repository the record keys on — a request
+-- filed under `Globex/portal` against rounds filed under `globex/portal` would never be
+-- subtracted from the queue's group and would draw a second row for one pull request.
+--
+-- **Withdrawal is a time and not a flag**, which is this record's idiom for an act — see
+-- `dismissed_at`, `out_of_play_at`, `signoff_withdrawn_at`. Null is an open request. A
+-- later call without `--withdrawn` clears it, because GitHub taking a request away and
+-- asking again is the shape the dispatcher is watching for, and the verb asserts the state
+-- it has just seen rather than accumulating history. The history that matters is on GitHub.
+--
+-- **Nothing says whether a request has been satisfied, and that is deliberate.** A request
+-- is answered once a round of its pull request opens at or after `requested_at`, which is a
+-- comparison against `reviews` and is made every time the question is asked. A column would
+-- have to be written by whatever opens a round — one more write to miss, and a request
+-- recorded *after* a round opened would need it unwritten again. The comparison cannot be
+-- missed and cannot go stale.
+--
+-- **No foreign key to `reviews`, for the same reason the table exists**: the whole point is
+-- a pull request the record holds no review of. The join is made on `(repo, pr)` where it
+-- is needed, which is how `out_of_play` already reaches every round of a pull request.
+--
+-- **And no index.** `review_requests` holds one row per outstanding request — the
+-- dispatcher's own backlog is tens of rows, not thousands — the lookup by `(repo, pr)` is
+-- served by the unique index above, and the queue's read is a full scan of a table that
+-- small. Migration 19's rule: an index bought with a sentence about a query nobody makes is
+-- a second structure to keep in step for nothing.
+--
+-- **And the one CHECK in this file, because this is the one migration that can carry one.**
+-- Migrations 17, 19 and 20 each excuse an absent CHECK with SQLite's own limit — it cannot
+-- add one to a table that already exists — and that excuse is not available to a CREATE
+-- TABLE. The column it guards is the one the queue *compares*: a `requested_at` of 0 draws
+-- "requested 20743 days ago" and a negative one is before the epoch, and neither is a
+-- moment GitHub asked for a review. `record_review_request` refuses both with a message
+-- naming the field, which is where a caller is told; this is the record refusing to hold a
+-- value no caller can mean, with nothing to go round it.
+CREATE TABLE review_requests (
+    repo         TEXT    NOT NULL,
+    pr           INTEGER NOT NULL,
+    requested_at INTEGER NOT NULL CHECK (requested_at > 0),
+    withdrawn_at INTEGER,
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL,
+    UNIQUE (repo, pr)
+);
 "#,
     },
 ];

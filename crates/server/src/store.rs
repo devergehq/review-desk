@@ -18,8 +18,9 @@ use review_desk_store::{
     DraftThread, DuplicateRounds, Finding, FindingInRound, FoldedRound, FullReview, HeadUpdates,
     NewDraft, NewOutcome, NitTicket, NotForSigning, OpenedReview, Outcome, PostedReview,
     ProblemStatement, RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewEvent, ReviewFacts,
-    ReviewLayer, ReviewProvenance, ReviewTimings, ReviewsShown, RoundCommit, RoundSummary, Rule,
-    RuleCounts, RuleStage, RulesSummary, Store, StoreError, TicketedAndApproved, Timestamp,
+    ReviewLayer, ReviewProvenance, ReviewRequest, ReviewTimings, ReviewsShown, RoundCommit,
+    RoundSummary, Rule, RuleCounts, RuleStage, RulesSummary, Store, StoreError,
+    TicketedAndApproved, Timestamp,
 };
 
 use crate::error::{ApiError, Code};
@@ -248,6 +249,17 @@ impl Records {
     /// store's own doc carries why it cannot be made against five more reads of the record.
     pub fn newest_rounds_in_play(&self) -> Result<Vec<Review>, ApiError> {
         self.with(|store| store.newest_rounds_in_play(None))
+    }
+
+    /// Every review GitHub has asked for that nothing on the desk answers.
+    ///
+    /// **The other half of the Inbox's `awaiting_session` candidates**, and the same
+    /// division of labour as the query above: the store answers what is outstanding — not
+    /// withdrawn, no round opened since, and the pull request not merged, closed or out of
+    /// play — and `api.rs` subtracts the pull requests this answer has already drawn
+    /// somewhere else. DEV-996.
+    pub fn open_review_requests(&self) -> Result<Vec<ReviewRequest>, ApiError> {
+        self.with(|store| store.open_review_requests())
     }
 
     /// Posted reviews whose pull request has not been merged or closed, newest posting

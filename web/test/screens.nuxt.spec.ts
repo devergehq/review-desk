@@ -682,9 +682,15 @@ describe('the queue', () => {
      * It is the same rule one group further down: the chip has to count every row the page
      * draws for that repository, and a group left out of this tally would have put its rows
      * on the page and out of the picker's reach.
+     *
+     * **Four on billing-api since DEV-996**, and the fourth is a row with no review behind
+     * it at all: `#104`, a review GitHub asked for that no session has started. The chip
+     * counts rows rather than reviews, which is what lets it count that one — and a
+     * repository whose only row were a request would otherwise have rows on the page and
+     * no chip to reach them by.
      */
     expect(tabs).toContain('acme/portal· 8')
-    expect(tabs).toContain('acme/billing-api· 3')
+    expect(tabs).toContain('acme/billing-api· 4')
 
     const billing = page
       .findAll('[role="radio"]')
@@ -747,14 +753,16 @@ describe('the queue', () => {
   it('links a pull request of the developer’s own out to GitHub rather than writing to it', async () => {
     const page = await shown(Inbox)
     /*
-     * **Found by what it says, not by being the first GitHub link on the page.** It was
-     * the first until DEV-936 put a "GitHub" link on every row above it, and "the first
-     * one" was never what this test is about: the claim is that *this* row's own
-     * destination is the pull request, which is what its action cell says out loud.
+     * **Found by where it goes, which is the claim.** It was "the first GitHub link" until
+     * DEV-936 put one on every row above it, then "the link that says Open on GitHub"
+     * until DEV-996 gave that same wording to a request row — whose own destination is
+     * *also* its pull request, and rightly so. The claim has always been that this row
+     * goes to this pull request, so that is what is matched on; the action cell is
+     * asserted below, where it is a fact about the row rather than a way of finding it.
      */
     const out = page
       .findAll('a')
-      .find(link => link.text().includes('Open on GitHub'))
+      .find(link => link.attributes('href') === 'https://github.com/acme/portal/pull/415')
     expect(out).toBeDefined()
     expect(out!.attributes('href')).toBe('https://github.com/acme/portal/pull/415')
     expect(out!.attributes('rel')).toContain('noopener')
@@ -1155,6 +1163,13 @@ describe('the queue', () => {
       rules: [],
       repos: [],
       own_prs: [],
+      /*
+       * **A fourth thing an empty database has to be empty of.** DEV-996 put a record in
+       * the source that is not a review, so emptying the reviews no longer empties the
+       * queue: a recorded review request draws a row with no review behind it, which is
+       * exactly what it is for. A database with nothing in it has no requests either.
+       */
+      review_requests: [],
       session_liveness: {},
     })
     const page = await shown(Inbox)
@@ -2433,6 +2448,12 @@ describe('the server stops while a page is open', () => {
 /**
  * "Requested, not started": the queue's one group for a pull request nobody has.
  *
+ * **Two kinds of row since DEV-996**: a round Review Desk holds that no session is working
+ * on, and a review GitHub has asked for that no round exists of at all. The second is the
+ * larger half of the gap — the Locus dispatcher sees a request before any session opens a
+ * round and queues it until a slot frees — and it is drawn by the same subtraction, so
+ * every claim below is about both.
+ *
  * DEV-994. Every other group asks a question of a review — is this brief unconfirmed, is
  * this draft ready, has the author said something, is a layer running, has it posted — and
  * a round opened and not written to answers none of them. So it was in no group at all, and
@@ -2446,6 +2467,19 @@ describe('the server stops while a page is open', () => {
  * `crates/server/tests/requested.rs` carries the other half.
  */
 describe('a pull request nobody has picked up', () => {
+  /*
+   * **The fixtures back, before each test.** This block had none, and the tests that
+   * change the source were all at the end of it — so the ones at the top read whatever the
+   * previous `describe` had left behind, which held while nothing in between wrote. DEV-996
+   * adds tests that replace `review_requests` in the middle of the block, and without this
+   * the three after them would have been asserting against a withdrawn request and passing
+   * for the wrong reason: "1 not started" is true of a source with the request taken out
+   * of it as well as of one where the group is right.
+   */
+  beforeEach(async () => {
+    await resetDesk()
+  })
+
   /** The review the fixtures hold with nothing written to it: `acme/portal#421`. */
   const UNSTARTED = 70
 
@@ -2464,18 +2498,19 @@ describe('a pull request nobody has picked up', () => {
     const page = await shown(Inbox)
 
     const drawn = rowsUnder(page, 'Requested, not started')
-    expect(drawn, 'one row for the one pull request nothing has touched').toHaveLength(1)
-    expect(drawn[0]!.text()).toContain('#421')
-    expect(drawn[0]!.text()).toContain('Waiting for a session')
-    expect(drawn[0]!.text()).toContain('no session is working on it')
+    expect(drawn, 'the untouched round, and the request nothing has opened')
+      .toHaveLength(2)
+    const round = drawn.find(row => row.text().includes('#421'))!
+    expect(round.text()).toContain('Waiting for a session')
+    expect(round.text()).toContain('no session is working on it')
     /*
-     * **The row links the round**, which is the newest and the only one this group holds —
-     * and it links the review rather than offering to start a session, because Review Desk
-     * does not dispatch.
+     * **The row links the round**, which is the newest and the only one this group holds
+     * of that pull request — and it links the review rather than offering to start a
+     * session, because Review Desk does not dispatch.
      */
-    expect(drawn[0]!.find('.row').attributes('href'))
+    expect(round.find('.row').attributes('href'))
       .toBe(`/reviews/${UNSTARTED}/understand`)
-    expect(drawn[0]!.text(), 'the repository and the round, on the row’s own line')
+    expect(round.text(), 'the repository and the round, on the row’s own line')
       .toContain('acme/portal · round 1')
 
     /*
@@ -2487,6 +2522,108 @@ describe('a pull request nobody has picked up', () => {
       .toBeGreaterThan(order.indexOf('With the agent'))
     expect(order.indexOf('Requested, not started'))
       .toBeLessThan(order.indexOf('Waiting on the author'))
+  })
+
+  it('draws a review GitHub asked for that no round exists of', async () => {
+    /*
+     * **DEV-996, and the larger half of the gap this group was built for.** The Locus
+     * dispatcher sees a GitHub review request before any session opens a round and queues
+     * it until a slot frees — hours, or forever if the dispatcher is down — and for that
+     * whole time the pull request was on GitHub, in the dispatcher, and on no page here.
+     * On 15 October 2026 the queue drew 7 pull requests against 9 requests on GitHub.
+     */
+    const page = await shown(Inbox)
+    const row = rowsUnder(page, 'Requested, not started')
+      .find(one => one.text().includes('#104'))!
+    expect(row, 'the request is drawn in the same group as the rounds').toBeDefined()
+
+    /*
+     * **No round, said rather than drawn as a hole.** Nobody has opened one, which is the
+     * whole of what the row reports — and the line that draws "round 1" for a round would
+     * have read "round null" here, which TypeScript cannot refuse.
+     */
+    expect(row.find('.meta-text').text())
+      .toBe('acme/billing-api')
+    expect(row.text()).toContain('no round has been opened')
+    expect(row.text()).toContain('Waiting for a session')
+
+    /*
+     * **The pull request is the way out, and the only one.** There is no review page to
+     * open — the row must not link `/reviews/null/understand`, which is a string a
+     * template literal builds happily and a page does not serve — and no ticket, because a
+     * ticket reaches the record when a session opens a round and says what it is for.
+     */
+    const link = row.find('.row')
+    expect(link.attributes('href')).toBe('https://github.com/acme/billing-api/pull/104')
+    expect(link.attributes('target')).toBe('_blank')
+    expect(row.text()).toContain('Open on GitHub')
+    expect(page.html()).not.toContain('/reviews/null')
+
+    /* And how long it has waited, from when GitHub asked rather than when it was told. */
+    expect(row.text()).toMatch(/\d+ days? ago/)
+    expect(row.text()).not.toContain('no time recorded')
+  })
+
+  it('draws no second row for a pull request another group already holds', async () => {
+    /*
+     * **The state the invariant is most easily broken by.** GitHub drops a review request
+     * when a review is posted and adds it again when the author pushes, so a request
+     * standing on a pull request another group holds is ordinary — `#412` has a brief
+     * waiting on the developer under "Needs you", and a request recorded *after* its round
+     * opened is outstanding by the record's own reading. The round's row is the row.
+     */
+    await resetDesk({
+      review_requests: [
+        { repo: 'acme/portal', pr: 412, requested_at: '2026-10-14T08:00:00Z', withdrawn_at: null },
+      ],
+    })
+    const page = await shown(Inbox)
+
+    const rows = [
+      ...rowsUnder(page, 'Needs you'),
+      ...rowsUnder(page, 'With the agent'),
+      ...rowsUnder(page, 'Requested, not started'),
+      ...rowsUnder(page, 'Waiting on the author'),
+    ].filter(row => /#412(?![0-9])/.test(row.text()))
+    expect(rows, 'one pull request, one row, whatever is recorded about it')
+      .toHaveLength(1)
+    expect(rows[0]!.text()).toContain('Problem brief ready')
+  })
+
+  it('draws nothing for a request a round has already answered', async () => {
+    /*
+     * The ticket's fourth acceptance criterion, at the page. `#412`'s round opened on 8
+     * October; a request made the day before is answered by it, and the queue has one row
+     * for the pull request either way — but the record says the ask was met, which is what
+     * keeps `review requested` from being a second row waiting for ever.
+     */
+    await resetDesk({
+      review_requests: [
+        { repo: 'acme/portal', pr: 412, requested_at: '2026-10-07T08:00:00Z', withdrawn_at: null },
+      ],
+    })
+    const page = await shown(Inbox)
+
+    expect(rowsUnder(page, 'Requested, not started')
+      .filter(row => row.text().includes('#412')))
+      .toHaveLength(0)
+  })
+
+  it('draws nothing for a request GitHub has withdrawn', async () => {
+    /* The ticket's third acceptance criterion: nobody is asking for this review now. */
+    await resetDesk({
+      review_requests: [
+        {
+          repo: 'acme/billing-api',
+          pr: 104,
+          requested_at: '2026-10-12T16:40:00Z',
+          withdrawn_at: '2026-10-14T09:00:00Z',
+        },
+      ],
+    })
+    const page = await shown(Inbox)
+
+    expect(page.text()).not.toContain('#104')
   })
 
   it('dates the row from when the round was requested', async () => {
@@ -2513,8 +2650,12 @@ describe('a pull request nobody has picked up', () => {
      * server leaves this group out of.
      */
     expect(page.text()).toContain('7 pull requests need you')
-    /* And the line under it signposts the group, which is below the fold on a phone. */
-    expect(page.text()).toContain('1 not started')
+    /*
+     * And the line under it signposts the group, which is below the fold on a phone. Two
+     * since DEV-996: the untouched round and the request nobody has opened, which asks the
+     * developer for nothing either — Review Desk does not dispatch.
+     */
+    expect(page.text()).toContain('2 not started')
   })
 
   /**
@@ -2525,8 +2666,14 @@ describe('a pull request nobody has picked up', () => {
    * the record and not against the rule it is testing. The four rounds of
    * `globex/portal#9568` are absent because that pull request merged, and `#9541` and
    * `#9585` appear once each although the fixtures hold two rounds of each — a row is one
-   * pull request, which is DEV-957. `#421` is the one DEV-994 added, and before this change
+   * pull request, which is DEV-957. `#421` is the one DEV-994 added, and before that change
    * it was the one with no row anywhere.
+   *
+   * **`#104` is DEV-996's, and it is on this list although the record holds no review of
+   * it.** That is the point of it: a review GitHub asked for, recorded before any round
+   * exists, which no query of reviews could reach. The claim below is about what the page
+   * draws, and a request is a row the page draws — so leaving it out would make the
+   * length assertion refuse the very row this change adds.
    */
   const ON_THE_DESK = [
     '#412',
@@ -2540,6 +2687,7 @@ describe('a pull request nobody has picked up', () => {
     '#9541',
     '#9585',
     '#421',
+    '#104',
   ]
 
   it('every pull request in play and not dismissed is drawn exactly once', async () => {
@@ -2557,10 +2705,15 @@ describe('a pull request nobody has picked up', () => {
     const page = await shown(Inbox)
 
     /*
-     * **Every row the page draws about a review.** "Your pull requests" is left out
-     * deliberately: those are pull requests nobody has reviewed, which Review Desk has no
-     * record of and the ticket puts out of scope — they are not on the desk and this claim
-     * is not about them.
+     * **Every row the page draws about a review.** "Your pull requests" is left out of
+     * *this* tally deliberately: those are pull requests nobody has reviewed, which Review
+     * Desk has no record of and the ticket puts out of scope — they are not on the desk
+     * and the count below is not about them.
+     *
+     * **It is not left out of the claim, and since DEV-996 it cannot be.** The argument
+     * that kept it out entirely was that every row above is a review and that group holds
+     * pull requests nobody has reviewed, so the two could not name the same pull request.
+     * A request is not a review. The assertion after the loop is where that half lives.
      */
     const drawn = [
       ...rowsUnder(page, 'Needs you'),
@@ -2587,6 +2740,53 @@ describe('a pull request nobody has picked up', () => {
      */
     expect(drawn, 'one row per pull request on the desk, and no others')
       .toHaveLength(ON_THE_DESK.length)
+
+    /*
+     * **And nothing the page draws is also one of the developer's own pull requests.** The
+     * fixtures hold `#415` and `#91` there, and a review request recorded against either
+     * would draw the pull request twice — once under each heading — because
+     * `own_prs_without_reviewer` is the one array the group's subtraction could forget. It
+     * is asserted here rather than only in the test below it because this is where a
+     * reader comes to find out what "exactly once" covers.
+     */
+    const ownPrs = rowsUnder(page, 'Your pull requests').map(row => row.text())
+    expect(ownPrs.length, 'the fixtures hold some, or this assertion is vacuous')
+      .toBeGreaterThan(0)
+    for (const pr of ['#415', '#91']) {
+      const names = new RegExp(`${pr}(?![0-9])`)
+      expect(
+        drawn.filter(text => names.test(text)),
+        `${pr} is the developer's own pull request and is drawn under that heading only`,
+      ).toHaveLength(0)
+    }
+  })
+
+  it('draws no second row for a pull request of the developer’s own', async () => {
+    /*
+     * **The one array the group's subtraction could forget, and the only backend that can
+     * show it.** `own_prs_without_reviewer` holds pull requests nobody has reviewed, so
+     * DEV-994 left it out of the subtraction with an argument: every candidate for the
+     * group was a review, and the two sets could not meet. DEV-996 put a row in the group
+     * that is not a review, and nothing stops a request being recorded against a pull
+     * request that array holds — `#415` is in it. The server's own term for this
+     * subtracts nothing, because `own_prs_without_reviewer` is empty there; this backend
+     * is the only place the fault is reachable. Found by an independent review of this
+     * change, which reproduced it exactly this way.
+     */
+    await resetDesk({
+      review_requests: [
+        { repo: 'acme/portal', pr: 415, requested_at: '2026-10-14T08:00:00Z', withdrawn_at: null },
+      ],
+    })
+    const page = await shown(Inbox)
+
+    const rows = [
+      ...rowsUnder(page, 'Requested, not started'),
+      ...rowsUnder(page, 'Your pull requests'),
+    ].filter(row => /#415(?![0-9])/.test(row.text()))
+    expect(rows, 'one pull request, one row, whichever heading it belongs under')
+      .toHaveLength(1)
+    expect(rows[0]!.text()).toContain('No reviewer requested')
   })
 
   it('draws nothing for a pull request whose newest round is dismissed', async () => {
@@ -2611,7 +2811,13 @@ describe('a pull request nobody has picked up', () => {
     })
     const page = await shown(Inbox)
 
-    expect(rowsUnder(page, 'Requested, not started')).toHaveLength(0)
+    /*
+     * One row left, and it is the other kind: `#104`, the review GitHub asked for. The
+     * assertion is on the pull request rather than on an empty group, because since
+     * DEV-996 an empty group would also be what a backend that had stopped drawing
+     * requests looked like.
+     */
+    expect(rowsUnder(page, 'Requested, not started')).toHaveLength(1)
     expect(page.text(), 'and nowhere else either').not.toContain('#421')
   })
 
@@ -2640,7 +2846,7 @@ describe('a pull request nobody has picked up', () => {
     })
     const page = await shown(Inbox)
 
-    expect(rowsUnder(page, 'Requested, not started')).toHaveLength(0)
+    expect(rowsUnder(page, 'Requested, not started')).toHaveLength(1)
     expect(page.text()).not.toContain('#421')
   })
 
@@ -2743,7 +2949,9 @@ describe('a pull request nobody has picked up', () => {
     })
     const page = await shown(Inbox)
 
-    expect(rowsUnder(page, 'Requested, not started')).toHaveLength(0)
+    const left = rowsUnder(page, 'Requested, not started')
+    expect(left.filter(row => row.text().includes('#421')), 'the round has left the group')
+      .toHaveLength(0)
     const agent = rowsUnder(page, 'With the agent').filter(row => row.text().includes('#421'))
     expect(agent, 'drawn there instead, which is the whole of exactly one group')
       .toHaveLength(1)

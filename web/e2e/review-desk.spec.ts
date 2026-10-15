@@ -52,6 +52,7 @@ const {
   heldBackReviewId,
   postedReviewId,
   requestedReviewId,
+  reviewRequestPr,
   mergedReviewIds,
   movedHeadReviewId,
 } = addresses
@@ -182,10 +183,10 @@ test.describe('the whole path, on a seeded database', () => {
      */
     await expect(page.getByText('Retry failed webhook deliveries')).toHaveCount(1)
     /*
-     * **Seven rows for four pull requests that need you**, which is not a contradiction:
-     * the fifth is the posted review under "Waiting on the author", and the sixth and
-     * seventh are under "Requested, not started". Nothing in either group is waiting on the
-     * developer, and the headline counts what is.
+     * **Eight rows for four pull requests that need you**, which is not a contradiction:
+     * the fifth is the posted review under "Waiting on the author", and the last three are
+     * under "Requested, not started". Nothing in either group is waiting on the developer,
+     * and the headline counts what is.
      *
      * **It was five until DEV-994, and the two it gained were already in this seed.**
      * `acme/portal#777` is opened with nothing written to it and `#418`'s brief needed no
@@ -193,8 +194,13 @@ test.describe('the whole path, on a seeded database', () => {
      * neither was drawn anywhere — two pull requests on the record and on no page. That is
      * the defect, live in the seed this suite has been running all along, which is the
      * strongest thing this count can say about the fix.
+     *
+     * **The eighth is DEV-996's and it is the only row here with no review behind it**:
+     * `acme/portal#901`, a review GitHub asked for that `review requested` recorded and no
+     * session has started. Before it, a request waiting in the dispatcher's backlog could
+     * not be held by this record at all.
      */
-    await expect(page.locator('.row')).toHaveCount(7)
+    await expect(page.locator('.row')).toHaveCount(8)
     await expect(page.getByText('Problem brief ready')).toBeVisible()
     await expect(page.getByText('nothing posts until you confirm')).toBeVisible()
     await expect(page.getByText('a draft is ready behind it')).toBeVisible()
@@ -253,8 +259,25 @@ test.describe('the whole path, on a seeded database', () => {
       `/reviews/${requestedReviewId}/understand`,
     )
     await expect(page.locator('.queue-line').filter({ hasText: '#418' })).toHaveCount(1)
+
+    /*
+     * **And the third row of the group, which has no review behind it at all.** DEV-996:
+     * `review requested` recorded what GitHub asked for, and no session has opened a round
+     * — so the row names no round, links no review page, and goes to the pull request,
+     * which is the whole of the way out of it. This is the one row in this suite that
+     * proves the group holds something that is not a review.
+     */
+    const asked = page.locator('.queue-line').filter({ hasText: `#${reviewRequestPr}` })
+    await expect(asked).toHaveCount(1)
+    await expect(asked).toContainText('no round has been opened')
+    await expect(asked.locator('.row')).toHaveAttribute(
+      'href',
+      `https://github.com/acme/portal/pull/${reviewRequestPr}`,
+    )
+    await expect(asked).toContainText('days ago')
+
     /* And the headline still counts only what is waiting on the developer. */
-    await expect(page.getByText('2 not started')).toBeVisible()
+    await expect(page.getByText('3 not started')).toBeVisible()
 
     /*
      * **The group the board drew and the API could not fill, filled.** It said "not
@@ -370,10 +393,11 @@ test.describe('the whole path, on a seeded database', () => {
      * "one row showing its next action" buys — a review waiting for two things does not
      * become two rows, and does not stop being a row when one of them is answered.
      *
-     * Seven rather than five since DEV-994, and the two it gained are the two this seed
-     * had on the record and on no page: see the count in the first test of this file.
+     * Eight rather than five since DEV-994 and DEV-996, and the three it gained are the
+     * two this seed had on the record and on no page and the one it could not hold at all:
+     * see the count in the first test of this file.
      */
-    await expect(page.locator('.row')).toHaveCount(7)
+    await expect(page.locator('.row')).toHaveCount(8)
     const webhooks = page.locator('.row').filter({ hasText: 'Retry failed webhook deliveries' })
     await expect(webhooks).toHaveCount(1)
     await expect(webhooks.getByText('Draft ready')).toBeVisible()

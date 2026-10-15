@@ -2954,3 +2954,36 @@ pub struct FindingInRound {
     /// was not missed".
     pub late: Option<bool>,
 }
+
+/// A review GitHub has asked for, as the record holds it.
+///
+/// **The one record here that is not about a review.** DEV-996: the Locus dispatcher sees a
+/// GitHub review request before any session opens a round, and until it did the pull
+/// request was on GitHub, in the dispatcher's backlog and nowhere on the queue. So this is
+/// keyed on the pull request and holds no review id.
+///
+/// **Whether it has been answered is not here.** `Store::review_request_satisfied_by` is
+/// the comparison — a round of this pull request opened at or after `requested_at` — and it
+/// is made every time the question is asked rather than written down. Migration 21 carries
+/// why.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReviewRequest {
+    /// The repository as `owner/repo`, in the form the record keys on.
+    pub repo: String,
+    pub pr: i64,
+    /// When GitHub asked, as the caller watching GitHub reports it. Not when Review Desk
+    /// was told: the dispatcher can be minutes or hours behind, and "requested 3 days ago"
+    /// is a sentence about the request rather than about the dispatcher.
+    pub requested_at: Timestamp,
+    /// When the request was withdrawn, or `None` for an open one.
+    pub withdrawn_at: Option<Timestamp>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+impl ReviewRequest {
+    /// Whether GitHub has taken this request away.
+    pub fn is_withdrawn(&self) -> bool {
+        self.withdrawn_at.is_some()
+    }
+}

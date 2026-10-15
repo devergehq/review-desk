@@ -59,6 +59,7 @@ import type {
   FindingDecision,
   FindingDecisionMade,
   Inbox,
+  InboxAwaitingSessionItem,
   InboxNewestRound,
   InboxPr,
   LeftTheDesk,
@@ -80,6 +81,7 @@ import type {
   Rule,
   RuleStage,
   RulesPage,
+  SampleReviewRequest,
   SeverityCounts,
   TicketedAndApproved,
 } from '~/types/desk'
@@ -100,6 +102,12 @@ export function loadSource(): DeskSource {
     summary: desk.summary,
     repos: desk.repos,
     own_prs: desk.own_prs,
+    /*
+     * **The one fixture here that is not a review.** DEV-996: a review GitHub has asked
+     * for, recorded before any round of it exists. Cast like the others, because the
+     * fixture file is JSON and the type is the record's.
+     */
+    review_requests: desk.review_requests as DeskSource['review_requests'],
     handled_without_you: desk.handled_without_you,
     session_liveness: desk.session_liveness as Record<string, boolean | null>,
     github_available: desk.github_available,
@@ -220,9 +228,12 @@ function isFinished(detail: ReviewDetail): boolean {
  * what the server's own queries do — one clause, pasted into each of them, so that a group
  * added later cannot quietly put a review back in front of the developer that has left.
  *
- * **Two ways of leaving, and the same exclusion**, which is the server's `IN_PLAY` since
- * DEV-957: the developer dismissed it, or its pull request merged or closed. A dismissal
- * is somebody's act and a finish is something that happened, and neither is anybody's turn.
+ * **Three ways of leaving, and the same exclusion**, which is the server's `IN_PLAY`: the
+ * developer dismissed it, its pull request merged or closed, or the pull request is out of
+ * play. A dismissal is somebody's act, a finish is something that happened and out of play
+ * is the author pulling the change back — and none of the three is anybody's turn. It said
+ * two until DEV-996 noticed it: DEV-962 added the third to `isOffTheDesk` below and this
+ * sentence, which is the one a reader meets first, was left behind.
  *
  * The round arithmetic and `reviewById` deliberately read every review, whatever became of
  * it: a round that has left is still a round the pull request reached, and the review is
@@ -256,6 +267,54 @@ function isOffTheDesk(detail: ReviewDetail): boolean {
     || detail.review.out_of_play != null
     || isFinished(detail)
   )
+}
+
+/**
+ * The reviews GitHub has asked for that nothing on the desk answers.
+ *
+ * **The sample backend's copy of `Store::open_review_requests`, and it has to have one.**
+ * Two backends serve this screen and each implements the rule — the alternative is a demo
+ * that draws a group the binary does not, which is the omission DEV-994's red team found
+ * in this very file. Three exclusions, each the server's:
+ *
+ * * **withdrawn**, which is GitHub no longer asking;
+ * * **satisfied**, which is a round of that pull request opened *at or after* the ask. At
+ *   or after rather than after: the record's resolution is one second, and a dispatcher
+ *   that records a request and starts a session in one tick is the ordinary case. Every
+ *   round counts, whatever became of it — a round that opened and was then dismissed or
+ *   merged still answered the request, and filtering those out would draw the pull request
+ *   here the moment its round left the desk;
+ * * **the record's own answer that the pull request is not to be worked on**: merged or
+ *   closed, out of play, or its newest round dismissed. A dismissal is the developer
+ *   saying they will not act, and a group that put the pull request back in front of them
+ *   under another heading would undo their own act. Unconditional rather than compared
+ *   against the ask, which is the server's argument: `requested_at` is last-write-wins, so
+ *   a clause comparing two times is one a caller can walk past by moving one of them.
+ *
+ * **Times are compared as instants, not as text.** The store compares two integers; these
+ * fixtures are ISO strings, and text comparison is only chronological while every one of
+ * them is spelled the same way — `'2026-10-12T16:40:00+00:00' >= '2026-10-12T16:40:00Z'`
+ * is false, because `+` sorts below `Z`, though the two are the same moment. Parsing is
+ * what makes the two backends answer the same question, and it is what makes a
+ * `requested_at` written as a number by mistake fail loudly rather than compare false
+ * against every round in silence.
+ */
+function outstandingRequests(): SampleReviewRequest[] {
+  return source.review_requests.filter((request) => {
+    if (request.withdrawn_at != null) return false
+    const rounds = source.reviews.filter(
+      detail => detail.review.repo === request.repo && detail.review.pr === request.pr,
+    )
+    const asked = Date.parse(request.requested_at)
+    const satisfied = rounds.some(detail => Date.parse(detail.review.created_at) >= asked)
+    const gone = rounds.some(
+      detail =>
+        detail.review.out_of_play != null
+        || isFinished(detail)
+        || (detail.review.dismissed_at != null && isNewestRound(detail)),
+    )
+    return !satisfied && !gone
+  })
 }
 
 /**
@@ -968,7 +1027,7 @@ function inbox(): Inbox {
       ...posted_awaiting_author,
     ].map(item => `${item.pull_request.repo}#${item.pull_request.pr}`),
   )
-  const awaiting_session = inPlay()
+  const awaiting_session: InboxAwaitingSessionItem[] = inPlay()
     .filter(isNewestRound)
     .filter(detail =>
       !drawnAlready.has(`${detail.review.repo}#${detail.review.pr}`))
@@ -991,7 +1050,74 @@ function inbox(): Inbox {
        */
       requested_at: detail.review.created_at,
     }))
-    .sort((a, b) => b.review_id - a.review_id)
+
+  /*
+   * **The group's second kind of row: a review GitHub asked for that no round exists of.**
+   * DEV-996. The rounds above are pull requests this record holds a review of; these are
+   * pull requests it has only been *told* about, by the Locus dispatcher, which sees the
+   * request first and queues it until a slot frees. For that whole time the pull request
+   * was on GitHub, in the dispatcher, and in no group here.
+   *
+   * **Subtracted against the rounds as well as the five arrays, and after both**, which is
+   * what the server does and for the same reason: the rule is "a pull request this answer
+   * has drawn anywhere", and the rounds are part of what it has drawn. GitHub drops a
+   * review request when a review is posted and adds it again when the author pushes, so a
+   * request standing on a pull request another group holds is ordinary rather than
+   * contrived.
+   */
+  for (const item of awaiting_session) {
+    drawnAlready.add(`${item.pull_request.repo}#${item.pull_request.pr}`)
+  }
+  /*
+   * **And the developer's own pull requests, which the five arrays above leave out.**
+   * DEV-994's argument for leaving that array out of a subtraction was that every
+   * candidate was a review and `own_prs_without_reviewer` holds pull requests nobody has
+   * reviewed, so the two sets could not meet. A request is not a review, and nothing stops
+   * one being recorded against a pull request this fixture already holds there — `#415`
+   * and `#91` are both in it. Without this the page draws that pull request twice, once
+   * under each heading, which is exactly the invariant the group was added to keep.
+   *
+   * **It is empty in the server's answer and populated here**, which is why the server's
+   * own term for it subtracts nothing and this one does: the two backends implement the
+   * same rule against different records, and the only one that can show the fault is this
+   * one. Found by an independent review of this change.
+   */
+  for (const item of source.own_prs) {
+    drawnAlready.add(`${item.pull_request.repo}#${item.pull_request.pr}`)
+  }
+  awaiting_session.push(
+    ...outstandingRequests()
+      .filter(request => !drawnAlready.has(`${request.repo}#${request.pr}`))
+      .map(request => ({
+        /*
+         * **Null, and null together.** There is no round: nobody has opened one, which is
+         * the whole of what this row reports — and the page branches on this field. No
+         * title and no ticket for the same reason: both reach the record when a session
+         * opens a round and says what it is reviewing.
+         */
+        review_id: null,
+        pull_request: { repo: request.repo, pr: request.pr, title: null },
+        ticket_id: null,
+        ticket_url: null,
+        round: null,
+        /*
+         * **When GitHub asked**, as the dispatcher reported it — not when Review Desk was
+         * told. The two differ by however long the request sat in the backlog, which is
+         * the delay this group exists to make visible.
+         */
+        requested_at: request.requested_at,
+      })),
+  )
+  /*
+   * **One order over both kinds, by the one field both carry**, newest ask first — the
+   * server's rule, written out here because this is a second implementation of it rather
+   * than a client of it. It sorted on `review_id` until DEV-996, which is the same order
+   * wherever the ids ascend with the clock and is not an order a request can be put in at
+   * all; the tie-break keeps a round ahead of a request recorded in the same second.
+   */
+  awaiting_session.sort((a, b) =>
+    (b.requested_at ?? '').localeCompare(a.requested_at ?? '')
+    || (b.review_id ?? 0) - (a.review_id ?? 0))
 
   /*
    * **The five waiting groups, and deliberately not the other three.** `in_progress` is

@@ -39,7 +39,7 @@ import type { DeskNotice } from '~/utils/format'
  * | The board draws | Source |
  * |---|---|
  * | Waiting on the author | `posted_awaiting_author` — **DEV-930** |
- * | Requested, not started | `awaiting_session` — **DEV-994** |
+ * | Requested, not started | `awaiting_session` — **DEV-994**, with the reviews GitHub asked for that no round exists of since **DEV-996** |
  * | The age of a draft, a reply or a running session | `draft_ready_at`, `replied_at`, `in_state_since` — **DEV-890** |
  * | "Session not seen for 20 min" | `last_activity_at`, which is when anything last wrote to the review |
  *
@@ -716,14 +716,63 @@ function aboutAgent(item: InboxInProgressItem): string {
 }
 
 /**
- * The line under the title of a row "Requested, not started": the repository and the round.
+ * The line under the title of a row "Requested, not started": the repository, and the
+ * round where there is one.
  *
  * **No second clause about a session's round, unlike `aboutAgent`.** That group draws rows
- * whose session may be on an older round than the row is numbered for; this group *is* the
- * newest round and nothing else, so the two numbers it would reconcile are one number.
+ * whose session may be on an older round than the row is numbered for; a round in this
+ * group *is* the newest round and nothing else, so the two numbers it would reconcile are
+ * one number.
+ *
+ * **And no round at all for a review GitHub has asked for.** DEV-996: the record holds the
+ * repository, the number and when GitHub asked, and no session has opened anything — so
+ * there is no round, and the template literal that drew one would read "acme/portal ·
+ * round null", which TypeScript cannot refuse and a reader would have to interpret.
  */
 function aboutRequested(item: InboxAwaitingSessionItem): string {
-  return `${item.pull_request.repo} · round ${item.round}`
+  const parts = [item.pull_request.repo]
+  if (item.round != null) parts.push(`round ${item.round}`)
+  return parts.join(' · ')
+}
+
+/**
+ * What a row of "Requested, not started" is waiting for, and where it goes.
+ *
+ * **Two kinds of row and two destinations.** A round has a review page, so the row links
+ * it and the action says so. A request has no round to open — DEV-996 — so the row is the
+ * pull request itself, the way a row of "Your pull requests" is, and the action says that
+ * instead. A row whose `to` was built from a null review id would be the string
+ * `/reviews/null/understand`, which `QueueRow` would happily make an anchor to a page that
+ * does not exist; a row with neither would be a `div` still captioned "Open the round",
+ * which is an action it cannot perform.
+ *
+ * **`warn` for a repository name no link can be built from**, which is `ownPr`'s rule and
+ * its reason: `prUrl` refuses a name that is not `owner/repo`, and a request row has no
+ * other way out of it — no review to open, no ticket, nothing. Saying so is better than a
+ * row that advertises an action it cannot do.
+ *
+ * Called once per row from `rows`, like `ownPr`, rather than three times from the markup.
+ */
+function requestedLink(item: InboxAwaitingSessionItem) {
+  if (item.review_id != null) {
+    return {
+      to: `/reviews/${item.review_id}/understand`,
+      href: null,
+      action: 'Open the round',
+      tone: 'quiet' as const,
+      prHref: prUrl(item.pull_request.repo, item.pull_request.pr),
+    }
+  }
+  const href = prUrl(item.pull_request.repo, item.pull_request.pr)
+  return {
+    to: null,
+    href,
+    action: href ? 'Open on GitHub' : 'no link: this is not a repository name',
+    tone: href ? ('quiet' as const) : ('warn' as const),
+    // Left off: the row's own destination is already the pull request, and `QueueRow`'s
+    // own note says a second link to where the row goes is noise.
+    prHref: null,
+  }
 }
 
 /**
@@ -831,9 +880,14 @@ const drawnAbove = computed(() => {
 /**
  * The pull requests waiting for a session to start: the queue's "Requested, not started".
  *
+ * **Two kinds of row since DEV-996**: a round nobody is working on, and a review GitHub
+ * asked for that no round exists of. Both are drawn here and both are subtracted the same
+ * way; `requestedLink` is where the two part company, because only one of them has a round
+ * to open.
+ *
  * **The one group drawn from an array that is already disjoint from the others**, because
  * `GET /inbox` computes it as the pull requests on the desk minus the ones it served in the
- * five groups above. So this subtraction can only ever be a no-op against a server that
+ * five groups above, and then the requests minus every pull request it has drawn at all. So this subtraction can only ever be a no-op against a server that
  * keeps its contract — and it is here all the same, for the reason every other group's is:
  * one row per pull request is a property this page owes its reader, not a promise it takes
  * from whatever answered it. Two backends serve this screen and the sample one is a second
@@ -841,8 +895,9 @@ const drawnAbove = computed(() => {
  *
  * **No `byNewestRound` pass, unlike "With the agent".** That group needs one because
  * `reviews_in_progress` asks only whether a layer is running and two rounds of one pull
- * request can both be there. This array is the newest round and nothing else, and
- * `UNIQUE (repo, pr, round)` is what makes that one row rather than a hope.
+ * request can both be there. This array holds the newest round and nothing else, and
+ * `UNIQUE (repo, pr, round)` is what makes that one row rather than a hope —
+ * `UNIQUE (repo, pr)` on `review_requests` is the same guarantee for the other kind.
  */
 const requested = computed(() =>
   (inbox.data.value?.awaiting_session ?? [])
@@ -1061,16 +1116,22 @@ const rows = computed(() => {
     item => item.pull_request.pr,
   ).map(item => ({ ...item, link: ownPr(item) }))
   /*
-   * Oldest request first, like every other group. **Every row here has a time**, because
-   * `requested_at` is when the round was opened and the record stamps every round — so this
-   * is the one group whose sort can never fall back on the id, and the one that never draws
-   * "not recorded" where the age goes.
+   * Oldest ask first, like every other group. **Every row here has a time**, whichever kind
+   * it is: `requested_at` is when the round was opened, or when GitHub asked for a review
+   * no round exists of, and the record stamps both — so this is the one group whose sort
+   * can never fall back on the tie-break, and the one that never draws "not recorded"
+   * where the age goes.
+   *
+   * **Tie-broken on the pull request's number rather than the review's id**, because since
+   * DEV-996 a row in this group may have no review at all. The id is this page's tie-break
+   * everywhere else and it cannot be here; the number is the identity every row in this
+   * group has, and one pull request is one row in it by construction.
    */
-  const requestedRows: InboxAwaitingSessionItem[] = oldestFirst(
+  const requestedRows = oldestFirst(
     requested.value.filter(item => showing(item.pull_request.repo)),
     item => item.requested_at,
-    item => item.review_id,
-  )
+    item => item.pull_request.pr,
+  ).map(item => ({ ...item, link: requestedLink(item) }))
   // Oldest posting first, like every other group, so the caption over the page stays
   // true: the API serves these newest first, which is the opposite.
   const shown = oldestFirst(
@@ -1093,9 +1154,11 @@ const rows = computed(() => {
  * Whether any row on the page has no recorded time, which the caption then says.
  *
  * **"Requested, not started" is deliberately not a term here**, and it is the only group
- * that is not: `requested_at` is when the round was opened and the record stamps every
- * round as it is created, so there is no absence for that group to report. A term for it
- * would be a condition that can never be true.
+ * that is not: `requested_at` is required of both kinds of row that group holds — the
+ * record stamps every round as it is created, and a request carries the time the
+ * dispatcher reported GitHub asking, which `review requested` will not record without. So
+ * there is no absence for that group to report, and a term for it would be a condition
+ * that can never be true.
  */
 const someTimesMissing = computed(
   () =>
@@ -1413,14 +1476,18 @@ function handledLine(data: Inbox): string {
         </DeskSection>
 
         <!--
-          **Requested, not started: nobody has this.** DEV-994. The group below "With the
-          agent" and above "Waiting on the author", which is where it belongs in the order
-          the page reads: who has it — you, the agent, nobody, the author.
+          **Requested, not started: nobody has this.** DEV-994, and since DEV-996 two kinds
+          of row: a round Review Desk holds that no session is working on, and a review
+          GitHub has asked for that no round exists of. The group below "With the agent"
+          and above "Waiting on the author", which is where it belongs in the order the
+          page reads: who has it — you, the agent, nobody, the author.
 
           **Hidden when empty, and empty is a claim**: the array is the pull requests on the
-          desk minus the ones every other group was served for, so nothing in it says every
-          pull request on the desk is being dealt with. That is a true sentence rather than
-          an unmeasured one, which is what the posted group's own note argues about itself.
+          desk minus the ones every other group was served for, and then the review requests
+          nothing on the desk answers — so nothing in it says every pull request on the desk
+          is being dealt with and nothing has been asked for that nobody has started. That
+          is a true sentence rather than an unmeasured one, which is what the posted group's
+          own note argues about itself.
 
           The note says why no row here asks the developer for anything, including the one
           thing they cannot do about it: Review Desk does not start a session.
@@ -1433,15 +1500,16 @@ function handledLine(data: Inbox): string {
         >
           <QueueRow
             v-for="item in rows.requested"
-            :key="item.review_id"
+            :key="prKey(item)"
             :pr="item.pull_request.pr"
             :title="item.pull_request.title ?? 'no title recorded'"
             :meta="aboutRequested(item)"
-            :to="`/reviews/${item.review_id}/understand`"
-            action="Open the round"
-            action-tone="quiet"
+            :to="item.link.to"
+            :href="item.link.href"
+            :action="item.link.action"
+            :action-tone="item.link.tone"
             :age="sinceLabel(item.requested_at)"
-            :pr-href="prUrl(item.pull_request.repo, item.pull_request.pr)"
+            :pr-href="item.link.prHref"
             :ticket-href="ticketUrl(item.ticket_url)"
             :ticket-id="item.ticket_id"
           >
@@ -1463,7 +1531,20 @@ function handledLine(data: Inbox): string {
               how long the work has been abandoned, which is a different measurement and one
               this record has not got.
             -->
-            <span class="rd-meta what-detail">no session is working on it</span>
+            <!--
+              **Which of the two things the row is**, said rather than left to the reader
+              to infer from an absent round. A round in this group is one Review Desk
+              holds and nobody is working on; a request is one GitHub has asked for that
+              Review Desk has never been told anything else about — no title, no ticket,
+              no round — and "no session is working on it" would read, of the second, as
+              though there were something for a session to pick up here. There is: it is
+              on GitHub, which is where the row goes. DEV-996.
+            -->
+            <span class="rd-meta what-detail">{{
+              item.review_id == null
+                ? 'no round has been opened'
+                : 'no session is working on it'
+            }}</span>
           </QueueRow>
         </DeskSection>
 
