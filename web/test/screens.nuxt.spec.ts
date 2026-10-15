@@ -458,6 +458,22 @@ describe('the queue', () => {
     const source = loadSource()
     await resetDesk({
       reviews: source.reviews.map((detail) => {
+        /*
+         * **Round 1's reply, moved to after round 2 opened.** The fixture records it at
+         * `2026-10-12T08:15:00Z` and round 2 opened at `2026-10-12T16:10:00Z`, so as the
+         * fixture stands DEV-990 reads round 2's own session as having answered it. This
+         * row is about where a live reply's measurement comes from, so the reply has to be
+         * one that is still waiting: an answer the next round was never open to read.
+         */
+        if (detail.review.id === 62) {
+          return {
+            ...detail,
+            outcomes: detail.outcomes.map(outcome => ({
+              ...outcome,
+              occurred_at: '2026-10-12T18:00:00Z',
+            })),
+          }
+        }
         /* Round 2 of #9585: posted, nothing back, and nothing waiting on the developer. */
         if (detail.review.id !== 63) return detail
         return {
@@ -1193,6 +1209,21 @@ describe('a pull request whose later round has posted', () => {
   })
 
   /**
+   * The same outcome, recorded after round 2 opened.
+   *
+   * **The fixture's reply is at `2026-10-12T08:15:00Z` and round 2 opened at
+   * `2026-10-12T16:10:00Z`**, so as the fixture stands DEV-990 reads round 2's session as
+   * having answered it — it was there to read when that round opened. These rows are about
+   * how a *live* reply is drawn on the newest round's row, which needs a reply the next
+   * round was never open to read, so the kept outcomes are moved past that opening. Round 1
+   * holds one, and it is that reply.
+   */
+  const afterRoundTwoOpened = <T extends { occurred_at: string }>(outcome: T): T => ({
+    ...outcome,
+    occurred_at: '2026-10-12T18:00:00Z',
+  })
+
+  /**
    * The desk with round 2 posted, and these outcomes on each round.
    *
    * Posting round 2's draft is also what takes it out of "drafts to approve", which is the
@@ -1210,7 +1241,7 @@ describe('a pull request whose later round has posted', () => {
           return {
             ...detail,
             outcomes: [
-              ...(options.keepRoundOneReply ? detail.outcomes : []),
+              ...(options.keepRoundOneReply ? detail.outcomes.map(afterRoundTwoOpened) : []),
               ...(options.onRoundOne ?? []),
             ],
           }

@@ -23,6 +23,24 @@ mod common;
 use common::{get_json, serve, wait_for, Desk, Served};
 use serde_json::Value;
 
+/// A minute past this run's clock, as the epoch seconds `outcome add --at` takes.
+///
+/// **A reply has to be recorded after the round that answers it opened, and since DEV-990
+/// the fixture may not leave that to the order the commands happen to run in.** The rounds
+/// here are opened during this run, so each one's `created_at` is this run's own clock; a
+/// minute past it is after every one of them, whatever order the setup is written in.
+/// Spelt out rather than defaulted, because a reply defaulted to now sits on the right side
+/// of the comparison by accident, and a reordered fixture would move it with nothing
+/// failing. `std` rather than the store's `now`, because nothing in this file imports the
+/// store and the module header says why.
+fn a_minute_from_now() -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("a clock set after 1970")
+        .as_secs();
+    (now + 60).to_string()
+}
+
 /// The repository and pull request these fixtures are on.
 const REPO: &str = "acme/portal";
 const PR: &str = "741";
@@ -349,8 +367,10 @@ fn a_reply_on_round_one_after_round_two_posts_is_still_waiting() {
     let desk = Desk::new();
     let rounds = two_posted_rounds(&desk);
     code_changed(&desk, &rounds.one, &rounds.one_seq, SECOND, FIRST, SECOND);
-    // The author answers a round-1 thread the day after round 2 posted. A reply is a thing
-    // a person said; only a code change can be already reviewed.
+    // The author answers a round-1 thread after round 2 had already opened, which is what
+    // the `--at` is for: round 2's session was never open to read this, so it is still the
+    // developer's. DEV-990 hides a reply only when a later posted round opened *after* it,
+    // and that case has its own test in the store.
     desk.command()
         .args([
             "outcome",
@@ -365,6 +385,8 @@ fn a_reply_on_round_one_after_round_two_posts_is_still_waiting() {
             "author",
             "--detail",
             "The retry passes the tenant now.",
+            "--at",
+            &a_minute_from_now(),
         ])
         .assert()
         .success();

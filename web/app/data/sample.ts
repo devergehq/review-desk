@@ -391,23 +391,29 @@ function ticketOf(detail: ReviewDetail): { ticket_id: string | null, ticket_url:
 }
 
 /**
- * Whether a code change on this review is one a later posted round has already reviewed.
+ * Whether a later posted round of this pull request has already answered this outcome.
  *
- * **The sample backend's copy of `ALREADY_REVIEWED`, and it has to have one.** DEV-983:
- * an earlier round's `code_changed_after` whose commit is the recorded head of a *later*
- * round of the same pull request that has **posted** is work somebody has done — the round
- * that posted read that code. Without this the demo mode draws a stale item the real API
- * does not, which is the one way the two surfaces are allowed to differ and should not.
+ * **The sample backend's copy of `ALREADY_REVIEWED`, and it has to have one.** Without it
+ * the demo mode draws a stale item the real API does not, which is the one way the two
+ * surfaces are allowed to differ and should not.
  *
- * Either commit the detail carries will answer: the commit the change is at, or the commit
- * the `compare A...B` it was read from ends at. The second is what makes "at or before"
- * decidable — a change at a commit between two rounds has its own sha in neither round's
+ * **Two halves, partitioned on the outcome's kind, as the SQL const is.** DEV-983: an
+ * earlier round's `code_changed_after` whose commit is the recorded head of a *later* round
+ * that has **posted** is work somebody has done — the round that posted read that code.
+ * DEV-990: anything else an author or the harvester recorded names no commit, so the
+ * question is *when* — a later round that opened after it happened and has posted is a
+ * review that had it in front of it. `alreadyAnswered` below is that half.
+ *
+ * **For the code change, either commit the detail carries will answer**: the commit the
+ * change is at, or the commit the `compare A...B` it was read from ends at. The second is
+ * what makes "at or before" decidable — a change at a commit between two rounds has its own sha in neither round's
  * head, but the comparison it was found in ends at a head that did post.
  *
- * **It errs toward showing.** Ancestry is in no record here, so only the rounds' own heads
- * have a known position; a commit this does not recognise is shown. A detail that is not
- * JSON is the same answer, which is why the parse is in a `try`: `outcome add --detail`
- * takes free text and the server's clause guards the same case with `json_valid`.
+ * **The code-change half errs toward showing.** Ancestry is in no record here, so only the
+ * rounds' own heads have a known position; a commit this does not recognise is shown. A
+ * detail that is not JSON is the same answer, which is why the parse is in a `try`:
+ * `outcome add --detail` takes free text and the server's clause guards the same case with
+ * `json_valid`. `alreadyAnswered` carries the other half's own direction.
  *
  * **One document the two read differently, said rather than left to be found.** A detail
  * with the same key twice — `{"commit": "a", "commit": "b"}` — is valid JSON, and
@@ -417,7 +423,7 @@ function ticketOf(detail: ReviewDetail): { ticket_id: string | null, ticket_url:
  * reachable only by hand, through `outcome add --detail`.
  */
 function alreadyReviewed(detail: ReviewDetail, outcome: Outcome): boolean {
-  if (outcome.kind !== 'code_changed_after') return false
+  if (outcome.kind !== 'code_changed_after') return alreadyAnswered(detail, outcome)
   if (outcome.detail == null) return false
 
   let named: unknown
@@ -455,11 +461,47 @@ function alreadyReviewed(detail: ReviewDetail, outcome: Outcome): boolean {
 }
 
 /**
+ * Whether a later posted round opened after this outcome happened.
+ *
+ * **The other half of `ALREADY_REVIEWED`** — DEV-990. A pull request showed "The author
+ * replied to F18 · replied to round 2" with "Read the reply", though round 3 had opened
+ * eight minutes after those replies and posted twenty-nine minutes later. Round 3 is the
+ * answer to the reply: its session read round 2's threads, because they were there to read
+ * when it opened.
+ *
+ * **Both halves of the rule are load-bearing.** A round that opened *before* the reply
+ * arrived may never have seen it, so such a reply stays in the queue — the safe direction
+ * to be wrong in. And a round that has not **posted** is a review that has not happened,
+ * so it has answered nothing; posted is asked the way `isPostedReview` asks it, which is
+ * the one definition DEV-962 made.
+ *
+ * **Strictly after, and parsed rather than compared as text.** Two instants in the same
+ * second leave the reply shown, which is one more glance rather than one reply nobody
+ * reads. `Date.parse` of something that is not an instant is `NaN`, and every comparison
+ * with `NaN` is false — so an unreadable timestamp shows too, which is the same direction
+ * the clause errs in everywhere else. The SQL half compares two `INTEGER NOT NULL`
+ * columns and cannot meet that case at all.
+ */
+function alreadyAnswered(detail: ReviewDetail, outcome: Outcome): boolean {
+  const happened = Date.parse(outcome.occurred_at)
+  if (Number.isNaN(happened)) return false
+
+  return source.reviews.some((other) => {
+    if (other.review.repo !== detail.review.repo) return false
+    if (other.review.pr !== detail.review.pr) return false
+    if (other.review.round <= detail.review.round) return false
+    if (!isPostedReview(other)) return false
+    return Date.parse(other.review.created_at) > happened
+  })
+}
+
+/**
  * The acts on this review that are still waiting on the developer, in the record's order.
  *
- * The author's and the harvester's, minus the code changes a later posted round has
- * already reviewed. Both halves of the `author_replies` item are built from this one call,
- * because the item's events and its `replied_at` have to describe the same set.
+ * The author's and the harvester's, minus what a later posted round has already answered —
+ * a code change at a commit it read, or anything else it was opened after. Both halves of
+ * the `author_replies` item are built from this one call, because the item's events and its
+ * `replied_at` have to describe the same set.
  */
 function stillWaiting(detail: ReviewDetail): Outcome[] {
   return detail.outcomes.filter(
@@ -719,11 +761,12 @@ function inbox(): Inbox {
        */
       newest_round: newestRoundOf(detail),
       /*
-       * **What is still the developer's to read**, which since DEV-983 is not every act the
-       * author or the harvester recorded: a code change a later posted round has already
-       * reviewed is out. One list, read twice below, because the events and the time have to
-       * be about the same set — the row's age comes off this and a figure dated from an
-       * event the row does not draw is a figure about nothing the reader can see.
+       * **What is still the developer's to read**, which is not every act the author or the
+       * harvester recorded: a code change a later posted round has already reviewed is out
+       * (DEV-983), and so is anything else it was opened after (DEV-990). One list, read
+       * twice below, because the events and the time have to be about the same set — the
+       * row's age comes off this and a figure dated from an event the row does not draw is a
+       * figure about nothing the reader can see.
        */
       events: stillWaiting(detail).map(outcome => ({
         finding_seq: outcome.finding_seq,

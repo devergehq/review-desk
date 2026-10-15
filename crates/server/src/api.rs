@@ -265,10 +265,12 @@ impl Api {
                 //
                 // **The store decides which acts those are, since DEV-983.** This filtered
                 // a whole `full_review` by actor, which is a question about who — and the
-                // one it could not ask is whether a later posted round has already reviewed
-                // the change an outcome reports. That is a clause over the review's row and
-                // its pull request's other rounds, so it is asked where the group's own
-                // membership is asked, in one place. The read is narrower as well: the
+                // one it could not ask is whether a later posted round has already answered
+                // an outcome: the change it reports at a commit that round read (DEV-983),
+                // or anything else it says, recorded before that round opened (DEV-990).
+                // Both are clauses over the review's row and its pull request's other
+                // rounds, so they are asked where the group's own membership is asked, in
+                // one place. The read is narrower as well: the
                 // outcomes rather than the review, its layers, its brief, its findings and
                 // its draft.
                 let acted = self.records.author_activity(review.id)?;

@@ -236,8 +236,25 @@ macro_rules! compared_to {
     };
 }
 
-/// **Whether an outcome is a code change a later round has already reviewed**, as a SQL
-/// predicate over an outcome aliased `o` and its own review aliased `v`.
+/// **Whether a later posted round of the same pull request has already answered this
+/// outcome**, as a SQL predicate over an outcome aliased `o` and its own review aliased
+/// `v`.
+///
+/// **Two halves, partitioned on the outcome's kind, because the record can answer two
+/// different questions about it.** A code change names commits, so DEV-983 asks *which
+/// commit* and matches it against the rounds' own heads. Everything else an author or the
+/// harvester records — a reply, a thread resolved — names no commit at all, so DEV-990 asks
+/// *when*: a later round that opened after the thing happened and has posted is a review
+/// that had it in front of it. Every author outcome is covered, each by the question the
+/// record can actually answer about it.
+///
+/// **Not one time test for both, and that is the reason the halves exist.** A code change
+/// at a commit the record does not recognise is shown on purpose — "What it errs toward"
+/// below is that argument — and a time test over those same rows would hide it, which is
+/// DEV-983's whole direction reversed. So the commit test keeps the kind it was written
+/// for and the time test takes the rest.
+///
+/// ## A code change: the commit a later posted round read (DEV-983)
 ///
 /// DEV-983. On 14 October 2026 Patrick's queue drew a two-round pull request as
 /// "round 1 · The code under F1 changed · See what changed" and opened round 1, though
@@ -266,7 +283,7 @@ macro_rules! compared_to {
 /// reviewed — and a newest round has no later round at all, so its events are never touched
 /// by this.
 ///
-/// ## What it errs toward, and why it has to err at all
+/// ### What it errs toward, and why it has to err at all
 ///
 /// **Ancestry is not in this record.** Nothing in Review Desk reads git, so there is no way
 /// to ask whether one commit contains another. The only commits whose position is *known*
@@ -290,7 +307,7 @@ macro_rules! compared_to {
 /// untouched, so the earlier round's What happened page still lists every event the
 /// harvester recorded, which is the ticket's own requirement.
 ///
-/// ## The one case this reads the record wrongly, which is the record's gap and not this
+/// ### The one case this reads the record wrongly, which is the record's gap and not this
 /// rule's
 ///
 /// **A round's `head_sha` is where that round *is*, not where it *posted*.** Those are the
@@ -309,8 +326,63 @@ macro_rules! compared_to {
 /// ever moved would close it and take most of the fix with it: a round that opened, moved
 /// once and then posted is the ordinary shape, and it would stop covering anything.
 /// Raised with the pull request rather than guessed at. Found by a review of this branch.
+///
+/// ## Everything else: a later posted round that opened after it happened (DEV-990)
+///
+/// DEV-990. On 15 October 2026 a pull request showed "The author replied to F18 · replied
+/// to round 2" with "Read the reply", though round 3 had been opened eight minutes after
+/// those replies and posted twenty-nine minutes after that. Round 3 *is* the answer to the
+/// reply: its session read round 2's threads, because they were there to read when it
+/// opened. Carrying the reply on round 2's row asks the developer to answer a thing their
+/// own next review has already answered.
+///
+/// **The rule: a later round of the same pull request opened after the outcome occurred,
+/// and posted.** Both halves of that are load-bearing. *Opened after* is what makes the
+/// later round's reading include the outcome — a round opened before the reply arrived may
+/// never have seen it, so a reply that lands after the round opens stays in the queue,
+/// which is the safe direction to be wrong in. *Posted* is the same test the half above
+/// asks, for the same reason: a round that has not posted is a review that has not
+/// happened, so it has answered nothing.
+///
+/// **`created_at` is when the round opened, and that is a fact this record holds rather
+/// than one derived.** Since DEV-962 new commits on an unposted round move that round's
+/// head instead of opening another, so a round's `created_at` is not disturbed by the
+/// author pushing again — the column means what this clause reads it as.
+///
+/// **Strictly after, so a tie shows.** A reply and the round that answers it recorded in
+/// the same second are indistinguishable here, and `>` leaves the reply in the queue.
+/// One more glance, rather than one reply nobody reads.
+///
+/// **This half asks no question about `detail`**, so none of the JSON guarding above
+/// applies to it: prose in `detail` is as readable here as a harvested document, because
+/// nothing is read out of it.
+///
+/// ### The one shape this takes off the queue altogether, raised rather than decided here
+///
+/// A pull request can now be in no group on the queue where an earlier round's reply used
+/// to hold it there. Round 1 posts and the author replies; round 2 opens after the reply
+/// and posts; the author pushes, so round 3 opens — and nothing has been written to it yet.
+/// Round 1's reply is answered by this rule, round 2 is not the newest round so
+/// [`Store::posted_reviews_awaiting_author`] passes it over, and round 3 has no brief, no
+/// draft at a status and no layer running, so it is in no array of its own. That is the
+/// shape [`NEWEST_ROUND`] and `InboxNewestRound` were written for, and the reply was the
+/// item carrying it.
+///
+/// **Measured rather than argued: the round is in the work list, not lost.**
+/// [`Store::work_list`] returns round 3 in exactly this shape, which is the reading that
+/// makes the queue's silence right rather than wrong — the queue answers what is waiting on
+/// the *developer*, and a round nobody has reviewed is waiting on a session. It resolves
+/// itself the moment one starts: a brief, a draft or a running layer puts the pull request
+/// back on the page under its own round.
+///
+/// **It does not resolve itself if no session ever comes** — a dispatcher that is not
+/// running, or a round 3 that is dismissed, since [`NEWEST_ROUND`] counts a dismissed round
+/// and keeps round 2 out either way. Closing that needs a group the queue has not got, for
+/// a round waiting on nobody in particular, which is a decision about the board rather than
+/// about this rule. Raised with the pull request rather than guessed at. Found by a review
+/// of this branch.
 pub(super) const ALREADY_REVIEWED: &str = concat!(
-    "o.kind = 'code_changed_after' AND EXISTS (
+    "(o.kind = 'code_changed_after' AND EXISTS (
              SELECT 1 FROM reviews reviewed
              LEFT JOIN drafts posted ON posted.review_id = reviewed.id
              WHERE reviewed.repo = v.repo
@@ -322,7 +394,17 @@ pub(super) const ALREADY_REVIEWED: &str = concat!(
     ", ",
     compared_to!(),
     ")
-         )"
+         ))
+         OR (o.kind <> 'code_changed_after' AND EXISTS (
+             SELECT 1 FROM reviews answering
+             LEFT JOIN drafts answered ON answered.review_id = answering.id
+             WHERE answering.repo = v.repo
+               AND answering.pr = v.pr
+               AND answering.round > v.round
+               AND (answered.posted_at IS NOT NULL
+                    OR answering.github_review_id IS NOT NULL)
+               AND answering.created_at > o.occurred_at
+         ))"
 );
 
 impl Store {
@@ -402,12 +484,13 @@ impl Store {
     /// has reached. The queue draws it on the newest round's row and says which round it
     /// was on — DEV-957's "replied to round 1".
     ///
-    /// **A code change a later posted round has already reviewed is not activity.**
-    /// [`ALREADY_REVIEWED`] carries the rule and what it errs toward. DEV-983: an earlier
-    /// round's `code_changed_after` at a commit a posted later round read is work somebody
-    /// has done, and a review whose every recorded act is one of those is in no group at
-    /// all — which is what takes it out of the header's count as well as off the page,
-    /// because the count is of the items the groups hold.
+    /// **What a later posted round has already answered is not activity.**
+    /// [`ALREADY_REVIEWED`] carries both halves of that and what each errs toward. DEV-983:
+    /// an earlier round's `code_changed_after` at a commit a posted later round read is work
+    /// somebody has done. DEV-990: a reply a posted later round *opened after* is a thing
+    /// that round's own session read. Either way a review whose every recorded act is one of
+    /// those is in no group at all — which is what takes it out of the header's count as
+    /// well as off the page, because the count is of the items the groups hold.
     ///
     /// **Membership and the events the server lists are decided by one clause**, pasted
     /// here and into [`Store::author_activity`]. Two readings would let this return a
@@ -446,9 +529,10 @@ impl Store {
     /// The events one `author_replies` item lists. The server built them by reading the
     /// whole review and filtering its outcomes by actor, which could not ask the question
     /// DEV-983 adds: whether a later posted round has already reviewed the change an
-    /// outcome reports. [`ALREADY_REVIEWED`] is that question, and it is a clause over the
-    /// review's own row — so it is asked here, in SQL, rather than reimplemented beside the
-    /// caller that renders the item.
+    /// outcome reports — or the one DEV-990 adds beside it, whether a later posted round
+    /// opened after the author said the thing. [`ALREADY_REVIEWED`] is both questions, and
+    /// each is a clause over the review's own row — so they are asked here, in SQL, rather
+    /// than reimplemented beside the caller that renders the item.
     ///
     /// **The same order [`Store::list_outcomes`] serves**, because the item's first event is
     /// what the queue's row is worded from: finding, then time, then the row's own id. A
@@ -1075,6 +1159,46 @@ mod tests {
         assert!(
             ALREADY_REVIEWED.contains("json_valid(o.detail)"),
             "a detail that is not JSON must not fail the query: {ALREADY_REVIEWED}"
+        );
+    }
+
+    /// **The already-answered half asks when the later round opened, and about every kind
+    /// the commit half does not.**
+    ///
+    /// DEV-990. The two halves partition the outcomes between them on one literal, so the
+    /// `<>` is as load-bearing as the `=` above it and is tied to [`OutcomeKind`] for the
+    /// same reason: a variant renamed would leave the SQL compiling and this half matching
+    /// every row or none. And the comparison itself is named, because a half that asked
+    /// only whether a later round had posted would hide a reply that round was opened
+    /// before — the one direction this rule is written not to be wrong in.
+    #[test]
+    fn the_already_answered_half_asks_when_the_later_round_opened() {
+        assert!(
+            ALREADY_REVIEWED.contains(&format!(
+                "o.kind <> '{}'",
+                OutcomeKind::CodeChangedAfter.as_str()
+            )),
+            "the halves partition on the kind the commit half names: {ALREADY_REVIEWED}"
+        );
+        assert!(
+            ALREADY_REVIEWED.contains("answering.created_at > o.occurred_at"),
+            "a later round that opened before the outcome has not read it: {ALREADY_REVIEWED}"
+        );
+        assert!(
+            ALREADY_REVIEWED.contains("answering.round > v.round"),
+            "only a later round can have answered this outcome: {ALREADY_REVIEWED}"
+        );
+        assert_eq!(
+            ALREADY_REVIEWED.matches("posted_at IS NOT NULL").count(),
+            2,
+            "both halves ask whether the later round posted: {ALREADY_REVIEWED}"
+        );
+        assert_eq!(
+            ALREADY_REVIEWED
+                .matches("github_review_id IS NOT NULL")
+                .count(),
+            2,
+            "and both ask it the way review_is_posted does: {ALREADY_REVIEWED}"
         );
     }
 

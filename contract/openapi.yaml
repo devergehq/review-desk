@@ -4386,22 +4386,33 @@ components:
         An author has acted on a posted review. Built from outcomes with actor `author`
         or `harvester`.
 
-        **A code change a later posted round has already reviewed is not one of those
-        acts** — DEV-983. An earlier round's `code_changed_after` whose commit is the
-        recorded head of a *later* round of the same pull request that has **posted** is
-        work somebody has done: the round that posted read that code. It is in no group
-        here and outside `totals.items`, and a review whose every recorded act is one of
-        those is not an item at all. Either commit the outcome's detail carries will
-        answer — the commit the change is at, or the commit the `compare A...B` it was
-        read from ends at, which is what makes "at or before" decidable.
+        **What a later posted round has already answered is not one of those acts.** Two
+        halves of one rule, and which one an outcome is asked depends on its kind.
 
-        **Nothing is deleted, and the rule errs toward showing.** The outcome row is
+        **A code change** — DEV-983. An earlier round's `code_changed_after` whose commit
+        is the recorded head of a *later* round of the same pull request that has
+        **posted** is work somebody has done: the round that posted read that code.
+        Either commit the outcome's detail carries will answer — the commit the change is
+        at, or the commit the `compare A...B` it was read from ends at, which is what
+        makes "at or before" decidable.
+
+        **Anything else the author or the harvester recorded** — DEV-990. A reply, or a
+        thread resolved, names no commit, so the question is *when*: a later round of the
+        same pull request that **opened after** the outcome occurred and has **posted** is
+        a review whose session read it, because it was there to read when that round
+        opened. Round 3 is the answer to a reply to round 2.
+
+        Either way the act is in no group here and outside `totals.items`, and a review
+        whose every recorded act is one of those is not an item at all.
+
+        **Nothing is deleted, and both halves err toward showing.** The outcome row is
         untouched, so `GET /reviews/{id}` still carries every event the harvester
-        recorded and the earlier round's What happened page still draws them. And nothing
-        in Review Desk reads git, so the only commits whose position is known are the
-        rounds' own heads: a commit the record does not recognise is treated as not
-        reviewed and stays in the queue. Showing a stale item costs a glance; hiding a
-        change nobody reviewed costs the review.
+        recorded and the earlier round's What happened page still draws them. Nothing in
+        Review Desk reads git, so the only commits whose position is known are the rounds'
+        own heads: a commit the record does not recognise is treated as not reviewed and
+        stays in the queue. And a reply that arrives *after* the later round opened stays
+        too — that round's session may never have seen it. Showing a stale item costs a
+        glance; hiding an act nobody has answered costs the review.
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         pull_request: { $ref: '#/components/schemas/InboxPr' }
