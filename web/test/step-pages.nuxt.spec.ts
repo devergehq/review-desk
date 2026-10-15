@@ -1446,7 +1446,7 @@ describe('Alternatives', () => {
      * own fold, and its line says both are there. DEV-892's measurement stands: printed
      * open, "It looked up:" was a 91-word paragraph in a card beside another card.
      */
-    const fold = page.findAll('details.fold')
+    const fold = page.findAll('details.rd-fold')
       .find(one => one.find('summary').text().includes('what it read'))
     expect(fold, 'the fold names both').toBeDefined()
     expect(page.text()).not.toContain('It looked up:')

@@ -341,7 +341,7 @@ const fold = computed(() => foldSummary([
               -->
               <details
                 v-if="files(row.part).length"
-                class="files-fold"
+                class="rd-fold files-fold"
               >
                 <summary>{{ count(files(row.part).length, 'file') }} in this part</summary>
                 <ul class="files">
@@ -390,7 +390,7 @@ const fold = computed(() => foldSummary([
     -->
     <details
       v-if="fold"
-      class="fold"
+      class="rd-fold"
     >
       <summary>{{ fold }}</summary>
 
@@ -828,15 +828,15 @@ const fold = computed(() => foldSummary([
 
 /* ------------------------------------ The files ------------------------------------ */
 
-.files-fold summary {
-  cursor: pointer;
+/*
+ * **The fold inside an opened row, which is `.rd-fold` at a smaller size.** It was the one
+ * control on these pages with a pointer and no height of its own — a 14px line, which is
+ * under the 44px floor `test/contrast.spec.ts` holds every pressable thing to. It escaped
+ * that test while it lived on a page rather than in a component; moving the band here is
+ * what found it.
+ */
+.files-fold > summary {
   font-size: 14px;
-  color: var(--rd-accent);
-}
-
-.files-fold summary:focus-visible {
-  outline: 3px solid var(--rd-focus-ring);
-  outline-offset: 2px;
 }
 
 .files {
@@ -873,20 +873,7 @@ const fold = computed(() => foldSummary([
 
 /* --------------------------------- The three lists --------------------------------- */
 
-.fold > summary {
-  display: flex;
-  align-items: center;
-  min-height: var(--rd-control-min);
-  color: var(--rd-accent);
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.fold > summary:focus-visible {
-  outline: 3px solid var(--rd-focus-ring);
-  outline-offset: 2px;
-}
-
+/* The control itself is `.rd-fold` in `tokens.css`; what is here is what it holds. */
 .reference {
   display: flex;
   flex-direction: column;

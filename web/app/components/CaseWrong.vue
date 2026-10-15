@@ -270,7 +270,7 @@ const reference = computed(() => {
     <!-- ------------------------------- The two flows ------------------------------- -->
     <details
       v-if="hasFlows"
-      class="fold"
+      class="rd-fold"
     >
       <summary>
         <template v-if="flowBefore.length && flowAfter.length">
@@ -417,7 +417,7 @@ const reference = computed(() => {
     -->
     <details
       v-if="reference.length"
-      class="fold"
+      class="rd-fold"
     >
       <summary>{{ reference.join(' · ') }}</summary>
 
@@ -790,23 +790,11 @@ const reference = computed(() => {
 /* -------------------------------- The two folds ------------------------------------ */
 
 /*
- * The one control this app folds with, and the one it uses on every other page that has a
- * fold: a `<summary>` in the accent, at the height everything you press is held to.
+ * **The control itself is `.rd-fold` in `tokens.css`**, which the three bands share: a
+ * summary in the accent, at the height everything you press is held to, with a disclosure
+ * triangle a `display: flex` summary does not draw for itself. What is here is what the
+ * fold holds.
  */
-.fold > summary {
-  display: flex;
-  align-items: center;
-  min-height: var(--rd-control-min);
-  color: var(--rd-accent);
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.fold > summary:focus-visible {
-  outline: 3px solid var(--rd-focus-ring);
-  outline-offset: 2px;
-}
-
 .reference {
   display: flex;
   flex-direction: column;

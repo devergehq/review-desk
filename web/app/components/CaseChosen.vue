@@ -441,7 +441,13 @@ const fold = computed(() => {
         v-if="pick && brief.blind_pass?.pick_why"
         class="pick-why"
       >
-        <strong>{{ pickLead }}:</strong>
+        <!--
+          `{{ ' ' }}` after the lead: Vue's `whitespace: 'condense'` deletes a
+          whitespace-only text node between two elements, so this read "…would pick D:It is
+          the only option…". An interpolated space is a text node wherever it is written;
+          `&#32;` at the end of a line is merged with the newline and deleted with it.
+        -->
+        <strong class="pick-lead">{{ pickLead }}:</strong>{{ ' ' }}
         <TickedText :text="brief.blind_pass.pick_why" />
       </p>
 
@@ -475,7 +481,7 @@ const fold = computed(() => {
 
       <details
         v-if="fold.length"
-        class="fold"
+        class="rd-fold"
       >
         <summary>{{ fold.join(' · ') }}</summary>
 
@@ -744,28 +750,23 @@ const fold = computed(() => {
   font-variant-numeric: tabular-nums;
 }
 
+/*
+ * **The lead in the blind pass's colour, the sentence in the body ink.** Five lines of
+ * question-blue is a paragraph shouting; what the colour is for is saying whose claim this
+ * is, which is the half-line that names the pass.
+ */
 .pick-why {
   margin: 0;
   max-width: var(--rd-measure);
+}
+
+.pick-lead {
   color: var(--rd-question-ink);
 }
 
 /* ------------------------------------ The fold ------------------------------------- */
 
-.fold > summary {
-  display: flex;
-  align-items: center;
-  min-height: var(--rd-control-min);
-  color: var(--rd-accent);
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.fold > summary:focus-visible {
-  outline: 3px solid var(--rd-focus-ring);
-  outline-offset: 2px;
-}
-
+/* The control itself is `.rd-fold` in `tokens.css`; what is here is what it holds. */
 .reference {
   display: flex;
   flex-direction: column;
