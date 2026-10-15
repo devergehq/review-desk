@@ -677,8 +677,13 @@ describe('the queue', () => {
      * Seven on portal, not six: review 43 is posted with its pull request open, so it is a
      * row under "Waiting on the author" and the chip counts it. A chip whose number does
      * not match the rows pressing it shows is worse than no chip.
+     *
+     * **Eight since DEV-994**, and the eighth is review 70 under "Requested, not started".
+     * It is the same rule one group further down: the chip has to count every row the page
+     * draws for that repository, and a group left out of this tally would have put its rows
+     * on the page and out of the picker's reach.
      */
-    expect(tabs).toContain('acme/portal· 7')
+    expect(tabs).toContain('acme/portal· 8')
     expect(tabs).toContain('acme/billing-api· 3')
 
     const billing = page
@@ -2334,6 +2339,7 @@ describe('a read that is still in flight', () => {
       own_prs_without_reviewer: [],
       proposed_rules: [],
       in_progress: [],
+      awaiting_session: [],
       posted_awaiting_author: [],
       handled_without_you: { window_days: 7 },
     }))
@@ -2369,6 +2375,7 @@ describe('the server stops while a page is open', () => {
               own_prs_without_reviewer: [],
               proposed_rules: [],
               in_progress: [],
+              awaiting_session: [],
               posted_awaiting_author: [],
               handled_without_you: { window_days: 7 },
             }),
@@ -2420,5 +2427,432 @@ describe('the server stops while a page is open', () => {
 
     expect(page.text()).not.toContain('Review Desk is not answering')
     expect(page.text()).toContain('Nothing here yet')
+  })
+})
+
+/**
+ * "Requested, not started": the queue's one group for a pull request nobody has.
+ *
+ * DEV-994. Every other group asks a question of a review — is this brief unconfirmed, is
+ * this draft ready, has the author said something, is a layer running, has it posted — and
+ * a round opened and not written to answers none of them. So it was in no group at all, and
+ * the queue said nothing about a review that had been requested.
+ *
+ * **This is where "drawn in exactly one group" is asserted**, because *drawn* is this
+ * page's word. The five arrays above the group overlap on purpose — a posted review whose
+ * author has replied is in two of them, which the contract's `Inbox` describes as a join —
+ * so the server can only promise that every pull request on the desk is in some array and
+ * that the new one overlaps none. One pull request, one row is this page's rule, and
+ * `crates/server/tests/requested.rs` carries the other half.
+ */
+describe('a pull request nobody has picked up', () => {
+  /** The review the fixtures hold with nothing written to it: `acme/portal#421`. */
+  const UNSTARTED = 70
+
+  /** The rows under a heading, whatever group drew them. */
+  function rowsUnder(page: VueWrapper, heading: string) {
+    const group = page.findAll('section').find(one => one.text().startsWith(heading))
+    return group ? group.findAll('.queue-line') : []
+  }
+
+  /** The group headings the page draws, in the order it draws them. */
+  function headings(page: VueWrapper) {
+    return page.findAll('h2').map(one => one.text())
+  }
+
+  it('draws it under Requested, not started, below With the agent', async () => {
+    const page = await shown(Inbox)
+
+    const drawn = rowsUnder(page, 'Requested, not started')
+    expect(drawn, 'one row for the one pull request nothing has touched').toHaveLength(1)
+    expect(drawn[0]!.text()).toContain('#421')
+    expect(drawn[0]!.text()).toContain('Waiting for a session')
+    expect(drawn[0]!.text()).toContain('no session is working on it')
+    /*
+     * **The row links the round**, which is the newest and the only one this group holds —
+     * and it links the review rather than offering to start a session, because Review Desk
+     * does not dispatch.
+     */
+    expect(drawn[0]!.find('.row').attributes('href'))
+      .toBe(`/reviews/${UNSTARTED}/understand`)
+    expect(drawn[0]!.text(), 'the repository and the round, on the row’s own line')
+      .toContain('acme/portal · round 1')
+
+    /*
+     * **Below "With the agent" and above "Waiting on the author"**, which is the order the
+     * page reads in: who has this — you, the agent, nobody, the author.
+     */
+    const order = headings(page)
+    expect(order.indexOf('Requested, not started'))
+      .toBeGreaterThan(order.indexOf('With the agent'))
+    expect(order.indexOf('Requested, not started'))
+      .toBeLessThan(order.indexOf('Waiting on the author'))
+  })
+
+  it('dates the row from when the round was requested', async () => {
+    const page = await shown(Inbox)
+    const row = rowsUnder(page, 'Requested, not started')[0]!
+
+    /*
+     * The fixture's round opened on 13 October 2026, which is days ago whenever this runs
+     * against the fixtures' clock. **Never "no time recorded"**: `requested_at` is when the
+     * round was opened and the record stamps every round, so this is the one group whose
+     * age cell can never be absent.
+     */
+    expect(row.text()).toMatch(/\d+ days? ago/)
+    expect(row.text()).not.toContain('no time recorded')
+  })
+
+  it('is not counted in the pull requests that need you', async () => {
+    const page = await shown(Inbox)
+
+    /*
+     * **The headline is what asks the developer for something**, and this group asks for
+     * nothing — it reports that the work has not been picked up, and the one thing the
+     * developer cannot do about that is pick it up. The count is `totals.items`, which the
+     * server leaves this group out of.
+     */
+    expect(page.text()).toContain('7 pull requests need you')
+    /* And the line under it signposts the group, which is below the fold on a phone. */
+    expect(page.text()).toContain('1 not started')
+  })
+
+  /**
+   * Every pull request the fixtures hold on the desk: the newest round of each, less the
+   * ones that have left.
+   *
+   * **Written out rather than derived from the answer**, so that this holds the page against
+   * the record and not against the rule it is testing. The four rounds of
+   * `globex/portal#9568` are absent because that pull request merged, and `#9541` and
+   * `#9585` appear once each although the fixtures hold two rounds of each — a row is one
+   * pull request, which is DEV-957. `#421` is the one DEV-994 added, and before this change
+   * it was the one with no row anywhere.
+   */
+  const ON_THE_DESK = [
+    '#412',
+    '#407',
+    '#88',
+    '#398',
+    '#409',
+    '#93',
+    '#514',
+    '#403',
+    '#9541',
+    '#9585',
+    '#421',
+  ]
+
+  it('every pull request in play and not dismissed is drawn exactly once', async () => {
+    /*
+     * **The ticket's fourth acceptance criterion, over the rendered page.** The fixtures
+     * hold a pull request in the shape of every group, so this is the invariant the group
+     * exists to make true: a pull request on the desk and not dismissed is drawn once —
+     * never twice, which is DEV-876's rule, and never nought, which is the silence DEV-994
+     * removes.
+     *
+     * **Over the page and not over the answer**, because *drawn* is the page's word: the
+     * arrays overlap on purpose, and `#403` and `#398` are each in two of them. Which group
+     * a row goes in is this page's decision, so this is where the claim can be made at all.
+     */
+    const page = await shown(Inbox)
+
+    /*
+     * **Every row the page draws about a review.** "Your pull requests" is left out
+     * deliberately: those are pull requests nobody has reviewed, which Review Desk has no
+     * record of and the ticket puts out of scope — they are not on the desk and this claim
+     * is not about them.
+     */
+    const drawn = [
+      ...rowsUnder(page, 'Needs you'),
+      ...rowsUnder(page, 'With the agent'),
+      ...rowsUnder(page, 'Requested, not started'),
+      ...rowsUnder(page, 'Waiting on the author'),
+    ].map(row => row.text())
+
+    for (const pr of ON_THE_DESK) {
+      /*
+       * The number, not followed by another digit: a row names it with no space after it
+       * ("#88Cache the permissions lookup") and again inside its links, so a plain
+       * `includes` of `#88` would also match `#884` and a padded one matches neither.
+       */
+      const names = new RegExp(`${pr}(?![0-9])`)
+      const rows = drawn.filter(text => names.test(text))
+      expect(rows, `${pr} is in play and not dismissed, so it is drawn once`)
+        .toHaveLength(1)
+    }
+    /*
+     * **And the page draws no row this list does not name**, which is the other direction
+     * and the one a complement group can get wrong: without it a server drawing a merged
+     * pull request as "Requested, not started" would pass every line above.
+     */
+    expect(drawn, 'one row per pull request on the desk, and no others')
+      .toHaveLength(ON_THE_DESK.length)
+  })
+
+  it('draws nothing for a pull request whose newest round is dismissed', async () => {
+    /*
+     * **The one place the invariant stops, and it stops on purpose.** A dismissal is the
+     * developer saying they will not act on this round, so a group that put the pull
+     * request back in front of them under another heading would undo their own act.
+     */
+    const source = loadSource()
+    await resetDesk({
+      reviews: source.reviews.map(detail =>
+        detail.review.id === UNSTARTED
+          ? {
+              ...detail,
+              review: {
+                ...detail.review,
+                dismissed_at: '2026-10-14T09:00:00Z',
+                dismissed_reason: 'the author withdrew the change',
+              },
+            }
+          : detail) as typeof source.reviews,
+    })
+    const page = await shown(Inbox)
+
+    expect(rowsUnder(page, 'Requested, not started')).toHaveLength(0)
+    expect(page.text(), 'and nowhere else either').not.toContain('#421')
+  })
+
+  it('draws nothing for a pull request that is out of play', async () => {
+    /*
+     * **DEV-962's third way off the desk, which this backend did not ask about.** A pull
+     * request converted to a draft, or whose review request was withdrawn, is paused and
+     * comes back. It hid nothing while every group was a positive predicate — a missing
+     * exclusion only ever kept a row *in* — and this group is a complement, so the same
+     * omission would have drawn every out-of-play pull request as "Requested, not started".
+     * Found by a red-team pass over this change's design, before the group existed.
+     */
+    const source = loadSource()
+    await resetDesk({
+      reviews: source.reviews.map(detail =>
+        detail.review.id === UNSTARTED
+          ? {
+              ...detail,
+              review: {
+                ...detail.review,
+                out_of_play: 'draft' as const,
+                out_of_play_at: '2026-10-14T09:00:00Z',
+              },
+            }
+          : detail) as typeof source.reviews,
+    })
+    const page = await shown(Inbox)
+
+    expect(rowsUnder(page, 'Requested, not started')).toHaveLength(0)
+    expect(page.text()).not.toContain('#421')
+  })
+
+  it('does not tell the developer nothing touched a draft they just approved', async () => {
+    /*
+     * **The group's most reachable member, and the row must not lie to them about it.**
+     * Approving a draft writes step 6 `done`, so the round has no running layer, a status
+     * that is not `ready` and nothing posted — it arrives in this group one click after the
+     * developer's own act. The row said "nothing has picked it up", which was false of a
+     * review they had just signed off; it says no session is *working* on it, which is true
+     * of every member. Found by a review of this change.
+     */
+    /*
+     * `#407`'s draft, which the fixtures hold at `ready` and under "Needs you", moved to
+     * where `approve_draft` leaves it: the status `approved`, step 6 `done`, and nothing
+     * posted. **The real shape, not a review with no draft at all** — the first version of
+     * this test emptied `drafts`, which put the row in the group for the ordinary reason
+     * and asserted the wording against a premise it had not built.
+     */
+    const APPROVED = 15
+    const source = loadSource()
+    await resetDesk({
+      reviews: source.reviews.map(detail =>
+        detail.review.id === APPROVED
+          ? {
+              ...detail,
+              draft_status: 'approved' as const,
+              layers: detail.layers.map(layer =>
+                layer.number === 6
+                  ? {
+                      ...layer,
+                      state: 'done' as const,
+                      detail: 'approved by you',
+                      updated_at: '2026-10-14T09:00:00Z',
+                    }
+                  : layer),
+            }
+          : detail) as typeof source.reviews,
+      drafts: source.drafts.map(detail =>
+        detail.draft.review_id === APPROVED
+          ? {
+              ...detail,
+              draft: {
+                ...detail.draft,
+                status: 'approved' as const,
+                event: 'comment' as const,
+                approved_at: '2026-10-14T09:00:00Z',
+              },
+            }
+          : detail) as typeof source.drafts,
+    })
+    const page = await shown(Inbox)
+
+    expect(
+      rowsUnder(page, 'Needs you').filter(row => row.text().includes('#407')),
+      'an approved draft is waiting on nobody, so it leaves Needs you',
+    ).toHaveLength(0)
+
+    const drawn = rowsUnder(page, 'Requested, not started')
+      .filter(row => row.text().includes('#407'))
+    expect(drawn, 'and arrives here, because no session is posting it').toHaveLength(1)
+    expect(drawn[0]!.text()).toContain('no session is working on it')
+    expect(drawn[0]!.text(), 'a review they have just signed off has been touched')
+      .not.toContain('nothing has picked it up')
+  })
+
+  it('leaves the group as soon as a layer is running', async () => {
+    /*
+     * The ticket's third acceptance criterion. **Level-triggered on the record rather than
+     * on a dispatch**, which is what makes the group recover on its own: nothing tells
+     * Review Desk that a session started, and the first thing a session writes takes the row
+     * away.
+     */
+    const source = loadSource()
+    await resetDesk({
+      reviews: source.reviews.map(detail =>
+        detail.review.id === UNSTARTED
+          ? {
+              ...detail,
+              review: { ...detail.review, session_id: 'ses_dev994' },
+              layers: detail.layers.map(layer =>
+                layer.number === 4
+                  ? {
+                      ...layer,
+                      state: 'running' as const,
+                      detail: 'mapping the solution',
+                      updated_at: '2026-10-14T09:00:00Z',
+                      runs: [{
+                        state: 'running' as const,
+                        started_at: '2026-10-14T09:00:00Z',
+                        ended_as: null,
+                        finished_at: null,
+                        seconds: null,
+                        detail: 'mapping the solution',
+                      }],
+                    }
+                  : layer),
+            }
+          : detail) as typeof source.reviews,
+    })
+    const page = await shown(Inbox)
+
+    expect(rowsUnder(page, 'Requested, not started')).toHaveLength(0)
+    const agent = rowsUnder(page, 'With the agent').filter(row => row.text().includes('#421'))
+    expect(agent, 'drawn there instead, which is the whole of exactly one group')
+      .toHaveLength(1)
+  })
+
+  it('is not a fresh database when it is the only thing on the desk', async () => {
+    /*
+     * **The bug the posted group's own comment records, a second time.** `totals.items` is
+     * the groups that ask the developer for something and this group is deliberately not
+     * among them — so a desk whose only pull request is one nobody has picked up has
+     * `items` nought, nothing in progress and nothing posted, and `isEmpty` sent it to the
+     * card reading "This database holds no reviews" over the thing the developer came to
+     * find. Caught by a red-team pass over this change's design rather than by the page.
+     */
+    const source = loadSource()
+    await resetDesk({
+      reviews: source.reviews.filter(detail => detail.review.id === UNSTARTED),
+      drafts: [],
+      rules: [],
+      own_prs: [],
+    })
+    const page = await shown(Inbox)
+
+    expect(page.text()).not.toContain('Nothing here yet')
+    expect(page.text()).toContain('Requested, not started')
+    expect(page.text()).toContain('#421')
+    /*
+     * And the sentence above the group stops promising that a session produces what turns
+     * up here, which it would be saying directly over a round no session has produced
+     * anything for.
+     */
+    expect(page.text()).toContain('Nothing is waiting on you.')
+    expect(page.text()).not.toContain('Anything a session produces turns up here')
+  })
+
+  it('holds DEV-990’s three-round shape, which no other group reaches', async () => {
+    /*
+     * **The ticket's first acceptance criterion, in the backend that is a second
+     * implementation of the rule.** Round 1 posts and the author replies; round 2 opens
+     * after the reply and posts, so DEV-990 reads round 2's session as having answered it;
+     * the author pushes, so round 3 opens with nothing written to it. Round 1's reply is
+     * answered, round 2 is not the newest round, and round 3 is in no array of its own — so
+     * the pull request was in no group on the queue and recovered only if a session started.
+     *
+     * Built from `globex/portal#9585`, whose rounds 1 and 2 the fixtures already hold: the
+     * second is posted and a third is opened after it.
+     */
+    const source = loadSource()
+    const roundTwo = source.reviews.find(detail => detail.review.id === 63)!
+    /*
+     * Round 3 is the fixtures' own untouched round, re-identified onto this pull request:
+     * no brief, no draft, no finding, no outcome and every step pending, which is what "has
+     * been opened and not written to" is.
+     */
+    const untouched = source.reviews.find(detail => detail.review.id === UNSTARTED)!
+    const roundThree = {
+      ...untouched,
+      review: {
+        ...untouched.review,
+        id: 71,
+        repo: 'globex/portal',
+        pr: 9585,
+        round: 3,
+        head_sha: 'e5f6a75',
+        title: roundTwo.review.title,
+        ticket_id: roundTwo.review.ticket_id,
+        ticket_url: roundTwo.review.ticket_url,
+        created_at: '2026-10-14T06:00:00Z',
+      },
+      nit_ticket: { ...untouched.nit_ticket, review_id: 71 },
+    }
+    await resetDesk({
+      reviews: [
+        ...source.reviews.map(detail =>
+          detail.review.id === 63
+            ? {
+                ...detail,
+                review: { ...detail.review, github_review_id: 'PRR_globex9585r2' },
+              }
+            : detail),
+        roundThree,
+      ] as typeof source.reviews,
+      drafts: source.drafts.map(detail =>
+        detail.draft.review_id === roundTwo.review.id
+          ? {
+              ...detail,
+              draft: {
+                ...detail.draft,
+                status: 'posted' as const,
+                event: 'comment' as const,
+                posted_at: '2026-10-13T05:00:00Z',
+              },
+            }
+          : detail) as typeof source.drafts,
+    })
+    const page = await shown(Inbox)
+
+    const needing = rowsUnder(page, 'Needs you').filter(row => row.text().includes('#9585'))
+    expect(needing, 'round 1’s reply is answered by round 2, which is DEV-990')
+      .toHaveLength(0)
+    const author = rowsUnder(page, 'Waiting on the author')
+      .filter(row => row.text().includes('#9585'))
+    expect(author, 'and round 2 is not the newest round').toHaveLength(0)
+
+    const drawn = rowsUnder(page, 'Requested, not started')
+      .filter(row => row.text().includes('#9585'))
+    expect(drawn, 'so the pull request is here, in the group it used to fall out of')
+      .toHaveLength(1)
+    expect(drawn[0]!.text()).toContain('round 3')
+    expect(drawn[0]!.find('.row').attributes('href')).toBe('/reviews/71/understand')
   })
 })

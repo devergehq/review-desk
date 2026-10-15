@@ -254,6 +254,16 @@ export type DescriptionLint = Schema['DescriptionLint']
 export type InboxOwnPrItem = Schema['InboxOwnPrItem']
 export type InboxProposedRuleItem = Schema['InboxProposedRuleItem']
 export type InboxInProgressItem = Schema['InboxInProgressItem']
+/**
+ * A pull request's newest round that no other group holds: the queue's "Requested, not
+ * started".
+ *
+ * **The one group defined by where a pull request is not.** Every other array asks a
+ * question of a review, and a round opened and not written to answers none of them — so it
+ * was in no group at all and the queue said nothing about it. DEV-994. It needs no
+ * `newest_round`: the group holds only that round, so the item's own identity is the row's.
+ */
+export type InboxAwaitingSessionItem = Schema['InboxAwaitingSessionItem']
 export type InboxHandled = Schema['InboxHandled']
 /**
  * A posted review whose pull request has not been merged or closed.

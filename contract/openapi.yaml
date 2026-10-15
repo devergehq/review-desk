@@ -52,7 +52,8 @@ paths:
       summary: Everything waiting on the developer, grouped
       description: |
         Serves the whole Inbox screen in one call: the five waiting groups, the reviews in
-        progress, the posted reviews waiting on their author, and the week's figures.
+        progress, the rounds waiting for a session to start, the posted reviews waiting on
+        their author, and the week's figures.
       responses:
         '200':
           description: The inbox.
@@ -4181,11 +4182,14 @@ components:
             approve, author replies, the developer's own pull requests, and proposed
             rules.
 
-            **`in_progress` and `posted_awaiting_author` are not in it**, and the
-            distinction is the screen's headline. Both are the record saying where a
-            review is, not a thing asking for an act — so a desk whose only review is
-            posted reads "nothing is waiting on you", which is true, rather than
-            reporting an item the developer cannot do anything about.
+            **`in_progress`, `awaiting_session` and `posted_awaiting_author` are not in
+            it**, and the distinction is the screen's headline. All three are the record
+            saying where a review is, not a thing asking for an act — so a desk whose only
+            review is posted reads "nothing is waiting on you", which is true, rather than
+            reporting an item the developer cannot do anything about. `awaiting_session`
+            joined them in DEV-994 and is the clearest of the three: it says the work has
+            **not** been picked up, and the one thing the developer cannot do about that is
+            pick it up, because Review Desk does not dispatch.
         repos:
           type: integer
           minimum: 0
@@ -4771,6 +4775,111 @@ components:
             null means nothing has written since the record started keeping this, and the
             queue says so rather than drawing a figure.
 
+    InboxAwaitingSessionItem:
+      type: object
+      additionalProperties: false
+      required:
+        [review_id, pull_request, round, requested_at, ticket_id, ticket_url]
+      description: |
+        **A pull request's newest round that no other group holds.** The queue's
+        "Requested, not started". DEV-994.
+
+        **The one group defined by where a pull request is not.** Every other array here
+        answers a question — is this brief unconfirmed, is this draft ready, has the author
+        said something, is a layer running, has it posted — and a round that has been opened
+        and not written to answers none of them. So it was in no array, and the queue said
+        nothing about a review that had been requested: on 15 October 2026 two of them were
+        on the record and invisible until their sessions started. It recovered when a
+        session started and never recovered if none did.
+
+        **The invariant this closes: a pull request in play and not dismissed is drawn in
+        exactly one group.** Which is why the group is worth having rather than one more list
+        to read — not the particular shapes it holds, but that after it the queue has no
+        silence left in it.
+
+        **A dismissed newest round is not here, and that is the answer rather than a
+        remaining gap.** The newest round counts every round whatever became of it, so no
+        earlier round becomes the live round again to stand in for a dismissed one — and a
+        dismissal is the developer saying they will not act on this round, so a group
+        putting the pull request back in front of them under another heading would undo
+        their own act. The same holds for a pull request merged, closed or out of play.
+
+        **Not in `totals.items`**, like `in_progress` and `posted_awaiting_author`: it says
+        the work has not been picked up, which asks the developer for nothing. Review Desk
+        does not dispatch, so the row links the round and says what it is waiting for; it
+        offers no way to start a session.
+
+        ## What is deliberately in it, so the heading is not read as a stronger claim
+
+        The group is "nobody has this", not "nothing has been written to it". Five shapes
+        reach it with work already on the round, and each belongs — **and the row is worded
+        for all five**: it says no session is *working* on it, never that nothing has touched
+        it, because the second is false of the first two below.
+
+        * a draft at `drafting` that a session stopped writing;
+        * a draft the developer **approved** — nothing is waiting on them, and no session is
+          posting it. **The most reachable member of the group**, and one click away:
+          approving a draft writes step 6 `done`, so the round has no running layer, a status
+          that is not `ready` and nothing posted;
+        * a draft **sent back**, for the same reason;
+        * a brief recorded as needing no confirmation, which settles step 2 with no act from
+          the developer;
+        * a round whose only running layer is the harvest, which `in_progress` leaves out
+          because a quarter-hourly read of GitHub is not a session reviewing anything
+          (DEV-933);
+        * a live session **between two steps**, for as long as it takes to finish one and
+          start the next — two `review-desk layer set` calls, so the gap is real. The round
+          moves out of `in_progress` and into this group and back. Before DEV-994 it moved
+          out of `in_progress` and into *nothing*, so the flicker is a group appearing where
+          a silence was, and the wording is what keeps it honest.
+
+        **`review-desk work list` is the half of the record that says which of those an agent
+        is to do**, and it is a command rather than an operation here: this API serves the
+        dashboard, and what an agent is to do next is asked through the command line. This
+        group says only that none of them is being done.
+      properties:
+        review_id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: |
+            The round the row links. **Always the pull request's newest round**, which is
+            DEV-983's rule reached by construction rather than by a `newest_round` field:
+            this group holds only that round, so the item's own identity is the row's. The
+            two arrays that carry `newest_round` do so because they can be about an older
+            one.
+        pull_request: { $ref: '#/components/schemas/InboxPr' }
+        round:
+          type: integer
+          format: int64
+          minimum: 1
+          description: The round's number — the highest this pull request has reached.
+        requested_at:
+          type: string
+          format: date-time
+          description: |
+            **When this round was opened**, which is how long it has waited. Never null: the
+            record stamps every round as it is created.
+
+            **It is when the round opened and not when the waiting began**, and the two
+            differ for the shapes listed above — a draft approved five minutes ago on a
+            round opened a week ago reads as a week. That is the honest answer rather than a
+            convenient one: nothing in this record holds when a session stopped, because
+            nothing observes a session stopping. Since DEV-962 a new commit on an unposted
+            round moves that round's head instead of opening another, so the author pushing
+            again does not disturb it either.
+        ticket_id:
+          allOf:
+            - $ref: '#/components/schemas/ForeignId'
+          description: The ticket the change is for, opaque.
+        ticket_url:
+          allOf:
+            - $ref: '#/components/schemas/TicketUrl'
+          description: |
+            Where that ticket is, so this row can link it without the review being opened
+            first. Null for a review with an id and no address, which the row then names on
+            its own line and does not link.
+
     InboxHandled:
       type: object
       additionalProperties: false
@@ -4804,6 +4913,7 @@ components:
         - own_prs_without_reviewer
         - proposed_rules
         - in_progress
+        - awaiting_session
         - posted_awaiting_author
         - handled_without_you
       description: |
@@ -4811,9 +4921,17 @@ components:
         one tagged list, because each carries different fields and the screen renders
         each differently; `totals.items` is their combined length.
 
-        **Seven arrays, five of which are waiting on the developer.** `in_progress` is
-        with the agent and `posted_awaiting_author` is with the author, and neither is in
-        `totals.items` — see `InboxTotals`.
+        **Eight arrays, five of which are waiting on the developer.** `in_progress` is with
+        the agent, `awaiting_session` is with nobody and `posted_awaiting_author` is with
+        the author; none of the three is in `totals.items` — see `InboxTotals`.
+
+        **Five of the eight are positive predicates and one is a complement, and the
+        difference is worth knowing.** `briefs_to_confirm`, `drafts_to_approve`,
+        `author_replies`, `in_progress` and `posted_awaiting_author` each ask a question of
+        a review, so a mistake in one of them *hides* a row. `awaiting_session` is the
+        pull requests on the desk that none of those five holds, so a mistake there *draws*
+        a wrong row. That is why it is specified as a subtraction over the items this answer
+        actually serves rather than as a sixth question — see `InboxAwaitingSessionItem`.
 
         **One row per review, built from the three arrays that wait on a developer's act**
         — `briefs_to_confirm`, `drafts_to_approve` and `author_replies` — with
@@ -4830,14 +4948,14 @@ components:
         record, and no way to reach it — while the Reviews list showed the link for that
         same review.
 
-        **All five arrays about a review carry the pair** — the seven here less
+        **All six arrays about a review carry the pair** — the eight here less
         `own_prs_without_reviewer`, which is a pull request nobody has reviewed, and
         `proposed_rules`, which is about a rule.
 
-        The join is not all the other two arrays do: `in_progress` holds reviews nothing is
-        waiting on the developer for — 18 and 19 in the example — and
-        `posted_awaiting_author` holds 14, and each of those
-        draws a row of its own. So a row that could not reach its ticket while
+        The join is not all the other arrays do: `in_progress` holds reviews nothing is
+        waiting on the developer for — 18 and 19 in the example — `posted_awaiting_author`
+        holds 14, and `awaiting_session` holds only reviews no other array does, so each of
+        those draws a row of its own. So a row that could not reach its ticket while
         `GET /reviews` linked it was a gap, and this closes it rather than restating it.
 
         It was open for a few commits, with a reason that has since expired: DEV-933 was
@@ -4864,6 +4982,21 @@ components:
         in_progress:
           type: array
           items: { $ref: '#/components/schemas/InboxInProgressItem' }
+        awaiting_session:
+          type: array
+          items: { $ref: '#/components/schemas/InboxAwaitingSessionItem' }
+          description: |
+            A pull request's newest round that no other array here holds, newest review
+            first — the order every array here serves. **Disjoint from every other array in
+            this answer by construction**: it is
+            the pull requests on the desk minus the ones the five groups above were served
+            for, computed after they were built. So a client draws it as a group of its own
+            and needs no subtraction of its own — though the dashboard makes one anyway,
+            because one row per pull request is a property the page owes its reader whatever
+            a server sends.
+
+            **Empty is a claim, and a true one**: every pull request on the desk is in some
+            other group. DEV-994.
         posted_awaiting_author:
           type: array
           items: { $ref: '#/components/schemas/InboxPostedItem' }

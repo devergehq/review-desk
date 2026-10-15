@@ -232,9 +232,30 @@ function inPlay(): ReviewDetail[] {
   return source.reviews.filter(detail => !isOffTheDesk(detail))
 }
 
-/** Whether this review has left the desk, either way. The predicate behind `inPlay`. */
+/**
+ * Whether this review has left the desk, any of the three ways. The predicate behind
+ * `inPlay`.
+ *
+ * **Out of play is the third, and it was missing.** DEV-962 added it to the server's
+ * `IN_PLAY` — a pull request converted to a draft, or whose review request was withdrawn,
+ * "leaves the queue and returns when it's ready or re-requested" — and this predicate
+ * asked only the other two, so sample mode and the real server disagreed about the one of
+ * the three that undoes itself. **It hid nothing until DEV-994**, because every group was a
+ * positive predicate and a missing exclusion only ever kept a row *in*; the new group is a
+ * complement, so the same omission would have drawn every out-of-play pull request as
+ * "Requested, not started". Found by a red-team pass over DEV-994's design, before the
+ * group existed.
+ *
+ * The fixtures all carry `out_of_play: null`, so this changes nothing anybody can see
+ * today; the web tests inject a value to exercise it, which is how the other two ways off
+ * the desk are tested here too.
+ */
 function isOffTheDesk(detail: ReviewDetail): boolean {
-  return detail.review.dismissed_at != null || isFinished(detail)
+  return (
+    detail.review.dismissed_at != null
+    || detail.review.out_of_play != null
+    || isFinished(detail)
+  )
 }
 
 /**
@@ -919,9 +940,66 @@ function inbox(): Inbox {
     .sort((a, b) => (b.posted_at ?? '').localeCompare(a.posted_at ?? ''))
 
   /*
-   * **The five waiting groups, and deliberately not the other two.** `in_progress` is
-   * with the agent and `posted_awaiting_author` is with the author; neither asks the
-   * developer for anything, and `totals.items` is a count of what does.
+   * **The group the queue was missing, and the one defined by subtraction.** DEV-994: a
+   * pull request whose newest round has been opened and not written to answers none of the
+   * five questions above — no brief to confirm, no draft at a status, nothing an author has
+   * said, no layer running, nothing posted — so it was in no array, and the queue said
+   * nothing about a review that had been requested.
+   *
+   * **Subtracted from the arrays just built, not from the fixtures again.** That is what
+   * the server does and for its reason: `author_replies` drops an item whose every event
+   * turned out to be answered, so a rule asking the fixtures a sixth time could subtract a
+   * pull request this answer then draws nowhere. Reading what was served cannot disagree
+   * with what was served — and here it is also simply shorter, because the arrays are to
+   * hand.
+   *
+   * **The candidates are the newest round of everything still on the desk**, which is the
+   * server's `newest_rounds_in_play`: `inPlay` for the three ways off the desk, and
+   * `isNewestRound` because the row is one pull request. A dismissed newest round is
+   * therefore drawn nowhere, which is the answer rather than a gap — the developer said
+   * they would not act on that round.
+   */
+  const drawnAlready = new Set(
+    [
+      ...briefs_to_confirm,
+      ...drafts_to_approve,
+      ...author_replies,
+      ...in_progress,
+      ...posted_awaiting_author,
+    ].map(item => `${item.pull_request.repo}#${item.pull_request.pr}`),
+  )
+  const awaiting_session = inPlay()
+    .filter(isNewestRound)
+    .filter(detail =>
+      !drawnAlready.has(`${detail.review.repo}#${detail.review.pr}`))
+    .map(detail => ({
+      /*
+       * **The newest round, so this item needs no `newest_round` of its own.** The group
+       * holds only that round, and DEV-983's rule is that the queue's row for a pull
+       * request is its newest; the two arrays that carry `newest_round` carry it because
+       * they can be about an older one.
+       */
+      review_id: detail.review.id,
+      pull_request: prOf(detail),
+      ...ticketOf(detail),
+      round: detail.review.round,
+      /*
+       * **When the round was opened, which is how long it has waited.** Never null. Not
+       * when the waiting *began*: a draft the developer approved an hour ago sits on a
+       * round that may have opened a week before, and nothing in this record holds when a
+       * session stopped, because nothing observes one stopping.
+       */
+      requested_at: detail.review.created_at,
+    }))
+    .sort((a, b) => b.review_id - a.review_id)
+
+  /*
+   * **The five waiting groups, and deliberately not the other three.** `in_progress` is
+   * with the agent, `awaiting_session` is with nobody and `posted_awaiting_author` is with
+   * the author; none of them asks the developer for anything, and `totals.items` is a count
+   * of what does. `awaiting_session` is the clearest of the three: it reports that the work
+   * has *not* been picked up, and the one thing the developer cannot do about that is pick
+   * it up, because Review Desk does not dispatch.
    */
   const groups = [
     briefs_to_confirm,
@@ -954,6 +1032,7 @@ function inbox(): Inbox {
     own_prs_without_reviewer: source.own_prs,
     proposed_rules,
     in_progress,
+    awaiting_session,
     posted_awaiting_author,
     handled_without_you: source.handled_without_you,
   }

@@ -357,30 +357,33 @@ macro_rules! compared_to {
 /// applies to it: prose in `detail` is as readable here as a harvested document, because
 /// nothing is read out of it.
 ///
-/// ### The one shape this takes off the queue altogether, raised rather than decided here
+/// ### The one shape this took off the queue altogether, and the group that holds it now
 ///
-/// A pull request can now be in no group on the queue where an earlier round's reply used
-/// to hold it there. Round 1 posts and the author replies; round 2 opens after the reply
-/// and posts; the author pushes, so round 3 opens — and nothing has been written to it yet.
+/// A pull request could be in no group on the queue where an earlier round's reply used to
+/// hold it there. Round 1 posts and the author replies; round 2 opens after the reply and
+/// posts; the author pushes, so round 3 opens — and nothing has been written to it yet.
 /// Round 1's reply is answered by this rule, round 2 is not the newest round so
 /// [`Store::posted_reviews_awaiting_author`] passes it over, and round 3 has no brief, no
 /// draft at a status and no layer running, so it is in no array of its own. That is the
 /// shape [`NEWEST_ROUND`] and `InboxNewestRound` were written for, and the reply was the
 /// item carrying it.
 ///
-/// **Measured rather than argued: the round is in the work list, not lost.**
-/// [`Store::work_list`] returns round 3 in exactly this shape, which is the reading that
-/// makes the queue's silence right rather than wrong — the queue answers what is waiting on
-/// the *developer*, and a round nobody has reviewed is waiting on a session. It resolves
-/// itself the moment one starts: a brief, a draft or a running layer puts the pull request
-/// back on the page under its own round.
+/// **The round was never lost: [`Store::work_list`] returns round 3 in exactly this
+/// shape.** The queue answers what is waiting on the *developer*, and a round nobody has
+/// reviewed is waiting on a session — so a dispatcher that is running resolves it, and the
+/// silence was only ever right for as long as one was.
 ///
-/// **It does not resolve itself if no session ever comes** — a dispatcher that is not
-/// running, or a round 3 that is dismissed, since [`NEWEST_ROUND`] counts a dismissed round
-/// and keeps round 2 out either way. Closing that needs a group the queue has not got, for
-/// a round waiting on nobody in particular, which is a decision about the board rather than
-/// about this rule. Raised with the pull request rather than guessed at. Found by a review
-/// of this branch.
+/// **It did not resolve itself if no session came**, which is a dispatcher that is not
+/// running or a session that died, and on 15 October 2026 two pull requests were on the
+/// record and invisible that way. DEV-994 closes it: [`Store::newest_rounds_in_play`] is
+/// the candidates for a group of its own, "Requested, not started", for a round waiting on
+/// nobody in particular. So this rule may answer a reply without taking a pull request off
+/// the page, which is what makes the half above safe to be right about.
+///
+/// **A round 3 that is dismissed still shows nothing**, since [`NEWEST_ROUND`] counts a
+/// dismissed round and keeps round 2 out either way — and that is the answer, not a
+/// remaining gap: the developer dismissed the round the pull request is on. Raised with the
+/// pull request rather than guessed at. Found by a review of this branch.
 pub(super) const ALREADY_REVIEWED: &str = concat!(
     "(o.kind = 'code_changed_after' AND EXISTS (
              SELECT 1 FROM reviews reviewed
@@ -937,6 +940,74 @@ impl Store {
                 })
             })
             .collect()
+    }
+
+    /// The newest round of every pull request still on the desk, newest first.
+    ///
+    /// **The candidates for the queue's "Requested, not started", and the only query here
+    /// that asks nothing.** DEV-994. Every other group above is a question — is this brief
+    /// unconfirmed, is this draft ready, has the author said something — and the one group
+    /// the queue was missing is defined by where a pull request *is not*: on the desk, and
+    /// in none of the others. So this answers the half that is a fact about the record, and
+    /// the subtraction is the caller's.
+    ///
+    /// **The defect that group closes is a pull request in no group at all.** A round that
+    /// has been opened and not written to has no brief to confirm, no draft at a status, no
+    /// running layer, nothing posted and nothing an author has said — so every query above
+    /// passes it over, and the queue said nothing about a review that had been requested. On
+    /// 15 October 2026 two of them were on the record and invisible until their sessions
+    /// started, and [`ALREADY_REVIEWED`] carries the three-round shape that reaches it with
+    /// no dispatcher failing at all: round 1's reply answered by round 2, round 2 no longer
+    /// the newest, and round 3 opened with nothing in it. It recovers when a session starts
+    /// and never recovers if none does.
+    ///
+    /// **The invariant it serves: in play and not dismissed means exactly one group.** That
+    /// is what makes the group worth having rather than a fifth list to read — not the
+    /// particular shapes it holds, but that after it the queue has no silence left in it.
+    ///
+    /// # Why the subtraction is not here
+    ///
+    /// **It has to be made against what was *served*, and this store does not serve
+    /// anything.** `GET /inbox` can drop an item after the group query returned its review
+    /// — an `author_replies` item whose events all turn out to be answered has
+    /// `minItems: 1` and is left out — and `api.rs` already counts its repositories off the
+    /// items rather than off the reviews for exactly that reason: "counting what was served
+    /// cannot disagree with what was served." A subtraction made here, against five more
+    /// reads of those queries, is a sixth reading of the same record: a write landing
+    /// between them leaves a pull request subtracted from this group and dropped from the
+    /// other, which is the silence the group exists to remove, reintroduced by the fix.
+    ///
+    /// **So the rule lives where the arrays are assembled, in both backends** — `api.rs`
+    /// here and `web/app/data/sample.ts` for sample mode — and each subtracts the items it
+    /// has just built. That is one definition per backend rather than two per backend, and
+    /// the one that cannot disagree with the answer it is part of.
+    ///
+    /// # What this excludes, and why each is right
+    ///
+    /// **A round the developer dismissed.** [`IN_PLAY`] takes it out and [`NEWEST_ROUND`]
+    /// counts it, so no earlier round becomes the live round again to stand in for it. A
+    /// dismissal is the developer saying they will not act on this round; a group that put
+    /// the pull request back in front of them under a different heading would undo their own
+    /// act. **This is the one place the invariant above stops**, and it stops on purpose:
+    /// in play *and not dismissed* is the set it is a claim about.
+    ///
+    /// **A pull request merged, closed or out of play**, which [`IN_PLAY`] carries for the
+    /// reasons written there: the first two are over and the third is paused and comes back.
+    ///
+    /// **A round a newer one has superseded**, which is [`NEWEST_ROUND`] and its argument:
+    /// nothing moves a superseded round's state again, so a pull request on round three
+    /// would otherwise offer three rounds to a group whose row is one pull request.
+    pub fn newest_rounds_in_play(&self, repo: Option<&str>) -> Result<Vec<Review>> {
+        let repo = repo.map(normalise::repo);
+        let mut statement = self.conn.prepare(&format!(
+            "SELECT {REVIEW_COLUMNS} FROM reviews v
+             WHERE {IN_PLAY}
+               AND {NEWEST_ROUND}
+               AND (?1 IS NULL OR v.repo = ?1)
+             ORDER BY v.id DESC"
+        ))?;
+        let rows = statement.query_map(params![repo], row_to_review)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
     /// The nit tickets filed since a time, newest review first.

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type {
   Inbox,
+  InboxAwaitingSessionItem,
   InboxBriefItem,
   InboxDraftItem,
   InboxInProgressItem,
@@ -38,6 +39,7 @@ import type { DeskNotice } from '~/utils/format'
  * | The board draws | Source |
  * |---|---|
  * | Waiting on the author | `posted_awaiting_author` — **DEV-930** |
+ * | Requested, not started | `awaiting_session` — **DEV-994** |
  * | The age of a draft, a reply or a running session | `draft_ready_at`, `replied_at`, `in_state_since` — **DEV-890** |
  * | "Session not seen for 20 min" | `last_activity_at`, which is when anything last wrote to the review |
  *
@@ -714,6 +716,17 @@ function aboutAgent(item: InboxInProgressItem): string {
 }
 
 /**
+ * The line under the title of a row "Requested, not started": the repository and the round.
+ *
+ * **No second clause about a session's round, unlike `aboutAgent`.** That group draws rows
+ * whose session may be on an older round than the row is numbered for; this group *is* the
+ * newest round and nothing else, so the two numbers it would reconcile are one number.
+ */
+function aboutRequested(item: InboxAwaitingSessionItem): string {
+  return `${item.pull_request.repo} · round ${item.round}`
+}
+
+/**
  * The second line under a review's title: where it is, which round, what changed.
  *
  * **The ticket is not here, and it was.** `QueueRow` draws it on this same line now —
@@ -758,6 +771,14 @@ function repoTabs(data: Inbox) {
    * count."
    */
   for (const item of withAuthor.value) bump(item.pull_request.repo)
+  /*
+   * **And the rounds waiting for a session**, which is the group DEV-994 added. Left out,
+   * a repository whose only queue content is one of those got no chip at all — so its rows
+   * were on the page and unreachable from the picker — and every other chip's count was
+   * short of what pressing it showed, which is the failure the comment above names. Found
+   * by a red-team pass over this change's design.
+   */
+  for (const item of requested.value) bump(item.pull_request.repo)
 
   return [
     { value: ALL_REPOSITORIES, label: 'All repositories' },
@@ -781,8 +802,15 @@ const prKey = (item: { pull_request: { repo: string, pr: number } }) =>
   `${item.pull_request.repo}#${item.pull_request.pr}`
 
 /**
- * Every pull request this page draws above the posted group — needs-you **and**
- * with-the-agent.
+ * Every pull request this page draws above the **"Requested, not started"** group —
+ * needs-you and with-the-agent.
+ *
+ * **It was "above the posted group" until DEV-994, and that sentence stopped being true the
+ * moment a group was drawn between the two.** `drawnAboveAuthor` is the set for the posted
+ * group now, and this one is what *it* is built from — so a seventh group inserted here
+ * subtracts against the right set rather than against a comment that had quietly aged.
+ * Found by a review of this change, which is the second time this file's own convention —
+ * that a comment is load-bearing — caught a sentence left behind by an edit.
  *
  * One row per pull request is DEV-876's rule read at DEV-957's level, and it holds across
  * groups, not only within them: a posted review has to be subtracted from this whole set
@@ -797,6 +825,43 @@ const prKey = (item: { pull_request: { repo: string, pr: number } }) =>
 const drawnAbove = computed(() => {
   const drawn = new Set(waiting.value.map(row => `${row.repo}#${row.pr}`))
   for (const item of withAgent.value) drawn.add(prKey(item))
+  return drawn
+})
+
+/**
+ * The pull requests waiting for a session to start: the queue's "Requested, not started".
+ *
+ * **The one group drawn from an array that is already disjoint from the others**, because
+ * `GET /inbox` computes it as the pull requests on the desk minus the ones it served in the
+ * five groups above. So this subtraction can only ever be a no-op against a server that
+ * keeps its contract — and it is here all the same, for the reason every other group's is:
+ * one row per pull request is a property this page owes its reader, not a promise it takes
+ * from whatever answered it. Two backends serve this screen and the sample one is a second
+ * implementation of the same rule.
+ *
+ * **No `byNewestRound` pass, unlike "With the agent".** That group needs one because
+ * `reviews_in_progress` asks only whether a layer is running and two rounds of one pull
+ * request can both be there. This array is the newest round and nothing else, and
+ * `UNIQUE (repo, pr, round)` is what makes that one row rather than a hope.
+ */
+const requested = computed(() =>
+  (inbox.data.value?.awaiting_session ?? [])
+    .filter(item => !drawnAbove.value.has(prKey(item))))
+
+/**
+ * Everything drawn above the posted group, which is now three groups rather than two.
+ *
+ * `drawnAbove` is the needs-you rows and the agent's; this adds the rounds waiting for a
+ * session. **Nothing in the record can be in both this and the posted group** — a posted
+ * round is in `posted_awaiting_author`, so the server never puts it in `awaiting_session` —
+ * so like the filter above this can only agree. It exists because `drawnAbove`'s own
+ * contract is "every pull request this page draws above the posted group", and a group
+ * inserted between the two made that sentence false the moment it was drawn. The next group
+ * added will need it to be true.
+ */
+const drawnAboveAuthor = computed(() => {
+  const drawn = new Set(drawnAbove.value)
+  for (const item of requested.value) drawn.add(prKey(item))
   return drawn
 })
 
@@ -882,7 +947,7 @@ function byNewestRound<T extends {
  */
 const withAuthor = computed(() =>
   (inbox.data.value?.posted_awaiting_author ?? [])
-    .filter(item => !drawnAbove.value.has(prKey(item))))
+    .filter(item => !drawnAboveAuthor.value.has(prKey(item))))
 
 /**
  * How many posted reviews the group left to the groups above it, for the note beside it.
@@ -894,7 +959,7 @@ const withAuthor = computed(() =>
  */
 const alsoPosted = computed(() =>
   (inbox.data.value?.posted_awaiting_author ?? []).filter(
-    item => showing(item.pull_request.repo) && drawnAbove.value.has(prKey(item)),
+    item => showing(item.pull_request.repo) && drawnAboveAuthor.value.has(prKey(item)),
   ).length)
 
 const showing = (name: string) => repo.value === ALL_REPOSITORIES || repo.value === name
@@ -961,6 +1026,7 @@ const rows = computed(() => {
     return {
       needsYou: [],
       withAgent: [],
+      requested: [],
       ownPrs: [],
       withAuthor: [],
       alsoPosted: 0,
@@ -994,6 +1060,17 @@ const rows = computed(() => {
     item => item.opened_at ?? null,
     item => item.pull_request.pr,
   ).map(item => ({ ...item, link: ownPr(item) }))
+  /*
+   * Oldest request first, like every other group. **Every row here has a time**, because
+   * `requested_at` is when the round was opened and the record stamps every round — so this
+   * is the one group whose sort can never fall back on the id, and the one that never draws
+   * "not recorded" where the age goes.
+   */
+  const requestedRows: InboxAwaitingSessionItem[] = oldestFirst(
+    requested.value.filter(item => showing(item.pull_request.repo)),
+    item => item.requested_at,
+    item => item.review_id,
+  )
   // Oldest posting first, like every other group, so the caption over the page stays
   // true: the API serves these newest first, which is the opposite.
   const shown = oldestFirst(
@@ -1004,6 +1081,7 @@ const rows = computed(() => {
   return {
     needsYou,
     withAgent: agentRows,
+    requested: requestedRows,
     ownPrs,
     withAuthor: shown,
     alsoPosted: alsoPosted.value,
@@ -1011,7 +1089,14 @@ const rows = computed(() => {
   }
 })
 
-/** Whether any row on the page has no recorded time, which the caption then says. */
+/**
+ * Whether any row on the page has no recorded time, which the caption then says.
+ *
+ * **"Requested, not started" is deliberately not a term here**, and it is the only group
+ * that is not: `requested_at` is when the round was opened and the record stamps every
+ * round as it is created, so there is no absence for that group to report. A term for it
+ * would be a condition that can never be true.
+ */
 const someTimesMissing = computed(
   () =>
     rows.value.needsYou.some(row => row.at == null)
@@ -1035,6 +1120,16 @@ const someTimesMissing = computed(
 const besides = computed(() => {
   const said: string[] = []
   if (rows.value.withAgent.length) said.push(`${rows.value.withAgent.length} with the agent`)
+  /*
+   * **The group furthest down the page, so the line that signposts the fold says it too.**
+   * "Requested, not started" sits under "With the agent", which on a phone is below the
+   * group this line was written for — and it is the one group whose rows nobody is working
+   * on, so a reader who never scrolls to it is the reader who most needs to know it is
+   * there.
+   */
+  if (rows.value.requested.length) {
+    said.push(`${rows.value.requested.length} not started`)
+  }
   if (rows.value.withAuthor.length) {
     said.push(`${rows.value.withAuthor.length} waiting on the author`)
   }
@@ -1123,14 +1218,42 @@ function layerSegments(item: InboxInProgressItem): Array<'done' | 'now' | 'todo'
  * function sent it to the fresh-database card, which says "This database holds no reviews"
  * over a record holding exactly the review the developer came to find. The group built to
  * show it is inside the other branch and would never have drawn.
+ *
+ * **`awaiting_session` counts for the same reason, and it would have been the same bug a
+ * second time.** A desk whose only pull request is one nobody has picked up has `items`
+ * nought, nothing in progress and nothing posted — which is the headline case of the group
+ * DEV-994 adds, sent to the fresh-database card by the very function whose comment records
+ * the first occurrence. Caught by a red-team pass over this change's design rather than by
+ * the page; three of these terms now exist and the fourth was predictable from the third.
  */
 function isEmpty(data: Inbox): boolean {
   return (
     data.totals.items === 0
     && data.in_progress.length === 0
+    && data.awaiting_session.length === 0
     && data.posted_awaiting_author.length === 0
   )
 }
+
+/**
+ * What the page says when no group is asking the developer for anything.
+ *
+ * **The second sentence is conditional, and that is DEV-994.** "Anything a session produces
+ * turns up here" was unconditional, and it can now sit directly above a populated
+ * "Requested, not started" — a group of rounds a session has produced nothing for — which
+ * reads as the page contradicting itself. The first sentence is true whatever else is on the
+ * page, because `totals.items` counts the groups that ask the developer for something.
+ * Found by a red-team pass over this change's design.
+ *
+ * **Assembled here rather than from `<template v-if>` fragments**, which is the correction
+ * `handledLine` below carries and its reason: the linter puts those on their own lines and
+ * the renderer then separates them with spaces, so the conditional sentence would have
+ * arrived with a double space in front of it.
+ */
+const nothingWaiting = computed(() =>
+  rows.value.requested.length
+    ? 'Nothing is waiting on you.'
+    : 'Nothing is waiting on you. Anything a session produces turns up here.')
 
 /**
  * What was dealt with without the developer, as one sentence.
@@ -1219,7 +1342,7 @@ function handledLine(data: Inbox): string {
           v-if="data.totals.items === 0"
           class="rd-empty"
         >
-          Nothing is waiting on you. Anything a session produces turns up here.
+          {{ nothingWaiting }}
         </p>
 
         <!-- Needs you: the three waiting groups, merged into one row per pull request. -->
@@ -1286,6 +1409,61 @@ function handledLine(data: Inbox): string {
                 · {{ forLabel(item.in_state_since) }}
               </template>
             </span>
+          </QueueRow>
+        </DeskSection>
+
+        <!--
+          **Requested, not started: nobody has this.** DEV-994. The group below "With the
+          agent" and above "Waiting on the author", which is where it belongs in the order
+          the page reads: who has it — you, the agent, nobody, the author.
+
+          **Hidden when empty, and empty is a claim**: the array is the pull requests on the
+          desk minus the ones every other group was served for, so nothing in it says every
+          pull request on the desk is being dealt with. That is a true sentence rather than
+          an unmeasured one, which is what the posted group's own note argues about itself.
+
+          The note says why no row here asks the developer for anything, including the one
+          thing they cannot do about it: Review Desk does not start a session.
+        -->
+        <DeskSection
+          v-if="rows.requested.length"
+          heading="Requested, not started"
+          :count="rows.requested.length"
+          note="waiting for a session — Review Desk does not start one"
+        >
+          <QueueRow
+            v-for="item in rows.requested"
+            :key="item.review_id"
+            :pr="item.pull_request.pr"
+            :title="item.pull_request.title ?? 'no title recorded'"
+            :meta="aboutRequested(item)"
+            :to="`/reviews/${item.review_id}/understand`"
+            action="Open the round"
+            action-tone="quiet"
+            :age="sinceLabel(item.requested_at)"
+            :pr-href="prUrl(item.pull_request.repo, item.pull_request.pr)"
+            :ticket-href="ticketUrl(item.ticket_url)"
+            :ticket-id="item.ticket_id"
+          >
+            <span class="what-title">Waiting for a session</span>
+            <!--
+              **"No session is working on it", and not "nothing has picked it up".** The
+              second was here and was false of the group's most reachable member: approving a
+              draft writes step 6 `done`, so the round has no running layer, a status that is
+              not `ready` and nothing posted — it arrives here seconds after the developer's
+              own act, and told them nothing had touched a review they had just signed off.
+              It was wrong transiently for a live session too, between the two
+              `review-desk layer set` calls that finish one step and start the next. What is
+              true of every member is that no session is *working* on it, which is the same
+              reading of "running" that `reviews_in_progress` takes when it leaves the
+              harvest out. Found by a review of this change.
+
+              **And no duration beside it.** The age cell already says when the round was
+              requested; a second rendering of that same instant as "for 6 days" reads as
+              how long the work has been abandoned, which is a different measurement and one
+              this record has not got.
+            -->
+            <span class="rd-meta what-detail">no session is working on it</span>
           </QueueRow>
         </DeskSection>
 
