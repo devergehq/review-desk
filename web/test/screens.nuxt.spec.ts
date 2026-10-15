@@ -1795,6 +1795,88 @@ describe('the draft preview', () => {
     expect(threads.text()).toContain('Blocker · F9')
   })
 
+  /**
+   * **The outline is the index, as navigation** — step 1.3 of the design loop.
+   *
+   * Three panes: what posts in the order it posts, the preview, and what you do about it.
+   * The outline carries more than the index did, because the body's prose blocks are places
+   * a reader wants to get back to and the index never listed them; and it is built from the
+   * body and the threads rather than from the index's own table, so a draft written before
+   * the house style grew one still has an outline.
+   *
+   * **It is not a second copy of the index.** The index is one folded line inside the body,
+   * where it posts from. This is a way around the document.
+   */
+  it('draws an outline of what posts, in the order it posts', async () => {
+    const page = await open(41)
+    const rows = page.findAll('.outline-row')
+
+    expect(rows.length).toBeGreaterThan(3)
+    /* The body first, then the comments on the code — the order GitHub receives them in. */
+    const lands = rows.map(row => row.find('.outline-lands').exists()
+      ? row.find('.outline-lands').text()
+      : null)
+    expect(lands.filter(one => one === 'on the code')).toHaveLength(9)
+    expect(lands.lastIndexOf('in the body')).toBeLessThan(lands.indexOf('on the code'))
+
+    /* And the opening prose is in it, which the index never carried. */
+    expect(page.find('.outline').text()).toContain('Problem fit')
+  })
+
+  /*
+   * An outline whose rows go nowhere is a table of contents for a document with no page
+   * numbers. jsdom computes no layout and implements no scrolling, so what is asserted is
+   * the half it can hold: every row names an anchor the preview actually draws.
+   */
+  it('gives every outline row a part of the preview to reach', async () => {
+    const page = await open(41)
+
+    for (const row of page.findAll('.outline-row')) {
+      const go = row.find('button')
+      await go.trigger('click')
+      await nextTick()
+      expect(page.find('.outline-go--reached').exists()).toBe(true)
+    }
+
+    /* The body is drawn in pieces, each with its own anchor. */
+    expect(page.findAll('.block').length).toBeGreaterThan(3)
+    expect(page.find('#body-1').exists(), 'the opening prose').toBe(true)
+    expect(page.find('#thread-F9').exists(), 'and the blocker’s comment').toBe(true)
+  })
+
+  /*
+   * **The anchors belong to the rendered tab.** A row pressed while the Markdown tab or the
+   * editor is showing would otherwise scroll to nothing, which reads as a broken control
+   * rather than as a tab being in the way.
+   */
+  it('comes back to the rendered tab before going to a part of the post', async () => {
+    const page = await open(41)
+    const markdown = page.findAll('[role="tab"]').find(tab => tab.text() === 'Markdown')!
+    await markdown.trigger('click')
+    await nextTick()
+    expect(page.find('.source').exists()).toBe(true)
+
+    await page.find('.outline-go').trigger('click')
+    await nextTick()
+
+    expect(page.find('.source').exists()).toBe(false)
+    expect(page.find('.rendered').exists()).toBe(true)
+  })
+
+  /*
+   * **The pieces are the body.** The rendered tab cuts it at its own headings so that each
+   * part can be reached, and the one thing that must stay true of the pieces is that they
+   * are what posts — the same rule the index's fold is held to.
+   */
+  it('draws every part of the body across the blocks', async () => {
+    const page = await open(41)
+    const drawn = page.find('.blocks').text()
+
+    expect(drawn).toContain('Problem fit')
+    expect(drawn).toContain('Index · 12 findings')
+    expect(drawn).toContain('Should · F14')
+  })
+
   /*
    * **The fold is the preview's, and the record's body is untouched.** The rendered tab
    * wraps the index in a `<details>`; the characters that post carry no such thing, and the

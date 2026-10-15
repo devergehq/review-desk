@@ -205,6 +205,7 @@ function measuredElsewhere(thread: DraftThread): string | null {
     >
       <li
         v-for="thread in threads"
+        :id="`thread-${thread.finding_key}`"
         :key="thread.finding_key"
         class="thread"
       >

@@ -1,19 +1,27 @@
 import { describe, expect, it } from 'vitest'
 import {
   TITLE_WORDS,
+  bodyBlocks,
   detectEdits,
   editDetail,
   editLines,
+  foldOpenIndex,
   heldBackGroups,
   heldBackRows,
+  outlineRows,
   shortenClaim,
   splitMermaid,
   visibleWords,
   whereInCode,
-  foldOpenIndex,
 } from '../app/utils/draft'
 import { INDEX_HEADING } from '../app/utils/houseStyle'
-import type { DraftEdit, Finding, HeldBackFinding } from '../app/types/desk'
+import type {
+  DraftEdit,
+  DraftThread,
+  Finding,
+  HeldBackFinding,
+  Severity,
+} from '../app/types/desk'
 
 /*
  * Reading a draft body. Two of DEV-855's acceptance criteria rest on this: the preview
@@ -637,5 +645,126 @@ describe('the open index, which the preview folds rather than drops', () => {
       'Every run on `dev` has failed since the gate went up.\n\n<details>',
     )
     expect(body).toContain('</details>\n\n### Should · F3 ·')
+  })
+})
+
+/**
+ * The body cut at its own headings, for the outline to reach.
+ *
+ * Step 1.3: the draft is three panes and the left one is an outline. An outline whose rows
+ * go nowhere is a table of contents for a document with no page numbers — so the rendered
+ * tab draws the body in pieces, each with an anchor, and the one thing that must be true of
+ * the pieces is that they are the body.
+ */
+describe('the body as blocks', () => {
+  const BODY = [
+    '**5 Should · 4 Nit — 9 open, no blockers.** The shape is right.',
+    '',
+    '**Method** · read the diff at `3ab019bf`.',
+    '',
+    '### Problem fit',
+    '',
+    'Every run on `dev` has failed since the gate went up.',
+    '',
+    '```sh',
+    '### this is a comment in a proof, not a heading',
+    '```',
+    '',
+    '### Should · F3 · Nothing has tested this against the real gate',
+    '',
+    '**What** · the branch does not exist on the remote.',
+    '',
+    '<details><summary>How this review was made</summary>',
+    '',
+    '### Scope',
+    '',
+    'Read the diff.',
+    '',
+    '</details>',
+  ].join('\n')
+
+  it('is the body, character for character', () => {
+    expect(bodyBlocks(BODY).map(block => block.markdown).join('\n')).toBe(BODY)
+  })
+
+  it('opens with the prose before the first heading', () => {
+    const [first] = bodyBlocks(BODY)
+
+    expect(first!.heading).toBeNull()
+    expect(first!.key).toBeNull()
+    expect(first!.markdown).toContain('9 open, no blockers')
+    expect(first!.markdown).toContain('**Method**')
+  })
+
+  /*
+   * A proof is a fenced block and may hold a line that looks like a heading; the house
+   * style's "How this review was made" is a fold that carries headings of its own. Cutting
+   * on either would take a block apart in the middle.
+   */
+  it('does not cut inside a fenced block or a fold', () => {
+    const headings = bodyBlocks(BODY).map(block => block.heading)
+
+    expect(headings).toEqual([
+      null,
+      'Problem fit',
+      'Should · F3 · Nothing has tested this against the real gate',
+    ])
+  })
+
+  it('anchors a finding by its key and everything else by its place', () => {
+    expect(bodyBlocks(BODY).map(block => block.anchor))
+      .toEqual(['body-1', 'body-2', 'body-F3'])
+  })
+})
+
+describe('the outline over it', () => {
+  const thread = (seq: number, severity: Severity, title: string): DraftThread => ({
+    finding_seq: seq,
+    finding_key: `F${seq}`,
+    severity,
+    title,
+    path: 'e2e/auth.ts',
+    line: 12,
+    line_sha: null,
+    side: 'RIGHT',
+    body: '…',
+  })
+
+  const BODY = [
+    '**9 open.**',
+    '',
+    '### Problem fit',
+    '',
+    'The gate.',
+    '',
+    '### Should · F3 · Nothing has tested this against the real gate',
+    '',
+    '**What** · it does not exist.',
+  ].join('\n')
+
+  const rows = () => outlineRows(bodyBlocks(BODY), [thread(1, 'should', 'The guard is in one path')])
+
+  it('reads a composed heading as its severity and its title', () => {
+    const finding = rows().find(row => row.key === 'F3')!
+
+    expect(finding.severity).toBe('should')
+    expect(finding.label).toBe('Nothing has tested this against the real gate')
+    expect(finding.lands).toBe('in the body')
+  })
+
+  it('keeps a heading the house style did not compose, and grades it as nothing', () => {
+    const prose = rows().find(row => row.label === 'Problem fit')!
+
+    expect(prose.severity).toBeNull()
+    expect(prose.key).toBeNull()
+    expect(prose.lands, 'prose lands nowhere in particular; it is the body').toBeNull()
+  })
+
+  it('puts the comments on the code after the body, each reaching its own thread', () => {
+    const last = rows()[rows().length - 1]!
+
+    expect(last.key).toBe('F1')
+    expect(last.lands).toBe('on the code')
+    expect(last.anchor).toBe('thread-F1')
   })
 })

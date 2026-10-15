@@ -2327,6 +2327,32 @@ test.describe('the body is an index and the findings live on the code', () => {
     })
   }
 
+  /**
+   * **An outline row brings its part of the post into view.**
+   *
+   * Step 1.3 of the design loop: the index becomes the left pane of a three-pane draft, as
+   * navigation. jsdom holds the half that is structure — every row names a part the preview
+   * draws — and implements no scrolling at all, so whether pressing one actually goes
+   * anywhere can only be measured here.
+   *
+   * The last row is chosen deliberately: it is a comment on the code, which on this review
+   * is thousands of pixels below the fold, so a row that did nothing would fail rather than
+   * pass by accident on something already on screen.
+   */
+  test('an outline row brings its part of the post into view', async ({ page }) => {
+    await page.goto(`${seeded}reviews/${structuredReviewId}/draft`)
+    await expect(page.locator('h1')).toBeVisible()
+
+    const last = page.locator('.outline-go').last()
+    const anchor = await last.getAttribute('aria-controls')
+    expect(anchor, 'the row says which part it reaches').toBeTruthy()
+    await expect(page.locator(`#${anchor}`)).not.toBeInViewport()
+
+    await last.click()
+    await expect(page.locator(`#${anchor}`)).toBeInViewport()
+    await expect(last).toHaveAttribute('aria-current', 'true')
+  })
+
   /*
    * **A cut takes the row and the thread together**, which is the acceptance criterion the
    * page exists to show: the developer decides on the code review page, and what posts

@@ -16,6 +16,7 @@
 
 import type {
   DraftEdit,
+  DraftThread,
   Finding,
   HeldBackFinding,
   OutcomeKind,
@@ -606,4 +607,140 @@ export function editLines(edits: DraftEdit[]): EditLine[] {
   return lines
     .sort((one, two) => (two.when ?? 0) - (one.when ?? 0) || two.seq - one.seq)
     .map(({ when: _when, ...line }) => line)
+}
+
+/* ===================== The body as blocks, and the outline over it ================== */
+
+/** One block of a body: everything from one heading to the next. */
+export interface BodyBlock {
+  /**
+   * Where the preview draws it, and what an outline row scrolls to. `body-F3` for a
+   * finding's own section, `body-1`, `body-2` … for everything else, counted in order.
+   */
+  anchor: string
+  /** The finding this block raises, or null for prose. */
+  key: string | null
+  /** The heading's own words, less the hashes. Null for the block before the first one. */
+  heading: string | null
+  /** The markdown, exactly as the body holds it, heading included. */
+  markdown: string
+}
+
+/**
+ * The body cut at its own headings, so that each part of it can be reached.
+ *
+ * ## Why the body has to be in pieces at all
+ *
+ * Step 1.3 of the design loop puts an outline down the left of the draft, and an outline
+ * whose rows do not go anywhere is a table of contents for a document with no page numbers.
+ * The rendered tab was one `MarkdownView` over the whole body, which is one element and one
+ * anchor — so the page could say "nine findings post in the body" and not reach any of
+ * them.
+ *
+ * **Nothing is added, removed or reordered.** `blocks.map(block => block.markdown)` joined
+ * by a newline is the body, character for character, which `test/draft.spec.ts` asserts
+ * directly rather than by sampling. The same rule as the index's fold, for the same reason:
+ * this is the page a draft is signed off on.
+ *
+ * ## Where it cuts, and where it refuses to
+ *
+ * A line that opens a heading at **top level**: `##`, `###` or `####` outside every fenced
+ * block and every `<details>`. The two exclusions are the ones that bite — a session's
+ * proof is a fenced block and may hold a line of markdown that looks like a heading, and
+ * the house style's "How this review was made" is a fold that carries headings of its own.
+ * `splitMermaid` above tracks both for the same reason; this is the third reader of that
+ * rule and the first one to cut on it.
+ */
+export function bodyBlocks(body: string): BodyBlock[] {
+  const lines = body.split('\n')
+  const starts: number[] = []
+  let fence: string | null = null
+  let folds = 0
+
+  lines.forEach((line, at) => {
+    const marker = line.match(/^(\s*)(`{3,}|~{3,})\s*([\w-]*)\s*$/)
+    if (marker) {
+      const found = marker[2]!
+      if (fence == null) fence = found
+      else if (found.startsWith(fence[0]!) && found.length >= fence.length) fence = null
+      return
+    }
+    if (fence != null) return
+    if (/<details\b/i.test(line)) folds += 1
+    if (/<\/details>/i.test(line)) folds = Math.max(0, folds - 1)
+    if (folds === 0 && /^#{2,4}\s/.test(line)) starts.push(at)
+  })
+
+  /* The run before the first heading is a block of its own: the verdict line and Method. */
+  const cuts = starts[0] === 0 ? starts : [0, ...starts]
+  let prose = 0
+
+  return cuts.map((start, at) => {
+    const end = cuts[at + 1] ?? lines.length
+    const first = lines[start]!
+    const heading = /^#{2,4}\s/.test(first) ? first.replace(/^#{2,4}\s+/, '').trim() : null
+    const key = heading == null ? null : (/\bF(\d+)\b/.exec(heading)?.[0] ?? null)
+    if (key == null) prose += 1
+    return {
+      anchor: key == null ? `body-${prose}` : `body-${key}`,
+      key,
+      heading,
+      markdown: lines.slice(start, end).join('\n'),
+    }
+  })
+}
+
+/** One line of the outline: what posts, where it lands, and what reaches it. */
+export interface OutlineRow {
+  anchor: string
+  /** The finding's number, or null for a block of prose. */
+  key: string | null
+  severity: Severity | null
+  /** What the row reads: a finding's title, or a heading. */
+  label: string
+  /** Which half of the post this is. Null for the prose the body opens with. */
+  lands: 'in the body' | 'on the code' | null
+}
+
+/**
+ * The outline: everything this draft posts, in the order it posts it.
+ *
+ * **It is the index, as navigation.** Patrick, 16 October 2026: the index becomes the
+ * outline pane of the three-pane draft, "so it is navigation there rather than a
+ * duplicate". It carries more than the index does — the body's prose blocks are in it too,
+ * because `### Problem fit` is a place a reader wants to get back to and the index never
+ * listed it — and it is built from the body and the threads rather than from the index's
+ * own table, so a body whose index was never written still has one.
+ *
+ * **The severity and the title are read off the heading the house style composed.** The
+ * same decision as the fold's tally: the body is what posts, a developer may have rewritten
+ * a heading, and this is a view of the body rather than of the record beside it. A heading
+ * the style did not compose keeps its own words and takes no severity.
+ */
+export function outlineRows(blocks: BodyBlock[], threads: DraftThread[]): OutlineRow[] {
+  const composed = /^(Blocker|Should|Nit|Question)\s+·\s+F\d+\s+·\s+(.+)$/
+
+  const body = blocks.map((block) => {
+    const found = block.heading == null ? null : composed.exec(block.heading)
+    return {
+      anchor: block.anchor,
+      key: block.key,
+      severity: found == null
+        ? null
+        : (found[1]!.toLowerCase() as Severity),
+      label: found?.[2] ?? block.heading ?? 'The verdict, and how the review was made',
+      lands: block.key == null ? null : ('in the body' as const),
+    }
+  })
+
+  return [
+    ...body,
+    ...threads.map(thread => ({
+      anchor: `thread-${thread.finding_key}`,
+      key: thread.finding_key,
+      severity: thread.severity,
+      label: thread.title,
+      lands: 'on the code' as const,
+    })),
+  ]
 }
