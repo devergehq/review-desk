@@ -4018,8 +4018,20 @@ test.describe('a round whose head moved', () => {
 
       await page.goto(`${seeded}reviews/${reviewId}/draft`)
       await page.getByRole('button', { name: 'Sign off and post' }).click()
-      /* The sign-off is recorded, and the page says the session posts it. */
-      await expect(page.getByText(/signed off|Signed off|posts it/)).toBeVisible()
+      /*
+       * The sign-off is recorded, and the page says the session posts it.
+       *
+       * **Named by the one element that says it**, which is the posting watch's live
+       * region. The pattern this replaces — `/signed off|Signed off|posts it/` over the
+       * whole page — matches six things once a draft is signed off: the step's outcome on
+       * the trail, two lines of the preview's own prose, the sign-off card's label, the
+       * line under its buttons and this. Strict mode fails on all six, and which of them
+       * have rendered when the locator resolves is a race, so the assertion passed or
+       * failed by timing rather than by what the page says.
+       */
+      await expect(
+        page.getByRole('status').filter({ hasText: 'The review session posts it' }),
+      ).toBeVisible()
 
       /* And then the author pushes. */
       cli(seededDatabase, [
