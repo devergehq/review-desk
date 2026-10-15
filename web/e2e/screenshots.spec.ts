@@ -72,7 +72,15 @@ test.describe('a seeded database', () => {
      * page this set was missing.
      */
     await page.goto(`${seeded}reviews/${reviewId}/code-review`)
-    await expect(page.getByText('A retried delivery is sent without')).toBeVisible()
+    /*
+     * **Scoped to the pane**, because step 1.2 of the design loop made this page a dense
+     * list beside the finding it has chosen — so a finding's claim is now drawn on its row
+     * and again in the pane, and the bare text matched three elements. This project is not
+     * in CI, which is why that went unnoticed until the case page was built.
+     */
+    await expect(
+      page.locator('#finding-1').getByText('A retried delivery is sent without'),
+    ).toBeVisible()
     await shot(page, 'seeded-2-review')
 
     await page.goto(`${seeded}reviews/${reviewId}/draft`)
@@ -139,47 +147,44 @@ test.describe('a seeded database', () => {
  * private repository, and nothing from them is committed to this repository — which is why
  * the example was invented at the same lengths in the first place.
  */
-/**
- * A fold in the page's own body, which is to say not the step trail's.
- *
- * DEV-892 gave a long step note a control that opens it, and the trail is above everything
- * — so "the first closed fold on the page" became the trail's. These pictures are of the
- * pages, and the trail has one of its own.
- */
-const BODY_FOLD = 'button[aria-expanded="false"]:not(.rest)'
+test.describe('the case page', () => {
+  /**
+   * **Three pages became one on 16 October 2026**, so three pictures became two states of
+   * one page: the case as it opens, and the case with everything a reader can open opened.
+   *
+   * The `dev-885-1` to `-3` pictures are of the three pages this replaced and are left as
+   * the record of them. What they were pictures of — a matrix headed by labels, the part
+   * cards, "Already decided" — is on this page or argued away in the components that draw
+   * it.
+   */
+  test('the three bands, closed and open', async ({ page }) => {
+    for (const width of [1440, 390] as const) {
+      await page.setViewportSize({ width, height: width === 1440 ? 900 : 844 })
+      const suffix = width === 1440 ? '' : '-390'
 
-test.describe('the three step pages', () => {
-  test('Understand, Alternatives and Solution', async ({ page }) => {
-    const steps = ['understand', 'alternatives', 'solution'] as const
-
-    for (const [at, step] of steps.entries()) {
-      await page.goto(`${seeded}reviews/${structuredReviewId}/${step}`)
+      await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
       await expect(page.locator('h1')).toBeVisible()
       /*
-       * One fold open on each, because a fold is half of what these pages are for —
-       * Patrick wants to "go down the rabbit holes when I need to", and a picture of three
-       * pages with everything closed shows only the half that is always visible.
-       *
-       * **Not the trail's**, which since DEV-892 is the first fold on the page in document
-       * order. It has a picture of its own below; what these three are about is the fold in
-       * the page's own body.
+       * **As it opens.** The headline, the derived answer line, the verdict on the
+       * approach, and the three bands — which is the whole point of the page and the thing
+       * to compare against the three it replaced.
        */
-      await page.locator(BODY_FOLD).first().click()
-      await shot(page, `dev-885-${at + 1}-${step}`)
-    }
+      await expect(page.locator('.answer')).toBeVisible()
+      await shot(page, `case-1-the-case${suffix}`)
 
-    /*
-     * And at a phone's width. The assertion that nothing scrolls sideways is in the
-     * acceptance suite; these are the pictures of what it looks like when it does not —
-     * the six-column matrix as a card per option, and the four-column tables as labelled
-     * lists.
-     */
-    await page.setViewportSize({ width: 390, height: 844 })
-    for (const [at, step] of steps.entries()) {
-      await page.goto(`${seeded}reviews/${structuredReviewId}/${step}`)
-      await expect(page.locator('h1')).toBeVisible()
-      await page.locator(BODY_FOLD).first().click()
-      await shot(page, `dev-885-${at + 1}-${step}-390`)
+      /*
+       * **And with every fold open**, because a fold is half of what this page is for:
+       * Patrick wants to "go down the rabbit holes when I need to", and a picture with
+       * everything closed shows only the half that is always visible. The first row of each
+       * band is opened too, so each of the three kinds of detail is in the picture.
+       */
+      for (const fold of await page.locator('.band > details > summary').all()) {
+        await fold.click()
+      }
+      for (const selector of ['button.problem', 'button.option', 'button.part']) {
+        await page.locator(selector).first().click()
+      }
+      await shot(page, `case-2-the-case-open${suffix}`)
     }
     await page.setViewportSize({ width: 1440, height: 900 })
 
@@ -218,14 +223,12 @@ test.describe('what DEV-892 and DEV-917 fixed', () => {
     await expect(page.locator('.floating')).toBeVisible()
     await shot(page, 'dev-917-1-step-card-open')
 
-    await page.goto(`${seeded}reviews/${structuredReviewId}/alternatives`)
-    await expect(page.locator('h1')).toBeVisible()
     /*
-     * The matrix headed by its labels, with the fold under it open: three numbers, their
-     * labels and the sentences that used to be the headings.
+     * **And no picture of "What each number is, in full" any more.** That fold was the
+     * Alternatives page's answer to a matrix headed by bare numbers on a page away from the
+     * sentences; on the case page the sentences are the rows of band 1, three inches above
+     * the matrix and open. `dev-892-2-numbers-in-full.png` is left as the record of it.
      */
-    await page.locator('details.numbers summary').click()
-    await shot(page, 'dev-892-2-numbers-in-full')
   })
 })
 
@@ -297,6 +300,13 @@ test.describe('the posted shape, after DEV-929', () => {
 
       await page.goto(`${seeded}reviews/${structuredReviewId}/draft`)
       await expect(page.locator('h1')).toBeVisible()
+      /*
+       * **The index is folded in the body since step 1.1 of the design loop**, which is a
+       * `<details>` in the markdown the session wrote — the same markup GitHub renders — so
+       * the table is behind its summary rather than open. The picture is of the index, so
+       * the fold is opened for it.
+       */
+      await page.locator('.preview details > summary').first().click()
       await expect(page.locator('.preview table')).toBeVisible()
       await shot(page, `dev-929-1-index${suffix}`)
 

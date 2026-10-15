@@ -848,11 +848,11 @@ test.describe('the whole path, on a seeded database', () => {
  * the binary like everything else here: twenty-six files, eight options, three numbered
  * problems and thirteen findings.
  */
-test.describe('the three step pages of one review', () => {
-  test('Understand to Alternatives to Solution, by the trail', async ({ page }) => {
+test.describe('the case for one review, in three bands', () => {
+  test('all three bands on one page, and the trail says so', async ({ page }) => {
     await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
 
-    /* ---- 2 · Understand ---- */
+    /* ---- the opening: the headline, the derived line, the verdict ---- */
 
     await expect(
       page.getByRole('heading', {
@@ -861,13 +861,49 @@ test.describe('the three step pages of one review', () => {
       }),
     ).toBeVisible()
 
-    /* Both flows, drawn as boxes. Five rows before and six after, from the record. */
+    /*
+     * **The answer line, every fact of it read off the record.** Three problems, the option
+     * that was built, how far its verdicts say it goes, and that an independent pass picked
+     * the same one.
+     */
+    /*
+     * **Read as the page announces it**: the middots between the facts are drawn by the
+     * stylesheet, so a line wrapping to two rows never starts with one, and the commas are
+     * what a screen reader is given in their place.
+     */
+    await expect(page.locator('.answer')).toHaveText(
+      'From the record: 3 problems, option C built, fixes all 3, blind pass agrees',
+    )
+    /* And the verdict on the approach under it, which is a judgement rather than a count. */
+    await expect(page.locator('.sub')).toContainText('C is the right shape.')
+
+    /* ---- band 1 · what was wrong ---- */
+
+    await expect(page.getByRole('heading', { name: 'What was wrong · 3' })).toBeVisible()
+    await expect(page.locator('.problem')).toHaveCount(3)
+    /* The join nothing drew before: which part of the change fixes this problem. */
+    await expect(page.locator('.problem').first()).toContainText('parts 1, 2')
+
+    /*
+     * **Both flows, behind a fold that names them.** They are the picture the rows above
+     * draw in words, and folding them is what buys the band its height — so the measurement
+     * is that the fold is closed, and that the picture is whole when it is opened.
+     */
+    const flows = page.locator('details', { has: page.locator('.flows') })
+    await expect(flows).toHaveCount(1)
+    await expect(page.locator('details[open]', { has: page.locator('.flows') }))
+      .toHaveCount(0)
+    await expect(
+      page.getByText('The tenant arrives through a slot the web also writes'),
+    ).not.toBeVisible()
+
+    await flows.locator('summary').click()
+    /* Five rows before and six after, from the record. */
     await expect(page.locator('.flow')).toHaveCount(2)
     await expect(page.locator('.flow').first().locator('.row')).toHaveCount(5)
     await expect(page.locator('.flow').nth(1).locator('.row')).toHaveCount(6)
     /* And no mermaid figure: a flow is HTML, which is what DEV-880 bought. */
     await expect(page.locator('figure')).toHaveCount(0)
-
     /* The captions come off the record, not out of the page. */
     await expect(
       page.getByText('The tenant arrives through a slot the web also writes'),
@@ -882,36 +918,58 @@ test.describe('the three step pages of one review', () => {
     /* And its boxes are picked out of both flows at once. */
     await expect(page.locator('.box--focus')).toHaveCount(4)
 
-    /* The supporting table, and how it works today. */
     /*
-     * By role: the section's heading and the table's own `<caption>` carry the same words,
-     * which is deliberate — the heading names the section and the caption names the table
-     * for a reader navigating by table.
+     * **The reference material, behind one fold whose line names every piece of it.** How
+     * the system works today, the one supporting table, what the review read the problem
+     * from, and the problem in the session's own words: wanted sometimes, never first.
+     */
+    const reference = page.locator('details', { has: page.locator('.reference') }).first()
+    await expect(reference.locator('summary'))
+      .toContainText('how it works today · the idea behind the change · what the review read')
+    /*
+     * **Closed, measured on the element and on a heading rather than on the prose.** A
+     * closed `<details>` keeps its content in the document, so "behind a fold" is a claim
+     * about what is drawn — but every recorded field inside it goes through `TickedText`,
+     * which is `display: contents` and so has no box of its own to ask about. The heading
+     * is a block, and the `open` attribute is what the browser itself reads.
+     */
+    await expect(reference).not.toHaveAttribute('open', /.*/)
+    await expect(page.getByRole('heading', { name: 'How it works today' })).not.toBeVisible()
+    await reference.locator('summary').click()
+    /*
+     * By role: the piece's heading and the table's own `<caption>` carry the same words,
+     * which is deliberate — the heading names the piece and the caption names the table for
+     * a reader navigating by table.
      */
     await expect(
       page.getByRole('heading', { name: 'The idea: three questions, each with one owner' }),
     ).toBeVisible()
     await expect(page.getByText('Every report is built by one class.')).toBeVisible()
 
+    /* ---- band 2 · what was chosen, reached by the trail ---- */
+
     /*
-     * The open choices are **not** here. One list, drawn once: this page carries the line
-     * and the link, and Solution carries the table.
+     * **The trail's step 3 lands on this page at its band**, which is what the fragment is
+     * for: three steps, one page, three places.
      */
-    await expect(
-      page.getByRole('heading', { name: 'Where the ticket left a choice' }),
-    ).toHaveCount(0)
-    await expect(page.getByText('3 choices the ticket left open')).toBeVisible()
-
-    /* ---- 3 · Alternatives, reached by the trail ---- */
-
     await page.locator('.trail').getByRole('link', { name: /3 Alternatives/ }).click()
-    await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/alternatives`)
+    await expect(page).toHaveURL(
+      `${seeded}reviews/${structuredReviewId}/alternatives#what-was-chosen`,
+    )
+    await expect(page.locator('#what-was-chosen')).toBeVisible()
 
-    /* Eight options, three problem columns. */
+    /* Eight options, three dots each, and the numbers over them. */
     await expect(page.locator('.option')).toHaveCount(8)
-    await expect(page.locator('thead th')).toHaveCount(6)
-    /* `not_assessed` is drawn as the verdict it is — option D, which nothing scored. */
-    await expect(page.locator('.word--not_assessed')).toHaveCount(3)
+    await expect(page.locator('.caption-row').first().locator('.verdicts .mark'))
+      .toHaveCount(3)
+    await expect(page.locator('.option').first().locator('.verdict')).toHaveCount(3)
+    /*
+     * `not_assessed` is drawn as the verdict it is — option D, which nothing scored.
+     * **Counted inside the matrix**, because the legend under it draws one of each shape:
+     * four dots nobody can read are what the legend is for.
+     */
+    await expect(page.locator('.matrix .word--not_assessed')).toHaveCount(3)
+    await expect(page.locator('.legend-item .word--not_assessed')).toHaveCount(1)
     await expect(page.getByText('Not assessed').first()).toBeVisible()
     /* The built option, and the four the ticket never had. */
     await expect(page.locator('.option--built')).toHaveCount(1)
@@ -925,20 +983,24 @@ test.describe('the three step pages of one review', () => {
     await expect(page.locator('#option-C')).toContainText('Fixes all three')
     await expect(page.locator('#option-C')).toContainText('Two entry points to keep in step')
 
-    /* ---- 4 · Solution, reached by the trail ---- */
+    /* ---- band 3 · what was built, reached by the trail ---- */
 
     await page.locator('.trail').getByRole('link', { name: /4 Solution/ }).click()
-    await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/solution`)
+    await expect(page).toHaveURL(
+      `${seeded}reviews/${structuredReviewId}/solution#what-was-built`,
+    )
 
-    /* The verdict, and the size of the change counted off the parts. */
+    /*
+     * The size of the change, counted off the parts and in the band's own heading. **Every
+     * file the parts name, and how many the pull request did not touch** — the rows below
+     * count claimed files too, so a heading counting only changed ones would not sum to the
+     * column under it.
+     */
     await expect(
-      page.getByRole('heading', { name: /C is the right shape/, level: 1 }),
+      page.getByRole('heading', {
+        name: 'What was built · 7 parts · 27 files (3 not changed) · +959 −423',
+      }),
     ).toBeVisible()
-    /* Every file the parts name, and how many the pull request did not touch. */
-    await expect(
-      page.getByText('27 files (3 the pull request did not change)'),
-    ).toBeVisible()
-    await expect(page.getByText('959 lines added and 423 removed')).toBeVisible()
     await expect(page.locator('.part')).toHaveCount(7)
 
     /* The three groups, each from the rule and each with a row under it. */
@@ -1010,12 +1072,23 @@ test.describe('the three step pages of one review', () => {
     await page.locator('#part-3').locator('summary').click()
     await expect(page.locator('#part-3')).toContainText('not in the change')
 
-    /* Findings no part accounts for are listed rather than lost. */
+    /*
+     * **The three lists, behind one control whose line counts each of them.** The findings
+     * no part accounts for, the choices the ticket left open and the places the description
+     * and the code disagree — each a table on the old page, each read after the rows rather
+     * than before them.
+     */
+    const lists = page.locator('#what-was-built details', { has: page.locator('.reference') })
+    await expect(lists.locator('summary').first()).toContainText(
+      '2 findings about no one part · 3 choices the ticket left open · '
+      + '2 places the description and the code disagree',
+    )
+    await expect(page.getByText('Departs from the ticket')).not.toBeVisible()
+
+    await lists.locator('summary').first().click()
     await expect(
       page.getByRole('heading', { name: '2 findings are not about any one part' }),
     ).toBeVisible()
-
-    /* The open choices and the disagreements, each naming its finding. */
     await expect(
       page.getByRole('heading', { name: 'Where the ticket left a choice' }),
     ).toBeVisible()
@@ -1057,7 +1130,9 @@ test.describe('the three step pages of one review', () => {
      * either way.
      */
     await page.locator('.trail').getByRole('link', { name: /3 Alternatives/ }).click()
-    await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/alternatives`)
+    await expect(page).toHaveURL(
+      `${seeded}reviews/${structuredReviewId}/alternatives#what-was-chosen`,
+    )
     await page.locator('.trail').getByRole('link', { name: /2 Understand/ }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/understand`)
 
@@ -4504,6 +4579,21 @@ test.describe('state that belongs to one review', () => {
    * entries back is the *same page of the first review*, which is the parameter-only change
    * the whole block is about.
    */
+  /*
+   * **Steps 3 and 4 land at a band, so their trail links carry a fragment.** The three of
+   * them are one page; the address is still each step's own, and the fragment is where on
+   * the page it lands. `BAND_OF_STEP` in `app/utils/theCase.ts` is where they are declared.
+   */
+  const BAND: Record<string, string> = {
+    alternatives: '#what-was-chosen',
+    solution: '#what-was-built',
+  }
+
+  /** Every other step lands at the top of its own page, so it carries no fragment. */
+  const band = (step: string) => BAND[step] ?? ''
+
+  const at = (id: number, step: string) => `${seeded}reviews/${id}/${step}${band(step)}`
+
   async function byTheTrail(page: Page, id: number, step: string): Promise<number> {
     await page.getByRole('navigation', { name: 'Review Desk' })
       .getByRole('link', { name: 'Reviews' })
@@ -4513,8 +4603,8 @@ test.describe('state that belongs to one review', () => {
     await expect(page).toHaveURL(`${seeded}reviews/${id}/understand`)
     if (step === 'understand') return 2
 
-    await page.locator(`.trail a[href="/reviews/${id}/${step}"]`).click()
-    await expect(page).toHaveURL(`${seeded}reviews/${id}/${step}`)
+    await page.locator(`.trail a[href="/reviews/${id}/${step}${band(step)}"]`).click()
+    await expect(page).toHaveURL(at(id, step))
     return 3
   }
 
@@ -4558,7 +4648,7 @@ test.describe('state that belongs to one review', () => {
       const controls = await openTheFirstRow(page, prefix)
 
       await jump(page, -entries)
-      await expect(page).toHaveURL(`${seeded}reviews/${first}/${step}`)
+      await expect(page).toHaveURL(at(first, step))
 
       /* The arriving review has been read: its own pull request number is in the frame. */
       await expect(page.getByText(`· #${firstPr}`).first()).toBeVisible()

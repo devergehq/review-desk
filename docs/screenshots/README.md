@@ -52,6 +52,27 @@ database**, written by `review-desk review open`, `brief put`, `finding add`, `l
 and `draft put`. Nothing on these screens came from a fixture — that is what the absence of
 the "Sample data" marker means.
 
+## The case page — three steps on one page, 16 October 2026
+
+| File | What it is |
+| -- | -- |
+| `case-1-the-case.png`, `-390` | **The case for one change, as it opens.** The brief's own headline sentence, then one line of facts read off the record — "3 problems · option C built · fixes all 3 · blind pass agrees" — then the verdict on the approach, then three bands: what was wrong, what was chosen, what was built. Each band is the shape of its own answer rather than a summary of it, so the counts are read rather than asserted. |
+| `case-2-the-case-open.png`, `-390` | The same page with every fold open and the first row of each band open: the two flows, the reference material, the reasoning for and against each option, what the blind pass was given, and the three lists the ticket and the description left behind. **This is the cost of the page as well as its depth** — the picture is what one reader opening everything at once gets, and nothing on it is a page away. |
+
+**What this replaced, and what became of its pictures.** Understand, Alternatives and
+Solution were a page each: `dev-885-1` to `-3` below are of those three, and they are left
+as the record of them. On review #9639 they came to 3,653 + 3,132 + 2,768 pixels and three
+navigations for one review, and Patrick — who reads about seventy-two reviews a month —
+said of all three that the content is good and that they are "quite broad, quite large,
+you've got to dig into them". `dev-892-2-numbers-in-full.png` goes the same way: the fold it
+pictures was the Alternatives page's answer to a matrix headed by bare numbers on a page
+away from the sentences, and the sentences are now the rows of band 1 three inches above
+the matrix.
+
+**The three addresses still work and still draw this page**, so a run of this set that
+asked for `/alternatives` would take the same picture twice. Steps 3 and 4 carry a fragment
+to the band they are, which is what the trail links to.
+
 ## DEV-880 — a diagram that is not a diagram
 
 | File | What it is |

@@ -350,6 +350,12 @@ lints it.
 
 Every field is **plain text**. The pages interpolate and never use `v-html`.
 
+**The three pages are one page since 16 October 2026**, so the Page column reads as which
+**band** of it draws the field: Understand is "what was wrong", Alternatives is "what was
+chosen", Solution is "what was built". The three addresses all draw the whole page, and
+nothing about the contract changed — the table below is unaltered, and `app/components`
+holds the bands.
+
 | # | Page | What it draws | Field |
 |---|---|---|---|
 | 1 | Understand | the headline sentence | `brief.headline` |

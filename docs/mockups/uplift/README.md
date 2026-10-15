@@ -16,10 +16,12 @@ control set and these two screens on 10 October 2026; of the controls he said
 
 **The boards the review's own pages were built from are not here.** A5 to A8 — Understand,
 Alternatives, Solution and Code review — were drawn on a real review of a client's private
-repository, so neither they nor anything copied from them is in this repository. The pages
-are `web/app/pages/reviews/[id]/{understand,alternatives,solution,code-review}.vue`, and their
-invented example is `contract/examples/getReview.response.code-review.json` — written at the
-lengths those boards were measured at, which is why it was invented rather than copied.
+repository, so neither they nor anything copied from them is in this repository. The first
+three became one page on 16 October 2026 — `web/app/components/ReviewCase.vue` and the three
+bands beside it, drawn by `web/app/pages/reviews/[id]/{understand,alternatives,solution}.vue`
+— and the fourth is `code-review.vue`. Their invented example is
+`contract/examples/getReview.response.code-review.json`, written at the lengths those boards
+were measured at, which is why it was invented rather than copied.
 
 **These are copies, not a build input.** Nothing in `web/` reads them and nothing builds
 them. Each references a `support.js` that belongs to the tool they were drawn in and is not

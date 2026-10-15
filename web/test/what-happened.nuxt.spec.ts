@@ -525,7 +525,7 @@ describe('the page step 7 never had', () => {
     expect(page.text()).toContain('acme/portal')
     expect(page.text()).toContain('#601')
     expect(page.find('.trail').exists()).toBe(true)
-    expect(page.find('.face--here .name').text()).toBe('7 What happened')
+    expect(page.find('.face[aria-current="page"] .name').text()).toBe('7 What happened')
   })
 
   it('says how the pull request stands, and when it was last read', async () => {

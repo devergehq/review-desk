@@ -165,9 +165,16 @@ describe('where the component is used, and the one place it is not', () => {
   it.each([
     ['app/components/ReviewStepPage.vue', 'the headline and the line under it'],
     ['app/components/FlowDiagram.vue', 'a flow box’s note'],
-    ['app/pages/reviews/[id]/understand.vue', 'the brief’s sentences and detail lists'],
-    ['app/pages/reviews/[id]/alternatives.vue', 'an option’s arguments'],
-    ['app/pages/reviews/[id]/solution.vue', 'a part’s summary'],
+    /*
+     * **The three step pages are one page since the case page**, and the fields moved with
+     * the bands that draw them: the three addresses are wrappers around `ReviewCase`, so a
+     * list that still named them would be checking three files of eighteen lines each and
+     * would have gone on passing with every one of these fields drawn raw.
+     */
+    ['app/components/CaseWrong.vue', 'the brief’s sentences and detail lists'],
+    ['app/components/CaseChosen.vue', 'an option’s arguments'],
+    ['app/components/CaseBuilt.vue', 'a part’s summary'],
+    ['app/components/ReviewCase.vue', 'an old brief’s recorded problem'],
     ['app/pages/reviews/[id]/code-review.vue', 'a finding’s claim, evidence and title'],
   ])('%s draws %s through it', (path) => {
     expect(read(path)).toContain('<TickedText')

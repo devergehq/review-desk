@@ -528,10 +528,15 @@ describe('the shell every step page sits in', () => {
      * happened" is the whole of what came back on a posted review, and before it the only
      * trace of a harvest anywhere was a count in the trail's own tooltip.
      */
+    /*
+     * **Steps 3 and 4 carry a fragment**, because the three of them are one page since the
+     * case page: the address is still each step's own, and the fragment is the band it lands
+     * at. `BAND_OF_STEP` in `utils/theCase.ts` owns them.
+     */
     expect(links).toEqual([
       `/reviews/${STRUCTURED}/understand`,
-      `/reviews/${STRUCTURED}/alternatives`,
-      `/reviews/${STRUCTURED}/solution`,
+      `/reviews/${STRUCTURED}/alternatives#what-was-chosen`,
+      `/reviews/${STRUCTURED}/solution#what-was-built`,
       `/reviews/${STRUCTURED}/code-review`,
       `/reviews/${STRUCTURED}/draft`,
       `/reviews/${STRUCTURED}/what-happened`,
@@ -588,19 +593,43 @@ describe('the shell every step page sits in', () => {
      */
     const step = page.findAll('.steps li').find(one => one.text().includes('6 Draft'))!
     expect(step.text()).toContain('waiting on you')
-    expect(page.find('.trail .face--here').text()).toContain('2 Understand')
+    expect(page.find('.trail .face[aria-current="page"]').text()).toContain('2 Understand')
   })
 
-  it('marks the step you are on, on each of the three pages', async () => {
+  /**
+   * **Three steps are marked, and one of them is the address.**
+   *
+   * Steps 2, 3 and 4 are one page, so the trail washes all three: a reader who pressed step
+   * 3 and arrived on a page the trail drew as step 2 would read the trail as broken.
+   * `aria-current="page"` stays on exactly one, because it names the page a link would take
+   * you to and three links claiming to be it tells a screen reader nothing.
+   */
+  it('marks all three of the steps that are one page, and names the one you asked for', async () => {
     for (const [page, name] of [
       [await understand(STRUCTURED), '2 Understand'],
       [await alternatives(STRUCTURED), '3 Alternatives'],
       [await solution(STRUCTURED), '4 Solution map'],
     ] as const) {
-      const current = page.find('.trail [aria-current="page"]')
-      expect(current.exists()).toBe(true)
-      expect(current.text()).toContain(name)
+      const here = page.findAll('.trail .face--here')
+      expect(here.map(one => one.text().trim())).toEqual([
+        '2 Understand',
+        '3 Alternatives',
+        '4 Solution map',
+      ])
+
+      const current = page.findAll('.trail [aria-current="page"]')
+      expect(current).toHaveLength(1)
+      expect(current[0]!.text()).toContain(name)
     }
+  })
+
+  it('marks one step on a page that is only itself', async () => {
+    const page = await shown(
+      (await import('../app/pages/reviews/[id]/code-review.vue')).default,
+      `/reviews/${STRUCTURED}/code-review`,
+    )
+    expect(page.findAll('.trail .face--here')).toHaveLength(1)
+    expect(page.find('.trail .face--here').text()).toContain('5 Code review')
   })
 
   it('says a review is not on the desk rather than drawing an empty page', async () => {
@@ -826,7 +855,7 @@ describe('Understand', () => {
 
   it('lists what was wrong and what it is now, one line each', async () => {
     const page = await understand(STRUCTURED)
-    expect(page.text()).toContain('3 things were wrong')
+    expect(page.text()).toContain('What was wrong · 3')
     const rows = page.findAll('.problem')
     expect(rows).toHaveLength(3)
     expect(rows[0]!.text()).toContain(
@@ -925,42 +954,45 @@ describe('Understand', () => {
    * all looked alike, one of them carrying a 40-character commit id twice — "lacking
    * structure and it's difficult to read".
    */
-  it('puts the decision first, as a pill and a title with a way to the rest', async () => {
+  /*
+   * **"Already decided" is gone, and what it said is in two better places.** It was a
+   * heading over three levels: which option was built, what was still open, and where the
+   * decision came from. The option is on the opening answer line and marked on its own row
+   * in band 2; the two figures are the line on band 3's fold, over the lists themselves; and
+   * where it came from is in band 1's reference fold. Nothing was dropped, and the section
+   * that held copies of all three is.
+   */
+  it('names the option that was built on the opening line, and marks its row', async () => {
     const page = await understand(STRUCTURED)
-    expect(page.text()).toContain('Already decided')
 
-    const decision = page.find('.decision')
-    expect(decision.text()).toContain('Option C of 8')
-    expect(decision.text()).toContain(
+    expect(page.find('.answer').text()).toContain('option C built')
+
+    const built = page.findAll('.option').find(one => one.text().includes('Built'))
+    expect(built, 'the option that was built is marked on its row').toBeDefined()
+    expect(built!.text()).toContain(
       'An export context passed explicitly, and one filter chain for both',
     )
-    expect(
-      decision.findAll('a').map(one => one.attributes('href')),
-      'and a way to the options it was chosen from',
-    ).toContain(`/reviews/${STRUCTURED}/alternatives`)
   })
 
-  it('draws what is still open as figures, not as a clause', async () => {
+  it('counts what is still open on the fold that holds it', async () => {
     const page = await understand(STRUCTURED)
-    const counts = page.find('.open-counts')
-    expect(counts.exists()).toBe(true)
-    const figures = counts.findAll('.open-count').map(one => one.text())
-    expect(figures).toEqual([
-      '3 choices the ticket left open',
-      '2 places the description and the code disagree',
-    ])
-    /* Each figure is the number, drawn as the thing to look at. */
-    expect(counts.find('.open-count b').text()).toBe('3')
+    const summary = page.findAll('summary')
+      .find(one => one.text().includes('choices the ticket left open'))
+    expect(summary, 'the fold names what it holds').toBeDefined()
+    expect(summary!.text()).toContain('3 choices the ticket left open')
+    expect(summary!.text()).toContain('2 places the description and the code disagree')
   })
 
-  it('draws no figure for a count of nought', async () => {
+  it('counts nothing on the fold for a list that is empty', async () => {
     const detail = fixture(STRUCTURED)
     detail.brief = { ...detail.brief!, disagreements: [] }
     await withReview(detail)
 
     const page = await understand(STRUCTURED)
-    const figures = page.findAll('.open-count').map(one => one.text())
-    expect(figures).toEqual(['3 choices the ticket left open'])
+    const summary = page.findAll('summary')
+      .find(one => one.text().includes('choices the ticket left open'))!
+    expect(summary.text()).toContain('3 choices the ticket left open')
+    expect(summary.text(), 'a nought is not drawn').not.toContain('disagree')
   })
 
   it('draws the sources as a table of kind, reference, state and what it tells us', async () => {
@@ -988,20 +1020,24 @@ describe('Understand', () => {
     expect(bare.findAll('td').at(3)!.text()).toBe('')
   })
 
-  it('leaves the open-choices table to Solution, and links to it', async () => {
+  it('draws each of the three lists exactly once', async () => {
     const page = await understand(STRUCTURED)
     /*
-     * DEV-885's comment: "One list, drawn once." The Understand board's fold and the
-     * Solution board's table are the same `open_choices`, so this page carries the line
-     * and the link, and Solution carries the table.
+     * DEV-885's comment: "One list, drawn once." It used to mean one page each — the figures
+     * on Understand and the table on Solution — and on one page it means what it says. The
+     * fold's line is the figures and what is inside it is the tables, so a reader meets each
+     * list once and the count beside its name.
      */
-    expect(page.text()).toContain('3 choices the ticket left open')
-    expect(page.text()).toContain('2 places the description and the code disagree')
-    expect(page.findAll('a').map(one => one.attributes('href')))
-      .toContain(`/reviews/${STRUCTURED}/solution`)
-    /* And none of the table's own columns are on this page. */
-    expect(page.text()).not.toContain('Against the ticket')
-    expect(page.text()).not.toContain('Where the ticket left a choice')
+    const text = page.text()
+    expect(text.split('Where the ticket left a choice').length - 1).toBe(2)
+    expect(text.split('Where the description and the code disagree').length - 1).toBe(2)
+    /*
+     * Twice each, not once: `DeskTable` draws its own `label` for a screen reader as well as
+     * the heading above it. What is being counted here is that the *table* is not drawn
+     * twice, which is what two pages drawing one list came to.
+     */
+    expect(page.findAll('table').filter(one => one.text().includes('Against the ticket')))
+      .toHaveLength(1)
   })
 
   /**
@@ -1014,23 +1050,28 @@ describe('Understand', () => {
    */
   it('draws no word count over the recorded text', async () => {
     const page = await understand(STRUCTURED)
-    const foot = page.find('.measured').text()
+    const fold = page.findAll('details')
+      .find(one => one.text().includes('the problem as recorded'))!
 
-    expect(foot).not.toMatch(/\d+ words/)
-    expect(foot).not.toContain('text sketch')
+    expect(fold.text()).not.toMatch(/\d+ words/)
+    expect(fold.text()).not.toContain('text sketch')
   })
 
   it('keeps the recorded problem a click away, and interpolated', async () => {
     const page = await understand(STRUCTURED)
-    expect(page.find('#as-recorded').exists()).toBe(false)
+    const fold = page.findAll('details')
+      .find(one => one.text().includes('the problem as recorded'))
+    expect(fold, 'the reference fold names it').toBeDefined()
+    /*
+     * **Closed, asserted on the element rather than on what is in the document.** A
+     * `<details>` holds its content in the DOM whether it is open or not, so "a click away"
+     * is the absence of the `open` attribute — which is also the only thing a browser reads.
+     */
+    expect(fold!.attributes('open')).toBeUndefined()
 
-    await open(page, 'Read the problem as recorded')
-
-    const recorded = page.find('#as-recorded')
-    expect(recorded.exists()).toBe(true)
-    expect(recorded.text()).toContain('Scheduled exports run with whatever tenant')
-    /* `pre-wrap` at a readable measure, which is what keeps a record a record. */
-    expect(recorded.classes()).toContain('rd-recorded')
+    const recorded = fold!.findAll('.rd-recorded')
+      .find(one => one.text().includes('Scheduled exports run with whatever tenant'))
+    expect(recorded, 'and the record is inside it, interpolated').toBeDefined()
   })
 
   /*
@@ -1041,8 +1082,6 @@ describe('Understand', () => {
    */
   it('draws each piece of recorded text in exactly one place', async () => {
     const page = await understand(STRUCTURED)
-    await open(page, 'Read the problem as recorded')
-    await open(page, 'Where this came from, as recorded')
 
     const brief = fixture(STRUCTURED).brief!
     const text = page.text()
@@ -1161,11 +1200,16 @@ describe('Alternatives', () => {
     await resetDesk()
   })
 
-  it('draws a row per option and a column per numbered problem', async () => {
+  it('draws a row per option and a dot per numbered problem', async () => {
     const page = await alternatives(STRUCTURED)
     expect(page.findAll('.option')).toHaveLength(8)
-    /* Option, Seen by, three problems, and the column the opener sits in. */
-    expect(page.findAll('thead th')).toHaveLength(6)
+    /*
+     * **The verdicts are one column of dots, not a column each.** A column each made every
+     * problem as wide as the widest word in it — "Not assessed" — and eight rows of that
+     * took the width of the page. Three dots per row, and the numbers over them.
+     */
+    expect(page.find('.caption-row .verdicts').findAll('.mark')).toHaveLength(3)
+    expect(page.findAll('.option')[0]!.findAll('.verdict')).toHaveLength(3)
   })
 
   /**
@@ -1176,21 +1220,22 @@ describe('Alternatives', () => {
    * above asserted the sentence was there, which is how the defect survived an invented
    * example: it was a measurement of the wrong thing.
    */
-  it('heads a problem column with its number and its label', async () => {
+  it('heads a verdict column with its number, never with its sentence', async () => {
     const page = await alternatives(STRUCTURED)
-    const head = page.find('thead').text()
+    const head = page.find('.caption-row .verdicts')
 
-    expect(head).toContain('The shared slot')
-    expect(head).toContain('The builder\'s branch')
-    expect(head).toContain('Filters skipped')
-
+    expect(head.findAll('.mark')).toHaveLength(3)
+    expect(head.text()).toContain('1')
     for (const problem of fixture(STRUCTURED).brief!.problems) {
-      expect(head, `problem ${problem.number}'s sentence is not a heading`)
+      expect(head.text(), `problem ${problem.number}'s sentence is not a heading`)
         .not.toContain(problem.was_wrong)
     }
+    /* And each dot names its problem for a reader who cannot see the column it is in. */
+    expect(page.findAll('.option')[0]!.find('.verdict').text())
+      .toContain('1 · The shared slot')
   })
 
-  it('heads a problem column with the number alone when the brief wrote no label', async () => {
+  it('heads a verdict column with the number alone when the brief wrote no label', async () => {
     const detail = fixture(STRUCTURED)
     detail.brief!.problems = detail.brief!.problems.map(problem => ({
       ...problem,
@@ -1199,36 +1244,32 @@ describe('Alternatives', () => {
     await withReview(detail)
 
     const page = await alternatives(STRUCTURED)
-    const head = page.find('thead')
+    const head = page.find('.caption-row .verdicts')
 
-    /* Still three problem columns, each with its mark and nothing else. */
-    expect(head.findAll('.th--marked')).toHaveLength(3)
+    expect(head.findAll('.mark')).toHaveLength(3)
     for (const problem of detail.brief!.problems) {
       expect(head.text(), 'the sentence is never promoted to a heading')
         .not.toContain(problem.was_wrong)
     }
-    /* And the number is still there, which is all a reader has to go on. */
-    expect(head.findAll('.th--marked')[0]!.text()).toContain('1')
+    /* "Problem 1" rather than a bare number, which is what a dot alone would announce. */
+    expect(page.findAll('.option')[0]!.find('.verdict').text()).toContain('Problem 1')
   })
 
   /**
-   * And the sentence is one click away **on this page**.
+   * And the sentence is said in full **on the same page**, in the band above.
    *
-   * A reader working down column 2 should not have to leave the matrix to find out what
-   * column 2 is, and a brief with no labels needs this most — the headings are then bare
-   * numbers.
+   * It used to be a fold under the matrix called "What each number is, in full", because the
+   * sentences were a page away. On one page they are the rows of band 1, three inches up and
+   * open — which is the fold's own purpose met without a control.
    */
-  it('says what every number is, in full, one click away', async () => {
+  it('says what every number is, in full, in the band above', async () => {
     const page = await alternatives(STRUCTURED)
 
-    const fold = page.find('details.numbers')
-    expect(fold.exists()).toBe(true)
-    expect(fold.find('summary').text()).toContain('What each number is')
-
-    const said = fold.findAll('.says')
-    expect(said).toHaveLength(3)
+    expect(page.find('details.numbers').exists(), 'no fold for it any more').toBe(false)
+    const rows = page.findAll('.problem')
+    expect(rows).toHaveLength(3)
     for (const problem of fixture(STRUCTURED).brief!.problems) {
-      expect(fold.text(), `problem ${problem.number} is said in full`)
+      expect(rows.map(one => one.text()).join(' | '), `problem ${problem.number} in full`)
         .toContain(problem.was_wrong)
     }
   })
@@ -1240,7 +1281,7 @@ describe('Alternatives', () => {
    */
   it('names a verdict’s column by number and label at a phone’s width', async () => {
     const page = await alternatives(STRUCTURED)
-    const labels = page.findAll('.option .cell[data-label]')
+    const labels = page.findAll('.option [data-label]')
       .map(cell => cell.attributes('data-label'))
 
     expect(labels).toContain('1 · The shared slot')
@@ -1251,7 +1292,12 @@ describe('Alternatives', () => {
 
   it('tells the three real verdicts apart, by word as well as by colour', async () => {
     const page = await alternatives(STRUCTURED)
-    const sheet = page.find('table').text()
+    /*
+     * **The word is in the markup though the cell draws a shape.** `VerdictCell`'s compact
+     * mode hides it visually and no further, so a screen reader reads "Fixed" and nothing
+     * on the page depends on telling four shapes apart.
+     */
+    const sheet = page.find('.matrix').text()
     expect(sheet).toContain('Fixed')
     expect(sheet).toContain('Partly')
     expect(sheet).toContain('Stays')
@@ -1293,12 +1339,13 @@ describe('Alternatives', () => {
     const both = page.findAll('.option').find(one =>
       one.text().includes('Clear the slot between jobs'))!
     /* `both` draws both pills: two sides arrived at it independently. */
-    expect(both.find('.seen').text()).toContain('Ticket A')
+    /* "Ticket", not "Ticket A": the letter is the row's first column. */
+    expect(both.find('.seen').text()).toContain('Ticket')
     expect(both.find('.seen').text()).toContain('Blind')
 
     const ticketOnly = page.findAll('.option').find(one =>
       one.text().includes('A tenant-scoped database connection per export'))!
-    expect(ticketOnly.find('.seen').text()).toContain('Ticket D')
+    expect(ticketOnly.find('.seen').text()).toContain('Ticket')
     expect(ticketOnly.find('.seen').text()).not.toContain('Blind')
 
     const blindOnly = page.findAll('.option').find(one =>
@@ -1334,14 +1381,22 @@ describe('Alternatives', () => {
     expect(detail.text()).toContain('Two entry points to keep in step')
   })
 
-  it('puts what was built beside what a fresh pair of eyes would pick', async () => {
+  /*
+   * **The two cards are gone and what they said is on the rows and the opening line.**
+   * "Built" and "The blind pass would pick" were a pair of cards under the matrix drawing
+   * the same two facts the matrix already marks — the option's letter, its title and
+   * whether the two agree. The one thing a row cannot carry is `pick_why`, which is a
+   * sentence, and it is drawn as one.
+   */
+  it('says so on the line and on the row when the pass agrees with the build', async () => {
     const page = await alternatives(STRUCTURED)
-    expect(page.text()).toContain('Built against what a fresh pair of eyes would pick')
-    expect(page.text()).toContain('The blind pass would pick')
-    expect(page.text()).toContain('C · An export context passed explicitly')
-    expect(page.text()).toContain('It puts the split where the paths genuinely differ')
-    /* They agree here, and the page says so rather than leaving it to be worked out. */
-    expect(page.find('.card--blind').text()).toContain('Same as what was built')
+
+    expect(page.find('.answer').text()).toContain('blind pass agrees')
+    expect(page.find('.pick-why').text()).toContain('The blind pass picked the same option')
+    expect(page.find('.pick-why').text())
+      .toContain('It puts the split where the paths genuinely differ')
+    /* No second copy of it as a card. */
+    expect(page.text()).not.toContain('Built against what a fresh pair of eyes would pick')
   })
 
   it('says when the blind pass would have picked something else', async () => {
@@ -1350,8 +1405,12 @@ describe('Alternatives', () => {
     await withReview(detail)
 
     const page = await alternatives(STRUCTURED)
-    expect(page.find('.card--blind').text()).toContain('Not what was built')
-    expect(page.find('.card--blind').text()).toContain('Extract reporting into a service')
+    expect(page.find('.answer').text()).toContain('blind pass would pick F')
+
+    const picked = page.findAll('.option')
+      .find(one => one.text().includes('Extract reporting into a service'))!
+    expect(picked.text()).toContain('Blind pass would pick')
+    expect(page.find('.pick-why').text()).toContain('The blind pass would pick F')
   })
 
   it('counts the questions rather than asserting there are four', async () => {
@@ -1379,23 +1438,23 @@ describe('Alternatives', () => {
 
   it('shows where the options came from, and what the pass looked up', async () => {
     const page = await alternatives(STRUCTURED)
-    expect(page.text()).toContain('Where these came from')
     /* Eight options: four on the ticket, seven from the pass, three on both. */
-    expect(page.text()).toContain('4 options')
-    expect(page.text()).toContain('7 options')
+    expect(page.text()).toContain('4 from the ticket')
+    expect(page.text()).toContain('7 from the blind pass')
     /*
-     * **What it looked up is behind the same control as what it was given.** DEV-892: this
-     * printed open, as a line beginning "It looked up:", and on a real review that line was
-     * a 91-word paragraph in a card beside another card.
+     * **What it was given and what it looked up are behind one control**, with the band's
+     * own fold, and its line says both are there. DEV-892's measurement stands: printed
+     * open, "It looked up:" was a 91-word paragraph in a card beside another card.
      */
-    const folds = page.findAll('details.given')
-    expect(folds).toHaveLength(2)
+    const fold = page.findAll('details.fold')
+      .find(one => one.find('summary').text().includes('what it read'))
+    expect(fold, 'the fold names both').toBeDefined()
     expect(page.text()).not.toContain('It looked up:')
-    expect(folds[1]!.find('summary').text()).toContain('What it looked up')
-    expect(folds[1]!.find('.given-text').text()).toContain('nothing')
+    expect(fold!.text()).toContain('What it looked up, in its own words')
+    expect(fold!.text()).toContain('nothing')
 
     /* And what it was given, verbatim, on the page rather than linked to. */
-    expect(folds[0]!.find('.given-text').text()).toContain(
+    expect(fold!.text()).toContain(
       'A multi-tenant PHP web application serves reports.',
     )
   })
@@ -1448,7 +1507,8 @@ describe('Alternatives', () => {
     it('says a pass ran when one did', async () => {
       const page = await withState('ran', true)
       expect(page.text()).toContain('A blind pass ran')
-      expect(page.text()).toContain('What it put forward is marked below.')
+      /* "above", because the line sits under the matrix it is about rather than over it. */
+      expect(page.text()).toContain('What it put forward is marked above.')
     })
   })
 
@@ -1498,13 +1558,15 @@ describe('Alternatives', () => {
 
     it('leaves the matrix a valid grid when no problem is numbered', async () => {
       const page = await oldWayWithOptions()
-      const template = page.find('table').attributes('style')
       /*
-       * `repeat(0, …)` is invalid, and a browser drops the whole declaration — taking the
-       * board's column layout off the header and every row with it.
+       * `repeat(0, …)` was invalid and a browser dropped the whole declaration, taking the
+       * column layout off the header and every row with it. The dots are one track now, so
+       * the failure would be quieter and no better: a track of `calc(0 * 22px)` is an
+       * 18-pixel gap where the verdicts are not. The class is what takes the track out.
        */
-      expect(template).not.toContain('repeat(0')
-      expect(template).toContain('2.4fr 150px 110px')
+      expect(page.find('.matrix').classes()).toContain('matrix--unnumbered')
+      expect(page.findAll('.verdict')).toHaveLength(0)
+      expect(page.findAll('.option')).toHaveLength(8)
     })
   })
 
@@ -1528,8 +1590,15 @@ describe('Alternatives', () => {
     await withReview(detail)
 
     const page = await alternatives(STRUCTURED)
-    expect(page.find('h1').text()).toBe(headline)
-    expect(page.text()).toContain(why)
+    /*
+     * **In the band, not as the page's heading.** The page is three bands now and its
+     * heading is the brief's own sentence, so an empty step 3 is a notice inside band 2 —
+     * which is what lets the other two bands go on being read while a session writes this
+     * one.
+     */
+    const band = page.find('#what-was-chosen')
+    expect(band.text()).toContain(headline)
+    expect(band.text()).toContain(why)
     /* Never the sentence the defect was: it asserted an absence the record contradicted. */
     expect(page.text()).not.toContain('No alternatives are recorded')
   })
@@ -1554,9 +1623,17 @@ describe('Solution', () => {
     return found
   }
 
-  it('opens with the verdict on the approach', async () => {
+  it('carries the verdict on the approach under the headline', async () => {
     const page = await solution(STRUCTURED)
-    expect(page.find('h1').text()).toContain('C is the right shape.')
+    /*
+     * **The line under the headline, not the headline.** The page's heading is the brief's
+     * own sentence now, because one page cannot have three headings — and the verdict is a
+     * judgement on the approach, which is what the line under a headline is for.
+     */
+    expect(page.find('h1').text()).toContain(
+      'Scheduled exports get their own context',
+    )
+    expect(page.find('.sub').text()).toContain('C is the right shape.')
     /*
      * And the size of the change, counted off the parts rather than asserted. **Every
      * file the parts name, and how many of them the pull request did not touch.** The
@@ -1565,9 +1642,8 @@ describe('Solution', () => {
      * files changed" is told the difference rather than left to find it. `sub`'s
      * docstring has the argument and the two readings this replaced.
      */
-    expect(page.text()).toContain('27 files (3 the pull request did not change)')
-    expect(page.text()).toContain('959 lines added and 423 removed')
-    expect(page.text()).toContain('in 7 parts')
+    expect(page.find('#what-was-built').text())
+      .toContain('7 parts · 27 files (3 not changed) · +959 −423')
   })
 
   /**
@@ -2103,14 +2179,17 @@ describe('Solution', () => {
     await withReview(detail)
 
     const page = await solution(STRUCTURED)
-    /* The heading is the verdict; the notice says the state, and says it once. */
-    expect(page.find('h1').text()).toBe(detail.brief!.approach_verdict)
-    expect(page.text().split(said).length - 1, `${said} is on the page once`).toBe(1)
+    /* The band says the state, and says it once. */
+    expect(page.find('.sub').text()).toBe(detail.brief!.approach_verdict)
+    expect(
+      page.find('#what-was-built').text().split(said).length - 1,
+      `${said} is in the band once`,
+    ).toBe(1)
     expect(page.text()).toContain(why)
     expect(page.text()).not.toContain('The change has not been described in parts yet.')
   })
 
-  it('says the state as its heading when there is no verdict to head the page', async () => {
+  it('says the state in the band when there is no verdict on the page at all', async () => {
     const detail = fixture(STRUCTURED)
     detail.brief!.parts = []
     detail.brief!.approach_verdict = null
@@ -2119,12 +2198,16 @@ describe('Solution', () => {
     await withReview(detail)
 
     const page = await solution(STRUCTURED)
-    expect(page.find('h1').text()).toBe('Being worked on now.')
+    /* No verdict, so no line under the headline — and nothing standing in for one. */
+    expect(page.find('.sub').exists()).toBe(false)
+    expect(page.find('#what-was-built').text()).toContain('Being worked on now.')
     /*
-     * And not again in the notice underneath. "One sentence, once" is the issue's own
-     * wording about exactly this pair.
+     * And said once. "One sentence, once" is the issue's own wording about exactly this
+     * pair, and on one page the pair is the band's notice and anything else that triaged
+     * the same step.
      */
-    expect(page.text().split('Being worked on now.').length - 1).toBe(1)
+    expect(page.find('#what-was-built').text().split('Being worked on now.').length - 1)
+      .toBe(1)
   })
 
   it('still draws the choices and the clashes when there are no parts', async () => {
@@ -2145,13 +2228,101 @@ describe('Solution', () => {
     expect(page.text()).toContain('F9')
   })
 
+  /**
+   * **Nothing the three pages drew is off the page.**
+   *
+   * The rule the Draft page's fold established and this change is the second application
+   * of: a page may fold or reorder what it draws, and may never drop any of it. Three pages
+   * became one and the obvious failure is a field that quietly went with a section — so
+   * this walks every string the brief holds and asserts the page draws it, which is a
+   * stronger statement than any list of sections could be.
+   *
+   * The parts' summaries and their file paths are behind a row, as they were on Solution, so
+   * each row is opened in turn and the text accumulated.
+   */
+  it('draws every string the brief holds, somewhere on the page', async () => {
+    const page = await understand(STRUCTURED)
+    const brief = fixture(STRUCTURED).brief!
+
+    /*
+     * Opening every row of all three bands, one at a time — a problem's named detail, an
+     * option's verdict lines and a part's summary and files are each behind their own row,
+     * as they were on the three pages. One is open at a time, so the text is accumulated.
+     */
+    let text = page.text()
+    for (const selector of ['button.problem', 'button.option', 'button.part']) {
+      for (let at = 0; at < page.findAll(selector).length; at += 1) {
+        await page.findAll(selector)[at]!.trigger('click')
+        await settle(page)
+        text += page.text()
+      }
+    }
+
+    const said: string[] = [
+      brief.headline!,
+      brief.how_it_works_today!,
+      brief.problem,
+      brief.provenance!,
+      brief.approach_verdict!,
+      brief.flow_before_caption!,
+      brief.flow_after_caption!,
+      brief.support_table!.title!,
+      ...brief.support_table!.columns,
+      ...brief.support_table!.rows.flat(),
+      ...brief.problems.flatMap(problem => [
+        problem.label!,
+        problem.was_wrong,
+        problem.now_fixed!,
+        problem.detail_title!,
+        ...problem.detail_before,
+        ...problem.detail_after,
+      ]),
+      ...brief.options.flatMap(option => [
+        option.title,
+        option.argument_for,
+        option.argument_against,
+        ...(option.verdicts ?? []).map(verdict => verdict.why).filter(why => why != null),
+      ]),
+      brief.blind_pass!.given,
+      brief.blind_pass!.looked_up,
+      brief.blind_pass!.pick_why!,
+      ...brief.blind_pass!.questions,
+      ...brief.parts.flatMap(part => [
+        part.title,
+        part.summary,
+        ...part.files.map(file => file.path),
+      ]),
+      ...brief.open_choices.flatMap(choice => [choice.left_open, choice.chosen, choice.why]),
+      ...brief.disagreements.flatMap(clash => [clash.description_says, clash.code_does]),
+    ]
+
+    /*
+     * **Compared with the backtick pairs taken out of both sides.** Every one of these
+     * fields goes through `TickedText`, which draws a `` `name` `` as a code chip — so the
+     * rendered text holds the name and not the backticks around it. Three of the detail
+     * lines in this fixture are nothing but code names.
+     */
+    const plain = (one: string) => one.replace(/`/g, '')
+    const drawn = plain(text)
+    const missing = said.filter(one => one != null && !drawn.includes(plain(one)))
+    expect(missing, 'every field the three pages drew is still drawn').toEqual([])
+    /* And the list is not vacuously empty. */
+    expect(said.length).toBeGreaterThan(80)
+  })
+
   it('says there is no brief at all differently again', async () => {
     const detail = fixture(STRUCTURED)
     detail.brief = null
     await withReview(detail)
 
     const page = await solution(STRUCTURED)
-    expect(page.text()).toContain('Nothing has been written about this change yet.')
+    /*
+     * **One sentence, because there is one page.** Understand said "about this problem" and
+     * Solution "about this change"; the page that draws both says the first, and the line
+     * under it names all three steps.
+     */
+    expect(page.text()).toContain('Nothing has been written about this problem yet.')
+    expect(page.text()).toContain('Steps 2 to 4 are where a session writes')
     expect(page.text()).not.toContain('Where the ticket left a choice')
   })
 })
