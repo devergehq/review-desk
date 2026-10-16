@@ -8,3 +8,10 @@ contract/node_modules/
 # the checks themselves write no report and no cache of their own -- `release_age.py`
 # prints its table and keeps nothing.
 __pycache__/
+
+# The design loop's own working directory: a copy of
+# ~/.locus/data/review-desk/design-loop/fixture.db, and the before/after screenshots
+# `web/scripts/shoot.mjs` writes. The copy is there so the snapshot stays a clean baseline
+# to reset from, and the pictures are published in an artifact rather than committed --
+# `docs/screenshots/` is the committed set and is produced by `e2e/screenshots.spec.ts`.
+.design-loop/
