@@ -443,10 +443,25 @@ export function descriptionLintLabel(lint: DescriptionLint | null | undefined): 
  * here instead of a word nobody wrote — which is how DEV-877's two arrived.
  */
 const VERBS: Record<OutcomeKind, string> = {
-  cut: 'Cut',
+  /*
+   * **"Set aside", not "Cut".** The decision is `cut` in the record and always will be;
+   * what a developer presses is a button named for the list it moves the finding to, and
+   * on 16 October 2026 that became "Set aside" on the code review page. A verb here that
+   * disagreed with the button would have the draft page report a decision under a word the
+   * screen that took it does not use.
+   *
+   * `kept` and `rewritten` are the same, and followed on the same day once Patrick had
+   * seen the first one land: a line reading "Kept F1" under a button that says Post is the
+   * screen disagreeing with itself about what was just done.
+   *
+   * **The record is untouched by any of it.** `cut`, `kept` and `rewritten` are the
+   * contract's own kinds and the store's own columns; this table is only how a person
+   * reads them back.
+   */
+  cut: 'Set aside',
   regraded: 'Regraded',
-  rewritten: 'Rewrote',
-  kept: 'Kept',
+  rewritten: 'Edited',
+  kept: 'Posted',
   rejected: 'Rejected',
   ticketed: 'Moved to a ticket',
   withdrawn: 'Withdrew',

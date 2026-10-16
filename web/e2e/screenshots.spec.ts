@@ -249,11 +249,12 @@ test.describe('the code review page and the draft', () => {
       await shot(page, `dev-878-1-code-review${suffix}`)
 
       /*
-       * The blocker, open, with its reasoning unfolded — every part of the open row in one
-       * picture, which is what "the code with the comments, the inline style" is about.
+       * The blocker on the bench, with its reasoning unfolded — every part of the finding
+       * in one picture, which is what "the code with the comments, the inline style" is
+       * about. Since step 1.2 of the design loop a row is the control itself: it chooses
+       * which finding the pane beside the list is drawing, rather than unfolding in place.
        */
-      await page.locator('.row').filter({ hasText: 'F9' }).first()
-        .getByRole('button').first().click()
+      await page.locator('.row').filter({ hasText: 'F9' }).first().click()
       await expect(page.locator('.code')).toBeVisible()
       await page.getByRole('button', { name: /The full reasoning/ }).click()
       await expect(page.locator('.blocks')).toBeVisible()
@@ -272,7 +273,7 @@ test.describe('the code review page and the draft', () => {
      * existed, and the one the per-finding decisions refuse against.
      */
     await page.goto(`${seeded}reviews/${reviewId}/code-review`)
-    await page.locator('.row').first().getByRole('button').first().click()
+    await page.locator('.row').first().click()
     await expect(page.getByText('one block of markdown')).toBeVisible()
     await shot(page, 'dev-878-4-one-block-draft')
   })

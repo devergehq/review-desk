@@ -101,7 +101,7 @@ const DISPOSITIONS: Record<Disposition, string> = {
  */
 const DECIDED: Record<FindingDecision, string> = {
   keep: 'stays in the review, and its comment posts on its line.',
-  cut: 'will not be posted. It stays on the record, marked as cut by you.',
+  cut: 'will not be posted. It stays on the record, set aside by you.',
   regrade: 'will be posted at the severity you chose.',
   rewrite: 'will be posted in your words. The session’s own are kept beside them.',
   to_ticket: 'has left the review for the ticket.',

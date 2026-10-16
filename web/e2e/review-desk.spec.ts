@@ -998,9 +998,9 @@ test.describe('the three step pages of one review', () => {
       `${seeded}reviews/${structuredReviewId}/code-review#F9`,
     )
     await expect(page.locator('#finding-9')).toBeVisible()
-    /* `.title .key` — the row's own reference. The decision buttons carry `.key` too, for
-     * their keyboard shortcuts. */
-    await expect(page.locator('li.row--open').locator('.title .key')).toHaveText('F9')
+    /* `.row--picked .key` — the row's own reference, on the one the bench is drawing. The
+     * decision buttons carry `.key` too, for their keyboard shortcuts. */
+    await expect(page.locator('.row--picked').locator('.key')).toHaveText('F9')
 
     await page.goBack()
     await expect(page.locator('.part').first()).toBeVisible()
@@ -1673,6 +1673,48 @@ test.describe('the three step pages of one review', () => {
       }
     })
 
+    /**
+     * **The bench uses the window; every other screen keeps the shell.**
+     *
+     * Patrick, 16 October 2026. Only a browser can check it: the shell's width is a
+     * stylesheet fact about a layout, and jsdom computes none. What is asserted is the
+     * whole of the rule — the page is wider, it is capped, the pages either side of it are
+     * not, and the prose inside it did not grow with the window, which is the half that
+     * makes "contained" mean anything.
+     */
+    test(`the bench is wider than the shell, and its prose is not, at ${label}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height })
+
+      await page.goto(`${seeded}reviews/${structuredReviewId}/code-review`)
+      await expect(page.locator('h1')).toBeVisible()
+      const bench = await page.locator('#main').evaluate(el => el.clientWidth)
+      const prose = await page.locator('.fields .rd-recorded').first()
+        .evaluate(el => el.clientWidth)
+
+      await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
+      await expect(page.locator('h1')).toBeVisible()
+      const shell = await page.locator('#main').evaluate(el => el.clientWidth)
+
+      if (width > 1240) {
+        expect(bench, 'the bench takes the window').toBeGreaterThan(shell)
+      }
+      expect(bench, 'and stops at the cap').toBeLessThanOrEqual(1600)
+      expect(shell, 'the pages either side of it keep the shell')
+        .toBeLessThanOrEqual(1240)
+      /*
+       * **`--rd-measure-recorded` is 70ch, which this browser resolves to about 700px** at
+       * the 16px a claim is set in — measured, not assumed: the first bound written here
+       * was 580 and the real figure is 699. The point of the assertion is that the prose
+       * stops at *a* measure while the page does not, so the bound is the token's own
+       * figure with a little room, and a prose column that started tracking the window
+       * would be hundreds of pixels past it.
+       */
+      expect(prose, 'the reading measure did not grow with the window')
+        .toBeLessThanOrEqual(720)
+    })
+
     /*
      * **And the one thing on the code review page that is allowed to be wider than the
      * page — the code — is inside the one thing that scrolls.**
@@ -1689,8 +1731,7 @@ test.describe('the three step pages of one review', () => {
       await expect(page.locator('h1')).toBeVisible()
 
       /* The blocker, which is the finding with the widest hunk. */
-      await page.locator('.row').filter({ hasText: 'F9' }).first()
-        .getByRole('button').first().click()
+      await page.locator('.row').filter({ hasText: 'F9' }).first().click()
       await expect(page.locator('.code')).toBeVisible()
 
       const measured = await page.evaluate(() => {
@@ -1723,8 +1764,7 @@ test.describe('the three step pages of one review', () => {
     }) => {
       await page.setViewportSize({ width, height })
       await page.goto(`${seeded}reviews/${structuredReviewId}/code-review`)
-      await page.locator('.row').filter({ hasText: 'F9' }).first()
-        .getByRole('button').first().click()
+      await page.locator('.row').filter({ hasText: 'F9' }).first().click()
       await expect(page.locator('.note .card')).toBeVisible()
 
       const moved = await page.evaluate(async () => {
@@ -1758,12 +1798,11 @@ test.describe('the three step pages of one review', () => {
     await page.goto(`${seeded}reviews/${structuredReviewId}/code-review`)
 
     /* F10, a nit: cutting it takes it out of the review and off this list. */
-    await page.locator('.row').filter({ hasText: 'F10' }).first()
-      .getByRole('button').first().click()
+    await page.locator('.row').filter({ hasText: 'F10' }).first().click()
     await expect(page.getByText('Your call')).toBeVisible()
 
     await page.getByRole('group', { name: /How to decide on F10/ })
-      .getByRole('button', { name: 'Cut' })
+      .getByRole('button', { name: 'Set aside' })
       .click()
 
     await expect(page.getByText('will not be posted')).toBeVisible()
@@ -1788,6 +1827,53 @@ test.describe('the three step pages of one review', () => {
     expect(after.draft.lint.passes).toBeNull()
   })
 
+  /**
+   * **The keys work in a browser, which is the only place that can be checked.**
+   *
+   * DEV-876's rule is that a key drawn on a control has to work and must not fire while
+   * somebody is typing. Step 1.2 of the design loop put a key on every decision and gave
+   * the list J and K — and the point of that was cost: "Ticket" and "Set aside" are only
+   * as easy as "Post" if they are one keystroke too. A jsdom test can dispatch a
+   * `KeyboardEvent`; only this one presses a key.
+   *
+   * **It moves what it decides back.** The suite shares one database and this is the one
+   * review whose draft is written in parts, so a finding left on the ticket list would be
+   * a finding the tests below it count differently — and the way back is the same keyboard,
+   * which is the second half of the claim.
+   */
+  test('the bench moves on J and K, and a ticket is one key', async ({ page }) => {
+    await page.goto(`${seeded}reviews/${structuredReviewId}/code-review`)
+    const showing = page.locator('.row--picked').locator('.key')
+    const leads = await showing.innerText()
+
+    await page.keyboard.press('j')
+    await expect(showing).not.toHaveText(leads)
+    await page.keyboard.press('k')
+    await expect(showing).toHaveText(leads)
+
+    /* K at the top does nothing rather than wrapping to the foot of the list. */
+    await page.keyboard.press('k')
+    await expect(showing).toHaveText(leads)
+
+    await page.keyboard.press('t')
+    await expect(page.locator('.notice')).toContainText('has left the review for the ticket')
+    await expect(page.locator('.row').filter({ hasText: leads })).toHaveCount(0)
+
+    /*
+     * And back, by the same key that posts anything. **`P`, and it sends a different
+     * decision** — the store refuses `keep` on a finding whose round status is not open,
+     * and `to_ticket` writes `Ticketed`, so what P sends here is `raise_again`. One label
+     * over two decisions, chosen by the record: the developer is not learning which of two
+     * words means post it depending on what they pressed a moment ago.
+     */
+    await page.getByRole('radio', { name: /For a ticket/ }).click()
+    await page.locator('.row').filter({ hasText: leads }).first().click()
+    await expect(showing).toHaveText(leads)
+
+    await page.keyboard.press('p')
+    await expect(page.locator('.notice')).toContainText('is in the review again')
+  })
+
   /*
    * **A signed-off draft refuses every decision, and says why.**
    *
@@ -1803,7 +1889,7 @@ test.describe('the three step pages of one review', () => {
    */
   test('a signed-off draft refuses every decision, and says why', async ({ page }) => {
     await page.goto(`${seeded}reviews/${reviewId}/code-review`)
-    await page.locator('.row').first().getByRole('button').first().click()
+    await page.locator('.row').first().click()
 
     await expect(page.getByText('You have signed this draft off')).toBeVisible()
     await expect(
@@ -2255,10 +2341,9 @@ test.describe('the body is an index and the findings live on the code', () => {
     expect(threadsBefore).toBeGreaterThan(0)
 
     await page.goto(`${seeded}reviews/${structuredReviewId}/code-review`)
-    await page.locator('.row').filter({ hasText: 'F9' }).first()
-      .getByRole('button').first().click()
+    await page.locator('.row').filter({ hasText: 'F9' }).first().click()
     await page.getByRole('group', { name: /How to decide on F9/ })
-      .getByRole('button', { name: 'Cut' })
+      .getByRole('button', { name: 'Set aside' })
       .click()
     await expect(page.getByText('will not be posted')).toBeVisible()
 
@@ -2273,10 +2358,9 @@ test.describe('the body is an index and the findings live on the code', () => {
      */
     await page.goto(`${seeded}reviews/${structuredReviewId}/code-review`)
     await page.getByRole('radio', { name: /Set aside/ }).click()
-    await page.locator('.row').filter({ hasText: 'F9' }).first()
-      .getByRole('button').first().click()
+    await page.locator('.row').filter({ hasText: 'F9' }).first().click()
     await page.getByRole('group', { name: /How to decide on F9/ })
-      .getByRole('button', { name: /Keep|Post it/ })
+      .getByRole('button', { name: 'Post' })
       .click()
     await expect(page.getByText('stays in the review')).toBeVisible()
 
@@ -2466,7 +2550,11 @@ test.describe('the findings held back, as rows', () => {
 
     const lines = page.locator('.edit')
     await expect(lines).toHaveCount(1)
-    await expect(lines.first()).toContainText('Kept F1')
+    /*
+     * **"Posted", because that is the button.** The record's kind is still `kept`; the
+     * verb a person reads was renamed with the decision it reports on, 16 October 2026.
+     */
+    await expect(lines.first()).toContainText('Posted F1')
     await expect(lines.first()).toContainText('changed 5 times')
     /* The verb once: "Kept F1 · kept" is what this replaced. */
     await expect(lines.first()).not.toContainText('· kept')
@@ -3930,8 +4018,20 @@ test.describe('a round whose head moved', () => {
 
       await page.goto(`${seeded}reviews/${reviewId}/draft`)
       await page.getByRole('button', { name: 'Sign off and post' }).click()
-      /* The sign-off is recorded, and the page says the session posts it. */
-      await expect(page.getByText(/signed off|Signed off|posts it/)).toBeVisible()
+      /*
+       * The sign-off is recorded, and the page says the session posts it.
+       *
+       * **Named by the one element that says it**, which is the posting watch's live
+       * region. The pattern this replaces — `/signed off|Signed off|posts it/` over the
+       * whole page — matches six things once a draft is signed off: the step's outcome on
+       * the trail, two lines of the preview's own prose, the sign-off card's label, the
+       * line under its buttons and this. Strict mode fails on all six, and which of them
+       * have rendered when the locator resolves is a race, so the assertion passed or
+       * failed by timing rather than by what the page says.
+       */
+      await expect(
+        page.getByRole('status').filter({ hasText: 'The review session posts it' }),
+      ).toBeVisible()
 
       /* And then the author pushes. */
       cli(seededDatabase, [
@@ -4413,8 +4513,13 @@ test.describe('state that belongs to one review', () => {
     return controls
   }
 
+  /*
+   * **The code review page is not in this loop any more.** Step 1.2 of the design loop made
+   * its rows a list that chooses rather than folds, so there is no `aria-expanded` to read
+   * and no row to find closed — what belongs to one review there is *which* finding the
+   * bench is drawing, and the test under this loop is that one, in its own terms.
+   */
   for (const [step, prefix, what] of [
-    ['code-review', 'finding-', 'a finding'],
     ['understand', 'problem-', 'a problem'],
     ['solution', 'part-', 'a part'],
     ['alternatives', 'option-', 'an option'],
@@ -4451,6 +4556,38 @@ test.describe('state that belongs to one review', () => {
       await expect(page.locator(`#${controls}`)).toHaveCount(0)
     })
   }
+
+  /**
+   * **The same criterion on the code review page, in the bench's own terms.**
+   *
+   * A finding is always on the bench there, so "closed on the next review" cannot be the
+   * assertion: what must not travel is *which* one. Both reviews carry the same findings,
+   * so choosing the first would prove nothing — the third is chosen, and the arriving
+   * review has to be showing its own first.
+   */
+  test('a finding chosen does not follow to the next review’s code-review page', async ({
+    page,
+  }) => {
+    await page.goto(seeded)
+    await byTheTrail(page, first, 'code-review')
+    const entries = await byTheTrail(page, second, 'code-review')
+
+    const rows = page.locator('.row')
+    const leads = await rows.first().locator('.key').innerText()
+    const another = await rows.nth(2).locator('.key').innerText()
+    expect(another, 'the review has findings enough for this to mean anything')
+      .not.toBe(leads)
+
+    await rows.nth(2).click()
+    await expect(page.locator('.row--picked').locator('.key')).toHaveText(another)
+
+    await jump(page, -entries)
+    await expect(page).toHaveURL(`${seeded}reviews/${first}/code-review`)
+    await expect(page.getByText(`· #${firstPr}`).first()).toBeVisible()
+    await expect(page.getByText(`· #${secondPr}`)).toHaveCount(0)
+
+    await expect(page.locator('.row--picked').locator('.key')).toHaveText(leads)
+  })
 
   /**
    * **The draft page, by history**, which is the defect the issue was raised for.

@@ -405,7 +405,7 @@ describe('the developer’s edits as one line a finding', () => {
 
   it('reports the latest decision, and the verb once', () => {
     const [line] = editLines(FIVE)
-    expect(line!.verb).toBe('Kept')
+    expect(line!.verb).toBe('Posted')
     expect(line!.detail).toBeNull()
   })
 
@@ -424,7 +424,7 @@ describe('the developer’s edits as one line a finding', () => {
       edit({ finding_seq: 1, finding_key: 'F1', kind: 'cut', summary: 'cut', occurred_at: '2026-10-11T09:02:00Z' }),
     ])
     expect(lines.map(line => line.key)).toEqual(['F1', 'F3'])
-    expect(lines[0]).toMatchObject({ verb: 'Cut', changed: 'changed 2 times' })
+    expect(lines[0]).toMatchObject({ verb: 'Set aside', changed: 'changed 2 times' })
     expect(lines[1]).toMatchObject({ verb: 'Regraded', detail: 'Blocker to Should', changed: null })
   })
 
@@ -447,7 +447,7 @@ describe('the developer’s edits as one line a finding', () => {
       edit({ kind: 'cut', summary: 'cut', occurred_at: null }),
     ])
     expect(lines).toHaveLength(1)
-    expect(lines[0]!.verb).toBe('Cut')
+    expect(lines[0]!.verb).toBe('Set aside')
   })
 
   it('is empty for a draft nobody has edited', () => {

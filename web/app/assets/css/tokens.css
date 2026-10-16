@@ -134,6 +134,16 @@
   --rd-font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
 
   --rd-shell-max: 1240px;
+  /*
+   * **The wider shell, for a screen that is a workbench rather than a document.**
+   *
+   * The code review page and the draft are two panes and three; at 1,240px the code block
+   * in the third of them shows about 45 characters before it scrolls. Patrick, 16 October
+   * 2026: the page leaves the shell and uses the window, capped here. The cap is what keeps
+   * it contained — and the prose inside it still stops at `--rd-measure-recorded`, so the
+   * measure a reader reads at does not grow with the window.
+   */
+  --rd-shell-wide: 1600px;
   --rd-measure: 720px;
   /*
    * The measure for text a session wrote, which runs longer than the page's own copy:

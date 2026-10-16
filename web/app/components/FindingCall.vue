@@ -14,30 +14,47 @@ import type { TrackOption } from './DecisionTrack.vue'
  * "Your call" — every decision the record has, on one finding.
  *
  * ```
- *  YOUR CALL
- *  ┌──────────────────────────────────────────────┐
- *  │ Keep  │  Cut  │  Regrade  │  Rewrite        │   The session put this in the review.
- *  └──────────────────────────────────────────────┘
+ *  YOUR CALL                                       The session put this in the review.
+ *  ┌──────────────────────────────────────────────────────────────┐
+ *  │ Post P │ Ticket T │ Set aside S │ Regrade G │ Edit wording E │
+ *  └──────────────────────────────────────────────────────────────┘
  *  REGRADE TO
  *  [ Blocker ] [ Should ] [ Nit ] [ Question ]
  * ```
  *
- * **Eight decisions behind eleven buttons**, which is the contract's own collapsing: "Keep"
- * on a finding in the draft and "Post it" on a held-back nit are both `keep`, because both
- * mean *this is posted*. Which buttons are drawn is a fact about the finding, not a
- * preference:
+ * ## The buttons are the three lists, and each key is its own first letter
+ *
+ * Patrick, 16 October 2026, on the keys this had: *he has no muscle memory for them.* So
+ * **Post**, **Ticket** and **Set aside** are the three lists the code review page sorts
+ * findings into, worded the same way, with P, T and S; Regrade keeps G; Rewrite became
+ * **Edit wording**, which is what it does, and keeps E. A developer who can read the
+ * button can type the key.
+ *
+ * ## Eight decisions behind eleven buttons, and one button over two decisions
+ *
+ * Which buttons are drawn is a fact about the finding, not a preference:
  *
  * | The finding | What it is offered |
  * |---|---|
- * | raised this round, or carried and still open | Keep, Cut, Regrade, Rewrite |
- * | carried and settled — fixed, accepted, withdrawn, ticketed | Raise it again, Accept their reason, Withdraw |
- * | either | To a ticket |
+ * | raised this round, or carried and still open | Post, Set aside, Regrade, Edit wording |
+ * | ticketed or set aside this round | the same four; Post raises it again |
+ * | carried and settled — fixed, accepted, withdrawn | Raise it again, Accept their reason, Withdraw |
+ * | any of them | Ticket |
  *
- * **A settled carried finding is not offered Keep**, and that is not tidiness. The store
- * refuses it: "Keep" means post this as it stands, and a finding carried as fixed is not
- * posted as an open finding — so moving its round status on a click labelled Keep would put
- * a decision in the record the developer did not make. Raising it again is the decision that
- * says it is still there, and it is one of the three buttons drawn instead.
+ * **Post is `keep` on a finding this round still holds open, and `raise_again` on one it
+ * has settled.** The store refuses `keep` outright when the round status is not open —
+ * `decision.rs`: "moving its round status to still open on a click labelled Keep would put
+ * a decision in the record the developer did not make" — and `raise_again` is the decision
+ * that says it is still there. That refusal is right, and it is a fact about the record
+ * rather than about the screen: a developer who has just moved a finding to a ticket and
+ * wants it back is not learning which of two words means *post it* depending on what they
+ * pressed a moment ago.
+ *
+ * So this is the mirror of what it replaces. The old version was **one decision under two
+ * labels** — "Keep" in the draft, "Post it" on a held-back nit — which existed because
+ * "Keep" beside "The session held this back for a ticket" reads as *leave it held back*.
+ * With the button named for the list it moves the finding to, that ambiguity is gone, and
+ * what is left is **one label over two decisions**, chosen by the record's own rule.
  *
  * ## Three decisions need words, and the words are asked for before the write
  *
@@ -109,59 +126,91 @@ const refusal = computed<string | null>(() => {
  */
 const NEEDS_A_BLOCK: FindingDecision[] = ['cut', 'regrade', 'rewrite']
 
-/** Whether a decision can be made at all, and whether this one in particular can. */
-function available(decision: FindingDecision): boolean {
+/**
+ * Whether a decision can be made at all, and whether this one in particular can.
+ *
+ * `post` resolves first, because what it costs is what the decision behind it costs —
+ * neither `keep` nor `raise_again` needs a block, so the answer is the same for both, and
+ * resolving rather than special-casing is what keeps it the same if that ever changes.
+ */
+function available(decision: string): boolean {
   if (refusal.value != null) return false
-  return !(NEEDS_A_BLOCK.includes(decision) && block.value == null)
+  const chosen = decision === 'post' ? post.value : (decision as FindingDecision)
+  return !(NEEDS_A_BLOCK.includes(chosen) && block.value == null)
 }
 
 /**
- * The buttons, in the order the Controls board draws them, with its keys.
+ * What `post` means on this finding: the decision the store will take for it.
  *
- * The keys are the board's: Y, X, G, E. They work from anywhere on the page and not while
- * the developer is typing, which `DecisionTrack` owns — and they are only attached while a
- * finding is open, because this component is only mounted then.
+ * The one rule, in one place, read by the button and by the key alike. Argued at the top of
+ * this file: `keep` is refused outright on a finding whose round status is not open, and
+ * `raise_again` is what says it is still there.
  */
-const DECISIONS: Array<{ value: FindingDecision, label: string, key?: string }> = [
-  { value: 'keep', label: 'Keep', key: 'Y' },
-  { value: 'cut', label: 'Cut', key: 'X' },
+const post = computed<FindingDecision>(() =>
+  isStillOpen(props.finding.round_status) ? 'keep' : 'raise_again',
+)
+
+/**
+ * The buttons, in the order the board draws them, with their keys.
+ *
+ * Keys work from anywhere on the page and not while the developer is typing, which
+ * `DecisionTrack` owns — and they are only attached while a finding is showing, because
+ * this component is only mounted then.
+ *
+ * **Every decision has one**, which was step 1.2's own ask. Patrick, 15 October 2026, on
+ * why he accepts and posts almost everything: "there's too much going on" — and the four
+ * decisions that read as the default were the four with keys, while moving a finding to a
+ * ticket or answering an author took a reach for the pointer. A decision that costs more
+ * than its neighbour is not weighed against it; it is skipped.
+ *
+ * **And each key is the first letter of its own button**, which is the 16 October change:
+ * a key nobody can derive from what they are reading is a key nobody presses.
+ */
+const DECISIONS: Array<{ value: string, label: string, key?: string }> = [
+  { value: 'post', label: 'Post', key: 'P' },
+  { value: 'cut', label: 'Set aside', key: 'S' },
   { value: 'regrade', label: 'Regrade', key: 'G' },
-  { value: 'rewrite', label: 'Rewrite', key: 'E' },
+  { value: 'rewrite', label: 'Edit wording', key: 'E' },
 ]
 
 /**
- * `keep` on a finding the draft holds no block for says **"Post it"**, not "Keep".
+ * What the author's reply left to answer, on a finding an earlier round settled.
  *
- * The contract's own table is `Keep · Post it`: one decision, two labels, because the same
- * act reads differently depending on where the finding stands. On a held-back nit the panel
- * says "The session held this back for a ticket" and a button beside it reading "Keep" is
- * read as *leave it held back* — while pressing it writes the finding a block and posts it.
- * That is the opposite of what the developer is told they are doing.
+ * **Offered on a carried finding and on nothing else.** These three are about what somebody
+ * *else* did — the author fixed it, gave a reason, or the finding was withdrawn — and a
+ * finding this round ticketed or set aside has had none of that happen to it. It has had a
+ * decision taken on it by the developer, and the way back from a decision is the decision
+ * that undoes it, which is Post.
+ *
+ * **R was the way back from a ticket until 16 October.** It no longer is: P is, and it
+ * sends the same `raise_again` the store takes either way. R stays here for the finding
+ * this panel was written for — the one carried in as fixed, where "raise it again" is a
+ * claim about the author's work rather than about the developer's own filing.
  */
-function labelFor(decision: FindingDecision, label: string): string {
-  if (decision !== 'keep' || block.value != null) return label
-  return 'Post it'
-}
-
-const REPLIES: Array<{ value: FindingDecision, label: string, key?: string }> = [
-  { value: 'raise_again', label: 'Raise it again' },
-  { value: 'accept_reason', label: 'Accept their reason' },
-  { value: 'withdraw', label: 'Withdraw' },
+const REPLIES: Array<{ value: string, label: string, key?: string }> = [
+  { value: 'raise_again', label: 'Raise it again', key: 'R' },
+  { value: 'accept_reason', label: 'Accept their reason', key: 'A' },
+  { value: 'withdraw', label: 'Withdraw', key: 'W' },
 ]
 
+/**
+ * Which set this finding is offered, and the ticket that is on both.
+ *
+ * **Carried and settled** is the test, where it used to be *settled* alone. A finding the
+ * developer ticketed a moment ago is settled by that reading — `to_ticket` writes
+ * `Ticketed` — and was then offered the author's three replies, which is a panel asking
+ * what the author made of a decision the author has never seen. It is offered the four
+ * decisions, with Post as the way back.
+ */
 const options = computed<TrackOption[]>(() => {
-  const offered = open.value ? DECISIONS : REPLIES
-  const all: Array<{ value: FindingDecision, label: string, key?: string }> = [
-    ...offered,
-    { value: 'to_ticket', label: 'To a ticket' },
+  const answering = isCarried(props.finding) && !open.value
+  const all: Array<{ value: string, label: string, key?: string }> = [
+    ...(answering ? REPLIES : DECISIONS),
+    { value: 'to_ticket', label: 'Ticket', key: 'T' },
   ]
   return all
     .filter(one => available(one.value))
-    .map(one => ({
-      value: one.value as string,
-      label: labelFor(one.value, one.label),
-      key: one.key,
-    }))
+    .map(one => ({ value: one.value, label: one.label, key: one.key }))
 })
 
 /* ------------------------- The three that need words ------------------------- */
@@ -196,7 +245,7 @@ const SEVERITIES: Severity[] = ['blocker', 'should', 'nit', 'question']
 
 function pick(decision: string) {
   problem.value = ''
-  const chosen = decision as FindingDecision
+  const chosen = decision === 'post' ? post.value : (decision as FindingDecision)
   if (chosen === 'regrade' || chosen === 'rewrite' || chosen === 'accept_reason') {
     asking.value = chosen
     /* A rewrite opens on the words that are there, which is what rewriting means. */
@@ -388,7 +437,7 @@ const sessionSaid = computed(() => {
         <DeskButton
           kind="primary"
           :working="working"
-          working-label="Rewriting"
+          working-label="Editing"
           @click="rewrite"
         >
           Post it in my words
