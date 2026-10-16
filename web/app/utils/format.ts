@@ -503,7 +503,7 @@ export function eventLabel(event: ReviewEvent): string {
 }
 
 /**
- * What has come back on a posted review, in the record's own terms.
+ * What has come back on a posted review, in the record's own terms — **one line of it.**
  *
  * **Three states, three sentences, and only one of them has figures in it.** The counts
  * are null when nothing could have found one, and which absence it is matters: a review
@@ -514,6 +514,34 @@ export function eventLabel(event: ReviewEvent): string {
  * The figures carry their measurement time, because the record only supports a statement
  * about *then*: "0 replies" over a figure taken two hours ago reads as a statement about
  * now, and the author may have answered since.
+ *
+ * ## It fits on one line, and that is a rule rather than a hope
+ *
+ * The design pass of 15 October 2026 quoted this function's own output as the thing wrong
+ * with the queue:
+ *
+ * > **Status cells are paragraphs.** On the Queue, "0 replies · 0 threads resolved ·
+ * > 0 findings with code changed since · as at 24 min ago · pull request open at the last
+ * > harvest" fills three lines to say *nothing new*.
+ *
+ * Four of the five rows under "Waiting on the author" on the real desk read exactly that.
+ * Three things were done about it and **none of them is dropping a figure**:
+ *
+ * 1. **Three measured noughts are one phrase.** "Nothing back" says what "0 replies ·
+ *    0 threads resolved · 0 findings with code changed since" says, in a ninth of the
+ *    width. It fires only when all three are *measured* — a null is still never a nought,
+ *    which is the rule this function was written for, and a nought beside an unmeasured
+ *    figure is still drawn as the nought it is.
+ * 2. **The absence sentences say the same thing in half the words.** "Not harvested yet —
+ *    nothing has read this review back from GitHub" is one fact said twice; "Not read back
+ *    from GitHub yet" is the fact.
+ * 3. **The pull request's state left this line.** It was `prStateLabel`, joined on by the
+ *    queue — "pull request open at the last harvest" — which named the basis the clause
+ *    beside it had just given. It is a fact about the pull request, so it is drawn on the
+ *    row's pull-request line now, as the one word it is.
+ *
+ * And "as at 12 hours ago" is "read 12 hours ago", which is `harvestReadLabel`'s wording
+ * for the same event. One idiom for one fact, and shorter.
  */
 export function authorResponseLabel(item: InboxPostedItem): string {
   /*
@@ -534,38 +562,60 @@ export function authorResponseLabel(item: InboxPostedItem): string {
   if (item.replies == null && item.threads_resolved == null) {
     said.push(
       item.harvested_at == null
-        ? 'Not harvested yet — nothing has read this review back from GitHub'
+        ? 'Not read back from GitHub yet'
         : item.findings === 0
-          ? 'No findings were posted, so there is nothing for the author to reply to'
-          : `No finding is linked to a comment on GitHub, so no reply could be read (${
-            count(item.findings, 'finding')})`,
+          ? 'No findings were posted, so nothing can come back'
+          : `${count(item.findings, 'finding')}, none carrying a comment to reply to`,
     )
   }
 
   /*
-   * **Each figure drawn only where there is one**, and never through a `?? 0`. A null
-   * coalesced to nought is the exact thing this function exists to prevent, and it is
-   * reachable on its own: an outcome recorded by hand gives a review a reply count with
-   * no harvest behind it, leaving the resolution count beside it still unmeasured.
+   * **Three measured noughts are one phrase.** "Nothing back" is the whole of what "0
+   * replies · 0 threads resolved · 0 findings with code changed since" says, and it is
+   * what four of the five posted rows on the real desk draw — so the row that has nothing
+   * to report is the row this line is read on most, and it was the longest one on the page.
+   *
+   * **All three measured, or this does not fire.** The figures are nulled on their own
+   * sources, and "nothing back" over an unmeasured one would be the claim this whole
+   * function exists to refuse: a null coalesced to nought, said in English instead of in
+   * digits. A row with two noughts and one unknown draws the two noughts, which is longer
+   * and is the truth.
    */
-  if (item.replies != null) said.push(count(item.replies, 'reply', 'replies'))
-  if (item.threads_resolved != null) {
-    said.push(`${count(item.threads_resolved, 'thread')} resolved`)
+  const everyFigure
+    = item.replies != null && item.threads_resolved != null && item.code_changed_after != null
+  const nothingBack
+    = everyFigure
+      && item.replies === 0 && item.threads_resolved === 0 && item.code_changed_after === 0
+
+  if (nothingBack) said.push('Nothing back')
+  else {
+    /*
+     * **Each figure drawn only where there is one**, and never through a `?? 0`. A null
+     * coalesced to nought is the exact thing this function exists to prevent, and it is
+     * reachable on its own: an outcome recorded by hand gives a review a reply count with
+     * no harvest behind it, leaving the resolution count beside it still unmeasured.
+     */
+    if (item.replies != null) said.push(count(item.replies, 'reply', 'replies'))
+    if (item.threads_resolved != null) {
+      said.push(`${count(item.threads_resolved, 'thread')} resolved`)
+    }
+
+    /*
+     * **"findings whose code changed", not "commits since".** DEV-930 asks for the second
+     * and the record holds neither: the harvester writes one of these per finding whose
+     * file changed, so one commit touching three findings' files writes three.
+     */
+    if (item.code_changed_after != null) {
+      said.push(`${count(item.code_changed_after, 'finding')} with code changed since`)
+    }
   }
 
   /*
-   * **"findings whose code changed", not "commits since".** DEV-930 asks for the second
-   * and the record holds neither: the harvester writes one of these per finding whose
-   * file changed, so one commit touching three findings' files writes three.
-   */
-  if (item.code_changed_after != null) {
-    said.push(`${count(item.code_changed_after, 'finding')} with code changed since`)
-  }
-
-  /*
-   * **The measurement's own time, and only where there is a measurement to date.** "as at
+   * **The measurement's own time, and only where there is a measurement to date.** "read
    * 2 hr ago" over a figure taken then is what stops a nought reading as a statement about
-   * now; over "not harvested yet" it would be dating an absence.
+   * now; over "not read back yet" it would be dating an absence. It matters most under
+   * "Nothing back", which is three noughts in two words — the shorter the figure, the more
+   * it needs the moment it was taken.
    *
    * And where a figure exists with no harvest behind it, the row says so — for *any* of
    * the three, not only `replies`. They are nulled on their own sources, so the one that
@@ -582,7 +632,7 @@ export function authorResponseLabel(item: InboxPostedItem): string {
    * harvested.
    */
   const saidAlready = item.replies == null && item.threads_resolved == null
-  if (item.harvested_at != null) said.push(`as at ${sinceLabel(item.harvested_at)}`)
+  if (item.harvested_at != null) said.push(`read ${sinceLabel(item.harvested_at)}`)
   else if (measured && !saidAlready) said.push('recorded without a harvest')
 
   return said.join(' · ')
@@ -635,25 +685,71 @@ export function dayLabel(at: Instant | null | undefined): string | null {
 }
 
 /**
- * What the record knows of a posted pull request's state.
+ * What the record knows of a posted pull request's state: **one word.**
  *
  * `null` is not "open": it is the harvester never having looked, which is every review
  * until `review-desk harvest` runs over it. The group's heading says an author is being
  * waited on, and this is the row saying how much of that the record can actually support.
+ *
+ * **The sentence around the word has gone, and both halves of it were already on the row.**
+ * It read "pull request open at the last harvest", joined onto the end of
+ * `authorResponseLabel` — which had just said "as at 12 hours ago" about that same harvest.
+ * The design pass quoted the pair as one three-line cell. So: "pull request" is what every
+ * row on these two pages is, said once at the row's left in its number; "at the last
+ * harvest" is the basis the line beside it gives; and what is left is the state, which is
+ * the only part the record had to be read for.
+ *
+ * It is drawn on the row's **pull-request line** now — beside the repository, where the
+ * facts about the pull request rather than about the review are — and not in the status
+ * cell, which is about what came back.
+ *
+ * The enum's own three words are already English (`open`, `merged`, `closed`), so this
+ * returns them unchanged rather than translating them into three near-identical ones. What
+ * it still owns, and the only reason it is a function, is the fourth case: a null says the
+ * harvester has not looked, in words, rather than passing through as nothing at all.
  */
 export function prStateLabel(state: PrState | null | undefined): string {
-  if (state == null) return 'pull request state not established'
-  return `pull request ${state} at the last harvest`
+  if (state == null) return 'state not established'
+  return state
 }
 
 /**
- * Where a review has got to, as the step **and what the step says** — never the step alone.
+ * Where a review has got to: **the step and its number on one line, what it says on the
+ * next.**
  *
- * A bare step name is the step a review is *waiting at* when the state is `waiting_on_you`
- * and the step it has *left* when the state is `done`. A posted review's furthest started
- * step is the draft, so a cell reading "Draft" tells a reader it still needs signing off
- * while the queue says it is with the author. "Draft · signed off by the developer" says
- * the same record and misleads nobody.
+ * ```
+ *  What happened 7/7                              ← `said`
+ *  code changed since · read 12 hours ago         ← `detail`
+ * ```
+ *
+ * ## Why a pair rather than a sentence
+ *
+ * This was `stepLabel`, one string — "What happened · code changed since · read 12 hours
+ * ago" — and the Reviews row drew "step 7 of 7" under it from two more fields. At 1440 the
+ * sentence wrapped to two lines and the number took a third, on every row of the page. The
+ * design pass of 15 October 2026 named that: "Status cells are paragraphs."
+ *
+ * Nothing here is shorter by a word. What changed is which line each fact is on: the number
+ * joins the step it is a number *of*, which is one line saved and one less place to read it
+ * from, and the outcome drops to the line under it where the queue already puts the same
+ * kind of thing. The two pages draw the same shape now — a state, then its facts.
+ *
+ * **"7/7" rather than "step 7 of 7".** The word "step" is what `layerLabel` has just said
+ * by naming one, and the figure beside a name reads as a position without being told to.
+ * The long form is still what a screen reader is given, because a bare "7/7" announced after
+ * "What happened" is two numbers and no noun; the row writes that.
+ *
+ * ## The rule this function has always held
+ *
+ * **The step is never drawn as a name alone.** A bare step name is the step a review is
+ * *waiting at* when the state is `waiting_on_you` and the step it has *left* when the state
+ * is `done`. A posted review's furthest started step is the draft, so a cell reading "Draft"
+ * tells a reader it still needs signing off while the queue says it is with the author.
+ *
+ * That rule is about the **cell**, which is why splitting the sentence does not break it:
+ * `said` and `detail` are drawn one above the other in the same cell, and a caller that
+ * drew only the first would be drawing the name alone. `test/format.spec.ts` holds both to
+ * it.
  *
  * **The outcome comes from `layerOutcome`, which the trail already uses.** Writing the
  * detail out raw here looked like the same thing and was not: `layerDetail` rewrites the
@@ -665,7 +761,7 @@ export function prStateLabel(state: PrState | null | undefined): string {
  *
  * A review nothing has reported on is "Not started" and not a step number: the record
  * holds seven pending steps, which is a thing it knows rather than a thing it has not
- * measured.
+ * measured. Its `detail` is empty, and the row draws no second line at all.
  *
  * **A review harvested after it was posted reports step 7, and the row says when it was
  * last read.** Until DEV-933 nothing in the harvest path wrote a step, so a posted review
@@ -683,15 +779,17 @@ export function prStateLabel(state: PrState | null | undefined): string {
  * **The read time comes from `review.harvested_at`**, the harvester's own stamp, rather
  * than from the step's `updated_at` as the trail's does — this row holds the review and
  * not the layer, and `harvested_at` is the more exact answer to the question anyway. The
- * two are written microseconds apart by the same harvest. A row has the width for it,
- * which the trail's 154-pixel column does not; that argument is in `harvestReadLabel`.
+ * two are written microseconds apart by the same harvest.
  *
  * A *session* may write step 7 too, and is reported like any other step. What there must
  * not be is a step derived from a harvest time.
  */
-export function stepLabel(row: ReviewListItem, now: Date = new Date()): string {
+export function stepCell(
+  row: ReviewListItem,
+  now: Date = new Date(),
+): { said: string, detail: string, of: string | null } {
   if (row.step_number == null || row.step_name == null || row.step_state == null) {
-    return 'Not started'
+    return { said: 'Not started', detail: '', of: null }
   }
   /*
    * **A row that has left the desk does not claim anything is waiting on anybody.**
@@ -717,13 +815,22 @@ export function stepLabel(row: ReviewListItem, now: Date = new Date()): string {
     ? 'was waiting on you'
     : layerOutcome({ state: row.step_state, detail: row.step_detail })
 
-  const said = `${layerLabel(row.step_name)} · ${outcome}`
   const read = harvestReadLabel({
     name: row.step_name,
     state: row.step_state,
     updated_at: row.review.harvested_at,
   }, now)
-  return read ? `${said} · ${read}` : said
+
+  return {
+    said: `${layerLabel(row.step_name)} ${row.step_number}/${row.steps_total}`,
+    detail: read ? `${outcome} · ${read}` : outcome,
+    /*
+     * The number again, in the words a screen reader needs. "What happened 7/7" announced
+     * aloud is a name and two numbers; this is what the row puts in the hidden span beside
+     * it, so the figure on the page can be the figure and the sentence can be the sentence.
+     */
+    of: `step ${row.step_number} of ${row.steps_total}`,
+  }
 }
 
 /*

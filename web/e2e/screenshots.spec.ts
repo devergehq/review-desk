@@ -646,10 +646,20 @@ test.describe('a finished review, and a row’s links', () => {
       await expect(page.locator('.queue-line').filter({ hasText: '#9541' })).toHaveCount(1)
       await shot(page, `dev-957-1-queue${suffix}`)
 
+      /*
+       * **One row for the merged pull request, with its other three rounds opened.** Four
+       * rounds of #9568 were four rows until 16 October 2026; they are one row and a fold
+       * now. The fold is opened before the picture because a picture of a closed fold does
+       * not show what is in it, and what this shot is for is that every round is still
+       * reachable with its own sentence.
+       */
       await page.goto(`${seeded}reviews`)
       await page.getByRole('radio').filter({ hasText: 'Finished' }).click()
-      await expect(page.locator('.queue-line').filter({ hasText: '#9568' }))
-        .toHaveCount(mergedReviewIds.length)
+      const merged = page.locator('.queue-line').filter({ hasText: '#9568' })
+      await expect(merged).toHaveCount(1)
+      await merged.locator('.earlier summary').click()
+      await expect(merged.locator('.earlier-round'))
+        .toHaveCount(mergedReviewIds.length - 1)
       await shot(page, `dev-957-2-finished${suffix}`)
 
       /* Round 4: the one round of the four that never posted. */

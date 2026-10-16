@@ -14,6 +14,36 @@ import type { ReviewListItem, ReviewsShown } from '~/types/desk'
  * can't even get to the review page if I wanted to go back." This is the page that answers
  * that, and the queue's new "Waiting on the author" group is the shortcut to it.
  *
+ * ## One row per pull request, with its earlier rounds folded into it
+ *
+ * The design pass of 15 October 2026, over the live desk:
+ *
+ * > **One pull request, many rows.** #9541 appears five times on Reviews, once per round,
+ * > with near-identical titles and status. The Queue already folds rounds together;
+ * > Reviews doesn't.
+ *
+ * It does now, and the rule is the queue's: **one pull request is one thing to deal with.**
+ * The row is the newest round in the answer; every earlier round the answer holds opens
+ * from a fold on it, with its own step, its own sentence about how it left the desk, and
+ * its own link. Nothing is dropped — this page's promise is "every review the record holds,
+ * whatever became of it", and a round behind a fold is still on the page.
+ *
+ * **The title is the newest round that records one**, which is a different rule from the
+ * queue's and deliberately so. A queue row is a *round*, so a round with no title says it
+ * has none; this row is a *pull request*, and #9541's round 5 records no title while its
+ * rounds 1 to 4 all record "DUC-1998: team hierarchy schema, closure engine and self-row
+ * backfill". Folding on the newest round alone would have put four real titles behind the
+ * words "no title recorded".
+ *
+ * **The fold is a sibling of the row's link, not a cell in it.** `QueueRow` argues that at
+ * length about anchors; a `<summary>` inside an `<a>` is the same mistake, and pressing it
+ * would open the review instead of opening the fold.
+ *
+ * **And the summary says what is inside it.** A dismissal's reason and a supersession's
+ * explanation are the two sentences this page exists to carry, and either can be on a
+ * round that is not the newest — so the fold's own line counts the rounds and names the
+ * states behind it. A reader never has to open a fold to find out whether it matters.
+ *
  * ## It describes; it does not grade
  *
  * There is no score here, no ranking, and no figure about how well a review went. That
@@ -195,6 +225,128 @@ function viewLine(answer: { show: ReviewsShown }): string {
   return VIEW_LINES[answer.show]
 }
 
+/* --------------------- One row per pull request --------------------- */
+
+/** One pull request on the list: the round it is drawn as, and the rounds behind it. */
+interface PullRequestRow {
+  /** `repo#pr`, which is the key this page is grouped on and the row's own `:key`. */
+  key: string
+  /** The newest round of this pull request **in the answer**: the row's step, age and link. */
+  face: ReviewListItem
+  /**
+   * The pull request's title: the newest round that records one.
+   *
+   * **A fact about the pull request rather than about a round**, which is what makes this
+   * rule different from the queue's. A queue row is one round and says so when that round
+   * records no title; this row is the pull request, and `trilogy-care/tc-portal#9541` holds
+   * five rounds of which only the newest records none. Reading the face round alone drew
+   * "no title recorded" over four rounds that all carry the same real title.
+   */
+  title: string
+  /** Every other round the answer holds, newest first. Empty for most pull requests. */
+  earlier: ReviewListItem[]
+}
+
+/**
+ * The answer's reviews, grouped into one row per pull request.
+ *
+ * **Insertion order is kept**, so the page's stated sort — newest first, by when each was
+ * opened — still decides where a pull request sits: it goes where its first-mentioned round
+ * was. The server serves newest first, so that is its newest round.
+ *
+ * **Grouped in the page rather than by the server, deliberately.** `GET /reviews` answers
+ * about reviews because a review is what the record holds and what the four-position filter
+ * selects; which of them a reader wants drawn as one line is a question about this page.
+ * The queue groups its own five arrays for the same reason and in the same shape.
+ */
+function byPullRequest(rows: ReviewListItem[]): PullRequestRow[] {
+  const held = new Map<string, ReviewListItem[]>()
+  for (const row of rows) {
+    const key = `${row.review.repo}#${row.review.pr}`
+    const list = held.get(key)
+    if (list) list.push(row)
+    else held.set(key, [row])
+  }
+
+  return [...held.entries()].map(([key, list]) => {
+    /*
+     * **Sorted on the round, not taken as served.** The answer's order is by when a review
+     * was opened, which is the newest round for every pull request whose rounds were opened
+     * in order and is not a promise the contract makes. The round number is the fact.
+     */
+    const byRound = [...list].sort((left, right) => right.review.round - left.review.round)
+    const face = byRound[0]!
+    return {
+      key,
+      face,
+      title: byRound.find(row => row.review.title)?.review.title ?? 'no title recorded',
+      earlier: byRound.slice(1),
+    }
+  })
+}
+
+/**
+ * What the fold's own line says: how many rounds are behind it, which, and what they are.
+ *
+ * **The states are named on the summary because two of them are the reason this page
+ * exists.** A dismissal carries the developer's own words and a supersession explains where
+ * a round went; both can be on a round that is not the newest, and a fold that said only
+ * "4 earlier rounds" would make a reader open every one to find out whether any of them
+ * mattered. Counting them on the line answers that without opening anything.
+ *
+ * A round still in play contributes no word, which is the ordinary case: "4 earlier rounds ·
+ * rounds 1 to 4" is a complete sentence about four rounds that simply came before.
+ */
+const LEFT_WORDS: Record<string, string> = {
+  dismissed: 'dismissed',
+  finished: 'finished',
+  out_of_play: 'out of play',
+  superseded: 'superseded',
+}
+
+function earlierSummary(row: PullRequestRow): string {
+  const rounds = row.earlier.map(item => item.review.round)
+  const low = Math.min(...rounds)
+  const high = Math.max(...rounds)
+  const said = [
+    count(row.earlier.length, 'earlier round'),
+    low === high ? `round ${low}` : `rounds ${low} to ${high}`,
+  ]
+
+  const tally = new Map<string, number>()
+  for (const item of row.earlier) {
+    const word = item.left_the_desk == null ? null : LEFT_WORDS[item.left_the_desk]
+    if (word) tally.set(word, (tally.get(word) ?? 0) + 1)
+  }
+  for (const [word, many] of tally) said.push(`${many} ${word}`)
+
+  return said.join(' · ')
+}
+
+/**
+ * What a row that has left the desk says under its step — **one function, two places.**
+ *
+ * It was four `v-else-if` branches in the markup, which was fine while a row was a review.
+ * A row is a pull request now and the same sentence has to be written for the round on its
+ * face and for every round in its fold, and a condition chain written twice is two chains
+ * that drift.
+ *
+ * `null` for a round that has not left, which is most of them.
+ */
+function leftLine(row: ReviewListItem): string | null {
+  if (row.left_the_desk === 'dismissed' && row.review.dismissed_at) {
+    const why = row.review.dismissed_reason ? ` — ${row.review.dismissed_reason}` : ''
+    return `Dismissed ${sinceLabel(row.review.dismissed_at)}${why}`
+  }
+  if (row.left_the_desk === 'finished') return finishedLine(row)
+  if (row.left_the_desk === 'out_of_play') return outOfPlayLine(row)
+  if (row.left_the_desk === 'superseded') {
+    return `Superseded by round ${row.rounds_on_pr}. The author pushed past the commit this `
+      + 'round was written against, so it can never be the review that posts.'
+  }
+  return null
+}
+
 /**
  * What a finished row says under its title.
  *
@@ -248,6 +400,16 @@ function outOfPlayLine(row: ReviewListItem): string {
    */
   return `Out of play${since}. It comes back when the pull request does.`
 }
+
+/**
+ * The rows the page draws: one per pull request, in the answer's own order.
+ *
+ * A computed over the resource rather than a call in the markup, which is the shape the
+ * queue uses and for its reason: four bindings per row need the answer, and a function
+ * called from the template is re-evaluated on every render — on every press of either
+ * picker.
+ */
+const pullRequests = computed(() => byPullRequest(reviews.data.value?.reviews ?? []))
 
 /** Whether any row has no activity time, which the caption then says. */
 const someTimesMissing = computed(
@@ -336,6 +498,7 @@ function nothingHere(answer: { repo: string | null, show: ReviewsShown }): strin
           -->
           <p class="rd-meta aside-line">
             {{ viewLine(data) }}
+            Rounds of one pull request are folded into its row.
             How long one took is on its own page.
           </p>
         </div>
@@ -379,40 +542,57 @@ function nothingHere(answer: { repo: string | null, show: ReviewsShown }): strin
           </template>
         </p>
 
+        <!--
+          **"Every pull request", and the count counts the rows it draws.** It read "Every
+          review" over one row per review; a row is a pull request now, so the heading is.
+          The headline above still counts reviews, which is the record's own number and
+          this page's promise — the line between the two says rounds are folded, so the
+          13 and the 8 cannot read as a contradiction.
+        -->
         <DeskSection
           v-else
-          heading="Every review"
-          :count="data.reviews.length"
+          heading="Every pull request"
+          :count="pullRequests.length"
         >
           <QueueRow
-            v-for="row in data.reviews"
-            :key="row.review.id"
-            :pr="row.review.pr"
-            :title="row.review.title ?? 'no title recorded'"
-            :meta="about(row)"
-            :to="`/reviews/${row.review.id}/understand`"
+            v-for="row in pullRequests"
+            :key="row.key"
+            :pr="row.face.review.pr"
+            :title="row.title"
+            :meta="about(row.face)"
+            :to="`/reviews/${row.face.review.id}/understand`"
             action="Read the review"
             action-tone="quiet"
-            :age="row.last_activity_at ? `last written to ${sinceLabel(row.last_activity_at)}` : null"
+            :age="row.face.last_activity_at
+              ? `last written to ${sinceLabel(row.face.last_activity_at)}` : null"
             age-unknown-because="nothing has written to this review since Review Desk started keeping when one last changed"
-            :pr-href="prUrl(row.review.repo, row.review.pr)"
-            :ticket-href="ticketUrl(row.review.ticket_url)"
-            :ticket-id="row.review.ticket_id"
+            :pr-href="prUrl(row.face.review.repo, row.face.review.pr)"
+            :ticket-href="ticketUrl(row.face.review.ticket_url)"
+            :ticket-id="row.face.review.ticket_id"
           >
-            <span class="step">{{ stepLabel(row) }}</span>
             <!--
-              "step 6 of 7", and nothing at all for a review that has not started one.
-              `step 0 of 7` would be a nought where the record says plainly that no step
-              has begun, and the line above already says "Not started" in words.
+              **The step and its number on one line, what it says on the next.** Three
+              lines before: the step and its outcome wrapped, and "step 6 of 7" took a
+              third. `stepCell` puts the number where it belongs — beside the step it is a
+              number of — and the outcome drops to the row's second line, which is the
+              shape the queue's rows already have.
+
+              The contract requires a screen to draw `step_state` or `step_detail` and
+              never the name alone. Both lines are in this one cell, which is what that
+              rule is about; `stepCell`'s own note carries the argument.
             -->
+            <span class="step">{{ stepCell(row.face).said }}<span
+              class="rd-visually-hidden"
+            >, {{ stepCell(row.face).of }}</span></span>
             <span
-              v-if="row.step_number != null"
+              v-if="stepCell(row.face).detail"
               class="rd-meta step-of"
-            >step {{ row.step_number }} of {{ row.steps_total }}</span>
+            >{{ stepCell(row.face).detail }}</span>
             <!--
               **When and why, on the row**, which is what DEV-945 asks the dismissed view
-              for. On its own line because the reason is the developer's sentence and has
-              no length limit — the step line above it is two or three words.
+              for, and the same line for a finish, a pull request out of play and a
+              superseded round. `leftLine` holds all four so that the fold below can write
+              the same sentence about a round that is not on the face.
 
               Drawn on every view rather than only on the dismissed one: under
               **Everything** a dismissed review sits beside reviews in play, and a row
@@ -420,44 +600,46 @@ function nothingHere(answer: { repo: string | null, show: ReviewsShown }): strin
               it is not.
             -->
             <span
-              v-if="row.left_the_desk === 'dismissed' && row.review.dismissed_at"
+              v-if="leftLine(row.face)"
               class="rd-meta left"
-            >Dismissed {{ sinceLabel(row.review.dismissed_at) }}<template
-              v-if="row.review.dismissed_reason"
-            > — {{ row.review.dismissed_reason }}</template></span>
+            >{{ leftLine(row.face) }}</span>
+
             <!--
-              **A finish, in the words of the thing that happened.** Not "dismissed", which
-              would put a decision in the developer's mouth about a merge nobody made — the
-              two are told apart on every row, which is DEV-957's criterion. The date is
-              drawn only when the record holds one: GitHub does not always give a time, and
-              a row must then say the pull request merged without naming the day.
+              **The rounds behind this one.** Outside the row's own link — `QueueRow` draws
+              this slot as a sibling of the anchor — because a `<summary>` inside a link is
+              a control inside a control.
             -->
-            <span
-              v-else-if="row.left_the_desk === 'finished'"
-              class="rd-meta left"
-            >{{ finishedLine(row) }}</span>
-            <!--
-              **A pull request the author has pulled back, which is coming back.** It stays
-              under In play for the reason a superseded round does, and one more of its own:
-              this row is the only sentence that explains where the review went, so hiding
-              it would hide the explanation. Not a dismissal and not a finish — the two words
-              this page exists to tell apart — and the reason names which of the two it is.
-            -->
-            <span
-              v-else-if="row.left_the_desk === 'out_of_play'"
-              class="rd-meta left"
-            >{{ outOfPlayLine(row) }}</span>
-            <!--
-              **A superseded round, which is in play and is still nobody's turn.** It stays
-              under In play — the pull request is in play and so is this round's record — and
-              the row says why nothing is waiting on it, because the step beside it reads
-              "was waiting on you" and a reader is owed the reason.
-            -->
-            <span
-              v-else-if="row.left_the_desk === 'superseded'"
-              class="rd-meta left"
-            >Superseded by round {{ row.rounds_on_pr }}. The author pushed past the commit
-              this round was written against, so it can never be the review that posts.</span>
+            <template
+              v-if="row.earlier.length"
+              #rounds
+            >
+              <details class="rd-fold earlier">
+                <summary>{{ earlierSummary(row) }}</summary>
+                <ol class="earlier-list">
+                  <li
+                    v-for="item in row.earlier"
+                    :key="item.review.id"
+                    class="earlier-round"
+                  >
+                    <NuxtLink
+                      class="earlier-link"
+                      :to="`/reviews/${item.review.id}/understand`"
+                    >Round {{ item.review.round }} of {{ item.rounds_on_pr }}</NuxtLink>
+                    <span class="earlier-step">{{ stepCell(item).said }}<span
+                      class="rd-visually-hidden"
+                    >, {{ stepCell(item).of }}</span></span>
+                    <span
+                      v-if="stepCell(item).detail"
+                      class="rd-meta earlier-detail"
+                    >{{ stepCell(item).detail }}</span>
+                    <span
+                      v-if="leftLine(item)"
+                      class="rd-meta left earlier-left"
+                    >{{ leftLine(item) }}</span>
+                  </li>
+                </ol>
+              </details>
+            </template>
           </QueueRow>
         </DeskSection>
 
@@ -584,9 +766,14 @@ function nothingHere(answer: { repo: string | null, show: ReviewsShown }): strin
   font-weight: 600;
 }
 
+/*
+ * What the step says, under the step. `text-wrap: pretty` for the queue's reason: this is a
+ * line of clauses, and a greedy break leaves the last word of one alone on a line.
+ */
 .step-of {
   display: block;
   flex: 1 1 100%;
+  text-wrap: pretty;
 }
 
 /*
@@ -603,6 +790,110 @@ function nothingHere(answer: { repo: string | null, show: ReviewsShown }): strin
   flex: 1 1 100%;
   overflow-wrap: break-word;
   color: var(--rd-warn-ink);
+}
+
+/*
+ * **The fold of earlier rounds.** `.rd-fold` is the app's fold control — its summary, its
+ * 44-pixel target and its drawn triangle are all there — and this adds only what is about
+ * a list of rounds: the type size of a line that is not the row's own, and the rows inside.
+ */
+.earlier {
+  font-size: 13px;
+}
+
+/*
+ * **The summary is indented to the title column, and the rounds under it are not.** It is a
+ * line *about* the row — "4 earlier rounds · rounds 1 to 4 · 1 superseded" — so it reads
+ * where the row's other such lines read, under the title; the rounds themselves are rows and
+ * sit on the row's own columns. 76 pixels is the number cell's width plus the row's column
+ * gap, which is what `QueueRow`'s repository line uses.
+ */
+.earlier > summary {
+  padding-left: 76px;
+}
+
+@media (max-width: 560px) {
+  .earlier > summary {
+    padding-left: 0;
+  }
+}
+
+.earlier-list {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 4px;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * **One round, on the row above's own columns.** The tracks are `QueueRow`'s — the number's
+ * width, the two text columns, the age, the action — because a round in this fold *is* a row
+ * of this list, and a reader scanning the status column down the page should not find the
+ * fold's steps sitting in the middle of the title column.
+ *
+ * The round's number goes where a title goes and its step where a status goes, which leaves
+ * the first, fourth and fifth tracks empty: the pull request's number is on the row above
+ * and saying it four more times is the repetition this change is removing, and a round's own
+ * age and action are what pressing it is for.
+ */
+.earlier-round {
+  display: grid;
+  grid-template-columns:
+    56px minmax(0, 1fr) minmax(0, 1fr) 90px 150px;
+  gap: 2px 20px;
+  align-items: baseline;
+}
+
+.earlier-link {
+  grid-column: 2;
+}
+
+.earlier-step {
+  grid-column: 3;
+}
+
+.earlier-link {
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.earlier-step {
+  font-weight: 600;
+}
+
+/*
+ * The two sentences under a round sit under its step rather than under its number — the
+ * number is the thing being pressed, and a sentence beginning in its column would read as
+ * part of the link's own label.
+ *
+ * **In the status column and not spanning past it**, although a finish's sentence would read
+ * more easily on a wider line. The face row's own sentence is inside `QueueRow`'s status
+ * cell and cannot span; a fold row that did would put the same sentence at two widths on one
+ * row, three lines apart, which is the kind of difference a reader looks for a meaning in.
+ */
+.earlier-detail,
+.earlier-left {
+  grid-column: 3;
+}
+
+@media (max-width: 560px) {
+  /*
+   * **One column at a phone's width**, which is what the row above does too: 390 pixels does
+   * not hold five tracks, and a round number in a 56-pixel column beside a step cell of
+   * about 90 would put "What happened 7/7" on three lines.
+   */
+  .earlier-round {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .earlier-link,
+  .earlier-step,
+  .earlier-detail,
+  .earlier-left {
+    grid-column: 1;
+  }
 }
 
 .fresh {

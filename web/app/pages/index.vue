@@ -8,6 +8,7 @@ import type {
   InboxOwnPrItem,
   InboxPostedItem,
   InboxReplyItem,
+  PrState,
 } from '~/types/desk'
 import type { DeskNotice } from '~/utils/format'
 
@@ -668,26 +669,36 @@ function alsoWaiting(row: Waiting): string[] {
 }
 
 /**
- * The line under the title for the two groups no developer act is waiting on.
+ * The line under the title of a posted row: the repository, and what the pull request was
+ * last seen to be.
  *
- * **The repository, and nothing else — the ticket is `QueueRow`'s now.** It named the
- * ticket here too, which was right while the row's own ticket link was a column at the
- * row's end: a review with an id and no address drew no ticket at all unless this said it.
- * DEV-957 put the link inline in this very line, so saying it here as well drew the id
- * twice in a row — and the component draws it once, linked or not, which is that rule being
- * true by construction. Both halves of the contract's "names it on its own line and does
- * not link" are kept; only who writes it moved.
+ * **The state moved here from the status cell, and this is the line it belongs on.** It was
+ * `prStateLabel` joined onto the end of `authorResponseLabel` — "0 replies · 0 threads
+ * resolved · 0 findings with code changed since · as at 12 hours ago · pull request open at
+ * the last harvest" — which the design pass quoted whole as a three-line cell saying nothing
+ * new. The status cell is about what came back from the author. Whether the pull request is
+ * still open is a fact about the pull request, and this line is where the row's facts about
+ * the pull request are: its repository, and the two links out to it.
+ *
+ * `prStateLabel` returns one word now, and its own note argues the sentence away. The
+ * harvest basis the sentence used to carry is still said, once, by the cell beside it.
+ *
+ * **The ticket is `QueueRow`'s, not this line's.** It named the ticket here too, which was
+ * right while the row's own ticket link was a column at the row's end: a review with an id
+ * and no address drew no ticket at all unless this said it. DEV-957 put the link inline in
+ * this very line, so saying it here as well drew the id twice in a row — and the component
+ * draws it once, linked or not, which is that rule being true by construction.
  *
  * **It also lost its leading `· `.** The line used to sit under the title in the row's own
  * cell, where a leading separator read as a continuation; it is a line of its own now, and
  * a line beginning with a middle dot reads as a stray mark.
  *
- * **Two call sites, which is what the name says.** "Your pull requests" is the one array
- * the contract gives no ticket, because it is the one with no review — a pull request
- * nobody has reviewed.
+ * **One call site now, where it had two.** "Your pull requests" reads its repository
+ * straight: those rows have no review, so there is nothing for a harvest to have looked at
+ * and no state for this to say.
  */
-function alsoAbout(item: { pull_request: { repo: string } }): string {
-  return item.pull_request.repo
+function alsoAbout(item: { pull_request: { repo: string }, pr_state?: PrState | null }): string {
+  return `${item.pull_request.repo} · ${prStateLabel(item.pr_state)}`
 }
 
 /**
@@ -1584,10 +1595,13 @@ function handledLine(data: Inbox): string {
               What came back, and where the record has no answer, which absence it is.
               Never a nought over an unread thread: `authorResponseLabel` holds that rule
               and says the measurement's own time beside the figures it has.
+
+              **One line, which is what this change is for.** Three measured noughts are
+              "Nothing back" there, and the pull request's state has moved up to the line
+              under the title where the row's other facts about the pull request are. What
+              is left is what came back and when it was read.
             -->
-            <span class="rd-meta what-detail">
-              {{ authorResponseLabel(item) }} · {{ prStateLabel(item.pr_state) }}
-            </span>
+            <span class="rd-meta what-detail">{{ authorResponseLabel(item) }}</span>
           </QueueRow>
         </DeskSection>
 
@@ -1730,9 +1744,17 @@ function handledLine(data: Inbox): string {
   font-weight: 600;
 }
 
+/*
+ * **The line of facts under the state.** `text-wrap: pretty` because this line is a list of
+ * clauses joined by middle dots, and the browser's greedy line breaking left "replied to
+ * round" on one line and "4" alone on the next — a figure orphaned from the word it belongs
+ * to, which is exactly the kind of thing a reader stops on. Where the browser does not
+ * support it the line breaks as it did, which is the old behaviour rather than a broken one.
+ */
 .what-detail {
   display: block;
   flex: 1 1 100%;
+  text-wrap: pretty;
 }
 
 .own {

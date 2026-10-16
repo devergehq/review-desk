@@ -544,9 +544,17 @@ describe('the queue', () => {
     const row = page.findAll('.row').find(one => one.text().includes('#403'))!
     expect(row, 'the posted review has a row').toBeDefined()
     expect(row.text()).toContain('Posted as Comment')
-    expect(row.text()).toContain('Not harvested yet')
-    expect(row.text()).toContain('pull request state not established')
+    expect(row.text()).toContain('Not read back from GitHub yet')
     expect(row.attributes('href')).toBe('/reviews/43/understand')
+
+    /*
+     * **And the pull request's state on the row's own pull-request line**, which is where
+     * it moved to on 16 October 2026: the status cell is what came back from the author,
+     * and whether the pull request is still open is a fact about the pull request. Found on
+     * the whole line rather than on `.row`, because that line is a sibling of the anchor.
+     */
+    const line = page.findAll('.queue-line').find(one => one.text().includes('#403'))!
+    expect(line.find('.meta-text').text()).toContain('state not established')
   })
 
   /*
@@ -704,16 +712,32 @@ describe('the queue', () => {
   })
 
   /*
-   * The three typefaces, where the boards put them: Newsreader for a review's title,
-   * JetBrains Mono for a pull request number. Asserted on the elements rather than on the
-   * stylesheet, because what matters is which words wear which face.
+   * **One title face down the whole list**, which is the change of 16 October 2026 and the
+   * design pass's own words: "Titles switch between serif (Needs you) and sans (everything
+   * else) on the same list." A needs-you title was `rd-display-row`, Newsreader at 21px,
+   * and every other group's was the sans — so one column of titles was drawn in two shapes
+   * for no difference a reader could act on.
+   *
+   * JetBrains Mono for a pull request's number stays: that is a different *kind* of thing
+   * and the face says so. Asserted on the elements rather than on the stylesheet, because
+   * what matters is which words wear which face.
    */
-  it('sets a review’s title in the display face and its number in the mono one', async () => {
+  it('sets every row’s title in one face, and its number in the mono one', async () => {
     const page = await shown(Inbox)
     const row = page.findAll('.row').find(one => one.text().includes('#412'))!
-    expect(row.find('.rd-display-row').text()).toBe('Retry failed webhook deliveries')
+    expect(row.find('.title').text()).toBe('Retry failed webhook deliveries')
+    expect(row.find('.title').classes(), 'emphasised, not reset in another face')
+      .toContain('title--emphasis')
+    expect(row.findAll('.rd-display-row'), 'no serif on a row').toHaveLength(0)
     expect(row.find('.pr').classes()).toContain('rd-mono')
     expect(row.find('.pr').text()).toBe('#412')
+
+    /*
+     * **And a row in a quieter group wears the same class, without the emphasis.** The
+     * difference between the groups is weight and size now; it was the typeface.
+     */
+    const quiet = page.findAll('.row').find(one => one.text().includes('Read the review'))
+    expect(quiet?.find('.title').classes()).not.toContain('title--emphasis')
   })
 
   it('has a labelled field for starting a review', async () => {

@@ -97,23 +97,42 @@ describe('the Reviews list’s Finished view', () => {
     expect(page.text()).toContain('#9541')
   })
 
-  it('lists all four rounds under Finished, posted or not', async () => {
+  it('draws all four rounds as one row, with three of them in its fold', async () => {
     /*
-     * **Four, and only one of them was ever harvested.** The other three hold no
-     * `pr_state`, so a page reading the round's own column would show one row here and
-     * leave three rounds reachable from nowhere at all.
+     * **Four rounds, one pull request, one row.** The design pass's seventh finding: "#9541
+     * appears five times on Reviews, once per round, with near-identical titles and
+     * status." #9568 is the same shape under Finished — four rounds of one merged pull
+     * request — so the row is the pull request and the three earlier rounds open from a
+     * fold on it.
+     *
+     * **And only one of them was ever harvested.** The other three hold no `pr_state`, so
+     * a page reading the round's own column would show one row here and leave three rounds
+     * reachable from nowhere at all. Which is why the fold is tested for reachability and
+     * not merely for existing.
      */
     const page = await shown(Reviews)
     await choose(page, 'Finished')
 
     expect(page.text()).toContain('The reviews whose pull request merged or closed')
     const rows = page.findAll('.queue-line').filter(row => row.text().includes('#9568'))
-    expect(rows, 'every round of #9568').toHaveLength(4)
+    expect(rows, '#9568 is one row').toHaveLength(1)
+
+    const row = rows[0]!
+    expect(row.find('.earlier summary').text(), 'the fold says what is behind it')
+      .toContain('3 earlier rounds')
+
+    /*
+     * **Every round reachable**, the face one through the row's own link and the other
+     * three through the fold. This is the page's promise — "every review the record holds,
+     * whatever became of it" — and folding may not cost it.
+     */
+    const reachable = [
+      row.find('.row').attributes('href'),
+      ...row.findAll('.earlier-link').map(link => link.attributes('href')),
+    ]
     for (const id of [MERGED.posted, ...MERGED.unposted]) {
-      expect(
-        page.findAll('.queue-line .row').map(row => row.attributes('href')),
-        `round ${id} is reachable from the list`,
-      ).toContain(`/reviews/${id}/understand`)
+      expect(reachable, `round ${id} is reachable from the list`)
+        .toContain(`/reviews/${id}/understand`)
     }
   })
 
@@ -150,14 +169,50 @@ describe('a superseded round in the Reviews list', () => {
    * "Nothing left to do". Found by a review of this branch.
    */
   it('stays under In play, reads in the past tense, and says why', async () => {
+    /*
+     * **In the fold of its own pull request's row, which is where an earlier round is
+     * now.** It is still on the page in the default view, which is what this test is for;
+     * what changed is that #9541 is one row rather than two, and round 1 is behind the
+     * fold on it with its sentence intact.
+     */
     const page = await shown(Reviews)
-    const row = page.findAll('.queue-line').find(one => one.text().includes('#9541')
-      && one.text().includes('round 1 of 2'))
-    expect(row, 'round 1 of #9541 is in the default view').toBeDefined()
-    expect(row!.text()).toContain('was waiting on you')
-    expect(row!.text()).toContain('Superseded by round 2')
-    expect(row!.text(), 'nobody dismissed it').not.toContain('Dismissed')
-    expect(row!.text(), 'and its pull request has not merged').not.toContain('Finished —')
+    const row = page.findAll('.queue-line').find(one => one.text().includes('#9541'))
+    expect(row, '#9541 is in the default view').toBeDefined()
+
+    const fold = row!.find('.row-rounds')
+    expect(fold.exists(), 'round 1 is behind a fold on it').toBe(true)
+    /*
+     * **And the fold's own line says a round behind it was superseded**, so a reader need
+     * not open it to learn that something there wants explaining.
+     */
+    expect(row!.find('.earlier summary').text()).toContain('1 superseded')
+
+    const earlier = fold.findAll('.earlier-round')
+      .find(one => one.text().includes('Round 1 of 2'))
+    expect(earlier, 'round 1 of #9541 is in the default view').toBeDefined()
+    expect(earlier!.text()).toContain('was waiting on you')
+    expect(earlier!.text()).toContain('Superseded by round 2')
+    expect(earlier!.text(), 'nobody dismissed it').not.toContain('Dismissed')
+    expect(earlier!.text(), 'and its pull request has not merged').not.toContain('Finished —')
+  })
+
+  it('draws the step with its number on one line and its outcome on the next', async () => {
+    /*
+     * The shape both lists share since 16 October 2026: a state, then its facts. It was the
+     * step and its outcome on one line — wrapping to two at 1440 — and "step 6 of 7" on a
+     * third. `test/format.spec.ts` holds the wording; this is the row drawing it.
+     */
+    const page = await shown(Reviews)
+    const row = page.findAll('.queue-line').find(one => one.text().includes('#9541'))!
+
+    expect(row.find('.step').text()).toMatch(/^Draft 6\/7/)
+    expect(row.find('.step-of').text()).toBe('waiting on you')
+
+    /*
+     * **And the long form is what a screen reader is given.** "Draft 6/7" read aloud is a
+     * name and two numbers; the hidden span beside it is the sentence.
+     */
+    expect(row.find('.step .rd-visually-hidden').text()).toBe(', step 6 of 7')
   })
 
   it('is in no other view, because it has not left the desk', async () => {
@@ -172,12 +227,19 @@ describe('a superseded round in the Reviews list', () => {
   })
 
   it('leaves the newest round saying what it is still waiting for', async () => {
+    /*
+     * **Read off the row's own cell, not off the whole line.** The line now carries the
+     * fold as well, and round 1's sentences are in it — so the question "what does the
+     * face of this row say" has to be asked of the face.
+     */
     const page = await shown(Reviews)
     const row = page.findAll('.queue-line').find(one => one.text().includes('round 2 of 2'))
     expect(row, 'round 2 of #9541').toBeDefined()
-    expect(row!.text()).toContain('waiting on you')
-    expect(row!.text()).not.toContain('was waiting on you')
-    expect(row!.text()).not.toContain('Superseded')
+
+    const face = row!.find('.what').text()
+    expect(face).toContain('waiting on you')
+    expect(face).not.toContain('was waiting on you')
+    expect(face).not.toContain('Superseded')
   })
 })
 

@@ -303,10 +303,18 @@ test.describe('the whole path, on a seeded database', () => {
      * And nothing has harvested it, so the three figures are absent rather than nought,
      * and the pull request's state is not claimed. Both halves of the rule the brief
      * states: a figure with no source is shown as unknown, never as a number.
+     *
+     * **The state is read off the row's own pull-request line, which is where it moved on
+     * 16 October 2026** — the status cell is about what came back from the author, and
+     * whether the pull request is still open is a fact about the pull request. That line is
+     * a sibling of this anchor, so it is found on the whole row rather than inside it.
      */
-    await expect(posted).toContainText('Not harvested yet')
-    await expect(posted).toContainText('pull request state not established')
+    await expect(posted).toContainText('Not read back from GitHub yet')
     await expect(posted).toHaveAttribute('href', `/reviews/${postedReviewId}/understand`)
+
+    const postedLine = page.locator('.queue-line')
+      .filter({ hasText: 'Record the delivery attempt' })
+    await expect(postedLine.locator('.meta-text')).toContainText('state not established')
 
     /* And it is one click from the queue, which is the whole of what was asked for. */
     await posted.click()
@@ -3261,8 +3269,14 @@ test.describe('a harvested review, on the queue and in the list', () => {
        * The step, its own words, and the number of seven — never the bare state word,
        * which on step 7 means "the pull request is open and still being watched" and
        * would read as a harvest executing for as long as a pull request stays open.
+       *
+       * **Two lines since 16 October 2026**: the step carries its number — "What happened
+       * 7/7" — and what it says drops to the line under it. The cell holds both, which is
+       * what the contract's "never the name alone" is about; the long form of the number
+       * is still there for a screen reader, which is what `step 7 of 7` matches here.
        */
-      await expect(row).toContainText(`What happened · ${detail}`)
+      await expect(row.locator('.step')).toContainText('What happened 7/7')
+      await expect(row.locator('.step-of')).toContainText(detail)
       await expect(row).toContainText('step 7 of 7')
       await expect(row).not.toContainText('· running')
     })
@@ -3913,14 +3927,31 @@ test.describe('a merged pull request finishes its review', () => {
     await page.getByRole('radio').filter({ hasText: 'Finished' }).click()
     await expect(page.getByText('whose pull request merged or closed')).toBeVisible()
 
-    /* All four, which is the derivation: three of them hold no state of their own. */
+    /*
+     * **All four, as one row with three of them in its fold.** The derivation is what this
+     * test is about and is unchanged — three of the four hold no state of their own, so a
+     * page reading the round's own column would find one — and since 16 October 2026 the
+     * four rounds of one pull request are one row rather than four. Every one of them is
+     * still on the page, which is the property; where they are is the change.
+     */
     const rows = page.locator('.queue-line').filter({ hasText: '#9568' })
-    await expect(rows).toHaveCount(mergedReviewIds.length)
+    await expect(rows, '#9568 is one row').toHaveCount(1)
+
+    const row = rows.first()
+    await expect(row.locator('.earlier summary'))
+      .toContainText(`${mergedReviewIds.length - 1} earlier rounds`)
+    const reachable = await Promise.all([
+      row.locator('.row').getAttribute('href'),
+      ...(await row.locator('.earlier-link').all()).map(link => link.getAttribute('href')),
+    ])
+    for (const id of mergedReviewIds) {
+      expect(reachable, `round ${id} is reachable`).toContain(`/reviews/${id}/understand`)
+    }
 
     /* And each says what happened, in the words of the thing that happened. */
-    await expect(rows.first()).toContainText('Finished — the pull request merged')
-    await expect(rows.first()).toContainText('No round of it can be posted')
-    await expect(rows.first()).not.toContainText('Dismissed')
+    await expect(row).toContainText('Finished — the pull request merged')
+    await expect(row).toContainText('No round of it can be posted')
+    await expect(row).not.toContainText('Dismissed')
 
     /* Dismissed is a different view, and nothing here is in it. */
     await page.getByRole('radio').filter({ hasText: 'Dismissed' }).click()
