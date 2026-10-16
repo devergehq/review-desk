@@ -1,7 +1,7 @@
 // @vitest-environment nuxt
 import { readFileSync, readdirSync } from 'node:fs'
 import { relative, resolve, sep } from 'node:path'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { flushPromises, type VueWrapper } from '@vue/test-utils'
 
@@ -33,6 +33,25 @@ import type { ReviewDetail } from '../app/types/desk'
  * drawn from the record rather than assumed, and that the rules the issue states hold. They
  * do not check that it looks right; the screenshots in the pull request are for that.
  */
+
+/*
+ * **Twenty seconds a test, because one mount here draws three steps.**
+ *
+ * Every `it` below mounts a whole page under the Nuxt environment, and since the case merged
+ * Understand, Alternatives and Solution into one component each of those mounts renders all
+ * three bands — every problem row, every option row with its verdicts, every part — against
+ * a real-length brief. Locally that is a few hundred milliseconds. On a CI runner sharing
+ * four cores with the Rust job, a cold jsdom built for this file took longer than Vitest's
+ * five-second default and the run failed on `a brief written before any of this`, which is
+ * neither the slowest test here nor a test that does anything unusual: it was the one that
+ * happened to run while the machine was busy. Nothing was broken, and nothing in the report
+ * said so.
+ *
+ * So the ceiling is raised for this file rather than for the suite. A hang is still an
+ * error, which is what a timeout is for; what it must not do is report contention as a
+ * defect in the page.
+ */
+vi.setConfig({ testTimeout: 20_000 })
 
 /** The review carrying the structured brief at real length. */
 const STRUCTURED = 41
