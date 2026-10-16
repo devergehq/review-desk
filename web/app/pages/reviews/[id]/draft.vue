@@ -324,6 +324,22 @@ watch(dirty, (unsaved) => {
  */
 const editRows = computed(() => editLines(detail.data.value?.edits ?? []))
 
+/**
+ * The body as the rendered preview draws it, with its open index folded.
+ *
+ * **The one thing this page printed twice was the open index**, and every row of it is a
+ * finding drawn in full further down the same page — as its own section when it posts in
+ * the body, as a thread when it posts on a line. `foldOpenIndex` folds the heading and
+ * that table into one line and touches nothing else.
+ *
+ * **Folded, not taken out.** The whole index is still in this preview, one click from
+ * open, because the page a developer signs off on has to be what posts — Patrick's ruling
+ * of 16 October 2026, argued on the function. The Markdown tab shows `draft.body`
+ * verbatim, the editor edits the stored characters, and the session posts the body as
+ * stored, so nothing here changes what GitHub receives either.
+ */
+const preview = computed(() => foldOpenIndex(detail.data.value?.draft.body ?? ''))
+
 const heldRows = computed(() =>
   heldBackRows(detail.data.value?.held_back ?? [], review.data.value?.findings ?? []),
 )
@@ -784,11 +800,15 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
 
               <div class="body">
                 <!--
-                  **The main column is the two halves of what posts.** The body above, and
-                  the threads below it — a finding with a line inside the diff is a row in
-                  the body's index and a comment on the code, so the preview is only half
-                  the review until both are drawn. The aside is untouched: it is where the
-                  sign-off lives.
+                  **The main column is what posts; the aside is what you do about it.**
+
+                  Both halves of the post are inside the one preview card now — the body,
+                  and the comments on the code under it — because a finding was being drawn
+                  in two of three places and the page never said which half it was. The
+                  aside keeps the checks, the edits and what was held back, and the sign-off
+                  has moved to the top of it and stays there while this column scrolls: it
+                  used to run out about 1,590px down a 4,305px page, which put the one
+                  control this screen exists for out of reach for three quarters of it.
                 -->
                 <div class="main">
                   <DeskCard
@@ -820,10 +840,49 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                     </div>
 
                     <div class="pane">
-                      <MarkdownView
+                      <!--
+                        **One document, and each part of it says where it lands on GitHub.**
+
+                        The page drew three things and called them the preview: an index
+                        table, the body's own finding sections, and a separate card of
+                        threads underneath. A finding with a line was in the index and in
+                        the threads; a finding without one was in the index and in the body.
+                        Everything was printed twice and nothing said which half of the post
+                        it was.
+
+                        Now: the body, labelled as the body; the comments on the code under
+                        it inside the same frame, labelled as comments; and the index folded
+                        to one line, because it was the duplicate. Folded and not taken out:
+                        every row of it is still here, one click from open, because this is
+                        the page the draft is signed off on. See `foldOpenIndex`.
+                      -->
+                      <div
                         v-if="view === 'rendered' && data.draft.body.length > 0"
-                        :source="data.draft.body"
-                      />
+                        class="rendered"
+                      >
+                        <p class="rd-label lands">
+                          {{
+                            data.draft.status === 'posted'
+                              ? 'Posted as the review body'
+                              : 'Posts as the review body'
+                          }}
+                        </p>
+
+                        <MarkdownView :source="preview.body" />
+
+                        <!--
+                          **The head goes with the threads.** DEV-978: a thread's line was
+                          counted on some commit, and whether that is the one GitHub will
+                          anchor it against is the fact the developer is signing off on. The
+                          list compares the two; the page is what knows where the pull
+                          request is.
+                        -->
+                        <DraftThreads
+                          :threads="data.threads"
+                          :head-sha="data.review.head_sha"
+                          :posted="data.draft.status === 'posted'"
+                        />
+                      </div>
 
                       <!--
                 A draft the session has opened and not written into. The body may be empty
@@ -902,21 +961,268 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                       </div>
                     </div>
                   </DeskCard>
-
-                  <!--
-                    **The head goes with the threads.** DEV-978: a thread's line was
-                    counted on some commit, and whether that is the one GitHub will anchor
-                    it against is the fact the developer is signing off on. The card
-                    compares the two; the page is what knows where the pull request is.
-                  -->
-                  <DraftThreads
-                    :threads="data.threads"
-                    :head-sha="data.review.head_sha"
-                    :posted="data.draft.status === 'posted'"
-                  />
                 </div>
 
                 <aside class="aside">
+                  <!--
+                    **The sign-off is the first thing in the aside, and it stays in view.**
+
+                    The design pass measured what it was: the rail ended about 1,590px down
+                    a 4,305px page and did not move, so for three quarters of the scroll the
+                    right third of the screen was empty and the one control this page exists
+                    for was somewhere above. The order inside the aside was the order the
+                    panels were built in -- checks, edits, held back, and the act last.
+
+                    **Sticky rather than fixed, and wrapped with the notice rather than on
+                    its own.** The notice is where a refused save, a refused sign-off and
+                    "this review is still being read" are said, and four of the five writes
+                    it reports on are in the panel above it. A sentence about a button that
+                    scrolls away from the button is a sentence nobody reads.
+
+                    The aside stretches to the main column's height for this to have
+                    anywhere to stick to -- see `.aside` in the stylesheet, where the
+                    narrow-width case is handled too.
+                  -->
+                  <div class="pinned">
+                    <!--
+                      **No sign-off at all when nothing can post this draft**, which is
+                      DEV-957's "an unposted draft on a finished review says so and cannot be
+                      signed off". Not a disabled button: the panel is the three acts that
+                      each ask a session to do something afterwards — post it, file a ticket
+                      and post it, send it back to be rewritten — and on a merged pull request
+                      there is no session coming for any of them. A greyed-out "Sign off and
+                      post" would still be offering the act, and the API refuses it; the
+                      status line above says what happened instead.
+
+                      The card in its place is not a refusal notice. Nothing was refused and
+                      nothing is wrong: the record simply says what became of the pull request,
+                      and the draft stays on it to be read.
+                    -->
+                    <DeskCard
+                      v-if="notForSigning(data)"
+                      class="panel"
+                    >
+                      <p class="rd-label">
+                        Nothing to sign off
+                      </p>
+                      <p class="rd-note">
+                        {{ notForSigningLine(notForSigning(data)!) }}
+                      </p>
+                      <p class="rd-meta foot">
+                        The draft, the findings and your decisions are all still on the
+                        record. Nothing has been removed.
+                      </p>
+                    </DeskCard>
+
+                    <DeskCard
+                      v-else
+                      class="panel"
+                    >
+                      <label
+                        class="rd-label"
+                        for="event"
+                      >Post as</label>
+                      <select
+                        id="event"
+                        v-model="event"
+                        class="rd-field"
+                        :disabled="decided(data)"
+                      >
+                        <option value="request_changes">
+                          Request changes
+                        </option>
+                        <option value="comment">
+                          Comment
+                        </option>
+                        <option value="approve">
+                          Approve
+                        </option>
+                      </select>
+                      <button
+                        type="button"
+                        class="rd-btn rd-btn--primary"
+                        :disabled="decided(data) || dirty || working"
+                        @click="approve"
+                      >
+                        {{ working ? 'Working…' : 'Sign off and post' }}
+                      </button>
+                      <!--
+                  **"Ticket what is left, and sign off" — one act, and a sign-off.**
+
+                  Drawn only while there is something left to file. The API refuses a review
+                  with no open finding, saying to sign off instead and ask for a ticket for
+                  the nits on their own — so a button that is always there is a button that
+                  is sometimes a refusal, and the two things it would do are already the two
+                  buttons above it.
+                -->
+                      <template v-if="openFindings && !ticketingRest">
+                        <button
+                          type="button"
+                          class="rd-btn"
+                          :disabled="decided(data) || dirty || working"
+                          @click="ticketingRest = true"
+                        >
+                          Ticket what is left, and sign off
+                        </button>
+                      </template>
+                      <div
+                        v-else-if="ticketingRest"
+                        class="send-back"
+                      >
+                        <label
+                          class="rd-meta"
+                          for="ticket-rest-note"
+                        >Why is the rest going to a ticket? Optional.</label>
+                        <textarea
+                          id="ticket-rest-note"
+                          v-model="ticketNote"
+                          class="rd-field"
+                          rows="2"
+                        />
+                        <p class="rd-meta">
+                          Every open finding is held back and recorded as ticketed this round,
+                          and the draft is signed off. The event is not yours to choose here —
+                          the control above is set to Approve, because a request for changes
+                          that ticketed everything it asked for would contradict itself.
+                          Review Desk files no ticket; an agent does, and the sign-off cannot
+                          link to one that does not exist yet.
+                        </p>
+                        <div class="send-back-actions">
+                          <button
+                            type="button"
+                            class="rd-btn rd-btn--primary"
+                            :disabled="working"
+                            @click="ticketRest"
+                          >
+                            Ticket it and sign off
+                          </button>
+                          <button
+                            type="button"
+                            class="rd-btn"
+                            @click="ticketingRest = false"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+
+                      <!--
+                        **The one transition out of a sign-off.** A draft that is approved and
+                        not yet posted can be sent back, which takes the sign-off with it —
+                        and without that a draft the hand-over refuses has nowhere to go at
+                        all: it cannot be posted, cannot be rewritten, and could not be sent
+                        back. Measured by the session building the posting half of DEV-929.
+                        The label says what the button does, because taking back a sign-off is
+                        not the same act as sending back a draft nobody has signed.
+                      -->
+                      <template v-if="!sendingBack">
+                        <button
+                          type="button"
+                          class="rd-btn"
+                          :disabled="!canSendBack(data) || working"
+                          @click="sendingBack = true"
+                        >
+                          {{
+                            data.draft.status === 'approved'
+                              ? 'Take back the sign-off and send it back'
+                              : 'Send back with a note'
+                          }}
+                        </button>
+                      </template>
+                      <div
+                        v-else
+                        class="send-back"
+                      >
+                        <label
+                          class="rd-meta"
+                          for="send-back-note"
+                        >What is the session to change?</label>
+                        <textarea
+                          id="send-back-note"
+                          v-model="note"
+                          class="rd-field"
+                          rows="3"
+                        />
+                        <div class="send-back-actions">
+                          <!--
+                            **Guarded like the button that opened it**, which it did not need
+                            to be until this page started re-reading. The form opens on a
+                            draft that is `approved`, and the status can now move underneath
+                            it: the session posts while the note is being typed, the panel
+                            flips to "Posted", and an enabled Send back over a posted draft
+                            buys the developer a refusal from the server.
+                          -->
+                          <button
+                            type="button"
+                            class="rd-btn rd-btn--primary"
+                            :disabled="working || !canSendBack(data)"
+                            @click="sendBack"
+                          >
+                            Send back
+                          </button>
+                          <button
+                            type="button"
+                            class="rd-btn"
+                            @click="sendingBack = false"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                      <DeskNotice
+                        v-if="dirty"
+                        tone="problem"
+                      >
+                        Save or discard your changes before signing off.
+                      </DeskNotice>
+                      <!--
+                        **What happens after the press, kept current.** Everything above this
+                        is the developer's to do; this is the only part of the panel that
+                        reports on somebody else, so it is the only part that has to re-read
+                        the record — DEV-932, where a sign-off went 4 min 28 s with nothing
+                        on screen. It asks this page to read again; it writes nothing.
+                      -->
+                      <PostingWatch
+                        :draft="data.draft"
+                        :review="data.review"
+                        :last-activity-at="review.data.value?.timings.last_activity_at"
+                        :body-is-stale="data.body_is_stale"
+                        :record-is-current="recordIsCurrent"
+                        :reread="reread"
+                      />
+                      <p class="rd-meta foot">
+                        The review session posts it under your name, with no bot banner.
+                      </p>
+                    </DeskCard>
+
+                    <!--
+                      **What the last write did, in the aside itself and not in a panel.**
+
+                      It was the last line of the sign-off card — and that card is the `v-else`
+                      of the one that says "Nothing to sign off", so on a review the record
+                      will not let anybody sign off, there was no element on this page that
+                      could draw a notice at all. The editor is not gated on status, and the
+                      server refuses a save on an `approved` or a `posted` draft, so a
+                      developer on a merged pull request could press Save the draft, be refused
+                      with a 409, and watch nothing happen: `said()` set a sentence that had
+                      nowhere to go. Raised by a review of this branch, which also caught that
+                      `stillReading()` had been written into the same blind spot while its own
+                      comment claimed the page always had somewhere to say this.
+
+                      It belongs out here because it is the page's notice, not the sign-off
+                      panel's: four of the five writes it reports on are in that panel, and the
+                      fifth — the save — is in the editor in the other column.
+                    -->
+                    <DeskCard
+                      v-if="notice"
+                      class="panel"
+                    >
+                      <DeskNotice :tone="notice.tone">
+                        {{ notice.text }}
+                      </DeskNotice>
+                    </DeskCard>
+                  </div>
+
                   <DeskCard class="panel">
                     <div class="rd-label">
                       Checks
@@ -1073,244 +1379,6 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                       }}
                     </button>
                   </DeskCard>
-
-                  <!--
-                    **No sign-off at all when nothing can post this draft**, which is
-                    DEV-957's "an unposted draft on a finished review says so and cannot be
-                    signed off". Not a disabled button: the panel is the three acts that
-                    each ask a session to do something afterwards — post it, file a ticket
-                    and post it, send it back to be rewritten — and on a merged pull request
-                    there is no session coming for any of them. A greyed-out "Sign off and
-                    post" would still be offering the act, and the API refuses it; the
-                    status line above says what happened instead.
-
-                    The card in its place is not a refusal notice. Nothing was refused and
-                    nothing is wrong: the record simply says what became of the pull request,
-                    and the draft stays on it to be read.
-                  -->
-                  <DeskCard
-                    v-if="notForSigning(data)"
-                    class="panel"
-                  >
-                    <p class="rd-label">
-                      Nothing to sign off
-                    </p>
-                    <p class="rd-note">
-                      {{ notForSigningLine(notForSigning(data)!) }}
-                    </p>
-                    <p class="rd-meta foot">
-                      The draft, the findings and your decisions are all still on the
-                      record. Nothing has been removed.
-                    </p>
-                  </DeskCard>
-
-                  <DeskCard
-                    v-else
-                    class="panel"
-                  >
-                    <label
-                      class="rd-label"
-                      for="event"
-                    >Post as</label>
-                    <select
-                      id="event"
-                      v-model="event"
-                      class="rd-field"
-                      :disabled="decided(data)"
-                    >
-                      <option value="request_changes">
-                        Request changes
-                      </option>
-                      <option value="comment">
-                        Comment
-                      </option>
-                      <option value="approve">
-                        Approve
-                      </option>
-                    </select>
-                    <button
-                      type="button"
-                      class="rd-btn rd-btn--primary"
-                      :disabled="decided(data) || dirty || working"
-                      @click="approve"
-                    >
-                      {{ working ? 'Working…' : 'Sign off and post' }}
-                    </button>
-                    <!--
-                **"Ticket what is left, and sign off" — one act, and a sign-off.**
-
-                Drawn only while there is something left to file. The API refuses a review
-                with no open finding, saying to sign off instead and ask for a ticket for
-                the nits on their own — so a button that is always there is a button that
-                is sometimes a refusal, and the two things it would do are already the two
-                buttons above it.
-              -->
-                    <template v-if="openFindings && !ticketingRest">
-                      <button
-                        type="button"
-                        class="rd-btn"
-                        :disabled="decided(data) || dirty || working"
-                        @click="ticketingRest = true"
-                      >
-                        Ticket what is left, and sign off
-                      </button>
-                    </template>
-                    <div
-                      v-else-if="ticketingRest"
-                      class="send-back"
-                    >
-                      <label
-                        class="rd-meta"
-                        for="ticket-rest-note"
-                      >Why is the rest going to a ticket? Optional.</label>
-                      <textarea
-                        id="ticket-rest-note"
-                        v-model="ticketNote"
-                        class="rd-field"
-                        rows="2"
-                      />
-                      <p class="rd-meta">
-                        Every open finding is held back and recorded as ticketed this round,
-                        and the draft is signed off. The event is not yours to choose here —
-                        the control above is set to Approve, because a request for changes
-                        that ticketed everything it asked for would contradict itself.
-                        Review Desk files no ticket; an agent does, and the sign-off cannot
-                        link to one that does not exist yet.
-                      </p>
-                      <div class="send-back-actions">
-                        <button
-                          type="button"
-                          class="rd-btn rd-btn--primary"
-                          :disabled="working"
-                          @click="ticketRest"
-                        >
-                          Ticket it and sign off
-                        </button>
-                        <button
-                          type="button"
-                          class="rd-btn"
-                          @click="ticketingRest = false"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-
-                    <!--
-                      **The one transition out of a sign-off.** A draft that is approved and
-                      not yet posted can be sent back, which takes the sign-off with it —
-                      and without that a draft the hand-over refuses has nowhere to go at
-                      all: it cannot be posted, cannot be rewritten, and could not be sent
-                      back. Measured by the session building the posting half of DEV-929.
-                      The label says what the button does, because taking back a sign-off is
-                      not the same act as sending back a draft nobody has signed.
-                    -->
-                    <template v-if="!sendingBack">
-                      <button
-                        type="button"
-                        class="rd-btn"
-                        :disabled="!canSendBack(data) || working"
-                        @click="sendingBack = true"
-                      >
-                        {{
-                          data.draft.status === 'approved'
-                            ? 'Take back the sign-off and send it back'
-                            : 'Send back with a note'
-                        }}
-                      </button>
-                    </template>
-                    <div
-                      v-else
-                      class="send-back"
-                    >
-                      <label
-                        class="rd-meta"
-                        for="send-back-note"
-                      >What is the session to change?</label>
-                      <textarea
-                        id="send-back-note"
-                        v-model="note"
-                        class="rd-field"
-                        rows="3"
-                      />
-                      <div class="send-back-actions">
-                        <!--
-                          **Guarded like the button that opened it**, which it did not need
-                          to be until this page started re-reading. The form opens on a
-                          draft that is `approved`, and the status can now move underneath
-                          it: the session posts while the note is being typed, the panel
-                          flips to "Posted", and an enabled Send back over a posted draft
-                          buys the developer a refusal from the server.
-                        -->
-                        <button
-                          type="button"
-                          class="rd-btn rd-btn--primary"
-                          :disabled="working || !canSendBack(data)"
-                          @click="sendBack"
-                        >
-                          Send back
-                        </button>
-                        <button
-                          type="button"
-                          class="rd-btn"
-                          @click="sendingBack = false"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                    <DeskNotice
-                      v-if="dirty"
-                      tone="problem"
-                    >
-                      Save or discard your changes before signing off.
-                    </DeskNotice>
-                    <!--
-                      **What happens after the press, kept current.** Everything above this
-                      is the developer's to do; this is the only part of the panel that
-                      reports on somebody else, so it is the only part that has to re-read
-                      the record — DEV-932, where a sign-off went 4 min 28 s with nothing
-                      on screen. It asks this page to read again; it writes nothing.
-                    -->
-                    <PostingWatch
-                      :draft="data.draft"
-                      :review="data.review"
-                      :last-activity-at="review.data.value?.timings.last_activity_at"
-                      :body-is-stale="data.body_is_stale"
-                      :record-is-current="recordIsCurrent"
-                      :reread="reread"
-                    />
-                    <p class="rd-meta foot">
-                      The review session posts it under your name, with no bot banner.
-                    </p>
-                  </DeskCard>
-
-                  <!--
-                    **What the last write did, in the aside itself and not in a panel.**
-
-                    It was the last line of the sign-off card — and that card is the `v-else`
-                    of the one that says "Nothing to sign off", so on a review the record
-                    will not let anybody sign off, there was no element on this page that
-                    could draw a notice at all. The editor is not gated on status, and the
-                    server refuses a save on an `approved` or a `posted` draft, so a
-                    developer on a merged pull request could press Save the draft, be refused
-                    with a 409, and watch nothing happen: `said()` set a sentence that had
-                    nowhere to go. Raised by a review of this branch, which also caught that
-                    `stillReading()` had been written into the same blind spot while its own
-                    comment claimed the page always had somewhere to say this.
-
-                    It belongs out here because it is the page's notice, not the sign-off
-                    panel's: four of the five writes it reports on are in that panel, and the
-                    fifth — the save — is in the editor in the other column.
-                  -->
-                  <DeskCard
-                    v-if="notice"
-                    class="panel"
-                  >
-                    <DeskNotice :tone="notice.tone">
-                      {{ notice.text }}
-                    </DeskNotice>
-                  </DeskCard>
                 </aside>
               </div>
             </div>
@@ -1412,6 +1480,22 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
   padding: 24px 20px;
 }
 
+/* The body, with its index folded, and the comments on the code: one document. */
+.rendered {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/*
+ * Where this part of the page lands on GitHub, over the part it is about. Quiet: it is a
+ * caption on the preview, not a heading in the review.
+ */
+.lands {
+  margin: 0;
+  color: var(--rd-ink-muted);
+}
+
 .source {
   margin: 0;
   padding: 16px;
@@ -1444,12 +1528,52 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
   margin: 0;
 }
 
+/*
+ * **Stretched to the row, so the panel inside it has something to stick to.**
+ *
+ * `position: sticky` works inside its own containing block and no further. With the aside
+ * sized to its contents -- which `align-items: flex-start` on `.body` gives it -- a sticky
+ * panel would stop sticking where the aside stopped, which on the measured page was 1,590px
+ * into 4,305px. Stretching the aside to the main column's height is what makes the whole
+ * scroll the sticky range, and it costs nothing visible: the aside's cards keep their own
+ * sizes and the column below them is empty either way.
+ */
 .aside {
   flex: 1 1 320px;
+  align-self: stretch;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/*
+ * The act, and the one place this page says what a write did.
+ *
+ * 16px, not 0: the page scrolls under it and a panel flush to the viewport edge reads as
+ * cut off rather than pinned.
+ */
+.pinned {
+  position: sticky;
+  top: 16px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/*
+ * **Nothing is pinned once the aside is under the body rather than beside it.** Below this
+ * width `.body` wraps, the aside is its own flex line at the foot of the page, and a sticky
+ * panel there would pin the sign-off over the held-back findings a reader had just scrolled
+ * to -- the panel would be the last thing on the page and would float over the end of it.
+ * The breakpoint is `.main`'s own basis plus the aside's, which is where the two stop
+ * fitting side by side.
+ */
+@media (max-width: 920px) {
+  .pinned {
+    position: static;
+  }
 }
 
 .panel {

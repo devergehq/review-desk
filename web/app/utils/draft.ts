@@ -14,10 +14,18 @@
  * a finding they cannot see the claim of.
  */
 
-import type { DraftEdit, Finding, HeldBackFinding, OutcomeKind, Severity } from '~/types/desk'
+import type {
+  DraftEdit,
+  Finding,
+  HeldBackFinding,
+  OutcomeKind,
+  Severity,
+  SeverityCounts,
+} from '~/types/desk'
 
 import { SEVERITY_ORDER, whereOf } from './findings'
-import { SEVERITY_WORDS, count, editVerb } from './format'
+import { SEVERITY_WORDS, count, editVerb, severityTally } from './format'
+import { INDEX_HEADING, SEVERITY_LABELS } from './houseStyle'
 import { freeDetail } from './outcomes'
 
 export interface MarkdownBlock {
@@ -103,6 +111,132 @@ export function visibleWords(markdown: string): number {
     .replace(/<details>[\s\S]*?<\/details>/g, ' ')
     .replace(/[`*_#>[\]()]/g, ' ')
   return prose.split(/\s+/).filter(word => /[A-Za-z0-9]/.test(word)).length
+}
+
+/** A body as the rendered tab draws it, and what it folded to draw it that way. */
+export interface PreviewBody {
+  /** The markdown to render: the body, with its open index folded to one line. */
+  body: string
+  /** How many findings that index lists, or null where there was no index to fold. */
+  indexRows: number | null
+}
+
+/**
+ * The body with the open index folded, for the rendered tab and for it alone.
+ *
+ * ## The one thing on this page that is printed twice
+ *
+ * Every row of the index is a finding drawn in full further down — as its own
+ * `### Severity · F3 · …` section when it posts in the body, and as a thread when it posts
+ * on a line. Nine rows of severity, place and claim sit above nine blocks that say the
+ * same three things at length, and the design pass measured what that costs: the Draft
+ * page ran 4,305px at 1440 and 8,555px at 390.
+ *
+ * ## Folded, and not removed
+ *
+ * **An earlier version of this took the index out of the preview** and said so in a line
+ * naming the tab that still had it. Patrick ruled against it on 16 October 2026: *"we
+ * shouldn't be signing off on something that isn't what we're posting."* The index is
+ * worth having on GitHub and it keeps posting, so the page he signs off on has to hold it.
+ *
+ * **So the rule this page is built to: it may fold or reorder what posts, and it may never
+ * remove any of it.** The whole index is still here, heading and every row, inside a fold
+ * one click opens — which is what a reader does when they want the table and not what they
+ * have to undo to be sure nothing was taken.
+ *
+ * **The fold is markdown, not a control of the app's.** It is written into the body as the
+ * `<details>` GitHub itself renders, so `MarkdownView` draws it with the same border and
+ * the same summary as a fold a session wrote by hand. A preview whose job is fidelity
+ * should fold the way the thing it previews folds.
+ *
+ * ## What it folds, and what it refuses to touch
+ *
+ * The heading `INDEX_HEADING`, and **the contiguous markdown table under it**. Nothing
+ * else. Not the prose some sessions write under the same heading, not the `### Resolved in
+ * this PR` table, which is a different claim about different findings, and not a body that
+ * carries no index at all — review 1 of the design loop's fixture is exactly that, having
+ * been written before the house style grew one, and it comes back byte-identical.
+ *
+ * A heading with no table under it is left standing: there is no duplication under it to
+ * fold, and folding a sentence away would be the page hiding something that is said once.
+ */
+export function foldOpenIndex(body: string): PreviewBody {
+  const lines = body.split('\n')
+  const heading = lines.findIndex(line => line.trim() === INDEX_HEADING)
+  if (heading === -1) return { body, indexRows: null }
+
+  /* Past the blank line markdown needs between a heading and the table under it. */
+  let start = heading + 1
+  while (start < lines.length && lines[start]!.trim() === '') start += 1
+
+  let end = start
+  while (end < lines.length && lines[end]!.trim().startsWith('|')) end += 1
+
+  /* No table under it, so there is no duplication here to fold. */
+  if (end === start) return { body, indexRows: null }
+
+  /*
+   * Two of those lines are the header and the rule under it, and the rest are findings.
+   * `Math.max` rather than a subtraction taken on trust: a malformed table of one line is
+   * still a table this should fold, and a negative count would print as one.
+   */
+  const indexRows = Math.max(0, end - start - 2)
+
+  /*
+   * **The blank line after `</summary>` is what makes the table a table.** markdown-it
+   * reads `<details>` as a raw HTML block and ends that block at the first blank line, so
+   * the heading and the rows after it are parsed as markdown and the closing tag as HTML
+   * of its own. Without it the index would render as the literal pipes of its own source.
+   * This is GitHub's own idiom for a fold with markdown inside it.
+   */
+  const folded = [
+    ...lines.slice(0, heading),
+    '',
+    '<details>',
+    `<summary>${indexSummary(lines.slice(start, end), indexRows)}</summary>`,
+    '',
+    ...lines.slice(heading, end),
+    '',
+    '</details>',
+    '',
+    ...lines.slice(end),
+  ]
+  return { body: folded.join('\n').replace(/\n{3,}/g, '\n\n').trim(), indexRows }
+}
+
+/**
+ * The one line the fold carries while it is closed: what it is, how much of it, and how
+ * serious.
+ *
+ * **The severities are read off the rows and not off the review's findings.** The findings
+ * are a second source for the same fact and the two can disagree — a developer may have
+ * edited the body, and what this folds is the body. This module's contract is a draft's
+ * markdown in and facts out, which is the same reason it reads the count from the table
+ * rather than asking the page for one.
+ *
+ * **The tally is shown only when every row was graded.** A row whose first cell carries no
+ * severity word is a row the house style did not compose, and a breakdown that added up to
+ * less than the count printed beside it would read as a miscount rather than as a gap.
+ * `severityTally` writes the words, so this and the queue cannot disagree about whether
+ * three shoulds are "3 should".
+ */
+function indexSummary(rows: string[], findings: number): string {
+  const counts: SeverityCounts = { blocker: 0, should: 0, nit: 0, question: 0 }
+  let graded = 0
+
+  for (const row of rows) {
+    /* The row's first cell, which is where the house style puts the glyph and the word. */
+    const first = row.split('|')[1] ?? ''
+    const severity = (Object.keys(SEVERITY_LABELS) as Severity[])
+      .find(key => new RegExp(`\\b${SEVERITY_LABELS[key]}\\b`).test(first))
+    if (severity == null) continue
+    counts[severity] += 1
+    graded += 1
+  }
+
+  const parts = ['Index', count(findings, 'finding')]
+  if (graded > 0 && graded === findings) parts.push(severityTally(counts))
+  return parts.join(' · ')
 }
 
 /** The part of the body that raises one finding, from its heading to the next. */

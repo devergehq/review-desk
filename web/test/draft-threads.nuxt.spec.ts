@@ -48,7 +48,7 @@ describe('the threads the draft hands over', () => {
     const text = panel.text()
 
     expect(panel.findAll('.thread')).toHaveLength(9)
-    expect(panel.find('.rd-label').text()).toContain('9 threads')
+    expect(panel.find('.rd-label').text()).toBe('Posts as 9 comments on the code')
     for (const one of threads) {
       expect(text).toContain(`${one.path}:${one.line}`)
       expect(text).toContain(one.finding_key)
@@ -128,7 +128,7 @@ describe('the threads the draft hands over', () => {
     expect(panel.findAll('.thread')).toHaveLength(0)
     expect(panel.find('.rd-empty').text())
       .toContain('has a line inside the diff to hang a comment on')
-    expect(panel.find('.rd-label').text()).toContain('0 threads')
+    expect(panel.find('.rd-label').text()).toBe('Nothing in this review posts on the code')
   })
 
   it('names the severity as the record’s own word, and grades nothing', async () => {

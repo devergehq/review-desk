@@ -10,7 +10,9 @@ import {
   splitMermaid,
   visibleWords,
   whereInCode,
+  foldOpenIndex,
 } from '../app/utils/draft'
+import { INDEX_HEADING } from '../app/utils/houseStyle'
 import type { DraftEdit, Finding, HeldBackFinding } from '../app/types/desk'
 
 /*
@@ -468,5 +470,172 @@ describe('an edit’s detail is never a stored record', () => {
   it('still shows the prose a developer typed', () => {
     expect(editDetail('regraded', 'Blocker to Should')).toBe('Blocker to Should')
     expect(editDetail('cut', 'the second sentence')).toBe('the second sentence')
+  })
+})
+
+/**
+ * Every line of the stored body that the drawn body does not carry.
+ *
+ * **The whole rule this fold is built to, as one list that has to be empty.** The preview
+ * may fold what posts and may reorder it; it may not drop any of it, because this is the
+ * page the draft is signed off on. Blank lines are not checked: the fold adds and collapses
+ * them, and no reader is signing off on a blank line.
+ */
+function missingFrom(drawn: string, stored: string): string[] {
+  return stored.split('\n').filter(line => line.trim() !== '' && !drawn.includes(line))
+}
+
+describe('the open index, which the preview folds rather than drops', () => {
+  const INDEXED = [
+    '**4 open, no blockers.** The shape is right.',
+    '',
+    '### Problem fit',
+    '',
+    'Every run on `dev` has failed since the gate went up.',
+    '',
+    INDEX_HEADING,
+    '',
+    '| | Where | Finding | Status |',
+    '| -- | -- | -- | -- |',
+    '| 🟠 Should · F1 | `auth.ts:194` | the guard is in one path | Open · on the code |',
+    '| 🟠 Should · F3 | the pull request | nothing tested the real gate | Open · in the body |',
+    '| ⚪ Nit · F7 | the pull request | the file list omits one | Open · in the body |',
+    '',
+    '### Should · F3 · Nothing has tested this against the real gate',
+    '',
+    '**What** · the branch does not exist on the remote.',
+  ].join('\n')
+
+  it('folds the heading and the table into one summary line', () => {
+    const { body } = foldOpenIndex(INDEXED)
+
+    expect(body).toContain('<summary>Index · 3 findings · 2 should, 1 nit</summary>')
+  })
+
+  /*
+   * **The rule, stated as a test.** Patrick, 16 October 2026: "we shouldn't be signing off
+   * on something that isn't what we're posting." An earlier version of this filter took the
+   * index out and said so in a line; this one may fold it and nothing more, so every line of
+   * the body the session wrote is still in what the rendered tab draws.
+   */
+  it('draws every part of the stored body', () => {
+    const { body } = foldOpenIndex(INDEXED)
+
+    expect(missingFrom(body, INDEXED)).toEqual([])
+  })
+
+  it('puts the index inside the fold and the rest of the body outside it', () => {
+    const { body } = foldOpenIndex(INDEXED)
+    const open = body.indexOf('<details>')
+    const close = body.indexOf('</details>')
+
+    expect(open).toBeGreaterThan(-1)
+    expect(body.indexOf(INDEX_HEADING)).toBeGreaterThan(open)
+    expect(body.indexOf('| 🟠 Should · F1 |')).toBeLessThan(close)
+    expect(body.indexOf('### Problem fit')).toBeLessThan(open)
+    expect(body.indexOf('### Should · F3 ·')).toBeGreaterThan(close)
+  })
+
+  /*
+   * markdown-it reads `<details>` as a raw HTML block and ends that block at the first
+   * blank line. Without one after the summary the index renders as the literal pipes of its
+   * own source — which is the fold showing the developer something GitHub will not show.
+   */
+  it('leaves a blank line after the summary, so the table stays a table', () => {
+    const { body } = foldOpenIndex(INDEXED)
+
+    expect(body).toContain(`</summary>\n\n${INDEX_HEADING}`)
+  })
+
+  /*
+   * The count is what the fold's one line says, so it has to be the number of findings and
+   * not the number of lines: the header and the rule under it are not findings.
+   */
+  it('counts the findings it folded, not the rows of markup', () => {
+    expect(foldOpenIndex(INDEXED).indexRows).toBe(3)
+  })
+
+  /*
+   * A row the house style did not compose carries no severity word, and a breakdown adding
+   * up to less than the count beside it reads as a miscount rather than as a gap.
+   */
+  it('leaves the tally out when a row carries no severity', () => {
+    const ungraded = [
+      INDEX_HEADING,
+      '',
+      '| | Where | Finding | Status |',
+      '| -- | -- | -- | -- |',
+      '| 🟠 Should · F1 | `auth.ts:194` | the guard is in one path | Open · on the code |',
+      '| F4 | the pull request | written by hand | Open · in the body |',
+    ].join('\n')
+
+    const { body, indexRows } = foldOpenIndex(ungraded)
+
+    expect(indexRows).toBe(2)
+    expect(body).toContain('<summary>Index · 2 findings</summary>')
+  })
+
+  /*
+   * Review 1 of the design loop's fixture: 17 findings, a 19,750-character body, and no
+   * index at all, having been written before the house style grew one. A body with nothing
+   * to fold must come back as it went in, or the filter is editing drafts rather than
+   * de-duplicating a page.
+   */
+  it('leaves a body with no index exactly as it was', () => {
+    const plain = '**Two open.**\n\n### Problem fit\n\nThe shape is right.'
+    const { body, indexRows } = foldOpenIndex(plain)
+
+    expect(body).toBe(plain)
+    expect(indexRows).toBeNull()
+  })
+
+  /*
+   * `### Resolved in this PR` is a different claim about different findings — what the
+   * author has already fixed — and review 35's body carries both tables. Folding the wrong
+   * one would close the only place the resolved findings are listed.
+   */
+  it('leaves the resolved table outside the fold', () => {
+    const both = [
+      INDEX_HEADING,
+      '',
+      '| | Where | Finding | Status |',
+      '| -- | -- | -- | -- |',
+      '| 🟠 Should · F35 | `Action.php:36` | a stray grant | Open · in the body |',
+      '',
+      '### Resolved in this PR',
+      '',
+      '| | Where | Finding | Fixed in |',
+      '| -- | -- | -- | -- |',
+      '| 🟠 Should · F28 | `Policy.php:155` | the gate threw | 2f1a5f1 |',
+    ].join('\n')
+
+    const { body, indexRows } = foldOpenIndex(both)
+
+    expect(indexRows).toBe(1)
+    expect(missingFrom(body, both)).toEqual([])
+    expect(body.indexOf('| 🟠 Should · F35 |')).toBeLessThan(body.indexOf('</details>'))
+    expect(body.indexOf('### Resolved in this PR')).toBeGreaterThan(body.indexOf('</details>'))
+  })
+
+  /*
+   * A session that wrote prose under the heading rather than a table has said something no
+   * other part of the page is saying. Nothing is folded away from it.
+   */
+  it('leaves the heading standing when there is no table under it', () => {
+    const prose = `${INDEX_HEADING}\n\nNothing is open on this round.`
+
+    const { body, indexRows } = foldOpenIndex(prose)
+
+    expect(body).toBe(prose)
+    expect(indexRows).toBeNull()
+  })
+
+  it('does not weld the paragraph after the fold to the one before it', () => {
+    const { body } = foldOpenIndex(INDEXED)
+
+    expect(body).toContain(
+      'Every run on `dev` has failed since the gate went up.\n\n<details>',
+    )
+    expect(body).toContain('</details>\n\n### Should · F3 ·')
   })
 })

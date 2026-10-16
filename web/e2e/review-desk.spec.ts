@@ -2163,8 +2163,21 @@ test.describe('the body is an index and the findings live on the code', () => {
        * The body: the session's prose, then the index. The glyph and the word together, the
        * place in the code as a link, and where the finding stands — and the blocker is a
        * row rather than a section, because the diff can anchor it.
+       *
+       * **The index is folded to one line, and this is where that is proved end to end.**
+       * Step 1.1 of the design loop: every row of the index is a finding drawn in full
+       * further down the same page, so the preview folds it — and folds it rather than
+       * dropping it, because this is the page the draft is signed off on. Closed, the fold
+       * says how much is in it; one click shows the whole table, which is what the rest of
+       * this test reads.
        */
       const body = page.locator('.preview')
+      const fold = body.locator('details').filter({ hasText: 'Index ·' }).first()
+      await expect(fold.locator('summary')).toBeVisible()
+      await expect(fold.locator('summary')).toContainText(`Index · ${postedFindings()}`)
+      await expect(body.getByText('Open — needs a decision')).toBeHidden()
+
+      await fold.locator('summary').click()
       await expect(body.getByText('Open — needs a decision')).toBeVisible()
       await expect(body.getByRole('table')).toBeVisible()
       /*
@@ -2197,7 +2210,11 @@ test.describe('the body is an index and the findings live on the code', () => {
       expect(anchored, 'the example has findings the diff can anchor').toBeGreaterThan(7)
 
       const threads = page.locator('.threads')
-      await expect(threads.getByText(`On the code · ${anchored} threads`)).toBeVisible()
+      /* Each half says where it lands on GitHub, which is step 1.1's other change. */
+      await expect(body.getByText('Posts as the review body')).toBeVisible()
+      await expect(
+        threads.getByText(`Posts as ${anchored} comments on the code`),
+      ).toBeVisible()
       await expect(threads.locator('.thread')).toHaveCount(anchored)
       await expect(
         threads.getByText('app/Reporting/ColumnPolicy.php:52', { exact: true }),

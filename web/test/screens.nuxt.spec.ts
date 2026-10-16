@@ -1750,30 +1750,73 @@ describe('the draft preview', () => {
   })
 
   /*
-   * **The body is an index, and the threads are the rest of what posts.** DEV-929: a real
-   * review went out as 309 lines with no index and two threads because the posted body
-   * *was* the blocks joined. The page's own job did not change — nothing is posted unread —
-   * but what it has to draw did: a finding with a line inside the diff is a row in the body
-   * and a comment on the code.
+   * **The preview is one document, and every finding in it is drawn once.** DEV-929 made the
+   * body an index: a finding with a line inside the diff became a row in it and a comment on
+   * the code. The page then drew that finding twice — once in the table and once as a thread
+   * — and drew an unanchored one twice as well, in the table and as its own section.
+   *
+   * The index is the duplicate, so the rendered tab folds it to one line; the threads move
+   * inside the same card under the body; and each half carries a label saying where it
+   * posts.
+   *
+   * **Folded, and not taken out.** The first version of this left the index out of the
+   * rendered tab and named the tab that still had it. Patrick ruled against that on 16
+   * October 2026 — "we shouldn't be signing off on something that isn't what we're posting"
+   * — so the whole table is still in this preview, one click from open.
    *
    * Review 41 is the real-length example: twelve posted findings, nine of them anchored.
    */
-  it('draws the index in the body and the threads beside it', async () => {
+  it('draws each finding once, and says where each half of the page posts', async () => {
     const page = await open(41)
     const body = page.find('.preview').text()
 
-    expect(body).toContain('Open — needs a decision')
-    expect(body).toContain('🔴 Blocker · F9')
-    expect(body).toContain('Open · on the code')
-    /* F9 is anchored, so the body indexes it and does not carry its section. */
+    /* The two labels: this is the body, and those are the comments. */
+    expect(body).toContain('Posts as the review body')
+    expect(body).toContain('Posts as 9 comments on the code')
+
+    /* The index is folded, with its size on the one line the fold shows. */
+    expect(body).toContain('Index · 12 findings')
+    expect(body).not.toContain('is left out of this preview')
+
+    /* And folded means it is still here: a fold, with the index's own heading inside it. */
+    const fold = page.find('.rendered details')
+    expect(fold.exists()).toBe(true)
+    expect(fold.find('summary').text()).toContain('Index · 12 findings')
+    expect(fold.text()).toContain('Open — needs a decision')
+    expect(fold.find('table').exists()).toBe(true)
+
+    /* F9 is anchored, so it is drawn as a thread and nowhere else. */
     expect(body).not.toContain('Blocker · F9 · The column policy')
 
     const threads = page.find('.threads')
-    expect(threads.find('.rd-label').text()).toContain('9 threads')
     expect(threads.findAll('.thread')).toHaveLength(9)
     expect(threads.text()).toContain('app/Reporting/ColumnPolicy.php:52')
     /* And the comment as the author will read it, with the severity before a word of it. */
     expect(threads.text()).toContain('Blocker · F9')
+  })
+
+  /*
+   * **The fold is the preview's, and the record's body is untouched.** The rendered tab
+   * wraps the index in a `<details>`; the characters that post carry no such thing, and the
+   * tab beside the preview shows them as they are.
+   */
+  it('keeps the index in the markdown the session hands over', async () => {
+    const page = await open(41)
+    const markdown = page.findAll('[role="tab"]').find(tab => tab.text() === 'Markdown')!
+    await markdown.trigger('click')
+    await nextTick()
+
+    const source = page.find('.source').text()
+    expect(source).toContain('Open — needs a decision')
+    expect(source).toContain('🔴 Blocker · F9')
+    /*
+     * And nothing of the preview's own fold. Not "no `<details>` at all": the house style's
+     * own "How this review was made" is a fold the session wrote, and this body carries one
+     * — which is the distinction worth asserting, since the preview must add its fold
+     * without touching the ones that post.
+     */
+    expect(source).not.toContain('<summary>Index ·')
+    expect(source).toContain('<details><summary>How this review was made')
   })
 
   /*
@@ -1783,11 +1826,39 @@ describe('the draft preview', () => {
    * That is a state rather than an absence, and the card says which it is rather than being
    * left empty.
    */
+  /*
+   * **The act is the first thing in the aside, and the notice it reports with goes with it.**
+   *
+   * The design pass measured the page it replaced: the rail ran out about 1,590px down a
+   * 4,305px draft and did not move, so the one control this screen exists for was out of
+   * reach for three quarters of the scroll and the right third of the screen was empty.
+   *
+   * **Asserted as order and containment, not as `position: sticky`.** jsdom computes no
+   * layout, so a test that read the property would pass over a panel stuck to nothing —
+   * what makes the sticking work is the aside stretching to the row, which is a stylesheet
+   * fact this cannot see either. What it can hold is the part that was wrong: the sign-off
+   * was built last and drawn last. `.pinned` first, with the act inside it.
+   */
+  it('puts the sign-off at the top of the aside, with its notice', async () => {
+    const page = await open(41)
+    const aside = page.find('.aside')
+
+    expect(aside.element.firstElementChild).toBe(page.find('.pinned').element)
+
+    const pinned = page.find('.pinned')
+    expect(pinned.text()).toContain('Post as')
+    expect(pinned.findAll('button').map(one => one.text())).toContain('Sign off and post')
+
+    /* And the checks are still there, below it rather than above it. */
+    const labels = aside.findAll('.rd-label').map(one => one.text())
+    expect(labels.indexOf('Post as')).toBeLessThan(labels.indexOf('Checks'))
+  })
+
   it('says when no finding has a line inside the diff', async () => {
     const page = await open(17)
     const threads = page.find('.threads')
 
-    expect(threads.find('.rd-label').text()).toContain('0 threads')
+    expect(threads.find('.rd-label').text()).toBe('Nothing in this review posts on the code')
     expect(threads.find('.rd-empty').text())
       .toContain('has a line inside the diff to hang a comment on')
     /* One prose block, so the body is what the session wrote and carries no index. */
