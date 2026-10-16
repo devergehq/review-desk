@@ -47,6 +47,16 @@ const props = defineProps<{
   detail: ReviewDetail
   /** Which step this is. The trail marks it and the document title says it. */
   step: ReviewLayerName
+  /**
+   * Every step this one page draws, when it draws more than one. Defaults to `step` alone.
+   *
+   * **Steps 2, 3 and 4 are one page since the case page**, and the trail has to be able to
+   * say so: a reader who pressed step 3 and arrived on a page the trail drew as step 2
+   * would read the trail as broken. `step` stays the one the route is for — it is what
+   * `aria-current` names and what the document title says — and this is what the trail
+   * washes.
+   */
+  here?: ReviewLayerName[]
   /** The page's one heading. */
   headline: string
   /** The line under the heading, when the page has one. */
@@ -143,6 +153,7 @@ const stepName = computed(() => layerLabel(props.step))
         :layers="detail.layers"
         :review-id="detail.review.id"
         :active="step"
+        :here="here ?? [step]"
         :round="detail.review.round"
         :off-the-desk="detail.not_for_signing != null"
       />
@@ -162,6 +173,18 @@ const stepName = computed(() => layerLabel(props.step))
       <h1 class="rd-display headline">
         <TickedText :text="headline" />
       </h1>
+      <!--
+        **Between the headline and the line under it**, which is the one place a reader's eye
+        is already going. The case page puts its derived answer line here — the facts the
+        record already holds, under the sentence the session wrote and above the verdict on
+        the approach, so the three read as one opening rather than as three sections.
+
+        A slot rather than a second string prop: what goes here is a row of values, and a
+        page that had to flatten them into a sentence to pass them in would be writing the
+        summary this page exists not to write.
+      -->
+      <slot name="beneath" />
+
       <p
         v-if="sub"
         class="sub"

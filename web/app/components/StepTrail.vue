@@ -96,8 +96,18 @@ const NuxtLink = resolveComponent('NuxtLink')
 const props = defineProps<{
   layers: ReviewLayer[]
   reviewId: number
-  /** Which step's page this is. */
+  /** Which step's page this is. Exactly one, and it is what `aria-current` names. */
   active: ReviewLayerName
+  /**
+   * Every step the page you are on draws. Defaults to `active` alone.
+   *
+   * **Three of the seven are one page.** Steps 2, 3 and 4 — Understand, Alternatives,
+   * Solution — became the case page, so the trail washes all three and each still links to
+   * its own band. `active` stays one step, because `aria-current="page"` names the page a
+   * link would take you to and three links claiming to be the current page tells a screen
+   * reader reader nothing at all.
+   */
+  here?: ReviewLayerName[]
   /** Which round the second group is. */
   round: number
   /**
@@ -144,7 +154,10 @@ interface Step {
   /** Whether this step has a card: facts to show, or a read time to say. */
   opens: boolean
   to: string | null
+  /** Whether the page you are on draws this step. True of three steps on the case page. */
   current: boolean
+  /** Whether this step is the one the route is for. True of exactly one step. */
+  itself: boolean
   tone: 'done' | 'current' | 'pending' | 'failed'
 }
 
@@ -201,10 +214,18 @@ const steps = computed<Step[]>(() =>
         read,
         title: titleOf(said, read),
         opens: facts.length > 0 || read != null,
+        /*
+         * Where the step goes, and — for the two of them that land part way down the case
+         * page — which band. `BAND_OF_STEP` is in `utils/theCase.ts` rather than in
+         * `PAGE_OF_STEP`, because the round switcher reads that map too and a fragment
+         * there would scroll a reader into the middle of a page they had just arrived at.
+         */
         to: PAGE_OF_STEP[layer.name] == null
           ? null
-          : `/reviews/${props.reviewId}/${PAGE_OF_STEP[layer.name]}`,
-        current: layer.name === props.active,
+          : `/reviews/${props.reviewId}/${PAGE_OF_STEP[layer.name]}`
+            + (BAND_OF_STEP[layer.name] ? `#${BAND_OF_STEP[layer.name]}` : ''),
+        current: (props.here ?? [props.active]).includes(layer.name),
+        itself: layer.name === props.active,
         tone: layerTone(layer.state),
       }
     }),
@@ -320,7 +341,7 @@ const groups = computed(() => [
             :to="step.to ?? undefined"
             class="face"
             :class="[`face--${step.tone}`, { 'face--here': step.current }]"
-            :aria-current="step.current ? 'page' : undefined"
+            :aria-current="step.itself ? 'page' : undefined"
           >
             <span class="name">{{ step.number }} {{ step.label }}</span>
           </component>

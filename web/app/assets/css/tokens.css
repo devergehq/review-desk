@@ -488,6 +488,58 @@ textarea.rd-field {
   padding: 12px 14px;
 }
 
+/*
+ * **A fold the app draws, which has to say it is one.**
+ *
+ * Three bands of the case page and two sections of the page before it each needed the same
+ * twenty lines: a summary at the height everything you press is held to, in the accent,
+ * with a disclosure triangle and the app's focus ring. The copy that mattered is the
+ * triangle — `display: flex` takes the native marker off a `<summary>`, so a fold with no
+ * rule of its own is a line of accent text with nothing to say a click opens it.
+ * `MarkdownView` learned that when the draft's index went behind a fold, where it cost the
+ * thing the fold is for: the developer has to see that the index is there and closed, not
+ * gone. Drawn rather than typed, so it needs no glyph from the body font and turns with the
+ * fold.
+ *
+ * The class goes on the `<details>` and the child combinator scopes it to that fold's own
+ * summary, so a fold nested inside one — a part's file list inside an opened row — takes the
+ * class itself and overrides what it wants to, which is its size.
+ */
+.rd-fold > summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--rd-control-min);
+  color: var(--rd-accent);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.rd-fold > summary::before {
+  content: '';
+  flex: none;
+  width: 0;
+  height: 0;
+  margin-right: 8px;
+  border: 5px solid transparent;
+  border-left: 7px solid currentColor;
+  transition: transform 120ms ease;
+}
+
+.rd-fold[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rd-fold > summary::before {
+    transition: none;
+  }
+}
+
+.rd-fold > summary:focus-visible {
+  outline: 3px solid var(--rd-focus-ring);
+  outline-offset: 2px;
+}
+
 .rd-visually-hidden {
   position: absolute;
   width: 1px;

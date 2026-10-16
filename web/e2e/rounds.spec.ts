@@ -298,7 +298,7 @@ for (const { name, width, height } of WIDTHS) {
       await page.goto(`${serving.url}reviews/${rounds[1]}/${suffix}`)
 
       /* The step page it says it is, so a wrong page cannot pass the rest of this. */
-      await expect(page.locator('.face--here .name'), step).toContainText(step)
+      await expect(page.locator('.face[aria-current="page"] .name'), step).toContainText(step)
 
       const switcher = page.locator('nav.rounds')
       await expect(switcher, `${step} draws the switcher`).toBeVisible()
@@ -368,7 +368,7 @@ for (const { name, width, height } of WIDTHS) {
 
     for (const { step, suffix } of PAGES) {
       await page.goto(`${serving.url}reviews/${alone}/${suffix}`)
-      await expect(page.locator('.face--here .name'), step).toContainText(step)
+      await expect(page.locator('.face[aria-current="page"] .name'), step).toContainText(step)
       await expect(page.locator('nav.rounds'), `${step} draws none`).toHaveCount(0)
       await expect(page.locator('main'), `${step} says no "of 1"`).not.toContainText('Round 1 of 1')
     }
@@ -444,7 +444,7 @@ test('a dismissed round is marked as dismissed and still links', async ({ page }
     await expect(third).toHaveAttribute('href', `/reviews/${rounds[2]}/understand`)
     await third.click()
     await expect(page).toHaveURL(`${serving.url}reviews/${rounds[2]}/understand`)
-    await expect(page.locator('.face--here .name')).toContainText('Understand')
+    await expect(page.locator('.face[aria-current="page"] .name')).toContainText('Understand')
   }
   finally {
     const restored = await call(rounds[2]!, 'restore', {})
@@ -518,7 +518,7 @@ test('following a round link lands on the same step of that round', async ({ pag
     await page.goto(`${serving.url}reviews/${rounds[1]}/${suffix}`)
     await page.getByRole('link', { name: `Round 3 , ${step}` }).click()
     await expect(page).toHaveURL(`${serving.url}reviews/${rounds[2]}/${suffix}`)
-    await expect(page.locator('.face--here .name'), step).toContainText(step)
+    await expect(page.locator('.face[aria-current="page"] .name'), step).toContainText(step)
     await expect(page.locator('nav.rounds'), step).toContainText('Round 3 of 3')
   }
 })
@@ -537,7 +537,7 @@ test('a round is reached and followed from the keyboard alone', async ({ page })
   await link.press('Enter')
 
   await expect(page).toHaveURL(`${serving.url}reviews/${rounds[0]}/alternatives`)
-  await expect(page.locator('.face--here .name')).toContainText('Alternatives')
+  await expect(page.locator('.face[aria-current="page"] .name')).toContainText('Alternatives')
 })
 
 /**
@@ -588,7 +588,7 @@ test('a round link off the draft page asks before it discards unsaved edits', as
   await page.getByRole('link', { name: 'Round 1 , Draft' }).click()
   await page.getByRole('button', { name: 'Discard the edits' }).click()
   await expect(page).toHaveURL(`${serving.url}reviews/${rounds[0]}/draft`)
-  await expect(page.locator('.face--here .name')).toContainText('Draft')
+  await expect(page.locator('.face[aria-current="page"] .name')).toContainText('Draft')
   await expect(page.locator('nav.rounds')).toContainText('Round 1 of 3')
 
   expect(dialogs, 'the browser was never asked to put up a dialog').toEqual([])

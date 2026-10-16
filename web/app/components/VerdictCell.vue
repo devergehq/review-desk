@@ -25,6 +25,21 @@ import type { BriefOptionVerdict } from '~/types/desk'
 const props = defineProps<{
   /** The verdict, or `null` when the brief recorded none against this problem. */
   verdict: BriefOptionVerdict | null
+  /**
+   * The shape alone, with the word read out rather than drawn.
+   *
+   * **What the case page's matrix needs, and why the word is still in the document.** Nine
+   * options against four problems is thirty-six cells on one page; the words made each
+   * column as wide as "Not assessed" and the matrix then took the width the page has.
+   * Drawn as a shape the row is a line a reader scans, and the legend under the matrix says
+   * what each shape is. The word stays in the markup, visually hidden, so a screen reader
+   * reads "Fixed" and nothing depends on a reader distinguishing four shapes.
+   *
+   * The `why` is dropped from the cell in this mode and drawn inside the row's own detail,
+   * where there is a column for it — a line of prose in a cell 90 pixels wide is the defect
+   * this mode exists to undo.
+   */
+  compact?: boolean
 }>()
 
 const WORDS = {
@@ -37,26 +52,39 @@ const WORDS = {
 const kind = computed(() => props.verdict?.verdict ?? 'absent')
 const says = computed(() =>
   props.verdict == null ? 'Not recorded' : WORDS[props.verdict.verdict])
+
+/**
+ * What a pointer gets where the word is not drawn: the verdict, and its one line of why.
+ *
+ * A hover costs no layout, so what the compact cell has no room for is here as well as in
+ * the row's detail — the same bargain the step trail's one line strikes with its `title`.
+ */
+const title = computed(() =>
+  props.verdict?.why ? `${says.value} — ${props.verdict.why}` : says.value)
 </script>
 
 <template>
-  <span class="cell">
+  <span
+    class="cell"
+    :class="{ 'cell--compact': compact }"
+  >
     <span
       class="word"
       :class="`word--${kind}`"
+      :title="compact ? title : undefined"
     >
       <span
         class="shape"
         aria-hidden="true"
       />
-      {{ says }}
+      <span :class="{ 'rd-visually-hidden': compact }">{{ says }}</span>
     </span>
     <!--
       The one line of why, which is non-null for every verdict but `not_assessed` — the one
       that is the absence of a judgement rather than one.
     -->
     <span
-      v-if="verdict?.why"
+      v-if="verdict?.why && !compact"
       class="why"
     >{{ verdict.why }}</span>
   </span>
@@ -68,6 +96,19 @@ const says = computed(() =>
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+}
+
+/*
+ * The shape alone, centred in its column. Centred because a row of four of these is read
+ * across rather than down, and a disc sitting against the left edge of a 90-pixel column
+ * reads as four columns of different widths.
+ */
+.cell--compact {
+  align-items: center;
+}
+
+.cell--compact .word {
+  gap: 0;
 }
 
 .word {
