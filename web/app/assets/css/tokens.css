@@ -192,7 +192,20 @@ h3 {
   font-weight: 600;
 }
 
-/* ---- Display type. Newsreader, at the sizes the boards set. ---- */
+/*
+ * ---- Display type. Newsreader, at the sizes the boards set. ----
+ *
+ * **The serif is the page's own voice, and never a row's.** Every class here is a heading, a
+ * figure or a statement the page is making: the h1 over a list, the headline of a review,
+ * the number on a card. A *row* is one of twelve things in a column, and a reader scanning
+ * that column is reading shapes — so a row whose title is set in this face reads as a
+ * different kind of thing from the row under it, which is a difference that means nothing.
+ *
+ * There was a `.rd-display-row` here, Newsreader at 21px, and it was used on exactly one
+ * line: the queue's needs-you title. The design pass of 15 October 2026 found what that did
+ * — "Titles switch between serif (Needs you) and sans (everything else) on the same list" —
+ * and it has gone with its one caller. Emphasis inside a list is size and weight.
+ */
 
 .rd-display {
   margin: 0;
@@ -235,13 +248,6 @@ h3 {
   font-family: var(--rd-font-display);
   font-weight: 400;
   font-size: 24px;
-  line-height: 1.2;
-}
-
-.rd-display-row {
-  font-family: var(--rd-font-display);
-  font-weight: 400;
-  font-size: 21px;
   line-height: 1.2;
 }
 

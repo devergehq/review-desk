@@ -426,3 +426,218 @@ test('the heading and the repository chip count the rows drawn', async ({ page }
   await expect(chip).toBeVisible()
   await expect(chip.locator('.count')).toHaveText(`· ${drawn}`)
 })
+
+/*
+ * **Step 1.5 of the design loop, in a browser: the rows read as rows.**
+ *
+ * The design pass of 15 October 2026 found two things on these two screens:
+ *
+ * > **05 · Status cells are paragraphs.** On the Queue, "0 replies · 0 threads resolved ·
+ * > 0 findings with code changed since · as at 24 min ago · pull request open at the last
+ * > harvest" fills three lines to say *nothing new*. Titles switch between serif (Needs
+ * > you) and sans (everything else) on the same list.
+ * >
+ * > **07 · One pull request, many rows.** #9541 appears five times on Reviews, once per
+ * > round, with near-identical titles and status. The Queue already folds rounds together;
+ * > Reviews doesn't.
+ *
+ * Three of the four things fixed are properties only a layout engine can answer — how many
+ * lines a cell draws, whether a column is the same width on two rows, which face a word is
+ * set in — so they are measured here rather than asserted in jsdom, where every box is
+ * zero. The fourth, the fold, is checked in `test/finished.nuxt.spec.ts` for its content
+ * and here for the one thing that file cannot see: that pressing it opens the fold rather
+ * than the review.
+ *
+ * This seed is the right one for it. Four pull requests, three of them with two rounds, so
+ * Reviews has something to fold; the harness cannot record a pull-request state, which is
+ * said in the header above and is why the state word is read as the absence rather than as
+ * "open".
+ */
+
+/** How many lines of its own text an element is drawing. */
+async function lines(locator: Locator): Promise<{ drawn: number, text: string }> {
+  return locator.evaluate((element) => {
+    const style = getComputedStyle(element)
+    const one = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize)
+    const height = element.getBoundingClientRect().height
+    return { drawn: Math.round(height / one), text: element.textContent ?? '' }
+  })
+}
+
+test('every row’s title is set in one face', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await queue(page)
+
+  /*
+   * **The whole column, not two rows of it.** The defect was that one *group* was drawn in
+   * a serif, so the check that matters is over every title on the page at once: one family,
+   * whatever group its row is in.
+   */
+  const titles = page.locator('.queue-line .title')
+  const many = await titles.count()
+  expect(many, 'the queue draws rows in more than one group').toBeGreaterThan(2)
+
+  const families = new Set<string>()
+  for (let at = 0; at < many; at += 1) {
+    families.add(await titles.nth(at).evaluate(el => getComputedStyle(el).fontFamily))
+  }
+  expect([...families], 'one family down the whole column').toHaveLength(1)
+  expect([...families][0], 'and it is the sans').not.toMatch(/Newsreader/)
+
+  /*
+   * **And the needs-you row is still first among equals.** Emphasis moved from the face to
+   * the weight, which only works if it is actually heavier than the rows below it.
+   */
+  const emphasised = page.locator('.queue-line--emphasis .title').first()
+  const quiet = page.locator('.queue-line:not(.queue-line--emphasis) .title').first()
+  const weight = async (one: Locator) =>
+    Number(await one.evaluate(el => getComputedStyle(el).fontWeight))
+  expect(await weight(emphasised)).toBeGreaterThan(await weight(quiet))
+})
+
+test('a posted row says what came back on one line', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await queue(page)
+
+  /*
+   * **One line, measured.** `#751` is posted with nothing read back from GitHub, which is
+   * the row the design pass quoted: it drew the three noughts, the time they were taken and
+   * the pull request's state, and ran to three lines. The seed cannot harvest, so what it
+   * says is the absence — but the property under test is the number of lines, and the
+   * absence sentence was the longest of the three.
+   */
+  const row = rowFor(page, '751')
+  await expect(row).toHaveCount(1)
+  const detail = await lines(row.locator('.what-detail'))
+  expect(detail.drawn, `the row says "${detail.text.trim()}"`).toBe(1)
+
+  /*
+   * **And the pull request's state is on the row's own line, not in that cell.** The seed
+   * has never harvested, so it is the sentence that says so rather than a word.
+   */
+  await expect(row.locator('.meta-text')).toContainText('state not established')
+  expect(detail.text).not.toContain('state not established')
+})
+
+test('the five cells are the same width on every row', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await queue(page)
+
+  /*
+   * **The claim this component made and did not keep.** `QueueRow`'s own note has said
+   * since it was written that "the widths stay the same down the page so the columns line
+   * up across groups", and `flex` basis values resolve differently on a row whose title is
+   * one word and a row whose title is three lines. A grid is what makes it true.
+   */
+  const rows = page.locator('.queue-line .row')
+  const many = await rows.count()
+  expect(many).toBeGreaterThan(2)
+
+  const widths = new Map<string, Set<number>>()
+  for (let at = 0; at < many; at += 1) {
+    for (const cell of ['.pr', '.about', '.what', '.age', '.action']) {
+      const box = await rows.nth(at).locator(cell).boundingBox()
+      if (!box) continue
+      const held = widths.get(cell) ?? new Set<number>()
+      held.add(Math.round(box.width))
+      widths.set(cell, held)
+    }
+  }
+  for (const [cell, seen] of widths) {
+    expect([...seen], `${cell} is one width down the page`).toHaveLength(1)
+  }
+})
+
+test('Reviews draws one row per pull request, with the rounds behind a fold', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto(`${serving.url}reviews`)
+  await expect(page.locator('.queue-line').first()).toBeVisible()
+  await page.waitForLoadState('networkidle')
+
+  /*
+   * **Seven reviews, four pull requests, four rows.** Three of the four were opened twice.
+   * The heading counts what it draws, which is the queue's rule applied here — a count
+   * that disagrees with the rows under it is worse than no count.
+   */
+  const drawn = page.locator('.queue-line')
+  await expect(drawn).toHaveCount(4)
+  const section = page.locator('section')
+    .filter({ has: page.getByRole('heading', { name: 'Every pull request' }) })
+  await expect(section.locator('.head .rd-meta')).toHaveText('4')
+
+  /*
+   * **And the headline still counts reviews**, which is the record's own number and this
+   * page's promise. Eight reviews on four pull requests: the two numbers sit one above the
+   * other and the line between them says why they differ.
+   */
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(/8 reviews/)
+
+  const row = rowFor(page, '751')
+  const fold = row.locator('details.earlier')
+  expect(await fold.evaluate((el: HTMLDetailsElement) => el.open), 'closed to begin with')
+    .toBe(false)
+  await expect(fold.locator('summary')).toContainText('1 earlier round')
+
+  /*
+   * **Pressing the summary opens the fold and does not open the review**, which is the one
+   * thing jsdom cannot answer: a `<summary>` inside the row's anchor would navigate. It is
+   * a sibling of it, and this is what that structure is for.
+   */
+  const was = page.url()
+  await fold.locator('summary').click()
+  expect(await fold.evaluate((el: HTMLDetailsElement) => el.open), 'the fold opened').toBe(true)
+  expect(page.url(), 'and the page did not').toBe(was)
+
+  /* Round 1 is inside it, with its own link. */
+  const earlier = fold.locator('.earlier-round')
+  await expect(earlier).toHaveCount(1)
+  await expect(earlier.locator('.earlier-link')).toHaveText('Round 1 of 2')
+  await expect(earlier.locator('.earlier-link'))
+    .toHaveAttribute('href', `/reviews/${rounds.get('751')!.one}/understand`)
+})
+
+test('a Reviews row says its step on one line, and nothing under it where there is none',
+  async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(`${serving.url}reviews`)
+    await expect(page.locator('.queue-line').first()).toBeVisible()
+
+    /*
+     * Three lines before: the step and its outcome wrapped to two, and "step 6 of 7" took a
+     * third. The number is on the step's own line now and the outcome is the second.
+     *
+     * **Nothing in this seed has reported a step**, because nothing here runs a session —
+     * `review open` and `review link` write no layer. So what it draws is the other case,
+     * and the other case is worth a browser: a review nothing has reported on has no second
+     * line at all, and a cell that drew an empty one would put a blank row's worth of space
+     * under every such row. `test/format.spec.ts` holds the numbered form.
+     */
+    const cell = rowFor(page, '751').locator('.step').first()
+    const measured = await lines(cell)
+    expect(measured.drawn, `the step reads "${measured.text.trim()}"`).toBe(1)
+    await expect(cell).toContainText('Not started')
+    await expect(rowFor(page, '751').locator('.step-of')).toHaveCount(0)
+  })
+
+for (const [label, width, height] of [
+  ['a laptop', 1440, 900],
+  ['a phone', 390, 844],
+] as const) {
+  test(`neither list scrolls sideways at ${label}`, async ({ page }) => {
+    await page.setViewportSize({ width, height })
+    for (const route of ['', 'reviews']) {
+      await page.goto(`${serving.url}${route}`)
+      await expect(page.locator('.queue-line').first()).toBeVisible()
+      /* Every fold open, because an open fold is the widest the page gets. */
+      await page.locator('details.earlier').evaluateAll(folds =>
+        folds.forEach((fold) => { (fold as HTMLDetailsElement).open = true }))
+      const measured = await page.evaluate(() => ({
+        wide: document.documentElement.scrollWidth,
+        client: document.documentElement.clientWidth,
+      }))
+      expect(measured.wide, `/${route} at ${width}`).toBeLessThanOrEqual(measured.client)
+    }
+  })
+}

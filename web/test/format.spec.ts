@@ -23,7 +23,7 @@ import {
   sessionLabel,
   severityTally,
   sinceLabel,
-  stepLabel,
+  stepCell,
   stepDurationLabel,
 } from '../app/utils/format'
 
@@ -323,10 +323,10 @@ describe('what came back on a posted review', () => {
       threads_resolved: null,
       code_changed_after: null,
     }))
-    expect(said).toContain('Not harvested yet')
+    expect(said).toBe('Not read back from GitHub yet')
     expect(said).not.toMatch(/\b0\b/)
     /* And it does not date an absence. */
-    expect(said).not.toContain('as at')
+    expect(said).not.toContain('read 0')
   })
 
   it('names the figures and when they were taken', () => {
@@ -338,7 +338,41 @@ describe('what came back on a posted review', () => {
      * **The measurement's own time.** A bare nought over a figure taken two hours ago
      * reads as a statement about now, and the record only supports one about then.
      */
-    expect(said).toContain('as at')
+    expect(said).toMatch(/read .+ ago$/)
+  })
+
+  /*
+   * **The line the design pass quoted, and what it says now.** Four of the five rows under
+   * "Waiting on the author" on the live desk drew three measured noughts, the time they
+   * were taken, and the pull request's state — three lines to say nothing had come back.
+   * The three noughts are one phrase; the state left this function altogether.
+   */
+  it('says three measured noughts once, and still dates them', () => {
+    const said = authorResponseLabel(posted({
+      replies: 0,
+      threads_resolved: 0,
+      code_changed_after: 0,
+    }))
+    expect(said).toMatch(/^Nothing back · read .+ ago$/)
+    expect(said).not.toMatch(/\b0\b/)
+    /* And nothing about the pull request, which is drawn on the row's own line now. */
+    expect(said).not.toContain('open')
+  })
+
+  /*
+   * **All three measured, or it does not fire.** "Nothing back" over a figure nobody took
+   * is a null coalesced to nought said in English — the exact claim this function exists to
+   * refuse, and the longer line is the true one.
+   */
+  it('draws two noughts rather than claiming nothing came back over an unknown', () => {
+    const said = authorResponseLabel(posted({
+      replies: 0,
+      threads_resolved: 0,
+      code_changed_after: null,
+    }))
+    expect(said).not.toContain('Nothing back')
+    expect(said).toContain('0 replies')
+    expect(said).toContain('0 threads resolved')
   })
 
   /*
@@ -353,7 +387,7 @@ describe('what came back on a posted review', () => {
       replies: null,
       threads_resolved: null,
     }))
-    expect(said).toContain('No finding is linked to a comment on GitHub')
+    expect(said).toContain('none carrying a comment to reply to')
     expect(said).toContain('3 findings')
   })
 
@@ -368,7 +402,7 @@ describe('what came back on a posted review', () => {
       threads_resolved: null,
       code_changed_after: 4,
     }))
-    expect(said).toContain('No finding is linked')
+    expect(said).toContain('none carrying a comment to reply to')
     expect(said).toContain('4 findings with code changed since')
   })
 
@@ -419,7 +453,10 @@ describe('what came back on a posted review', () => {
       steps_total: 7,
       last_activity_at: null,
     } as unknown as ReviewListItem
-    expect(stepLabel(row)).toBe('Draft · signed off by the developer')
+    const cell = stepCell(row)
+    expect(cell.said).toBe('Draft 6/7')
+    expect(cell.detail).toBe('signed off by the developer')
+    expect(cell.of).toBe('step 6 of 7')
   })
 
   /*
@@ -444,23 +481,26 @@ describe('what came back on a posted review', () => {
     } as unknown as ReviewListItem)
 
     /* In play, it is a claim about now and it stands. */
-    expect(stepLabel(row({}))).toBe('Draft · waiting on you')
+    expect(stepCell(row({})).detail).toBe('waiting on you')
 
     for (const left of ['finished', 'dismissed']) {
-      expect(stepLabel(row({ left_the_desk: left })), left)
-        .toBe('Draft · was waiting on you')
+      expect(stepCell(row({ left_the_desk: left })).detail, left)
+        .toBe('was waiting on you')
     }
+
+    /* The step and its number are the same either way: only the claim changes. */
+    expect(stepCell(row({ left_the_desk: 'finished' })).said).toBe('Draft 6/7')
 
     /*
      * **Only the claim about whose turn it is.** A step that finished says what it found,
      * and a review leaving the desk does not make that less true — so a `done` step reads
      * exactly as it did.
      */
-    expect(stepLabel(row({
+    expect(stepCell(row({
       left_the_desk: 'finished',
       step_state: 'done',
       step_detail: 'approved by the developer',
-    }))).toBe('Draft · signed off by the developer')
+    })).detail).toBe('signed off by the developer')
   })
 
   it('falls back to the state when a step recorded no note, and says so in words', () => {
@@ -476,12 +516,18 @@ describe('what came back on a posted review', () => {
       ...over,
     } as unknown as ReviewListItem)
 
-    expect(stepLabel(row({}))).toBe('Code review · running')
+    expect(stepCell(row({})).said).toBe('Code review 5/7')
+    expect(stepCell(row({})).detail).toBe('running')
     /* A detail that is present and empty is a step with nothing written, not a blank cell. */
-    expect(stepLabel(row({ step_detail: '' }))).toBe('Code review · running')
-    /* And a review nothing has reported on is not step 1 pending. */
-    expect(stepLabel(row({ step_number: null, step_name: null, step_state: null })))
-      .toBe('Not started')
+    expect(stepCell(row({ step_detail: '' })).detail).toBe('running')
+    /*
+     * And a review nothing has reported on is not step 1 pending — and has no second line
+     * at all, so the row draws none rather than drawing an empty one.
+     */
+    const none = stepCell(row({ step_number: null, step_name: null, step_state: null }))
+    expect(none.said).toBe('Not started')
+    expect(none.detail).toBe('')
+    expect(none.of).toBeNull()
   })
 
   /*
@@ -504,29 +550,39 @@ describe('what came back on a posted review', () => {
     } as unknown as ReviewListItem)
     const later = (minutes: number) => new Date(Date.parse(at) + minutes * 60_000)
 
-    expect(stepLabel(row({}), later(3)))
-      .toBe('What happened · nothing back yet · read 3 min ago')
+    expect(stepCell(row({}), later(3)).said).toBe('What happened 7/7')
+    expect(stepCell(row({}), later(3)).detail)
+      .toBe('nothing back yet · read 3 min ago')
 
     /* Settled: how it ended, and no read time — nothing will read it again. */
-    expect(stepLabel(
+    expect(stepCell(
       row({ step_state: 'done', step_detail: 'merged, 2 replies back' }),
       later(3),
-    )).toBe('What happened · merged, 2 replies back')
+    ).detail).toBe('merged, 2 replies back')
 
     /* And posted, with no harvest yet: what posting wrote, and no invented time. */
-    expect(stepLabel(
+    expect(stepCell(
       row({
         review: { id: 12, harvested_at: null },
         step_state: 'pending',
         step_detail: 'posted, waiting for the harvest',
       }),
       later(3),
-    )).toBe('What happened · posted, waiting for the harvest')
+    ).detail).toBe('posted, waiting for the harvest')
   })
 
+  /*
+   * **One word, and a fourth case that is not one.** The sentence this used to return —
+   * "pull request open at the last harvest" — said in six words two things the row around
+   * it had already said: what a row is, and which harvest the figure beside it came from.
+   * What stays is the part the record had to be read for, and the null, which is the only
+   * reason this is a function rather than a field.
+   */
   it('does not claim a pull request is open when nothing has looked', () => {
-    expect(prStateLabel(null)).toBe('pull request state not established')
-    expect(prStateLabel('open')).toBe('pull request open at the last harvest')
+    expect(prStateLabel(null)).toBe('state not established')
+    expect(prStateLabel('open')).toBe('open')
+    expect(prStateLabel('merged')).toBe('merged')
+    expect(prStateLabel('closed')).toBe('closed')
   })
 })
 

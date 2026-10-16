@@ -85,7 +85,21 @@ const props = withDefaults(
     age?: string | null
     /** Why there is no age, for the unknown state. */
     ageUnknownBecause?: string
-    /** Needs-you rows set the title in display type and give the row more air. */
+    /**
+     * Needs-you rows carry the row's weight: a larger title, and more air.
+     *
+     * **In the same face as every other row, which is the change of 16 October 2026.** It
+     * set the title in Newsreader, so one list drew its first group in a serif and its four
+     * others in a sans — the design pass's words: "Titles switch between serif (Needs you)
+     * and sans (everything else) on the same list." A reader scanning a column of titles for
+     * the one they want is reading shapes, and two shapes for one kind of thing is a
+     * difference that means nothing.
+     *
+     * The serif is still the app's display face. It is what the page's own voice is set in —
+     * the heading over this list, the headline on a review — and a row is not the page's
+     * voice; it is one of twelve things in a column. Emphasis here is size and weight, which
+     * says "this one first" without saying "this one is a different kind of thing".
+     */
     emphasis?: boolean
     /**
      * Where this row's pull request is, drawn in the row's repository line.
@@ -158,7 +172,10 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
       <span class="pr rd-mono">#{{ pr }}</span>
 
       <span class="about">
-        <span :class="emphasis ? 'rd-display-row title' : 'title'">{{ title }}</span>
+        <span
+          class="title"
+          :class="{ 'title--emphasis': emphasis }"
+        >{{ title }}</span>
       </span>
 
       <span class="what">
@@ -250,6 +267,25 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
         </template>
       </span>
     </span>
+
+    <!--
+      **The rounds behind this row, when the caller has any** — the Reviews list's fold.
+
+      Outside the anchor, for the reason the meta line above is: a `<details>` inside a link
+      is a control inside a control, and pressing its summary would open the review as well.
+      The note at the top of this file argues that at length about `<a>` inside `<a>`; a
+      `<summary>` is the same shape of mistake with the same fix, and the fix is structural
+      rather than a handler that stops the event.
+
+      Empty on every other list, and an empty slot draws nothing — so a queue row is the
+      same element it was.
+    -->
+    <div
+      v-if="$slots.rounds"
+      class="row-rounds"
+    >
+      <slot name="rounds" />
+    </div>
   </div>
 </template>
 
@@ -305,10 +341,32 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
  * measured 42.6 — found by that measurement, which is what it is for. Stated as the floor
  * it is, so the next change to this box cannot take it away by arithmetic.
  */
+/*
+ * **A grid, so the five cells are the same width on every row of every group.**
+ *
+ * This file has claimed that since it was written — "The widths stay the same down the page
+ * so the columns line up across groups" — and `flex` basis values do not deliver it. A basis
+ * is a starting size that the free space is then shared out from in proportion to `grow`, so
+ * a row whose title is one word and a row whose title is three lines resolve to different
+ * column widths; they line up on a page where every row happens to overflow its basis, and
+ * drift apart on one where they do not. The design pass's first word for the whole desk was
+ * "sprawling".
+ *
+ * The tracks: the pull request's number, the title, what it is waiting for, the age, the
+ * action. The two that hold text are `minmax(0, …fr)` so that a long repository name or a
+ * long title shrinks the track rather than pushing the row past the page — `0` is the
+ * min-content override that makes `overflow-wrap: anywhere` below able to do its job.
+ *
+ * The two text tracks share the free space evenly. A title is read for which review this is
+ * and a status cell for whether to open it, and neither outranks the other; measured at 1440
+ * that is 405 pixels each, which puts "Nothing back · read 12 hours ago" on one line — the
+ * measurement this change is for.
+ */
 .row {
-  display: flex;
+  display: grid;
+  grid-template-columns:
+    56px minmax(0, 1fr) minmax(0, 1fr) 90px 150px;
   flex: 1 1 100%;
-  flex-wrap: wrap;
   gap: 6px 20px;
   align-items: center;
   min-height: var(--rd-control-min);
@@ -336,18 +394,30 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
 }
 
 .pr {
-  flex: 0 0 56px;
   color: var(--rd-ink-muted);
 }
 
 .about {
   display: block;
-  flex: 3 1 300px;
   min-width: 0;
 }
 
 .title {
   display: block;
+  font-size: 15px;
+}
+
+/*
+ * **The needs-you row's title, in the same face, two steps up.** Newsreader at 20px was
+ * what marked this row before; 16px and 600 marks it just as plainly in a column a reader
+ * is scanning, and marks it as *the same kind of thing, first* rather than as something
+ * else. `.rd-display-row` had one user — this line — so it has gone from `tokens.css` with
+ * it: a row-sized serif is a thing the app no longer does, and leaving the class there
+ * would be leaving the next list an easy way to do it again.
+ */
+.title--emphasis {
+  font-size: 16px;
+  font-weight: 600;
 }
 
 /*
@@ -379,7 +449,6 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
 
 .what {
   display: flex;
-  flex: 2 1 240px;
   flex-wrap: wrap;
   gap: 2px 10px;
   align-items: center;
@@ -387,11 +456,10 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
 }
 
 .age {
-  flex: 0 0 90px;
+  min-width: 0;
 }
 
 .action {
-  flex: 0 0 150px;
   text-align: right;
   font-size: 13px;
 }
@@ -462,6 +530,20 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
   color: var(--rd-ink-muted);
 }
 
+/*
+ * **The fold of earlier rounds, on the row's own width.** No indent, unlike the meta line
+ * above it: what the slot holds is rows, and the caller lines their cells up with this
+ * row's by using the same tracks. Indenting this box would have shifted every one of those
+ * cells 76 pixels out of the column it belongs to.
+ *
+ * The one thing that *is* indented is the fold's own summary, which is a line about the row
+ * rather than a row — the caller does that, because it is the caller's summary.
+ */
+.row-rounds {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
 .row-out-link {
   max-width: 100%;
   text-decoration: underline;
@@ -494,8 +576,33 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
    * of a 358-pixel line is a fifth of the width this line needs for a repository name, a
    * round and two links.
    */
-  .row-meta {
+  .row-meta,
+  .row-rounds {
     padding-left: 0;
+  }
+
+  /*
+   * **One column at a phone's width**, which is what the five cells were before the grid
+   * and what they should still be: 390 pixels does not hold a 56-pixel number, a title, a
+   * status cell, an age and an action side by side, and a grid that tried would give each
+   * track about 50 pixels.
+   */
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  /*
+   * **And the two text cells take a line each, which the grid's tracks were doing for
+   * them.** Their `flex: 3 1 300px` and `flex: 2 1 240px` were what pushed them onto their
+   * own lines here — both bases are wider than a 358-pixel line, so both wrapped — and the
+   * grid replaced the bases. Without this a row whose status cell holds one short word,
+   * like `done`, shrinks to that word's width and the age cell rides up beside it: found in
+   * the phone shot of this change, on #9541.
+   */
+  .about,
+  .what {
+    flex: 1 1 100%;
   }
 }
 </style>

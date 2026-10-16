@@ -73,6 +73,33 @@ the matrix.
 asked for `/alternatives` would take the same picture twice. Steps 3 and 4 carry a fragment
 to the band they are, which is what the trail links to.
 
+## The two lists — one row per pull request, one line per fact, 16 October 2026
+
+| File | What it is |
+| -- | -- |
+| `seeded-1-queue.png`, `seeded-6-queue-390.png` | **The queue, after step 1.5 of the design loop.** Every row's title in one face — it was Newsreader under "Needs you" and the sans everywhere else, on one column of titles — and the five cells on a grid, so a column is the same width on every row of every group. The status cell is a state and one line of facts under it. |
+| `seeded-7-reviews.png`, `seeded-8-reviews-390.png` | **The Reviews list, one row per pull request.** The step carries its number on the state line — "What happened 7/7" — and what the step says is the line under it, where it was a third line reading "step 7 of 7". |
+| `dev-957-1-queue.png`, `-390` | The queue's row for a pull request whose head has moved. The pull request's state — `open`, `merged`, `closed` — is on the row's own pull-request line beside the repository now, not in the status cell. |
+| `dev-957-2-finished.png`, `-390` | **Four rounds of a merged pull request as one row, with the fold open.** It was four rows. The fold's own line says how many rounds are behind it, which they are and what became of them — "3 earlier rounds · rounds 1 to 3 · 3 finished" — so a reader never has to open it to find out whether it matters. Each round inside it keeps its own step, its own sentence and its own link, on the row's own columns. |
+
+**What the design pass said, and what each picture answers.**
+
+> **05 · Status cells are paragraphs.** On the Queue, "0 replies · 0 threads resolved ·
+> 0 findings with code changed since · as at 24 min ago · pull request open at the last
+> harvest" fills three lines to say *nothing new*. Titles switch between serif (Needs you)
+> and sans (everything else) on the same list.
+>
+> **07 · One pull request, many rows.** #9541 appears five times on Reviews, once per round,
+> with near-identical titles and status. The Queue already folds rounds together; Reviews
+> doesn't.
+
+**No figure was dropped to make a line shorter.** Three *measured* noughts became "Nothing
+back", which says the same thing; a null is still never a nought, and a row with two noughts
+and one unmeasured figure still draws the two. What left the status cell is the pull
+request's state, which moved up one line to where the row's other facts about the pull
+request are — and the sentence around it, "pull request … at the last harvest", which named
+the row's own subject and repeated the basis the clause beside it had just given.
+
 ## DEV-880 — a diagram that is not a diagram
 
 | File | What it is |
