@@ -25,6 +25,14 @@ import { withdrawnLine } from '~/utils/rounds'
  *
  * So the review is the resource `DeskState` renders and the draft is read beside it.
  */
+/*
+ * **Three panes, so the page is wider than the rest of the app.** Patrick, 16 October 2026,
+ * ruling on the code review bench and on this: the workbench screens leave the 1,240px
+ * shell for the window, capped at 1,600px. What grows is the outline and the preview; the
+ * body's own prose keeps the measure `MarkdownView` sets for it.
+ */
+definePageMeta({ wide: true })
+
 const route = useRoute()
 const desk = useReviewDesk()
 
@@ -339,6 +347,54 @@ const editRows = computed(() => editLines(detail.data.value?.edits ?? []))
  * stored, so nothing here changes what GitHub receives either.
  */
 const preview = computed(() => foldOpenIndex(detail.data.value?.draft.body ?? ''))
+
+/**
+ * The body in pieces, each with an anchor the outline reaches.
+ *
+ * **Cut from the folded body, not from the stored one**, so that the index's fold is inside
+ * the first block rather than a block of its own — it is one line of the opening, which is
+ * what folding it made it. `bodyBlocks` carries the argument for cutting at all, and a test
+ * asserts that the pieces joined are the body.
+ */
+const blocks = computed(() => bodyBlocks(preview.value.body))
+
+/**
+ * The outline: what this draft posts, in the order it posts it.
+ *
+ * **This is the index, as navigation.** Patrick's words on where the index goes in the
+ * three-pane draft: "it is navigation there rather than a duplicate". It carries what the
+ * index never did — the body's own prose blocks, because `### Problem fit` is a place a
+ * reader wants to get back to — and it is built from the body and the threads rather than
+ * from the index's table, so a draft written before the house style grew one still has it.
+ */
+const outline = computed(() =>
+  outlineRows(blocks.value, detail.data.value?.threads ?? []),
+)
+
+/** Which outline row is showing as the one reached, or null until one is pressed. */
+const reached = ref<string | null>(null)
+
+/**
+ * Go to a part of the post.
+ *
+ * **It switches to the rendered tab first.** The anchors are the rendered tab's; a row
+ * pressed while the Markdown tab or the editor is showing would otherwise scroll to
+ * nothing, which reads as a broken control rather than as a tab being in the way. Nothing
+ * is discarded by it — the editor's text is held in `editing`, not in the DOM.
+ *
+ * jsdom implements no scrolling, hence the check rather than an optional call; the test for
+ * this asserts the anchors exist and that the tab changed, which is the part a layout
+ * cannot swallow.
+ */
+async function goTo(anchor: string) {
+  reached.value = anchor
+  view.value = 'rendered'
+  await nextTick()
+  const found = document.getElementById(anchor)
+  if (typeof found?.scrollIntoView === 'function') {
+    found.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }
+}
 
 const heldRows = computed(() =>
   heldBackRows(detail.data.value?.held_back ?? [], review.data.value?.findings ?? []),
@@ -800,6 +856,71 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
 
               <div class="body">
                 <!--
+                  **Three panes: what posts, in order; what posts; and what you do about it.**
+
+                  Step 1.3 of the design loop. The outline is the index as navigation —
+                  every block of the body and every comment on the code, in the order they
+                  post, each reaching the part of the preview it names. It is not a second
+                  copy of the index: the index is one folded line inside the body, where it
+                  posts from, and this is a way around the document.
+
+                  The preview is unchanged in what it holds. The aside keeps the checks, the
+                  edits and what was held back, with the sign-off at the top of it.
+                -->
+                <nav
+                  v-if="outline.length > 0 && data.draft.body.length > 0"
+                  class="outline"
+                  aria-label="What this draft posts"
+                >
+                  <p class="rd-label outline-label">
+                    {{ data.draft.status === 'posted' ? 'What was posted' : 'What posts' }}
+                  </p>
+                  <ol class="outline-rows">
+                    <li
+                      v-for="row in outline"
+                      :key="row.anchor"
+                      class="outline-row"
+                    >
+                      <!--
+                        `aria-controls` is the part of the post this row reaches, which is
+                        true of it and is also the only thing in the markup that says where
+                        a row goes — the browser test reads it to check that pressing a row
+                        brings that part into view, which is the half jsdom cannot hold.
+                      -->
+                      <button
+                        type="button"
+                        class="outline-go"
+                        :class="{ 'outline-go--reached': reached === row.anchor }"
+                        :aria-controls="row.anchor"
+                        :aria-current="reached === row.anchor ? 'true' : undefined"
+                        @click="goTo(row.anchor)"
+                      >
+                        <span class="outline-top">
+                          <SeverityTag
+                            v-if="row.severity"
+                            :severity="row.severity"
+                          />
+                          <span
+                            v-if="row.key"
+                            class="outline-key rd-mono"
+                          >{{ row.key }}</span>
+                          <!--
+                            Which half of the post this is, on the row rather than as two
+                            headed groups: the order is the order it posts in, and grouping
+                            would have to break that to say the same thing.
+                          -->
+                          <span
+                            v-if="row.lands"
+                            class="outline-lands"
+                          >{{ row.lands }}</span>
+                        </span>
+                        <span class="outline-label-text">{{ row.label }}</span>
+                      </button>
+                    </li>
+                  </ol>
+                </nav>
+
+                <!--
                   **The main column is what posts; the aside is what you do about it.**
 
                   Both halves of the post are inside the one preview card now — the body,
@@ -868,7 +989,24 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                           }}
                         </p>
 
-                        <MarkdownView :source="preview.body" />
+                        <!--
+                          **One block a heading, each with the anchor its outline row
+                          names.** The body is cut at its own top-level headings and
+                          nowhere else — never inside a proof's fence or inside the house
+                          style's own fold — and the pieces joined are the body, character
+                          for character. `bodyBlocks` argues it; `test/draft.spec.ts`
+                          asserts it.
+                        -->
+                        <div class="blocks">
+                          <section
+                            v-for="block in blocks"
+                            :id="block.anchor"
+                            :key="block.anchor"
+                            class="block"
+                          >
+                            <MarkdownView :source="block.markdown" />
+                          </section>
+                        </div>
 
                         <!--
                           **The head goes with the threads.** DEV-978: a thread's line was
@@ -1433,11 +1571,43 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
   font-weight: 600;
 }
 
+/*
+ * **Three panes at a desk, two at a laptop, one at a phone.**
+ *
+ * A grid rather than the wrapping flex row it was, because the outline has to be able to
+ * sit beside both columns at one width and above them at another, and a flex row can only
+ * wrap in the order it is written. The areas say the arrangement in one place.
+ *
+ * Below 1,280px there is not the width for three, so the outline goes above the preview
+ * with a height of its own — bounded, and scrolling inside itself, because an outline that
+ * pushed a 4,000px page down by another 600 would cost more than it saves.
+ */
 .body {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'outline'
+    'main'
+    'aside';
   gap: 24px;
-  align-items: flex-start;
+  align-items: start;
+}
+
+@media (min-width: 920px) {
+  .body {
+    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-areas:
+      'outline outline'
+      'main    aside';
+  }
+}
+
+@media (min-width: 1280px) {
+  .body {
+    grid-template-columns: 260px minmax(0, 1fr) 330px;
+    grid-template-areas: 'outline main aside';
+    gap: 32px;
+  }
 }
 
 /*
@@ -1445,11 +1615,140 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
  * here unchanged: the column takes the room, and the aside keeps its own 320px basis.
  */
 .main {
-  flex: 999 1 560px;
+  grid-area: main;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+/* ------------------------------- the outline ---------------------------------- */
+
+/*
+ * **The index, as navigation.** It stays put while the preview scrolls, which is the whole
+ * of what a three-pane document is for: the place you are in the post is readable from the
+ * left without scrolling back to the table at the top of it.
+ */
+.outline {
+  grid-area: outline;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+@media (min-width: 1280px) {
+  .outline {
+    position: sticky;
+    top: 16px;
+    max-height: calc(100vh - 96px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+
+/*
+ * **Above the preview it is bounded rather than as long as the post.** Eleven rows of a
+ * real review is about 600px, and an outline that pushed a 7,500px page down by another
+ * 600 would cost more than it saves. Five rows and a scroll: enough to see what the shape
+ * of the post is, and to reach the rest without leaving the top of the page.
+ */
+@media (max-width: 1279px) {
+  .outline-rows {
+    max-height: 200px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+
+.outline-label {
+  margin: 0;
+}
+
+.outline-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--rd-ink);
+  min-width: 0;
+}
+
+.outline-row {
+  border-bottom: 1px solid var(--rd-line);
+  min-width: 0;
+}
+
+.outline-go {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-left: 3px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.outline-go:hover {
+  background: var(--rd-ground);
+}
+
+.outline-go:focus-visible {
+  outline: 3px solid var(--rd-focus-ring);
+  outline-offset: -3px;
+}
+
+/* The one last gone to, marked the way the bench marks the finding it is drawing. */
+.outline-go--reached {
+  border-left-color: var(--rd-ink);
+  background: var(--rd-ground);
+}
+
+.outline-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.outline-key {
+  color: var(--rd-ink-faint);
+  font-size: 12px;
+}
+
+.outline-lands {
+  font-size: 12px;
+  color: var(--rd-ink-muted);
+}
+
+.outline-label-text {
+  font-size: 14px;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* The body's own parts, separated as the markdown renderer separates its blocks. */
+.blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+.block {
+  min-width: 0;
+  /* So a row pressed in the outline does not land with its heading under the top edge. */
+  scroll-margin-top: 16px;
 }
 
 .preview {
@@ -1539,7 +1838,7 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
  * sizes and the column below them is empty either way.
  */
 .aside {
-  flex: 1 1 320px;
+  grid-area: aside;
   align-self: stretch;
   min-width: 0;
   display: flex;
