@@ -1184,6 +1184,7 @@ Tests always use a temporary file and never touch the default path.
 | `dependency-allowlist.toml` | What the two checks knowingly let through, with a reason, who decided and a date to look again. |
 | `docs/brief.md` | The project's design record. When it and the Linear project disagree, it is right. |
 | `docs/dependencies.md` | The bar a dependency has to meet, and the steps to add one. |
+| `docs/design.md` | The design system: what a screen is, what a key is, and what a page may do to what it draws. The values are in `web/app/assets/css/tokens.css`. |
 | `docs/mockups` | The five mockups the dashboard was built from, and where it departs from them. |
 
 **The store crate is the only thing that opens the database.** The binary, and every
@@ -1193,9 +1194,16 @@ functions. That is what keeps one way into the record.
 ## The dashboard
 
 Five screens — the queue, the reviews, one review, the draft preview and the rules — in
-`web/`. They read and write the JSON API that `review-desk serve` serves. A review is a
-page per step, reached from the trail across the top of each one: Understand, Alternatives,
-Solution map, Code review, Draft and [What happened](#what-happened-step-7s-page).
+`web/`. They read and write the JSON API that `review-desk serve` serves. A review is
+reached from the trail across the top of each of its pages: Understand, Alternatives and
+Solution map are three steps on [one page](docs/design.md#the-case-for-a-change-is-three-bands-and-a-derived-answer-line),
+then Code review, Draft and [What happened](#what-happened-step-7s-page).
+
+**Before you change how a screen looks, read [docs/design.md](docs/design.md).** It is the
+patterns — what makes a screen a document or a workbench, what a key is, the words a
+decision is read under, and the rule that a page may fold or reorder what it draws and may
+never remove any of it. The values it is built from are in
+`web/app/assets/css/tokens.css`.
 
 ```sh
 cd web
