@@ -22,6 +22,13 @@ fn foreign_fetch(host: &str) -> Vec<(&str, &str)> {
     ]
 }
 
+/// The name the local reverse proxy forwards, as `--hostname` would be given it.
+///
+/// A subdomain, because macOS sends a bare `.local` apex to mDNS whatever
+/// `/etc/resolver` says. No port: the proxy terminates TLS on 443 and a browser sends no port for the default
+/// one, so this is the exact `Host` that arrives.
+const PROXIED: &str = "app.review-desk.local";
+
 #[test]
 fn a_foreign_origin_cannot_approve_a_draft() {
     let harness = common::start_with_no_github();
@@ -562,7 +569,186 @@ fn a_header_name_in_another_case_is_still_the_same_header() {
     );
 }
 
-/// **There is no way to turn the guard off, and DEV-862 is where that was put under
+// --- The one host `--hostname` may name ----------------------------------------------
+//
+// `review-desk serve --hostname review-desk.local` is how the dashboard is reached at a
+// name instead of at a port: the machine's reverse proxy forwards that `Host`, and until
+// the server is told the name it refuses its own dashboard. These tests are the boundary
+// of what naming it widens. `crates/server/src/hostname.rs` argues why it is not the
+// configurable guard `the_guard_has_no_way_to_be_turned_off` forbids; this is where that
+// argument is checked rather than asserted.
+
+#[test]
+fn a_named_hostname_is_answered() {
+    let harness = common::start_answering_to(PROXIED);
+    common::seed(&harness.store);
+
+    let answer = harness.raw("GET", "/api/v1/inbox", &[("Host", PROXIED)], None);
+
+    assert_eq!(
+        answer.status,
+        200,
+        "the server refused the name it was told to answer to: {}",
+        answer.text()
+    );
+}
+
+#[test]
+fn a_hostname_that_was_not_named_is_still_refused() {
+    let harness = common::start_with_no_github();
+    common::seed(&harness.store);
+
+    // The default. Nothing is widened by the flag existing — only by it being typed.
+    let answer = harness.raw("GET", "/api/v1/inbox", &[("Host", PROXIED)], None);
+
+    assert!(
+        answer.status >= 400,
+        "a server told no hostname answered to one: {}",
+        answer.text()
+    );
+}
+
+#[test]
+fn naming_one_hostname_does_not_name_its_neighbours() {
+    let harness = common::start_answering_to(PROXIED);
+    let seeded = common::seed(&harness.store);
+
+    // Exact, never a suffix or a prefix match. Both halves matter: a suffix match would
+    // make every name an attacker can register under a `.local` they control into this
+    // server, and a prefix match would hand them `review-desk.local.evil.example`.
+    for host in [
+        "evil.app.review-desk.local",
+        "app.review-desk.local.evil.example",
+        "xapp.review-desk.local",
+        "app.review-desk.localx",
+        "app.review-desk.local.",
+        "evil.example",
+    ] {
+        let answer = harness.raw(
+            "POST",
+            &format!("/api/v1/reviews/{}/draft/approve", seeded.review_id),
+            &[("Host", host), ("Content-Type", "application/json")],
+            Some(r#"{"event":"approve"}"#),
+        );
+
+        assert!(
+            answer.status >= 400,
+            "Host {host:?} reached a handler on a server that named only {PROXIED:?}: {}",
+            answer.text()
+        );
+    }
+
+    assert_eq!(
+        harness.store.get_draft(seeded.review_id).unwrap().status,
+        DraftStatus::Ready,
+        "a neighbour of the named hostname approved the draft"
+    );
+}
+
+#[test]
+fn the_named_hostnames_own_origin_can_write() {
+    let harness = common::start_answering_to(PROXIED);
+    let seeded = common::seed(&harness.store);
+
+    // What the dashboard really sends when it is served through the proxy. If this is
+    // refused then the name is useless: browsing works and signing off does not.
+    let answer = harness.raw(
+        "POST",
+        &format!("/api/v1/reviews/{}/brief/confirm", seeded.review_id),
+        &[
+            ("Host", PROXIED),
+            ("Origin", "https://app.review-desk.local"),
+            ("Content-Type", "application/json"),
+        ],
+        None,
+    );
+
+    assert_eq!(answer.status, 200, "{}", answer.text());
+}
+
+#[test]
+fn the_named_hostname_is_https_and_not_http() {
+    let harness = common::start_answering_to(PROXIED);
+    let seeded = common::seed(&harness.store);
+
+    // The proxy terminates TLS and redirects port 80 to 443, so nothing is ever served
+    // on `http://review-desk.local` and no browser can be on that origin. Accepting it
+    // would widen the allowlist to an origin that does not exist.
+    let answer = harness.raw(
+        "POST",
+        &format!("/api/v1/reviews/{}/draft/approve", seeded.review_id),
+        &[
+            ("Host", PROXIED),
+            ("Origin", "http://app.review-desk.local"),
+            ("Content-Type", "application/json"),
+        ],
+        Some(r#"{"event":"approve"}"#),
+    );
+
+    assert!(answer.status >= 400, "{}", answer.text());
+    assert_eq!(
+        harness.store.get_draft(seeded.review_id).unwrap().status,
+        DraftStatus::Ready,
+        "an http origin on the named hostname approved the draft"
+    );
+}
+
+#[test]
+fn a_foreign_origin_through_the_named_hostname_is_still_refused() {
+    let harness = common::start_answering_to(PROXIED);
+    let seeded = common::seed(&harness.store);
+
+    // **This is the property that chose this design.** A proxy can be made to serve the
+    // name by rewriting `Host` and `Origin` instead, and `web/nuxt.config.ts` does
+    // exactly that for the dev server — but rewriting `Origin` launders it, so a page on
+    // any origin arrives wearing the dashboard's and `web/dev-proxy.ts` has to filter the
+    // real one back out. Naming the host rewrites nothing: a foreign `Origin` arrives as
+    // itself and the check that was already here refuses it.
+    let answer = harness.raw(
+        "POST",
+        &format!("/api/v1/reviews/{}/draft/approve", seeded.review_id),
+        &[
+            ("Host", PROXIED),
+            ("Origin", "https://evil.example"),
+            ("Content-Type", "application/json"),
+        ],
+        Some(r#"{"event":"approve"}"#),
+    );
+
+    assert!(answer.status >= 400, "{}", answer.text());
+    assert_eq!(
+        harness.store.get_draft(seeded.review_id).unwrap().status,
+        DraftStatus::Ready,
+        "a foreign origin approved the draft through the named hostname"
+    );
+}
+
+#[test]
+fn a_form_post_through_the_named_hostname_is_still_refused() {
+    let harness = common::start_answering_to(PROXIED);
+    let seeded = common::seed(&harness.store);
+
+    // The third check is not weakened by the first one being widened. A form cannot send
+    // JSON whatever `Host` it is sent to.
+    let answer = harness.raw(
+        "POST",
+        &format!("/api/v1/reviews/{}/draft/approve", seeded.review_id),
+        &[
+            ("Host", PROXIED),
+            ("Content-Type", "application/x-www-form-urlencoded"),
+        ],
+        Some("event=approve"),
+    );
+
+    assert!(answer.status >= 400, "{}", answer.text());
+    assert_eq!(
+        harness.store.get_draft(seeded.review_id).unwrap().status,
+        DraftStatus::Ready,
+        "a form post approved the draft through the named hostname"
+    );
+}
+
+/// **The guard takes no configuration, and DEV-862 is where that was first put under
 /// pressure.**
 ///
 /// That issue points the dashboard at this API, which means a `nuxt dev` server on
@@ -574,47 +760,85 @@ fn a_header_name_in_another_case_is_still_the_same_header() {
 /// It was made to work the other way round. `web/nuxt.config.ts` has the proxy state what
 /// it is really talking to — `changeOrigin` rewrites `Host`, and `headers.origin` replaces
 /// the browser's `Origin` with this server's own — so what arrives is a request that
-/// genuinely names this server. The guard is unchanged and knows nothing about a proxy;
+/// genuinely names this server. The guard is unchanged and knows nothing about that proxy;
 /// it would refuse that dev server exactly as it refuses any other origin.
 ///
-/// This test is the tripwire on that. It reads `guard.rs` and fails if the module grows a
-/// way to be configured, which is what every bypass would look like.
+/// **Serving the dashboard at a hostname moved this line, and it is worth being exact
+/// about where it now is.** `review-desk serve --hostname review-desk.local` lets the
+/// developer add one host to the first check, because the machine's reverse proxy forwards
+/// that `Host` and the server otherwise refuses its own dashboard. That is a widening, and
+/// the reason it is not the bypass this test was written against is the shape of it: one
+/// name, of a type that parsed it, passed as an argument that has to be typed. There is no
+/// list, no environment variable, no build flag and no default — and because nothing is
+/// rewritten anywhere, a foreign `Origin` arriving on that host is still refused by the
+/// second check. `crates/server/src/hostname.rs` makes the argument; the tests above it
+/// check it; this one holds the shape.
+///
+/// So the needles below are unchanged, and the test now reads `hostname.rs` as well —
+/// a bypass that moved into the module next door would otherwise pass. The signature is
+/// still pinned, and still pinned to carry at most one name rather than a collection.
 #[test]
 fn the_guard_has_no_way_to_be_turned_off() {
-    let source = std::fs::read_to_string(
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/guard.rs"),
-    )
-    .expect("reading the guard");
+    let crate_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
-    for (needle, what) in [
-        ("env::var", "a read of the environment"),
-        ("env!(", "a compile-time environment variable"),
-        (
-            "option_env!",
-            "an optional compile-time environment variable",
-        ),
-        ("cfg!(debug_assertions)", "a debug-build branch"),
-        ("#[cfg(debug_assertions)]", "a debug-build branch"),
-        ("cfg!(feature", "a Cargo feature branch"),
-        ("allowed_origins", "a configurable origin list"),
-        ("allow_origin", "a configurable origin list"),
-        ("Access-Control-Allow", "a CORS header"),
-    ] {
-        assert!(
-            !source.contains(needle),
-            "crates/server/src/guard.rs contains {needle:?} — {what}. The guard takes no \
-             configuration: the only thing it is told is the address the listener actually \
-             bound, and everything else it decides from the request. A development loop \
-             that needed this relaxed would be a development loop that could sign off a \
-             review from any page the developer has open."
-        );
+    // Both files, because the guard's policy is only as fixed as the narrowest thing it
+    // is allowed to be told, and that is now defined one module over.
+    for module in ["src/guard.rs", "src/hostname.rs"] {
+        let source = std::fs::read_to_string(crate_root.join(module)).expect("reading the module");
+
+        for (needle, what) in [
+            ("env::var", "a read of the environment"),
+            ("env!(", "a compile-time environment variable"),
+            (
+                "option_env!",
+                "an optional compile-time environment variable",
+            ),
+            ("cfg!(debug_assertions)", "a debug-build branch"),
+            ("#[cfg(debug_assertions)]", "a debug-build branch"),
+            ("cfg!(feature", "a Cargo feature branch"),
+            ("allowed_origins", "a configurable origin list"),
+            ("allow_origin", "a configurable origin list"),
+            ("Access-Control-Allow", "a CORS header"),
+        ] {
+            assert!(
+                !source.contains(needle),
+                "crates/server/{module} contains {needle:?} — {what}. The guard takes no \
+                 configuration: the only things it is told are the address the listener \
+                 actually bound and at most one hostname the developer typed, and \
+                 everything else it decides from the request. A development loop that \
+                 needed this relaxed would be a development loop that could sign off a \
+                 review from any page the developer has open."
+            );
+        }
     }
 
-    // And the one thing it *is* told stays the bound address rather than becoming a list
-    // of hosts somebody can add to.
+    let guard =
+        std::fs::read_to_string(crate_root.join("src/guard.rs")).expect("reading the guard");
+
+    // Whitespace is collapsed so that the assertion is about the signature rather than
+    // about where rustfmt chose to wrap it.
+    let collapsed = guard.split_whitespace().collect::<Vec<_>>().join(" ");
+
+    // And the things it *is* told stay the bound address and one optional name, rather
+    // than becoming a list of hosts somebody can add to.
     assert!(
-        source.contains("pub fn check(bound: SocketAddr, method: &str, headers: Headers<'_>)"),
-        "the guard's signature changed; it takes the bound address, the method and the \
-         headers, and nothing that could carry a policy"
+        collapsed.contains(
+            "pub fn check( bound: SocketAddr, proxied: Option<&Hostname>, method: &str, \
+             headers: Headers<'_>, )"
+        ),
+        "the guard's signature changed; it takes the bound address, at most one hostname, \
+         the method and the headers, and nothing that could carry a policy"
     );
+
+    for (needle, what) in [
+        ("Vec<Hostname>", "a list of hostnames"),
+        ("&[Hostname]", "a list of hostnames"),
+        ("Vec<&Hostname>", "a list of hostnames"),
+    ] {
+        assert!(
+            !collapsed.contains(needle),
+            "crates/server/src/guard.rs contains {needle:?} — {what}. One name is a name \
+             the developer typed; a list is a configuration file waiting to happen."
+        );
+    }
 }
