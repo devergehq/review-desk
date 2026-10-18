@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use review_desk_harvest::recorded::Recorded;
 use review_desk_harvest::{CommitFiles, Comparison, GitHub, PullRequest, ReviewThread};
-use review_desk_server::{Github, Records, Running, Server};
+use review_desk_server::{Github, Hostname, Records, Running, Server};
 use review_desk_store::{
     BriefBlindPass, BriefDisagreement, BriefFlowBox, BriefOpenChoice, BriefOption,
     BriefOptionVerdict, BriefPart, BriefPartFile, BriefProblem, BriefSupportTable, Disposition,
@@ -118,6 +118,22 @@ pub struct Harness {
 
 /// Start a server on a fresh database, reading GitHub through `github`.
 pub fn start(github: impl review_desk_harvest::GitHub + Send + 'static) -> Harness {
+    start_on_a_fresh_database(github, None)
+}
+
+/// Start a server that also answers to one proxied hostname, as `--hostname` does.
+///
+/// The name is parsed here rather than passed as a string, so a test cannot name
+/// something the command line would have refused.
+pub fn start_answering_to(name: &str) -> Harness {
+    let proxied = Hostname::parse(name).expect("a hostname the command line would accept");
+    start_on_a_fresh_database(Recorded::nothing(), Some(proxied))
+}
+
+fn start_on_a_fresh_database(
+    github: impl review_desk_harvest::GitHub + Send + 'static,
+    proxied: Option<Hostname>,
+) -> Harness {
     let directory = tempfile::tempdir().expect("a temporary directory");
     let path = directory.path().join("review-desk.db");
 
@@ -128,7 +144,8 @@ pub fn start(github: impl review_desk_harvest::GitHub + Send + 'static) -> Harne
 
     // Port 0, so tests can run at the same time without choosing ports by hand.
     let server = Server::bind(0, Records::new(served), Github::new(github))
-        .expect("binding a free port on 127.0.0.1");
+        .expect("binding a free port on 127.0.0.1")
+        .also_answering_to(proxied);
 
     Harness {
         running: server.spawn(),

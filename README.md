@@ -1446,6 +1446,7 @@ review-desk serve                 # http://127.0.0.1:7777/
 review-desk serve --port 8080
 review-desk serve --port 0        # any free port; the one bound is printed
 review-desk serve --json          # one document saying where it is
+review-desk serve --hostname app.review-desk.local   # also answer to that name
 ```
 
 It prints where it is and then serves. The API is under `/api/v1`, matching the
@@ -1520,6 +1521,45 @@ click on a draft at `ready` publishes a review the developer never read, under t
 convenience hole: rebinding points a name *the attacker controls* at 127.0.0.1, so the
 browser sends that name and never `localhost`.
 
+#### Reaching it at a hostname
+
+**`review-desk serve --hostname app.review-desk.local` adds that one name to the `Host`
+and `Origin` checks.** It is how the dashboard is reached at a name instead of at a port: a
+reverse proxy on this machine terminates TLS for the name, dnsmasq resolves it to
+127.0.0.1, and the proxy forwards the request here — and until the server is told the
+name, it refuses its own dashboard. See [Serving it at a hostname](#serving-it-at-a-hostname).
+
+**It does not widen the bind.** The listener is still `127.0.0.1` and nothing else, and
+the two tests above still hold. All the flag adds is one exact string to a pair of
+allowlists, and only while it is typed.
+
+**The name is accepted over `https` and only `https`**, because the proxy terminates TLS
+and sends port 80 to 443, so no browser sending that `Host` is ever on another scheme.
+Accepting `http://` too would admit an origin nothing serves.
+
+**It is not the configurable guard that DEV-862 refused**, and the difference is the shape
+rather than the intent. What that issue rejected was a guard that reads policy from
+somewhere — an allowed-origins list, an environment variable, a `--dev` flag — any of
+which is one mistake away from being left on in a build that signs off reviews. This is
+one name, parsed into `Hostname` so that nothing downstream holds an unchecked string, and
+passed as an argument that has to be typed. There is no list, no environment variable, no
+build flag and no default. `crates/server/tests/cross_origin.rs` still refuses every one
+of those by reading the source, now across `guard.rs` and `hostname.rs` both, so a bypass
+cannot move into the module next door.
+
+**Nothing is rewritten, which is the reason it was done this way.** The alternative is to
+have the proxy state this server's own `Host` and `Origin`, which is exactly what
+`web/nuxt.config.ts` does for the dev server — but rewriting `Origin` in a proxy launders
+it, so a page on any origin arrives wearing the dashboard's and `web/dev-proxy.ts` has to
+filter the real one back out. Naming the host rewrites nothing: a foreign `Origin` arrives
+as itself and the second check refuses it, with no second filter to keep true. A test
+asserts that.
+
+Rebinding is unaffected either way. It works by pointing a name *the attacker controls* at
+127.0.0.1, and an attacker cannot make a browser send `app.review-desk.local`; the match is
+exact, so `evil.app.review-desk.local` and `app.review-desk.local.evil.example` are both
+still refused.
+
 **An absent `Origin` is allowed**, deliberately. Nothing that is not a browser sends one —
 `curl`, a script, a review session — and a browser always sends one on a cross-origin
 request, including a form submission. Refusing the absent case would break every
@@ -1531,6 +1571,115 @@ developer. That is the authorisation model the contract states, and closing it n
 authentication. What these checks buy is the narrower and more valuable thing — a web page
 cannot reach the API, and a web page is the one attacker that arrives without the
 developer installing anything.
+
+### Serving it at a hostname
+
+**`https://app.review-desk.local` instead of `http://127.0.0.1:7777`.** Four pieces, none
+of which changes what the server binds: dnsmasq resolves the name to the loopback address,
+a reverse proxy on 443 terminates TLS for it and forwards to port 7777, a locally-trusted
+certificate makes the browser accept it, and `--hostname` tells the server the name so its
+guard does not refuse its own dashboard.
+
+This is written for the setup these machines already run — dnsmasq from Homebrew and a
+Traefik container sharing one file provider across every local project — because that is
+what it was done on. Any reverse proxy will do; what matters is the four pieces.
+
+```sh
+review-desk serve --hostname app.review-desk.local
+```
+
+**The name has to be a subdomain, and this is the part that will waste an afternoon.**
+macOS reserves `.local` for mDNS, and an `/etc/resolver/<domain>` file redirects only the
+*subdomains* of that domain to unicast DNS — a bare `review-desk.local` still goes to
+Bonjour, which nothing answers, however correct dnsmasq's reply would have been. So
+`app.review-desk.local` resolves and `review-desk.local` does not, and the same is true of
+every other `.local` domain on the machine. It is why the house pattern is
+`s-<id>.<project>.local` and never an apex.
+
+**The certificate.** `mkcert` mints one the system already trusts, for the apex and one
+level of subdomain, so another name under the domain needs no re-minting:
+
+```sh
+mkcert -cert-file _wildcard.review-desk.local.pem \
+       -key-file  _wildcard.review-desk.local-key.pem \
+       "review-desk.local" "*.review-desk.local"
+```
+
+**The name.** One line in `dnsmasq.conf` — `address=/<domain>/` covers the domain and
+everything under it — and a resolver file so macOS asks dnsmasq for that domain rather
+than the upstream nameserver:
+
+```sh
+echo 'address=/review-desk.local/127.0.0.1' >> /opt/homebrew/etc/dnsmasq.conf
+echo 'nameserver 127.0.0.1' | sudo tee /etc/resolver/review-desk.local
+sudo launchctl kickstart -k system/homebrew.mxcl.dnsmasq
+```
+
+**That last line is `launchctl`, not `brew services`, and the difference is silent.**
+dnsmasq re-reads `dnsmasq.conf` only on a full restart — a `SIGHUP` reloads hosts files
+and not the config — and if the daemon was loaded straight into the system domain rather
+than started by brew, `brew services list` shows its status as `none` and
+`sudo brew services restart dnsmasq` exits successfully having done nothing at all.
+
+**The route.** A router on `websecure` for `Host(\`app.review-desk.local\`)` pointing at
+the server, plus one on `web` that redirects to HTTPS. Two things about it are decisions
+rather than boilerplate:
+
+* **Nothing rewrites `Host` or `Origin`.** The server is told the name instead, so a
+  foreign `Origin` arrives as itself and is refused — see
+  [Reaching it at a hostname](#reaching-it-at-a-hostname) for why that was preferred to
+  having the proxy state this server's own headers.
+* **No response headers are added.** A shared middleware that sets
+  `X-Frame-Options: SAMEORIGIN` would overwrite the `DENY` this server sends, which is a
+  header a test asserts. Review Desk sends its own security headers and wants nothing
+  layered over them.
+
+A container reaching a server on the host's loopback interface needs the host's gateway
+name rather than `127.0.0.1`, which inside a container is the container. On OrbStack and
+Docker Desktop `host.docker.internal` is forwarded through to the host's loopback, so the
+server does not have to bind anything wider for this to work.
+
+```yaml
+http:
+  routers:
+    review-desk-redirect:
+      rule: "Host(`app.review-desk.local`)"
+      entryPoints: ["web"]
+      middlewares: ["https-redirect"]
+      service: noop@internal
+
+    review-desk:
+      rule: "Host(`app.review-desk.local`)"
+      entryPoints: ["websecure"]
+      tls: {}
+      service: review-desk-app
+
+  services:
+    review-desk-app:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:7777"
+```
+
+**Checking it.** The name, the certificate and the guard fail in different ways, so check
+them separately rather than concluding from a browser error:
+
+```sh
+dscacheutil -q host -a name app.review-desk.local    # ip_address: 127.0.0.1
+curl -s https://app.review-desk.local/api/v1/health  # the health document, TLS verified
+curl -sI https://app.review-desk.local/ | grep -i x-frame   # DENY, not SAMEORIGIN
+```
+
+**Use `dscacheutil` rather than `dig` for the first one.** `dig` talks to the nameserver in
+`/etc/resolv.conf` and knows nothing about `/etc/resolver`, so it answers nothing for a
+name that resolves perfectly well in every application on the machine.
+`dig +short @127.0.0.1 app.review-desk.local` is still the right way to ask dnsmasq itself
+what it would say, which is how the two halves are told apart.
+
+A `400` naming the hosts this server answers to means the proxy reached it and
+`--hostname` was not given, or was given a different name. A TLS error means the
+certificate, not the route. A name that dnsmasq answers and `dscacheutil` does not means
+the resolver file, the daemon restart, or an apex.
 
 ### Which operations are answered
 

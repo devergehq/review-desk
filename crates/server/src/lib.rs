@@ -63,6 +63,7 @@ pub mod assets;
 pub mod error;
 pub mod github;
 pub mod guard;
+pub mod hostname;
 pub mod route;
 pub mod store;
 pub mod wire;
@@ -83,6 +84,7 @@ use tokio::sync::Notify;
 pub use crate::api::{Api, API_PREFIX};
 pub use crate::error::{ApiError, Code};
 pub use crate::github::Github;
+pub use crate::hostname::{Hostname, HostnameError};
 pub use crate::store::Records;
 
 /// The port the contract's `servers` entry names: `http://127.0.0.1:7777/api/v1`.
@@ -103,7 +105,8 @@ pub enum BindError {
     Listen { port: u16, detail: String },
 }
 
-/// The store and the address it is answering on, as every request sees them.
+/// The store, the address it is answering on, and any name it also answers to, as every
+/// request sees them.
 ///
 /// The address is carried rather than looked up because the guard checks `Host` against
 /// the address actually bound, and with port 0 that is not known until it is.
@@ -111,6 +114,7 @@ pub enum BindError {
 struct Desk {
     api: Api,
     bound: SocketAddr,
+    proxied: Option<Hostname>,
 }
 
 /// A listening server.
@@ -124,6 +128,7 @@ pub struct Server {
     listener: TcpListener,
     address: SocketAddr,
     api: Api,
+    proxied: Option<Hostname>,
 }
 
 impl Server {
@@ -147,7 +152,19 @@ impl Server {
             listener,
             address,
             api: Api::new(records, github),
+            // Answering to a name is asked for, never assumed.
+            proxied: None,
         })
+    }
+
+    /// Also answer to one name a reverse proxy in front of this server forwards.
+    ///
+    /// `None` leaves the server answering only to the address it bound, which is what
+    /// every caller that does not pass `--hostname` gets. See [`crate::hostname`] for
+    /// what this widens and what it deliberately does not.
+    pub fn also_answering_to(mut self, proxied: Option<Hostname>) -> Self {
+        self.proxied = proxied;
+        self
     }
 
     /// The address actually bound.
@@ -171,6 +188,7 @@ impl Server {
             self.listener,
             self.address,
             self.api,
+            self.proxied,
             // Production stops when the process does.
             std::future::pending::<()>(),
         ));
@@ -190,9 +208,15 @@ impl Server {
             .name("review-desk-http".to_string())
             .spawn(move || {
                 let runtime = runtime();
-                runtime.block_on(run(self.listener, self.address, self.api, async move {
-                    signal.notified().await;
-                }));
+                runtime.block_on(run(
+                    self.listener,
+                    self.address,
+                    self.api,
+                    self.proxied,
+                    async move {
+                        signal.notified().await;
+                    },
+                ));
             })
             .expect("spawning the HTTP thread");
 
@@ -219,7 +243,13 @@ fn runtime() -> tokio::runtime::Runtime {
 }
 
 /// Serve `listener` until `stop` resolves.
-async fn run(listener: TcpListener, bound: SocketAddr, api: Api, stop: impl Future<Output = ()>) {
+async fn run(
+    listener: TcpListener,
+    bound: SocketAddr,
+    api: Api,
+    proxied: Option<Hostname>,
+    stop: impl Future<Output = ()>,
+) {
     listener
         .set_nonblocking(true)
         .expect("the listening socket could not be made non-blocking");
@@ -234,9 +264,11 @@ async fn run(listener: TcpListener, bound: SocketAddr, api: Api, stop: impl Futu
     // not a permissive CORS one: `guard.rs` is the only thing that decides who may talk
     // to this server, and middleware that answered first, or added headers of its own,
     // would be a second rule in a place nobody looks.
-    let app = Router::new()
-        .fallback(answer)
-        .with_state(Desk { api, bound });
+    let app = Router::new().fallback(answer).with_state(Desk {
+        api,
+        bound,
+        proxied,
+    });
 
     let serving = axum::serve(listener, app).into_future();
 
@@ -311,7 +343,7 @@ async fn answer(State(desk): State<Desk>, request: Request) -> Response {
     // **Above the API branch, not inside it.** It began inside, which left the static
     // branch unguarded — no data leak, since the dashboard bundle is public code, but one
     // rule for the whole server is a thing a reader can check and two rules is not.
-    if let Err(refusal) = guard::check(desk.bound, &method, &headers) {
+    if let Err(refusal) = guard::check(desk.bound, desk.proxied.as_ref(), &method, &headers) {
         return json_response(refusal.status(), &refusal.document());
     }
 

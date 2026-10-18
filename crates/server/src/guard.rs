@@ -16,7 +16,7 @@
 //!
 //! | Check | Closes |
 //! |---|---|
-//! | `Host` is the loopback address and port actually bound | DNS rebinding: a name the attacker controls, resolved to 127.0.0.1 |
+//! | `Host` is the address actually bound, or the one host `--hostname` named | DNS rebinding: a name the attacker controls, resolved to 127.0.0.1 |
 //! | `Origin`, when present, is this server's own | A page on another origin driving `fetch` or submitting a form |
 //! | `Content-Type` is JSON on a write | A plain HTML form, which cannot send one |
 //!
@@ -24,6 +24,13 @@
 //! covers it — but the third is what makes that a property of the request shape rather
 //! than of browser behaviour that could change. **No CORS headers are sent**, by omission
 //! and on purpose: there is no origin this API wants to be readable from.
+//!
+//! **One name may be added to the first check, and nothing may be added to the others.**
+//! `review-desk serve --hostname app.review-desk.local` tells this module the single host a
+//! reverse proxy in front of it forwards, which is how the dashboard is reached at a name
+//! instead of at a port. It is an argument that has to be typed, not a list, an
+//! environment variable or a build flag, and `crate::hostname` is where the difference is
+//! argued. `crates/server/tests/cross_origin.rs` is the tripwire that keeps it that way.
 //!
 //! ## What this does not stop
 //!
@@ -37,6 +44,7 @@
 use std::net::SocketAddr;
 
 use crate::error::ApiError;
+use crate::hostname::Hostname;
 
 /// A request's headers, as name and value.
 pub type Headers<'a> = &'a [(String, String)];
@@ -50,13 +58,13 @@ fn header<'a>(headers: Headers<'a>, wanted: &str) -> Option<&'a str> {
         .map(|(_, value)| value.as_str())
 }
 
-/// The host-and-port forms that name this server.
+/// The host-and-port forms of the address the listener bound.
 ///
 /// `localhost` is allowed beside the literal address, and that is safe rather than a
 /// convenience hole: DNS rebinding works by pointing a name *the attacker controls* at
 /// 127.0.0.1, and the browser then sends that name — `evil.example` — in `Host`. It
 /// cannot make the browser send `localhost`.
-fn own_hosts(bound: SocketAddr) -> [String; 3] {
+fn loopback_hosts(bound: SocketAddr) -> [String; 3] {
     let port = bound.port();
     // Three exact strings, never a suffix match. The exactness does more work than it
     // looks: it also closes `0.0.0.0:{port}` — which routes to loopback and is the known
@@ -71,12 +79,35 @@ fn own_hosts(bound: SocketAddr) -> [String; 3] {
     ]
 }
 
+/// The host-and-port forms that name this server.
+///
+/// The address bound, and — when `review-desk serve --hostname` named one — the single
+/// host a reverse proxy in front of this server forwards. Still exact strings and still
+/// never a suffix match, so naming `app.review-desk.local` does not make
+/// `evil.app.review-desk.local` this server. See [`crate::hostname`] for why one named host
+/// is not the configurable guard `cross_origin.rs` forbids.
+fn own_hosts(bound: SocketAddr, proxied: Option<&Hostname>) -> Vec<String> {
+    let mut hosts = loopback_hosts(bound).to_vec();
+    if let Some(name) = proxied {
+        hosts.push(name.host().to_string());
+    }
+    hosts
+}
+
 /// The origins that are this server.
-fn own_origins(bound: SocketAddr) -> Vec<String> {
-    own_hosts(bound)
+///
+/// The bound address is `http`, because that is what it serves. A named host is `https`
+/// and only `https`: it is reached through the proxy, which terminates TLS and sends port
+/// 80 to 443, so no browser sending that `Host` is on any other scheme.
+fn own_origins(bound: SocketAddr, proxied: Option<&Hostname>) -> Vec<String> {
+    let mut origins: Vec<String> = loopback_hosts(bound)
         .iter()
         .map(|host| format!("http://{host}"))
-        .collect()
+        .collect();
+    if let Some(name) = proxied {
+        origins.push(name.origin());
+    }
+    origins
 }
 
 /// Whether this method changes the record.
@@ -86,15 +117,24 @@ fn is_a_write(method: &str) -> bool {
 
 /// Check a request bound for the API.
 ///
+/// `proxied` is the single host `review-desk serve --hostname` named, and is `None`
+/// unless it was typed. It is the only thing this module is told beyond the address the
+/// listener bound; everything else it decides from the request.
+///
 /// Returns the refusal to serve, or `Ok(())`.
-pub fn check(bound: SocketAddr, method: &str, headers: Headers<'_>) -> Result<(), ApiError> {
+pub fn check(
+    bound: SocketAddr,
+    proxied: Option<&Hostname>,
+    method: &str,
+    headers: Headers<'_>,
+) -> Result<(), ApiError> {
     // --- Host -----------------------------------------------------------------
     //
     // Absent is refused as firmly as wrong. HTTP/1.1 requires a Host, every browser
     // sends one, and treating "no Host" as "must be fine" would make the check optional
     // for anything that simply left it off.
     let host = header(headers, "host").unwrap_or_default();
-    let hosts = own_hosts(bound);
+    let hosts = own_hosts(bound, proxied);
     if !hosts.iter().any(|own| host.eq_ignore_ascii_case(own)) {
         return Err(ApiError::bad_request(format!(
             "this server answers only to {}, and this request named {host:?}: \
@@ -111,7 +151,7 @@ pub fn check(bound: SocketAddr, method: &str, headers: Headers<'_>) -> Result<()
     if let Some(origin) = header(headers, "origin") {
         // "null" is what a sandboxed frame or a `file://` page sends. It names no origin
         // this server could recognise, so it is not this one.
-        let origins = own_origins(bound);
+        let origins = own_origins(bound, proxied);
         if !origins.iter().any(|own| origin.eq_ignore_ascii_case(own)) {
             return Err(ApiError::bad_request(format!(
                 "this API answers only its own origin, and this request came from \
