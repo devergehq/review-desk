@@ -2519,6 +2519,50 @@ fn every_response_example_can_be_produced_from_the_store() {
         "getProblemStatement",
         &problem_statement_document(&store.problem_statement(review).expect("the problem half")),
     );
+    // The conversation: a question read by a session, the session's reply to it, and a
+    // send-back note — every field of a message, from the store.
+    {
+        use review_desk_store::ReviewLayerName;
+        let asked = store
+            .ask_session(review, ReviewLayerName::Draft, "Why is F13 a Should?")
+            .expect("asking");
+        store
+            .mark_message_read(review, asked.seq, Some("allele-ae03f8ce"))
+            .expect("delivering");
+        store
+            .reply_from_session(review, ReviewLayerName::Draft, "Because.", Some(asked.seq))
+            .expect("replying");
+        store
+            .record_send_back_message(review, "Regrade it.")
+            .expect("a send-back note");
+        let messages = store.messages(review).expect("the conversation");
+        let document = |message: &review_desk_store::ReviewMessage| {
+            json!({
+                "review_id": message.review_id,
+                "seq": message.seq,
+                "step": message.step.as_str(),
+                "author": message.author.as_str(),
+                "kind": message.kind.as_str(),
+                "body": message.body,
+                "in_reply_to": message.in_reply_to,
+                "created_at": message.created_at,
+                "read_at": message.read_at,
+                "read_by_session": message.read_by_session,
+            })
+        };
+        fields += check(
+            "listMessages",
+            &json!({
+                "review_id": review,
+                "messages": messages.iter().map(document).collect::<Vec<_>>(),
+            }),
+        );
+        let fresh = store
+            .ask_session(review, ReviewLayerName::Draft, "Still there?")
+            .expect("asking again");
+        fields += check("askSession", &document(&fresh));
+    }
+
     // The record's half of the session read: which review, which session. `reading` is
     // Allele's and is null in anything built from the store alone.
     fields += check("getReviewSession", &{
@@ -2821,7 +2865,7 @@ fn every_response_example_can_be_produced_from_the_store() {
     );
 
     // Said out loud, so that a refactor which quietly stops checking most of the
-    // contract fails here rather than passing. The twenty-seven examples carry well over
+    // contract fails here rather than passing. The twenty-nine examples carry well over
     // three hundred leaf fields between them.
     assert!(
         fields >= 300,
@@ -2846,6 +2890,8 @@ fn every_response_example_is_checked() {
         "confirmBrief",
         "getProblemStatement",
         "getReviewSession",
+        "listMessages",
+        "askSession",
         "setFindingDisposition",
         "requestNitTicket",
         "promoteRule",

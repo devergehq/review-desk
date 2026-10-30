@@ -396,6 +396,30 @@ pub fn brief_disagreement(clash: &BriefDisagreement) -> Value {
 /// statement by naming what belongs in it rather than by removing what does not, and this
 /// does the same, so a field added to the brief cannot reach the wire through here by
 /// accident.
+/// One message in a review's conversation.
+pub fn message(message: &review_desk_store::ReviewMessage) -> Value {
+    json!({
+        "review_id": message.review_id,
+        "seq": message.seq,
+        "step": message.step.as_str(),
+        "author": message.author.as_str(),
+        "kind": message.kind.as_str(),
+        "body": message.body,
+        "in_reply_to": message.in_reply_to,
+        "created_at": rfc3339(message.created_at),
+        "read_at": rfc3339_or_null(message.read_at),
+        "read_by_session": message.read_by_session,
+    })
+}
+
+/// `GET /reviews/{id}/messages`.
+pub fn message_list(review_id: i64, messages: &[review_desk_store::ReviewMessage]) -> Value {
+    json!({
+        "review_id": review_id,
+        "messages": messages.iter().map(message).collect::<Vec<_>>(),
+    })
+}
+
 /// `GET /reviews/{id}/session`: the session the record names, and what Allele said of it.
 ///
 /// `reading` is null when there was no one to ask — no session recorded, or no Allele on

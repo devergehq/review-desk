@@ -177,6 +177,16 @@ const stepName = computed(() => layerLabel(props.step))
       />
 
       <!--
+        **The conversation with that session, on this step**, folded under the strip that
+        says whether anything can read it. DEV-1141.
+      -->
+      <StepConversation
+        :key="`conversation-${detail.review.id}-${step}`"
+        :review-id="detail.review.id"
+        :step="step"
+      />
+
+      <!--
         The headline and the line under it are a session's prose, so the backtick pairs in
         them are drawn as code — `TickedText` owns that, and every field on these four
         pages that a session wrote goes through it.

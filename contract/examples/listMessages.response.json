@@ -1,0 +1,41 @@
+{
+  "review_id": 41,
+  "messages": [
+    {
+      "review_id": 41,
+      "seq": 1,
+      "step": "draft",
+      "author": "developer",
+      "kind": "ask",
+      "body": "Why is F13 a Should and not a Blocker? It skips tenants silently every night.",
+      "in_reply_to": null,
+      "created_at": "2026-10-30T10:42:00Z",
+      "read_at": "2026-10-30T10:42:14Z",
+      "read_by_session": "allele-ae03f8ce"
+    },
+    {
+      "review_id": 41,
+      "seq": 2,
+      "step": "draft",
+      "author": "session",
+      "kind": "reply",
+      "body": "Graded Should because the job is skipped, not run, so nothing leaks. Send it back if you want it regraded.",
+      "in_reply_to": 1,
+      "created_at": "2026-10-30T10:43:05Z",
+      "read_at": null,
+      "read_by_session": null
+    },
+    {
+      "review_id": 41,
+      "seq": 3,
+      "step": "draft",
+      "author": "developer",
+      "kind": "send_back",
+      "body": "Regrade F13 to Blocker and redraft the summary line.",
+      "in_reply_to": null,
+      "created_at": "2026-10-30T10:51:00Z",
+      "read_at": null,
+      "read_by_session": null
+    }
+  ]
+}

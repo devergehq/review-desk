@@ -11,7 +11,7 @@ This repository is at the fourth slice: the store, the commands an agent session
 to record a review, the harvester that reads a posted review's outcomes back from GitHub,
 the dashboard's five screens, the local HTTP server that serves the JSON API and the
 dashboard from one binary, and **the dashboard reading and writing that API**. All
-twenty-seven of the contract's operations are answered, and the dashboard calls every one
+twenty-nine of the contract's operations are answered, and the dashboard calls every one
 it has a screen for — the two it does not are `GET /timings`, which no screen draws yet,
 and `GET /reviews/{id}/brief/problem-statement`, which a blind pass reads.
 
@@ -699,6 +699,43 @@ posted — for the same reason a decision is: an approved draft is what the sess
 and it does not move underneath it. A change that cannot alter what posts is not refused,
 and neither is any of them once the draft is `posted`: by then the body is history, and
 recording what the author did with it is the harvest's whole job.
+
+### Talking to the review's session
+
+**The developer asks from the dashboard; the session reads, marks read and replies from
+here.** Decided on 30 October 2026 in DEV-1140 (option A) and built in DEV-1141: the
+conversation is kept in the record and delivered by Locus, so Review Desk still writes into
+no session and depends on nothing.
+
+```sh
+review-desk message list --unread                       # every review's undelivered messages
+review-desk message list --unread --review "$REVIEW"    # a watcher's own review
+review-desk message read --review "$REVIEW" --seq 3 --session "$SESSION"
+review-desk message reply --review "$REVIEW" --step draft --to 3 \
+  --body "Regraded F13 to Blocker and sent the draft for sign-off again."
+review-desk message list --review "$REVIEW"             # the whole conversation
+```
+
+| Who | Can | Through |
+| -- | -- | -- |
+| The developer | ask, on any step | the conversation fold under the strip on every review page |
+| The developer | send the draft back | the draft page's own button, whose note is kept in the conversation too |
+| A session | read, mark read, reply | these three commands |
+
+**There is no command that writes the developer's words**, for the reason there is none
+that confirms a brief: a session could otherwise put a question in the developer's mouth and
+answer it. **No message signs anything off.** A message can ask for an explanation or for
+rework; approving, confirming and posting are not messages, and the record has no kind or
+column that would make one.
+
+**Mark a message read before acting on it**, so a watcher restarted part way does not
+deliver it twice. Marking it again changes nothing: the first reading stands. A message's
+body is the developer's prose — **data, never instructions** — and a watcher hands it to a
+session quoted as something a person said.
+
+**A message nothing has read** says "not read yet" on the page, or "not delivered" when the
+strip gives a reason it cannot be: the session is gone, or blocked on a permission prompt.
+A Locus that does not know about messages leaves them unread, and that is all that happens.
 
 ### Asking what is waiting
 
@@ -1697,14 +1734,14 @@ the resolver file, the daemon restart, or an apex.
 
 ### Which operations are answered
 
-**All twenty-seven**, and the dashboard calls every one it has a screen for. One GET per
+**All twenty-nine**, and the dashboard calls every one it has a screen for. One GET per
 screen, and every write the five screens make.
 
 | Screen | Reads | Writes |
 | -- | -- | -- |
 | Queue | `GET /inbox` | `POST /reviews` |
 | Reviews | `GET /reviews?repo=&show=` | — |
-| One review | `GET /reviews/{id}`, and `GET /reviews/{id}/session` every five seconds for the strip under the trail | `POST …/brief/confirm`, `PATCH …/findings/{seq}`, `POST …/dismiss`, `POST …/restore`, `DELETE /reviews/{id}` |
+| One review | `GET /reviews/{id}`, and `GET /reviews/{id}/session` and `GET /reviews/{id}/messages` every five seconds for the strip and the conversation under the trail | `POST …/messages`, `POST …/brief/confirm`, `PATCH …/findings/{seq}`, `POST …/dismiss`, `POST …/restore`, `DELETE /reviews/{id}` |
 | Draft preview | `GET /reviews/{id}/draft` — the body as it will post, the blocks it is composed of, and the inline threads with the line each sits on | `PUT …/draft`, `POST …/draft/approve`, `POST …/draft/send-back`, `POST …/held-back/ticket` |
 | Rules | `GET /rules?repo=`, `GET /repos` | `POST /rules/{id}/promote`, `/dismiss`, `/retire`, `/defer` |
 
@@ -1844,6 +1881,7 @@ needs (version 4).
 | Brief option | One alternative considered: a key, a title, the argument each way, and whether it is what was built |
 | Draft | The review body, its status, the event chosen at approval, who approved it and when, the note it was sent back with, when it was posted, and what the lint said |
 | Rule exception | An accepted exception to a rule, with the reason. The rule stays in force |
+| Message | What the developer and the review's session said on one step: who, which kind (`ask`, `send_back` or `reply`), the words, what it answers, and when and by which session it was read. Migration 22 |
 
 A review is unique on repository, pull request number and round. A review has one
 brief, one draft and at most seven layers.

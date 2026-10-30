@@ -6,9 +6,9 @@
  * sentence here says what Allele said, and says nothing when there was no one to ask.
  */
 
-import type { SessionReading } from '~/types/desk'
+import type { ReviewMessage, SessionReading } from '~/types/desk'
 
-import { durationLabel } from './format'
+import { agoLabel, durationLabel } from './format'
 
 /**
  * How often a review page asks again while it is visible.
@@ -110,4 +110,35 @@ export function sessionAnswered(reading: SessionReading | null | undefined): boo
       || reading.status === 'awaiting_input'
       || reading.status === 'finished'
       || reading.status === 'gone')
+}
+
+/**
+ * Whether one of the developer's messages has reached the session, in words. `null` for a
+ * session's own reply, which is read by being on the page.
+ *
+ * **"Not delivered" only where there is a reason it cannot be**, from Allele: the session
+ * is gone, or blocked on a permission prompt and so not reading anything. Otherwise an
+ * unread message is "not read yet", because the review's watcher reads the desk every
+ * twenty seconds or so and a message a few seconds old has simply not been picked up.
+ */
+export function deliveryLine(
+  message: ReviewMessage,
+  reading: SessionReading | null | undefined,
+  now: Date = new Date(),
+): string | null {
+  if (message.author !== 'developer') return null
+  if (message.read_at != null) {
+    const when = agoLabel(message.read_at, now) ?? 'at an unrecorded time'
+    return `Read by ${message.read_by_session ?? 'the session'} ${when}`
+  }
+  switch (reading?.status) {
+    case 'gone':
+      return 'Not delivered · the session is gone, so nothing will read it'
+    case 'awaiting_input':
+      return 'Not delivered · the session is waiting on a permission prompt'
+    case 'unreachable':
+      return 'Not read yet · Allele can\'t be reached to say whether the session can'
+    default:
+      return 'Not read yet'
+  }
 }

@@ -18,9 +18,9 @@ use review_desk_store::{
     DraftThread, DuplicateRounds, Finding, FindingInRound, FoldedRound, FullReview, HeadUpdates,
     NewDraft, NewOutcome, NitTicket, NotForSigning, OpenedReview, Outcome, PostedReview,
     ProblemStatement, RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewEvent, ReviewFacts,
-    ReviewLayer, ReviewProvenance, ReviewRequest, ReviewTimings, ReviewsShown, RoundCommit,
-    RoundSummary, Rule, RuleCounts, RuleStage, RulesSummary, Store, StoreError,
-    TicketedAndApproved, Timestamp,
+    ReviewLayer, ReviewLayerName, ReviewMessage, ReviewProvenance, ReviewRequest, ReviewTimings,
+    ReviewsShown, RoundCommit, RoundSummary, Rule, RuleCounts, RuleStage, RulesSummary, Store,
+    StoreError, TicketedAndApproved, Timestamp,
 };
 
 use crate::error::{ApiError, Code};
@@ -492,9 +492,33 @@ impl Records {
         self.with(|store| store.approve_draft(review_id, event, SIGN_OFF_ACTOR))
     }
 
-    /// Send the draft back to the session with a note.
+    /// Send the draft back to the session with a note, and keep the note in the review's
+    /// conversation.
+    ///
+    /// **The send-back first, so a refused one leaves no message saying it happened.** The
+    /// note is the same words either way; the message is what puts them beside the
+    /// questions and answers on the page. DEV-1141: send-back is one kind of message.
     pub fn send_back_draft(&self, review_id: i64, note: &str) -> Result<Draft, ApiError> {
-        self.with(|store| store.send_back_draft(review_id, note))
+        self.with(|store| {
+            let draft = store.send_back_draft(review_id, note)?;
+            store.record_send_back_message(review_id, note)?;
+            Ok(draft)
+        })
+    }
+
+    /// Every message on a review, oldest first.
+    pub fn messages(&self, review_id: i64) -> Result<Vec<ReviewMessage>, ApiError> {
+        self.with(|store| store.messages(review_id))
+    }
+
+    /// The developer asks the review's session something.
+    pub fn ask_session(
+        &self,
+        review_id: i64,
+        step: ReviewLayerName,
+        body: &str,
+    ) -> Result<ReviewMessage, ApiError> {
+        self.with(|store| store.ask_session(review_id, step, body))
     }
 
     /// The blocks the draft body is composed of, in order.

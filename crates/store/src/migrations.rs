@@ -1779,6 +1779,53 @@ CREATE TABLE review_requests (
 );
 "#,
     },
+    Migration {
+        version: 22,
+        name: "review-messages",
+        sql: r#"
+-- What the developer and a review's session say to each other, on one step of the review.
+--
+-- **Before this, the developer could send a draft back with one note and nothing came
+-- back.** DEV-1140 decided, on 30 October 2026, that a conversation with the review's agent
+-- is kept here, in the record, and delivered by Locus — option A — so Review Desk still
+-- depends on nothing and the conversation stays with the review whatever happens to the
+-- session. DEV-1141 builds it.
+--
+-- **Who may say what is the table's own rule, not only the caller's.** The developer asks,
+-- or sends the draft back; the session replies. A reply from the developer, or an ask from
+-- a session, is a row no caller can mean, and the CHECK refuses it with nothing to go
+-- round it. **No kind approves, confirms or posts**, and there is no column a message
+-- could set that would: signing off stays the dashboard's act alone.
+--
+-- **`seq` numbers a review's messages from 1**, the way findings are numbered, so a
+-- session can say which question it is answering (`in_reply_to`) and a watcher can say
+-- which one it delivered, without either holding a row id.
+--
+-- **Read is a time and who read it, never a flag**, the record's idiom for an act. Null is
+-- a message nothing has delivered. Only the developer's messages are marked read — a
+-- session's reply is read by being on the page.
+--
+-- **On delete, the conversation goes with the review**, as every table hanging off
+-- `reviews (id)` does: a review deleted under `DELETE /reviews/{id}` never got past being
+-- requested, and its conversation is about nothing that exists any more.
+CREATE TABLE review_messages (
+    id              INTEGER PRIMARY KEY,
+    review_id       INTEGER NOT NULL REFERENCES reviews (id) ON DELETE CASCADE,
+    seq             INTEGER NOT NULL CHECK (seq >= 1),
+    step            TEXT    NOT NULL,
+    author          TEXT    NOT NULL CHECK (author IN ('developer', 'session')),
+    kind            TEXT    NOT NULL CHECK (kind IN ('ask', 'send_back', 'reply')),
+    body            TEXT    NOT NULL CHECK (length(trim(body)) > 0),
+    in_reply_to     INTEGER,
+    created_at      INTEGER NOT NULL,
+    read_at         INTEGER,
+    read_by_session TEXT,
+    CHECK ((author = 'developer' AND kind IN ('ask', 'send_back'))
+        OR (author = 'session' AND kind = 'reply')),
+    UNIQUE (review_id, seq)
+);
+"#,
+    },
 ];
 
 /// The version a freshly created database lands on.

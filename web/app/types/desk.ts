@@ -148,6 +148,9 @@ export type ProblemStatement = Schema['ProblemStatement']
 export type ReviewSession = Schema['ReviewSession']
 export type SessionReading = Schema['SessionReading']
 export type SessionStatus = Schema['SessionStatus']
+export type ReviewMessage = Schema['ReviewMessage']
+export type MessageList = Schema['MessageList']
+export type AskSessionRequest = Schema['AskSessionRequest']
 export type Finding = Schema['Finding']
 /** The lines around a finding, as the pull request changed them. */
 export type FindingHunk = Schema['FindingHunk']
@@ -366,6 +369,11 @@ export interface DeskSource {
    * holds. DEV-996.
    */
   review_requests: SampleReviewRequest[]
+  /**
+   * Every review's conversation, in one list. Empty when the desk loads: no fixture holds
+   * a message, so sample mode starts every conversation fresh. DEV-1141.
+   */
+  messages: ReviewMessage[]
   handled_without_you: InboxHandled
   /** What Allele would tell the server about each running session, by review id. */
   session_liveness: Record<string, boolean | null>
