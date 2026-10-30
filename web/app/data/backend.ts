@@ -30,6 +30,7 @@ import type {
   ReviewDetail,
   ReviewEvent,
   ReviewList,
+  ReviewSession,
   Rule,
   RuleStage,
   RulesPage,
@@ -53,6 +54,13 @@ export interface DeskBackend {
   listReviews: (repo: string | null, show?: ReviewsShown) => Promise<ReviewList>
   getReview: (reviewId: number) => Promise<ReviewDetail>
   getDraft: (reviewId: number) => Promise<DraftDetail>
+  /**
+   * `GET /reviews/{id}/session` — what the review's Allele session is doing, as Allele says.
+   *
+   * **The one read that is not the record's**, and the one a page asks again on a timer.
+   * `reading` is null when there is no session or no Allele, and the page draws nothing.
+   */
+  getReviewSession: (reviewId: number) => Promise<ReviewSession>
   listRules: (repo: string | null) => Promise<RulesPage>
   listRepos: () => Promise<RepoSummary[]>
 

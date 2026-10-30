@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use review_desk_harvest::recorded::Recorded;
 use review_desk_harvest::{CommitFiles, Comparison, GitHub, PullRequest, ReviewThread};
-use review_desk_server::{Github, Hostname, Records, Running, Server};
+use review_desk_server::{Allele, Github, Hostname, Records, Running, Server};
 use review_desk_store::{
     BriefBlindPass, BriefDisagreement, BriefFlowBox, BriefOpenChoice, BriefOption,
     BriefOptionVerdict, BriefPart, BriefPartFile, BriefProblem, BriefSupportTable, Disposition,
@@ -118,7 +118,7 @@ pub struct Harness {
 
 /// Start a server on a fresh database, reading GitHub through `github`.
 pub fn start(github: impl review_desk_harvest::GitHub + Send + 'static) -> Harness {
-    start_on_a_fresh_database(github, None)
+    start_on_a_fresh_database(github, None, Allele::none())
 }
 
 /// Start a server that also answers to one proxied hostname, as `--hostname` does.
@@ -127,12 +127,52 @@ pub fn start(github: impl review_desk_harvest::GitHub + Send + 'static) -> Harne
 /// something the command line would have refused.
 pub fn start_answering_to(name: &str) -> Harness {
     let proxied = Hostname::parse(name).expect("a hostname the command line would accept");
-    start_on_a_fresh_database(Recorded::nothing(), Some(proxied))
+    start_on_a_fresh_database(Recorded::nothing(), Some(proxied), Allele::none())
+}
+
+/// Start a server that asks the Allele socket at `socket` what each review's session is
+/// doing, as `review-desk serve` does with `~/.allele/control.sock`.
+#[allow(dead_code)]
+pub fn start_reading_sessions_from(socket: &std::path::Path) -> Harness {
+    start_on_a_fresh_database(Recorded::nothing(), None, Allele::at(socket))
+}
+
+/// A stand-in for Allele's control socket: it answers every connection with `reply`, one
+/// line, and counts the connections it was asked on.
+///
+/// The directory is under `/tmp` and short, because a Unix socket's path is limited to
+/// about a hundred bytes and a test's default temporary directory can use most of that.
+#[allow(dead_code)]
+pub fn fake_allele(reply: &'static str) -> (TempDir, std::path::PathBuf, Arc<AtomicUsize>) {
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::net::UnixListener;
+
+    let directory = tempfile::Builder::new()
+        .prefix("rd")
+        .tempdir_in("/tmp")
+        .expect("a temporary directory");
+    let path = directory.path().join("a.sock");
+    let listener = UnixListener::bind(&path).expect("binding a socket");
+    let asked = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&asked);
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(stream) = stream else { break };
+            counter.fetch_add(1, Ordering::SeqCst);
+            let mut reader = BufReader::new(stream.try_clone().expect("cloning a stream"));
+            let mut line = String::new();
+            let _ = reader.read_line(&mut line);
+            let mut stream = stream;
+            let _ = writeln!(stream, "{reply}");
+        }
+    });
+    (directory, path, asked)
 }
 
 fn start_on_a_fresh_database(
     github: impl review_desk_harvest::GitHub + Send + 'static,
     proxied: Option<Hostname>,
+    allele: Allele,
 ) -> Harness {
     let directory = tempfile::tempdir().expect("a temporary directory");
     let path = directory.path().join("review-desk.db");
@@ -145,7 +185,8 @@ fn start_on_a_fresh_database(
     // Port 0, so tests can run at the same time without choosing ports by hand.
     let server = Server::bind(0, Records::new(served), Github::new(github))
         .expect("binding a free port on 127.0.0.1")
-        .also_answering_to(proxied);
+        .also_answering_to(proxied)
+        .reading_sessions_from(allele);
 
     Harness {
         running: server.spawn(),

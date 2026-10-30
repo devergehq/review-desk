@@ -573,6 +573,36 @@ paths:
         '500':
           $ref: '#/components/responses/StoreUnavailable'
 
+  /reviews/{reviewId}/session:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+    get:
+      operationId: getReviewSession
+      tags: [review]
+      summary: What the review's Allele session is doing, as Allele says it now
+      description: |
+        **The one read that is not the record's.** The review records which Allele session
+        has it (`session_id`); this asks Allele, over its control socket, what that session
+        is doing, and serves the answer as it came. Decided on 30 October 2026 in DEV-1140.
+
+        **Absent is silent.** `reading` is null when the review records no session or the
+        machine has no Allele socket, and the page then draws nothing. **Broken is loud and
+        blocks nothing:** a socket that refuses or takes longer than a second answers
+        `unreachable`, still with a 200, because the review itself was read fine.
+
+        It only ever asks. Nothing here approves, posts, answers a permission prompt or
+        writes to the session, and the session's own address is not served.
+      responses:
+        '200':
+          description: The session the record names, and what Allele said of it.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewSession' }
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
   /reviews/{reviewId}/findings/{seq}:
     parameters:
       - $ref: '#/components/parameters/ReviewId'
@@ -2583,6 +2613,62 @@ components:
               number: { type: integer, format: int64, minimum: 1 }
               was_wrong: { type: string, minLength: 1 }
 
+    ReviewSession:
+      type: object
+      additionalProperties: false
+      required: [review_id, session_id, reading]
+      description: |
+        What `getReviewSession` serves. The first two fields are the record's; everything
+        inside `reading` is Allele's answer, read at `reading.read_at`.
+      properties:
+        review_id: { type: integer, format: int64, minimum: 1 }
+        session_id: { $ref: '#/components/schemas/ForeignId' }
+        reading:
+          oneOf:
+            - $ref: '#/components/schemas/SessionReading'
+            - type: 'null'
+          description: |
+            Null when there was nobody to ask: the review records no session, or there is
+            no Allele socket on this machine. The page draws no strip for it.
+    SessionReading:
+      type: object
+      additionalProperties: false
+      required: [status, allele_state, state_age_secs, detail, read_at]
+      description: One answer from Allele about one session.
+      properties:
+        status: { $ref: '#/components/schemas/SessionStatus' }
+        allele_state:
+          type: [string, 'null']
+          description: |
+            Allele's own word for the state, as sent: `running`, `awaiting_input`,
+            `response_ready`, `idle`, `suspended` or `done` today. Carried so a suspended
+            session can be told from a done one, which `status` folds together, and so an
+            `unknown` says what Allele actually said. Null when Allele sent no state.
+        state_age_secs:
+          type: [integer, 'null']
+          minimum: 0
+          description: Seconds since that state began, as Allele counts them.
+        detail:
+          type: [string, 'null']
+          description: |
+            Why the status is what it is, when the status alone does not say: the error
+            Allele sent, or what went wrong reaching it. Prose for a person, never parsed.
+        read_at:
+          type: string
+          format: date-time
+          description: When the server asked.
+    SessionStatus:
+      type: string
+      enum: [running, awaiting_input, finished, gone, unknown, unreachable]
+      description: |
+        | Status | Means |
+        | -- | -- |
+        | `running` | Allele says it is working |
+        | `awaiting_input` | Blocked on a permission prompt. Nobody is coming unless a person answers it in Allele |
+        | `finished` | It finished its turn and is waiting for a prompt (`response_ready` or `idle`) |
+        | `gone` | Suspended or done in Allele, or Allele has no session with that id |
+        | `unknown` | Allele answered with something the server does not know how to read. Not a guess |
+        | `unreachable` | The socket is there and did not answer within a second |
     Brief:
       type: object
       additionalProperties: false

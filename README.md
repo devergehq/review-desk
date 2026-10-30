@@ -11,7 +11,7 @@ This repository is at the fourth slice: the store, the commands an agent session
 to record a review, the harvester that reads a posted review's outcomes back from GitHub,
 the dashboard's five screens, the local HTTP server that serves the JSON API and the
 dashboard from one binary, and **the dashboard reading and writing that API**. All
-twenty-four of the contract's operations are answered, and the dashboard calls every one
+twenty-seven of the contract's operations are answered, and the dashboard calls every one
 it has a screen for — the two it does not are `GET /timings`, which no screen draws yet,
 and `GET /reviews/{id}/brief/problem-statement`, which a blind pass reads.
 
@@ -1289,10 +1289,23 @@ that body, so no session will post it however long the page waited, and "the ses
 not be running" would be the wrong diagnosis of a state whose cause is known and whose way
 out is on the page.
 
-**It will not say whether the session is alive.** Allele owns that; `session_alive` is null
-in every response this server writes, and `GET /reviews/{id}` does not carry it at all. How
-long the review has been silent is the nearest thing the record holds, and that is what is
-shown.
+**What the session is doing comes from Allele, on the strip under the trail.** Decided on
+30 October 2026 in DEV-1140: the server asks Allele's control socket
+(`~/.allele/control.sock`, or `serve --allele-socket`) with `sessions_status`, and
+`GET /reviews/{id}/session` serves the answer — working, waiting on a permission prompt and
+for how long, finished, gone, unknown, or that Allele could not be reached within a second.
+Every review page draws it and asks again every five seconds while it is visible.
+
+**When Allele has answered, this panel stops guessing**: the forty-second sentence says
+how long the wait has been and points at the strip, instead of "the session may not be
+running". **With no Allele, nothing changes**: there is no strip and the sentence is the
+one above. The server only ever asks; it never writes to a session, never answers a prompt
+and never serves the session's own address. `session_alive` on the queue is still null —
+the queue is a separate screen and was left out of this change.
+
+`crates/server/src/allele.rs` holds the one brittle thing: Allele answers an id it has no
+record of with `bad_request` and the message `no session with id …`, so "gone" is told by
+that text until Allele has a code of its own. Both are accepted.
 
 The GitHub link is built from `github_review_id`, which is a `ForeignId` — opaque, stored
 and returned and never parsed. GitHub's own address for a review is the pull request plus
@@ -1447,6 +1460,7 @@ review-desk serve --port 8080
 review-desk serve --port 0        # any free port; the one bound is printed
 review-desk serve --json          # one document saying where it is
 review-desk serve --hostname app.review-desk.local   # also answer to that name
+review-desk serve --allele-socket /path/to/control.sock  # ask another Allele
 ```
 
 It prints where it is and then serves. The API is under `/api/v1`, matching the
@@ -1683,14 +1697,14 @@ the resolver file, the daemon restart, or an apex.
 
 ### Which operations are answered
 
-**All twenty-four**, and the dashboard calls every one it has a screen for. One GET per
+**All twenty-seven**, and the dashboard calls every one it has a screen for. One GET per
 screen, and every write the five screens make.
 
 | Screen | Reads | Writes |
 | -- | -- | -- |
 | Queue | `GET /inbox` | `POST /reviews` |
 | Reviews | `GET /reviews?repo=&show=` | — |
-| One review | `GET /reviews/{id}` | `POST …/brief/confirm`, `PATCH …/findings/{seq}`, `POST …/dismiss`, `POST …/restore`, `DELETE /reviews/{id}` |
+| One review | `GET /reviews/{id}`, and `GET /reviews/{id}/session` every five seconds for the strip under the trail | `POST …/brief/confirm`, `PATCH …/findings/{seq}`, `POST …/dismiss`, `POST …/restore`, `DELETE /reviews/{id}` |
 | Draft preview | `GET /reviews/{id}/draft` — the body as it will post, the blocks it is composed of, and the inline threads with the line each sits on | `PUT …/draft`, `POST …/draft/approve`, `POST …/draft/send-back`, `POST …/held-back/ticket` |
 | Rules | `GET /rules?repo=`, `GET /repos` | `POST /rules/{id}/promote`, `/dismiss`, `/retire`, `/defer` |
 

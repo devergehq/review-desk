@@ -5,7 +5,7 @@ holds no implementation of either.
 
 | File | What it is |
 |---|---|
-| `openapi.yaml` | OpenAPI 3.1 for the local JSON API. 26 operations. |
+| `openapi.yaml` | OpenAPI 3.1 for the local JSON API. 27 operations. |
 | `examples/` | One example response per endpoint, one request body per write, and the error shape. A `.<variant>.` form adds a second shape where one example cannot show an optional field both present and absent. `getReview.response.round-two.json` is the second round of the same pull request as the canonical one. |
 | `validate-examples.mjs` | Checks every example against its schema, and fails when an endpoint has no example. |
 
@@ -1397,6 +1397,7 @@ null.
 |---|---|---|
 | "Your PRs with no reviewer", and those PRs' description lint | Inbox | GitHub. Reachable in principle — see "Reading GitHub" below — but no endpoint or issue covers listing the developer's own pull requests. |
 | "session alive" | Inbox, in progress | Allele. The store holds `session_id` and nothing about liveness. |
+| What the session is doing (`getReviewSession`'s `reading`) | Every review page | Allele, **asked by the server when the page asks** rather than stored: the record holds the session id and the server reads Allele's control socket for the rest. Null when there is no session or no Allele. |
 | "9 description problems caught by the CI check" | Inbox | A CI run. The brief puts `pr_lint.py` in CI explicitly outside this project. |
 | "Caught by the check", "Raised in a review since" | Rules | The same CI source. |
 | "last said by a human reviewer 19 days ago" | Rules | A GitHub harvest. DEV-859 harvests four kinds of outcome; this is not one of them. |

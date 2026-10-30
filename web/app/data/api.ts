@@ -53,6 +53,7 @@ import type {
   ReviewDetail,
   ReviewEvent,
   ReviewList,
+  ReviewSession,
   Rule,
   RuleStage,
   RulesPage,
@@ -309,6 +310,16 @@ export function getReview(reviewId: number): Promise<ReviewDetail> {
 /** `GET /reviews/{reviewId}/draft` — the draft preview in one call. */
 export function getDraft(reviewId: number): Promise<DraftDetail> {
   return send<DraftDetail>('GET', `/reviews/${reviewId}/draft`)
+}
+
+/**
+ * `GET /reviews/{id}/session` — what the review's Allele session is doing.
+ *
+ * The server asks Allele and answers within about a second whatever Allele does, so this
+ * can be asked on a timer without a slow Allele holding up anything else on the page.
+ */
+export function getReviewSession(reviewId: number): Promise<ReviewSession> {
+  return send<ReviewSession>('GET', `/reviews/${reviewId}/session`)
 }
 
 /**

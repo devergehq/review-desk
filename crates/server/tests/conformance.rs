@@ -179,6 +179,38 @@ fn confirm_brief_validates_as_a_brief() {
 }
 
 #[test]
+fn every_kind_of_session_reading_validates() {
+    // Each of the three shapes the page draws differently: an answer, a session Allele
+    // has never heard of, and no Allele to ask.
+    let answers = [
+        r#"{"result":"status","session":{"session_id":"allele-ae03f8ce","state":"awaiting_input","state_age_secs":372}}"#,
+        r#"{"result":"error","code":"bad_request","message":"no session with id allele-ae03f8ce"}"#,
+    ];
+    for reply in answers {
+        let (_dir, socket, _asked) = common::fake_allele(reply);
+        let harness = common::start_reading_sessions_from(&socket);
+        let seeded = common::seed(&harness.store);
+        let answer = harness.api(
+            "GET",
+            &format!("/reviews/{}/session", seeded.running_review_id),
+            None,
+        );
+        assert_eq!(answer.status, 200, "{}", answer.text());
+        assert_valid("ReviewSession", &answer.json());
+    }
+
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+    let answer = harness.api(
+        "GET",
+        &format!("/reviews/{}/session", seeded.running_review_id),
+        None,
+    );
+    assert_valid("ReviewSession", &answer.json());
+    assert!(answer.json()["reading"].is_null());
+}
+
+#[test]
 fn the_problem_statement_validates_and_carries_nothing_of_the_change() {
     let harness = common::start_with_no_github();
     let seeded = common::seed(&harness.store);

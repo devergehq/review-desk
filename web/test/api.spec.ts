@@ -71,6 +71,7 @@ describe('where it sends things', () => {
     ],
     ['getReview', () => api.getReview(17), 'GET', '/api/v1/reviews/17'],
     ['getDraft', () => api.getDraft(17), 'GET', '/api/v1/reviews/17/draft'],
+    ['getReviewSession', () => api.getReviewSession(17), 'GET', '/api/v1/reviews/17/session'],
     ['listRepos', () => api.listRepos(), 'GET', '/api/v1/repos'],
     ['listRules (all)', () => api.listRules(null), 'GET', '/api/v1/rules'],
     ['confirmBrief', () => api.confirmBrief(17), 'POST', '/api/v1/reviews/17/brief/confirm'],

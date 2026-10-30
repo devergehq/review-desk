@@ -84,6 +84,22 @@ const NO_SOURCE: &[(&str, &str)] = &[
         "/counts/last_human_mention_at",
         "a GitHub harvest of what reviewers said",
     ),
+    // `getReviewSession`'s answer is Allele's, read off its control socket when the
+    // page asks. The store holds the session id and nothing of what that session is doing.
+    (
+        "/reading/status",
+        "Allele: what the session is doing, asked when the page asks",
+    ),
+    (
+        "/reading/allele_state",
+        "Allele: its own word for the session's state",
+    ),
+    (
+        "/reading/state_age_secs",
+        "Allele: how long the session has been in that state",
+    ),
+    ("/reading/detail", "Allele, or the attempt to reach it"),
+    ("/reading/read_at", "the moment the server asked Allele"),
     (
         "/summary/replay_matched",
         "the replay consistency check, which does not exist",
@@ -2503,6 +2519,21 @@ fn every_response_example_can_be_produced_from_the_store() {
         "getProblemStatement",
         &problem_statement_document(&store.problem_statement(review).expect("the problem half")),
     );
+    // The record's half of the session read: which review, which session. `reading` is
+    // Allele's and is null in anything built from the store alone.
+    fields += check("getReviewSession", &{
+        // Read again rather than taken from the seed: the session id is linked after
+        // the review is created, so the seed's copy predates it.
+        let linked = store
+            .find_review_by_id(review)
+            .expect("reading the review")
+            .expect("the review");
+        json!({
+            "review_id": linked.id,
+            "session_id": linked.session_id,
+            "reading": null,
+        })
+    });
     fields += check(
         "setFindingDisposition",
         &finding_document(&store, &store.get_finding(review, 4).expect("the finding")),
@@ -2790,7 +2821,7 @@ fn every_response_example_can_be_produced_from_the_store() {
     );
 
     // Said out loud, so that a refactor which quietly stops checking most of the
-    // contract fails here rather than passing. The twenty-six examples carry well over
+    // contract fails here rather than passing. The twenty-seven examples carry well over
     // three hundred leaf fields between them.
     assert!(
         fields >= 300,
@@ -2814,6 +2845,7 @@ fn every_response_example_is_checked() {
         "startReview",
         "confirmBrief",
         "getProblemStatement",
+        "getReviewSession",
         "setFindingDisposition",
         "requestNitTicket",
         "promoteRule",

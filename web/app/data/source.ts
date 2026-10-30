@@ -154,6 +154,7 @@ export async function loadBackend(): Promise<DeskBackend> {
     listReviews: api.listReviews,
     getReview: api.getReview,
     getDraft: api.getDraft,
+    getReviewSession: api.getReviewSession,
     listRules: api.listRules,
     listRepos: api.listRepos,
     startReview: api.startReview,

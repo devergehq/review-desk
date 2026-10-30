@@ -23,6 +23,7 @@ use review_desk_store::{
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use crate::allele::Allele;
 use crate::error::{ApiError, Code};
 use crate::github::Github;
 use crate::route::{match_route, Operation, Target};
@@ -46,12 +47,26 @@ const RULES_WINDOW_DAYS: i64 = 30;
 pub struct Api {
     records: Records,
     github: Github,
+    allele: Allele,
 }
 
 impl Api {
     /// Serve from this store, reading GitHub through this reader.
+    ///
+    /// Asks no Allele: every review's session reads as having none to ask. A server that
+    /// should ask says where, with [`Api::reading_sessions_from`].
     pub fn new(records: Records, github: Github) -> Self {
-        Api { records, github }
+        Api {
+            records,
+            github,
+            allele: Allele::none(),
+        }
+    }
+
+    /// Read what each review's session is doing from this Allele.
+    pub fn reading_sessions_from(mut self, allele: Allele) -> Self {
+        self.allele = allele;
+        self
     }
 
     /// Answer one request. `path` is the part after [`API_PREFIX`], `query` the part
@@ -113,6 +128,7 @@ impl Api {
             Operation::FoldRound { review_id } => self.fold_round(review_id),
             Operation::ConfirmBrief { review_id } => self.confirm_brief(review_id),
             Operation::GetProblemStatement { review_id } => self.problem_statement(review_id),
+            Operation::GetReviewSession { review_id } => self.review_session(review_id),
             Operation::SetFindingDisposition { review_id, seq } => {
                 self.set_finding_disposition(review_id, seq, body)
             }
@@ -1181,6 +1197,20 @@ impl Api {
         self.records.review(review_id)?;
         let statement = self.records.problem_statement(review_id)?;
         Ok((200, wire::problem_statement(&statement)))
+    }
+
+    /// `GET /reviews/{reviewId}/session`: what the review's Allele session is doing.
+    ///
+    /// **A review with no session id makes no call at all**, and neither does a server
+    /// with no Allele: both answer `reading: null`, which the page draws as nothing. The
+    /// only other program this server ever asks is Allele, and only here.
+    fn review_session(&self, review_id: i64) -> Result<(u16, Value), ApiError> {
+        let review = self.records.review(review_id)?;
+        let reading = review
+            .session_id
+            .as_deref()
+            .and_then(|session_id| self.allele.read(session_id));
+        Ok((200, wire::review_session(&review, reading.as_ref(), now())))
     }
 
     /// `PATCH /reviews/{reviewId}/findings/{seq}`: move a finding between the draft, held

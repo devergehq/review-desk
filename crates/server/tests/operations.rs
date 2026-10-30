@@ -1,4 +1,4 @@
-//! Every one of the contract's twenty-six operations is routed and answers.
+//! Every one of the contract's twenty-seven operations is routed and answers.
 //!
 //! This walks `Operation::ALL` rather than listing routes by hand, so an operation added
 //! to the contract and not to the server fails here instead of 404ing in a browser.
@@ -10,10 +10,10 @@ use std::collections::BTreeSet;
 use review_desk_server::route::Operation;
 use serde_json::Value;
 
-/// The twenty-six operations, as `contract/README.md` counts them.
+/// The twenty-seven operations, as `contract/README.md` counts them.
 #[test]
-fn the_contract_has_twenty_six_operations() {
-    assert_eq!(Operation::ALL.len(), 26);
+fn the_contract_has_twenty_seven_operations() {
+    assert_eq!(Operation::ALL.len(), 27);
 }
 
 /// The contract's own `paths` and this crate's `Operation` name the same set.
@@ -120,6 +120,7 @@ fn an_unknown_review_is_not_found_on_every_operation_that_names_one() {
         ("GET", "/reviews/9001", None),
         ("POST", "/reviews/9001/brief/confirm", None),
         ("GET", "/reviews/9001/brief/problem-statement", None),
+        ("GET", "/reviews/9001/session", None),
         (
             "PATCH",
             "/reviews/9001/findings/1",
