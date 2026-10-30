@@ -1497,6 +1497,19 @@ impl Store {
             return self.get_review(id);
         }
 
+        // **A different session answers a request for a fresh one.** Migration 23: the
+        // request was for a session, and one has come — so it stops being work and the
+        // page stops saying it is waiting. The same session linked again answers nothing.
+        if let Some(new) = session_id.as_deref() {
+            self.conn.execute(
+                "DELETE FROM fresh_session_requests
+                  WHERE review_id = ?1
+                    AND EXISTS (SELECT 1 FROM reviews
+                                 WHERE id = ?1 AND session_id IS NOT ?2)",
+                params![id, new],
+            )?;
+        }
+
         self.conn.execute(
             "UPDATE reviews SET
                  session_id       = COALESCE(?2, session_id),

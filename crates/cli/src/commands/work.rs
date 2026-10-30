@@ -25,7 +25,7 @@ use crate::report::Report;
 pub enum WorkCommand {
     /// Print the reviews that need an agent to act, oldest first.
     ///
-    /// Five kinds, and a review has at most one of them:
+    /// Six kinds, and a review has at most one of them:
     ///
     /// * `review_requested` — no brief has been written. Start reviewing.
     /// * `brief_settled` — layer 2 is settled, by the developer's confirmation or by a
@@ -38,6 +38,11 @@ pub enum WorkCommand {
     ///   be filed as one ticket, and nothing has reported it filed. File it, then record
     ///   the ticket with `review nit-ticket --ticket`. The findings it covers are this
     ///   review's findings at disposition `held_back`, which `finding list` shows.
+    ///
+    /// * `fresh_session_requested` — the developer asked for a fresh session, because the
+    ///   session strip said this review's session is gone. Ask Allele whether it is: if so,
+    ///   start one that reads the record and carries on, and link it with `review link
+    ///   --session`; if not, `review fresh-session --declined` with the reason.
     ///
     /// **Review Desk files no ticket and posts no review.** Both are the session's to
     /// perform; this is the record saying they are waiting.

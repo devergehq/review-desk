@@ -2552,8 +2552,18 @@ export function sampleBackend(): DeskBackend {
       return answered({
         review_id: id,
         session_id: detail.review.session_id ?? null,
+        fresh_session: null,
         reading: null,
       })
+    },
+    /*
+     * Refused as the server refuses it with no Allele: there is nothing to say the session
+     * is gone, so nothing is asked. Sample data has no Allele.
+     */
+    requestFreshSession: async (id) => {
+      if (!reviewById(id)) throw notFound(`review ${id}`)
+      throw conflict('There is no Allele here to say whether the session is gone, so nothing '
+        + 'was asked.')
     },
     listMessages: async (id) => {
       if (!reviewById(id)) throw notFound(`review ${id}`)

@@ -171,6 +171,7 @@ export async function loadBackend(): Promise<DeskBackend> {
     approveDraft: api.approveDraft,
     sendBackDraft: api.sendBackDraft,
     askSession: api.askSession,
+    requestFreshSession: api.requestFreshSession,
     ticketRestAndApprove: api.ticketRestAndApprove,
     requestNitTicket: api.requestNitTicket,
     promoteRule: api.promoteRule,

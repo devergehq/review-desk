@@ -105,6 +105,11 @@ export interface DeskBackend {
    * **Stored and nothing more.** Locus delivers it; no message signs anything off.
    */
   askSession: (reviewId: number, step: ReviewLayerName, body: string) => Promise<ReviewMessage>
+  /**
+   * `POST /reviews/{id}/fresh-session` — ask for a fresh session, because Allele says the
+   * review's session is gone. The server asks Allele itself first; the dispatcher starts it.
+   */
+  requestFreshSession: (reviewId: number) => Promise<ReviewSession>
   /** `POST …/draft/ticket-and-approve` — a sign-off. It neither posts nor files anything. */
   ticketRestAndApprove: (
     reviewId: number,

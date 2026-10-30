@@ -1,0 +1,16 @@
+{
+  "review_id": 41,
+  "session_id": "allele-ae03f8ce",
+  "fresh_session": {
+    "requested_at": "2026-10-30T11:20:00Z",
+    "declined_at": null,
+    "declined_reason": null
+  },
+  "reading": {
+    "status": "gone",
+    "allele_state": "done",
+    "state_age_secs": 840,
+    "detail": null,
+    "read_at": "2026-10-30T11:20:00Z"
+  }
+}

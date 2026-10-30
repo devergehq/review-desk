@@ -2563,6 +2563,31 @@ fn every_response_example_can_be_produced_from_the_store() {
         fields += check("askSession", &document(&fresh));
     }
 
+    // The fresh session the developer asked for: the record's half of
+    // `requestFreshSession`'s answer. `reading` is Allele's.
+    {
+        let fresh = store
+            .request_fresh_session(review)
+            .expect("asking for a fresh session");
+        let linked = store
+            .find_review_by_id(review)
+            .expect("reading the review")
+            .expect("the review");
+        fields += check(
+            "requestFreshSession",
+            &json!({
+                "review_id": linked.id,
+                "session_id": linked.session_id,
+                "fresh_session": {
+                    "requested_at": fresh.requested_at,
+                    "declined_at": fresh.declined_at,
+                    "declined_reason": fresh.declined_reason,
+                },
+                "reading": null,
+            }),
+        );
+    }
+
     // The record's half of the session read: which review, which session. `reading` is
     // Allele's and is null in anything built from the store alone.
     fields += check("getReviewSession", &{
@@ -2575,6 +2600,7 @@ fn every_response_example_can_be_produced_from_the_store() {
         json!({
             "review_id": linked.id,
             "session_id": linked.session_id,
+            "fresh_session": null,
             "reading": null,
         })
     });
@@ -2865,7 +2891,7 @@ fn every_response_example_can_be_produced_from_the_store() {
     );
 
     // Said out loud, so that a refactor which quietly stops checking most of the
-    // contract fails here rather than passing. The twenty-nine examples carry well over
+    // contract fails here rather than passing. The thirty examples carry well over
     // three hundred leaf fields between them.
     assert!(
         fields >= 300,
@@ -2892,6 +2918,7 @@ fn every_response_example_is_checked() {
         "getReviewSession",
         "listMessages",
         "askSession",
+        "requestFreshSession",
         "setFindingDisposition",
         "requestNitTicket",
         "promoteRule",

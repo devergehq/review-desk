@@ -15,12 +15,12 @@ use std::sync::{Arc, Mutex};
 
 use review_desk_store::{
     Actor, Brief, Decision, DecisionMade, DiffAtHead, Disposition, Draft, DraftSection,
-    DraftThread, DuplicateRounds, Finding, FindingInRound, FoldedRound, FullReview, HeadUpdates,
-    NewDraft, NewOutcome, NitTicket, NotForSigning, OpenedReview, Outcome, PostedReview,
-    ProblemStatement, RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewEvent, ReviewFacts,
-    ReviewLayer, ReviewLayerName, ReviewMessage, ReviewProvenance, ReviewRequest, ReviewTimings,
-    ReviewsShown, RoundCommit, RoundSummary, Rule, RuleCounts, RuleStage, RulesSummary, Store,
-    StoreError, TicketedAndApproved, Timestamp,
+    DraftThread, DuplicateRounds, Finding, FindingInRound, FoldedRound, FreshSessionRequest,
+    FullReview, HeadUpdates, NewDraft, NewOutcome, NitTicket, NotForSigning, OpenedReview, Outcome,
+    PostedReview, ProblemStatement, RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewEvent,
+    ReviewFacts, ReviewLayer, ReviewLayerName, ReviewMessage, ReviewProvenance, ReviewRequest,
+    ReviewTimings, ReviewsShown, RoundCommit, RoundSummary, Rule, RuleCounts, RuleStage,
+    RulesSummary, Store, StoreError, TicketedAndApproved, Timestamp,
 };
 
 use crate::error::{ApiError, Code};
@@ -504,6 +504,19 @@ impl Records {
             store.record_send_back_message(review_id, note)?;
             Ok(draft)
         })
+    }
+
+    /// The developer's request for a fresh session on this review, if there is one.
+    pub fn fresh_session_request(
+        &self,
+        review_id: i64,
+    ) -> Result<Option<FreshSessionRequest>, ApiError> {
+        self.with(|store| store.fresh_session_request(review_id))
+    }
+
+    /// The developer asks for a fresh session.
+    pub fn request_fresh_session(&self, review_id: i64) -> Result<FreshSessionRequest, ApiError> {
+        self.with(|store| store.request_fresh_session(review_id))
     }
 
     /// Every message on a review, oldest first.

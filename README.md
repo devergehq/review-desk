@@ -11,7 +11,7 @@ This repository is at the fourth slice: the store, the commands an agent session
 to record a review, the harvester that reads a posted review's outcomes back from GitHub,
 the dashboard's five screens, the local HTTP server that serves the JSON API and the
 dashboard from one binary, and **the dashboard reading and writing that API**. All
-twenty-nine of the contract's operations are answered, and the dashboard calls every one
+thirty of the contract's operations are answered, and the dashboard calls every one
 it has a screen for — the two it does not are `GET /timings`, which no screen draws yet,
 and `GET /reviews/{id}/brief/problem-statement`, which a blind pass reads.
 
@@ -737,6 +737,26 @@ session quoted as something a person said.
 strip gives a reason it cannot be: the session is gone, or blocked on a permission prompt.
 A Locus that does not know about messages leaves them unread, and that is all that happens.
 
+### Starting a fresh session
+
+**When the strip says a review's session is gone, the page offers "Start a fresh session".**
+DEV-1140 part 3, built in DEV-1142. Pressing it, and confirming, asks; it starts nothing.
+
+1. **The server asks Allele itself** before recording anything, rather than trusting what the
+   page last drew. Anything but gone is a 409 that says what Allele said.
+2. The review joins `work list` as `fresh_session_requested`.
+3. **The dispatcher asks Allele a third time**, over its socket and never from its state file
+   (DEV-1056). Gone: it starts a session that reads the record and carries on, and that
+   session's `review link --session` answers the request. Not gone: it declines.
+
+```sh
+review-desk review fresh-session --review "$REVIEW" --declined "Allele says allele-1 is running"
+```
+
+The page then shows the reason, and offers again. A request nothing has picked up after two
+minutes says so: the dispatcher is stopped, or too old to know the kind. **A fresh session
+never approves or posts**; it picks up where the review is, and the developer still signs off.
+
 ### Asking what is waiting
 
 `work list` is the one command written for a caller with no review in mind. **The Locus
@@ -759,6 +779,7 @@ contradictory instructions.
 | `brief_settled` | Layer 2 is settled — the developer confirmed the brief, or it was recorded as needing none — and no draft is waiting on the developer | Carry on past layer 2 |
 | `draft_sent_back` | The developer sent the draft back | Revise it, reading `note` |
 | `draft_approved` | The developer approved it and nothing has reported it posted | Post it, then `draft posted` |
+| `fresh_session_requested` | The developer asked for a fresh session because the strip said the review's session is gone, and nothing has answered it | Ask Allele whether the old session is gone. If it is, start one that reads the record and link it with `review link --session`, which answers the request. If not, `review fresh-session --declined "<why>"` |
 
 **`brief_settled`, not `brief_confirmed`.** It fires for a brief the developer confirmed
 *and* for one recorded as needing no confirmation, because an agent's next move is the same
@@ -1734,14 +1755,14 @@ the resolver file, the daemon restart, or an apex.
 
 ### Which operations are answered
 
-**All twenty-nine**, and the dashboard calls every one it has a screen for. One GET per
+**All thirty**, and the dashboard calls every one it has a screen for. One GET per
 screen, and every write the five screens make.
 
 | Screen | Reads | Writes |
 | -- | -- | -- |
 | Queue | `GET /inbox` | `POST /reviews` |
 | Reviews | `GET /reviews?repo=&show=` | — |
-| One review | `GET /reviews/{id}`, and `GET /reviews/{id}/session` and `GET /reviews/{id}/messages` every five seconds for the strip and the conversation under the trail | `POST …/messages`, `POST …/brief/confirm`, `PATCH …/findings/{seq}`, `POST …/dismiss`, `POST …/restore`, `DELETE /reviews/{id}` |
+| One review | `GET /reviews/{id}`, and `GET /reviews/{id}/session` and `GET /reviews/{id}/messages` every five seconds for the strip and the conversation under the trail | `POST …/messages`, `POST …/fresh-session`, `POST …/brief/confirm`, `PATCH …/findings/{seq}`, `POST …/dismiss`, `POST …/restore`, `DELETE /reviews/{id}` |
 | Draft preview | `GET /reviews/{id}/draft` — the body as it will post, the blocks it is composed of, and the inline threads with the line each sits on | `PUT …/draft`, `POST …/draft/approve`, `POST …/draft/send-back`, `POST …/held-back/ticket` |
 | Rules | `GET /rules?repo=`, `GET /repos` | `POST /rules/{id}/promote`, `/dismiss`, `/retire`, `/defer` |
 

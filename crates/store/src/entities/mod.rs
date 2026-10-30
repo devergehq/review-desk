@@ -10,6 +10,7 @@ pub(crate) mod decision;
 pub(crate) mod draft;
 mod finding;
 mod finding_evidence;
+mod fresh_session;
 mod harvest;
 pub(crate) mod house_style;
 pub(crate) mod inbox;

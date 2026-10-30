@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { deliveryLine, sessionAnswered, sessionLine } from '../app/utils/session'
+import { deliveryLine, freshSessionLine, sessionAnswered, sessionLine } from '../app/utils/session'
 import type { ReviewMessage, SessionReading, SessionStatus } from '../app/types/desk'
 
 function reading(status: SessionStatus, over: Partial<SessionReading> = {}): SessionReading {
@@ -100,5 +100,28 @@ describe('whether a message has reached the session', () => {
 
   it('says nothing about a reply, which is read by being on the page', () => {
     expect(deliveryLine({ ...asked, author: 'session', kind: 'reply' }, null, now)).toBeNull()
+  })
+})
+
+describe('a fresh session the developer asked for', () => {
+  const now = new Date('2026-10-30T11:21:00Z')
+
+  it('is nothing when nothing is asked', () => {
+    expect(freshSessionLine(null, now)).toBeNull()
+  })
+
+  it('is waiting at first, and not picked up after two minutes', () => {
+    const asked = { requested_at: '2026-10-30T11:20:30Z', declined_at: null, declined_reason: null }
+    expect(freshSessionLine(asked, now)?.tone).toBe('waiting')
+    expect(freshSessionLine({ ...asked, requested_at: '2026-10-30T11:10:00Z' }, now)?.tone)
+      .toBe('late')
+  })
+
+  it('says why it was declined', () => {
+    expect(freshSessionLine({
+      requested_at: '2026-10-30T11:20:00Z',
+      declined_at: '2026-10-30T11:20:40Z',
+      declined_reason: 'still running',
+    }, now)?.text).toBe('Not started · still running')
   })
 })

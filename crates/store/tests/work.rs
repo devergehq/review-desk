@@ -542,6 +542,29 @@ fn every_reachable_state_has_one_kind_or_none() {
         .expect("revised");
     seen(None, "revised and ready: the developer's turn again");
 
+    // DEV-1142: the session went while the draft waited, and the developer asked for a
+    // fresh one. A new session linked to the review is what answers it.
+    store
+        .request_fresh_session(review.id)
+        .expect("the developer asks for a fresh session");
+    seen(
+        Some(WorkKind::FreshSessionRequested),
+        "a fresh session asked for while the draft waits on the developer",
+    );
+    store
+        .set_review_links(
+            review.id,
+            review_desk_store::ReviewLinks {
+                session_id: Some("allele-new".to_string()),
+                ..Default::default()
+            },
+        )
+        .expect("the new session links itself");
+    seen(
+        None,
+        "a new session answered it: the developer's turn again",
+    );
+
     store
         .approve_draft(review.id, ReviewEvent::Comment, Actor::Developer)
         .expect("approved");

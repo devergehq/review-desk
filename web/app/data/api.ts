@@ -341,6 +341,11 @@ export function askSession(
   return send<ReviewMessage>('POST', `/reviews/${reviewId}/messages`, request)
 }
 
+/** `POST /reviews/{id}/fresh-session` — asked only when Allele says the session is gone. */
+export function requestFreshSession(reviewId: number): Promise<ReviewSession> {
+  return send<ReviewSession>('POST', `/reviews/${reviewId}/fresh-session`)
+}
+
 /**
  * `GET /rules?repo=` — the Rules screen for one repository, or for every one.
  *

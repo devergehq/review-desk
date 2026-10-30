@@ -657,6 +657,42 @@ paths:
         '500':
           $ref: '#/components/responses/StoreUnavailable'
 
+  /reviews/{reviewId}/fresh-session:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+    post:
+      operationId: requestFreshSession
+      tags: [review]
+      summary: The developer asks for a fresh session, because the review's session is gone
+      description: |
+        **Recorded only when Allele says the session is gone, and the server asks Allele
+        itself** rather than trusting what the page last drew. No Allele, no session
+        recorded, or any other answer is a 409 saying what Allele said, and nothing is
+        recorded. DEV-1140 part 3, built in DEV-1142.
+
+        **Review Desk starts nothing.** The review joins `work list` as
+        `fresh_session_requested`; the Locus dispatcher asks Allele again, then starts a
+        session that reads the record and carries on — linking it answers the request — or
+        declines with a reason, which `fresh_session` then carries. Nothing here approves or
+        posts.
+      responses:
+        '200':
+          description: The session read, with the request on it.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewSession' }
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            Allele does not say the session is gone — it is running, waiting, finished, or
+            there is no Allele or no session to ask about — or the review is out of play.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
   /reviews/{reviewId}/findings/{seq}:
     parameters:
       - $ref: '#/components/parameters/ReviewId'
@@ -2720,13 +2756,20 @@ components:
     ReviewSession:
       type: object
       additionalProperties: false
-      required: [review_id, session_id, reading]
+      required: [review_id, session_id, fresh_session, reading]
       description: |
         What `getReviewSession` serves. The first two fields are the record's; everything
         inside `reading` is Allele's answer, read at `reading.read_at`.
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         session_id: { $ref: '#/components/schemas/ForeignId' }
+        fresh_session:
+          oneOf:
+            - $ref: '#/components/schemas/FreshSessionState'
+            - type: 'null'
+          description: |
+            The developer's request for a fresh session, from the record. Null when nothing
+            is asked — including once a new session has been linked, which answers it.
         reading:
           oneOf:
             - $ref: '#/components/schemas/SessionReading'
@@ -2734,6 +2777,19 @@ components:
           description: |
             Null when there was nobody to ask: the review records no session, or there is
             no Allele socket on this machine. The page draws no strip for it.
+    FreshSessionState:
+      type: object
+      additionalProperties: false
+      required: [requested_at, declined_at, declined_reason]
+      properties:
+        requested_at: { type: string, format: date-time }
+        declined_at:
+          type: [string, 'null']
+          format: date-time
+          description: When a dispatcher looked and did not start one. Null while it waits.
+        declined_reason:
+          type: [string, 'null']
+          description: Why not, in the dispatcher's words. Prose, never parsed.
     SessionReading:
       type: object
       additionalProperties: false

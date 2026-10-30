@@ -1,6 +1,7 @@
 {
   "review_id": 41,
   "session_id": "allele-ae03f8ce",
+  "fresh_session": null,
   "reading": {
     "status": "awaiting_input",
     "allele_state": "awaiting_input",

@@ -1,4 +1,4 @@
-//! Every one of the contract's twenty-nine operations is routed and answers.
+//! Every one of the contract's thirty operations is routed and answers.
 //!
 //! This walks `Operation::ALL` rather than listing routes by hand, so an operation added
 //! to the contract and not to the server fails here instead of 404ing in a browser.
@@ -10,10 +10,10 @@ use std::collections::BTreeSet;
 use review_desk_server::route::Operation;
 use serde_json::Value;
 
-/// The twenty-nine operations, as `contract/README.md` counts them.
+/// The thirty operations, as `contract/README.md` counts them.
 #[test]
-fn the_contract_has_twenty_nine_operations() {
-    assert_eq!(Operation::ALL.len(), 29);
+fn the_contract_has_thirty_operations() {
+    assert_eq!(Operation::ALL.len(), 30);
 }
 
 /// The contract's own `paths` and this crate's `Operation` name the same set.
@@ -72,7 +72,18 @@ fn every_operation_answers_from_a_seeded_record() {
         // A record of its own per operation. Several of these write — approving a draft,
         // promoting a rule — so a shared record would make the answers depend on the
         // order of the loop, and the loop's order is not a thing this test is about.
-        let harness = common::start_with_no_github();
+        // **A fresh session is asked for only when Allele says the session is gone**, so
+        // that one operation is given an Allele that says so — and the review that records
+        // a session, in `call`.
+        let (_allele, harness) = match operation {
+            Operation::RequestFreshSession { .. } => {
+                let (dir, socket, _) = common::fake_allele(
+                    r#"{"result":"error","code":"bad_request","message":"no session with id x"}"#,
+                );
+                (Some(dir), common::start_reading_sessions_from(&socket))
+            }
+            _ => (None, common::start_with_no_github()),
+        };
         let seeded = common::seed(&harness.store);
 
         let answer = call(&harness, *operation, &seeded);
@@ -122,6 +133,7 @@ fn an_unknown_review_is_not_found_on_every_operation_that_names_one() {
         ("GET", "/reviews/9001/brief/problem-statement", None),
         ("GET", "/reviews/9001/session", None),
         ("GET", "/reviews/9001/messages", None),
+        ("POST", "/reviews/9001/fresh-session", None),
         (
             "POST",
             "/reviews/9001/messages",
@@ -313,6 +325,11 @@ pub fn call(
                 .expect("and the newer round it folds into");
             format!("/reviews/{}/fold", extra.id)
         }
+        // The review that records a session: the seeded one with a brief records none.
+        Operation::RequestFreshSession { .. } => path.replace(
+            &format!("/reviews/{}", seeded.review_id),
+            &format!("/reviews/{}", seeded.running_review_id),
+        ),
         _ => path.to_string(),
     };
     let path = path.as_str();
