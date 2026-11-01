@@ -1,4 +1,4 @@
-//! The contract's twenty-nine operations, as a type.
+//! The contract's thirty operations, as a type.
 //!
 //! [`Operation::ALL`] is the point of this module: a test walks every operation the
 //! contract declares and asserts that each one is routed and answers, rather than the set
@@ -36,6 +36,7 @@ pub enum Operation {
     GetReviewSession { review_id: i64 },
     ListMessages { review_id: i64 },
     AskSession { review_id: i64 },
+    RequestFreshSession { review_id: i64 },
     SetFindingDisposition { review_id: i64, seq: i64 },
     DecideFinding { review_id: i64, seq: i64 },
     GetDraft { review_id: i64 },
@@ -70,6 +71,7 @@ impl Operation {
         Operation::GetReviewSession { review_id: 1 },
         Operation::ListMessages { review_id: 1 },
         Operation::AskSession { review_id: 1 },
+        Operation::RequestFreshSession { review_id: 1 },
         Operation::SetFindingDisposition {
             review_id: 1,
             seq: 1,
@@ -110,6 +112,7 @@ impl Operation {
             Operation::GetReviewSession { .. } => "getReviewSession",
             Operation::ListMessages { .. } => "listMessages",
             Operation::AskSession { .. } => "askSession",
+            Operation::RequestFreshSession { .. } => "requestFreshSession",
             Operation::SetFindingDisposition { .. } => "setFindingDisposition",
             Operation::DecideFinding { .. } => "decideFinding",
             Operation::GetDraft { .. } => "getDraft",
@@ -158,6 +161,9 @@ impl Operation {
             }
             Operation::ListMessages { review_id } => format!("GET /reviews/{review_id}/messages"),
             Operation::AskSession { review_id } => format!("POST /reviews/{review_id}/messages"),
+            Operation::RequestFreshSession { review_id } => {
+                format!("POST /reviews/{review_id}/fresh-session")
+            }
             Operation::SetFindingDisposition { review_id, seq } => {
                 format!("PATCH /reviews/{review_id}/findings/{seq}")
             }
@@ -325,6 +331,13 @@ pub fn match_route(method: &str, path: &str) -> Target {
                 false,
             ),
             (None, _) => (Target::Unknown, true),
+        },
+        ["reviews", id, "fresh-session"] => match number(id) {
+            Some(review_id) => (
+                Target::Operation(Operation::RequestFreshSession { review_id }),
+                method == "POST",
+            ),
+            None => (Target::Unknown, true),
         },
         ["reviews", id, "findings", seq] => match (number(id), number(seq)) {
             (Some(review_id), Some(seq)) => (

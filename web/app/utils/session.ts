@@ -6,9 +6,9 @@
  * sentence here says what Allele said, and says nothing when there was no one to ask.
  */
 
-import type { ReviewMessage, SessionReading } from '~/types/desk'
+import type { FreshSessionState, ReviewMessage, SessionReading } from '~/types/desk'
 
-import { agoLabel, durationLabel } from './format'
+import { agoLabel, durationLabel, secondsSince } from './format'
 
 /**
  * How often a review page asks again while it is visible.
@@ -141,4 +141,40 @@ export function deliveryLine(
     default:
       return 'Not read yet'
   }
+}
+
+/**
+ * How long a fresh session may wait to be picked up before the page says it has not been.
+ *
+ * Two minutes: the dispatcher polls `work list` far more often than that, so a request
+ * still waiting after it is a dispatcher that is stopped, or one too old to know the kind.
+ * It is a statement about the dispatcher, never a timeout — nothing is cancelled.
+ */
+export const FRESH_SESSION_PICKED_UP_WITHIN_SECONDS = 120
+
+/** What the page says about a fresh session the developer asked for, or `null` for none. */
+export function freshSessionLine(
+  fresh: FreshSessionState | null | undefined,
+  now: Date = new Date(),
+): { tone: 'waiting' | 'late' | 'declined', text: string } | null {
+  if (fresh == null) return null
+  if (fresh.declined_at != null) {
+    return {
+      tone: 'declined',
+      text: `Not started · ${fresh.declined_reason ?? 'the dispatcher gave no reason'}`,
+    }
+  }
+  const waited = secondsSince(fresh.requested_at, now) ?? 0
+  const ago = agoLabel(fresh.requested_at, now) ?? 'just now'
+  return waited < FRESH_SESSION_PICKED_UP_WITHIN_SECONDS
+    ? {
+        tone: 'waiting',
+        text: `Asked for a fresh session ${ago} · the dispatcher checks the old one is gone, `
+          + 'then starts one',
+      }
+    : {
+        tone: 'late',
+        text: `Asked for a fresh session ${ago}, not picked up · the dispatcher may not be `
+          + 'running, or may be too old to know this request',
+      }
 }

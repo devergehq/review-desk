@@ -99,10 +99,13 @@ impl Store {
                     d.sent_back_at          AS draft_sent_back_at,
                     d.sent_back_note        AS draft_sent_back_note,
                     d.approved_at           AS draft_approved_at,
-                    d.updated_at            AS draft_updated_at
+                    d.updated_at            AS draft_updated_at,
+                    f.requested_at          AS fresh_requested_at,
+                    f.declined_at           AS fresh_declined_at
              FROM reviews v
              LEFT JOIN briefs b ON b.review_id = v.id
              LEFT JOIN drafts d ON d.review_id = v.id
+             LEFT JOIN fresh_session_requests f ON f.review_id = v.id
              WHERE {NEWEST_ROUND}
                AND {IN_PLAY}
                AND (?1 IS NULL OR v.id = ?1)
@@ -131,6 +134,9 @@ struct Candidate {
     review: Review,
     brief: Option<BriefState>,
     draft: Option<DraftState>,
+    /// When the developer asked for a fresh session, if a request is waiting: asked, and
+    /// not declined. Migration 23.
+    fresh_requested_at: Option<Timestamp>,
 }
 
 /// What layer 2 holds. Nothing about the brief's text: only whether it is finished with.
@@ -202,6 +208,7 @@ fn decide(candidate: Candidate) -> Option<WorkItem> {
         review,
         brief,
         draft,
+        fresh_requested_at,
     } = candidate;
 
     let sign_off = brief.as_ref().and_then(BriefState::sign_off);
@@ -241,6 +248,15 @@ fn decide(candidate: Candidate) -> Option<WorkItem> {
             review.nit_ticket_requested_at.unwrap_or(review.created_at),
             None,
         );
+    }
+
+    // **A fresh session the developer asked for**, after anything the draft or the ticket
+    // already asks of an agent — those are relayed to a replacement when nobody is
+    // listening, so a request beside one of them is answered by it. Before the developer's
+    // turn, because that is exactly when they ask: the session they would have talked to is
+    // gone while the draft waits on them.
+    if let Some(requested_at) = fresh_requested_at {
+        return item(WorkKind::FreshSessionRequested, requested_at, None);
     }
 
     // The developer's turn, and nobody's turn.
@@ -299,9 +315,17 @@ fn row_to_candidate(row: &Row<'_>) -> rusqlite::Result<Candidate> {
         })
         .transpose()?;
 
+    // Waiting only while nobody has declined it: a declined request is the dispatcher's
+    // answer, on the page, and no longer an agent's work.
+    let fresh_requested_at = match row.get::<_, Option<Timestamp>>("fresh_declined_at")? {
+        Some(_) => None,
+        None => row.get("fresh_requested_at")?,
+    };
+
     Ok(Candidate {
         review: row_to_review(row)?,
         brief,
         draft,
+        fresh_requested_at,
     })
 }

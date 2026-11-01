@@ -428,11 +428,20 @@ pub fn message_list(review_id: i64, messages: &[review_desk_store::ReviewMessage
 pub fn review_session(
     review: &review_desk_store::Review,
     reading: Option<&crate::allele::Reading>,
+    fresh: Option<&review_desk_store::FreshSessionRequest>,
     read_at: Timestamp,
 ) -> Value {
     json!({
         "review_id": review.id,
         "session_id": review.session_id,
+        // The record's: the developer asked for a fresh session, and whether a dispatcher
+        // has declined it. Null when nothing is asked, which includes once a new session
+        // has answered it.
+        "fresh_session": fresh.map(|fresh| json!({
+            "requested_at": rfc3339(fresh.requested_at),
+            "declined_at": rfc3339_or_null(fresh.declined_at),
+            "declined_reason": fresh.declined_reason,
+        })),
         "reading": reading.map(|reading| json!({
             "status": reading.status.as_str(),
             "allele_state": reading.allele_state,

@@ -258,6 +258,23 @@ pub enum ReviewCommand {
         ticket: String,
     },
 
+    /// Decline the developer's request for a fresh session, saying why.
+    ///
+    /// **Declining, never asking.** The developer asks on the review page when the session
+    /// strip says the session is gone, and `work list` then reports the review as
+    /// `fresh_session_requested`. A dispatcher that asked Allele and found the old session
+    /// still there says so here, and the page shows the reason. One that starts a session
+    /// needs no command: linking the new session with `review link --session` answers the
+    /// request. There is no form of this that asks for a session.
+    FreshSession {
+        /// The review's id.
+        #[arg(long, value_name = "ID")]
+        review: i64,
+        /// Why no session was started, for the developer to read.
+        #[arg(long, value_name = "REASON")]
+        declined: String,
+    },
+
     /// Take a pull request out of play: it was converted to a draft, or its review request
     /// was withdrawn.
     ///
@@ -536,6 +553,15 @@ pub fn run(command: &ReviewCommand) -> Result<Report> {
                         .collect::<Vec<_>>()
                         .join(", ")
                 ),
+            ))
+        }
+
+        ReviewCommand::FreshSession { review, declined } => {
+            let store = Store::open_default()?;
+            let request = store.decline_fresh_session(*review, declined)?;
+            Ok(Report::new(
+                json!({ "fresh_session": request }),
+                format!("the fresh session asked for on review {review} was declined"),
             ))
         }
 

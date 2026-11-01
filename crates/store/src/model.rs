@@ -367,6 +367,11 @@ string_enum! {
         /// The developer approved the draft and nothing has reported it posted. An agent
         /// should post it and then run `draft posted`.
         DraftApproved => "draft_approved",
+        /// The developer asked for a fresh session, because the strip said this review's
+        /// session is gone. A dispatcher should confirm with Allele that it is gone, then
+        /// start one that reads the record and carries on, or decline with
+        /// `review-desk review fresh-session --declined`.
+        FreshSessionRequested => "fresh_session_requested",
         /// The developer asked for this review's held-back findings to be filed as one
         /// ticket, and nothing has reported it filed. An agent should file it and then
         /// record the ticket with `review-desk review nit-ticket --ticket`.
@@ -3031,4 +3036,15 @@ pub struct ReviewMessage {
     pub read_at: Option<Timestamp>,
     /// The session that read it, as the deliverer named it.
     pub read_by_session: Option<String>,
+}
+
+/// The developer's request for a fresh session on a review. Migration 23.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FreshSessionRequest {
+    pub review_id: i64,
+    pub requested_at: Timestamp,
+    /// When a dispatcher looked and did not start one, or `None` while it is waiting.
+    pub declined_at: Option<Timestamp>,
+    /// Why not, in the dispatcher's words.
+    pub declined_reason: Option<String>,
 }

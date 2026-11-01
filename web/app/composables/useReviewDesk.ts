@@ -722,6 +722,19 @@ export function useReviewDesk() {
     )
   }
 
+  /**
+   * `POST /reviews/{id}/fresh-session` — ask the dispatcher for a fresh session.
+   *
+   * **It says what was asked and no more.** The dispatcher confirms with Allele that the old
+   * session is gone before it starts anything, and the strip follows it from there.
+   */
+  async function requestFreshSession(id: number): Promise<WriteResult> {
+    return write(
+      to => to.requestFreshSession(id),
+      () => 'Asked for a fresh session. The dispatcher checks the old one is gone first.',
+    )
+  }
+
   /** `POST /reviews/{id}/held-back/ticket` — Review Desk records it; an agent files it. */
   async function requestNitTicket(id: number): Promise<WriteResult> {
     return write(
@@ -787,6 +800,7 @@ export function useReviewDesk() {
     approveDraft,
     sendBackDraft,
     askSession,
+    requestFreshSession,
     requestNitTicket,
     promoteRule,
     dismissRule,

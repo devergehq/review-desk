@@ -199,6 +199,18 @@ fn every_kind_of_session_reading_validates() {
         assert_valid("ReviewSession", &answer.json());
     }
 
+    // And with a fresh session asked for, which is the record's half.
+    let (_dir, socket, _asked) = common::fake_allele(answers[1]);
+    let harness = common::start_reading_sessions_from(&socket);
+    let seeded = common::seed(&harness.store);
+    let answer = harness.api(
+        "POST",
+        &format!("/reviews/{}/fresh-session", seeded.running_review_id),
+        None,
+    );
+    assert_eq!(answer.status, 200, "{}", answer.text());
+    assert_valid("ReviewSession", &answer.json());
+
     let harness = common::start_with_no_github();
     let seeded = common::seed(&harness.store);
     let answer = harness.api(

@@ -23,7 +23,7 @@ use review_desk_store::{
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::allele::Allele;
+use crate::allele::{Allele, SessionStatus};
 use crate::error::{ApiError, Code};
 use crate::github::Github;
 use crate::route::{match_route, Operation, Target};
@@ -131,6 +131,7 @@ impl Api {
             Operation::GetReviewSession { review_id } => self.review_session(review_id),
             Operation::ListMessages { review_id } => self.messages(review_id),
             Operation::AskSession { review_id } => self.ask_session(review_id, body),
+            Operation::RequestFreshSession { review_id } => self.request_fresh_session(review_id),
             Operation::SetFindingDisposition { review_id, seq } => {
                 self.set_finding_disposition(review_id, seq, body)
             }
@@ -1212,7 +1213,48 @@ impl Api {
             .session_id
             .as_deref()
             .and_then(|session_id| self.allele.read(session_id));
-        Ok((200, wire::review_session(&review, reading.as_ref(), now())))
+        let fresh = self.records.fresh_session_request(review_id)?;
+        Ok((
+            200,
+            wire::review_session(&review, reading.as_ref(), fresh.as_ref(), now()),
+        ))
+    }
+
+    /// `POST /reviews/{reviewId}/fresh-session`: the developer asks for a fresh session.
+    ///
+    /// **Only when Allele says the session is gone, and the server asks it itself** rather
+    /// than trusting what the page last drew: a page open for an hour may be showing a
+    /// reading an hour old. No Allele, no session recorded, or any other answer is a 409
+    /// that says what Allele said, and nothing is recorded. Starting the session is the
+    /// dispatcher's, which asks Allele again before it does (DEV-1056).
+    fn request_fresh_session(&self, review_id: i64) -> Result<(u16, Value), ApiError> {
+        let review = self.records.review(review_id)?;
+        let Some(session_id) = review.session_id.as_deref() else {
+            return Err(ApiError::conflict(
+                "this review records no session, so there is none to replace: it is on the \
+                 work list for whichever session starts it",
+            ));
+        };
+        let Some(reading) = self.allele.read(session_id) else {
+            return Err(ApiError::conflict(
+                "there is no Allele on this machine to say whether the session is gone, so \
+                 nothing was asked",
+            ));
+        };
+        if reading.status != SessionStatus::Gone {
+            return Err(ApiError::conflict(format!(
+                "Allele says {session_id} is {}, not gone, so nothing was asked",
+                reading
+                    .allele_state
+                    .as_deref()
+                    .unwrap_or(reading.status.as_str())
+            )));
+        }
+        let fresh = self.records.request_fresh_session(review_id)?;
+        Ok((
+            200,
+            wire::review_session(&review, Some(&reading), Some(&fresh), now()),
+        ))
     }
 
     /// `GET /reviews/{reviewId}/messages`: the review's conversation, oldest first.

@@ -1,0 +1,16 @@
+{
+  "review_id": 41,
+  "session_id": "allele-ae03f8ce",
+  "fresh_session": {
+    "requested_at": "2026-10-30T11:20:00Z",
+    "declined_at": "2026-10-30T11:20:40Z",
+    "declined_reason": "Allele says allele-ae03f8ce is running, so nothing was started over it"
+  },
+  "reading": {
+    "status": "running",
+    "allele_state": "running",
+    "state_age_secs": 12,
+    "detail": null,
+    "read_at": "2026-10-30T11:20:45Z"
+  }
+}

@@ -1826,6 +1826,35 @@ CREATE TABLE review_messages (
 );
 "#,
     },
+    Migration {
+        version: 23,
+        name: "fresh-session-requests",
+        sql: r#"
+-- The developer asked for a fresh session on a review whose session is gone.
+--
+-- **Before this, the only way to get a stalled review going again was to leave Review Desk
+-- and start a session by hand.** DEV-1140 part 3, built in DEV-1142: the review page offers
+-- "Start a fresh session" once the session strip says the session is gone, and the Locus
+-- dispatcher acts on it as a work-list kind — `fresh_session_requested` — after asking Allele
+-- itself that the old session is gone, never trusting a state file (DEV-1056).
+--
+-- **One row per review, and the row is the request.** Asking again replaces it. A new
+-- session linked to the review is what answers it, so `review link --session` with a
+-- different id deletes the row: the request was for a session, and one has come. A
+-- dispatcher that looked and found the old session still running says so with
+-- `declined_at` and a reason, which the page shows, and the request stops being work.
+--
+-- **Its own table rather than three columns on `reviews`**, because every reader of a review
+-- would otherwise carry three fields about one rare event, and `reviews` is read everywhere.
+CREATE TABLE fresh_session_requests (
+    review_id       INTEGER PRIMARY KEY REFERENCES reviews (id) ON DELETE CASCADE,
+    requested_at    INTEGER NOT NULL,
+    declined_at     INTEGER,
+    declined_reason TEXT,
+    CHECK ((declined_at IS NULL) = (declined_reason IS NULL))
+);
+"#,
+    },
 ];
 
 /// The version a freshly created database lands on.

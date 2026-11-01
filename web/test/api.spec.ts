@@ -74,6 +74,12 @@ describe('where it sends things', () => {
     ['getReviewSession', () => api.getReviewSession(17), 'GET', '/api/v1/reviews/17/session'],
     ['listMessages', () => api.listMessages(17), 'GET', '/api/v1/reviews/17/messages'],
     [
+      'requestFreshSession',
+      () => api.requestFreshSession(17),
+      'POST',
+      '/api/v1/reviews/17/fresh-session',
+    ],
+    [
       'askSession',
       () => api.askSession(17, 'draft', 'Why?'),
       'POST',
