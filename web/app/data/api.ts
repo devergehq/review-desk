@@ -54,6 +54,10 @@ import type {
   ReviewEvent,
   ReviewList,
   ReviewSession,
+  MessageList,
+  ReviewMessage,
+  ReviewLayerName,
+  AskSessionRequest,
   Rule,
   RuleStage,
   RulesPage,
@@ -320,6 +324,21 @@ export function getDraft(reviewId: number): Promise<DraftDetail> {
  */
 export function getReviewSession(reviewId: number): Promise<ReviewSession> {
   return send<ReviewSession>('GET', `/reviews/${reviewId}/session`)
+}
+
+/** `GET /reviews/{id}/messages` — the review's conversation, oldest first. */
+export function listMessages(reviewId: number): Promise<MessageList> {
+  return send<MessageList>('GET', `/reviews/${reviewId}/messages`)
+}
+
+/** `POST /reviews/{id}/messages` — the developer asks; the server stores it and stops. */
+export function askSession(
+  reviewId: number,
+  step: ReviewLayerName,
+  body: string,
+): Promise<ReviewMessage> {
+  const request: AskSessionRequest = { step, body }
+  return send<ReviewMessage>('POST', `/reviews/${reviewId}/messages`, request)
 }
 
 /**

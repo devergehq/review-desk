@@ -1,4 +1,4 @@
-//! The contract's twenty-seven operations, as a type.
+//! The contract's twenty-nine operations, as a type.
 //!
 //! [`Operation::ALL`] is the point of this module: a test walks every operation the
 //! contract declares and asserts that each one is routed and answers, rather than the set
@@ -34,6 +34,8 @@ pub enum Operation {
     ConfirmBrief { review_id: i64 },
     GetProblemStatement { review_id: i64 },
     GetReviewSession { review_id: i64 },
+    ListMessages { review_id: i64 },
+    AskSession { review_id: i64 },
     SetFindingDisposition { review_id: i64, seq: i64 },
     DecideFinding { review_id: i64, seq: i64 },
     GetDraft { review_id: i64 },
@@ -66,6 +68,8 @@ impl Operation {
         Operation::ConfirmBrief { review_id: 1 },
         Operation::GetProblemStatement { review_id: 1 },
         Operation::GetReviewSession { review_id: 1 },
+        Operation::ListMessages { review_id: 1 },
+        Operation::AskSession { review_id: 1 },
         Operation::SetFindingDisposition {
             review_id: 1,
             seq: 1,
@@ -104,6 +108,8 @@ impl Operation {
             Operation::ConfirmBrief { .. } => "confirmBrief",
             Operation::GetProblemStatement { .. } => "getProblemStatement",
             Operation::GetReviewSession { .. } => "getReviewSession",
+            Operation::ListMessages { .. } => "listMessages",
+            Operation::AskSession { .. } => "askSession",
             Operation::SetFindingDisposition { .. } => "setFindingDisposition",
             Operation::DecideFinding { .. } => "decideFinding",
             Operation::GetDraft { .. } => "getDraft",
@@ -150,6 +156,8 @@ impl Operation {
             Operation::GetReviewSession { review_id } => {
                 format!("GET /reviews/{review_id}/session")
             }
+            Operation::ListMessages { review_id } => format!("GET /reviews/{review_id}/messages"),
+            Operation::AskSession { review_id } => format!("POST /reviews/{review_id}/messages"),
             Operation::SetFindingDisposition { review_id, seq } => {
                 format!("PATCH /reviews/{review_id}/findings/{seq}")
             }
@@ -300,6 +308,23 @@ pub fn match_route(method: &str, path: &str) -> Target {
                 method == "GET",
             ),
             None => (Target::Unknown, true),
+        },
+        // **Two methods on one path**, as `/reviews` is: reading the conversation and adding
+        // to it. Only the developer's ask is a write here; a session replies through the
+        // command line, and a send-back is still `POST …/draft/send-back`.
+        ["reviews", id, "messages"] => match (number(id), method) {
+            (Some(review_id), "GET") => (
+                Target::Operation(Operation::ListMessages { review_id }),
+                true,
+            ),
+            (Some(review_id), "POST") => {
+                (Target::Operation(Operation::AskSession { review_id }), true)
+            }
+            (Some(review_id), _) => (
+                Target::Operation(Operation::ListMessages { review_id }),
+                false,
+            ),
+            (None, _) => (Target::Unknown, true),
         },
         ["reviews", id, "findings", seq] => match (number(id), number(seq)) {
             (Some(review_id), Some(seq)) => (

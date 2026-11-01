@@ -74,6 +74,8 @@ import type {
   ReviewEvent,
   ReviewList,
   ReviewSession,
+  MessageList,
+  ReviewLayerName,
   Rule,
   RuleStage,
   RulesPage,
@@ -418,6 +420,16 @@ export function useReviewDesk() {
     return sharing(`session:${id}`, () => resource(from => from.getReviewSession(id)))
   }
 
+  /**
+   * `GET /reviews/{id}/messages` — the review's conversation with its session.
+   *
+   * Shared for the reason `session` is: the conversation fold asks it again on a timer,
+   * and a second reader of it should see the same answer.
+   */
+  function messages(id: number): DeskResource<MessageList> {
+    return sharing(`messages:${id}`, () => resource(from => from.listMessages(id)))
+  }
+
   /** `GET /repos` — the repository picker's options. */
   function repos(): DeskResource<RepoSummary[]> {
     return resource(from => from.listRepos())
@@ -693,6 +705,23 @@ export function useReviewDesk() {
     )
   }
 
+  /**
+   * `POST /reviews/{id}/messages` — the developer asks the review's session something.
+   *
+   * **It says where the question has gone and no further.** Review Desk stores it; the
+   * review's session is handed it by Locus, and the fold shows when that has happened.
+   */
+  async function askSession(
+    id: number,
+    step: ReviewLayerName,
+    body: string,
+  ): Promise<WriteResult> {
+    return write(
+      to => to.askSession(id, step, body),
+      () => 'Asked. It is with the review until the session reads it.',
+    )
+  }
+
   /** `POST /reviews/{id}/held-back/ticket` — Review Desk records it; an agent files it. */
   async function requestNitTicket(id: number): Promise<WriteResult> {
     return write(
@@ -741,6 +770,7 @@ export function useReviewDesk() {
     review,
     draft,
     session,
+    messages,
     duplicateRounds,
     repos,
     rules,
@@ -756,6 +786,7 @@ export function useReviewDesk() {
     saveDraft,
     approveDraft,
     sendBackDraft,
+    askSession,
     requestNitTicket,
     promoteRule,
     dismissRule,

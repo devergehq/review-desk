@@ -1713,10 +1713,14 @@ describe('the draft preview', () => {
   it('renders the body, keeping the folded section folded', async () => {
     const page = await open(17)
     expect(page.text()).toContain('The queue-with-backoff approach fits the ticket')
-    const fold = page.find('details')
+    /*
+     * The body's own fold, not the first on the page: since DEV-1141 the conversation with
+     * the session is a fold too, under the strip and above the body.
+     */
+    const fold = page.findAll('details').find(one => !one.attributes('data-testid'))!
     expect(fold.exists()).toBe(true)
     expect(fold.attributes('open')).toBeUndefined()
-    expect(page.find('summary').text()).toContain('Proof')
+    expect(fold.find('summary').text()).toContain('Proof')
   })
 
   it('hands the body’s mermaid fence to a diagram rather than a code block', async () => {

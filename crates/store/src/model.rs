@@ -2987,3 +2987,48 @@ impl ReviewRequest {
         self.withdrawn_at.is_some()
     }
 }
+
+string_enum! {
+    /// Who wrote a message on a review.
+    MessageAuthor as "author" {
+        /// The developer, from the dashboard. The only way a developer's message is written.
+        Developer => "developer",
+        /// The review's session, through `review-desk message reply`.
+        Session => "session",
+    }
+}
+
+string_enum! {
+    /// What a message is.
+    ///
+    /// **None of these signs anything off.** A message can ask for an explanation or for
+    /// rework; approving, confirming and posting are not messages and never will be.
+    MessageKind as "kind" {
+        /// The developer asks the session something.
+        Ask => "ask",
+        /// The developer sent the draft back; the note is this message's body.
+        SendBack => "send_back",
+        /// The session answers.
+        Reply => "reply",
+    }
+}
+
+/// One message on a review, from the developer or the review's session. Migration 22.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReviewMessage {
+    pub review_id: i64,
+    /// The message's number on this review, from 1.
+    pub seq: i64,
+    /// The step of the review it was written on.
+    pub step: ReviewLayerName,
+    pub author: MessageAuthor,
+    pub kind: MessageKind,
+    pub body: String,
+    /// The `seq` of the message this answers, when a reply names one.
+    pub in_reply_to: Option<i64>,
+    pub created_at: Timestamp,
+    /// When something delivered it to a session, or `None` while nothing has.
+    pub read_at: Option<Timestamp>,
+    /// The session that read it, as the deliverer named it.
+    pub read_by_session: Option<String>,
+}

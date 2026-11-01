@@ -937,6 +937,31 @@ fn a_draft_whose_lint_has_not_run_serves_a_null_lint() {
 }
 
 #[test]
+fn the_conversation_validates_whole() {
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+    let path = format!("/reviews/{}/messages", seeded.review_id);
+
+    let asked = harness.api("POST", &path, Some(r#"{"step":"draft","body":"Why?"}"#));
+    assert_eq!(asked.status, 201, "{}", asked.text());
+    assert_valid("ReviewMessage", &asked.json());
+
+    harness
+        .store
+        .reply_from_session(
+            seeded.review_id,
+            review_desk_store::ReviewLayerName::Draft,
+            "Because.",
+            Some(1),
+        )
+        .expect("the session replies");
+
+    let list = harness.api("GET", &path, None);
+    assert_eq!(list.status, 200);
+    assert_valid("MessageList", &list.json());
+}
+
+#[test]
 fn saving_approving_and_sending_back_a_draft_all_validate() {
     for (method, suffix, body) in [
         ("PUT", "", r#"{"body":"An edited review body.","edits":[]}"#),

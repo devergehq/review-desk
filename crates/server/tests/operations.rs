@@ -1,4 +1,4 @@
-//! Every one of the contract's twenty-seven operations is routed and answers.
+//! Every one of the contract's twenty-nine operations is routed and answers.
 //!
 //! This walks `Operation::ALL` rather than listing routes by hand, so an operation added
 //! to the contract and not to the server fails here instead of 404ing in a browser.
@@ -10,10 +10,10 @@ use std::collections::BTreeSet;
 use review_desk_server::route::Operation;
 use serde_json::Value;
 
-/// The twenty-seven operations, as `contract/README.md` counts them.
+/// The twenty-nine operations, as `contract/README.md` counts them.
 #[test]
-fn the_contract_has_twenty_seven_operations() {
-    assert_eq!(Operation::ALL.len(), 27);
+fn the_contract_has_twenty_nine_operations() {
+    assert_eq!(Operation::ALL.len(), 29);
 }
 
 /// The contract's own `paths` and this crate's `Operation` name the same set.
@@ -121,6 +121,12 @@ fn an_unknown_review_is_not_found_on_every_operation_that_names_one() {
         ("POST", "/reviews/9001/brief/confirm", None),
         ("GET", "/reviews/9001/brief/problem-statement", None),
         ("GET", "/reviews/9001/session", None),
+        ("GET", "/reviews/9001/messages", None),
+        (
+            "POST",
+            "/reviews/9001/messages",
+            Some(r#"{"step":"draft","body":"hello"}"#),
+        ),
         (
             "PATCH",
             "/reviews/9001/findings/1",
@@ -322,6 +328,9 @@ pub fn call(
         Operation::SaveDraft { .. } => Some(r#"{"body":"A review body."}"#.to_string()),
         Operation::ApproveDraft { .. } => Some(r#"{"event":"comment"}"#.to_string()),
         Operation::SendBackDraft { .. } => Some(r#"{"note":"cut the nits"}"#.to_string()),
+        Operation::AskSession { .. } => {
+            Some(r#"{"step":"draft","body":"Why is F2 a nit?"}"#.to_string())
+        }
         Operation::RequestNitTicket { .. } => Some("{}".to_string()),
         // Cut, which is the decision that needs the least beside it — and the seeded
         // draft is written in parts, so F1 has a block to cut.

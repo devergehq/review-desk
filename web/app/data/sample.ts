@@ -46,6 +46,8 @@ import {
 import { count, reviewWorkInWords, reviewWorkIsOneThing } from '~/utils/format'
 import { nothingMoved } from '~/utils/rounds'
 import type {
+  ReviewLayerName,
+  ReviewMessage,
   Brief,
   DecideFindingRequest,
   DeskSource,
@@ -108,6 +110,7 @@ export function loadSource(): DeskSource {
      * fixture file is JSON and the type is the record's.
      */
     review_requests: desk.review_requests as DeskSource['review_requests'],
+    messages: [],
     handled_without_you: desk.handled_without_you,
     session_liveness: desk.session_liveness as Record<string, boolean | null>,
     github_available: desk.github_available,
@@ -1586,7 +1589,46 @@ function sendBackDraft(id: number, note: string): DraftDetail {
   const owner = reviewById(id)
   if (owner) owner.draft_status = 'sent_back'
 
+  /* The note is kept in the conversation too, as the server keeps it. DEV-1141. */
+  addMessage(id, 'draft', trimmed, 'send_back')
+
   return detail
+}
+
+/** The review's conversation, oldest first. */
+function messagesOf(id: number): ReviewMessage[] {
+  return source.messages.filter(message => message.review_id === id)
+}
+
+/**
+ * One of the developer's messages, written as the store writes it: numbered from 1 on its
+ * review, and waiting for something to deliver it. **Sample data has no Locus**, so nothing
+ * ever does, and every message in sample mode stays unread — which is what a machine whose
+ * Locus does not know about messages looks like too.
+ */
+function addMessage(
+  id: number,
+  step: ReviewLayerName,
+  body: string,
+  kind: 'ask' | 'send_back' = 'ask',
+): ReviewMessage {
+  const words = body.trim()
+  if (words.length === 0) throw invalidValue('body', 'An empty message asks nothing.', 'what to ask')
+  if (!reviewById(id)) throw notFound(`review ${id}`)
+  const message: ReviewMessage = {
+    review_id: id,
+    seq: messagesOf(id).length + 1,
+    step,
+    author: 'developer',
+    kind,
+    body: words,
+    in_reply_to: null,
+    created_at: nowIso(),
+    read_at: null,
+    read_by_session: null,
+  }
+  source.messages.push(message)
+  return message
 }
 
 /** `POST /reviews/{id}/held-back/ticket` — Review Desk records it; an agent files it. */
@@ -2513,6 +2555,10 @@ export function sampleBackend(): DeskBackend {
         reading: null,
       })
     },
+    listMessages: async (id) => {
+      if (!reviewById(id)) throw notFound(`review ${id}`)
+      return answered({ review_id: id, messages: messagesOf(id) })
+    },
     listRules: async repo => answered(rulesPage(repo)),
     listRepos: async (): Promise<RepoSummary[]> =>
       answered(source.repos.map(repo => ({
@@ -2532,6 +2578,7 @@ export function sampleBackend(): DeskBackend {
       answered(standing(wrote(id, saveDraft(id, body, edits)))),
     approveDraft: async (id, event) => answered(standing(wrote(id, approveDraft(id, event)))),
     sendBackDraft: async (id, note) => answered(standing(wrote(id, sendBackDraft(id, note)))),
+    askSession: async (id, step, body) => answered(addMessage(id, step, body)),
     ticketRestAndApprove: async (id, note) =>
       answered(wrote(id, ticketRestAndApprove(id, note))),
     requestNitTicket: async (id, ticketId = null) =>

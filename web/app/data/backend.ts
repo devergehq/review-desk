@@ -31,6 +31,9 @@ import type {
   ReviewEvent,
   ReviewList,
   ReviewSession,
+  MessageList,
+  ReviewMessage,
+  ReviewLayerName,
   Rule,
   RuleStage,
   RulesPage,
@@ -61,6 +64,8 @@ export interface DeskBackend {
    * `reading` is null when there is no session or no Allele, and the page draws nothing.
    */
   getReviewSession: (reviewId: number) => Promise<ReviewSession>
+  /** `GET /reviews/{id}/messages` — the review's conversation with its session. */
+  listMessages: (reviewId: number) => Promise<MessageList>
   listRules: (repo: string | null) => Promise<RulesPage>
   listRepos: () => Promise<RepoSummary[]>
 
@@ -94,6 +99,12 @@ export interface DeskBackend {
   ) => Promise<DraftDetail>
   approveDraft: (reviewId: number, event: ReviewEvent) => Promise<DraftDetail>
   sendBackDraft: (reviewId: number, note: string) => Promise<DraftDetail>
+  /**
+   * `POST /reviews/{id}/messages` — the developer asks the review's session something.
+   *
+   * **Stored and nothing more.** Locus delivers it; no message signs anything off.
+   */
+  askSession: (reviewId: number, step: ReviewLayerName, body: string) => Promise<ReviewMessage>
   /** `POST …/draft/ticket-and-approve` — a sign-off. It neither posts nor files anything. */
   ticketRestAndApprove: (
     reviewId: number,

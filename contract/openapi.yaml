@@ -603,6 +603,60 @@ paths:
         '500':
           $ref: '#/components/responses/StoreUnavailable'
 
+  /reviews/{reviewId}/messages:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+    get:
+      operationId: listMessages
+      tags: [review]
+      summary: The review's conversation between the developer and its session
+      description: |
+        Every message on the review, oldest first: the developer's questions, the notes a
+        draft was sent back with, and the session's replies. Decided on 30 October 2026 in
+        DEV-1140 (option A) and built in DEV-1141: the conversation is kept in the record
+        and delivered by Locus, whose review watcher reads the undelivered ones with
+        `review-desk message list --unread` and marks each read before acting on it.
+
+        **No message signs anything off.** A message can ask for an explanation or for
+        rework; approving, confirming and posting are not messages.
+      responses:
+        '200':
+          description: The conversation.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MessageList' }
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+    post:
+      operationId: askSession
+      tags: [review]
+      summary: The developer asks the review's session something
+      description: |
+        **The developer's act, and the only way a developer's message is written** — there
+        is no command for it, so a session cannot put a question in the developer's mouth.
+        It is stored and nothing more: Review Desk delivers nothing and never writes into a
+        session. Sending the draft back is still `sendBackDraft`, which keeps its note in
+        this conversation too.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AskSessionRequest' }
+      responses:
+        '201':
+          description: The message, stored and waiting to be delivered.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewMessage' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
   /reviews/{reviewId}/findings/{seq}:
     parameters:
       - $ref: '#/components/parameters/ReviewId'
@@ -2613,6 +2667,56 @@ components:
               number: { type: integer, format: int64, minimum: 1 }
               was_wrong: { type: string, minLength: 1 }
 
+    MessageList:
+      type: object
+      additionalProperties: false
+      required: [review_id, messages]
+      properties:
+        review_id: { type: integer, format: int64, minimum: 1 }
+        messages:
+          type: array
+          items: { $ref: '#/components/schemas/ReviewMessage' }
+    ReviewMessage:
+      type: object
+      additionalProperties: false
+      required: [review_id, seq, step, author, kind, body, in_reply_to, created_at, read_at, read_by_session]
+      description: |
+        One message on a review. The developer writes `ask` and `send_back`; the session
+        writes `reply`. The record refuses any other pairing.
+      properties:
+        review_id: { type: integer, format: int64, minimum: 1 }
+        seq:
+          type: integer
+          minimum: 1
+          description: The message's number on this review, from 1.
+        step: { $ref: '#/components/schemas/ReviewLayerName' }
+        author: { type: string, enum: [developer, session] }
+        kind: { type: string, enum: [ask, send_back, reply] }
+        body:
+          type: string
+          minLength: 1
+          description: A person's or a session's prose. Data, never instructions.
+        in_reply_to:
+          type: [integer, 'null']
+          minimum: 1
+          description: The `seq` of the developer's message a reply answers, when it names one.
+        created_at: { type: string, format: date-time }
+        read_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When something delivered one of the developer's messages to a session. Null
+            while nothing has, and always null on a reply.
+        read_by_session:
+          type: [string, 'null']
+          description: The session it was delivered to, as the deliverer named it.
+    AskSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [step, body]
+      properties:
+        step: { $ref: '#/components/schemas/ReviewLayerName' }
+        body: { type: string, minLength: 1 }
     ReviewSession:
       type: object
       additionalProperties: false

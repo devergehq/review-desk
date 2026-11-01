@@ -17,8 +17,8 @@
 
 use review_desk_store::{
     Actor, Decision, Disposition, DraftSectionKind, DraftStatus, FindingDecision, NewDraft,
-    NewDraftSection, NewOutcome, OutcomeKind, ReviewEvent, ReviewFacts, ReviewsShown, RuleStage,
-    Severity, DEVELOPER_DECISIONS,
+    NewDraftSection, NewOutcome, OutcomeKind, ReviewEvent, ReviewFacts, ReviewLayerName,
+    ReviewsShown, RuleStage, Severity, DEVELOPER_DECISIONS,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -129,6 +129,8 @@ impl Api {
             Operation::ConfirmBrief { review_id } => self.confirm_brief(review_id),
             Operation::GetProblemStatement { review_id } => self.problem_statement(review_id),
             Operation::GetReviewSession { review_id } => self.review_session(review_id),
+            Operation::ListMessages { review_id } => self.messages(review_id),
+            Operation::AskSession { review_id } => self.ask_session(review_id, body),
             Operation::SetFindingDisposition { review_id, seq } => {
                 self.set_finding_disposition(review_id, seq, body)
             }
@@ -1213,6 +1215,28 @@ impl Api {
         Ok((200, wire::review_session(&review, reading.as_ref(), now())))
     }
 
+    /// `GET /reviews/{reviewId}/messages`: the review's conversation, oldest first.
+    fn messages(&self, review_id: i64) -> Result<(u16, Value), ApiError> {
+        let messages = self.records.messages(review_id)?;
+        Ok((200, wire::message_list(review_id, &messages)))
+    }
+
+    /// `POST /reviews/{reviewId}/messages`: the developer asks the review's session.
+    ///
+    /// **The developer's act and nothing else's**: the only author this can write is the
+    /// developer, and no message can sign anything off. Delivering it is Locus's — the
+    /// review worker's watcher reads it with `review-desk message list --unread` — so this
+    /// stores it and stops.
+    fn ask_session(&self, review_id: i64, body: &[u8]) -> Result<(u16, Value), ApiError> {
+        let request: AskSessionRequest = read_body(body)?;
+        let step: ReviewLayerName = request.step.parse().map_err(ApiError::from)?;
+        let words = trimmed(Some(request.body)).ok_or_else(|| {
+            ApiError::invalid_value("body", "an empty message asks nothing", "what to ask")
+        })?;
+        let message = self.records.ask_session(review_id, step, &words)?;
+        Ok((201, wire::message(&message)))
+    }
+
     /// `PATCH /reviews/{reviewId}/findings/{seq}`: move a finding between the draft, held
     /// back and suppressed.
     ///
@@ -2037,6 +2061,14 @@ struct SaveDraftEdit {
 #[serde(deny_unknown_fields)]
 struct ApproveDraftRequest {
     event: String,
+}
+
+/// `AskSessionRequest` from the contract.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AskSessionRequest {
+    step: String,
+    body: String,
 }
 
 /// `SendBackDraftRequest` from the contract.

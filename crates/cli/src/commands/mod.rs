@@ -10,6 +10,7 @@ mod draft;
 mod finding;
 mod harvest;
 mod layer;
+mod message;
 mod outcome;
 mod provenance;
 mod review;
@@ -96,6 +97,11 @@ enum Command {
     Harvest(harvest::HarvestArgs),
     /// Serve the JSON API and the dashboard on 127.0.0.1.
     Serve(serve::ServeArgs),
+    /// Read the developer's messages on a review, and answer them.
+    Message {
+        #[command(subcommand)]
+        command: message::MessageCommand,
+    },
     /// Ask what is waiting for an agent.
     Work {
         #[command(subcommand)]
@@ -118,6 +124,7 @@ pub fn run(cli: &Cli) -> Result<Report> {
         Command::Rules { command } => rules::run(command),
         Command::Harvest(args) => harvest::run(args),
         Command::Serve(args) => serve::run(args, cli.json),
+        Command::Message { command } => message::run(command),
         Command::Work { command } => work::run(command),
     }
 }
