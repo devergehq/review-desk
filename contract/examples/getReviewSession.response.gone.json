@@ -1,0 +1,11 @@
+{
+  "review_id": 41,
+  "session_id": "allele-ae03f8ce",
+  "reading": {
+    "status": "gone",
+    "allele_state": null,
+    "state_age_secs": null,
+    "detail": "Allele has no session with this id",
+    "read_at": "2026-10-30T11:05:12Z"
+  }
+}

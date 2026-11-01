@@ -73,6 +73,7 @@ import type {
   ReviewDetail,
   ReviewEvent,
   ReviewList,
+  ReviewSession,
   Rule,
   RuleStage,
   RulesPage,
@@ -406,6 +407,17 @@ export function useReviewDesk() {
     return following(id, (from, value) => from.getDraft(value))
   }
 
+  /**
+   * `GET /reviews/{id}/session` — what the review's Allele session is doing.
+   *
+   * **Shared**, because the strip under the trail and the draft page's posting watch both
+   * want it, and two reads of it a second apart could disagree. Not refreshed by anything
+   * here except a write: the strip asks it again on its own timer while it is visible.
+   */
+  function session(id: number): DeskResource<ReviewSession> {
+    return sharing(`session:${id}`, () => resource(from => from.getReviewSession(id)))
+  }
+
   /** `GET /repos` — the repository picker's options. */
   function repos(): DeskResource<RepoSummary[]> {
     return resource(from => from.listRepos())
@@ -728,6 +740,7 @@ export function useReviewDesk() {
     reviews,
     review,
     draft,
+    session,
     duplicateRounds,
     repos,
     rules,

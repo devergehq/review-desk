@@ -1,4 +1,4 @@
-//! The contract's twenty-six operations, as a type.
+//! The contract's twenty-seven operations, as a type.
 //!
 //! [`Operation::ALL`] is the point of this module: a test walks every operation the
 //! contract declares and asserts that each one is routed and answers, rather than the set
@@ -33,6 +33,7 @@ pub enum Operation {
     FoldRound { review_id: i64 },
     ConfirmBrief { review_id: i64 },
     GetProblemStatement { review_id: i64 },
+    GetReviewSession { review_id: i64 },
     SetFindingDisposition { review_id: i64, seq: i64 },
     DecideFinding { review_id: i64, seq: i64 },
     GetDraft { review_id: i64 },
@@ -64,6 +65,7 @@ impl Operation {
         Operation::FoldRound { review_id: 1 },
         Operation::ConfirmBrief { review_id: 1 },
         Operation::GetProblemStatement { review_id: 1 },
+        Operation::GetReviewSession { review_id: 1 },
         Operation::SetFindingDisposition {
             review_id: 1,
             seq: 1,
@@ -101,6 +103,7 @@ impl Operation {
             Operation::FoldRound { .. } => "foldRound",
             Operation::ConfirmBrief { .. } => "confirmBrief",
             Operation::GetProblemStatement { .. } => "getProblemStatement",
+            Operation::GetReviewSession { .. } => "getReviewSession",
             Operation::SetFindingDisposition { .. } => "setFindingDisposition",
             Operation::DecideFinding { .. } => "decideFinding",
             Operation::GetDraft { .. } => "getDraft",
@@ -143,6 +146,9 @@ impl Operation {
             }
             Operation::GetProblemStatement { review_id } => {
                 format!("GET /reviews/{review_id}/brief/problem-statement")
+            }
+            Operation::GetReviewSession { review_id } => {
+                format!("GET /reviews/{review_id}/session")
             }
             Operation::SetFindingDisposition { review_id, seq } => {
                 format!("PATCH /reviews/{review_id}/findings/{seq}")
@@ -280,6 +286,17 @@ pub fn match_route(method: &str, path: &str) -> Target {
         ["reviews", id, "brief", "problem-statement"] => match number(id) {
             Some(review_id) => (
                 Target::Operation(Operation::GetProblemStatement { review_id }),
+                method == "GET",
+            ),
+            None => (Target::Unknown, true),
+        },
+        // **A read of the review's session, beside the review rather than inside it.** The
+        // answer comes from Allele, not the record, and is asked every five seconds while a
+        // page is open; folding it into `GET /reviews/{id}` would make every read of the
+        // review wait on another program.
+        ["reviews", id, "session"] => match number(id) {
+            Some(review_id) => (
+                Target::Operation(Operation::GetReviewSession { review_id }),
                 method == "GET",
             ),
             None => (Target::Unknown, true),

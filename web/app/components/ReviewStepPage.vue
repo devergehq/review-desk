@@ -166,6 +166,17 @@ const stepName = computed(() => layerLabel(props.step))
       <ReviewTimings :timings="detail.timings" />
 
       <!--
+        **What the review's session is doing, from Allele**, under how long it has taken.
+        Draws nothing when there is no Allele or no session, so a review page on a machine
+        without Allele is as it was. Keyed by the review so a page reused for another one
+        cannot draw the last review's session for a moment.
+      -->
+      <SessionStrip
+        :key="detail.review.id"
+        :review-id="detail.review.id"
+      />
+
+      <!--
         The headline and the line under it are a session's prose, so the backtick pairs in
         them are drawn as code — `TickedText` owns that, and every field on these four
         pages that a session wrote goes through it.

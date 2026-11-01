@@ -64,6 +64,18 @@ const props = defineProps<{
    */
   reread: () => Promise<void>
 }>()
+/**
+ * What Allele says the review's session is doing — the strip under the trail reads the
+ * same answer, shared, so the two cannot disagree.
+ *
+ * **When Allele has answered, this panel stops guessing.** The forty-second sentence says
+ * "the session may not be running" because, before the strip, silence was the only thing
+ * the page had. With an answer from Allele the guess is redundant at best and, while the
+ * strip says "Working", wrong. No Allele, or an Allele that could not be reached, leaves
+ * the guess exactly as it was.
+ */
+const sessionRead = useReviewDesk().session(props.review.id)
+const alleleAnswered = computed(() => sessionAnswered(sessionRead.data.value?.reading))
 
 /**
  * The clock the figures are worded from, moved by the timer and by nothing else.
@@ -448,10 +460,12 @@ const announcement = computed(() => {
    * same two words announced twice in a row to anybody listening. What is new here is the
    * waiting, so that is what this says.
    */
-  return late.value
-    ? 'Nothing has reported it posted. The session that was reviewing this may not be '
-    + 'running.'
-    : 'Waiting for this review’s session to post it.'
+  if (!late.value) return 'Waiting for this review’s session to post it.'
+  /* With an answer from Allele the guess goes, here as in the sentence on the panel. */
+  return alleleAnswered.value
+    ? 'Nothing has reported it posted. The strip above says what the session is doing.'
+    : 'Nothing has reported it posted. The session that was reviewing this may not be '
+      + 'running.'
 })
 
 const signedOffLabel = computed(
@@ -517,9 +531,12 @@ const whoPosts = computed(
       : 'This review’s own session posts it, not Review Desk — it reads the desk about '
         + 'every ')
       + `${WATCHER_READS_EVERY_SECONDS} seconds while a draft is waiting, so one that is `
-      + `running posts within about ${POSTED_WITHIN_SECONDS} seconds. Whether it is running `
-      + 'is not something Review Desk is told; the time above is how long the review has been '
-      + 'silent, which is the nearest thing the record holds.',
+      + `running posts within about ${POSTED_WITHIN_SECONDS} seconds. `
+      + (alleleAnswered.value
+        ? 'Whether it is running is on the strip above, as Allele says it.'
+        : 'Whether it is running is not something Review Desk is told here; the time above '
+          + 'is how long the review has been silent, which is the nearest thing the record '
+          + 'holds.'),
 )
 
 /**
@@ -552,6 +569,15 @@ const bothTheSignOff
  * and the number a developer wants at this point is how long *they* have been waiting.
  */
 const lateSentence = computed(
+  () =>
+    alleleAnswered.value
+      ? `Nothing has reported it posted in the ${durationLabel(sinceSignOff.value)} since `
+      + 'you signed off. The strip above says what the session is doing, from Allele.'
+      : lateGuess.value,
+)
+
+/** The sentence the page said before the strip, and still says when Allele has not answered. */
+const lateGuess = computed(
   () =>
     `Nothing has reported it posted in the ${durationLabel(sinceSignOff.value)} since you `
     + 'signed off, so the session may not be running. '

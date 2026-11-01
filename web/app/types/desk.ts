@@ -145,6 +145,9 @@ export type BriefOpenChoice = Schema['BriefOpenChoice']
 export type BriefDisagreement = Schema['BriefDisagreement']
 /** The problem half on its own, which is what a blind pass may be handed. */
 export type ProblemStatement = Schema['ProblemStatement']
+export type ReviewSession = Schema['ReviewSession']
+export type SessionReading = Schema['SessionReading']
+export type SessionStatus = Schema['SessionStatus']
 export type Finding = Schema['Finding']
 /** The lines around a finding, as the pull request changed them. */
 export type FindingHunk = Schema['FindingHunk']

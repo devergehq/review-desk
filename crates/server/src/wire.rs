@@ -396,6 +396,29 @@ pub fn brief_disagreement(clash: &BriefDisagreement) -> Value {
 /// statement by naming what belongs in it rather than by removing what does not, and this
 /// does the same, so a field added to the brief cannot reach the wire through here by
 /// accident.
+/// `GET /reviews/{id}/session`: the session the record names, and what Allele said of it.
+///
+/// `reading` is null when there was no one to ask — no session recorded, or no Allele on
+/// this machine — and the page draws nothing for it. Everything inside it is Allele's
+/// answer, read at `read_at`; nothing inside it is the record's.
+pub fn review_session(
+    review: &review_desk_store::Review,
+    reading: Option<&crate::allele::Reading>,
+    read_at: Timestamp,
+) -> Value {
+    json!({
+        "review_id": review.id,
+        "session_id": review.session_id,
+        "reading": reading.map(|reading| json!({
+            "status": reading.status.as_str(),
+            "allele_state": reading.allele_state,
+            "state_age_secs": reading.state_age_secs,
+            "detail": reading.detail,
+            "read_at": rfc3339(read_at),
+        })),
+    })
+}
+
 pub fn problem_statement(statement: &ProblemStatement) -> Value {
     json!({
         "review_id": statement.review_id,

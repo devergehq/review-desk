@@ -58,6 +58,7 @@
 
 #![deny(missing_debug_implementations)]
 
+pub mod allele;
 pub mod api;
 pub mod assets;
 pub mod error;
@@ -81,6 +82,7 @@ use axum::Router;
 use tokio::runtime::Builder;
 use tokio::sync::Notify;
 
+pub use crate::allele::Allele;
 pub use crate::api::{Api, API_PREFIX};
 pub use crate::error::{ApiError, Code};
 pub use crate::github::Github;
@@ -164,6 +166,16 @@ impl Server {
     /// what this widens and what it deliberately does not.
     pub fn also_answering_to(mut self, proxied: Option<Hostname>) -> Self {
         self.proxied = proxied;
+        self
+    }
+
+    /// Read what each review's session is doing from this Allele.
+    ///
+    /// Not asked for, the server asks no Allele and every review's session reads as
+    /// having none — which is what the tests get, and what `review-desk serve` gets on a
+    /// machine whose Allele socket is not there. See [`crate::allele`].
+    pub fn reading_sessions_from(mut self, allele: Allele) -> Self {
+        self.api = self.api.reading_sessions_from(allele);
         self
     }
 

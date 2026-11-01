@@ -11,7 +11,9 @@
 
 use clap::Args;
 use review_desk_harvest::gh::Gh;
-use review_desk_server::{Github, Hostname, Records, Server, DEFAULT_PORT};
+use std::path::PathBuf;
+
+use review_desk_server::{Allele, Github, Hostname, Records, Server, DEFAULT_PORT};
 use review_desk_store::Store;
 use serde_json::json;
 
@@ -40,15 +42,32 @@ pub struct ServeArgs {
     /// not open.
     #[arg(long, value_name = "NAME", value_parser = Hostname::parse)]
     hostname: Option<Hostname>,
+
+    /// Where to ask Allele what each review's session is doing.
+    ///
+    /// Defaults to Allele's own socket, `~/.allele/control.sock`. **Optional in every
+    /// sense**: when nothing is there, the review pages draw no session strip and nothing
+    /// else changes. The server only ever asks `sessions_status`; it never writes to a
+    /// session. `crates/server/src/allele.rs` says what it reads and how it answers when
+    /// Allele does not.
+    #[arg(long, value_name = "PATH")]
+    allele_socket: Option<PathBuf>,
 }
 
 pub fn run(args: &ServeArgs, json: bool) -> Result<Report> {
     let store = Store::open_default()?;
     let database = store.path().display().to_string();
+    let allele = args
+        .allele_socket
+        .clone()
+        .or_else(Allele::default_socket)
+        .map_or_else(Allele::none, Allele::at);
+    let allele_socket = allele.socket().map(|path| path.display().to_string());
 
     let server = Server::bind(args.port, Records::new(store), Github::new(Gh::new()))
         .map_err(|error| CliError::bad_input("cannot start the server", error))?
-        .also_answering_to(args.hostname.clone());
+        .also_answering_to(args.hostname.clone())
+        .reading_sessions_from(allele.clone());
 
     let url = server.url();
     if json {
@@ -61,6 +80,8 @@ pub fn run(args: &ServeArgs, json: bool) -> Result<Report> {
                     // Null unless `--hostname` was given, which is the usual case.
                     "hostname": args.hostname.as_ref().map(ToString::to_string),
                     "database": database,
+                    // Where session state is asked for, present or not.
+                    "allele_socket": allele_socket,
                     "front_end_embedded": review_desk_server::assets::embedded(),
                 }
             })
@@ -71,6 +92,9 @@ pub fn run(args: &ServeArgs, json: bool) -> Result<Report> {
             println!("  also answering to https://{hostname}/ through this machine's proxy");
         }
         println!("  database: {database}");
+        if let Some(socket) = &allele_socket {
+            println!("  session state from Allele at {socket}, when it is running");
+        }
         if !review_desk_server::assets::embedded() {
             println!("  the front end is not built into this binary; the API is serving");
         }

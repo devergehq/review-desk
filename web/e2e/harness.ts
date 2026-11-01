@@ -1607,8 +1607,17 @@ export function fresh(directory: string): string {
  * Port 0, so two servers and two test runs cannot collide, and the URL comes from the
  * binary's own `--json` rather than from a guess.
  */
+/** A socket path nothing ever binds, so no test reads the Allele on the machine running it. */
+const NO_ALLELE = '/nonexistent/review-desk-e2e/allele.sock'
+
 export async function serve(database: string): Promise<Serving> {
-  const child = spawn(BINARY, ['serve', '--port', '0', '--json'], {
+  /*
+   * **No Allele, on every machine.** `serve` asks `~/.allele/control.sock` by default, so on
+   * a developer's machine the review pages would draw a session strip for whatever the real
+   * Allele says about the seeded ids, and in CI they would draw none. A path that is never
+   * there makes both draw the same thing.
+   */
+  const child = spawn(BINARY, ['serve', '--port', '0', '--json', '--allele-socket', NO_ALLELE], {
     env: { ...process.env, REVIEW_DESK_DB: database },
     stdio: ['ignore', 'pipe', 'pipe'],
   })

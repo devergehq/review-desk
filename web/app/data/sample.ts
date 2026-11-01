@@ -2498,6 +2498,21 @@ export function sampleBackend(): DeskBackend {
       if (!detail) throw notFound(`draft on review ${id}`)
       return answered(standing(detail))
     },
+    /*
+     * **Sample data has no Allele**, so no review in it has a session anyone could ask about:
+     * the reading is null and the pages draw no strip, exactly as they do on a machine
+     * without Allele. Inventing a session state here would put a fact on screen that no
+     * record or program said.
+     */
+    getReviewSession: async (id) => {
+      const detail = reviewById(id)
+      if (!detail) throw notFound(`review ${id}`)
+      return answered({
+        review_id: id,
+        session_id: detail.review.session_id ?? null,
+        reading: null,
+      })
+    },
     listRules: async repo => answered(rulesPage(repo)),
     listRepos: async (): Promise<RepoSummary[]> =>
       answered(source.repos.map(repo => ({

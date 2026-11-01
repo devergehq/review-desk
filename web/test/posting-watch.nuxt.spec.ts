@@ -4,6 +4,7 @@ import { mountSuspended } from '@nuxt/test-utils/runtime'
 import type { VueWrapper } from '@vue/test-utils'
 
 import PostingWatch from '../app/components/PostingWatch.vue'
+import { chooseSource } from '../app/data/source'
 import { POSTED_WITHIN_SECONDS, RE_READ_EVERY_SECONDS } from '../app/utils/posting'
 
 import type { Draft, DraftStatus, Instant, Review } from '../app/types/desk'
@@ -262,6 +263,41 @@ describe('when nothing has posted it', () => {
     await tick(page, POSTED_WITHIN_SECONDS)
     expect(page.text()).toContain('may not be running')
     expect(announced(page)).toContain('may not be running')
+  })
+
+  it('stops guessing once Allele has said what the session is doing', async () => {
+    /*
+     * A review of its own, so the shared session read is made fresh for this test rather
+     * than handed over from one an earlier test left mounted.
+     */
+    const review: Review = { ...REVIEW, id: 4417 }
+    const asked: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      asked.push(url)
+      return new Response(JSON.stringify({
+        review_id: 4417,
+        session_id: 'ses-9',
+        reading: {
+          status: 'running',
+          allele_state: 'running',
+          state_age_secs: 30,
+          detail: null,
+          read_at: SIGNED_OFF_AT,
+        },
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }))
+    chooseSource('api')
+    try {
+      const page = await signedOff({ review, draft: draft({ review_id: 4417 }) })
+      await tick(page, POSTED_WITHIN_SECONDS)
+      expect(asked).toContain('/api/v1/reviews/4417/session')
+      expect(page.text()).not.toContain('may not be running')
+      expect(page.text()).toContain('The strip above says what the session is doing')
+    }
+    finally {
+      chooseSource(null)
+      vi.unstubAllGlobals()
+    }
   })
 
   it('never opens an announcement with the two words three things above it say', async () => {
