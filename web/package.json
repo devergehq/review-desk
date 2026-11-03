@@ -1,6 +1,7 @@
 {
   "name": "review-desk-web",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@11.9.0",
   "scripts": {

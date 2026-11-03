@@ -22,8 +22,8 @@ info:
     Review ids, finding sequence numbers and rule ids are Review Desk's own and are
     integers, matching the store in `crates/store/src/model.rs`.
   license:
-    name: UNLICENSED
-    url: https://github.com/devergehq/review-desk
+    name: MIT
+    url: https://github.com/devergehq/review-desk/blob/master/LICENSE
   contact:
     name: Review Desk
     url: https://github.com/devergehq/review-desk
