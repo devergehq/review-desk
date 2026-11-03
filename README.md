@@ -1932,3 +1932,7 @@ the other way would retroactively excuse a confirmation that was actually waited
 unknown review, an invalid value, a duplicate — from Review Desk being unable to run.
 The binary exits 1 for the first and 2 for the second, so a caller can tell them apart
 without reading message text.
+
+## Licence
+
+Review Desk is released under the MIT License — see [LICENSE](LICENSE).
