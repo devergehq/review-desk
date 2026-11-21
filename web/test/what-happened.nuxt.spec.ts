@@ -996,6 +996,9 @@ describe('the figures and the rows count the same findings', () => {
     expect(sub).toContain('Nothing has come back on any of them')
     expect(sub).toContain('for 1, whether the code changed is not known')
     expect(sub).not.toContain('had something come back')
+    // The section's note says the same thing the line above it says, in its own words.
+    expect(page.text()).toContain('nothing yet · 1 not known')
+    expect(page.text()).not.toContain('1 of 3 findings')
 
     const rows = page.findAll('.answered-row')
     expect(rows).toHaveLength(1)

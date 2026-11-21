@@ -207,7 +207,7 @@ function detailId(seq: number): string {
         <!-- ------------------------------ What came back ------------------------------ -->
         <DeskSection
           heading="What came back"
-          :note="answered.length === 0 ? 'nothing yet' : `${answered.length} of ${posted} findings`"
+          :note="page?.note ?? 'nothing yet'"
         >
           <!--
             Nothing yet, which is most posted reviews most of the time. It is a sentence and

@@ -142,6 +142,8 @@ export interface WhatHappened {
   headline: string
   /** The line under it: when it was last read, and what came back, counted. */
   sub: string
+  /** The "What came back" section's note, counted the way `sub` is. DEV-1344. */
+  note: string
   /**
    * Whether a harvest has read this review *through* — `harvested_at`, which it writes
    * last. It is what "the harvest found no reply" rests on, and that may not be said of a
@@ -338,6 +340,36 @@ function roundRow(summary: RoundSummary, here: number): RoundRow {
  * themselves. Drawing a count of rows that disagreed with the rows under it is the defect
  * this whole issue is about, one level up.
  */
+/**
+ * **Which drawn rows had something come back, and which hold only a code change nobody could
+ * know.** DEV-1344. One function, because the sub-line and the section's note both say it,
+ * and the first fix counted it in one and not the other — so the page said "Nothing has
+ * come back on any of them" over a section noted "1 of 3 findings". Found by a review of
+ * this branch.
+ *
+ * The row is still drawn: its "—" and its reason are the record's answer. But the harvester
+ * saying it could not tell is not anybody doing anything, which is the misreading the inbox's
+ * `NOT_AN_ACT` keeps off the queue.
+ */
+function cameBackCounts(answered: FindingRow[]): { known: number, notKnown: number } {
+  const known = answered.filter(
+    row => row.cameBack.some(one => one.kind !== 'code_change_unknown'),
+  ).length
+  const notKnown = answered.filter(
+    row => row.cameBack.some(one => one.kind === 'code_change_unknown')
+      && !row.cameBack.some(one => one.kind === 'code_changed_after'),
+  ).length
+  return { known, notKnown }
+}
+
+/** The "What came back" section's note, from the same counts as the sub-line. */
+function sectionNote(answered: FindingRow[], posted: number): string {
+  if (answered.length === 0) return 'nothing yet'
+  const { known, notKnown } = cameBackCounts(answered)
+  const back = known === 0 ? 'nothing yet' : `${known} of ${count(posted, 'finding')}`
+  return notKnown === 0 ? back : `${back} · ${notKnown} not known`
+}
+
 function subLine(answered: FindingRow[], posted: number, at: string | null, now: Date): string {
   const read = at == null ? null : `Last read ${sinceLabel(at, now)}`
 
@@ -385,19 +417,8 @@ function subLine(answered: FindingRow[], posted: number, at: string | null, now:
     changed > 0 ? `${changed} whose code changed` : null,
   ].filter(Boolean).join(', ')
 
-  /*
-   * **A code change nobody could know is not something coming back.** DEV-1344. The row is
-   * still drawn, because its "—" and its reason are the record's answer; but the harvester
-   * saying it could not tell is not the author doing anything, and "1 of them had something
-   * come back" over it is the misreading the inbox's `NOT_AN_ACT` keeps off the queue.
-   */
-  const known = answered.filter(
-    row => row.cameBack.some(one => one.kind !== 'code_change_unknown'),
-  ).length
-  const unknown = answered.filter(
-    row => row.cameBack.some(one => one.kind === 'code_change_unknown')
-      && !row.cameBack.some(one => one.kind === 'code_changed_after'),
-  ).length
+  /* A code change nobody could know is not something coming back: see `cameBackCounts`. */
+  const { known, notKnown: unknown } = cameBackCounts(answered)
 
   const back = [
     known === 0
@@ -447,6 +468,7 @@ export function whatHappened(detail: ReviewDetail, now: Date = new Date()): What
      */
     headline: prEndLabel(detail.review.pr_state, detail.review.pr_state_at),
     sub: subLine(answered, rows.length, detail.review.harvested_at, now),
+    note: sectionNote(answered, rows.length),
     elsewhere: fromOthers(detail.outcomes).filter(one => !drawn.has(one.finding_seq)).length,
     harvested: detail.review.harvested_at != null,
     nothingLooked: detail.review.harvested_at == null && detail.review.pr_state == null,
