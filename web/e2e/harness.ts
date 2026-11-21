@@ -1675,12 +1675,16 @@ export function fresh(directory: string): string {
 /** A socket path nothing ever binds, so no test reads the Allele on the machine running it. */
 const NO_ALLELE = '/nonexistent/review-desk-e2e/allele.sock'
 
-export async function serve(database: string): Promise<Serving> {
+export async function serve(
+  database: string,
+  { allele = NO_ALLELE }: { allele?: string } = {},
+): Promise<Serving> {
   /*
-   * **No Allele, on every machine.** `serve` asks `~/.allele/control.sock` by default, so on
-   * a developer's machine the review pages would draw a session strip for whatever the real
-   * Allele says about the seeded ids, and in CI they would draw none. A path that is never
-   * there makes both draw the same thing.
+   * **No Allele, on every machine, unless a test brings its own.** `serve` asks
+   * `~/.allele/control.sock` by default, so on a developer's machine the review pages would
+   * draw a session strip for whatever the real Allele says about the seeded ids, and in CI
+   * they would draw none. A path that is never there makes both draw the same thing. A test
+   * that needs two way passes `allele`, the socket of `fakeAllele()` (`./fakeAllele.ts`).
    */
   /*
    * **The sign-in token, chosen here, which only an `e2e` build will take** — DEV-1346. A
@@ -1688,7 +1692,7 @@ export async function serve(database: string): Promise<Serving> {
    * e2e build reads `REVIEW_DESK_E2E_TOKEN` instead, and cannot be built in release.
    */
   const token = randomBytes(32).toString('hex')
-  const child = spawn(BINARY, ['serve', '--port', '0', '--json', '--allele-socket', NO_ALLELE], {
+  const child = spawn(BINARY, ['serve', '--port', '0', '--json', '--allele-socket', allele], {
     env: { ...process.env, REVIEW_DESK_DB: database, REVIEW_DESK_E2E_TOKEN: token },
     stdio: ['ignore', 'pipe', 'pipe'],
   })

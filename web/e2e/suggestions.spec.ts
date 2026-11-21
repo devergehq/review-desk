@@ -117,8 +117,14 @@ test('a follow-up fills the ask box and sends nothing', async ({ page }) => {
   const panel = page.getByTestId('conversation-panel')
 
   await panel.getByTestId('accept-follow_up').click()
-  await expect(panel.locator('textarea')).toHaveValue('Does the CSV download use a third path?')
-  await expect(panel.getByText('Nothing is sent until you ask.')).toBeVisible()
+  /*
+   * This server has no Allele and the session has written, so the panel is one way
+   * (DEV-1335): there is no textarea, and the question is held in the one-way box, which
+   * Copy a reference carries to the developer's own session.
+   */
+  await expect(panel).toHaveAttribute('data-mode', 'one_way')
+  await expect(panel.getByTestId('one-way-question')).toContainText('Does the CSV download use a third path?')
+  await expect(panel.getByText('In the reference. Copy it and ask in your Claude Code session.')).toBeVisible()
   const listed = JSON.parse(cli(database, ['message', 'list', '--review', String(reviewId), '--json']))
   expect(JSON.stringify(listed)).not.toContain('"author":"developer"')
 })

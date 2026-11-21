@@ -12,7 +12,7 @@
  * | `add_to_draft` | `decideFinding` `rewrite`, the sentence added to the finding's paragraph | `E` on Findings |
  * | `set_aside` | `decideFinding` `cut`, with the session's why as the note | `S` on Findings |
  * | `draft_reply` | fills the reply on Replies; the developer sends it | `R` `A` `W` on Replies |
- * | `follow_up` | fills the ask box; nothing is written | the composer |
+ * | `follow_up` | fills the ask box, or in one way the one-way box a reference carries; nothing is written | the composer |
  *
  * An `add_to_draft` that names no finding, or names one with no words to add, has no one-click
  * write on the page behind it, so its Accept opens the place where the developer makes it.
@@ -21,6 +21,7 @@
  * session's name** (Patrick, 21 November 2026): the decision is the developer's.
  */
 
+import type { AnsweringMode } from './answering'
 import type {
   AddFindingRequest,
   Answer,
@@ -126,8 +127,12 @@ export function accepting(
   }
 }
 
-/** The Accept button's words: the act, as the page's own control words it. */
-export function acceptLabel(suggestion: Suggestion): string {
+/**
+ * The Accept button's words: the act, as the page's own control words it. A follow-up goes
+ * to the ask box in two way and to the one-way box's reference in one way (DEV-1335), where
+ * there is no ask box to put it in.
+ */
+export function acceptLabel(suggestion: Suggestion, mode: AnsweringMode = 'two_way'): string {
   switch (suggestion.type) {
     case 'new_finding':
       return 'Add to findings'
@@ -141,8 +146,19 @@ export function acceptLabel(suggestion: Suggestion): string {
     case 'draft_reply':
       return 'Fill the reply'
     case 'follow_up':
-      return 'Put in the ask box'
+      return mode === 'one_way' ? 'Put in the reference' : 'Put in the ask box'
   }
+}
+
+/**
+ * **What a follow-up's Accept says it did**, by the panel's mode (DEV-1335). In two way the
+ * question waits in the ask box for the developer to send; in one way nothing can be sent from
+ * here, so it waits in the one-way box, and *Copy a reference* carries it to their session.
+ */
+export function followUpFilled(mode: AnsweringMode): string {
+  return mode === 'one_way'
+    ? 'In the reference. Copy it and ask in your Claude Code session.'
+    : 'In the ask box. Nothing is sent until you ask.'
 }
 
 /**

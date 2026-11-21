@@ -55,8 +55,13 @@ const covered = computed(() => {
 
 const working = ref(false)
 const problem = ref<string | null>(null)
-/** Accepted without a write: the ask box or the reply was filled. Not kept by the record. */
-const filled = ref<string | null>(null)
+/*
+ * Accepted without a write: the ask box or the reply was filled. Not kept by the record.
+ * Which was filled is kept, and the words are worked out as they are drawn (DEV-1335): a
+ * follow-up's line follows the panel's mode, and goes once the question has left the box —
+ * sent, copied or cleared — so it never says where a question is after it has gone.
+ */
+const filledWith = ref<{ kind: 'ask', question: string } | { kind: 'reply' } | null>(null)
 
 /*
  * The paragraph an `add_to_draft` adds its sentence to: read only for the one suggestion
@@ -75,7 +80,23 @@ const paragraph = computed<string | null>(() => {
 })
 
 const replyFill = useState<ReplyFill | null>(`reply-fill:${reviewId.value}`, () => null)
-const { fill } = useAskBox(reviewId.value)
+const { text: askBox, fill } = useAskBox(reviewId.value)
+
+/*
+ * The panel's mode, read off the same shared session reading and messages the panel reads
+ * (DEV-1335), so a follow-up says where it went in the words the panel draws.
+ */
+const session = desk.session(reviewId.value)
+const conversation = desk.messages(reviewId.value)
+const mode = computed(() =>
+  answeringMode(session.data.value?.reading, conversation.data.value?.messages ?? []))
+
+const filled = computed<string | null>(() => {
+  const with_ = filledWith.value
+  if (with_?.kind === 'reply') return 'Taken to Replies to fill. Nothing is sent until you send it there.'
+  if (with_?.kind === 'ask' && askBox.value === with_.question) return followUpFilled(mode.value)
+  return null
+})
 
 async function accept(): Promise<void> {
   if (working.value) return
@@ -95,11 +116,11 @@ async function accept(): Promise<void> {
     case 'fill-ask':
       // The composer's own gate decides whether it can be sent: nothing is sent from here.
       fill(acting.question)
-      filled.value = 'In the ask box. Nothing is sent until you ask.'
+      filledWith.value = { kind: 'ask', question: acting.question }
       return
     case 'fill-reply':
       replyFill.value = acting.fill
-      filled.value = 'Taken to Replies to fill. Nothing is sent until you send it there.'
+      filledWith.value = { kind: 'reply' }
       await router.push(replyPath(reviewId.value, `F${acting.fill.seq}`))
       return
     case 'open':
@@ -226,7 +247,7 @@ function sendWhy(): void {
         :data-testid="`accept-${suggestion.type}`"
         @click="accept"
       >
-        {{ acceptLabel(suggestion) }}
+        {{ acceptLabel(suggestion, mode) }}
       </DeskButton>
       <DeskButton
         kind="secondary"

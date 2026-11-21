@@ -7,11 +7,17 @@
  * pages this is no second read, and it moves with the strip's own timer. Moving to another
  * review remounts it against that review's reading. `agentLine` in `utils/sidebar.ts` has
  * the rules.
+ *
+ * **The messages are the conversation panel's**, shared the same way, because the line says
+ * the panel's mode (DEV-1335) and one way is read off what a session wrote there.
  */
 const props = defineProps<{ reviewId: number }>()
 
-const session = useReviewDesk().session(props.reviewId)
-const line = computed(() => agentLine(session.data.value?.reading))
+const desk = useReviewDesk()
+const session = desk.session(props.reviewId)
+const conversation = desk.messages(props.reviewId)
+const line = computed(() =>
+  agentLine(session.data.value?.reading, conversation.data.value?.messages ?? []))
 </script>
 
 <template>

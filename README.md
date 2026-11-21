@@ -803,7 +803,7 @@ review-desk message list --review "$REVIEW"             # the whole conversation
 
 | Who | Can | Through |
 | -- | -- | -- |
-| The developer | ask, about a tab or a finding on it | *Ask this review*, the column beside every tab of a review (DEV-1333). It is read only when Allele has no reading of the session |
+| The developer | ask, about a tab or a finding on it | *Ask this review*, the column beside every tab of a review (DEV-1333), when Allele has a reading of the session. Without one it cannot send: one way once a session has replied, read only before (DEV-1335, below) |
 | The developer | send the draft back | the draft page's own button, whose note is kept in the conversation too |
 | A session | read, mark read, reply | these three commands |
 
@@ -863,6 +863,28 @@ session quoted as something a person said.
 **A message nothing has read** says "not read yet" on the page, or "not delivered" when the
 strip gives a reason it cannot be: the session is gone, or blocked on a permission prompt.
 A Locus that does not know about messages leaves them unread, and that is all that happens.
+
+#### Who is answering: two way, one way, or nobody
+
+**Review Desk never starts, resumes or drives Claude.** DEV-1335, to S11 and S13. The column
+says who answers, read off Allele's socket and the record, never off a setting, a process or
+anything of the developer's Claude:
+
+| Mode | When | The column |
+| -- | -- | -- |
+| Two way | Allele has a reading of the review's session | *Ask this review*: asked here, kept, delivered by Locus |
+| One way | no reading, and a session has replied with `message reply` | *From your session*: what it wrote, *Written so far*, and **Copy a reference** in place of a send |
+| None | neither | read only; what is kept still reads |
+
+A reference is text for the developer to paste into their own session: the review's id, the
+`message reply` command and a pointer to this section. In one way a session records what it
+was asked in `asked`, since no question of the developer's is in the record to answer with
+`--to`. Where Allele can't be asked for a fresh session, the column shows the command a
+session the developer starts runs: `review-desk message list --review "$REVIEW"`.
+
+`crates/server/tests/hard_limit.rs` fails the build on Claude's headless print flag, its
+streaming JSON format or its dot-directory anywhere under `crates/` or `web/`, and on a
+spawned process in shipped code other than `gh`.
 
 ### Starting a fresh session
 
@@ -1728,6 +1750,11 @@ sign-off boundary this project rests on.
 
 Forty-four tests, about half a minute of browser once the build is warm.
 `.github/workflows/e2e.yml` runs it on every ready pull request.
+
+**Two way needs an Allele, and CI has none**, so `web/e2e/fakeAllele.ts` stands in: a Unix
+socket answering `sessions_status` in Allele's wire. Pass its socket to the harness's
+`serve(database, { allele: socket })`, on a review with a session linked;
+`e2e/answering.spec.ts` is the example.
 
 Two of them are measurements rather than assertions about words: the Pull requests list,
 and its *Every review* view, are opened at 1440 and at 390 pixels wide, and nothing may scroll sideways or draw a
