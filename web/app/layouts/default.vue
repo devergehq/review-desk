@@ -15,13 +15,23 @@
  * because the page is what holds the review, its step and its tab.
  *
  * **Between 700 and 1,100px the conversation sits under the page**, the main column's full
- * width: beside it, at 1,024, it would leave a review's page 332px. Under 700 it is not
- * drawn; S14's bottom sheet is DEV-1336's.
+ * width: beside it, at 1,024, it would leave a review's page 332px.
  *
  * **Under 700px the shell is one column.** The sidebar goes behind a menu button in a bar
- * at the top; the conversation is a bottom sheet there (S14), which is the second stack's.
- * The open sidebar behaves as a dialog would: Escape or a press outside it closes it, focus
- * goes into it and comes back to the button, and the page behind is `inert` meanwhile.
+ * at the top. The open sidebar behaves as a dialog would: Escape or a press outside it
+ * closes it, focus goes into it and comes back to the button, and the page behind is
+ * `inert` meanwhile.
+ *
+ * **Under 700px the conversation is a bottom sheet over the dimmed review** (S14,
+ * DEV-1336), opened by the bar's *Ask* on a review's pages. **The sheet is the same
+ * column, not a second one**: `#conversation` is what the page teleports its one
+ * `ConversationPanel` into, and under 700 that element is drawn fixed to the bottom of the
+ * window rather than not at all — so the thread, the ask box's text and the panel's timer
+ * are the ones the wider shell has, and nothing here forks the panel. The layout owns only
+ * the container: the grabber, the chevron that closes it, the scrim, the safe-area insets.
+ * It behaves as the menu does — a dialog while open, Escape or the scrim closes it, focus
+ * goes in and comes back, and widening past 700 or going somewhere closes it — so an
+ * accepted suggestion that opens a finding shows the finding rather than the sheet over it.
  *
  * **What the old header carried is all still here**: the name is the sidebar's wordmark,
  * the three places are its navigation, and the sample-data marker is at its foot — and in
@@ -70,20 +80,64 @@ function closeMenu(returnFocus = true) {
   if (returnFocus) menuButton.value?.focus()
 }
 
+/** Whether the conversation is open as a sheet over the review, under 700px. */
+const sheetOpen = ref(false)
+
+const askButton = ref<HTMLButtonElement | null>(null)
+const sheetClose = ref<HTMLButtonElement | null>(null)
+
+/**
+ * Open it and put focus on its chevron — not in the ask box, which on a phone would put the
+ * keyboard over the thread the developer opened the sheet to read.
+ */
+async function openSheet() {
+  closeMenu(false)
+  sheetOpen.value = true
+  await nextTick()
+  sheetClose.value?.focus()
+}
+
+/**
+ * Close it, and give focus back to *Ask* — after the bar has lost its `inert`, which is the
+ * next render: an inert button refuses focus.
+ */
+async function closeSheet(returnFocus = true) {
+  if (!sheetOpen.value) return
+  sheetOpen.value = false
+  if (!returnFocus) return
+  await nextTick()
+  askButton.value?.focus()
+}
+
+/** Anything over the page under 700px: the sheet or the menu, never both. */
+const overlaid = computed(() => menuOpen.value || sheetOpen.value)
+
 function onKey(event: KeyboardEvent) {
-  if (event.key === 'Escape') closeMenu()
+  if (event.key !== 'Escape') return
+  closeMenu()
+  void closeSheet()
 }
 
 /*
  * **Widening past 700px closes it**, without moving focus: the button and the scrim are not
  * drawn above 700, so an open menu there would leave `main` inert with nothing on screen
  * to close it — a phone turned from 390 to 844, or a window dragged wider (#86's
- * self-review, round 2).
+ * self-review, round 2). The sheet the same, for the same reason.
  */
 let phone: MediaQueryList | null = null
 function onWidth(event: MediaQueryListEvent) {
-  if (!event.matches) closeMenu(false)
+  if (event.matches) return
+  closeMenu(false)
+  void closeSheet(false)
 }
+
+/*
+ * **The page under an open sheet does not scroll.** `main` is `inert`, which stops a press
+ * but not a drag, and a drag on the scrim would otherwise scroll the review behind it.
+ */
+watch(sheetOpen, (open) => {
+  document.documentElement.classList.toggle('rd-sheet-open', open)
+})
 
 onMounted(() => {
   window.addEventListener('keydown', onKey)
@@ -93,16 +147,24 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey)
   phone?.removeEventListener('change', onWidth)
+  document.documentElement.classList.remove('rd-sheet-open')
 })
 
-/* Going somewhere is what the menu is for, so arriving closes it. Focus stays on the page. */
-watch(() => route.fullPath, () => closeMenu(false))
+/*
+ * Going somewhere is what the menu is for, so arriving closes it. Focus stays on the page.
+ * A cite, *Open F9* or an accepted suggestion goes somewhere from the sheet, and the
+ * developer pressed it to see that place, so arriving closes the sheet too.
+ */
+watch(() => route.fullPath, () => {
+  closeMenu(false)
+  void closeSheet(false)
+})
 </script>
 
 <template>
   <div
     class="shell"
-    :class="{ 'shell--review': onAReview, 'shell--menu-open': menuOpen }"
+    :class="{ 'shell--review': onAReview, 'shell--menu-open': menuOpen, 'shell--sheet-open': sheetOpen }"
   >
     <a
       class="skip"
@@ -110,7 +172,10 @@ watch(() => route.fullPath, () => closeMenu(false))
     >Skip to the page</a>
 
     <!-- Only drawn under 700px, where the sidebar is behind it. -->
-    <div class="topbar">
+    <div
+      class="topbar"
+      :inert="sheetOpen || undefined"
+    >
       <button
         ref="menuButton"
         type="button"
@@ -133,14 +198,34 @@ watch(() => route.fullPath, () => closeMenu(false))
       </button>
       <span class="topbar-name">Review Desk</span>
       <SampleDataBadge />
+      <!--
+        **Ask opens the conversation**, on a review's pages: the bar is the one thing on a
+        phone that is always in reach, as the column is beside every tab above 700px.
+      -->
+      <button
+        v-if="onAReview"
+        ref="askButton"
+        type="button"
+        class="ask"
+        aria-haspopup="dialog"
+        :aria-expanded="sheetOpen"
+        aria-controls="conversation"
+        @click="openSheet()"
+      >
+        Ask
+      </button>
     </div>
 
-    <!-- Under 700px, with the menu open: the page behind it, which a press closes it from. -->
+    <!--
+      Under 700px, with the menu or the sheet open: the page behind it, dimmed, which a
+      press closes it from.
+    -->
     <div
-      v-if="menuOpen"
+      v-if="overlaid"
       class="scrim"
+      :class="{ 'scrim--sheet': sheetOpen }"
       aria-hidden="true"
-      @click="closeMenu()"
+      @click="sheetOpen ? closeSheet() : closeMenu()"
     />
 
     <aside
@@ -155,7 +240,7 @@ watch(() => route.fullPath, () => closeMenu(false))
     <main
       id="main"
       class="main"
-      :inert="menuOpen || undefined"
+      :inert="overlaid || undefined"
       :class="{ 'main--split': split }"
     >
       <div
@@ -169,13 +254,45 @@ watch(() => route.fullPath, () => closeMenu(false))
     <!--
       The conversation's column, on a review's pages. The page teleports *Ask this review*
       into it (DEV-1333); a complementary landmark, named by the panel's own heading.
+
+      Under 700px it is the bottom sheet (DEV-1336), and a dialog while it is open. Its
+      own two children are the sheet's head — drawn only there — and the teleported panel
+      lands after them.
     -->
     <aside
       v-if="onAReview"
       id="conversation"
       class="shell-conversation"
       aria-label="Ask this review"
-    />
+      :role="sheetOpen ? 'dialog' : undefined"
+      :aria-modal="sheetOpen || undefined"
+    >
+      <div class="sheet-head">
+        <span
+          class="grabber"
+          aria-hidden="true"
+        />
+        <button
+          ref="sheetClose"
+          type="button"
+          class="sheet-close"
+          aria-label="Close the conversation"
+          @click="closeSheet()"
+        >
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 18 18"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          ><path d="M4 7l5 5 5-5" /></svg>
+        </button>
+      </div>
+    </aside>
   </div>
 </template>
 
@@ -272,6 +389,16 @@ watch(() => route.fullPath, () => closeMenu(false))
   border-left: 1px solid var(--rd-line);
 }
 
+/* The sheet's head, the grabber and the chevron, is the phone's alone. */
+.sheet-head,
+.ask {
+  display: none;
+}
+
+:global(html.rd-sheet-open) {
+  overflow: hidden;
+}
+
 @media (max-width: 699px) {
   .shell,
   .shell--review {
@@ -352,6 +479,115 @@ watch(() => route.fullPath, () => closeMenu(false))
 
   .shell-conversation {
     display: none;
+  }
+
+  .ask {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    min-height: var(--rd-control-min);
+    margin-left: auto;
+    padding: 0 14px;
+    color: var(--rd-accent-dark);
+    font: inherit;
+    font-weight: 600;
+    background: var(--rd-accent-wash);
+    border: 0;
+    border-radius: var(--rd-radius-sm);
+    cursor: pointer;
+  }
+
+  /* The badge takes the push to the right when it is drawn, and Ask sits after it. */
+  .topbar :deep(.badge) + .ask {
+    margin-left: 0;
+  }
+
+  .ask:hover {
+    background: var(--rd-rail-pressed);
+  }
+
+  /* S14 dims the review further than the menu does: the sheet is read, not glanced at. */
+  .scrim--sheet {
+    z-index: 3;
+    background: rgb(20 23 26 / 40%);
+  }
+
+  /*
+   * **The sheet.** Fixed to the window's foot, the top quarter of the review showing above
+   * it as S14 draws it, and inside every safe-area inset the browser reports — the home
+   * indicator under the composer, a notch to either side, the status bar above. The panel
+   * is its second row and takes the rest of the height, so the panel's own column puts the
+   * thread in the middle to scroll and the composer at the bottom, pinned.
+   */
+  .shell--sheet-open .shell-conversation {
+    position: fixed;
+    top: max(calc(env(safe-area-inset-top, 0px) + 48px), 22vh);
+    top: max(calc(env(safe-area-inset-top, 0px) + 48px), 22dvh);
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 4;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: auto;
+    padding:
+      0 env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px)
+      env(safe-area-inset-left, 0px);
+    background: var(--rd-ground);
+    border: 0;
+    border-radius: var(--rd-radius-section) var(--rd-radius-section) 0 0;
+    box-shadow: var(--rd-lift-raised);
+  }
+
+  /*
+   * The grabber in the middle of a strip over the panel's own head, and the chevron hung
+   * from that strip's right end, level with the panel's title as S14 draws it. The grabber
+   * is drawn, not pressed: the chevron, Escape and the scrim close it. A positioned child
+   * paints over the panel's head, which is not positioned, so the chevron takes the press.
+   */
+  .shell--sheet-open .sheet-head {
+    display: block;
+    position: relative;
+    height: 24px;
+  }
+
+  .grabber {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    width: 36px;
+    height: 4px;
+    border-radius: var(--rd-radius-pill);
+    background: var(--rd-line-strong);
+    transform: translateX(-50%);
+  }
+
+  .sheet-close {
+    position: absolute;
+    top: 10px;
+    right: 8px;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--rd-control-min);
+    height: var(--rd-control-min);
+    padding: 0;
+    color: var(--rd-ink);
+    background: none;
+    border: 0;
+    border-radius: var(--rd-radius-sm);
+    cursor: pointer;
+  }
+
+  .sheet-close:hover {
+    background: var(--rd-rail-pressed);
+  }
+
+  .ask:focus-visible,
+  .sheet-close:focus-visible {
+    outline: 3px solid var(--rd-focus-ring);
+    outline-offset: 2px;
   }
 }
 </style>

@@ -36,6 +36,14 @@ async function open(page: Page, path: string) {
   await expect(page.locator('main#main')).toBeVisible()
 }
 
+/** The page at a phone's width, settled: the sidebar is behind the menu there, so the bar is waited for. */
+async function openOnAPhone(page: Page, path: string) {
+  await page.goto(`${seeded}${path}`)
+  await page.waitForLoadState('networkidle')
+  await expect(page.getByRole('button', { name: 'Menu' })).toBeVisible()
+  await expect(page.locator('main#main')).toBeVisible()
+}
+
 /** How far the document scrolls sideways. Nought is the only right answer. */
 const sideways = (page: Page) =>
   page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
@@ -168,5 +176,37 @@ test.describe('under 700 wide', () => {
     await expect(page.locator('#sidebar')).toBeHidden()
 
     expect(await sideways(page), 'the page scrolls sideways').toBe(0)
+  })
+
+  /*
+   * **The conversation is a bottom sheet** (DEV-1336, S14): *Ask* in the bar opens it over
+   * the review, on every tab, and the window scrolls sideways neither with it closed nor
+   * open. The two-way ask from the sheet is `phone-sheet.spec.ts`'s.
+   */
+  for (const one of PAGES.filter(page => page.review)) {
+    test(`${one.name}: no sideways scroll with the sheet closed or open`, async ({ page }) => {
+      await openOnAPhone(page, one.path)
+      const ask = page.locator('.topbar .ask')
+      const sheet = page.locator('#conversation')
+
+      await expect(ask).toBeVisible()
+      await expect(sheet).toBeHidden()
+      expect(await sideways(page), 'closed, the page scrolls sideways').toBe(0)
+
+      await ask.click()
+      await expect(sheet).toBeVisible()
+      await expect(sheet.getByRole('heading', { name: 'Ask this review' })).toBeVisible()
+      expect(await sideways(page), 'open, the page scrolls sideways').toBe(0)
+      /* Nothing in the sheet is wider than the sheet. */
+      expect(await sheet.evaluate(el => el.scrollWidth - el.clientWidth)).toBe(0)
+      expect(await sheet.locator('[data-testid="conversation-panel"]').evaluate(el => el.scrollWidth - el.clientWidth)).toBe(0)
+    })
+  }
+
+  test('Ask is drawn on a review only', async ({ page }) => {
+    for (const one of PAGES.filter(page => !page.review)) {
+      await openOnAPhone(page, one.path)
+      await expect(page.locator('.topbar .ask'), one.name).toHaveCount(0)
+    }
   })
 })
