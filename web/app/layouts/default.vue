@@ -28,7 +28,13 @@
  * the three places are its navigation, and the sample-data marker is at its foot — and in
  * the bar under 700px, so it is on every screen at every width. The skip link stays first.
  *
- * ## Wide pages
+ * ## Wide pages, and a page with a column of its own
+ *
+ * **A page that draws its own right-hand column asks for it** with
+ * `definePageMeta({ split: true })`: the Pull requests list, whose preview is S1's third
+ * column (DEV-1325). The main column then has no right-hand padding and no cap, so the
+ * page's column meets the shell's edge and its rule runs the window's height, as the
+ * conversation's does on a review.
  *
  * A page still asks for the wider main column itself, with `definePageMeta({ wide: true })`
  * — read off the route, so a page that is wide is wide from its first frame. A document's
@@ -38,6 +44,9 @@ const route = useRoute()
 
 /** Whether this page asked to be a workbench rather than a document. */
 const wide = computed(() => route.meta.wide === true)
+
+/** Whether this page draws a column of its own at the right-hand edge. */
+const split = computed(() => route.meta.split === true)
 
 /** A review's pages, which are the ones the conversation sits beside. */
 const onAReview = computed(() => /^\/reviews\/\d+(?:\/|$)/.test(route.path))
@@ -148,10 +157,11 @@ watch(() => route.fullPath, () => closeMenu(false))
       id="main"
       class="main"
       :inert="menuOpen || undefined"
+      :class="{ 'main--split': split }"
     >
       <div
         class="page"
-        :class="{ 'page--wide': wide }"
+        :class="{ 'page--wide': wide || split }"
       >
         <slot />
       </div>
@@ -233,6 +243,11 @@ watch(() => route.fullPath, () => closeMenu(false))
 .main {
   min-width: 0;
   padding: 36px 40px 80px;
+}
+
+.main--split {
+  padding-right: 0;
+  padding-bottom: 0;
 }
 
 .page {
@@ -323,7 +338,8 @@ watch(() => route.fullPath, () => closeMenu(false))
     display: block;
   }
 
-  .main {
+  .main,
+  .main--split {
     padding: 24px 16px 48px;
   }
 

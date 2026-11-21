@@ -125,6 +125,14 @@ const props = withDefaults(
      */
     ticketHref?: string | null
     ticketId?: string | null
+    /**
+     * Whether this is the Pull requests list's selected row, the one its preview draws.
+     *
+     * DEV-1325, S1: a bar down the row's leading edge and the ground's tint. Not focus —
+     * `J` and `K` move the selection and the focus together, but a pointer resting on a row
+     * selects it without taking focus from wherever it was.
+     */
+    selected?: boolean
   }>(),
   {
     meta: null,
@@ -134,6 +142,7 @@ const props = withDefaults(
     age: null,
     ageUnknownBecause: 'the inbox carries no time for this kind of item',
     emphasis: false,
+    selected: false,
     prHref: null,
     ticketHref: null,
     ticketId: null,
@@ -158,7 +167,7 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
 <template>
   <div
     class="queue-line"
-    :class="{ 'queue-line--emphasis': emphasis }"
+    :class="{ 'queue-line--emphasis': emphasis, 'queue-line--selected': selected }"
   >
     <component
       :is="to ? NuxtLink : href ? 'a' : 'div'"
@@ -325,6 +334,17 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
 /* The needs-you rows carry more air, which is the board's own difference between them. */
 .queue-line--emphasis {
   padding: 14px 0;
+}
+
+/*
+ * **The selected row, as S1 draws it**: the ground's tint and a bar down its leading edge.
+ * The bar is a shadow inside the row rather than a border, so selecting a row moves nothing
+ * on it by a pixel; the row's own content is not indented for it, which is why the bar sits
+ * in the 12 pixels the wrapper pads with on the list.
+ */
+.queue-line--selected {
+  background: var(--rd-ground);
+  box-shadow: inset 3px 0 0 var(--rd-ink);
 }
 
 /*

@@ -146,7 +146,7 @@ async function remove() {
    */
   if (result.ok) {
     handOver(result.message)
-    await navigateTo('/reviews')
+    await navigateTo({ path: '/', query: { view: 'every' } })
   }
 }
 </script>
