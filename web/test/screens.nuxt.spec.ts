@@ -3503,7 +3503,7 @@ describe('the Pull requests list', () => {
 
   it('leaves a modified arrow to the browser', async () => {
     const page = await shown(Inbox)
-    const push = vi.spyOn(page.vm.$router, 'push')
+    const push = vi.spyOn(page.vm.$router, 'push').mockResolvedValue(undefined)
     await page.find('#tab-waiting').trigger('keydown', { key: 'ArrowLeft', altKey: true })
     expect(push).not.toHaveBeenCalled()
     push.mockRestore()
@@ -3511,7 +3511,7 @@ describe('the Pull requests list', () => {
 
   it('opens the next tab with the arrow keys, and the first and last with Home and End', async () => {
     const page = await shown(Inbox)
-    const push = vi.spyOn(page.vm.$router, 'push')
+    const push = vi.spyOn(page.vm.$router, 'push').mockResolvedValue(undefined)
     await page.find('#tab-waiting').trigger('keydown', { key: 'ArrowRight' })
     expect(push).toHaveBeenLastCalledWith({ query: { view: 'reviewing' } })
     await page.find('#tab-waiting').trigger('keydown', { key: 'ArrowLeft' })
@@ -3598,9 +3598,15 @@ describe('the Pull requests list', () => {
   it('opens the selected row’s Overview with Enter', async () => {
     const page = await shown(Inbox, { attachTo: document.body })
     const href = page.find('#panel-waiting .queue-line--selected .row').attributes('href')
-    const push = vi.spyOn(page.vm.$router, 'push')
+    /*
+     * **Stubbed, not only watched.** A spy that lets the navigation run loads the review page
+     * under the test, and on Linux CI that outran the 5-second timeout (the ready PR's first
+     * run). What this test owns is that Enter asks the router for the Overview; the browser
+     * test in `queue-rounds.spec.ts` owns arriving there.
+     */
+    const push = vi.spyOn(page.vm.$router, 'push').mockResolvedValue(undefined)
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
-    await settle(page)
+    await flushPromises()
     expect(push).toHaveBeenCalledWith(href)
     push.mockRestore()
     page.unmount()
