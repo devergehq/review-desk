@@ -30,7 +30,7 @@ import type { SidebarGroup, SidebarRow } from '~/utils/sidebar'
 const route = useRoute()
 const desk = useReviewDesk()
 const inbox = desk.inbox()
-const finished = desk.reviews(computed(() => ALL_REPOSITORIES), computed(() => 'finished' as const))
+const finished = desk.finishedReviews()
 
 const groups = computed<SidebarGroup[] | null>(() =>
   inbox.data.value ? sidebarGroups(inbox.data.value, finished.data.value) : null)

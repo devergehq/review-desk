@@ -1,6 +1,9 @@
 // @vitest-environment nuxt
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
+import { flushPromises, type VueWrapper } from '@vue/test-utils'
+
+import { resetDesk } from '../app/composables/useReviewDesk'
 
 import { loadSource } from '../app/data/sample'
 import ReviewHeader from '../app/components/ReviewHeader.vue'
@@ -23,8 +26,26 @@ function fixture(id: number): ReviewDetail {
   return found
 }
 
-const header = (detail: ReviewDetail, tab = 'overview' as const) =>
-  mountSuspended(ReviewHeader, { props: { detail, tab } })
+/**
+ * Mounted, and settled: the header holds its word and its action until the inbox it shares
+ * with the sidebar has answered, so a test reads it after that read lands.
+ */
+async function settle(page: VueWrapper) {
+  for (let round = 0; round < 20; round += 1) {
+    await new Promise(resolve => setTimeout(resolve, 0))
+    await flushPromises()
+  }
+  return page
+}
+
+const header = async (
+  detail: ReviewDetail,
+  tab: 'overview' | 'findings' = 'overview',
+) => settle(await mountSuspended(ReviewHeader, { props: { detail, tab } }))
+
+beforeEach(async () => {
+  await resetDesk()
+})
 
 describe('the review header', () => {
   it('draws the crumb, the number and the title', async () => {
@@ -42,6 +63,23 @@ describe('the review header', () => {
       expect(page.find('[data-testid="state-word"]').text(), `review ${review.review.id}`)
         .toBe(stateWord(stateOfReview(review)))
     }
+  })
+
+  /*
+   * **The row's word over its own facts** (DEV-1323 round 2). On the sample desk the two
+   * agree by construction, so this hands the header a detail whose own facts say *Posted*
+   * while the inbox the desk serves still lists #514 under drafts to approve: the header
+   * must draw the sidebar's *Draft ready*, and its action with it.
+   */
+  it('takes the sidebar’s word over the review’s own facts when the sidebar lists it', async () => {
+    const detail = fixture(DRAFT_READY)
+    detail.draft_status = 'posted'
+    detail.review = { ...detail.review, github_review_id: 'PRR_test' }
+    expect(stateWord(stateOfReview(detail)), 'its own facts say Posted').toBe('Posted')
+
+    const page = await header(detail)
+    expect(page.find('[data-testid="state-word"]').text()).toBe('Draft ready')
+    expect(page.find('[data-testid="primary-action"]').text()).toContain('Sign off and post')
   })
 
   it('draws one action naming its target on a review waiting on the developer', async () => {
@@ -92,7 +130,7 @@ describe('the review header', () => {
 
   it('draws five tabs, marks the one you are on, and counts the findings', async () => {
     const detail = fixture(DRAFT_READY)
-    const page = await mountSuspended(ReviewHeader, { props: { detail, tab: 'findings' } })
+    const page = await header(detail, 'findings')
     const tabs = page.findAll('.tab')
     expect(tabs.map(one => one.attributes('data-tab')))
       .toEqual(['overview', 'understanding', 'findings', 'draft', 'replies'])

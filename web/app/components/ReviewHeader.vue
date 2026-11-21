@@ -41,21 +41,29 @@ const ticket = computed(() => ticketUrl(review.value.ticket_url))
 /*
  * **The sidebar's word, when the sidebar lists this review.** DEV-1323's round 2: a review
  * the sidebar lists takes the sidebar's state in its own header, so the two can never say
- * different words. The reads are the ones `AppSidebar` already holds — `useReviewDesk`
- * shares them — so the header costs no request of its own. A round the sidebar does not
- * open, or a read not back yet, falls to the review's own facts inside `stateOfReview`.
+ * different words. Both reads are the ones `AppSidebar` holds, through the two keys
+ * `useReviewDesk` shares (`inbox`, `reviews:all:finished`), so the header costs no request of
+ * its own and groups the very answer the sidebar groups. A round the sidebar does not open
+ * falls to the review's own facts inside `stateOfReview`.
+ *
+ * **While those reads are in flight the header waits** rather than drawing its own-facts word
+ * and flipping when they land: the sidebar draws nothing until its inbox is read, and a pill
+ * that changes under the reader's eye is the disagreement this rule exists to stop.
  */
 const desk = useReviewDesk()
 const inbox = desk.inbox()
-const finished = desk.reviews(computed(() => ALL_REPOSITORIES), computed(() => 'finished' as const))
+const finished = desk.finishedReviews()
 const listed = computed(() =>
   rowFor(inbox.data.value ? sidebarGroups(inbox.data.value, finished.data.value) : null, review.value))
 
 const state = computed(() => stateOfReview(props.detail, listed.value))
+/** Whether the inbox has answered (or failed), so the word drawn is the word that stays. */
+const settled = computed(() => inbox.loaded.value)
 const word = computed(() => stateWord(state.value))
 
 const toAnswer = computed(() => repliesToAnswer(props.detail.outcomes))
-const action = computed(() => primaryAction(review.value.id, state.value, toAnswer.value))
+const action = computed(() =>
+  settled.value ? primaryAction(review.value.id, state.value, toAnswer.value) : null)
 
 /**
  * **The word is washed in the accent exactly when there is an action.** *Replies in* with
@@ -131,6 +139,7 @@ const tabs = computed(() =>
 
         <p class="facts rd-meta">
           <DeskPill
+            v-if="settled"
             :tone="waitsOnYou ? 'go-quiet' : 'quiet'"
             data-testid="state-word"
           >
