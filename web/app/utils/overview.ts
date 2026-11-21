@@ -67,6 +67,29 @@ export function overviewState(
  */
 const UNWRITTEN: ReadonlySet<ReviewState> = new Set<ReviewState>(['being_written', 'not_started', 'waiting_for_session'])
 
+/* ------------------------------ One rule for a step ------------------------------- */
+
+type LayerState = OverviewSource['layers'][number]['state']
+
+/**
+ * **A step that ran to its end**: done, or waiting on the developer. Never `skipped`.
+ *
+ * The contract: "a skipped step cannot read as a finished one". So grading, and any claim
+ * that a step *wrote* something, read this.
+ */
+function ran(state: LayerState | undefined): boolean {
+  return state === 'done' || state === 'waiting_on_you'
+}
+
+/**
+ * **A step that is over**: it ran, or it was deliberately skipped. This is about progress
+ * only — where the review has got to, and whether anything is still coming — and never
+ * that the step did its work.
+ */
+function over(state: LayerState | undefined): boolean {
+  return ran(state) || state === 'skipped'
+}
+
 /* -------------------------------- Where it stands ---------------------------------- */
 
 /** How one stage of *Where it stands* is marked. */
@@ -108,10 +131,7 @@ const STAGE_OF_STATE: Partial<Record<ReviewState, number>> = {
 export function whereItStands(detail: OverviewSource, listed?: ListedAs | null): Stage[] {
   const state = stateOfReview(detail, listed)
   const stateOf = (name: ReviewLayerName) => detail.layers.find(layer => layer.name === name)?.state
-  const finished = (name: ReviewLayerName) => {
-    const one = stateOf(name)
-    return one === 'done' || one === 'waiting_on_you' || one === 'skipped'
-  }
+  const finished = (name: ReviewLayerName) => over(stateOf(name))
 
   const reached = [
     STAGE_LAYERS[0]!.every(finished),
@@ -165,8 +185,7 @@ function postedFindings(detail: OverviewSource): Finding[] {
  * graded all the same; saying *not graded yet* there is a claim the record contradicts.
  */
 export function findingsGraded(detail: Pick<OverviewSource, 'layers'>): boolean {
-  const state = detail.layers.find(layer => layer.name === 'code_review')?.state
-  return state === 'done' || state === 'waiting_on_you' || state === 'skipped'
+  return ran(detail.layers.find(layer => layer.name === 'code_review')?.state)
 }
 
 /**
@@ -284,7 +303,11 @@ export function sinceBottomLine(detail: OverviewSource, groups: SinceYouPosted):
 /* ------------------------------ What you'd be asked -------------------------------- */
 
 /** Where a question's answer has got to. */
-export type QuestionMark = 'written' | 'writing' | 'not_started'
+/**
+ * Where a question's answer has got to. `none_recorded` is a step that is over and wrote no
+ * such field: true of the record, and **not** counted as written.
+ */
+export type QuestionMark = 'written' | 'writing' | 'not_started' | 'none_recorded'
 
 export interface Question {
   asks: string
@@ -313,10 +336,7 @@ export function fiveQuestions(detail: OverviewSource): Question[] {
   const id = detail.review.id
   const brief = detail.brief ?? null
   const stateOf = (name: ReviewLayerName) => detail.layers.find(layer => layer.name === name)?.state
-  const finished = (name: ReviewLayerName) => {
-    const one = stateOf(name)
-    return one === 'done' || one === 'waiting_on_you'
-  }
+  const finished = (name: ReviewLayerName) => ran(stateOf(name))
   /*
    * **Three answers for an answer the record lacks**: the step behind it is running, it has
    * finished and wrote no such field, or it has not started. "Not started" over a step that
@@ -324,7 +344,9 @@ export function fiveQuestions(detail: OverviewSource): Question[] {
    */
   const pending = (steps: ReviewLayerName[], notStarted: string): { answer: string, mark: QuestionMark } => {
     if (steps.some(name => stateOf(name) === 'running')) return { answer: 'Writing now.', mark: 'writing' }
-    if (steps.every(finished)) return { answer: 'The brief records no answer to this.', mark: 'written' }
+    if (steps.every(name => over(stateOf(name)))) {
+      return { answer: 'The record holds no answer to this.', mark: 'none_recorded' }
+    }
     return { answer: notStarted, mark: 'not_started' }
   }
 
@@ -379,7 +401,7 @@ export function fiveQuestions(detail: OverviewSource): Question[] {
       ...(notChecked
         ? { answer: notChecked, mark: 'written' as const }
         : graded
-          ? { answer: 'The review records nothing it left unchecked.', mark: 'written' as const }
+          ? { answer: 'The review records nothing it left unchecked.', mark: 'none_recorded' as const }
           : pending(['code_review'], 'Not started. Listed once the checks finish.')),
       /*
        * **No link: no tab draws `not_checked` yet.** S2 points at *Understanding › Not

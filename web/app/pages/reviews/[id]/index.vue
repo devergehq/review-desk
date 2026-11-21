@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ReviewDetail } from '~/types/desk'
+import type { QuestionMark } from '~/utils/overview'
 
 /**
  * `/reviews/{id}` — the **Overview** tab, and the address every pull request opens at.
@@ -70,6 +71,14 @@ function overviewOf(data: ReviewDetail) {
 }
 
 const BASIS = BASIS_WORDS
+
+/** What each question's mark says to a screen reader. */
+const MARK_WORDS: Record<QuestionMark, string> = {
+  written: 'Written',
+  writing: 'Writing now',
+  not_started: 'Not started',
+  none_recorded: 'Nothing recorded',
+}
 </script>
 
 <template>
@@ -219,7 +228,7 @@ const BASIS = BASIS_WORDS
                     <span
                       class="mark"
                       :class="`mark--${question.mark}`"
-                      :aria-label="question.mark === 'written' ? 'Written' : question.mark === 'writing' ? 'Writing now' : 'Not started'"
+                      :aria-label="MARK_WORDS[question.mark]"
                       role="img"
                     />
                     <div class="row-body">
@@ -485,6 +494,11 @@ const BASIS = BASIS_WORDS
 .mark--fixed {
   border-color: var(--rd-accent);
   background: radial-gradient(circle, var(--rd-accent) 0 3px, transparent 3.5px);
+}
+
+.mark--none_recorded {
+  border-style: dotted;
+  border-color: var(--rd-ink-muted);
 }
 
 .mark--writing {

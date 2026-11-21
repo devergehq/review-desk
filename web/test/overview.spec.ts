@@ -164,7 +164,7 @@ describe('the five questions', () => {
     expect(questions[1]!.link!.to).toBe('/reviews/41/understanding#what-was-chosen')
     expect(questions[2]!.link!.to).toBe('/reviews/41/findings')
     expect(questions[3]!.link!.to).toBe('/reviews/41/draft')
-    expect(questions.every(one => one.mark === 'written')).toBe(true)
+    expect(questions.every(one => one.mark === 'written' || one.mark === 'none_recorded')).toBe(true)
   })
 
   /* Self-review N1: a finished step whose field the brief lacks is not "Not started". */
@@ -172,8 +172,32 @@ describe('the five questions', () => {
     const detail = fixture(READY)
     detail.brief = { ...detail.brief!, flow_after_caption: null, approach_verdict: null, options: [] }
     const [does, right] = fiveQuestions(detail)
-    expect(does!.answer).toBe('The brief records no answer to this.')
-    expect(right!.answer).toBe('The brief records no answer to this.')
+    expect(does!.answer).toBe('The record holds no answer to this.')
+    expect(right!.answer).toBe('The record holds no answer to this.')
+    /* Round 2, N3: true of the record, and not counted as written. */
+    expect(does!.mark).toBe('none_recorded')
+    expect(right!.mark).toBe('none_recorded')
+  })
+
+  /* Round 2, N4: a skipped step is over, so it is not "Not started". */
+  it('treats a skipped step as over when the brief holds no answer', () => {
+    const detail = fixture(READY)
+    detail.brief = { ...detail.brief!, flow_after_caption: null, options: [] }
+    detail.layers = detail.layers.map(layer => layer.name === 'solution_map' ? { ...layer, state: 'skipped' } : layer)
+    expect(fiveQuestions(detail)[0]!.mark).toBe('none_recorded')
+  })
+
+  /* Round 2, S1: a skipped code review did not grade anything, or check anything. */
+  it('never reads a skipped code review as graded', () => {
+    const detail = fixture(READY)
+    detail.not_checked = null
+    detail.layers = detail.layers.map(layer => layer.name === 'code_review' ? { ...layer, state: 'skipped' } : layer)
+    expect(findingsGraded(detail)).toBe(false)
+    expect(needsYourEye(detail).every(card => card.severity === null)).toBe(true)
+    const [, , wrong, , unchecked] = fiveQuestions(detail)
+    expect(wrong!.mark).not.toBe('written')
+    expect(unchecked!.answer).not.toBe('The review records nothing it left unchecked.')
+    expect(unchecked!.mark).not.toBe('written')
   })
 
   it('says Writing now or Not started for what the brief has not reached', () => {
