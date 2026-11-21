@@ -287,7 +287,7 @@ function said(row: ReplyRow): string {
         >
           <h2
             id="needs-answer"
-            class="rd-label group-head"
+            class="rd-rubric group-head"
           >
             Needs your answer <span class="group-count">{{ needsAnswer.length }}</span>
           </h2>
@@ -432,7 +432,7 @@ function said(row: ReplyRow): string {
         >
           <h2
             id="settled"
-            class="rd-label group-head"
+            class="rd-rubric group-head"
           >
             Settled <span class="group-count">{{ settled.length }}</span>
           </h2>
@@ -517,7 +517,7 @@ function said(row: ReplyRow): string {
         >
           <h2
             id="no-reply"
-            class="rd-label group-head"
+            class="rd-rubric group-head"
           >
             No reply yet <span class="group-count">{{ noReply.length }}</span>
           </h2>
@@ -541,7 +541,7 @@ function said(row: ReplyRow): string {
                 class="quiet-row"
                 @toggle="toggle(row.seq)"
               >
-                <span class="cell"><SeverityTag :severity="row.severity" /></span>{{ ' ' }}
+                <span class="cell cell--tag"><SeverityTag :severity="row.severity" /></span>{{ ' ' }}
                 <span class="cell rd-mono key">{{ row.key }}</span>{{ ' ' }}
                 <span class="cell cell--line">
                   <TickedText
@@ -992,8 +992,12 @@ function said(row: ReplyRow): string {
     grid-template-columns: 4ch minmax(0, 1fr) auto;
   }
 
-  /* The severity leaves the narrow quiet row; it is in the row's accessible name either way. */
-  .quiet-row .cell:first-child {
+  /*
+   * The severity leaves the narrow quiet row; it is in the row's accessible name either way
+   * (`said()`), and on the history the row opens. By its own class: `OpenRow`'s first child
+   * is its visually-hidden label, so `:first-child` hid nothing and the tag sat over the line.
+   */
+  .quiet-row .cell--tag {
     display: none;
   }
 }

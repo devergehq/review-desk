@@ -233,7 +233,7 @@ the key.
 | `S` | Set aside | `cut` |
 | `G` | Regrade | `regrade`, then the severity |
 | `E` | Edit wording | `rewrite` |
-| `R` / `A` / `W` | Raise it again / Accept their reason / Withdraw | the three replies, on a carried and settled finding only |
+| `R` / `A` / `W` | Raise it again / Accept their reason / Withdraw | the three replies, on a carried and settled finding only, on a draft that still takes decisions. On Findings and on Replies, from one rule (`answersTheAuthor`); on Replies they are bound to one reply at a time |
 | `J` / `K` | — | move down and up the list |
 | `P` / `N` | Promote / Not a rule | on **Rules** only, on a proposed rule (S10). Added 21 November 2026; rules are not wired yet, so the keys arrive with them |
 

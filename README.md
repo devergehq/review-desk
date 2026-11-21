@@ -1430,7 +1430,7 @@ Four screens — the Pull requests list (the queue and the reviews, one list sin
 one review, the draft preview and the rules — in `web/`. They read and write the JSON API that `review-desk serve` serves. A review is
 reached from the trail across the top of each of its pages: Understand, Alternatives and
 Solution map are three steps on [one page](docs/design.md#the-case-for-a-change-is-five-bands-on-one-tab-and-a-derived-answer-line),
-then Code review, Draft and [What happened](#what-happened-step-7s-page).
+then Code review, Draft and [Replies](#what-happened-the-replies-tab).
 
 **Before you change how a screen looks, read [docs/design.md](docs/design.md).** It is the
 patterns — what makes a screen a document or a workbench, what a key is, the words a
@@ -1455,22 +1455,37 @@ embeds in the binary — see [the local server](#the-local-server). Nuxt's own s
 are not used: the JSON API is the Rust server's. Fonts are bundled rather than fetched, so
 the built app asks nothing of the network and works on a machine with no internet.
 
-### What happened: step 7's page
+### What happened: the Replies tab
 
-`/reviews/{id}/what-happened` is what a posted review came to. It is drawn from
-`GET /reviews/{id}` alone and reads GitHub nothing.
+`/reviews/{id}/replies` is what a posted review came to (DEV-1330, S09); the old
+`/reviews/{id}/what-happened` redirects there. It is drawn from `GET /reviews/{id}` alone and
+reads GitHub nothing.
 
 | Part | Says |
 | -- | -- |
 | One line | How the pull request ended and on what day — or without the day, where GitHub gave none — or that it is open, and when a harvest last read it |
-| A row per posted finding | Its key, severity and title, where it is, the round it was carried from — then what came back, oldest first: the author's words quoted, the thread resolved, the code changed and in which commit |
-| Folded under a count | The findings nothing came back on, each saying *why* nothing could have: raised in the body alone, or posted as a comment and waiting |
+| **Needs your answer** | Each finding whose newest outcome is the author replying, their words quoted and attributed to the login the record holds — with *Raise it again* / *Accept their reason* / *Withdraw* (`R` / `A` / `W`) where the record takes them, and the record's reason where it does not |
+| **Settled** | Fixed (the author resolved the thread — told, not re-run) or answered (the author replied and something was recorded since) |
+| **No reply yet** | The first four posted findings nothing came back on from the author, then *n more with no reply* |
+| Folded under every row | Everything step 7 drew for it: where it is, the round it was carried from, what came back oldest first — the author's words, the thread resolved, the code changed and in which commit — and the two links; or *why* nothing could have come back |
 | A table, on a pull request with more than one round | What each round held, and how its findings stood — which is what the record supports; a carry is on the row of the finding that was carried |
 
-**It describes; it does not grade.** No severity tag and no severity colour, no ordering by
-anything but time and the review's own grade, and nothing on it says a finding was fixed —
-the harvester compares two commits and reports that the lines a finding points at are no
-longer the lines that were reviewed, which is not the same claim.
+**The groups are Overview's.** `groupsOf` in `web/app/utils/overview.ts` is the one grouping
+(`sinceYouPosted`), so Overview's *Since you posted* and these groups cannot disagree. The
+tab's count is the number in *Needs your answer* — `repliesToAnswer`.
+
+**The three answers act only where the record takes them**: a finding carried in from an
+earlier round and settled in this one, on a draft that still takes decisions
+(`answersTheAuthor` and `draftTakesDecisions` in `web/app/utils/findings.ts`, the rule
+Findings offers them by too). A reply arrives on a posted round, which takes no decision, so
+there the row says so and names the round that would. The header's *Answer F3* goes to
+`/replies?finding=F3` and is offered only where the answer would be taken.
+
+**It describes; it does not grade.** No ordering by anything but the review's own grade,
+and nothing on it says a finding was fixed by a commit — the harvester compares two commits
+and reports that the lines a finding points at are no longer the lines that were reviewed,
+which is not the same claim. *Fixed* is the author's word, by resolving the thread, and the
+row says it was told rather than re-run.
 
 **No outcome's stored detail is printed as it is stored.** The harvester writes a detail as
 JSON, because the fields it records are several; `web/app/utils/outcomes.ts` words every
