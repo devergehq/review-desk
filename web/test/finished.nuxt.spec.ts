@@ -8,7 +8,8 @@ import { loadSource } from '../app/data/sample'
 
 import Draft from '../app/pages/reviews/[id]/draft.vue'
 import Reviews from '../app/pages/reviews/index.vue'
-import Understand from '../app/pages/reviews/[id]/understand.vue'
+import Understand from '../app/pages/reviews/[id]/understanding.vue'
+import Overview from '../app/pages/reviews/[id]/index.vue'
 
 /*
  * **A review whose pull request merged or closed, on the screens.**
@@ -132,7 +133,7 @@ describe('the Reviews list’s Finished view', () => {
     ]
     for (const id of [MERGED.posted, ...MERGED.unposted]) {
       expect(reachable, `round ${id} is reachable from the list`)
-        .toContain(`/reviews/${id}/understand`)
+        .toContain(`/reviews/${id}`)
     }
   })
 
@@ -269,7 +270,7 @@ describe('the brief of a review that cannot be posted', () => {
 
   it('still offers it on a review that is in play', async () => {
     /* Review 17's brief is unconfirmed and its pull request is open. */
-    const page = await shown(Understand, { route: '/reviews/17/understand' })
+    const page = await shown(Understand, { route: '/reviews/17' })
     expect(page.findAll('button').map(one => one.text())).toContain('Confirm the problem')
     expect(page.text()).not.toContain('Nothing to confirm')
   })
@@ -290,6 +291,10 @@ describe('the draft page of a review that cannot be posted', () => {
     expect(page.text()).toContain('No round of it can be posted now')
   })
 
+  /*
+   * **On Overview now**, which is where the trail is drawn since DEV-1324 put the five tabs
+   * where it was. The draft page itself says "Nothing left to do." and carries no trail.
+   */
   it('reads its step trail in the past tense too', async () => {
     /*
      * **"Nothing left to do." two lines above "6 Draft · waiting on you"** is the same
@@ -297,7 +302,7 @@ describe('the draft page of a review that cannot be posted', () => {
      * reading when they wonder what happened. The record is untouched — step 6 really is
      * `waiting_on_you` — and only the tense the page reads it in changes.
      */
-    const page = await draftOf(MERGED.unposted[0]!)
+    const page = await shown(Overview, { route: `/reviews/${MERGED.unposted[0]!}` })
     expect(page.text()).toContain('was waiting on you')
     expect(page.text()).not.toContain('Draftwaiting on you')
   })

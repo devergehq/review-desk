@@ -328,7 +328,7 @@ describe('the queue', () => {
     const rows = needsYouRows(page).filter(row => row.text().includes('#9541'))
     expect(rows, 'one row for #9541').toHaveLength(1)
     expect(rows[0]!.text()).toContain('round 2')
-    expect(rows[0]!.find('.row').attributes('href')).toBe('/reviews/61/understand')
+    expect(rows[0]!.find('.row').attributes('href')).toBe('/reviews/61')
   })
 
   it('draws one row for a pull request whose posted round was replied to', async () => {
@@ -662,7 +662,7 @@ describe('the queue', () => {
     expect(row, 'the posted review has a row').toBeDefined()
     expect(row.text()).toContain('Posted as Comment')
     expect(row.text()).toContain('Not read back from GitHub yet')
-    expect(row.attributes('href')).toBe('/reviews/43/understand')
+    expect(row.attributes('href')).toBe('/reviews/43')
 
     /*
      * **And the pull request's state on the row's own pull-request line**, which is where
@@ -940,7 +940,7 @@ describe('the queue', () => {
      * along the trail — which is also the click that walks past the alternatives and the
      * solution on the way.
      */
-    expect(row.attributes('href')).toBe('/reviews/17/understand')
+    expect(row.attributes('href')).toBe('/reviews/17')
   })
 
   it('opens Understand, whatever the row is waiting for', async () => {
@@ -953,11 +953,11 @@ describe('the queue', () => {
      * where a destination could only say it about one.
      */
     const brief = page.findAll('.row').find(one => one.text().includes('Problem brief ready'))!
-    expect(brief.attributes('href')).toBe('/reviews/17/understand')
+    expect(brief.attributes('href')).toBe('/reviews/17')
 
     const reply = page.findAll('.row').find(one => one.text().includes('The author replied'))
     expect(reply, 'the fixtures hold a review whose only waiting thing is a reply').toBeTruthy()
-    expect(reply!.attributes('href')).toMatch(/^\/reviews\/\d+\/understand$/)
+    expect(reply!.attributes('href')).toMatch(/^\/reviews\/\d+$/)
 
     /*
      * And no row anywhere goes anywhere else. Asserted over every row rather than as a
@@ -969,10 +969,14 @@ describe('the queue', () => {
       .filter((href): href is string => href != null)
       .filter(href => href.startsWith('/reviews/'))
     expect(everywhere.length).toBeGreaterThan(2)
-    for (const href of everywhere) expect(href).toMatch(/^\/reviews\/\d+\/understand$/)
+    for (const href of everywhere) expect(href).toMatch(/^\/reviews\/\d+$/)
   })
 
-  it('leaves a way back from the draft, which is the trail itself', async () => {
+  /*
+   * **The tabs, since DEV-1324**, which replaced the trail as the way between a review's
+   * pages: the draft carries all five, Overview first.
+   */
+  it('leaves a way back from the draft, which is the tabs themselves', async () => {
     /*
      * **The back link is gone, because the trail replaced it.** It existed because steps 5
      * and 6 landed on two screens that carried no trail of their own, so the queue — which
@@ -982,9 +986,9 @@ describe('the queue', () => {
      * whose first step is the review would be the same door twice.
      */
     const screen = await shown(DraftPreview, { route: '/reviews/17/draft' })
-    const trail = screen.findAll('.trail a').map(one => one.attributes('href'))
-    expect(trail, 'the draft carries the trail').toContain('/reviews/17/understand')
-    expect(trail).toContain('/reviews/17/code-review')
+    const trail = screen.findAll('.tabs a').map(one => one.attributes('href'))
+    expect(trail, 'the draft carries the tabs').toContain('/reviews/17')
+    expect(trail).toContain('/reviews/17/findings')
     expect(
       screen.findAll('a').some(one => /^Back to /.test(one.text())),
       'and no back link beside it',
@@ -996,7 +1000,7 @@ describe('the queue', () => {
      * says it for itself rather than inheriting the claim from the component. Review 17
      * holds a ticket address, so both links are here.
      */
-    const out = screen.findAll('.where a.header-out').map(one => one.attributes('href'))
+    const out = screen.findAll('[data-testid="review-header"] a.header-out').map(one => one.attributes('href'))
     expect(out).toEqual([
       'https://github.com/acme/portal/pull/412',
       'https://linear.app/acme/issue/ABC-231',
@@ -1028,7 +1032,7 @@ describe('the queue', () => {
     const rows = page.findAll('.queue-line .row')
     expect(rows.length).toBeGreaterThan(0)
     for (const row of rows) {
-      expect(row.attributes('href')).toMatch(/^\/reviews\/\d+\/understand$/)
+      expect(row.attributes('href')).toMatch(/^\/reviews\/\d+$/)
     }
   })
 
@@ -1142,7 +1146,7 @@ describe('the queue', () => {
         }
         /* And the row still goes to the review, which is what it is for. */
         expect(line.row.attributes('href') ?? line.row.attributes('to') ?? '')
-          .toMatch(/\/reviews\/\d+\//)
+          .toMatch(/\/reviews\/\d+$/)
       }
     }
   })
@@ -1464,7 +1468,7 @@ describe('a pull request whose later round has posted', () => {
     expect(posted, 'one row, under the group that says who has it').toHaveLength(1)
     expect(posted[0]!.text()).toContain('Round 2 of 2 posted')
     expect(posted[0]!.text()).not.toContain('changed')
-    expect(posted[0]!.find('.row').attributes('href')).toBe(`/reviews/${ROUND_TWO}/understand`)
+    expect(posted[0]!.find('.row').attributes('href')).toBe(`/reviews/${ROUND_TWO}`)
   })
 
   it('draws a change after that head as the newest round’s', async () => {
@@ -1488,7 +1492,7 @@ describe('a pull request whose later round has posted', () => {
     expect(rows[0]!.text()).toContain('The code under F1 changed')
     expect(rows[0]!.text(), 'the change is this round’s, so no earlier round is named')
       .not.toContain('round 1')
-    expect(rows[0]!.find('.row').attributes('href')).toBe(`/reviews/${ROUND_TWO}/understand`)
+    expect(rows[0]!.find('.row').attributes('href')).toBe(`/reviews/${ROUND_TWO}`)
   })
 
   it('draws an earlier round’s reply on the newest round’s row, saying which', async () => {
@@ -1511,7 +1515,7 @@ describe('a pull request whose later round has posted', () => {
      * reachable on a row whose next action *is* the reply.
      */
     expect(row.text()).toContain('round 2')
-    expect(row.find('.row').attributes('href')).toBe(`/reviews/${ROUND_TWO}/understand`)
+    expect(row.find('.row').attributes('href')).toBe(`/reviews/${ROUND_TWO}`)
     expect(row.text()).toContain('The author replied to F1')
     expect(row.text()).toContain('replied to round 1')
     /* And the ticket, which is read from the item about the round the row is. */
@@ -1558,7 +1562,7 @@ describe('a pull request whose later round has posted', () => {
     expect(rows, 'one row for one pull request').toHaveLength(1)
     expect(rows[0]!.text()).toContain('round 2')
     expect(rows[0]!.text()).toContain('replied to round 1')
-    expect(rows[0]!.find('.row').attributes('href')).toBe(`/reviews/${ROUND_TWO}/understand`)
+    expect(rows[0]!.find('.row').attributes('href')).toBe(`/reviews/${ROUND_TWO}`)
     /*
      * **And the ticket, which the first fix lost here.** No item above the reply is about
      * round 2, and a row takes a ticket only from something about the round it is numbered
@@ -1727,7 +1731,7 @@ describe('a pull request whose later round has posted', () => {
     const row = rows[0]!
     expect(row.text()).toContain('round 2')
     expect(row.text()).toContain('The name it has now')
-    expect(row.find('.row').attributes('href')).toBe(`/reviews/${ROUND_TWO}/understand`)
+    expect(row.find('.row').attributes('href')).toBe(`/reviews/${ROUND_TWO}`)
     /*
      * And which round the *session* is on, because the step the row draws is that round's
      * and a reader should not have to guess — the same sentence `alsoWaiting` says about a
@@ -1786,30 +1790,23 @@ describe('a pull request whose later round has posted', () => {
  * port. `setFindingDisposition` is still the contract's operation for an agent and is still
  * covered in `desk.spec.ts`; nothing in the dashboard calls it any more.
  */
-describe('the one-page review, retired', () => {
+describe('the review’s own address, which is Overview', () => {
   beforeEach(async () => {
     await resetDesk()
   })
 
   /*
-   * The address is in links people have, in bookmarks and in anything written down, so it
-   * keeps working. A route that 404s is worse than one that arrives somewhere useful, and
-   * Understand is where every queue row already lands.
+   * **`/reviews/{id}` is a page again** (DEV-1324): Overview, the first of the five tabs,
+   * where every pull request opens. It redirected to Understand from DEV-878 to DEV-1324,
+   * and until DEV-1326 builds Overview's own body it draws what that redirect arrived at —
+   * the case — with the step trail under the header.
    */
-  it('redirects to Understand, rather than answering not-found', async () => {
-    const redirect = (OneReview as { definePageMeta?: unknown }) as Record<string, unknown>
-    expect(redirect, 'the page still exists, as a redirect').toBeTruthy()
-
+  it('draws the header with Overview marked, the trail, and the case under it', async () => {
     const page = await shown(OneReview, { route: '/reviews/17' })
-    /*
-     * Mounted directly, the middleware does not run — `mountSuspended` mounts the component,
-     * not the route — so what is checked here is that nothing of the old page survives to be
-     * drawn. **The redirect itself is asserted in the browser**, in
-     * `web/e2e/review-desk.spec.ts`, where there is a router to redirect.
-     */
-    expect(page.text()).not.toContain('Findings')
-    expect(page.text()).not.toContain('Confirm the problem')
-    expect(page.text()).not.toContain('Not checked')
+    expect(page.find('[data-testid="review-header"]').exists()).toBe(true)
+    expect(page.find('.tabs [aria-current="page"]').text()).toBe('Overview')
+    expect(page.find('.trail').exists(), 'the trail, until Where it stands').toBe(true)
+    expect(page.text()).toContain('Confirm the problem')
   })
 })
 
@@ -2100,7 +2097,8 @@ describe('the draft preview', () => {
    */
   it('lists the developer’s edits, one line a finding', async () => {
     const page = await open(17)
-    const text = page.text()
+    /* The page below the header, whose facts line counts the lines the change touched. */
+    const text = page.text().replace(page.find('[data-testid="review-header"]').text(), '')
     expect(text).toContain('Your edits to this draft')
     expect(text).toContain('Edited F1 · first sentence')
     expect(text).toContain('Regraded F3 · Blocker to Should')
@@ -2297,8 +2295,8 @@ describe('the draft preview', () => {
     expect(page.text()).toContain('No session has written a draft for this review')
     expect(page.text()).not.toContain('Not on the desk')
     /* And the trail is there, which is the whole point. */
-    expect(page.findAll('.trail a').map(one => one.attributes('href')))
-      .toContain('/reviews/18/understand')
+    expect(page.findAll('.tabs a').map(one => one.attributes('href')))
+      .toContain('/reviews/18')
   })
 
   it('says the lint has not run, rather than drawing it as failing', async () => {
@@ -2811,7 +2809,7 @@ describe('a pull request nobody has picked up', () => {
      * session, because Review Desk does not dispatch.
      */
     expect(round.find('.row').attributes('href'))
-      .toBe(`/reviews/${UNSTARTED}/understand`)
+      .toBe(`/reviews/${UNSTARTED}`)
     expect(round.text(), 'the repository and the round, on the row’s own line')
       .toContain('acme/portal · round 1')
 
@@ -3363,6 +3361,6 @@ describe('a pull request nobody has picked up', () => {
     expect(drawn, 'so the pull request is here, in the group it used to fall out of')
       .toHaveLength(1)
     expect(drawn[0]!.text()).toContain('round 3')
-    expect(drawn[0]!.find('.row').attributes('href')).toBe('/reviews/71/understand')
+    expect(drawn[0]!.find('.row').attributes('href')).toBe('/reviews/71')
   })
 })

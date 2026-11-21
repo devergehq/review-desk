@@ -274,7 +274,7 @@ export function labelOfProblem(brief: Brief, number: number): string | null {
  * the work the line was supposed to have done for them.
  */
 export function findingLink(reviewId: number, finding: Finding): string {
-  return `/reviews/${reviewId}/code-review#${finding.key}`
+  return `/reviews/${reviewId}/findings#${finding.key}`
 }
 
 /**

@@ -72,10 +72,10 @@ import type { LayerFact, ReviewLayer, ReviewLayerName } from '~/types/desk'
  *
  * | Step | Goes to |
  * |---|---|
- * | 2, 3, 4 | the pages DEV-885 builds |
- * | 5 Code review | `/reviews/{id}/code-review`, which DEV-878 builds |
+ * | 2, 3, 4 | `/reviews/{id}/understanding`, the case as one tab (DEV-1324) |
+ * | 5 Code review | `/reviews/{id}/findings` |
  * | 6 Draft | `/reviews/{id}/draft` |
- * | 7 What happened | `/reviews/{id}/what-happened`, which DEV-958 builds |
+ * | 7 What happened | `/reviews/{id}/replies` |
  * | 1 Lint | nowhere — no page yet, and a link to a page that does not exist is worse than a label |
  *
  * **Step 6 is a link whatever the draft status says, and that changed in DEV-878.** It used
@@ -96,17 +96,16 @@ const NuxtLink = resolveComponent('NuxtLink')
 const props = defineProps<{
   layers: ReviewLayer[]
   reviewId: number
-  /** Which step's page this is. Exactly one, and it is what `aria-current` names. */
-  active: ReviewLayerName
   /**
-   * Every step the page you are on draws. Defaults to `active` alone.
+   * Which step's page this is, or none.
    *
-   * **Three of the seven are one page.** Steps 2, 3 and 4 — Understand, Alternatives,
-   * Solution — became the case page, so the trail washes all three and each still links to
-   * its own band. `active` stays one step, because `aria-current="page"` names the page a
-   * link would take you to and three links claiming to be the current page tells a screen
-   * reader reader nothing at all.
+   * **None since DEV-1324.** The trail is drawn on Overview alone, which is no step's page:
+   * the five tabs are now the way between pages, and the trail stays only for what else it
+   * says — where each step stands — until DEV-1326's *Where it stands* takes that over and
+   * this component is retired.
    */
+  active?: ReviewLayerName | null
+  /** Every step the page you are on draws. Defaults to `active` alone. */
   here?: ReviewLayerName[]
   /** Which round the second group is. */
   round: number
@@ -224,8 +223,8 @@ const steps = computed<Step[]>(() =>
           ? null
           : `/reviews/${props.reviewId}/${PAGE_OF_STEP[layer.name]}`
             + (BAND_OF_STEP[layer.name] ? `#${BAND_OF_STEP[layer.name]}` : ''),
-        current: (props.here ?? [props.active]).includes(layer.name),
-        itself: layer.name === props.active,
+        current: (props.here ?? (props.active ? [props.active] : [])).includes(layer.name),
+        itself: props.active != null && layer.name === props.active,
         tone: layerTone(layer.state),
       }
     }),

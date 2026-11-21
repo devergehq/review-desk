@@ -91,15 +91,13 @@ const WIDTHS = [
   { width: 390, tag: 'phone' },
 ]
 
-/** The seven steps of a review, in the order the trail draws them. `''` is the review itself. */
+/** The five tabs of a review, in the order the header draws them. `''` is Overview. */
 const STEPS = [
   '',
-  '/understand',
-  '/alternatives',
-  '/solution',
-  '/code-review',
+  '/understanding',
+  '/findings',
   '/draft',
-  '/what-happened',
+  '/replies',
 ]
 
 /** The screens that are not a review: the queue, the list and the rules. */

@@ -1,17 +1,29 @@
 <script setup lang="ts">
 /**
- * Step 3 — **Alternatives**, which is band 2 of the case page.
+ * `/reviews/{id}/alternatives` — **Alternatives's old address, which redirects to its tab.** DEV-1324.
  *
- * The matrix of options against numbered problems, who put each one forward, and what an
- * independent pass would have picked. It is drawn by `ReviewCase` with the other two steps,
- * for the reason that component states; this address lands on it, and the trail's link to
- * this step carries `#what-was-chosen` so pressing it arrives at the band.
+ * The step pages became five tabs; this address is in links people hold, in the queue's
+ * history and in anything bookmarked, so it keeps working. Where it goes, and the band an
+ * address with no fragment of its own lands at, is `RETIRED_ROUTES` in
+ * `app/utils/reviewTabs.ts`. **A fragment the link carries is kept**, so a link to one
+ * finding or one band still arrives at it. `e2e/redirects.spec.ts` follows each one.
  *
- * **`not_assessed` is a verdict, not a missing one**, and `CaseChosen` is where that rule
- * lives now.
+ * A middleware, as the old `/reviews/{id}` redirect was: it runs before the page resolves,
+ * so nothing renders and nothing is read.
  */
+definePageMeta({
+  middleware: [
+    to => navigateTo(
+      retiredRouteTarget(String(to.params.id), 'alternatives', to.hash, to.query),
+      { replace: true, redirectCode: 301 },
+    ),
+  ],
+})
 </script>
 
 <template>
-  <ReviewCase step="alternatives" />
+  <p class="rd-empty">
+    <!-- Never seen: the middleware redirects before this page is resolved. -->
+    Taking you to the review.
+  </p>
 </template>

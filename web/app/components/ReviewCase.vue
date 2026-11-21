@@ -5,7 +5,7 @@ import type { Brief, ReviewLayerName } from '~/types/desk'
  * **The case for the change** — steps 2, 3 and 4 on one page, in three bands.
  *
  * ```
- *  ┌── the step trail, with 2, 3 and 4 all marked as this page ───────────────┐
+ *  ┌── the review header, Understanding marked as the tab you are on ─────────┐
  *  Every request the browser sends to the portal now carries the gate's credentials…
  *  4 problems · option B built · fixes 3 of 4 · blind pass would pick D
  *  Right shape; the fail-fast sits one call site too low, and nothing has tested it…
@@ -32,14 +32,13 @@ import type { Brief, ReviewLayerName } from '~/types/desk'
  * up once it is clear which rows he opens. It is deliberately not built: "after some
  * testing, as an experiment".
  *
- * ## Three addresses, one page
+ * ## One tab, and the three addresses it replaced
  *
- * `/understand`, `/alternatives` and `/solution` all draw this. **Nothing is redirected**,
- * which is deliberate: the queue links to `/understand`, the round switcher builds the same
- * three suffixes for every other round, and every link anybody holds is one of the three. So
- * the routes stay and the bodies merged, and the trail says what has happened — it washes all
- * three steps as the page you are on, while `aria-current` names the one the address is for.
- * Steps 3 and 4 carry a fragment, so pressing one lands at its own band.
+ * `/understand`, `/alternatives` and `/solution` each drew this until DEV-1324 gave the
+ * case one tab, **Understanding**, at `/reviews/{id}/understanding`. The three old addresses
+ * redirect there — Alternatives and Solution to their own bands, `#what-was-chosen` and
+ * `#what-was-built`, unless the link carried a fragment of its own — so every link anybody
+ * holds still lands where it used to.
  *
  * ## What it costs, stated rather than discovered
  *
@@ -59,15 +58,19 @@ import type { Brief, ReviewLayerName } from '~/types/desk'
  * absence says which absence it is rather than drawing nothing — `CaseChosen` and `CaseBuilt`
  * each read their own step's state for that sentence.
  */
-defineProps<{
+const { step = 'understand', tab } = defineProps<{
   /**
-   * Which of the three addresses this is.
-   *
-   * It picks the document title's step, what `aria-current` names, and which step the
-   * "written in an earlier round" notice is about. It changes nothing on the page itself:
-   * all three draw the whole case, which is the point.
+   * Which step the page is about: what the document title, the conversation's asks and the
+   * "written in an earlier round" notice name. Understand, since DEV-1324 made the three
+   * case steps one tab at one address.
    */
-  step: ReviewLayerName
+  step?: ReviewLayerName
+  /**
+   * Which tab draws the case. **Understanding**, and — until DEV-1326 builds Overview's own
+   * page — **Overview** as well, so that `/reviews/{id}` arrives at what it arrived at
+   * before: the case, which is where a review starts.
+   */
+  tab: 'overview' | 'understanding'
 }>()
 
 const route = useRoute()
@@ -145,7 +148,8 @@ function headline(brief: Brief): string {
         v-if="!data.brief"
         :detail="data"
         :step="step"
-        :here="CASE_STEPS"
+        :tab="tab"
+        :conversation-steps="CASE_STEPS"
         :headline="briefWrittenEarlier(data, step)?.headline
           ?? 'Nothing has been written about this problem yet.'"
         :sub="briefWrittenEarlier(data, step)?.sub
@@ -180,7 +184,8 @@ function headline(brief: Brief): string {
         v-else-if="writtenTheOldWay(data.brief)"
         :detail="data"
         :step="step"
-        :here="CASE_STEPS"
+        :tab="tab"
+        :conversation-steps="CASE_STEPS"
         :headline="data.review.title ?? `Pull request #${data.review.pr}`"
       >
         <BriefConfirmation
@@ -250,7 +255,8 @@ function headline(brief: Brief): string {
         v-else
         :detail="data"
         :step="step"
-        :here="CASE_STEPS"
+        :tab="tab"
+        :conversation-steps="CASE_STEPS"
         :headline="headline(data.brief)"
         :sub="data.brief.approach_verdict ?? null"
       >

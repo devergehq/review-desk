@@ -17,14 +17,26 @@ import type { ReviewLayerName } from '~/types/desk'
  * **Nothing here signs anything off.** Sending the draft back is still the draft page's own
  * button; its note appears here too, because the server keeps it in the conversation.
  */
-const props = defineProps<{ reviewId: number, step: ReviewLayerName }>()
+const props = defineProps<{
+  reviewId: number
+  /** The step a question asked here is kept under. */
+  step: ReviewLayerName
+  /**
+   * Every step whose messages this fold draws, when it draws more than `step`'s. DEV-1324:
+   * Understanding is three steps on one tab, and a message kept under Alternatives or
+   * Solution must still be drawn there.
+   */
+  steps?: ReviewLayerName[]
+}>()
+
+const reading = computed(() => props.steps ?? [props.step])
 
 const desk = useReviewDesk()
 const conversation = desk.messages(props.reviewId)
 const session = desk.session(props.reviewId)
 
 const here = computed(() =>
-  (conversation.data.value?.messages ?? []).filter(message => message.step === props.step),
+  (conversation.data.value?.messages ?? []).filter(message => reading.value.includes(message.step)),
 )
 const waiting = computed(() =>
   here.value.filter(message => message.author === 'developer' && message.read_at == null).length,
@@ -32,7 +44,7 @@ const waiting = computed(() =>
 
 const summary = computed(() => {
   if (here.value.length === 0) return `Ask the agent about ${layerLabel(props.step)}`
-  const parts = [`${count(here.value.length, 'message')} with the agent on this step`]
+  const parts = [`${count(here.value.length, 'message')} with the agent on this ${reading.value.length > 1 ? 'tab' : 'step'}`]
   if (waiting.value > 0) parts.push(`${waiting.value} not read yet`)
   return parts.join(' · ')
 })

@@ -837,7 +837,7 @@ describe('a queue row', () => {
    */
   it('puts the links in the repository line, outside the row’s own link', async () => {
     const page = await row({
-      to: '/reviews/17/understand',
+      to: '/reviews/17',
       meta: 'acme/portal · round 1',
       prHref: 'https://github.com/acme/portal/pull/412',
       ticketHref: 'https://linear.app/acme/issue/ABC-231',
@@ -872,7 +872,7 @@ describe('a queue row', () => {
    * you click is still the thing you read.
    */
   it('keeps the title in the row’s own link', async () => {
-    const page = await row({ to: '/reviews/17/understand', meta: 'acme/portal · round 1' })
+    const page = await row({ to: '/reviews/17', meta: 'acme/portal · round 1' })
     expect(page.find('.row').text()).toContain('Retry failed webhook deliveries')
     expect(page.find('.row').text()).toContain('Read it')
   })

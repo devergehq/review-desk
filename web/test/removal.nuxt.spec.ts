@@ -7,7 +7,7 @@ import { resetDesk, useReviewDesk } from '../app/composables/useReviewDesk'
 import { loadSource, sampleBackend } from '../app/data/sample'
 
 import Reviews from '../app/pages/reviews/index.vue'
-import Understand from '../app/pages/reviews/[id]/understand.vue'
+import Understand from '../app/pages/reviews/[id]/understanding.vue'
 
 import type { ReviewDetail } from '../app/types/desk'
 

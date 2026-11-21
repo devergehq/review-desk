@@ -6,7 +6,7 @@ import { flushPromises, type VueWrapper } from '@vue/test-utils'
 import { resetDesk } from '../app/composables/useReviewDesk'
 import { loadSource } from '../app/data/sample'
 
-import CodeReview from '../app/pages/reviews/[id]/code-review.vue'
+import CodeReview from '../app/pages/reviews/[id]/findings.vue'
 import Draft from '../app/pages/reviews/[id]/draft.vue'
 
 import type { DraftDetail, ReviewDetail } from '../app/types/desk'
@@ -68,7 +68,7 @@ async function shown(component: Parameters<typeof mountSuspended>[0], route: str
   return page
 }
 
-const codeReview = (id: number) => shown(CodeReview, `/reviews/${id}/code-review`)
+const codeReview = (id: number) => shown(CodeReview, `/reviews/${id}/findings`)
 const draftPage = (id: number) => shown(Draft, `/reviews/${id}/draft`)
 
 /**
@@ -141,7 +141,7 @@ describe('the code review page', () => {
 
   it('leads with the counts, as a sentence', async () => {
     const page = await codeReview(REAL)
-    expect(page.find('h1').text()).toBe(
+    expect(page.find('h2.headline').text()).toBe(
       '1 blocker. 6 should change, 3 questions, 2 small points.',
     )
   })
@@ -155,7 +155,7 @@ describe('the code review page', () => {
     const detail = fixture(REAL)
     expect(detail.finding_severities.nit).toBe(5)
     const page = await codeReview(REAL)
-    expect(page.find('h1').text()).toContain('2 small points')
+    expect(page.find('h2.headline').text()).toContain('2 small points')
   })
 
   it('says how many were reproduced by running something', async () => {
@@ -201,7 +201,7 @@ describe('the code review page', () => {
     await withReview(detail)
 
     const page = await codeReview(RUNNING)
-    expect(page.find('h1').text()).toBe('The code review found nothing to say.')
+    expect(page.find('h2.headline').text()).toBe('The code review found nothing to say.')
     expect(page.text()).toContain('What the review did not look at')
     expect(page.text()).toContain('The admin screens')
     /* And no list, no strip and no tally, which would each be a count of nothing. */
@@ -255,7 +255,7 @@ describe('the code review page', () => {
    */
   it('leaves a settled carried finding out of the headline, and in its list', async () => {
     const before = await codeReview(REAL)
-    expect(before.find('h1').text()).toContain('6 should change')
+    expect(before.find('h2.headline').text()).toContain('6 should change')
 
     const detail = fixture(REAL)
     detail.findings = detail.findings.map(finding =>
@@ -270,7 +270,7 @@ describe('the code review page', () => {
     await withReview(detail)
 
     const page = await codeReview(REAL)
-    expect(page.find('h1').text()).toContain('5 should change')
+    expect(page.find('h2.headline').text()).toContain('5 should change')
     /* Still on the page, in the list its disposition puts it in, saying what became of it. */
     const row = page.findAll('.row').find(one => one.find('.key').text() === 'F1')!
     expect(row.text()).toContain('Fixed')
@@ -337,14 +337,14 @@ describe('a review with no findings', () => {
    */
   it('says the review has not run, when it has not', async () => {
     const page = await codeReview(NOT_RUN)
-    expect(page.find('h1').text()).toBe('The code review has not run yet.')
+    expect(page.find('h2.headline').text()).toBe('The code review has not run yet.')
     expect(page.text()).toContain('not the same as nothing being found')
     expect(page.find('.rows').exists()).toBe(false)
   })
 
   it('says it is still writing, when it is running', async () => {
     const page = await codeReview(RUNNING)
-    expect(page.find('h1').text()).toBe('The code review has not written anything yet.')
+    expect(page.find('h2.headline').text()).toBe('The code review has not written anything yet.')
     expect(page.text()).toContain('Findings appear here as it writes them.')
   })
 
@@ -355,7 +355,7 @@ describe('a review with no findings', () => {
     await withReview(detail)
 
     const page = await codeReview(RUNNING)
-    expect(page.find('h1').text()).toBe('The code review found nothing to say.')
+    expect(page.find('h2.headline').text()).toBe('The code review found nothing to say.')
     expect(page.text()).toContain('a result rather than an absence')
   })
 
@@ -366,7 +366,7 @@ describe('a review with no findings', () => {
     await withReview(detail)
 
     const page = await codeReview(RUNNING)
-    expect(page.find('h1').text()).toBe('The code review did not finish.')
+    expect(page.find('h2.headline').text()).toBe('The code review did not finish.')
     expect(page.text()).toContain('says nothing at all about the code')
   })
 })
@@ -831,7 +831,7 @@ describe('the code, with the comment on the line', () => {
    */
   it('links the pull request in its header', async () => {
     const page = await codeReview(REAL)
-    const pull = page.find('.where a.header-out')
+    const pull = page.find('[data-testid="review-header"] a.header-out')
     expect(pull.exists()).toBe(true)
     expect(pull.attributes('href')).toBe('https://github.com/acme/portal/pull/514')
     expect(pull.attributes('rel')).toBe('noopener noreferrer')
@@ -1080,7 +1080,7 @@ describe('the developer’s decisions', () => {
     await should.trigger('click')
     await press(page, 'Regrade F9')
 
-    expect(page.find('h1').text()).toContain('No blockers')
+    expect(page.find('h2.headline').text()).toContain('No blockers')
     expect(page.findAll('.row').find(one => one.find('.key').text() === 'F9')!.text())
       .toContain('Should')
   })
@@ -1470,7 +1470,7 @@ describe('every field is interpolated', () => {
  * **Arriving at one finding, named in the hash.** DEV-919's third criterion, from the other
  * end: "Each finding line reaches that finding on the code review page, not just the page."
  *
- * The Solution page writes `…/code-review#F9`. What has to happen here is that the right
+ * The Solution page writes `…/findings#F9`. What has to happen here is that the right
  * list is chosen, the part filter is cleared and the row is opened — in that order, because
  * the page closes whatever is open whenever the list or the part changes.
  */
@@ -1480,7 +1480,7 @@ describe('arriving at a finding named in the hash', () => {
   })
 
   const at = (id: number, hash: string) =>
-    shown(CodeReview, `/reviews/${id}/code-review${hash}`)
+    shown(CodeReview, `/reviews/${id}/findings${hash}`)
 
   it('puts the finding the hash names on the bench', async () => {
     const page = await at(REAL, '#F9')

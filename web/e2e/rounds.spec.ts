@@ -383,7 +383,7 @@ for (const { name, width, height } of WIDTHS) {
 /* ============================= Where it stands, and where it was written ========== */
 
 test('no round is marked while none of them is dismissed', async ({ page }) => {
-  await page.goto(`${serving.url}reviews/${rounds[1]}/understand`)
+  await page.goto(`${serving.url}reviews/${rounds[1]}`)
   await expect(page.locator('nav.rounds .round')).toHaveCount(3)
   await expect(page.locator('nav.rounds .tag')).toHaveCount(0)
 })
@@ -417,7 +417,7 @@ test('a dismissed round is marked as dismissed and still links', async ({ page }
       return { status: answer.status, body: await answer.text() }
     }, { base: serving.url, reviewId, path, body })
 
-  await page.goto(`${serving.url}reviews/${rounds[1]}/understand`)
+  await page.goto(`${serving.url}reviews/${rounds[1]}`)
   const dismissed = await call(rounds[2]!, 'dismiss', {
     reason: 'A duplicate of round 2; the author pushed twice.',
   })
@@ -425,7 +425,7 @@ test('a dismissed round is marked as dismissed and still links', async ({ page }
 
   try {
     /* Read from round 2, so what is asserted is the switcher and not the page's own notice. */
-    await page.goto(`${serving.url}reviews/${rounds[1]}/understand`)
+    await page.goto(`${serving.url}reviews/${rounds[1]}`)
     const chips = page.locator('nav.rounds .round')
     await expect(chips).toHaveCount(3)
 
@@ -446,9 +446,9 @@ test('a dismissed round is marked as dismissed and still links', async ({ page }
      * **Still a link.** Its pages are all still there and everything on it was kept, so what
      * the word changes is what a reader expects of the round, not where the chip goes.
      */
-    await expect(third).toHaveAttribute('href', `/reviews/${rounds[2]}/understand`)
+    await expect(third).toHaveAttribute('href', `/reviews/${rounds[2]}`)
     await third.click()
-    await expect(page).toHaveURL(`${serving.url}reviews/${rounds[2]}/understand`)
+    await expect(page).toHaveURL(`${serving.url}reviews/${rounds[2]}`)
     await expect(page.locator('.face[aria-current="page"] .name')).toContainText('Understand')
   }
   finally {
@@ -473,7 +473,7 @@ for (const at of [1, 2]) {
        * written about this problem yet" over a pull request whose brief is one round back.
        * It claims a brief rather than a step, which is all `brief_written` measures.
        */
-      await expect(page.locator('h1'), step)
+      await expect(page.locator('h2.headline'), step)
         .toHaveText('The last brief before this round was written in round 1.')
       await expect(page.locator('main'), step).toContainText(
         `Round ${at + 1} wrote none of its own, and nothing carries a brief from one round `
@@ -534,14 +534,14 @@ test('following a round link lands on the same step of that round', async ({ pag
  * global focus ring, and it is followed with Enter rather than clicked.
  */
 test('a round is reached and followed from the keyboard alone', async ({ page }) => {
-  await page.goto(`${serving.url}reviews/${rounds[1]}/alternatives`)
+  await page.goto(`${serving.url}reviews/${rounds[1]}/understanding#what-was-chosen`)
 
   const link = page.getByRole('link', { name: 'Round 1 , Alternatives' })
   await link.focus()
   await expect(link).toBeFocused()
   await link.press('Enter')
 
-  await expect(page).toHaveURL(`${serving.url}reviews/${rounds[0]}/alternatives`)
+  await expect(page).toHaveURL(`${serving.url}reviews/${rounds[0]}/understanding`)
   await expect(page.locator('.face[aria-current="page"] .name')).toContainText('Alternatives')
 })
 

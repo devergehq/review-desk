@@ -69,12 +69,12 @@ describe('what the two sides of a pair have in common', () => {
     expect(nameFor('desk', '/')).toBe('desk_home.png')
   })
 
-  it('visits the three screens and all seven steps of every review it is given', () => {
+  it('visits the three screens and all five tabs of every review it is given', () => {
     const routes = routesFor(['36', '1'])
 
     expect(routes.slice(0, 3)).toEqual(['/', '/reviews', '/rules'])
-    expect(routes).toHaveLength(3 + 2 * 7)
-    expect(routes).toContain('/reviews/36/what-happened')
-    expect(routes).toContain('/reviews/1/understand')
+    expect(routes).toHaveLength(3 + 2 * 5)
+    expect(routes).toContain('/reviews/36/replies')
+    expect(routes).toContain('/reviews/1/understanding')
   })
 })

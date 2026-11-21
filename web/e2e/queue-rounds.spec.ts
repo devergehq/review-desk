@@ -286,7 +286,7 @@ test('draws no "code changed" row for a change the posted round read', async ({ 
   await expect(row, 'no code change is reported on it').not.toContainText('changed')
   await expect(row.locator('.row')).toHaveAttribute(
     'href',
-    `/reviews/${fixture.two}/understand`,
+    `/reviews/${fixture.two}`,
   )
 })
 
@@ -305,7 +305,7 @@ test('draws a change after that head as the newest round’s', async ({ page }) 
    */
   await expect(row.locator('.row')).toHaveAttribute(
     'href',
-    `/reviews/${fixture.two}/understand`,
+    `/reviews/${fixture.two}`,
   )
   await expect(row, 'no earlier round is named, because the change is this round’s')
     .not.toContainText('round 1')
@@ -327,7 +327,7 @@ test('draws an earlier round’s reply on the newest round’s row, saying which
     await expect(row).toContainText('round 2')
     await expect(row.locator('.row')).toHaveAttribute(
       'href',
-      `/reviews/${fixture.two}/understand`,
+      `/reviews/${fixture.two}`,
     )
     await expect(row).toContainText('The author replied to')
     await expect(row).toContainText('replied to round 1')
@@ -347,7 +347,7 @@ test('clicking the row opens the newest round, which names itself', async ({ pag
   const fixture = rounds.get('753')!
 
   await rowFor(page, '753').locator('.row').click()
-  await expect(page).toHaveURL(`${serving.url}reviews/${fixture.two}/understand`)
+  await expect(page).toHaveURL(`${serving.url}reviews/${fixture.two}`)
   /*
    * **And the round switcher is how round 1 is reached**, which is the ticket's own answer
    * to "nothing is deleted": the earlier round is a click away rather than the row's
@@ -358,7 +358,7 @@ test('clicking the row opens the newest round, which names itself', async ({ pag
 
 test('the earlier round’s What happened page still shows the change', async ({ page }) => {
   const fixture = rounds.get('751')!
-  await page.goto(`${serving.url}reviews/${fixture.one}/what-happened`)
+  await page.goto(`${serving.url}reviews/${fixture.one}/replies`)
   await page.waitForLoadState('networkidle')
 
   /*
@@ -386,7 +386,7 @@ test('numbers the row for a newest round nothing else in the answer mentions',
     await expect(row).toContainText('replied to round 1')
     await expect(row.locator('.row')).toHaveAttribute(
       'href',
-      `/reviews/${fixture.two}/understand`,
+      `/reviews/${fixture.two}`,
     )
     /*
      * **And the ticket is still there.** No item above the reply is about round 2, and a
@@ -600,7 +600,7 @@ test('Reviews draws one row per pull request, with the rounds behind a fold', as
   await expect(earlier).toHaveCount(1)
   await expect(earlier.locator('.earlier-link')).toHaveText('Round 1 of 2')
   await expect(earlier.locator('.earlier-link'))
-    .toHaveAttribute('href', `/reviews/${rounds.get('751')!.one}/understand`)
+    .toHaveAttribute('href', `/reviews/${rounds.get('751')!.one}`)
 })
 
 test('a Reviews row says its step on one line, and nothing under it where there is none',

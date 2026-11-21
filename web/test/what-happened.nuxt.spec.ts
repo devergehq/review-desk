@@ -9,7 +9,7 @@ import { flushPromises, type VueWrapper } from '@vue/test-utils'
 import { resetDesk } from '../app/composables/useReviewDesk'
 import { loadSource } from '../app/data/sample'
 
-import WhatHappened from '../app/pages/reviews/[id]/what-happened.vue'
+import WhatHappened from '../app/pages/reviews/[id]/replies.vue'
 
 import type {
   Finding,
@@ -68,7 +68,7 @@ async function settle(page: VueWrapper) {
 
 async function shown(id: number) {
   const page = await mountSuspended(WhatHappened, {
-    route: `/reviews/${id}/what-happened`,
+    route: `/reviews/${id}/replies`,
     attachTo: document.body,
   })
   await settle(page)
@@ -520,17 +520,17 @@ describe('the page step 7 never had', () => {
     await withDense()
   })
 
-  it('sits in the shell every step page sits in, and marks step 7 as where you are', async () => {
+  it('sits in the shell every tab sits in, and marks Replies as where you are', async () => {
     const page = await shown(REVIEW)
     expect(page.text()).toContain('acme/portal')
     expect(page.text()).toContain('#601')
-    expect(page.find('.trail').exists()).toBe(true)
-    expect(page.find('.face[aria-current="page"] .name').text()).toBe('7 What happened')
+    expect(page.find('[data-testid="review-header"]').exists()).toBe(true)
+    expect(page.find('.tabs [aria-current="page"]').text()).toContain('Replies')
   })
 
   it('says how the pull request stands, and when it was last read', async () => {
     const page = await shown(REVIEW)
-    expect(page.find('h1').text()).toBe('The pull request is still open')
+    expect(page.find('h2.headline').text()).toBe('The pull request is still open')
     expect(page.find('.sub').text()).toContain('Last read')
     expect(page.find('.sub').text()).toContain('14 findings were posted')
     expect(page.find('.sub').text()).toContain('7 of them had something come back')
@@ -675,7 +675,7 @@ describe('what came back', () => {
     const page = await shown(REVIEW)
     const first = page.findAll('.answered-row')[0]!
     const to = first.findAll('a').map(one => one.attributes('href'))
-    expect(to).toContain(`/reviews/${REVIEW}/code-review#F1`)
+    expect(to).toContain(`/reviews/${REVIEW}/findings#F1`)
     expect(to).toContain('https://github.com/acme/portal/pull/601#discussion_r2314990001')
   })
 
@@ -770,13 +770,13 @@ describe('the states a posted review can be in', () => {
   it('a merged pull request, on the day it merged', async () => {
     await withDense(dense({ prState: 'merged' }))
     const page = await shown(REVIEW)
-    expect(page.find('h1').text()).toBe(`The pull request was merged on ${SETTLED_DAY}`)
+    expect(page.find('h2.headline').text()).toBe(`The pull request was merged on ${SETTLED_DAY}`)
   })
 
   it('a pull request closed without being merged, on the day it closed', async () => {
     await withDense(dense({ prState: 'closed' }))
     const page = await shown(REVIEW)
-    expect(page.find('h1').text())
+    expect(page.find('h2.headline').text())
       .toBe(`The pull request was closed on ${SETTLED_DAY} without being merged`)
   })
 
@@ -795,10 +795,10 @@ describe('the states a posted review can be in', () => {
       harvestedAt: '2026-10-14T06:00:00Z',
     }))
     const page = await shown(REVIEW)
-    expect(page.find('h1').text()).toBe('The pull request was merged')
-    expect(page.find('h1').text()).not.toContain('14 October')
-    expect(page.find('h1').text()).not.toContain('9 October')
-    expect(page.find('h1').text()).not.toContain(' on ')
+    expect(page.find('h2.headline').text()).toBe('The pull request was merged')
+    expect(page.find('h2.headline').text()).not.toContain('14 October')
+    expect(page.find('h2.headline').text()).not.toContain('9 October')
+    expect(page.find('h2.headline').text()).not.toContain(' on ')
   })
 
   /**
@@ -809,14 +809,14 @@ describe('the states a posted review can be in', () => {
   it('a merged pull request the record holds no day for', async () => {
     await withDense(dense({ prState: 'merged', prStateAt: null }))
     const page = await shown(REVIEW)
-    expect(page.find('h1').text()).toBe('The pull request was merged')
+    expect(page.find('h2.headline').text()).toBe('The pull request was merged')
   })
 
   /** And an open one is not dated at all: the column is null while it is open. */
   it('does not date a pull request that is still open', async () => {
     await withDense(dense({ prState: 'open', prStateAt: SETTLED_AT }))
     const page = await shown(REVIEW)
-    expect(page.find('h1').text()).toBe('The pull request is still open')
+    expect(page.find('h2.headline').text()).toBe('The pull request is still open')
   })
 
   /**
@@ -829,7 +829,7 @@ describe('the states a posted review can be in', () => {
   it('does not say nothing has looked over a state only a harvest could know', async () => {
     await withDense(dense({ prState: 'merged', harvestedAt: null }))
     const page = await shown(REVIEW)
-    expect(page.find('h1').text()).toBe(`The pull request was merged on ${SETTLED_DAY}`)
+    expect(page.find('h2.headline').text()).toBe(`The pull request was merged on ${SETTLED_DAY}`)
     expect(page.find('.notice').exists()).toBe(false)
     /* And it does not claim the harvest found nothing, because it did not finish. */
     expect(page.text()).not.toContain('found no reply, no resolved thread')
@@ -851,7 +851,7 @@ describe('the states a posted review can be in', () => {
   it('a review no harvest has read', async () => {
     await withDense(dense({ prState: null, harvestedAt: null, outcomes: [] }))
     const page = await shown(REVIEW)
-    expect(page.find('h1').text()).toBe('Nothing has read this pull request back from GitHub')
+    expect(page.find('h2.headline').text()).toBe('Nothing has read this pull request back from GitHub')
     expect(page.text()).toContain('No harvest has read this review back from GitHub')
     expect(page.find('.sub').text()).not.toContain('Last read')
   })
@@ -1070,7 +1070,7 @@ describe('a review whose repository name is not a repository name', () => {
     const page = await shown(REVIEW)
     expect(page.find('.notes').text()).toContain('code review page are unaffected')
     expect(page.findAll('.answered-row')[0]!.find('a').attributes('href'))
-      .toBe(`/reviews/${REVIEW}/code-review#F1`)
+      .toBe(`/reviews/${REVIEW}/findings#F1`)
   })
 
   it('says it on the row too, where the row has to explain itself', async () => {
@@ -1127,7 +1127,7 @@ describe('the rounds of the pull request', () => {
     const drawn = held.map((one, at) => [one, stood[at]!])
     expect(drawn.length).toBe(ROUNDS.length)
 
-    const source = readFileSync(resolve('app/pages/reviews/[id]/what-happened.vue'), 'utf8')
+    const source = readFileSync(resolve('app/pages/reviews/[id]/replies.vue'), 'utf8')
     const from = source.indexOf('THE ROUNDS OF THIS PULL REQUEST')
     expect(from, 'the sketch is where this says it is').toBeGreaterThan(-1)
 
@@ -1274,7 +1274,7 @@ describe('it describes and does not grade', () => {
     const links = page.findAll('.answered-row')[0]!.findAll('a')
     expect(links).toHaveLength(1)
     expect(links[0]!.text()).toContain('The finding')
-    expect(links[0]!.attributes('href')).toBe(`/reviews/${REVIEW}/code-review#F1`)
+    expect(links[0]!.attributes('href')).toBe(`/reviews/${REVIEW}/findings#F1`)
     expect(page.find('.notes').text()).toContain('14 comments with no address')
     expect(page.find('.notes').text()).not.toContain('raised in the body alone')
 
@@ -1307,7 +1307,7 @@ describe('it describes and does not grade', () => {
     await settle(page)
     expect(page.findAll('.silent-opened')).toHaveLength(1)
 
-    await page.vm.$router.push(`/reviews/${REVIEW + 1}/what-happened`)
+    await page.vm.$router.push(`/reviews/${REVIEW + 1}/replies`)
     await settle(page)
     expect(page.findAll('.silent-row')).toHaveLength(0)
     expect(page.findAll('.silent-opened')).toHaveLength(0)

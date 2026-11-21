@@ -560,7 +560,7 @@ function nothingHere(answer: { repo: string | null, show: ReviewsShown }): strin
             :pr="row.face.review.pr"
             :title="row.title"
             :meta="about(row.face)"
-            :to="`/reviews/${row.face.review.id}/understand`"
+            :to="`/reviews/${row.face.review.id}`"
             action="Read the review"
             action-tone="quiet"
             :age="row.face.last_activity_at
@@ -623,7 +623,7 @@ function nothingHere(answer: { repo: string | null, show: ReviewsShown }): strin
                   >
                     <NuxtLink
                       class="earlier-link"
-                      :to="`/reviews/${item.review.id}/understand`"
+                      :to="`/reviews/${item.review.id}`"
                     >Round {{ item.review.round }} of {{ item.rounds_on_pr }}</NuxtLink>
                     <span class="earlier-step">{{ stepCell(item).said }}<span
                       class="rd-visually-hidden"

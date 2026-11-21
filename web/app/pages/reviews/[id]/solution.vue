@@ -1,17 +1,29 @@
 <script setup lang="ts">
 /**
- * Step 4 — **Solution**, which is band 3 of the case page.
+ * `/reviews/{id}/solution` — **Solution's old address, which redirects to its tab.** DEV-1324.
  *
- * The change in parts, each row saying which numbered problems it fixes, how big it is and
- * where the code review looked — board A10, which Patrick approved on 11 October 2026 and
- * which moved onto the case page unchanged. `CaseBuilt` holds the four rules it is kept to
- * and the join that derives a part's findings from the review's own.
+ * The step pages became five tabs; this address is in links people hold, in the queue's
+ * history and in anything bookmarked, so it keeps working. Where it goes, and the band an
+ * address with no fragment of its own lands at, is `RETIRED_ROUTES` in
+ * `app/utils/reviewTabs.ts`. **A fragment the link carries is kept**, so a link to one
+ * finding or one band still arrives at it. `e2e/redirects.spec.ts` follows each one.
  *
- * The trail's link to this step carries `#what-was-built`, so pressing it arrives at the
- * band rather than at the top of the page.
+ * A middleware, as the old `/reviews/{id}` redirect was: it runs before the page resolves,
+ * so nothing renders and nothing is read.
  */
+definePageMeta({
+  middleware: [
+    to => navigateTo(
+      retiredRouteTarget(String(to.params.id), 'solution', to.hash, to.query),
+      { replace: true, redirectCode: 301 },
+    ),
+  ],
+})
 </script>
 
 <template>
-  <ReviewCase step="solution_map" />
+  <p class="rd-empty">
+    <!-- Never seen: the middleware redirects before this page is resolved. -->
+    Taking you to the review.
+  </p>
 </template>

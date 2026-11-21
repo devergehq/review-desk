@@ -71,7 +71,7 @@ test.describe('a seeded database', () => {
      * one. Two names for one picture, and neither of them showed a finding. Step 5 is the
      * page this set was missing.
      */
-    await page.goto(`${seeded}reviews/${reviewId}/code-review`)
+    await page.goto(`${seeded}reviews/${reviewId}/findings`)
     /*
      * **Scoped to the pane**, because step 1.2 of the design loop made this page a dense
      * list beside the finding it has chosen — so a finding's claim is now drawn on its row
@@ -127,7 +127,7 @@ test.describe('a seeded database', () => {
      * looking at this screen has to be able to tell it from one they confirmed
      * themselves.
      */
-    await page.goto(`${seeded}reviews/${waivedReviewId}/understand`)
+    await page.goto(`${seeded}reviews/${waivedReviewId}`)
     await expect(page.getByText('Confirmation not required.')).toBeVisible()
     await shot(page, 'seeded-5-review-no-confirmation')
   })
@@ -149,7 +149,7 @@ test.describe('the shell', () => {
     await page.waitForTimeout(400)
     await page.screenshot({ path: `${INTO}/shell-1-pull-requests.png` })
 
-    await page.goto(`${seeded}reviews/${reviewId}/code-review`)
+    await page.goto(`${seeded}reviews/${reviewId}/findings`)
     await expect(page.locator('.shell-conversation')).toBeVisible()
     await page.waitForLoadState('networkidle')
     await page.waitForTimeout(400)
@@ -160,7 +160,7 @@ test.describe('the shell', () => {
     await expect(page.getByRole('button', { name: 'Menu' })).toBeVisible()
     await shot(page, 'shell-1-pull-requests-390')
 
-    await page.goto(`${seeded}reviews/${reviewId}/code-review`)
+    await page.goto(`${seeded}reviews/${reviewId}/findings`)
     await expect(page.getByRole('button', { name: 'Menu' })).toBeVisible()
     await shot(page, 'shell-2-review-390')
 
@@ -201,8 +201,8 @@ test.describe('the case page', () => {
       await page.setViewportSize({ width, height: width === 1440 ? 900 : 844 })
       const suffix = width === 1440 ? '' : '-390'
 
-      await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
-      await expect(page.locator('h1')).toBeVisible()
+      await page.goto(`${seeded}reviews/${structuredReviewId}`)
+      await expect(page.locator('h2.headline')).toBeVisible()
       /*
        * **As it opens.** The headline, the derived answer line, the verdict on the
        * approach, and the three bands — which is the whole point of the page and the thing
@@ -232,7 +232,7 @@ test.describe('the case page', () => {
      * written before the structured one existed. The seeded review's own brief is three
      * free-text fields, and the criterion is that Understand still shows it.
      */
-    await page.goto(`${seeded}reviews/${reviewId}/understand`)
+    await page.goto(`${seeded}reviews/${reviewId}`)
     await expect(page.getByText('Written before the structured brief.')).toBeVisible()
     await shot(page, 'dev-885-4-understand-old-brief')
   })
@@ -249,8 +249,8 @@ test.describe('the case page', () => {
  */
 test.describe('what DEV-892 and DEV-917 fixed', () => {
   test('a step’s card opened, and every number said in full', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
-    await expect(page.locator('h1')).toBeVisible()
+    await page.goto(`${seeded}reviews/${structuredReviewId}`)
+    await expect(page.locator('h2.headline')).toBeVisible()
 
     /*
      * Step 2's detail is 34 words on the seeded record, drawn on one ellipsised line.
@@ -286,8 +286,8 @@ test.describe('the code review page and the draft', () => {
     for (const [width, suffix] of [[1440, ''], [390, '-390']] as const) {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
 
-      await page.goto(`${seeded}reviews/${structuredReviewId}/code-review`)
-      await expect(page.locator('h1')).toBeVisible()
+      await page.goto(`${seeded}reviews/${structuredReviewId}/findings`)
+      await expect(page.locator('h2.headline')).toBeVisible()
       await shot(page, `dev-878-1-code-review${suffix}`)
 
       /*
@@ -303,7 +303,7 @@ test.describe('the code review page and the draft', () => {
       await shot(page, `dev-878-2-finding-open${suffix}`)
 
       await page.goto(`${seeded}reviews/${structuredReviewId}/draft`)
-      await expect(page.locator('h1')).toBeVisible()
+      await expect(page.locator('h2.headline')).toBeVisible()
       await shot(page, `dev-878-3-draft${suffix}`)
     }
     await page.setViewportSize({ width: 1440, height: 900 })
@@ -314,7 +314,7 @@ test.describe('the code review page and the draft', () => {
      * markdown rather than in parts — which is every draft written before the composition
      * existed, and the one the per-finding decisions refuse against.
      */
-    await page.goto(`${seeded}reviews/${reviewId}/code-review`)
+    await page.goto(`${seeded}reviews/${reviewId}/findings`)
     await page.locator('.row').first().click()
     await expect(page.getByText('one block of markdown')).toBeVisible()
     await shot(page, 'dev-878-4-one-block-draft')
@@ -338,7 +338,7 @@ test.describe('the posted shape, after DEV-929', () => {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
 
       await page.goto(`${seeded}reviews/${structuredReviewId}/draft`)
-      await expect(page.locator('h1')).toBeVisible()
+      await expect(page.locator('h2.headline')).toBeVisible()
       /*
        * **The index is folded in the body since step 1.1 of the design loop**, which is a
        * `<details>` in the markdown the session wrote — the same markup GitHub renders — so
@@ -384,8 +384,8 @@ test.describe('the solution as a table', () => {
     for (const [width, suffix] of [[1440, ''], [390, '-390']] as const) {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
 
-      await page.goto(`${seeded}reviews/${structuredReviewId}/solution`)
-      await expect(page.locator('h1')).toBeVisible()
+      await page.goto(`${seeded}reviews/${structuredReviewId}/understanding#what-was-built`)
+      await expect(page.locator('h2.headline')).toBeVisible()
       await expect(page.locator('.part')).toHaveCount(7)
       await shot(page, `dev-919-1-table${suffix}`)
 
@@ -419,8 +419,8 @@ test.describe('a problem’s Before and After, after DEV-939', () => {
     for (const [width, suffix] of [[1440, ''], [390, '-390']] as const) {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
 
-      await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
-      await expect(page.locator('h1')).toBeVisible()
+      await page.goto(`${seeded}reviews/${structuredReviewId}`)
+      await expect(page.locator('h2.headline')).toBeVisible()
 
       await page.getByRole('button', { name: /A scheduled export read its tenant/ }).click()
       await expect(page.locator('#problem-1')).toBeVisible()
@@ -449,7 +449,7 @@ test.describe('the draft page, after DEV-928', () => {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
 
       await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
-      await expect(page.locator('h1')).toBeVisible()
+      await expect(page.locator('h2.headline')).toBeVisible()
       await expect(page.locator('.held-row')).toHaveCount(8)
       await shot(page, `dev-928-1-held-back${suffix}`)
 
@@ -474,7 +474,7 @@ test.describe('the draft page, after DEV-928', () => {
   test('a drawing opened larger, and zoomed', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
-    await expect(page.locator('h1')).toBeVisible()
+    await expect(page.locator('h2.headline')).toBeVisible()
     await page.waitForLoadState('networkidle')
 
     await page.locator('button.canvas').first().click()
@@ -519,7 +519,7 @@ test.describe('a fresh database', () => {
 
 test.describe('the server stopped', () => {
   test('with a page already open', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${reviewId}/understand`)
+    await page.goto(`${seeded}reviews/${reviewId}`)
     await expect(page.getByText('A webhook delivery that fails once')).toBeVisible()
 
     await page.route('**/api/v1/**', route => route.abort('connectionrefused'))
@@ -712,7 +712,7 @@ test.describe('a finished review, and a row’s links', () => {
        * more, so what is drawn here is what replaced it: one round, whose head moved and
        * whose base-branch merges changed nothing.
        */
-      await page.goto(`${seeded}reviews/${movedHeadReviewId}/code-review`)
+      await page.goto(`${seeded}reviews/${movedHeadReviewId}/findings`)
       await expect(page.getByText('Rounds')).toBeVisible()
       await shot(page, `dev-962-1-moved-head${suffix}`)
     })

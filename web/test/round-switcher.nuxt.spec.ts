@@ -5,12 +5,10 @@ import { flushPromises, type VueWrapper } from '@vue/test-utils'
 
 import { resetDesk } from '../app/composables/useReviewDesk'
 
-import Understand from '../app/pages/reviews/[id]/understand.vue'
-import Alternatives from '../app/pages/reviews/[id]/alternatives.vue'
-import Solution from '../app/pages/reviews/[id]/solution.vue'
-import CodeReview from '../app/pages/reviews/[id]/code-review.vue'
+import Understand from '../app/pages/reviews/[id]/understanding.vue'
+import CodeReview from '../app/pages/reviews/[id]/findings.vue'
 import Draft from '../app/pages/reviews/[id]/draft.vue'
-import WhatHappened from '../app/pages/reviews/[id]/what-happened.vue'
+import WhatHappened from '../app/pages/reviews/[id]/replies.vue'
 
 /*
  * **The round switcher, on every step page. DEV-976.**
@@ -80,20 +78,23 @@ async function settle(page: VueWrapper) {
   }
 }
 
-/** The six step pages, each with the suffix its route carries. */
+/**
+ * The four tabs that draw a step's page, each with the suffix its route carries.
+ *
+ * **Four, since DEV-1324**: Understand, Alternatives and Solution were three addresses of
+ * one page and are now one tab, Understanding, whose round switcher is Understand's.
+ */
 const PAGES = [
-  { step: 'Understand', suffix: 'understand', component: Understand },
-  { step: 'Alternatives', suffix: 'alternatives', component: Alternatives },
-  { step: 'Solution map', suffix: 'solution', component: Solution },
-  { step: 'Code review', suffix: 'code-review', component: CodeReview },
+  { step: 'Understand', suffix: 'understanding', component: Understand },
+  { step: 'Code review', suffix: 'findings', component: CodeReview },
   { step: 'Draft', suffix: 'draft', component: Draft },
-  { step: 'What happened', suffix: 'what-happened', component: WhatHappened },
+  { step: 'What happened', suffix: 'replies', component: WhatHappened },
 ] as const
 
-/** The three pages the brief feeds, which are the three a later round can hold none of. */
-const FROM_THE_BRIEF = PAGES.slice(0, 3)
+/** The tab the brief feeds, which is the one a later round can hold none of. */
+const FROM_THE_BRIEF = PAGES.slice(0, 1)
 /** The three whose record is the round's own, whatever any earlier round holds. */
-const ITS_OWN = PAGES.slice(3)
+const ITS_OWN = PAGES.slice(1)
 
 async function shown(page: (typeof PAGES)[number], id: number) {
   const mounted = await mountSuspended(page.component, { route: `/reviews/${id}/${page.suffix}` })
@@ -258,7 +259,7 @@ describe('where a step was written, when this round did not write it', () => {
        * "Round 2 wrote this pull request's alternatives" sent the reader to a page saying
        * "None was recorded" — the ambiguity inverted. Found by a review of this branch.
        */
-      expect(mounted.find('h1').text(), `${page.step} heading`)
+      expect(mounted.find('h2.headline').text(), `${page.step} heading`)
         .toBe('The last brief before this round was written in round 2.')
       expect(mounted.text(), `${page.step} says what this round wrote`)
         .toContain('Round 3 wrote none of its own, and nothing carries a brief from one '
@@ -299,11 +300,11 @@ describe('where a step was written, when this round did not write it', () => {
 
   it('points a two-round pull request’s second round back at its first', async () => {
     const mounted = await shown(PAGES[0], SECOND_OF_TWO)
-    expect(mounted.find('h1').text())
+    expect(mounted.find('h2.headline').text())
       .toBe('The last brief before this round was written in round 1.')
     const link = mounted.findAll('a').find(one => one.text().includes('Open round 1’s Understand'))
     expect(link).toBeDefined()
-    expect(link!.attributes('href')).toBe('/reviews/60/understand')
+    expect(link!.attributes('href')).toBe('/reviews/60/understanding')
   })
 
   /**

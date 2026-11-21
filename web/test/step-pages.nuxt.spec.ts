@@ -8,9 +8,8 @@ import { flushPromises, type VueWrapper } from '@vue/test-utils'
 import { resetDesk } from '../app/composables/useReviewDesk'
 import { loadSource } from '../app/data/sample'
 
-import Understand from '../app/pages/reviews/[id]/understand.vue'
-import Alternatives from '../app/pages/reviews/[id]/alternatives.vue'
-import Solution from '../app/pages/reviews/[id]/solution.vue'
+import Understand from '../app/pages/reviews/[id]/understanding.vue'
+import Overview from '../app/pages/reviews/[id]/index.vue'
 
 import type { ReviewDetail } from '../app/types/desk'
 
@@ -90,9 +89,16 @@ async function shown(
   return page
 }
 
-const understand = (id: number) => shown(Understand, `/reviews/${id}/understand`)
-const alternatives = (id: number) => shown(Alternatives, `/reviews/${id}/alternatives`)
-const solution = (id: number) => shown(Solution, `/reviews/${id}/solution`)
+/*
+ * **Three steps, one tab, since DEV-1324.** Alternatives and Solution are bands of the
+ * Understanding tab, and their old addresses redirect to it at those bands — so these two
+ * mount the tab where the redirect lands. `e2e/redirects.spec.ts` follows the redirects.
+ */
+const understand = (id: number) => shown(Understand, `/reviews/${id}/understanding`)
+const alternatives = (id: number) => shown(Understand, `/reviews/${id}/understanding#what-was-chosen`)
+const solution = (id: number) => shown(Understand, `/reviews/${id}/understanding#what-was-built`)
+/** Overview, which draws the step trail until DEV-1326 gives it *Where it stands*. */
+const overview = (id: number) => shown(Overview, `/reviews/${id}`)
 
 /** Click the button whose text contains this, and let what it started finish. */
 async function open(page: VueWrapper, within: string) {
@@ -158,7 +164,7 @@ describe('the shell every step page sits in', () => {
    * had one too — so this comment's claim held only because `SignOffCard` is drawn by no
    * page yet, and the draft page is a `ReviewStepPage`.
    */
-  const wayOut = (page: VueWrapper) => page.findAll('.where a.header-out')
+  const wayOut = (page: VueWrapper) => page.findAll('[data-testid="review-header"] a.header-out')
 
   it('links the repository and the number to the pull request', async () => {
     const page = await understand(STRUCTURED)
@@ -215,7 +221,7 @@ describe('the shell every step page sits in', () => {
       await withReview(detail)
 
       const page = await understand(STRUCTURED)
-      const where = page.find('.where')
+      const where = page.find('[data-testid="review-header"]')
       expect(where.text(), `${repo} is still named`).toContain(repo)
       expect(
         where.findAll('a').map(one => one.attributes('href') ?? ''),
@@ -261,14 +267,14 @@ describe('the shell every step page sits in', () => {
      * **The id is the link's text and the address is not drawn at all.** A link whose text
      * is a URL is a link a reader has to parse, and the id is the thing they came for.
      */
-    expect(page.find('.where').text()).not.toContain('linear.app')
+    expect(page.find('[data-testid="review-header"]').text()).not.toContain('linear.app')
   })
 
   it('draws the ticket’s id as text when the record holds no address', async () => {
     /* Review 41's fixture carries `ABC-402` and no address, as the contract example does. */
     const page = await understand(STRUCTURED)
 
-    expect(page.find('.where').text()).toContain('ABC-402')
+    expect(page.find('[data-testid="review-header"]').text()).toContain('ABC-402')
     expect(wayOut(page).length, 'the pull request alone is a link').toBe(1)
     expect(
       wayOut(page)[0]!.text(),
@@ -282,7 +288,7 @@ describe('the shell every step page sits in', () => {
     await withReview(detail)
 
     const page = await understand(STRUCTURED)
-    const where = page.find('.where').text()
+    const where = page.find('[data-testid="review-header"]').text()
     expect(where).toContain('acme/portal')
     expect(where).not.toContain('ABC-402')
     /* No stranded separator where the ticket would have been. */
@@ -308,13 +314,13 @@ describe('the shell every step page sits in', () => {
       const hrefs = page.findAll('a').map(one => one.attributes('href') ?? '')
       expect(hrefs, `${stored} never reaches an href`).not.toContain(stored)
       /* The id is still drawn, as text — the same thing a review with no address gets. */
-      expect(page.find('.where').text()).toContain('ABC-402')
+      expect(page.find('[data-testid="review-header"]').text()).toContain('ABC-402')
       expect(wayOut(page).length).toBe(1)
     }
   })
 
   it('draws seven steps, in the two groups a review actually has', async () => {
-    const page = await understand(STRUCTURED)
+    const page = await overview(STRUCTURED)
     const steps = page.findAll('.steps li').map(one => one.text())
     expect(steps).toHaveLength(7)
     expect(page.text()).toContain('The pull request · settled once')
@@ -327,7 +333,7 @@ describe('the shell every step page sits in', () => {
   })
 
   it('shows each step’s own outcome in a few words', async () => {
-    const page = await understand(STRUCTURED)
+    const page = await overview(STRUCTURED)
     const trail = page.find('.trail').text()
     /* The store's own words, not a restatement of the state. */
     expect(trail).toContain('passes, 2 warnings')
@@ -342,13 +348,13 @@ describe('the shell every step page sits in', () => {
       layer.name === 'harvest' ? { ...layer, detail: null } : layer)
     await withReview(detail)
 
-    const page = await understand(STRUCTURED)
+    const page = await overview(STRUCTURED)
     /* "not yet", rather than an empty cell where an outcome should be. */
     expect(page.find('.trail').text()).toContain('not yet')
   })
 
   it('shows how long a finished step took, on the step’s own card', async () => {
-    const page = await understand(STRUCTURED)
+    const page = await overview(STRUCTURED)
 
     /*
      * **The figure moved off the trail in DEV-917.** It was a third line under the name,
@@ -387,7 +393,7 @@ describe('the shell every step page sits in', () => {
     }
     await withReview(detail)
 
-    const page = await understand(STRUCTURED)
+    const page = await overview(STRUCTURED)
     await openCard(page, 2)
     const card = page.find('.floating').text()
     expect(card).toContain('time not recorded')
@@ -409,7 +415,7 @@ describe('the shell every step page sits in', () => {
    * `e2e/review-desk.spec.ts`.
    */
   it('draws a long step detail on one line and opens its facts on a card', async () => {
-    const page = await understand(STRUCTURED)
+    const page = await overview(STRUCTURED)
 
     const understandStep = page.findAll('.steps li')[1]!
     expect(understandStep.text()).toContain('2 Understand')
@@ -440,7 +446,7 @@ describe('the shell every step page sits in', () => {
   })
 
   it('opens one card at a time', async () => {
-    const page = await understand(STRUCTURED)
+    const page = await overview(STRUCTURED)
 
     await openCard(page, 2)
     expect(page.findAll('.floating')).toHaveLength(1)
@@ -451,7 +457,7 @@ describe('the shell every step page sits in', () => {
   })
 
   it('closes the card on a second press, and on Escape', async () => {
-    const page = await understand(STRUCTURED)
+    const page = await overview(STRUCTURED)
 
     const control = await openCard(page, 2)
     expect(page.find('.floating').exists()).toBe(true)
@@ -482,7 +488,7 @@ describe('the shell every step page sits in', () => {
   })
 
   it('closes the card when something outside it is pressed', async () => {
-    const page = await understand(STRUCTURED)
+    const page = await overview(STRUCTURED)
     await openCard(page, 2)
     expect(page.find('.floating').exists()).toBe(true)
 
@@ -492,7 +498,7 @@ describe('the shell every step page sits in', () => {
   })
 
   it('draws no card and no control on a step with nothing behind it', async () => {
-    const page = await understand(STRUCTURED)
+    const page = await overview(STRUCTURED)
     const steps = page.findAll('.steps li')
 
     /* Step 4 recorded none, and step 7 has not run. */
@@ -510,7 +516,7 @@ describe('the shell every step page sits in', () => {
   })
 
   it('shows the total with the agent and the total waiting on the developer', async () => {
-    const page = await understand(STRUCTURED)
+    const page = await overview(STRUCTURED)
     const totals = page.find('.totals')
     expect(totals.exists()).toBe(true)
     expect(totals.text()).toContain('with the agent')
@@ -529,13 +535,13 @@ describe('the shell every step page sits in', () => {
     }
     await withReview(detail)
 
-    const page = await understand(STRUCTURED)
+    const page = await overview(STRUCTURED)
     expect(page.text()).toContain('with the agent: not recorded yet')
     expect(page.text()).toContain('waiting on you: not recorded')
   })
 
   it('links the six steps that have somewhere to go, and no others', async () => {
-    const page = await understand(STRUCTURED)
+    const page = await overview(STRUCTURED)
     const links = page.findAll('.trail a').map(one => one.attributes('href'))
     /*
      * **The trail is the only way to five of these.** Every row in the queue opens
@@ -553,12 +559,12 @@ describe('the shell every step page sits in', () => {
      * at. `BAND_OF_STEP` in `utils/theCase.ts` owns them.
      */
     expect(links).toEqual([
-      `/reviews/${STRUCTURED}/understand`,
-      `/reviews/${STRUCTURED}/alternatives#what-was-chosen`,
-      `/reviews/${STRUCTURED}/solution#what-was-built`,
-      `/reviews/${STRUCTURED}/code-review`,
+      `/reviews/${STRUCTURED}/understanding`,
+      `/reviews/${STRUCTURED}/understanding#what-was-chosen`,
+      `/reviews/${STRUCTURED}/understanding#what-was-built`,
+      `/reviews/${STRUCTURED}/findings`,
       `/reviews/${STRUCTURED}/draft`,
-      `/reviews/${STRUCTURED}/what-happened`,
+      `/reviews/${STRUCTURED}/replies`,
     ])
     /* Lint alone is a label. */
     const labels = page.findAll('.trail .face:not(a)').map(one => one.text())
@@ -588,7 +594,7 @@ describe('the shell every step page sits in', () => {
       detail.draft_status = status
       await withReview(detail)
 
-      const page = await understand(STRUCTURED)
+      const page = await overview(STRUCTURED)
       expect(
         page.findAll('.trail a').map(one => one.attributes('href')),
         `step 6 should be a link with draft_status ${String(status)}`,
@@ -597,7 +603,7 @@ describe('the shell every step page sits in', () => {
   })
 
   it('still says which step is waiting, whichever page you are on', async () => {
-    const page = await understand(STRUCTURED)
+    const page = await overview(STRUCTURED)
     /*
      * Step 6 is a link now, and it is also the step waiting on the developer. The two
      * facts are drawn by different things — `face--current` is the review's state,
@@ -612,7 +618,8 @@ describe('the shell every step page sits in', () => {
      */
     const step = page.findAll('.steps li').find(one => one.text().includes('6 Draft'))!
     expect(step.text()).toContain('waiting on you')
-    expect(page.find('.trail .face[aria-current="page"]').text()).toContain('2 Understand')
+    /* Overview is no step's page, so no step claims to be the current one. */
+    expect(page.find('.trail .face[aria-current="page"]').exists()).toBe(false)
   })
 
   /**
@@ -623,32 +630,35 @@ describe('the shell every step page sits in', () => {
    * `aria-current="page"` stays on exactly one, because it names the page a link would take
    * you to and three links claiming to be it tells a screen reader nothing.
    */
-  it('marks all three of the steps that are one page, and names the one you asked for', async () => {
-    for (const [page, name] of [
-      [await understand(STRUCTURED), '2 Understand'],
-      [await alternatives(STRUCTURED), '3 Alternatives'],
-      [await solution(STRUCTURED), '4 Solution map'],
-    ] as const) {
-      const here = page.findAll('.trail .face--here')
-      expect(here.map(one => one.text().trim())).toEqual([
-        '2 Understand',
-        '3 Alternatives',
-        '4 Solution map',
-      ])
-
-      const current = page.findAll('.trail [aria-current="page"]')
+  /*
+   * **The tabs say which page you are on now, not the trail** (DEV-1324). The three case
+   * steps are one tab, so the three addresses that land on it all mark Understanding, and
+   * the trail — drawn on Overview alone — is not on them at all.
+   */
+  it('marks Understanding wherever the three case steps land, and draws no trail there', async () => {
+    for (const page of [
+      await understand(STRUCTURED),
+      await alternatives(STRUCTURED),
+      await solution(STRUCTURED),
+    ]) {
+      const current = page.findAll('.tabs [aria-current="page"]')
       expect(current).toHaveLength(1)
-      expect(current[0]!.text()).toContain(name)
+      expect(current[0]!.text()).toContain('Understanding')
+      expect(page.find('.trail').exists()).toBe(false)
     }
   })
 
-  it('marks one step on a page that is only itself', async () => {
-    const page = await shown(
-      (await import('../app/pages/reviews/[id]/code-review.vue')).default,
-      `/reviews/${STRUCTURED}/code-review`,
+  it('marks one tab on every other page, and Overview on the review’s own address', async () => {
+    const findings = await shown(
+      (await import('../app/pages/reviews/[id]/findings.vue')).default,
+      `/reviews/${STRUCTURED}/findings`,
     )
-    expect(page.findAll('.trail .face--here')).toHaveLength(1)
-    expect(page.find('.trail .face--here').text()).toContain('5 Code review')
+    expect(findings.findAll('.tabs [aria-current="page"]').map(one => one.text()))
+      .toEqual([expect.stringContaining('Findings')])
+
+    const first = await overview(STRUCTURED)
+    expect(first.findAll('.tabs [aria-current="page"]').map(one => one.text()))
+      .toEqual(['Overview'])
   })
 
   it('says a review is not on the desk rather than drawing an empty page', async () => {
@@ -745,7 +755,7 @@ describe('Understand', () => {
 
   it('opens with the brief’s one headline sentence', async () => {
     const page = await understand(STRUCTURED)
-    expect(page.find('h1').text()).toBe(
+    expect(page.find('h2.headline').text()).toBe(
       'Scheduled exports get their own context, so the report builder no longer reads '
       + 'whichever tenant a web request left behind.',
     )
@@ -1649,7 +1659,7 @@ describe('Solution', () => {
      * own sentence now, because one page cannot have three headings — and the verdict is a
      * judgement on the approach, which is what the line under a headline is for.
      */
-    expect(page.find('h1').text()).toContain(
+    expect(page.find('h2.headline').text()).toContain(
       'Scheduled exports get their own context',
     )
     expect(page.find('.sub').text()).toContain('C is the right shape.')
@@ -1830,7 +1840,7 @@ describe('Solution', () => {
     expect(blocker.text()).not.toContain('ColumnPolicy::for')
 
     /* **The whole line reaches that finding**, not the page it is on. */
-    expect(blocker.attributes('href')).toBe(`/reviews/${STRUCTURED}/code-review#F9`)
+    expect(blocker.attributes('href')).toBe(`/reviews/${STRUCTURED}/findings#F9`)
   })
 
   it('says where a held-back finding stands on its own line', async () => {
@@ -2045,7 +2055,7 @@ describe('Solution', () => {
     expect(loose).toHaveLength(2)
     expect(loose.map(one => one.find('.key').text())).toEqual(['F14', 'F15'])
     /* And each one reaches that finding, the same way a row's own lines do. */
-    expect(loose[1]!.attributes('href')).toBe(`/reviews/${STRUCTURED}/code-review#F15`)
+    expect(loose[1]!.attributes('href')).toBe(`/reviews/${STRUCTURED}/findings#F15`)
   })
 
   it('agrees with itself about one finding in no part', async () => {
@@ -2372,7 +2382,7 @@ describe('nothing on these pages is handed to the browser as markup', () => {
 
   it('finds the files it is about to check', () => {
     expect(sources.length).toBeGreaterThan(30)
-    expect(sources.map(file => file.name)).toContain('pages/reviews/[id]/understand.vue')
+    expect(sources.map(file => file.name)).toContain('pages/reviews/[id]/understanding.vue')
     expect(sources.map(file => file.name)).toContain('pages/reviews/[id]/alternatives.vue')
     expect(sources.map(file => file.name)).toContain('pages/reviews/[id]/solution.vue')
   })
