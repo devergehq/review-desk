@@ -35,12 +35,17 @@ const DAY: Timestamp = 86_400;
 /// for moving a time backwards and should not grow one so that a test can pass. The second
 /// handle on the same file is the one the harness already keeps for seeding.
 fn age(harness: &common::Harness, statement: &str, rule: i64, days: Timestamp) {
+    age_by_seconds(harness, statement, rule, days * DAY);
+}
+
+/// [`age`], to the second.
+fn age_by_seconds(harness: &common::Harness, statement: &str, rule: i64, seconds: Timestamp) {
     let connection = rusqlite::Connection::open(harness.store.path())
         .expect("opening the served database to age a rule");
     connection
         .execute(
             statement,
-            rusqlite::params![review_desk_store::now() - days * DAY, rule],
+            rusqlite::params![review_desk_store::now() - seconds, rule],
         )
         .expect("aging the rule");
 }
@@ -90,6 +95,16 @@ fn the_contract_names_this_file_as_what_ties_them() {
 
 /// A rule last cited `days` ago, served, and whether the server called it stale.
 fn stale_after(days: Timestamp) -> bool {
+    stale_after_seconds(days * DAY)
+}
+
+/// [`stale_after`], to the second.
+///
+/// **This reads the wall clock twice**: once here, to age the citation, and once in the
+/// server, to judge it. A second can tick between the two, so a case within a second of the
+/// boundary is not one this path can decide — the exact boundary is pinned against the pure
+/// `wire::is_stale` instead, in `the_boundary_is_exactly_sixty_days_to_the_second`.
+fn stale_after_seconds(seconds: Timestamp) -> bool {
     let harness = common::start_with_no_github();
 
     // A review and a finding, because a citation is a finding carrying a rule id — the
@@ -139,11 +154,11 @@ fn stale_after(days: Timestamp) -> bool {
     // with now. Aged in the database's own SQL, as `crates/store/tests/rules.rs` does for
     // the same reason: the store has no function for moving a time backwards and should
     // not grow one so that a test can pass.
-    age(
+    age_by_seconds(
         &harness,
         "UPDATE rules SET last_cited_at = ?1 WHERE id = ?2",
         rule,
-        days,
+        seconds,
     );
 
     let answer = harness.api("GET", "/rules?repo=acme/portal", None);
@@ -191,15 +206,61 @@ fn a_rule_cited_inside_the_window_is_not_stale() {
     );
 }
 
+/// **The boundary, to the second, with no clock in it.**
+///
+/// Exactly 60 days is not "more than 60 days". The contract says "more than 60 days have
+/// passed", so the boundary itself is the last moment the rule is current — and an
+/// off-by-one here is the difference between the Rules screen asking about a rule today and
+/// asking tomorrow.
+///
+/// **This was an over-HTTP test, and it raced.** It aged the citation by the test's clock
+/// and the server judged it by its own a moment later; a second ticking between the two made
+/// "exactly 60 days" 60 days and a second, and CI failed it twice in a row on #91 (DEV-1346)
+/// while the code was right. `wire::is_stale` takes `now`, so the boundary is pinned here
+/// against fixed times — which also catches `>=` and an off-by-one-second, which the old
+/// test, at whole-day resolution, could not tell apart.
 #[test]
-fn a_rule_cited_on_the_boundary_is_not_yet_stale() {
-    // Exactly 60 days is not "more than 60 days". The contract says "more than 60 days
-    // have passed", so the boundary day itself is the last day the rule is current — and
-    // an off-by-one here is the difference between the Rules screen asking about a rule
-    // today and asking tomorrow.
+fn the_boundary_is_exactly_sixty_days_to_the_second() {
+    let harness = common::start_with_no_github();
+    let id = harness
+        .store
+        .create_rule(NewRule {
+            statement: "A retry must carry an idempotency key.".to_string(),
+            prevents: "One event delivered twice.".to_string(),
+            scope: RuleScope::Global,
+            stage: RuleStage::Active,
+            origin_review_id: None,
+            origin_findings: Vec::new(),
+            why_proposed: None,
+            note: None,
+        })
+        .expect("writing a rule")
+        .id;
+    let mut rule = harness.store.get_rule(id).expect("the rule");
+
+    let cited: Timestamp = 1_760_000_000;
+    rule.last_cited_at = Some(cited);
+    rule.review_again_at = None;
+
+    let boundary = cited + STALE_AFTER_DAYS * DAY;
     assert!(
-        !stale_after(STALE_AFTER_DAYS),
+        !wire::is_stale(&rule, boundary),
         "a rule cited exactly {STALE_AFTER_DAYS} days ago has not passed the window"
+    );
+    assert!(
+        wire::is_stale(&rule, boundary + 1),
+        "a rule cited {STALE_AFTER_DAYS} days and one second ago has passed the window"
+    );
+}
+
+/// The same side of the boundary, over HTTP: the served group and `Rule.stale` agree for a
+/// rule just inside the window. Five seconds inside, a margin the two clock readings in
+/// [`stale_after_seconds`] cannot cross; the exact second is the test above.
+#[test]
+fn a_rule_cited_just_inside_the_boundary_is_served_as_active() {
+    assert!(
+        !stale_after_seconds(STALE_AFTER_DAYS * DAY - 5),
+        "a rule cited five seconds short of {STALE_AFTER_DAYS} days ago is inside the window"
     );
 }
 
