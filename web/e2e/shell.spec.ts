@@ -6,8 +6,9 @@ import { readAddresses } from './harness'
  * **The shell, measured in a browser** — DEV-1323's criteria that only a layout engine can
  * answer: every existing page renders inside the three columns at 1,600 and at 1,280 wide
  * without scrolling sideways, no element but the wordmark computes a serif face, and under
- * 700px the sidebar is behind a menu button and the conversation column is not drawn. Since
- * DEV-1333 the column holds *Ask this review*, under the page between 700 and 1,100.
+ * 700px the sidebar is behind a menu button and the conversation is a sheet behind *Ask*
+ * (DEV-1336). Since DEV-1333 the column holds *Ask this review*, under the page between 700
+ * and 1,100.
  *
  * Read-only against the acceptance suite's seeded server, so it adds nothing to the seed
  * the other files assert against by count.
@@ -33,6 +34,14 @@ async function open(page: Page, path: string) {
   await page.goto(`${seeded}${path}`)
   await page.waitForLoadState('networkidle')
   await expect(page.locator('#sidebar .wordmark')).toBeVisible()
+  await expect(page.locator('main#main')).toBeVisible()
+}
+
+/** The page at a phone's width, settled: the sidebar is behind the menu there, so the bar is waited for. */
+async function openOnAPhone(page: Page, path: string) {
+  await page.goto(`${seeded}${path}`)
+  await page.waitForLoadState('networkidle')
+  await expect(page.getByRole('button', { name: 'Menu' })).toBeVisible()
   await expect(page.locator('main#main')).toBeVisible()
 }
 
@@ -133,7 +142,7 @@ test('no element but the wordmark is set in a serif', async ({ page }) => {
 test.describe('under 700 wide', () => {
   test.use({ viewport: { width: 390, height: 844 } })
 
-  test('the sidebar is behind a menu button, and the conversation is not drawn', async ({ page }) => {
+  test('the sidebar is behind a menu button, and the conversation waits behind Ask', async ({ page }) => {
     await page.goto(`${seeded}reviews/${reviewId}/findings`)
     await page.waitForLoadState('networkidle')
 
@@ -168,5 +177,37 @@ test.describe('under 700 wide', () => {
     await expect(page.locator('#sidebar')).toBeHidden()
 
     expect(await sideways(page), 'the page scrolls sideways').toBe(0)
+  })
+
+  /*
+   * **The conversation is a bottom sheet** (DEV-1336, S14): *Ask* in the bar opens it over
+   * the review, on every tab, and the window scrolls sideways neither with it closed nor
+   * open. The two-way ask from the sheet is `phone-sheet.spec.ts`'s.
+   */
+  for (const one of PAGES.filter(page => page.review)) {
+    test(`${one.name}: no sideways scroll with the sheet closed or open`, async ({ page }) => {
+      await openOnAPhone(page, one.path)
+      const ask = page.locator('.topbar .ask')
+      const sheet = page.locator('#conversation')
+
+      await expect(ask).toBeVisible()
+      await expect(sheet).toBeHidden()
+      expect(await sideways(page), 'closed, the page scrolls sideways').toBe(0)
+
+      await ask.click()
+      await expect(sheet).toBeVisible()
+      await expect(sheet.getByRole('heading', { name: 'Ask this review' })).toBeVisible()
+      expect(await sideways(page), 'open, the page scrolls sideways').toBe(0)
+      /* Nothing in the sheet is wider than the sheet. */
+      expect(await sheet.evaluate(el => el.scrollWidth - el.clientWidth)).toBe(0)
+      expect(await sheet.locator('[data-testid="conversation-panel"]').evaluate(el => el.scrollWidth - el.clientWidth)).toBe(0)
+    })
+  }
+
+  test('Ask is drawn on a review only', async ({ page }) => {
+    for (const one of PAGES.filter(page => !page.review)) {
+      await openOnAPhone(page, one.path)
+      await expect(page.locator('.topbar .ask'), one.name).toHaveCount(0)
+    }
   })
 })
