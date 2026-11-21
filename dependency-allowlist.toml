@@ -55,9 +55,34 @@ look_again = 2027-10-08
 
 # ---------------------------------------------------------------------------- advisories
 #
-# None. Of the seven entries decided on 9 October 2026, six (simple-git x3,
+# Of the seven entries decided on 9 October 2026, six (simple-git x3,
 # @simple-git/argv-parser, node-forge, katex) were cleared by updates on 21 November 2026,
 # DEV-1354: nuxt 4.6.4 and mermaid 12.3.0 brought their trees past them. The seventh, braces,
 # was not updated - it is still 3.0.3 - but GitHub withdrew GHSA-vfj7-8cjw-p6xm on
 # 23 October 2026 with no patched version, so nothing reports it. Each entry then matched
 # nothing and was deleted rather than left to fail as ORPHANED.
+#
+# The two below are what no update could move on 21 November 2026. Both are held by packages
+# already at their newest release, and both were searched for in `web/.output/public` built
+# from that lockfile (6.3 MB, 172 files) by name and error strings, and are absent. No
+# `pnpm.overrides` is to be used for either: forcing a major into packages that declare the
+# old one is untested against their APIs and outlives the upstream fix. Decided by Patrick on
+# DEV-1354, 22 November 2026.
+
+[[advisory]]
+advisory = "GHSA-3g3m-2fjr-6pw4"
+dependency = "glob"
+ecosystem = "npm"
+reason = """
+@vue/test-utils > js-beautify > glob 13.0.7. Needs >=14.0.2, a major. js-beautify 2.0.3 is its newest release and declares glob ^13.0.6, so no in-range update reaches it. Test-only: @vue/test-utils is a devDependency and vitest is the only thing that loads it, so the AbortSignal cancellation bypass has no path into the product. Verified absent from the static build. Decided by Patrick on 22 November 2026."""
+decided_by = "Patrick"
+look_again = 2027-01-21
+
+[[advisory]]
+advisory = "GHSA-g3hv-75wg-m249"
+dependency = "minimatch"
+ecosystem = "npm"
+reason = """
+minimatch 10.2.6 has three holders, every one at its newest release: nuxt > nitropack > archiver 8.0.0 > readdir-glob 3.0.0 (archiver declares readdir-glob ^3; readdir-glob 4.0.0 has minimatch 11 but nothing takes it), and @vue/test-utils > js-beautify 2.0.3 twice, via editorconfig ^3.0.2 and via glob ^13.0.6. Needs >=11.0.1, a major. Build-time and test-time only: the globparts denial of service needs a hostile pattern, and the only patterns it sees are this repository's own build and editor configuration. Clearing it needs both archiver and js-beautify to move. Verified absent from the static build. Decided by Patrick on 22 November 2026."""
+decided_by = "Patrick"
+look_again = 2027-01-21
