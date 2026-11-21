@@ -4048,10 +4048,13 @@ test.describe('a merged pull request finishes its review', () => {
      */
     await page.goto(seeded)
     const refusal = await page.evaluate(async ({ base, reviewId }) => {
+      /* What the page would send back as shown, so the refusal is the merge's — DEV-1346. */
+      const read = await fetch(`${base}api/v1/reviews/${reviewId}/draft`)
+      const { shown } = await read.json() as { shown: unknown }
       const answer = await fetch(`${base}api/v1/reviews/${reviewId}/draft/approve`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ event: 'comment' }),
+        body: JSON.stringify({ event: 'comment', shown }),
       })
       return { status: answer.status, body: await answer.text() }
     }, { base: seeded, reviewId: mergedReviewIds[3] })

@@ -13,6 +13,11 @@
       "signoff_withdrawn_head": null,
       "updated_at": "2026-10-08T11:21:00Z"
     },
+    "shown": {
+      "body_sha256": "472e7e80d334651492104256932cadd23a10b7d734853c2bcf4b195fa4d503d3",
+      "threads_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "draft_rev": 3
+    },
     "review": {
       "id": 17,
       "repo": "acme/portal",
@@ -134,6 +139,11 @@
       "signoff_withdrawn_head": null,
       "updated_at": "2026-10-08T06:34:00Z"
     },
+    "shown": {
+      "body_sha256": "19b303c1eed589166b8ee5c7460be023e789160ef0ae93d0aa7b6808b07511fe",
+      "threads_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "draft_rev": 3
+    },
     "review": {
       "id": 15,
       "repo": "acme/portal",
@@ -240,6 +250,11 @@
       "signoff_withdrawn_head": null,
       "updated_at": "2026-10-08T10:12:00Z"
     },
+    "shown": {
+      "body_sha256": "b54b61ccdb62fdac88a8244de7fb1073154d3df4c85844f72219e6e38db484a4",
+      "threads_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "draft_rev": 3
+    },
     "review": {
       "id": 16,
       "repo": "acme/billing-api",
@@ -315,6 +330,11 @@
       "signoff_withdrawn_at": null,
       "signoff_withdrawn_head": null,
       "updated_at": "2026-10-06T14:30:00Z"
+    },
+    "shown": {
+      "body_sha256": "350b3f2f47910cf7854400e94b5413b4843bfc9f019714150868868ed0a9a19f",
+      "threads_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "draft_rev": 3
     },
     "review": {
       "id": 12,
@@ -396,6 +416,11 @@
       "sent_back_note": null,
       "sent_back_at": null,
       "updated_at": "2026-10-09T22:18:00Z"
+    },
+    "shown": {
+      "body_sha256": "7a905b041c5ccce684680ba2a26a105370784aa1af50c49a7265cca595fdd4b1",
+      "threads_sha256": "be47ed0886ff537a000f89fd7f2452725bd28493ac8374b5a37d11b04f5dcd9a",
+      "draft_rev": 3
     },
     "review": {
       "id": 41,
@@ -780,6 +805,11 @@
       "signoff_withdrawn_head": null,
       "updated_at": "2026-10-10T11:04:00Z"
     },
+    "shown": {
+      "body_sha256": "c9ea4fcada3ece8cbff175770bd767ecda5d0fd6cf82295579d8ebd6ff9afb46",
+      "threads_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "draft_rev": 3
+    },
     "review": {
       "id": 43,
       "repo": "acme/portal",
@@ -879,6 +909,11 @@
       "signoff_withdrawn_head": null,
       "updated_at": "2026-10-11T10:05:00Z"
     },
+    "shown": {
+      "body_sha256": "8f7a31173dc65a6eea850f2c7bbdce6569a80abaecc0647fd546674f691cb74f",
+      "threads_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "draft_rev": 3
+    },
     "review": {
       "id": 60,
       "repo": "globex/portal",
@@ -954,6 +989,11 @@
       "signoff_withdrawn_at": null,
       "signoff_withdrawn_head": null,
       "updated_at": "2026-10-12T14:20:00Z"
+    },
+    "shown": {
+      "body_sha256": "9dc4c12f29d47387a3088c43d3b60f6fecce369852905ecded15d5383eeefc3e",
+      "threads_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "draft_rev": 3
     },
     "review": {
       "id": 61,
@@ -1045,6 +1085,11 @@
       "signoff_withdrawn_head": null,
       "updated_at": "2026-10-11T11:40:00Z"
     },
+    "shown": {
+      "body_sha256": "fb71d747e3bafcfb7abe443c6650d597dc79bd1c6609d5b279709bdfb8faf789",
+      "threads_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "draft_rev": 3
+    },
     "review": {
       "id": 62,
       "repo": "globex/portal",
@@ -1120,6 +1165,11 @@
       "signoff_withdrawn_at": null,
       "signoff_withdrawn_head": null,
       "updated_at": "2026-10-12T16:10:00Z"
+    },
+    "shown": {
+      "body_sha256": "8e6f6375916658e792445de1f27ba30b1fe31a10e90a19cae8ab82adf209dea3",
+      "threads_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "draft_rev": 3
     },
     "review": {
       "id": 63,
@@ -1197,6 +1247,11 @@
       "signoff_withdrawn_head": null,
       "updated_at": "2026-10-09T09:15:00Z"
     },
+    "shown": {
+      "body_sha256": "cf0db8810efa2a2e71bec046fd0f5f24986e5a5fcd634fcaa2cfbf9cc6c3d1a2",
+      "threads_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "draft_rev": 3
+    },
     "review": {
       "id": 64,
       "repo": "globex/portal",
@@ -1272,6 +1327,11 @@
       "signoff_withdrawn_at": null,
       "signoff_withdrawn_head": null,
       "updated_at": "2026-10-10T10:30:00Z"
+    },
+    "shown": {
+      "body_sha256": "154fe412388479a6384e2d5bd6b316333f54b443269febbe630320b53264e70e",
+      "threads_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "draft_rev": 3
     },
     "review": {
       "id": 65,
@@ -1349,6 +1409,11 @@
       "signoff_withdrawn_head": null,
       "updated_at": "2026-10-10T17:05:00Z"
     },
+    "shown": {
+      "body_sha256": "154fe412388479a6384e2d5bd6b316333f54b443269febbe630320b53264e70e",
+      "threads_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "draft_rev": 3
+    },
     "review": {
       "id": 66,
       "repo": "globex/portal",
@@ -1424,6 +1489,11 @@
       "signoff_withdrawn_at": null,
       "signoff_withdrawn_head": null,
       "updated_at": "2026-10-11T12:50:00Z"
+    },
+    "shown": {
+      "body_sha256": "154fe412388479a6384e2d5bd6b316333f54b443269febbe630320b53264e70e",
+      "threads_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "draft_rev": 3
     },
     "review": {
       "id": 67,

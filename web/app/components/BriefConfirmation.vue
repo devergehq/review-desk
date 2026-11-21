@@ -100,7 +100,8 @@ const whyNot = computed(() => {
 
 async function confirm() {
   working.value = true
-  notice.value = noticeFor(await desk.confirmBrief(props.reviewId))
+  /* The brief this card drew, by the hash it was served with — DEV-1346. */
+  notice.value = noticeFor(await desk.confirmBrief(props.reviewId, props.brief.sha256))
   working.value = false
 }
 </script>

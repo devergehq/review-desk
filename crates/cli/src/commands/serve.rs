@@ -33,8 +33,9 @@ pub struct ServeArgs {
     /// The port to listen on. 0 asks the operating system for a free one.
     ///
     /// There is no flag for the address: the server binds 127.0.0.1 and nothing else.
-    /// This version has no authentication — reachability is the authorisation — so a flag
-    /// that could widen the bind is one typo away from publishing the whole record.
+    /// Reaching the port is enough to read the whole record — only the six sign-off acts
+    /// need the developer's cookie — so a flag that could widen the bind is one typo away
+    /// from publishing it.
     #[arg(long, value_name = "N", default_value_t = DEFAULT_PORT)]
     port: u16,
 

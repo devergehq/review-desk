@@ -165,6 +165,7 @@ export async function loadBackend(): Promise<DeskBackend> {
     restoreReview: api.restoreReview,
     deleteReview: api.deleteReview,
     confirmBrief: api.confirmBrief,
+    signIn: api.signIn,
     setFindingDisposition: api.setFindingDisposition,
     decideFinding: api.decideFinding,
     saveDraft: api.saveDraft,

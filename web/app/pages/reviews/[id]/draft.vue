@@ -536,12 +536,20 @@ async function save() {
   if (said(result)) view.value = 'rendered'
 }
 
+/*
+ * **Every sign-off on this page sends `data.shown`: the hashes of the document on screen** —
+ * DEV-1346. The page reads the draft once when it opens and again only after the developer's
+ * own write, or on `PostingWatch`'s timer once the draft is approved and the store refuses
+ * every edit to it — so the document on screen is the one that was read, and a session that
+ * rewrites the draft meanwhile is refused at the click. The refusal reads the page again
+ * and says "the draft changed while you were reading it · review the change".
+ */
 async function approve() {
   const data = detail.data.value
   if (!data) return
   if (!ofThisReview(data)) return stillReading()
   working.value = true
-  said(await desk.approveDraft(data.draft.review_id, event.value))
+  said(await desk.approveDraft(data.draft.review_id, event.value, data.shown))
   working.value = false
 }
 
@@ -550,7 +558,7 @@ async function sendBack() {
   if (!data) return
   if (!ofThisReview(data)) return stillReading()
   working.value = true
-  const result = await desk.sendBackDraft(data.draft.review_id, note.value)
+  const result = await desk.sendBackDraft(data.draft.review_id, note.value, data.shown)
   working.value = false
   if (said(result)) {
     sendingBack.value = false
@@ -654,7 +662,7 @@ async function ticketRest() {
   if (!data) return
   if (!ofThisReview(data)) return stillReading()
   working.value = true
-  const result = await desk.ticketRestAndApprove(data.draft.review_id, ticketNote.value)
+  const result = await desk.ticketRestAndApprove(data.draft.review_id, ticketNote.value, data.shown)
   working.value = false
   if (said(result)) {
     ticketingRest.value = false

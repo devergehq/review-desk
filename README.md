@@ -1187,6 +1187,62 @@ set on the first write, the reason is required, and `work list` marks it `waived
 `crates/cli` or `crates/harvest` so much as names those two functions, and it also
 checks that they still exist, so renaming them cannot quietly retire the rule.
 
+### What was shown, and who is asking
+
+**A sign-off is of the draft the developer was shown, not of whatever the draft is when the
+click lands** — DEV-1346, under DEV-1345. Before it, a session could rewrite the draft while
+the developer read it, and the click approved text they had never seen.
+
+`GET …/draft` serves `shown`: `body_sha256`, `threads_sha256` and `draft_rev`. The page
+sends back the `shown` of the document it rendered with approve, ticket-and-approve and
+send-back, and the brief's `sha256` as `shown_brief_sha256` with confirm. The store
+compares them inside the act's own transaction, and approval is a compare-and-set on
+`draft_rev`. A mismatch is a `409` `changed_since_shown` that writes nothing. The page then
+reads the draft again and says *"The draft changed while you were reading it · review the
+change."*
+
+| Value | What it is | Why it is there |
+| -- | -- | -- |
+| `body_sha256` | SHA-256 of the body as it posts | The body changed |
+| `threads_sha256` | SHA-256 of the inline comments, as JSON | The comments changed, which a finding's anchor can do without touching the body |
+| `draft_rev` | A count kept by migration 24's triggers on the body and its blocks | The draft was written at all, even with the same words |
+
+**What was approved is recorded with the approval** (`Draft::approved_shown`), so a later
+post can be held to it. For ticket-and-approve it is the draft *after* the ticketed findings
+have left it, which is the body that posts. A send-back, or the head moving under a
+sign-off, clears it with the rest of the sign-off.
+
+**Six acts need the developer's cookie**: confirm, approve, ticket-and-approve, send back,
+dismiss and restore. A request without it is a `401` `not_the_developer`, whatever else it
+gets right. Reads, the dashboard's other writes, and the agent's verbs (`brief put`,
+`finding add`, `layer set`, which never reach the server) stay open.
+
+The browser gets the cookie like this:
+
+1. `review-desk serve` makes a one-time token when it starts and prints it once, as the
+   fragment of the dashboard's URL (`#sign-in=…`). It prints it only when its output is a
+   terminal, and never with `--json`. An agent that starts the server in its own shell is
+   told to ask the developer instead.
+2. The page takes the fragment out of the address bar and trades it at
+   `POST /developer/sign-in` for an `HttpOnly; SameSite=Strict` cookie.
+3. The token is spent by that trade. The cookie is a different random value, and lasts
+   until the server stops. A restart means opening the new link.
+
+**The bar, stated honestly: it stops an agent approving with one `curl`. It does not stop
+an agent set on stealing a cookie.** Code running as the developer can read the browser's
+cookie store, or the terminal the link was printed to. What this closes is the documented
+interface: an agent can no longer sign off through the API by accident, by a prompt that
+tells it to, or by being asked. That is the bar Drafting Desk sets, and no higher. There is
+no Touch ID and no signing (DEV-1345, decision #17).
+
+**The end-to-end test signs in without a terminal** through `REVIEW_DESK_E2E_TOKEN`. Only a
+binary built with the `e2e` feature reads that variable (`pnpm run e2e:build` builds one),
+and `crates/server/src/developer.rs` refuses to compile that feature in a release build.
+
+`crates/server/tests/developer.rs` keeps the lists true. It fails if the route table and the
+contract's `security` disagree about which operations are the developer's, if one of them
+answers without the cookie, or if a sign-off is accepted without what was shown.
+
 ## Taking a review off the desk
 
 **A review is dismissed, and only one that never started is deleted.** Decided by Patrick
@@ -1587,12 +1643,12 @@ directory fixes a restored one.
 
 ### What it binds, and who may talk to it
 
-**It binds `127.0.0.1` and there is no flag to change that.** There is no authentication
-in this version — being able to reach the port is the authorisation, which
-`contract/README.md` states and justifies. That is sound only while the bind holds: on
-`0.0.0.0`, or through a tunnel, the whole record becomes readable and writable by anyone
-who can reach it. The version that adds authentication is the version that may add the
-flag.
+**It binds `127.0.0.1` and there is no flag to change that.** Being able to reach the port
+is enough to read and to make every write but six; those six need the developer's cookie
+([What was shown, and who is asking](#what-was-shown-and-who-is-asking)). That is sound only
+while the bind holds: on `0.0.0.0`, or through a tunnel, the whole record becomes readable,
+and nearly all of it writable, by anyone who can reach it. The cookie does not make a wider
+bind safe, so there is still no flag.
 
 Two tests hold the line: one asserts the address bound, and one asserts that every
 non-loopback address this machine has refuses a connection on the same port. The second

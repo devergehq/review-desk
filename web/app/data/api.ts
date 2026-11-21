@@ -63,6 +63,7 @@ import type {
   RulesPage,
   SaveDraftRequest,
   SendBackDraftRequest,
+  ShownDraft,
   SetFindingDispositionRequest,
   StartReviewRequest,
   TicketRestAndApproveRequest,
@@ -78,6 +79,8 @@ const CONTRACT_CODES = new Set([
   'invalid_value',
   'not_found',
   'conflict',
+  'changed_since_shown',
+  'not_the_developer',
   'github_unavailable',
   'store_unavailable',
 ])
@@ -146,11 +149,13 @@ async function send<T>(
       headers: { 'content-type': 'application/json', 'accept': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
       /*
-       * No credentials and no cross-origin anything: this is the same origin as the page,
-       * and the server sends no CORS headers because there is no origin it wants to be
-       * readable from.
+       * **The developer's cookie, and nothing cross-origin** — DEV-1346. Signing off needs
+       * the `HttpOnly` cookie the sign-in trade set, and `same-origin` is what sends it:
+       * this is the page's own origin, and the server sends no CORS headers because there
+       * is no other origin it wants to be readable from. It was `omit` until there was a
+       * cookie to send.
        */
-      credentials: 'omit',
+      credentials: 'same-origin',
       signal: limit.signal,
     })
   }
@@ -383,8 +388,19 @@ export function startReview(prUrl: string): Promise<Review> {
 }
 
 /** `POST /reviews/{id}/brief/confirm` — the developer's act at layer 2. */
-export function confirmBrief(reviewId: number): Promise<Brief> {
-  return send<Brief>('POST', `/reviews/${reviewId}/brief/confirm`)
+export function confirmBrief(reviewId: number, shownBriefSha256: string): Promise<Brief> {
+  /* The brief the page drew, by the `sha256` it was served with. A brief rewritten since is a 409. */
+  return send<Brief>('POST', `/reviews/${reviewId}/brief/confirm`, {
+    shown_brief_sha256: shownBriefSha256,
+  })
+}
+
+/**
+ * `POST /developer/sign-in` — trade the one-time token from the sign-in link for the
+ * developer's cookie. The token is spent by this call; the cookie is set by the answer.
+ */
+export function signIn(token: string): Promise<{ developer: true }> {
+  return send<{ developer: true }>('POST', '/developer/sign-in', { token })
 }
 
 /** `PATCH /reviews/{id}/findings/{seq}` — move a finding, with the reason it moved. */
@@ -441,14 +457,22 @@ export function saveDraft(
 }
 
 /** `POST /reviews/{id}/draft/approve` — approved here, posted by the review session. */
-export function approveDraft(reviewId: number, event: ReviewEvent): Promise<DraftDetail> {
-  const request: ApproveDraftRequest = { event }
+export function approveDraft(
+  reviewId: number,
+  event: ReviewEvent,
+  shown: ShownDraft,
+): Promise<DraftDetail> {
+  const request: ApproveDraftRequest = { event, shown }
   return send<DraftDetail>('POST', `/reviews/${reviewId}/draft/approve`, request)
 }
 
 /** `POST /reviews/{id}/draft/send-back` — refused without a note, as the API refuses it. */
-export function sendBackDraft(reviewId: number, note: string): Promise<DraftDetail> {
-  const request: SendBackDraftRequest = { note }
+export function sendBackDraft(
+  reviewId: number,
+  note: string,
+  shown: ShownDraft,
+): Promise<DraftDetail> {
+  const request: SendBackDraftRequest = { note, shown }
   return send<DraftDetail>('POST', `/reviews/${reviewId}/draft/send-back`, request)
 }
 
@@ -466,8 +490,9 @@ export function sendBackDraft(reviewId: number, note: string): Promise<DraftDeta
 export function ticketRestAndApprove(
   reviewId: number,
   note: string | null,
+  shown: ShownDraft,
 ): Promise<TicketedAndApproved> {
-  const request: TicketRestAndApproveRequest = { note }
+  const request: TicketRestAndApproveRequest = { note, shown }
   return send<TicketedAndApproved>(
     'POST',
     `/reviews/${reviewId}/draft/ticket-and-approve`,

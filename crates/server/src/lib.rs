@@ -15,12 +15,14 @@
 //!
 //! ## It binds `127.0.0.1` and there is no flag to change that
 //!
-//! There is no authentication in this version: being able to reach the port is the
-//! authorisation, which `contract/README.md` states and justifies. **That is sound only
+//! Being able to reach the port is the authorisation for reading and for every write but
+//! six, which need the developer's cookie too — `crate::developer`, DEV-1346 — as
+//! `contract/README.md` states. **That is sound only
 //! while the bind holds** — on `0.0.0.0`, or through a tunnel, the whole record becomes
 //! readable and writable by anyone who can reach it. So the address is a constant, not an
-//! option: a flag that could widen it is one typo away from publishing the record, and
-//! the version that adds authentication is the version that may add the flag.
+//! option: a flag that could widen it is one typo away from publishing the record. The
+//! developer's cookie guards six acts and nothing else, so it is not the authentication
+//! that would make a wider bind safe.
 //!
 //! ## Why `axum`, and why it is not `tiny_http` any more
 //!

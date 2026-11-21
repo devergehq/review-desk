@@ -15,7 +15,7 @@
     "test": "node scripts/contract-types.mjs && vitest run",
     "e2e": "pnpm run e2e:build && playwright test --config e2e/playwright.config.ts --project desk",
     "e2e:screenshots": "pnpm run e2e:build && playwright test --config e2e/playwright.config.ts --project screenshots",
-    "e2e:build": "pnpm run generate && cargo build --manifest-path ../Cargo.toml",
+    "e2e:build": "pnpm run generate && cargo build --manifest-path ../Cargo.toml --features review-desk/e2e",
     "contract:types": "node scripts/contract-types.mjs",
     "shoot": "node scripts/shoot.mjs"
   },

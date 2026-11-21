@@ -2587,6 +2587,8 @@ export function sampleBackend(): DeskBackend {
 
     startReview: async link => answered(startReview(link)),
     confirmBrief: async id => answered(wrote(id, confirmBrief(id))),
+    /* No server, so no cookie and nothing to refuse: the sample's developer is signed in. */
+    signIn: async () => answered({ developer: true as const }),
     setFindingDisposition: async (reviewId, seq, disposition, reason) =>
       answered(wrote(reviewId, setFindingDisposition(reviewId, seq, disposition, reason))),
     decideFinding: async (reviewId, seq, request) =>
