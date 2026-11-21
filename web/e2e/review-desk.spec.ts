@@ -4703,17 +4703,26 @@ test.describe('state that belongs to one review', () => {
     : `${seeded}reviews/${id}/${TAB_OF[step]}${band(step)}`
 
   async function byTheTrail(page: Page, id: number, step: string): Promise<number> {
+    /*
+     * **Every click is in the app**, because a history jump across a full page load bypasses
+     * the router guard these tests are about. The list of every review was the sidebar's
+     * Reviews item until DEV-1325 made it the Pull requests list's *Every review* tab, so the
+     * walk is one click longer from a review's page — and how many entries it added is
+     * measured rather than written down, which a fixed 2 or 3 no longer was.
+     */
+    const before = await page.evaluate(() => history.length)
     await page.getByRole('navigation', { name: 'Review Desk' })
-      .getByRole('link', { name: 'Reviews' })
+      .getByRole('link', { name: 'Pull requests' })
       .click()
-    await expect(page).toHaveURL(/\/reviews$/)
-    await page.locator(`a[href="/reviews/${id}"]`).click()
+    await page.getByRole('tab', { name: /^Every review/ }).click()
+    await expect(page).toHaveURL(/\?view=every$/)
+    await page.locator(`#panel-every a[href="/reviews/${id}"]`).first().click()
     await expect(page).toHaveURL(`${seeded}reviews/${id}`)
-    if (step === 'understand') return 2
-
-    await page.locator(`.trail a[href="/reviews/${id}/${TAB_OF[step]}${band(step)}"]`).click()
-    await expect(page).toHaveURL(at(id, step))
-    return 3
+    if (step !== 'understand') {
+      await page.locator(`.trail a[href="/reviews/${id}/${TAB_OF[step]}${band(step)}"]`).click()
+      await expect(page).toHaveURL(at(id, step))
+    }
+    return (await page.evaluate(() => history.length)) - before
   }
 
   /** The back button's own menu: this many entries up, in one navigation. */

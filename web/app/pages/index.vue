@@ -1387,13 +1387,19 @@ const doneRows = computed(() => {
     .filter(item => showing(item.review.repo))
 })
 
-/** Which tab is open, held in the address so a link, a reload and Back all keep it. */
+/**
+ * Which tab is open, held in the address so a link, a reload and Back all keep it.
+ *
+ * **Pushed, not replaced**: a tab is a place in the list, so Back from *Every review* is
+ * *Waiting on you* again rather than wherever the reader was before the list.
+ */
 const route = useRoute()
 const router = useRouter()
 const view = computed<ListView>({
   get: () => viewFromQuery(route.query.view),
   set: (next) => {
-    void router.replace({ query: { ...route.query, view: next === 'waiting' ? undefined : next } })
+    if (next === view.value) return
+    void router.push({ query: { ...route.query, view: next === 'waiting' ? undefined : next } })
   },
 })
 
