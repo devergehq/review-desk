@@ -591,6 +591,9 @@ impl Store {
                 SET status = ?2,
                     approved_at = NULL,
                     approved_by = NULL,
+                    approved_body_sha256 = NULL,
+                    approved_threads_sha256 = NULL,
+                    approved_rev = NULL,
                     signoff_withdrawn_at = ?3,
                     signoff_withdrawn_head = ?4,
                     updated_at = ?3

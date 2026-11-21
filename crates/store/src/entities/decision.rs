@@ -294,11 +294,17 @@ impl Store {
     ///
     /// Refused when the review has no open finding: there would be nothing to file, and
     /// the nits already held back are asked for on their own.
+    ///
+    /// **Held to what was shown**, as [`Store::approve_draft`] is — DEV-1346. What is
+    /// recorded as approved is the draft *after* the ticketed findings have left it, which
+    /// is the body that posts; what is compared is the draft the developer pressed the
+    /// button under.
     pub fn ticket_rest_and_approve(
         &self,
         review_id: i64,
         note: Option<&str>,
         by: Actor,
+        shown: &crate::model::DraftShown,
     ) -> Result<TicketedAndApproved> {
         only_the_developer(by, "approve a draft")?;
         self.refuse_if_dismissed(review_id, "ticketing what is left and approving")?;
@@ -312,6 +318,8 @@ impl Store {
                 wanted: "only a draft that is ready can be approved",
             });
         }
+
+        self.refuse_unless_draft_shown(review_id, shown)?;
 
         let open: Vec<Finding> = self
             .list_findings(review_id)?
@@ -373,7 +381,8 @@ impl Store {
         // And the same statements `approve_draft` runs, layer 6 included. The event is not
         // the caller's to choose: this act is an approval, and a request for changes that
         // tickets everything it asked for would contradict itself.
-        super::draft::write_approval(&tx, review_id, ReviewEvent::Approve, by, at)?;
+        let approved = self.draft_shown(review_id)?;
+        super::draft::write_approval(&tx, review_id, ReviewEvent::Approve, by, at, &approved)?;
         self.set_review_layer(
             review_id,
             crate::model::ReviewLayerName::Draft.number(),

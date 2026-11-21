@@ -21,9 +21,15 @@ fixed-clock = []
 [dependencies]
 rusqlite.workspace = true
 serde.workspace = true
+# What the developer was shown is hashed here and compared here — DEV-1346 — so the
+# serialisation the threads' hash is taken over lives beside the types it serialises.
+serde_json.workspace = true
+# SHA-256, for the same reason. RustCrypto's, rather than forty lines of our own: a hash
+# that two crates and a later post compare is the one place a home-made primitive costs
+# more than a dependency does.
+sha2 = "0.11"
 thiserror.workspace = true
 
 [dev-dependencies]
 review-desk-store = { path = ".", features = ["fixed-clock"] }
-serde_json.workspace = true
 tempfile.workspace = true

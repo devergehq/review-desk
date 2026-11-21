@@ -10,6 +10,11 @@ repository.workspace = true
 name = "review-desk"
 path = "src/main.rs"
 
+# Forwarded to the server: see `crates/server/Cargo.toml`. `web/` builds with it for
+# `pnpm run e2e`, and nothing else does.
+[features]
+e2e = ["review-desk-server/e2e"]
+
 [dependencies]
 review-desk-store = { path = "../store" }
 review-desk-harvest = { path = "../harvest" }

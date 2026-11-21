@@ -11,6 +11,12 @@ build = "build.rs"
 name = "review_desk_server"
 path = "src/lib.rs"
 
+# **The end-to-end test's build, and never a release one.** With it, `review-desk serve`
+# takes its sign-in token from `REVIEW_DESK_E2E_TOKEN`, so a browser test can sign in without
+# reading a terminal. `src/developer.rs` refuses to compile it without debug assertions.
+[features]
+e2e = []
+
 [dependencies]
 review-desk-store = { path = "../store" }
 review-desk-harvest = { path = "../harvest" }

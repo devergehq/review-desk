@@ -24,6 +24,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::allele::{Allele, SessionStatus};
+use crate::developer::{self, Developer};
 use crate::error::{ApiError, Code};
 use crate::github::Github;
 use crate::route::{match_route, Operation, Target};
@@ -48,6 +49,16 @@ pub struct Api {
     records: Records,
     github: Github,
     allele: Allele,
+    developer: Developer,
+}
+
+/// One answer: a status, a document, and the cookie to set when the answer is a sign-in.
+#[derive(Debug)]
+pub struct Answered {
+    pub status: u16,
+    pub document: Value,
+    /// A `Set-Cookie` value. `Some` only on a successful `POST /developer/sign-in`.
+    pub set_cookie: Option<String>,
 }
 
 impl Api {
@@ -55,11 +66,14 @@ impl Api {
     ///
     /// Asks no Allele: every review's session reads as having none to ask. A server that
     /// should ask says where, with [`Api::reading_sessions_from`].
-    pub fn new(records: Records, github: Github) -> Self {
+    ///
+    /// `developer` is who may sign off: see [`crate::developer`].
+    pub fn new(records: Records, github: Github, developer: Developer) -> Self {
         Api {
             records,
             github,
             allele: Allele::none(),
+            developer,
         }
     }
 
@@ -70,10 +84,34 @@ impl Api {
     }
 
     /// Answer one request. `path` is the part after [`API_PREFIX`], `query` the part
-    /// after the `?`.
-    pub fn answer(&self, method: &str, path: &str, query: &str, body: &[u8]) -> (u16, Value) {
+    /// after the `?`, and `cookie` the developer cookie's value if the request sent one.
+    pub fn answer(
+        &self,
+        method: &str,
+        path: &str,
+        query: &str,
+        body: &[u8],
+        cookie: Option<&str>,
+    ) -> Answered {
+        let mut set_cookie = None;
         let answered = match match_route(method, path) {
             Target::Health => self.health(),
+            Target::Operation(Operation::SignIn) => {
+                self.sign_in(body).map(|(status, doc, cookie)| {
+                    set_cookie = Some(cookie);
+                    (status, doc)
+                })
+            }
+            // **The developer extractor**, before the body is read and before any handler
+            // runs: an act without the cookie is refused whatever it says.
+            Target::Operation(operation)
+                if operation.is_developer_act() && !self.developer.recognises(cookie) =>
+            {
+                Err(ApiError::not_the_developer(
+                    "only the developer can do this, from the dashboard: open the sign-in link \
+                     `review-desk serve` printed in its own terminal",
+                ))
+            }
             Target::Operation(operation) => self.operation(operation, query, body),
             Target::WrongMethod => Err(ApiError::bad_request(format!(
                 "{path} does not answer {method}"
@@ -83,7 +121,7 @@ impl Api {
             ))),
         };
 
-        match answered {
+        let (status, document) = match answered {
             Ok((status, body)) => (status, body),
             // The body is the contract's `Error` object itself, not a document wrapping
             // one. Every error response in `openapi.yaml` is `$ref: Error`, and the
@@ -91,6 +129,37 @@ impl Api {
             // line wraps its failures in `{"error": ...}` because its own `--json`
             // contract says so; this is a different contract and it says otherwise.
             Err(error) => (error.status(), error.document()),
+        };
+
+        Answered {
+            status,
+            document,
+            set_cookie,
+        }
+    }
+
+    /// `POST /developer/sign-in`: trade the one-time token for the developer cookie.
+    ///
+    /// Spends the token. A second trade, or a wrong token, is a `401` that says where a
+    /// new one comes from.
+    fn sign_in(&self, body: &[u8]) -> Result<(u16, Value, String), ApiError> {
+        let request: SignInRequest = read_body(body)?;
+        match self.developer.sign_in(&request.token) {
+            Some(Ok(cookie)) => Ok((
+                200,
+                json!({ "developer": true }),
+                developer::set_cookie(&cookie),
+            )),
+            Some(Err(error)) => Err(ApiError {
+                code: Code::StoreUnavailable,
+                message: format!("no randomness for a cookie: {error}"),
+                field: None,
+                expected: None,
+            }),
+            None => Err(ApiError::not_the_developer(
+                "that sign-in link has been used, or is not from this run of the server: \
+                 restart `review-desk serve` in your own terminal for a new one",
+            )),
         }
     }
 
@@ -126,7 +195,7 @@ impl Api {
             Operation::DeleteReview { review_id } => self.delete_review(review_id),
             Operation::ListDuplicateRounds => self.duplicate_rounds(query),
             Operation::FoldRound { review_id } => self.fold_round(review_id),
-            Operation::ConfirmBrief { review_id } => self.confirm_brief(review_id),
+            Operation::ConfirmBrief { review_id } => self.confirm_brief(review_id, body),
             Operation::GetProblemStatement { review_id } => self.problem_statement(review_id),
             Operation::GetReviewSession { review_id } => self.review_session(review_id),
             Operation::ListMessages { review_id } => self.messages(review_id),
@@ -152,6 +221,11 @@ impl Api {
             Operation::DismissRule { rule_id } => self.dismiss_rule(rule_id, body),
             Operation::RetireRule { rule_id } => self.retire_rule(rule_id, body),
             Operation::DeferRule { rule_id } => self.defer_rule(rule_id, body),
+            // Answered in `answer`, because it is the one answer that sets a cookie; trading
+            // the token here would spend it and hand back no cookie.
+            Operation::SignIn => Err(ApiError::bad_request(
+                "a sign-in is answered before any operation is",
+            )),
         }
     }
 
@@ -1171,7 +1245,12 @@ impl Api {
     /// — and this API is the only surface where it happens: `review-desk brief confirm`
     /// no longer exists. The actor is `store::SIGN_OFF_ACTOR`, a constant, and the store
     /// refuses any other.
-    fn confirm_brief(&self, review_id: i64) -> Result<(u16, Value), ApiError> {
+    ///
+    /// **Of the brief the page drew** — DEV-1346. The body carries the `sha256` the brief
+    /// was served with, and a brief rewritten since is a `409` that wrote nothing.
+    fn confirm_brief(&self, review_id: i64, body: &[u8]) -> Result<(u16, Value), ApiError> {
+        let request: ConfirmBriefRequest = read_body(body)?;
+
         // Checked first so an unknown review is 404 and a review with no brief is 409.
         // The contract gives the operation both, and they are different things to say.
         self.records.review(review_id)?;
@@ -1179,7 +1258,9 @@ impl Api {
 
         // Confirming an already confirmed brief returns it unchanged rather than failing,
         // which is what the store does and what the contract asks for.
-        let brief = self.records.confirm_brief(review_id)?;
+        let brief = self
+            .records
+            .confirm_brief(review_id, &request.shown_brief_sha256)?;
         Ok((200, wire::brief(&brief)))
     }
 
@@ -1369,6 +1450,9 @@ impl Api {
 
         Ok(json!({
             "draft": wire::draft(draft),
+            // **What the sign-off endpoints take back** — DEV-1346. The page holds the
+            // document it rendered and sends this from it, so an act is on what was shown.
+            "shown": wire::draft_shown(&self.records.draft_shown(review_id)?),
             "review": wire::review(&review),
             "lint": wire::draft_lint(&draft.lint),
             "sections": sections,
@@ -1508,7 +1592,9 @@ impl Api {
         self.records.review(review_id)?;
         self.draft_must_be(review_id, DraftStatus::Ready, "approved")?;
 
-        let approved = self.records.approve_draft(review_id, event)?;
+        let approved = self
+            .records
+            .approve_draft(review_id, event, &request.shown.stored())?;
         Ok((200, self.draft_detail(&approved)?))
     }
 
@@ -1540,7 +1626,9 @@ impl Api {
             )));
         }
 
-        let sent_back = self.records.send_back_draft(review_id, &note)?;
+        let sent_back = self
+            .records
+            .send_back_draft(review_id, &note, &request.shown.stored())?;
         Ok((200, self.draft_detail(&sent_back)?))
     }
 
@@ -1622,19 +1710,19 @@ impl Api {
         review_id: i64,
         body: &[u8],
     ) -> Result<(u16, Value), ApiError> {
-        let request: TicketRestAndApproveRequest = if body.is_empty() {
-            TicketRestAndApproveRequest::default()
-        } else {
-            read_body(body)?
-        };
+        // **A body is required now**, where it was optional: what the developer was shown
+        // is part of the act — DEV-1346.
+        let request: TicketRestAndApproveRequest = read_body(body)?;
 
         self.records.review(review_id)?;
         self.draft_must_be(review_id, DraftStatus::Ready, "approved")?;
 
         let note = trimmed(request.note);
-        let settled = self
-            .records
-            .ticket_rest_and_approve(review_id, note.as_deref())?;
+        let settled = self.records.ticket_rest_and_approve(
+            review_id,
+            note.as_deref(),
+            &request.shown.stored(),
+        )?;
 
         Ok((
             200,
@@ -2082,12 +2170,47 @@ struct DecideFindingRequest {
     note: Option<String>,
 }
 
-/// `TicketRestAndApproveRequest` from the contract. One optional field, and so is the body.
-#[derive(Debug, Default, Deserialize)]
+/// `TicketRestAndApproveRequest` from the contract.
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct TicketRestAndApproveRequest {
     #[serde(default)]
     note: Option<String>,
+    shown: ShownDraftRequest,
+}
+
+/// `ShownDraft` from the contract: what the page was shown, sent back with the act.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ShownDraftRequest {
+    body_sha256: String,
+    threads_sha256: String,
+    draft_rev: i64,
+}
+
+impl ShownDraftRequest {
+    /// The store's shape, for the reason `SaveDraftSection::stored` gives.
+    fn stored(&self) -> review_desk_store::DraftShown {
+        review_desk_store::DraftShown {
+            body_sha256: self.body_sha256.clone(),
+            threads_sha256: self.threads_sha256.clone(),
+            draft_rev: self.draft_rev,
+        }
+    }
+}
+
+/// `SignInRequest` from the contract.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SignInRequest {
+    token: String,
+}
+
+/// `ConfirmBriefRequest` from the contract.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConfirmBriefRequest {
+    shown_brief_sha256: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2103,6 +2226,7 @@ struct SaveDraftEdit {
 #[serde(deny_unknown_fields)]
 struct ApproveDraftRequest {
     event: String,
+    shown: ShownDraftRequest,
 }
 
 /// `AskSessionRequest` from the contract.
@@ -2118,6 +2242,7 @@ struct AskSessionRequest {
 #[serde(deny_unknown_fields)]
 struct SendBackDraftRequest {
     note: String,
+    shown: ShownDraftRequest,
 }
 
 /// `RequestNitTicketRequest` from the contract. Every field optional, and so is the body.

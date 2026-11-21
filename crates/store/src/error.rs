@@ -122,6 +122,20 @@ pub enum StoreError {
     },
 
     /// A row was requested, or referenced, that is not there.
+    /// The developer acted on something that has changed since it was shown to them.
+    ///
+    /// DEV-1346. Nothing was written: the act was about what the page showed, and that is
+    /// no longer what the record holds. The page reads the draft again and shows the change.
+    #[error(
+        "the {what} of review {review_id} changed while you were reading it: {moved}. \
+         Nothing was written; read it again and review the change"
+    )]
+    ShownMoved {
+        what: &'static str,
+        review_id: i64,
+        moved: String,
+    },
+
     #[error("no {entity} with id {id}")]
     NotFound { entity: &'static str, id: String },
 
@@ -193,6 +207,7 @@ impl StoreError {
             StoreError::SupersededRound { .. } => "superseded_round",
             StoreError::NotDismissed { .. } => "not_dismissed",
             StoreError::ReviewStarted { .. } => "review_started",
+            StoreError::ShownMoved { .. } => "changed_since_shown",
             StoreError::NotFound { .. } => "not_found",
             StoreError::UnknownParent { .. } => "unknown_parent",
             StoreError::InvalidValue { .. } => "invalid_value",
@@ -220,6 +235,7 @@ impl StoreError {
                 | StoreError::SupersededRound { .. }
                 | StoreError::NotDismissed { .. }
                 | StoreError::ReviewStarted { .. }
+                | StoreError::ShownMoved { .. }
                 | StoreError::NotFound { .. }
                 | StoreError::UnknownParent { .. }
                 | StoreError::InvalidValue { .. }
