@@ -2203,12 +2203,23 @@ test.describe('the case for one review, in three bands', () => {
      * the Linux runner in 4 (90px, 1.25x) — so the comparison below measured font hinting
      * rather than the defect. At 1,600, the shell's cap and the width the S screens are drawn
      * at, it is 2.7x on macOS. The 1.5x rule is unchanged.
+     *
+     * **And with the *On this tab* rail's column taken out (DEV-1327).** S3 sets the rail
+     * beside the bands, which takes 196px from them at 1,600 and put this line back on the
+     * same boundary: 90px as built, 113px as the defect, 1.25x. What is measured here is how
+     * a problem's detail line wraps, not where the rail is, so the bands are given the whole
+     * of the case's column again — the width 1,600 was chosen for. The rail itself is
+     * measured by its own test, below.
      */
     for (const width of [1600, 390]) {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
       await page.goto(`${seeded}reviews/${structuredReviewId}/understanding`)
       await expect(page.locator('h2.headline')).toBeVisible()
       await page.waitForLoadState('networkidle')
+      await page.addStyleTag({
+        content: '.case-grid { grid-template-columns: minmax(0, 1fr) !important }'
+          + ' .case-rail { display: none !important }',
+      })
 
       await page.getByRole('button', { name: /A scheduled export read its tenant/ }).click()
       await expect(page.locator('#problem-1')).toBeVisible()
