@@ -756,3 +756,154 @@ export function repliesToAnswer(
     .sort((one, two) => one.finding_seq - two.finding_seq)
     .map(outcome => outcome.finding_key)
 }
+
+/* ------------------------------ What came back, grouped ------------------------------ */
+
+/**
+ * **What a group's figure rests on**, in the four words the S screens use.
+ *
+ * - `ran` — something re-ran the check. **The record holds no re-run today**, so nothing
+ *   here answers it; it is in the set so a later harvest that records one has a word, and so
+ *   a test can assert that nothing claims it.
+ * - `read` — the harvester read the code: a comparison between two commits.
+ * - `told` — the author said so: a reply, a reason, a resolved thread.
+ * - `not_rechecked` — nothing has come back and nothing has looked again.
+ */
+export type ReplyBasis = 'ran' | 'read' | 'told' | 'not_rechecked'
+
+/** The words a basis is drawn in. */
+export const BASIS_WORDS: Record<ReplyBasis, string> = {
+  ran: 'ran',
+  read: 'read',
+  told: 'told',
+  not_rechecked: 'not re-checked',
+}
+
+/** One finding in a group, with the outcome its place rests on. */
+export interface GroupedFinding {
+  seq: number
+  key: string
+  basis: ReplyBasis
+  /** The outcome that put it in this group, or `null` for a finding nothing came back on. */
+  outcome: Outcome | null
+}
+
+/**
+ * **A review's outcomes since it was posted, in the five groups the S screens draw them in.**
+ * DEV-1326 wrote it for Overview's *Since you posted*; DEV-1329's *Since round 1* and
+ * DEV-1330's Replies groups read it rather than grouping again. Recorded in the DEV-1322 plan
+ * as a cross-child contract.
+ */
+export interface SinceYouPosted {
+  /** The author resolved the finding's thread. Told, never re-run. */
+  fixed: GroupedFinding[]
+  /** The author replied, and something has been recorded on the finding since. */
+  answered: GroupedFinding[]
+  /**
+   * The author's reply is the newest thing on the finding: **exactly [`repliesToAnswer`]**,
+   * which is the Replies tab's count and the header's *Answer F3*. One definition.
+   */
+  contested: GroupedFinding[]
+  /** Posted, and nothing has come back from the author on it. */
+  noReply: GroupedFinding[]
+  /**
+   * **The harvester's comparison says the finding's own lines moved** — `lines_changed` is
+   * `true` on a `code_changed_after`. A file that changed around a line that did not is not
+   * here, and neither is a detail that carries no `lines_changed` at all: "new code under
+   * F6" is a positive claim and only the comparison makes it.
+   */
+  newCode: GroupedFinding[]
+  /**
+   * The commits the newest comparison of each posted finding named, at seven characters.
+   * **Not the number of commits pushed**: a comparison names the newest commit that touched
+   * the finding's file, so five pushes to one file are one commit here.
+   */
+  commits: string[]
+}
+
+/** The kinds the author writes, as the harvester and `outcome add` record them. */
+const FROM_THE_AUTHOR: ReadonlySet<OutcomeKind> = new Set<OutcomeKind>(['replied', 'rejected', 'thread_resolved'])
+
+/**
+ * Sort the outcomes the way [`repliesToAnswer`] reads them: by time, then by id.
+ */
+function inOrder<T extends Pick<Outcome, 'id' | 'occurred_at'>>(outcomes: readonly T[]): T[] {
+  return [...outcomes].sort((one, two) =>
+    (Date.parse(one.occurred_at) - Date.parse(two.occurred_at)) || (one.id - two.id))
+}
+
+/**
+ * Group what came back. **Each finding the draft posted is in exactly one of the first four
+ * groups**, chosen in this order: contested, fixed, answered, no reply. `newCode` is drawn
+ * beside them rather than instead of them, because code moving under a finding says nothing
+ * about whether its author has answered it.
+ *
+ * `posted` is the findings the draft carried, which are the ones a reply can be owed on.
+ * A finding outside the draft that the author replied to anyway is still grouped by its
+ * reply: what they said is a fact whether or not the draft asked them.
+ */
+export function sinceYouPosted(
+  posted: ReadonlyArray<{ seq: number, key: string }>,
+  outcomes: readonly Outcome[],
+): SinceYouPosted {
+  const contestedKeys = new Set(repliesToAnswer(outcomes))
+  const ordered = inOrder(outcomes)
+
+  const groups: SinceYouPosted = {
+    fixed: [], answered: [], contested: [], noReply: [], newCode: [], commits: [],
+  }
+
+  const findings = new Map<number, string>()
+  for (const finding of posted) findings.set(finding.seq, finding.key)
+  for (const outcome of ordered) {
+    if (outcome.actor === 'author' && FROM_THE_AUTHOR.has(outcome.kind) && !findings.has(outcome.finding_seq)) {
+      findings.set(outcome.finding_seq, outcome.finding_key)
+    }
+  }
+
+  for (const [seq, key] of [...findings.entries()].sort((one, two) => one[0] - two[0])) {
+    const own = ordered.filter(outcome => outcome.finding_seq === seq)
+    const fromAuthor = own.filter(outcome => outcome.actor === 'author' && FROM_THE_AUTHOR.has(outcome.kind))
+    const newest = <K extends OutcomeKind>(kind: K) =>
+      [...fromAuthor].reverse().find(outcome => outcome.kind === kind) ?? null
+
+    if (contestedKeys.has(key)) {
+      groups.contested.push({ seq, key, basis: 'told', outcome: newest('replied') })
+    }
+    else if (newest('thread_resolved')) {
+      groups.fixed.push({ seq, key, basis: 'told', outcome: newest('thread_resolved') })
+    }
+    else if (fromAuthor.length > 0) {
+      groups.answered.push({ seq, key, basis: 'told', outcome: fromAuthor[fromAuthor.length - 1]! })
+    }
+    else {
+      groups.noReply.push({ seq, key, basis: 'not_rechecked', outcome: null })
+    }
+  }
+
+  /*
+   * **The newest comparison per finding, and only for the findings the draft posted.**
+   *
+   * The harvester compares the posted commit with the pull request's head each time it
+   * reads, and records each new head's comparison as an outcome of its own — so the newest
+   * one is the current answer, and an earlier `lines_changed: true` that a later `false`
+   * overturns is no longer true. It also compares every finding with a file, cut and held
+   * back ones included; a finding the author never saw has nothing to re-anchor.
+   */
+  const postedSeqs = new Set(posted.map(finding => finding.seq))
+  const latest = new Map<number, Outcome>()
+  for (const outcome of ordered) {
+    if (outcome.kind !== 'code_changed_after' || !postedSeqs.has(outcome.finding_seq)) continue
+    latest.set(outcome.finding_seq, outcome)
+  }
+  for (const outcome of latest.values()) {
+    const held = facts(outcome.detail)
+    const commit = shortCommit(held?.commit)
+    if (commit != null && !groups.commits.includes(commit)) groups.commits.push(commit)
+    if (held?.lines_changed !== true) continue
+    groups.newCode.push({ seq: outcome.finding_seq, key: outcome.finding_key, basis: 'read', outcome })
+  }
+  groups.newCode.sort((one, two) => one.seq - two.seq)
+
+  return groups
+}

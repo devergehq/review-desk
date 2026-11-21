@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
-import { cli, scratch, serve, stop, type Serving, signedIn } from './harness'
+import { cli, openSteps, scratch, serve, signedIn, stop, type Serving } from './harness'
 
 /*
  * **Step 7's page at real density, measured at 1440 and 390.**
@@ -513,7 +513,7 @@ test('the trail’s step 7 opens the page', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto(`${serving.url}reviews/${reviewId}`)
 
-  await page.locator('.trail').getByRole('link', { name: '7 What happened' }).click()
+  await (await openSteps(page)).getByRole('link', { name: '7 What happened' }).click()
   await expect(page).toHaveURL(new RegExp(`/reviews/${reviewId}/replies$`))
   await expect(page.locator('h2.headline')).toHaveText(
     'Nothing has read this pull request back from GitHub',

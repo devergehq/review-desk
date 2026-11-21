@@ -2,7 +2,19 @@ import { resolve } from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
-import { cli, draftStamps, pinClockAt, readAddresses, seedReadyDraft } from './harness'
+import {
+  cli,
+  draftStamps,
+  fresh,
+  openSteps,
+  pinClockAt,
+  readAddresses,
+  scratch,
+  seedReadyDraft,
+  seedStructuredReview,
+  serve,
+  stop,
+} from './harness'
 
 /*
  * The screenshots in `docs/screenshots/`, produced rather than taken by hand.
@@ -124,7 +136,7 @@ test.describe('a seeded database', () => {
      * looking at this screen has to be able to tell it from one they confirmed
      * themselves.
      */
-    await page.goto(`${seeded}reviews/${waivedReviewId}`)
+    await page.goto(`${seeded}reviews/${waivedReviewId}/understanding`)
     await expect(page.getByText('Confirmation not required.')).toBeVisible()
     await shot(page, 'seeded-5-review-no-confirmation')
   })
@@ -258,7 +270,7 @@ test.describe('the case page', () => {
       await page.setViewportSize({ width, height: width === 1440 ? 900 : 844 })
       const suffix = width === 1440 ? '' : '-390'
 
-      await page.goto(`${seeded}reviews/${structuredReviewId}`)
+      await page.goto(`${seeded}reviews/${structuredReviewId}/understanding`)
       await expect(page.locator('h2.headline')).toBeVisible()
       /*
        * **As it opens.** The headline, the derived answer line, the verdict on the
@@ -289,7 +301,7 @@ test.describe('the case page', () => {
      * written before the structured one existed. The seeded review's own brief is three
      * free-text fields, and the criterion is that Understand still shows it.
      */
-    await page.goto(`${seeded}reviews/${reviewId}`)
+    await page.goto(`${seeded}reviews/${reviewId}/understanding`)
     await expect(page.getByText('Written before the structured brief.')).toBeVisible()
     await shot(page, 'dev-885-4-understand-old-brief')
   })
@@ -307,7 +319,8 @@ test.describe('the case page', () => {
 test.describe('what DEV-892 and DEV-917 fixed', () => {
   test('a step’s card opened, and every number said in full', async ({ page }) => {
     await page.goto(`${seeded}reviews/${structuredReviewId}`)
-    await expect(page.locator('h2.headline')).toBeVisible()
+    /* The trail is folded under *Where it stands* on Overview since DEV-1326. */
+    await openSteps(page)
 
     /*
      * Step 2's detail is 34 words on the seeded record, drawn on one ellipsised line.
@@ -477,7 +490,7 @@ test.describe('a problem’s Before and After, after DEV-939', () => {
     for (const [width, suffix] of [[1440, ''], [390, '-390']] as const) {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
 
-      await page.goto(`${seeded}reviews/${structuredReviewId}`)
+      await page.goto(`${seeded}reviews/${structuredReviewId}/understanding`)
       await expect(page.locator('h2.headline')).toBeVisible()
 
       await page.getByRole('button', { name: /A scheduled export read its tenant/ }).click()
@@ -577,7 +590,7 @@ test.describe('a fresh database', () => {
 
 test.describe('the server stopped', () => {
   test('with a page already open', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${reviewId}`)
+    await page.goto(`${seeded}reviews/${reviewId}/understanding`)
     await expect(page.getByText('A webhook delivery that fails once')).toBeVisible()
 
     await page.route('**/api/v1/**', route => route.abort('connectionrefused'))
@@ -775,4 +788,62 @@ test.describe('a finished review, and a row’s links', () => {
       await shot(page, `dev-962-1-moved-head${suffix}`)
     })
   }
+})
+
+/*
+ * **Overview in its three states** (DEV-1326), beside S2, S12 and S15 at 1,600 and 390.
+ *
+ * *Ready* is the seeded structured review. *Being written* and *Replies in* are seeded here,
+ * in a database of their own, so the shared seed's counts — which other specs assert —
+ * do not move: the same structured review twice, one with its code review still running and
+ * one posted with the author's replies, a resolved thread and a code change come back.
+ */
+test.describe('Overview', () => {
+  test('ready, being written and replies in, at 1,600 and 390', async ({ page }) => {
+    const directory = scratch()
+    const database = fresh(directory)
+
+    const writing = seedStructuredReview(database, 'Give a scheduled export its own context').reviewId
+    for (const [layer, state] of [[5, 'running'], [6, 'pending'], [7, 'pending']] as const) {
+      cli(database, ['layer', 'set', '--review', String(writing), '--layer', String(layer), '--state', state, '--detail', state === 'running' ? 'reading the diff' : 'not yet'])
+    }
+
+    const replies = seedStructuredReview(database, 'Give a scheduled export its own context').reviewId
+    cli(database, ['review', 'link', '--review', String(replies), '--github-review', 'PRR_kwDOoverview'])
+    for (const [layer, state] of [[6, 'done'], [7, 'running']] as const) {
+      cli(database, ['layer', 'set', '--review', String(replies), '--layer', String(layer), '--state', state, '--detail', state === 'done' ? 'posted' : 'replies back'])
+    }
+    const outcomes: Array<[number, string, string, string, string]> = [
+      [1, 'replied', 'author', 'Tenants are only soft-deleted, so the purge never reaches them.', '2026-11-20T09:00:00Z'],
+      [2, 'replied', 'author', 'Fixed in 3c1e2a: the empty list now exports no columns.', '2026-11-20T09:10:00Z'],
+      [2, 'thread_resolved', 'author', JSON.stringify({ resolved_by: 'dana-ruiz', time_basis: 'observed' }), '2026-11-20T09:12:00Z'],
+      [3, 'replied', 'author', 'A unique index on (tenant, schedule).', '2026-11-20T09:20:00Z'],
+      [3, 'raised_again', 'developer', 'Is a unique index enough to stop two runs?', '2026-11-20T10:00:00Z'],
+      [4, 'code_changed_after', 'harvester', JSON.stringify({ commit: '3c1e2a9d41', file: 'app/Reporting/ScheduleRunner.php', line: 41, lines_changed: true }), '2026-11-20T09:30:00Z'],
+    ]
+    for (const [finding, kind, by, detail, when] of outcomes) {
+      cli(database, ['outcome', 'add', '--review', String(replies), '--finding', String(finding), '--kind', kind, '--by', by, '--detail', detail, '--at', String(Math.floor(Date.parse(when) / 1000))])
+    }
+
+    const own = await serve(database)
+    try {
+      const states = [
+        [`${seeded}reviews/${structuredReviewId}`, 'overview-1-ready', 'ready'],
+        [`${own.url}reviews/${writing}`, 'overview-2-being-written', 'being_written'],
+        [`${own.url}reviews/${replies}`, 'overview-3-replies-in', 'replies_in'],
+      ] as const
+      for (const [width, height, suffix] of [[1600, 1000, ''], [390, 844, '-390']] as const) {
+        await page.setViewportSize({ width, height })
+        for (const [address, name, state] of states) {
+          await page.goto(address)
+          await expect(page.getByTestId('bottom-line')).toHaveAttribute('data-state', state)
+          await shot(page, `${name}${suffix}`)
+        }
+      }
+    }
+    finally {
+      await stop(own)
+      await page.setViewportSize({ width: 1440, height: 900 })
+    }
+  })
 })

@@ -8,7 +8,7 @@ import type { ReviewTab } from '~/utils/reviewTabs'
  * ```
  *  ┌── ReviewHeader: crumb, #number and title, state word, facts, action, five tabs ──┐
  *  └───────────────────────────────────────────────────────────────────────────────────┘
- *  the round switcher, the trail (Overview only), timings, the session, the conversation
+ *  the round switcher, timings, the session, the conversation
  *  The tab's one heading, in the sans at the scale's title
  *  the one line under it, when the tab has one
  *  …the tab…
@@ -17,8 +17,8 @@ import type { ReviewTab } from '~/utils/reviewTabs'
  * **Which review you are in, which tab you are on, and where the others are** — the three
  * things every one of these pages has to say, so they are here once. Since DEV-1324 the
  * header says them: it replaced the top line that named the review and the step trail that
- * linked the steps. The trail's *other* job, saying where each step stands, stays on
- * Overview until DEV-1326 gives Overview its own *Where it stands*.
+ * linked the steps. The trail's *other* job, saying where each step stands, is Overview's
+ * *Where it stands* since DEV-1326, with the trail folded under it.
  *
  * **The two ways out — the pull request and the ticket — are in the header**, for the
  * reason DEV-936 put them at the top: Patrick, 12 October 2026, "at a minimum, the link at
@@ -41,8 +41,13 @@ const props = defineProps<{
    * reads all of them and asks under `step`.
    */
   conversationSteps?: ReviewLayerName[]
-  /** The page's one heading. */
-  headline: string
+  /**
+   * The page's one heading, or `null` for a tab that opens on something else.
+   *
+   * **Overview has none** (DEV-1326): it opens on *The bottom line*, which is its own box
+   * with its own label, and an h2 over it would say the same sentence twice.
+   */
+  headline: string | null
   /** The line under the heading, when the page has one. */
   sub?: string | null
 }>()
@@ -85,20 +90,6 @@ const stepName = computed(() => layerLabel(props.step))
       />
 
       <!--
-        **The seven steps, on Overview alone, until Overview's own *Where it stands* lands
-        (DEV-1326).** The tabs replace the trail as the way between pages; what the trail
-        also said — each step's state, what it came to and how long it took — has no other
-        home yet, and a page may fold or move what it draws but never drop it.
-      -->
-      <StepTrail
-        v-if="tab === 'overview'"
-        :layers="detail.layers"
-        :review-id="detail.review.id"
-        :round="detail.review.round"
-        :off-the-desk="detail.not_for_signing != null"
-      />
-
-      <!--
         How long the review has taken, under the trail it is about: the total with the
         agent and the total waiting on the developer. Here rather than on one page, because
         it is a fact about the review and every one of these pages is the review.
@@ -136,7 +127,10 @@ const stepName = computed(() => layerLabel(props.step))
         **An h2 now**: the review's title in the header is the page's one h1, and this is
         the tab's own heading under it.
       -->
-      <h2 class="rd-display headline">
+      <h2
+        v-if="headline != null"
+        class="rd-display headline"
+      >
         <TickedText :text="headline" />
       </h2>
       <!--
