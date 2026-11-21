@@ -19,6 +19,11 @@
  *    and `J` is a letter in most sentences.
  * 2. **A modifier is held.** `Cmd-E` is the browser's, not ours.
  * 3. **The key is composing.** An IME candidate window is open and these are not keys yet.
+ * 4. **Something is open over the page** (DEV-1336). A modal dialog — the phone's
+ *    conversation sheet, an enlarged diagram — or the page made `inert` under the phone's
+ *    menu. `inert` stops a press and focus reaching the page, but not a `window` listener,
+ *    so without this an `S` pressed with focus on the sheet's chevron set aside the finding
+ *    behind it. The page's keys come back when whatever is over it closes.
  *
  * A keystroke with no target at all is ours: that is the document itself, which is where a
  * key pressed at nothing in particular arrives.
@@ -26,10 +31,17 @@
 export function keyIsForThePage(event: KeyboardEvent): boolean {
   if (event.metaKey || event.ctrlKey || event.altKey) return false
   if (event.isComposing) return false
+  if (somethingIsOverThePage()) return false
 
   const target = event.target as HTMLElement | null
   if (!target) return true
   if (target.isContentEditable) return false
   const tag = target.tagName
   return tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT'
+}
+
+/** Whether a modal dialog is open, or the page's `main` is `inert` under an overlay. */
+function somethingIsOverThePage(): boolean {
+  if (typeof document === 'undefined') return false
+  return document.querySelector('[aria-modal="true"], main[inert]') != null
 }

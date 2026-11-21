@@ -72,9 +72,13 @@ test('Ask opens the sheet, and a question asked in it is kept in the thread', as
   await expect(panel.getByRole('heading', { name: 'Ask this review' })).toBeVisible()
   await expect(panel.getByTestId('answering')).toHaveText('The session that wrote this review · idle · via Allele')
 
-  /* Over a dimmed review the developer cannot reach until it closes. */
+  /* Over a dimmed review the developer cannot reach until it closes, and that does not scroll. */
   await expect(page.locator('.scrim')).toBeVisible()
   await expect(page.locator('main#main')).toHaveAttribute('inert', '')
+  await expect(page.locator('.topbar')).toHaveAttribute('inert', '')
+  await expect(page.locator('a.skip')).toHaveAttribute('inert', '')
+  await expect(page.locator('html')).toHaveClass(/\brd-sheet-open\b/)
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).overflow)).toBe('hidden')
 
   /* The sheet meets the window's foot, and the composer is the last thing in it. */
   const box = (await sheet.boundingBox())!
@@ -94,8 +98,33 @@ test('Ask opens the sheet, and a question asked in it is kept in the thread', as
   await expect(sheet).toBeHidden()
   await expect(ask).toBeFocused()
   await expect(page.locator('main#main')).not.toHaveAttribute('inert')
+  await expect(page.locator('html')).not.toHaveClass(/\brd-sheet-open\b/)
   await ask.click()
   await expect(panel.locator('[data-author="developer"]')).toContainText('Does it also happen on the web path?')
+})
+
+/*
+ * **A key pressed in the sheet is the sheet's, not the review's behind it.** `inert` stops
+ * a press reaching the page but not a `window` listener, so Findings' `S` set aside the
+ * finding under the sheet (#107's self-review, F2). Then, closed, the same key decides.
+ */
+test('a decision key pressed with the sheet open decides nothing', async ({ page }) => {
+  await openReview(page, '/findings')
+  const decided: string[] = []
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && /\/decide$/.test(request.url())) decided.push(request.url())
+  })
+  await page.locator('.topbar .ask').click()
+  await expect(page.locator('#conversation')).toBeVisible()
+  for (const key of ['s', 't', 'g', 'e', 'p']) await page.keyboard.press(key)
+  await page.waitForTimeout(300)
+  expect(decided, 'a key in the sheet decided on the review behind it').toEqual([])
+  await expect(page.locator('#conversation')).toBeVisible()
+
+  await page.keyboard.press('Escape')
+  await expect(page.locator('#conversation')).toBeHidden()
+  await page.keyboard.press('s')
+  await expect.poll(() => decided.length, { message: 'closed, S sets the finding aside' }).toBe(1)
 })
 
 test('Escape, the dimmed review, going somewhere and widening each close it', async ({ page }) => {

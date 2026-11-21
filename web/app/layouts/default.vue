@@ -166,9 +166,14 @@ watch(() => route.fullPath, () => {
     class="shell"
     :class="{ 'shell--review': onAReview, 'shell--menu-open': menuOpen, 'shell--sheet-open': sheetOpen }"
   >
+    <!--
+      Inert while anything is over the page: a skip link under the scrim is one Tab out of
+      a modal sheet, and following it moves the hash and closes the sheet.
+    -->
     <a
       class="skip"
       href="#main"
+      :inert="overlaid || undefined"
     >Skip to the page</a>
 
     <!-- Only drawn under 700px, where the sidebar is behind it. -->

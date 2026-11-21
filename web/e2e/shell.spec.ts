@@ -6,8 +6,9 @@ import { readAddresses } from './harness'
  * **The shell, measured in a browser** — DEV-1323's criteria that only a layout engine can
  * answer: every existing page renders inside the three columns at 1,600 and at 1,280 wide
  * without scrolling sideways, no element but the wordmark computes a serif face, and under
- * 700px the sidebar is behind a menu button and the conversation column is not drawn. Since
- * DEV-1333 the column holds *Ask this review*, under the page between 700 and 1,100.
+ * 700px the sidebar is behind a menu button and the conversation is a sheet behind *Ask*
+ * (DEV-1336). Since DEV-1333 the column holds *Ask this review*, under the page between 700
+ * and 1,100.
  *
  * Read-only against the acceptance suite's seeded server, so it adds nothing to the seed
  * the other files assert against by count.
@@ -141,7 +142,7 @@ test('no element but the wordmark is set in a serif', async ({ page }) => {
 test.describe('under 700 wide', () => {
   test.use({ viewport: { width: 390, height: 844 } })
 
-  test('the sidebar is behind a menu button, and the conversation is not drawn', async ({ page }) => {
+  test('the sidebar is behind a menu button, and the conversation waits behind Ask', async ({ page }) => {
     await page.goto(`${seeded}reviews/${reviewId}/findings`)
     await page.waitForLoadState('networkidle')
 
