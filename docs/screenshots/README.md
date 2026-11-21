@@ -49,8 +49,8 @@ the same figures in the panel.
 ready to the developer signing off; "Taken to post", in the third picture, is `posted_at`
 less `approved_at`. Both are real seconds between two commands, so each can land a second
 either way and make a run differ. The alternative is moving the database's clock, which is
-what the `dev-890` shots below had to do and is worth it only where the figures are the
-subject of the picture.
+what the `dev-890` shots had to do (removed with the queue and the step trail they showed,
+DEV-1330) and is worth it only where the figures are the subject of the picture.
 
 The records in the seeded shots are invented, but they are **real rows in a real SQLite
 database**, written by `review-desk review open`, `brief put`, `finding add`, `layer set`
@@ -70,6 +70,17 @@ the "Sample data" marker means.
 page on 16 October 2026, then one tab. **Their `dev-885` pictures are removed with the
 pages**: the three addresses redirect here, so a picture taken at one of them was a picture
 of this tab under another name. The `case-` pictures are these, renamed for the tab.
+
+## Replies — what came back, in three groups, to S09 (DEV-1330, 21 November 2026)
+
+| File | What it is |
+| -- | -- |
+| `replies-1-groups.png`, `-390` | **The Replies tab beside `docs/mockups/s-structured/S09-replies.webp`, at 1,600 and 390.** *Needs your answer* with F1's reply quoted and attributed and — this seed's round having no draft, so the record takes no decision on it — the record's reason in place of *Raise it again / Accept their reason / Withdraw*; over the groups, #88's *What came back · 3 of 12 findings*; *Settled* with F2 fixed (its thread resolved) and F3 raised again on the developer's word; and the first four with no reply, then *6 more with no reply*. The header's action is *Read F1's reply*. |
+| `replies-2-history-open.png`, `-390` | The same tab with F1's history unfolded: everything step 7 drew for it — where it is, what came back oldest first, the author's words whole, and its links. |
+
+**What this replaced.** Step 7, *What happened*, drew two lists — what came back and what did
+not — at `/reviews/{id}/what-happened`, which now redirects here. Everything it drew is
+folded under each group's row rather than removed.
 
 ## The two lists — one row per pull request, one line per fact, 16 October 2026
 
@@ -98,38 +109,11 @@ request's state, which moved up one line to where the row's other facts about th
 request are — and the sentence around it, "pull request … at the last harvest", which named
 the row's own subject and repeated the basis the clause beside it had just given.
 
-## DEV-880 — a diagram that is not a diagram
-
-| File | What it is |
-| -- | -- |
-| `dev-880-before.png` | A brief whose `diagram` field holds a hand-drawn text sketch, **before** the fix. mermaid rejected it and left its own error graphic — a bomb, "Syntax error in text", "mermaid version 12.1.0" — at the bottom of the document, outside the card that asked for the diagram and outside the app's root element. It then stayed there on every page the developer opened. |
-| `dev-880-after.png` | The same page after. The sketch is where the diagram would be, shown as written, and nothing is below the last card. |
-
-**The sketch in both is verbatim**, down to the line breaks: it is what a review session
-actually wrote into a brief's `diagram` field on 10 October 2026, not something drawn to
-illustrate the bug. That is why it describes an OAuth authorize-and-redirect flow while the
-sample review it sits on is about caching a permissions lookup — the two do not match, and
-the real one did not either. A sketch written to fit the brief would have made a tidier
-picture of a failure nobody had seen. `e2e/harness.ts` seeds the same text.
-
-Both are sample mode, because sample mode is the only place with a brief that carries one
-of these. Made the same way as the `uplift/` shots below:
-
-```sh
-cd web && pnpm run dev
-```
-
-then Playwright at `{width: 1440, height: 1000}`, `deviceScaleFactor: 2`, `fullPage`, on
-`/reviews/16?sample`. For the "before", `app/components/MermaidFigure.vue` at its state
-before this pull request and nothing else changed.
-
 ## DEV-892 — six defects a real review showed, and a seventh
 
-| File | What it is |
-| -- | -- |
-| `dev-892-2-numbers-in-full.png` | The Alternatives matrix headed by its labels — "1 · the shared slot", not a sentence wrapped ten lines deep — with the fold under it open: every number, its label and the line that used to be the heading. |
-
-**The `understanding-` pictures above carry the rest of it.** The matrix headings and the
+**The `understanding-` pictures above carry it.** `dev-892-2-numbers-in-full.png`, the
+Alternatives page's matrix, went with that page when the review became five tabs (DEV-1330
+removed the picture of a route that no longer exists). The matrix headings and the
 part cards are what those three are pictures of, and a defect in how a page reads is fixed
 in the picture of the page rather than in a picture of its own. What changed in them:
 
@@ -155,33 +139,6 @@ in the picture of the page rather than in a picture of its own. What changed in 
 
 The step's duration moved onto the card, which is why the trail in these pictures has no
 figure under each step. The review's own totals are still under the trail.
-
-## DEV-890 — how long each step took
-
-| File | What it is |
-| -- | -- |
-| `dev-890-queue.png` | The queue. The row with the agent says which step it is on **and how long it has been on it** — "Alternatives · 26 min" — and reads "Last activity 9 min ago" where it read "Session state unknown". **Every row carries a time**, so the caption reads "Oldest first" with nothing after it: the clause about rows with no recorded time is drawn only when there is one. |
-| `dev-890-trail.png` | A step page. Each finished step carries its duration under its outcome, and step 4 — reported straight to `done` with no start — says "time not recorded". Under the trail: the total with the agent, and the total waiting on the developer, which this review has not finished one of. |
-| `dev-890-old-review.png` | **A review as it was recorded before this change.** Every step says "time not recorded", both totals say "not recorded", and nothing anywhere says 0. That is the acceptance criterion: an old review is never given a made-up start. |
-
-**Three real reviews in a real database**, written through `review-desk review open`,
-`brief put`, `finding add`, `layer set` and `draft put`, served by the binary with the
-dashboard in it. Two things in them are not what a day's work would leave, and both are
-named here rather than left to be assumed:
-
-- **The elapsed times were moved back with `sqlite3`** after the commands ran, because the
-  commands ran in seconds and the figures are the point of the picture. Nothing invented a
-  duration: every pass still has the two ends the store stamped, and only the instants
-  moved. There is no other way to photograph an hour.
-- **The third review's state record was replaced** with what migration 12's backfill
-  leaves — one row per step, from `updated_at`, and no start anywhere — so that the "before
-  this change" state could be seen on a database created after it.
-
-```sh
-cd web && pnpm run generate && cargo build --manifest-path ../Cargo.toml
-# seed a database through the command line, serve it, then Playwright at
-# {width: 1440, height: 1000}, deviceScaleFactor: 2, fullPage
-```
 
 ## `uplift/` — the approved boards beside the pages built from them
 
