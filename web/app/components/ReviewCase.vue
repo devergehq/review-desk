@@ -148,7 +148,6 @@ function headline(brief: Brief): string {
         :detail="data"
         :step="step"
         :tab="tab"
-        :conversation-steps="CASE_STEPS"
         :headline="briefWrittenEarlier(data, step)?.headline
           ?? 'Nothing has been written about this problem yet.'"
         :sub="briefWrittenEarlier(data, step)?.sub
@@ -197,7 +196,6 @@ function headline(brief: Brief): string {
         :detail="data"
         :step="step"
         :tab="tab"
-        :conversation-steps="CASE_STEPS"
         :headline="data.review.title ?? `Pull request #${data.review.pr}`"
       >
         <BriefConfirmation
@@ -282,7 +280,6 @@ function headline(brief: Brief): string {
         :detail="data"
         :step="step"
         :tab="tab"
-        :conversation-steps="CASE_STEPS"
         :headline="headline(data.brief)"
         :sub="data.brief.approach_verdict ?? null"
       >

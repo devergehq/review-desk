@@ -49,6 +49,7 @@ import type { ReviewTab } from '~/utils/reviewTabs'
 import type {
   ReviewLayerName,
   ReviewMessage,
+  MessageAbout,
   Brief,
   DecideFindingRequest,
   DeskSource,
@@ -114,6 +115,8 @@ export function loadSource(): DeskSource {
     messages: [],
     handled_without_you: desk.handled_without_you,
     session_liveness: desk.session_liveness as Record<string, boolean | null>,
+    // No Allele in sample data: no reading of any session, unless a test puts one here.
+    session_readings: {},
     github_available: desk.github_available,
   })
 }
@@ -1634,6 +1637,7 @@ function addMessage(
   step: ReviewLayerName,
   body: string,
   kind: 'ask' | 'send_back' = 'ask',
+  about?: MessageAbout,
 ): ReviewMessage {
   const words = body.trim()
   if (words.length === 0) throw invalidValue('body', 'An empty message asks nothing.', 'what to ask')
@@ -1649,8 +1653,8 @@ function addMessage(
     created_at: nowIso(),
     read_at: null,
     read_by_session: null,
-    // The server's default when the page sends no `about`: the tab the step now lives on.
-    about: { tab: TAB_OF_STEP[step], finding: null },
+    // What the page sent, else the server's default: the tab the step now lives on.
+    about: about ? { tab: about.tab, finding: about.finding ?? null } : { tab: TAB_OF_STEP[step], finding: null },
     parsed: false,
     answer: null,
     superseded_by: null,
@@ -2581,7 +2585,7 @@ export function sampleBackend(): DeskBackend {
         review_id: id,
         session_id: detail.review.session_id ?? null,
         fresh_session: null,
-        reading: null,
+        reading: source.session_readings?.[String(id)] ?? null,
       })
     },
     /*
@@ -2618,7 +2622,7 @@ export function sampleBackend(): DeskBackend {
       answered(standing(wrote(id, saveDraft(id, body, edits)))),
     approveDraft: async (id, event) => answered(standing(wrote(id, approveDraft(id, event)))),
     sendBackDraft: async (id, note) => answered(standing(wrote(id, sendBackDraft(id, note)))),
-    askSession: async (id, step, body) => answered(addMessage(id, step, body)),
+    askSession: async (id, step, body, about) => answered(addMessage(id, step, body, 'ask', about)),
     ticketRestAndApprove: async (id, note) =>
       answered(wrote(id, ticketRestAndApprove(id, note))),
     requestNitTicket: async (id, ticketId = null) =>

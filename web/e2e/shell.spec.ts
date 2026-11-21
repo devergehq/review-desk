@@ -6,7 +6,8 @@ import { readAddresses } from './harness'
  * **The shell, measured in a browser** — DEV-1323's criteria that only a layout engine can
  * answer: every existing page renders inside the three columns at 1,600 and at 1,280 wide
  * without scrolling sideways, no element but the wordmark computes a serif face, and under
- * 700px the sidebar is behind a menu button and the conversation column is not drawn.
+ * 700px the sidebar is behind a menu button and the conversation column is not drawn. Since
+ * DEV-1333 the column holds *Ask this review*, under the page between 700 and 1,100.
  *
  * Read-only against the acceptance suite's seeded server, so it adds nothing to the seed
  * the other files assert against by count.
@@ -55,6 +56,8 @@ for (const width of [1600, 1280] as const) {
         if (one.review) {
           await expect(conversation).toBeVisible()
           expect(Math.round((await conversation.boundingBox())!.width)).toBe(380)
+          /* *Ask this review* is in it, on every tab (DEV-1333). */
+          await expect(conversation.getByRole('heading', { name: 'Ask this review' })).toBeVisible()
         }
         else {
           await expect(conversation).toHaveCount(0)
@@ -78,8 +81,9 @@ for (const width of [1600, 1280] as const) {
 }
 
 /*
- * **Between 700 and 1,100 the empty conversation column is not drawn**, while it is empty:
- * at 1,024 it would leave a review's page 332px (the self-review of #86, F4).
+ * **Between 700 and 1,100 the conversation sits under the page** (DEV-1333): beside it, at
+ * 1,024, it would leave a review's page 332px (the self-review of #86, F4). So the page keeps
+ * the main column's full width and the conversation takes that same width below it.
  */
 test.describe('at 1024 wide', () => {
   test.use({ viewport: { width: 1024, height: 800 } })
@@ -87,9 +91,16 @@ test.describe('at 1024 wide', () => {
   for (const one of PAGES) {
     test(`${one.name} keeps its width`, async ({ page }) => {
       await open(page, one.path)
-      await expect(page.locator('.shell-conversation')).toBeHidden()
       const main = await page.locator('main#main').boundingBox()
       expect(Math.round(main!.width)).toBe(1024 - 232)
+      if (one.review) {
+        const conversation = await page.locator('.shell-conversation').boundingBox()
+        expect(Math.round(conversation!.width)).toBe(1024 - 232)
+        expect(conversation!.y).toBeGreaterThanOrEqual(main!.y + main!.height - 1)
+      }
+      else {
+        await expect(page.locator('.shell-conversation')).toHaveCount(0)
+      }
       expect(await sideways(page), 'the page scrolls sideways').toBe(0)
     })
   }

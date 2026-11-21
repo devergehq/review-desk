@@ -56,6 +56,7 @@ import type {
   ReviewSession,
   MessageList,
   ReviewMessage,
+  MessageAbout,
   ReviewLayerName,
   AskSessionRequest,
   Rule,
@@ -341,8 +342,9 @@ export function askSession(
   reviewId: number,
   step: ReviewLayerName,
   body: string,
+  about?: MessageAbout,
 ): Promise<ReviewMessage> {
-  const request: AskSessionRequest = { step, body }
+  const request: AskSessionRequest = about ? { step, body, about } : { step, body }
   return send<ReviewMessage>('POST', `/reviews/${reviewId}/messages`, request)
 }
 

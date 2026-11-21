@@ -10,14 +10,13 @@
  * | Main | the rest | The page |
  * | Conversation | 380px | **Ask this review**, on a review's pages only. Absent on the lists and Rules |
  *
- * **The conversation column is drawn empty**, as a placeholder: the second stack fills it
- * (DEV-1322's plan). It is drawn now so that every page laid out from here on is laid out
- * at the width it will have, and a page that fits beside an empty column fits beside a full
- * one.
+ * **The conversation column holds *Ask this review*** (DEV-1333). The layout draws the
+ * column, `#conversation`, and the review's page teleports its `ConversationPanel` into it,
+ * because the page is what holds the review, its step and its tab.
  *
- * **Under 1,100px the empty conversation column is not drawn**, while it is empty: at 1,024
- * it would leave a review's page 332px, and nothing in it is worth that. The second stack
- * decides what the column does at those widths once it holds something.
+ * **Between 700 and 1,100px the conversation sits under the page**, the main column's full
+ * width: beside it, at 1,024, it would leave a review's page 332px. Under 700 it is not
+ * drawn; S14's bottom sheet is DEV-1336's.
  *
  * **Under 700px the shell is one column.** The sidebar goes behind a menu button in a bar
  * at the top; the conversation is a bottom sheet there (S14), which is the second stack's.
@@ -168,14 +167,14 @@ watch(() => route.fullPath, () => closeMenu(false))
     </main>
 
     <!--
-      The conversation's column, on a review's pages. Empty until the second stack fills it,
-      so it is hidden from assistive technology: an empty landmark is a stop with nothing at
-      it.
+      The conversation's column, on a review's pages. The page teleports *Ask this review*
+      into it (DEV-1333); a complementary landmark, named by the panel's own heading.
     -->
-    <div
+    <aside
       v-if="onAReview"
+      id="conversation"
       class="shell-conversation"
-      aria-hidden="true"
+      aria-label="Ask this review"
     />
   </div>
 </template>
@@ -193,14 +192,22 @@ watch(() => route.fullPath, () => closeMenu(false))
   grid-template-columns: var(--rd-sidebar-width) minmax(0, 1fr) var(--rd-conversation-width);
 }
 
-/* While the column is empty it is not worth a narrow page's width. See the note above. */
+/* Under 1,100 the conversation sits under the page rather than beside it. See the note above. */
 @media (max-width: 1099px) {
   .shell--review {
     grid-template-columns: var(--rd-sidebar-width) minmax(0, 1fr);
   }
 
-  .shell-conversation {
-    display: none;
+  .shell--review .sidebar {
+    grid-row: 1 / span 2;
+  }
+
+  .shell--review .shell-conversation {
+    grid-column: 2;
+    position: static;
+    height: auto;
+    border-top: 1px solid var(--rd-line);
+    border-left: 0;
   }
 }
 
