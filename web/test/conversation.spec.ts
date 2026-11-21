@@ -30,7 +30,7 @@ const FINDINGS = [
 ] as unknown as ReviewDetail['findings']
 
 const SOURCE: CiteSource = {
-  review: { id: 41, repo: 'acme/portal', pr: 514 } as ReviewDetail['review'],
+  review: { id: 41, repo: 'acme/portal', pr: 514, head_sha: '7f3c2d1a9b8e' } as ReviewDetail['review'],
   findings: FINDINGS,
   criteria: [{ position: 1 }, { position: 3 }] as ReviewDetail['criteria'],
   brief: {
@@ -142,9 +142,16 @@ describe('where a cite goes', () => {
     expect(citeTarget('option C', { ...SOURCE, brief: null }).kind).toBe('text')
   })
 
-  it('links a commit to the repository on GitHub', () => {
+  it('links a commit the record holds to the repository on GitHub', () => {
     expect(citeTarget('7f3c2d1', SOURCE))
       .toEqual({ kind: 'away', text: '7f3c2d1', href: 'https://github.com/acme/portal/commit/7f3c2d1' })
+    const rounds = [{ head_sha: 'abc1234def' }] as unknown as ReviewDetail['rounds']
+    expect(citeTarget('abc1234', { ...SOURCE, rounds }).kind).toBe('away')
+  })
+
+  it('draws a commit the record does not hold as text, never a link to a 404', () => {
+    expect(citeTarget('1234567', SOURCE)).toEqual({ kind: 'text', text: '1234567' })
+    expect(citeTarget('deadbee', SOURCE).kind).toBe('text')
   })
 
   it('draws a commit in a repository it cannot address as text', () => {

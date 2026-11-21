@@ -14,7 +14,7 @@
  * | `path/to/file.php:41` | that finding, as `F9` would | a finding sits at exactly that file and line |
  * | `criterion 3` | Understanding › *Ticket against what was built* | the review records a criterion at position 3 |
  * | `option C` | Understanding › *Approach* | the brief weighs an option keyed `C` |
- * | a commit SHA | the commit on GitHub | the review's repository makes a usable address |
+ * | a commit SHA | the commit on GitHub | it is a prefix of a commit the record holds — a round's head, or a finding's line — and the repository makes a usable address |
  * | anything else | plain text | — |
  *
  * **A path is not linked to GitHub**, because a session cites `ExportController.php:41` as
@@ -33,6 +33,7 @@ import { optionsOf } from './theCase'
 
 /** The parts of a review a cite is resolved against. */
 export type CiteSource = Pick<ReviewDetail, 'review' | 'findings' | 'criteria' | 'brief'>
+  & Partial<Pick<ReviewDetail, 'rounds'>>
 
 /**
  * What one cite becomes on the page: a place in this app for `NuxtLink`, a place outside it
@@ -78,7 +79,7 @@ export function citeTarget(cite: string, source: CiteSource): CiteTarget {
 
   if (COMMIT.test(text)) {
     const pull = prUrl(source.review.repo, source.review.pr)
-    return pull
+    return pull && recordsCommit(text, source)
       ? { kind: 'away', text, href: `https://github.com/${source.review.repo}/commit/${text}` }
       : { kind: 'text', text }
   }
@@ -94,4 +95,20 @@ export function citeTarget(cite: string, source: CiteSource): CiteTarget {
   }
 
   return { kind: 'text', text }
+}
+
+/**
+ * Whether the record holds a commit this cite names: the review's head, any round's head, or
+ * the commit a finding's line was read at. **A prefix match either way**, as the contract
+ * compares commits (`contract/README.md`): a session may cite seven characters of a SHA the
+ * record holds whole, and the record may hold an abbreviated one.
+ */
+function recordsCommit(cite: string, source: CiteSource): boolean {
+  const held = [
+    source.review.head_sha,
+    ...(source.rounds ?? []).map(round => round.head_sha),
+    ...source.findings.map(finding => finding.line_sha),
+  ].filter((sha): sha is string => typeof sha === 'string' && sha.length >= 7)
+  const said = cite.toLowerCase()
+  return held.some(sha => sha.toLowerCase().startsWith(said) || said.startsWith(sha.toLowerCase()))
 }

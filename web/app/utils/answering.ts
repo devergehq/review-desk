@@ -75,6 +75,12 @@ export function answering(reading: SessionReading | null | undefined): Answering
 }
 
 /**
+ * **A gone or unreachable session still takes a question**, deliberately: the question is
+ * kept with the review, the line under it says *Not delivered · the session is gone*
+ * (`deliveryLine`), and the fresh session the strip offers is what reads it. Refusing it here
+ * would lose the developer's words to say what that line already says. DEV-1335 owns this
+ * gate and may decide otherwise.
+ *
  * Whether the composer takes a question in this mode. The one gate every send passes,
  * which DEV-1335 replaces with `canAsk(mode)` once one way exists.
  */
