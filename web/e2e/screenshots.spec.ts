@@ -830,7 +830,7 @@ test.describe('a finished review, and a row’s links', () => {
  * one posted with the author's replies, a resolved thread and a code change come back.
  */
 test.describe('Overview', () => {
-  test('ready, being written and replies in, at 1,600 and 390', async ({ page }) => {
+  test('ready, being written and replies in, and Replies, at 1,600 and 390', async ({ page }) => {
     const directory = scratch()
     const database = fresh(directory)
 
@@ -870,6 +870,17 @@ test.describe('Overview', () => {
           await expect(page.getByTestId('bottom-line')).toHaveAttribute('data-state', state)
           await shot(page, `${name}${suffix}`)
         }
+        /*
+         * **Replies (DEV-1330), beside S09**, off the same seed: F1 contested, F2 fixed, F3
+         * answered, and the rest with no reply. Round 1 and posted, so F1's row gives the
+         * record's reason in place of the three answers — the departure the PR names.
+         */
+        await page.goto(`${own.url}reviews/${replies}/replies`)
+        await expect(page.locator('.reply-row--contested')).toHaveCount(1)
+        await shot(page, `replies-1-groups${suffix}`)
+        await page.locator('#reply-F1 .rd-fold-line').click()
+        await expect(page.locator('#history-1')).toBeVisible()
+        await shot(page, `replies-2-history-open${suffix}`)
       }
     }
     finally {

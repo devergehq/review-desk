@@ -101,6 +101,16 @@ export function findingPath(reviewId: number, key: string): string {
 }
 
 /**
+ * **Where one reply is: the Replies tab with that finding's reply selected.** DEV-1330.
+ *
+ * The same `?finding=F3` the Findings tab reads, read by the same [`findingAsked`], so one
+ * address shape names a finding on either tab. The header's *Answer F3* goes here.
+ */
+export function replyPath(reviewId: number, key: string): string {
+  return `${tabPath(reviewId, 'replies')}?finding=${encodeURIComponent(key)}`
+}
+
+/**
  * The finding an address asks for, as its `seq`: `?finding=F9` first, then `#F9`, else null.
  *
  * A value that does not name a finding at all is null, not an error: a stale or mistyped
@@ -145,6 +155,16 @@ export function openWait(
   const since = Date.parse(timings.draft_ready_at)
   if (Number.isNaN(since)) return null
   return durationLabel(Math.max(0, Math.floor((now.getTime() - since) / 1000)))
+}
+
+/**
+ * **The replies waiting on the developer, in two readings.** `answer` is the ones the record
+ * would take an answer on here (`answerableReplies`); `read` is every one waiting
+ * (`repliesToAnswer`, the tab's count). A bare list means both.
+ */
+export interface RepliesWaiting {
+  answer: readonly string[]
+  read: readonly string[]
 }
 
 /** The one next action the header draws, top right. */
@@ -214,28 +234,29 @@ function signOff(read: ReadAt | undefined): { label: string, note: string } {
  * |---|---|---|
  * | Brief ready | Confirm the brief | Understanding, where the brief's card is |
  * | Draft ready | Sign off and post | Draft, where the sign-off is |
- * | Replies in, with a reply to answer | Answer F3, or Answer 2 replies | Replies |
+ * | Replies in, with a reply the record would take an answer on | Answer F3, or Answer 2 replies | F3's reply on Replies, or Replies |
+ * | Replies in, with replies waiting that no answer here would be taken on | Read F3's reply, or Read 2 replies | the same |
  *
  * Every other state is nothing for the developer to do, so no action: a session working
  * or awaited (*Being written*, *Waiting for a session*), a review posted and quiet, and the
  * ways off the desk (*Merged*, *Closed*, *Dismissed*, *Out of play*, *Superseded* — a round a
  * later one replaced, whose work is the later round's).
  *
- * **A reply is answered on Replies, so that is where both go**, one reply or several. DEV-1328
- * considered sending *Answer F3* to F3 on Findings (`?finding=F3`) and did not: a reply comes
- * in on a posted review, and Findings refuses every decision on one ("This review is posted").
- * The action would have opened a page where it could not be done. DEV-1330 builds the three
- * replies on Replies and may point this at the one reply there. DEV-1329 moves the Draft
- * page's sign-off binding into the draft-ready action.
+ * **A reply is answered on Replies.** *Answer F3* goes to F3's reply there, `?finding=F3`
+ * (DEV-1330, [`replyPath`]); more than one goes to the tab, which lists them. Not to F3 on
+ * Findings: a reply comes in on a posted review, and Findings refuses every decision on one. DEV-1329 moves the Draft page's sign-off binding into the draft-ready
+ * action; both repoint what this answers rather than adding a second place that chooses an
+ * action.
  *
- * `toAnswer` is the finding keys [`repliesToAnswer`] answers, passed in so this stays a
- * function of values. `read` is the round and its head, which the sign-off's label and note
+ * `toAnswer` is the replies waiting, as [`RepliesWaiting`] — the keys the record would take
+ * an answer on (`answerableReplies`) and every key waiting (`repliesToAnswer`) — passed in so
+ * this stays a function of values. A bare list means both. `read` is the round and its head, which the sign-off's label and note
  * are worded from (`signOff`); without it the action reads as round 1's with no commit.
  */
 export function primaryAction(
   reviewId: number,
   state: ReviewState,
-  toAnswer: readonly string[],
+  toAnswer: readonly string[] | RepliesWaiting,
   read?: ReadAt,
 ): PrimaryAction | null {
   switch (state) {
@@ -243,12 +264,28 @@ export function primaryAction(
       return { label: 'Confirm the brief', to: tabPath(reviewId, 'understanding') }
     case 'draft_ready':
       return { ...signOff(read), to: tabPath(reviewId, 'draft') }
-    case 'replies_in':
-      if (toAnswer.length === 0) return null
-      return {
-        label: toAnswer.length === 1 ? `Answer ${toAnswer[0]}` : `Answer ${toAnswer.length} replies`,
-        to: tabPath(reviewId, 'replies'),
+    case 'replies_in': {
+      /*
+       * **Answer where the answer would be taken; otherwise read what came back.** DEV-1330
+       * self-review, Should 3, ruled by the coordinator: a review marked waiting on you has a
+       * next act. A reply arrives on a posted round, which takes no decision, so there the act
+       * is reading it — *Answer* is kept for the case where R/A/W would really be taken.
+       */
+      const { answer, read } = Array.isArray(toAnswer)
+        ? { answer: toAnswer as readonly string[], read: toAnswer as readonly string[] }
+        : toAnswer as RepliesWaiting
+      if (answer.length > 0) {
+        return answer.length === 1
+          ? { label: `Answer ${answer[0]}`, to: replyPath(reviewId, answer[0]!) }
+          : { label: `Answer ${answer.length} replies`, to: tabPath(reviewId, 'replies') }
       }
+      if (read.length > 0) {
+        return read.length === 1
+          ? { label: `Read ${read[0]}’s reply`, to: replyPath(reviewId, read[0]!) }
+          : { label: `Read ${read.length} replies`, to: tabPath(reviewId, 'replies') }
+      }
+      return null
+    }
     default:
       return null
   }

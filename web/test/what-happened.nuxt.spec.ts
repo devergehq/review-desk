@@ -8,6 +8,8 @@ import { flushPromises, type VueWrapper } from '@vue/test-utils'
 
 import { resetDesk } from '../app/composables/useReviewDesk'
 import { loadSource } from '../app/data/sample'
+import drafts from '../app/data/drafts.json'
+import { NO_REPLY_SHOWN } from '../app/utils/replies'
 
 import WhatHappened from '../app/pages/reviews/[id]/replies.vue'
 
@@ -66,13 +68,41 @@ async function settle(page: VueWrapper) {
   }
 }
 
-async function shown(id: number) {
+async function shown(id: number, search = '') {
   const page = await mountSuspended(WhatHappened, {
-    route: `/reviews/${id}/replies`,
+    route: `/reviews/${id}/replies${search}`,
     attachTo: document.body,
   })
   await settle(page)
   return page
+}
+
+/* ============================ Reading the groups ============================== */
+
+/**
+ * **The rows of each group, by the key the row names.** DEV-1330 grouped step 7's two lists
+ * into S09's three — Needs your answer, Settled, No reply yet — so a test that read "the
+ * answered rows" now names the group it means.
+ */
+function keysIn(page: VueWrapper, selector: string): string[] {
+  return page.findAll(selector).map(one => one.find('.key').text())
+}
+
+/**
+ * Unfold everything the record holds on one finding — step 7's row, which each group row
+ * now folds — and answer the history. A quiet row past the first four is reached through
+ * "n more with no reply" first, as a reader would.
+ */
+async function historyOf(page: VueWrapper, key: string) {
+  if (!page.find(`#reply-${key}`).exists() && page.find('.more').exists()) {
+    await page.find('.more').trigger('click')
+    await settle(page)
+  }
+  const at = page.find(`#reply-${key}`)
+  const control = at.element.tagName === 'LI' ? at.find('.rd-fold-line') : at
+  await control.trigger('click')
+  await settle(page)
+  return page.find(`#history-${key.slice(1)}`)
 }
 
 /* ============================ The density review ============================= */
@@ -606,25 +636,29 @@ describe('what came back', () => {
     await withDense(dense({ findings, outcomes }))
     const page = await shown(REVIEW)
 
-    const rows = page.findAll('.answered-row')
-    expect(rows.map(one => one.find('.key').text())).toEqual(['F4', 'F3', 'F2', 'F1'])
-    expect(rows.map(one => one.find('.severity').text().replace('Severity:', '').trim()))
+    /* Code changes alone are no reply, so all four are in No reply yet — the first four. */
+    expect(keysIn(page, '.quiet-row')).toEqual(['F4', 'F3', 'F2', 'F1'])
+    expect(page.findAll('.quiet-row').map(one => one.find('.tag').text().trim().toLowerCase()))
       .toEqual(['blocker', 'should', 'question', 'nit'])
   })
 
-  it('draws a row for every posted finding, across both groups', async () => {
+  it('draws a row for every posted finding, across the three groups', async () => {
     const page = await shown(REVIEW)
-    const answered = page.findAll('.answered-row').length
-    /* The fold is closed, so the quiet ones are counted on its heading rather than drawn. */
-    expect(page.text()).toContain(`${14 - answered} of 14 findings`)
-    expect(page.text()).toContain(`${answered} of 14 findings`)
+    /* F1's thread was resolved; F2 replied and its code moved after; twelve had no reply. */
+    expect(keysIn(page, '.reply-row--contested')).toEqual([])
+    expect(keysIn(page, '.reply-row--settled')).toEqual(['F1', 'F2'])
+    /* The first four are drawn, and the rest are counted on the control that unfolds them. */
+    expect(page.findAll('.quiet-row')).toHaveLength(4)
+    expect(page.find('.more').text()).toBe('8 more with no reply')
+    await page.find('.more').trigger('click')
+    await settle(page)
+    expect(page.findAll('.quiet-row')).toHaveLength(12)
+    expect(page.find('#no-reply').text()).toContain('12')
   })
 
   it('puts a finding’s several outcomes in time order, oldest first', async () => {
     const page = await shown(REVIEW)
-    const first = page.findAll('.answered-row')[0]!
-    expect(first.text()).toContain('F1')
-    const said = first.findAll('.came-said').map(one => one.text())
+    const said = (await historyOf(page, 'F1')).findAll('.came-said').map(one => one.text())
     expect(said).toHaveLength(3)
     expect(said[0]).toContain('A reply from dana-okoye')
     expect(said[1]).toContain('The thread was resolved by dana-okoye')
@@ -642,10 +676,11 @@ describe('what came back', () => {
     expect(LONG_REPLY.trim().split(/\s+/).length).toBeGreaterThan(80)
 
     const page = await shown(REVIEW)
-    const quote = page.findAll('.quote').map(one => one.text())
-    expect(quote).toHaveLength(2)
-    expect(quote[0]).toBe(LONG_REPLY)
-    expect(quote[1]).toBe(SHORT_REPLY)
+    /* F2's reply is the newest thing its author said, so its row quotes it face up. */
+    expect(page.find('#reply-F2 .said .quote').text()).toBe(SHORT_REPLY)
+    /* F1's 108 words are in its history, whole. */
+    const quote = (await historyOf(page, 'F1')).findAll('.quote').map(one => one.text())
+    expect(quote).toEqual([LONG_REPLY])
   })
 
   it('prints no outcome’s stored detail as JSON', async () => {
@@ -662,7 +697,7 @@ describe('what came back', () => {
    */
   it('says the file changed and the lines did not, where that is what happened', async () => {
     const page = await shown(REVIEW)
-    expect(page.text()).toContain('but not line 82')
+    expect((await historyOf(page, 'F6')).text()).toContain('but not line 82')
   })
 
   it('does not replay the developer’s own decisions at them', async () => {
@@ -673,19 +708,17 @@ describe('what came back', () => {
 
   it('links a row to its finding and to its comment on GitHub', async () => {
     const page = await shown(REVIEW)
-    const first = page.findAll('.answered-row')[0]!
-    const to = first.findAll('a').map(one => one.attributes('href'))
+    const to = (await historyOf(page, 'F1')).findAll('a').map(one => one.attributes('href'))
     expect(to).toContain(`/reviews/${REVIEW}/findings?finding=F1`)
     expect(to).toContain('https://github.com/acme/portal/pull/601#discussion_r2314990001')
   })
 
   it('shows the claim cut to a title’s length for a finding with no title, and says so', async () => {
     const page = await shown(REVIEW)
-    /* F4 has no title. It has no outcome either, so the row is in the folded group. */
-    await page.find('.fold').trigger('click')
-    await settle(page)
-    const row = page.findAll('.silent-row').find(one => one.text().includes('F4'))!
+    /* F4 has no title. It has no outcome either, so the row is in No reply yet. */
+    const row = page.find('#reply-F4')
     expect(row.text()).toContain('…')
+    expect(row.find('.shortened').exists()).toBe(true)
   })
 
   /**
@@ -703,7 +736,10 @@ describe('what came back', () => {
    */
   it('words what came back without naming a round', async () => {
     const page = await shown(REVIEW)
-    const said = page.findAll('.came-said').map(one => one.text())
+    const said: string[] = []
+    for (const key of ['F1', 'F2', 'F3', 'F5', 'F6', 'F8', 'F11']) {
+      said.push(...(await historyOf(page, key)).findAll('.came-said').map(one => one.text()))
+    }
     expect(said.length).toBeGreaterThan(6)
     for (const one of said) expect(one.toLowerCase()).not.toContain('round')
   })
@@ -716,23 +752,18 @@ describe('the findings nothing came back on', () => {
     await withDense()
   })
 
-  it('are counted and folded, not drawn open', async () => {
+  /* S09: the first four, then "n more with no reply" — counted and folded, not drawn open. */
+  it('are counted, with the first four drawn and the rest folded', async () => {
     const page = await shown(REVIEW)
-    expect(page.findAll('.silent-row')).toHaveLength(0)
-    expect(page.find('.fold').text()).toContain('findings nothing came back on')
+    expect(page.findAll('.quiet-row')).toHaveLength(NO_REPLY_SHOWN)
+    expect(page.find('.more').text()).toBe('8 more with no reply')
+    expect(page.findAll('.history')).toHaveLength(0)
   })
 
   it('open, and each says so rather than showing a blank', async () => {
     const page = await shown(REVIEW)
-    await page.find('.fold').trigger('click')
-    await settle(page)
-    const rows = page.findAll('.silent-row')
-    expect(rows.length).toBeGreaterThan(0)
-
-    await rows[0]!.trigger('click')
-    await settle(page)
-    const opened = page.find('.silent-opened')
-    expect(opened.text()).toContain('Nothing has come back on')
+    const opened = await historyOf(page, 'F4')
+    expect(opened.text()).toContain('Nothing has come back on F4')
   })
 
   /*
@@ -743,24 +774,16 @@ describe('the findings nothing came back on', () => {
    */
   it('says when no reply could have been read at all', async () => {
     const page = await shown(REVIEW)
-    await page.find('.fold').trigger('click')
-    await settle(page)
-    const row = page.findAll('.silent-row').find(one => one.text().includes('F13'))!
-    await row.trigger('click')
-    await settle(page)
-    expect(page.find('.silent-opened').text()).toContain('no thread for a')
+    expect((await historyOf(page, 'F13')).text()).toContain('no thread for a')
   })
 
-  it('opens one row at a time', async () => {
+  it('opens one row at a time, across the groups', async () => {
     const page = await shown(REVIEW)
-    await page.find('.fold').trigger('click')
-    await settle(page)
-    const rows = page.findAll('.silent-row')
-    await rows[0]!.trigger('click')
-    await settle(page)
-    await rows[1]!.trigger('click')
-    await settle(page)
-    expect(page.findAll('.silent-opened')).toHaveLength(1)
+    await historyOf(page, 'F1')
+    await historyOf(page, 'F4')
+    await historyOf(page, 'F3')
+    expect(page.findAll('.history')).toHaveLength(1)
+    expect(page.find('#history-3').exists()).toBe(true)
   })
 })
 
@@ -859,9 +882,12 @@ describe('the states a posted review can be in', () => {
   it('a harvest that ran and found nothing', async () => {
     await withDense(dense({ outcomes: [] }))
     const page = await shown(REVIEW)
-    expect(page.text()).toContain('Nothing has come back on any of the findings')
-    expect(page.text()).toContain('found no reply, no resolved thread')
-    expect(page.findAll('.answered-row')).toHaveLength(0)
+    expect(page.text()).toContain('Nothing waits on your answer')
+    expect(page.text()).toContain('Nothing is settled yet')
+    expect(page.findAll('.reply-row')).toHaveLength(0)
+    expect(page.find('#no-reply').text()).toContain('14')
+    /* Each quiet row still says why nothing came back, rather than showing a blank. */
+    expect((await historyOf(page, 'F1')).text()).toContain('Nothing has come back on F1')
   })
 
   /*
@@ -889,7 +915,7 @@ describe('the states a posted review can be in', () => {
   it('does not print a finding’s path twice', async () => {
     await withDense()
     const page = await shown(REVIEW)
-    const row = page.findAll('.answered-row')[0]!
+    const row = await historyOf(page, 'F1')
     expect(row.findAll('.came-file')).toHaveLength(0)
     expect(row.text()).toContain('app/Reporting/ColumnPolicy.php:47')
   })
@@ -911,15 +937,16 @@ describe('the states a posted review can be in', () => {
     })]
     await withDense(dense({ outcomes: renamed }))
     const page = await shown(REVIEW)
-    expect(page.find('.came-file').text()).toBe('app/Reporting/ColumnPolicyOld.php')
+    expect((await historyOf(page, 'F1')).find('.came-file').text()).toBe('app/Reporting/ColumnPolicyOld.php')
   })
 
   it('a review with no findings at all', async () => {
     await withDense(dense({ findings: [], outcomes: [] }))
     const page = await shown(REVIEW)
     expect(page.find('.sub').text()).toContain('0 findings were posted')
-    expect(page.findAll('.silent-row')).toHaveLength(0)
-    expect(page.find('.fold').exists()).toBe(false)
+    expect(page.findAll('.quiet-row')).toHaveLength(0)
+    expect(page.find('.more').exists()).toBe(false)
+    expect(page.text()).toContain('This review posted no findings')
   })
 })
 
@@ -962,7 +989,9 @@ describe('the figures and the rows count the same findings', () => {
     expect(page.find('.sub').text()).toContain('11 findings were posted')
     expect(page.find('.sub').text()).toContain('1 of them had something come back')
     expect(page.find('.sub').text()).toContain('1 whose code changed')
-    expect(page.findAll('.answered-row')).toHaveLength(1)
+    /* Eleven posted, none replied to: eleven rows, and none for the three held back. */
+    expect(page.findAll('.reply-row')).toHaveLength(0)
+    expect(page.find('#no-reply').text()).toContain('11')
   })
 
   /**
@@ -1000,10 +1029,14 @@ describe('the figures and the rows count the same findings', () => {
     expect(page.text()).toContain('nothing yet · 1 not known')
     expect(page.text()).not.toContain('1 of 3 findings')
 
-    const rows = page.findAll('.answered-row')
-    expect(rows).toHaveLength(1)
-    expect(rows[0]!.text()).toContain('— whether the code it points at changed is not known')
-    expect(rows[0]!.text()).toContain('the history was rewritten')
+    /*
+     * DEV-1330: no reply came back, so F2 is in No reply yet; the dash and its reason are in
+     * the history its row folds, which is where step 7's row went.
+     */
+    expect(page.findAll('.reply-row')).toHaveLength(0)
+    const history = await historyOf(page, 'F2')
+    expect(history.text()).toContain('— whether the code it points at changed is not known')
+    expect(history.text()).toContain('the history was rewritten')
   })
 
   /*
@@ -1014,7 +1047,7 @@ describe('the figures and the rows count the same findings', () => {
   it('says what the record holds about findings it draws no row for', async () => {
     await withDense(withHeldBack())
     const page = await shown(REVIEW)
-    expect(page.text()).toContain('Outcomes on findings this page does not list')
+    expect(page.text()).toContain('Outcomes on findings this tab does not list')
     expect(page.text()).toContain('3 outcomes')
     expect(page.text()).toContain('Against findings this review did not post')
   })
@@ -1022,7 +1055,7 @@ describe('the figures and the rows count the same findings', () => {
   it('says nothing about them where there are none', async () => {
     await withDense()
     const page = await shown(REVIEW)
-    expect(page.text()).not.toContain('Outcomes on findings this page does not list')
+    expect(page.text()).not.toContain('Outcomes on findings this tab does not list')
   })
 })
 
@@ -1061,27 +1094,22 @@ describe('a review whose repository name is not a repository name', () => {
      * And it does not promise links on rows that are not on the screen. That is the same
      * shape as the sentence above it, which was guarded for the same reason.
      */
-    expect(page.find('.notes').text()).not.toContain('code review page are unaffected')
+    expect(page.find('.notes').text()).not.toContain('Findings tab are unaffected')
   })
 
   /* And the links to each finding's own row are unaffected, which the note says. */
   it('does not claim the links to the code review page are gone', async () => {
     await withBadRepo()
     const page = await shown(REVIEW)
-    expect(page.find('.notes').text()).toContain('code review page are unaffected')
-    expect(page.findAll('.answered-row')[0]!.find('a').attributes('href'))
+    expect(page.find('.notes').text()).toContain('Findings tab are unaffected')
+    expect((await historyOf(page, 'F1')).find('a').attributes('href'))
       .toBe(`/reviews/${REVIEW}/findings?finding=F1`)
   })
 
   it('says it on the row too, where the row has to explain itself', async () => {
     await withBadRepo()
     const page = await shown(REVIEW)
-    await page.find('.fold').trigger('click')
-    await settle(page)
-    const row = page.findAll('.silent-row').find(one => one.text().includes('F4'))!
-    await row.trigger('click')
-    await settle(page)
-    const opened = page.find('.silent-opened').text()
+    const opened = (await historyOf(page, 'F4')).text()
     expect(opened).toContain('repository name is not one a GitHub address can be built from')
     expect(opened).not.toContain('no thread for a reply to attach to')
   })
@@ -1196,7 +1224,7 @@ describe('the rounds of the pull request', () => {
     }
     await withDense(dense({ round: 2, rounds: ROUNDS, findings: carried }))
     const page = await shown(REVIEW)
-    const first = page.findAll('.answered-row')[0]!
+    const first = await historyOf(page, 'F1')
     expect(first.text()).toContain('Carried from round 1')
     expect(first.text()).toContain('Still open')
   })
@@ -1210,24 +1238,18 @@ describe('it describes and does not grade', () => {
   })
 
   /*
-   * **No severity tag and no severity colour.** `HeldBackRows` made the same call for the
-   * same reason and states it: a colour tells a reader which of these to be afraid of,
-   * which is a judgement about what came back rather than a report of it. The severity is
-   * still on every row, as the record's own word.
+   * **The severity is S09's tag, as it is on every other tab** (DEV-1330). Step 7 drew it as
+   * a word in the body ink, so that no colour graded *what came back*. Under the S shell the
+   * tag is the review's own grade drawn the way Findings draws it, and the words beside each
+   * reply — Contested, Fixed, Answered — carry no severity colour; what grades nothing is
+   * still that the reply's own standing is told, never inferred.
    */
-  it('draws a severity as a word, with no tag', async () => {
+  it('draws a severity as the tag every tab draws it with, on every row', async () => {
     const page = await shown(REVIEW)
-    /*
-     * `Severity:` is the visually-hidden label, which is in the text and not on the
-     * screen — and the space after it is an interpolated one, because Vue's
-     * `whitespace: 'condense'` deletes a whitespace-only text node between two elements and
-     * merges a trailing `&#32;` into it. Written as a newline, as a second `<span>` around
-     * the value, or as an entity at the end of a line, this read `Severity:blocker` — which
-     * is what a reader of the text then gets. `textContent` rather than `text()`, which
-     * trims.
-     */
-    expect(page.find('.severity').element.textContent).toBe('Severity: blocker')
-    expect(page.findAll('.tag')).toHaveLength(0)
+    const rows = [...page.findAll('.reply-row'), ...page.findAll('.quiet-row')]
+    expect(rows.length).toBeGreaterThan(0)
+    for (const row of rows) expect(row.find('.tag').exists()).toBe(true)
+    expect(page.find('#reply-F1 .tag').text().toLowerCase()).toContain('blocker')
   })
 
   it('says of no finding that it was fixed', async () => {
@@ -1242,7 +1264,7 @@ describe('it describes and does not grade', () => {
    */
   it('says a resolution’s time is when it was seen, and footnotes why', async () => {
     const page = await shown(REVIEW)
-    expect(page.find('.answered-row').text()).toContain('seen')
+    expect(page.find('#reply-F1 .who').text()).toContain('seen')
     expect(page.find('.notes').text()).toContain('GitHub does not record when a review thread')
   })
 
@@ -1271,18 +1293,14 @@ describe('it describes and does not grade', () => {
 
     /* One link, and it is the one to the code review page. The text carries its own
        visually-hidden tail, which is why this is `startsWith` and not an equality. */
-    const links = page.findAll('.answered-row')[0]!.findAll('a')
+    const links = (await historyOf(page, 'F1')).findAll('a')
     expect(links).toHaveLength(1)
     expect(links[0]!.text()).toContain('The finding')
     expect(links[0]!.attributes('href')).toBe(`/reviews/${REVIEW}/findings?finding=F1`)
     expect(page.find('.notes').text()).toContain('14 comments with no address')
     expect(page.find('.notes').text()).not.toContain('raised in the body alone')
 
-    await page.find('.fold').trigger('click')
-    await settle(page)
-    await page.findAll('.silent-row')[0]!.trigger('click')
-    await settle(page)
-    const opened = page.find('.silent-opened').text()
+    const opened = (await historyOf(page, 'F4')).text()
     expect(opened).toContain('so a reply would be read')
     expect(opened).not.toContain('no thread for a reply to attach to')
   })
@@ -1301,36 +1319,31 @@ describe('it describes and does not grade', () => {
     await resetDesk({ reviews: [...loadSource().reviews, dense(), second] })
 
     const page = await shown(REVIEW)
-    await page.find('.fold').trigger('click')
-    await settle(page)
-    await page.findAll('.silent-row')[0]!.trigger('click')
-    await settle(page)
-    expect(page.findAll('.silent-opened')).toHaveLength(1)
+    await historyOf(page, 'F13')
+    expect(page.findAll('.history')).toHaveLength(1)
+    expect(page.findAll('.quiet-row')).toHaveLength(12)
 
     await page.vm.$router.push(`/reviews/${REVIEW + 1}/replies`)
     await settle(page)
-    expect(page.findAll('.silent-row')).toHaveLength(0)
-    expect(page.findAll('.silent-opened')).toHaveLength(0)
+    expect(page.findAll('.quiet-row')).toHaveLength(NO_REPLY_SHOWN)
+    expect(page.findAll('.history')).toHaveLength(0)
   })
 
   /**
-   * Folding the quiet half lets go of whichever row was open inside it. Without that,
-   * unfolding brought one back already open, which reads as the control having done
-   * nothing.
+   * Folding the quiet rows past the first four lets go of whichever row was open inside
+   * them. Without that, unfolding brought one back already open, which reads as the control
+   * having done nothing.
    */
-  it('lets go of an open row when the group is folded', async () => {
+  it('lets go of an open row when the rest are folded', async () => {
     const page = await shown(REVIEW)
-    await page.find('.fold').trigger('click')
-    await settle(page)
-    await page.findAll('.silent-row')[0]!.trigger('click')
-    await settle(page)
-    expect(page.findAll('.silent-opened')).toHaveLength(1)
+    await historyOf(page, 'F13')
+    expect(page.findAll('.history')).toHaveLength(1)
 
-    await page.find('.fold').trigger('click')
+    await page.find('.more').trigger('click')
     await settle(page)
-    await page.find('.fold').trigger('click')
+    await page.find('.more').trigger('click')
     await settle(page)
-    expect(page.findAll('.silent-opened')).toHaveLength(0)
+    expect(page.findAll('.history')).toHaveLength(0)
   })
 
   it('footnotes nothing it has nothing to footnote', async () => {
@@ -1339,5 +1352,162 @@ describe('it describes and does not grade', () => {
     await withDense(dense({ outcomes: onlyChanged, findings: linked }))
     const page = await shown(REVIEW)
     expect(page.find('.notes').exists()).toBe(false)
+  })
+})
+
+/* ============================== Answering a reply ============================== */
+
+/**
+ * **DEV-1330: Raise it again, Accept their reason and Withdraw, where the record takes them.**
+ *
+ * Round 2 of the dense review, its draft still open, with F3 carried in from round 1 as
+ * fixed — and the author replying on it, which is the newest thing on F3. That is the one
+ * state in which the store takes the three: a carried, settled finding on a writable draft.
+ */
+function answerable(status: ReviewDetail['draft_status'] = 'ready'): { detail: ReviewDetail, draft: unknown } {
+  const findings = Array.from({ length: 14 }, (_, at) => finding(at + 1))
+  /*
+   * With a paragraph to post: Raise it again writes F3 a block, and the store refuses one
+   * with no words ("F3 has no paragraph to post") — which is why the self-review's probe of R
+   * was refused until the fixture carried one. Carry copies it, so a real carried finding has it.
+   */
+  findings[2] = {
+    ...findings[2]!,
+    continues_review_id: 12,
+    continues_round: 1,
+    round_status: 'fixed',
+    why_it_matters: 'A deleted tenant’s schedule still runs, so its export is sent to nobody.',
+  } as Finding
+  const contested = outcome({
+    finding_seq: 3,
+    kind: 'replied',
+    occurred_at: '2026-10-12T20:00:00Z',
+    detail: repliedDetail(3, SHORT_REPLY),
+  })
+  const detail = { ...dense({ round: 2, rounds: ROUNDS, findings, outcomes: [...OUTCOMES, contested] }), draft_status: status }
+  const draft = structuredClone((drafts as unknown as Array<{ draft: { review_id: number, status: string }, sections: Array<{ kind: string }>, threads: unknown[] }>)[0]!)
+  draft.draft.review_id = REVIEW
+  draft.draft.status = status ?? 'drafting'
+  draft.sections = draft.sections.filter(one => one.kind === 'prose').slice(0, 1)
+  draft.threads = []
+  return { detail, draft }
+}
+
+async function withAnswerable(status: ReviewDetail['draft_status'] = 'ready') {
+  const { detail, draft } = answerable(status)
+  const source = loadSource()
+  await resetDesk({ reviews: [...source.reviews, detail], drafts: [...source.drafts, draft] })
+}
+
+function press(key: string) {
+  window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+}
+
+describe('answering a reply', () => {
+  it('lists the contested reply under Needs your answer, quoted and attributed', async () => {
+    await withAnswerable()
+    const page = await shown(REVIEW)
+    expect(keysIn(page, '.reply-row--contested')).toEqual(['F3'])
+    const row = page.find('#reply-F3')
+    expect(row.find('.who').text()).toContain('dana-okoye')
+    expect(row.find('.quote').text()).toBe(SHORT_REPLY)
+    expect(row.find('.standing').text()).toBe('Contested')
+  })
+
+  it('draws the three answers with their keys on a carried, settled finding', async () => {
+    await withAnswerable()
+    const page = await shown(REVIEW)
+    const buttons = page.find('#reply-F3').findAll('.answers button')
+    expect(buttons.map(one => one.text())).toEqual(['Raise it againR', 'Accept their reasonA', 'WithdrawW'])
+  })
+
+  it('sends the decision a key names, and the record moves the reply to Settled', async () => {
+    await withAnswerable()
+    const page = await shown(REVIEW)
+    press('w')
+    await settle(page)
+    expect(page.text()).toContain('F3 is withdrawn')
+    expect(keysIn(page, '.reply-row--contested')).toEqual([])
+    expect(keysIn(page, '.reply-row--settled')).toContain('F3')
+  })
+
+  it('asks for the author’s reason before accepting it, opened on their words', async () => {
+    await withAnswerable()
+    const page = await shown(REVIEW)
+    press('a')
+    await settle(page)
+    const field = page.find<HTMLTextAreaElement>('#reason-3')
+    expect(field.element.value).toBe(SHORT_REPLY)
+    /* The key is not a key while the developer types in the field. */
+    field.element.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', bubbles: true }))
+    await settle(page)
+    expect(keysIn(page, '.reply-row--contested')).toEqual(['F3'])
+  })
+
+  /* Self-review Should 1: A left the field unfocused, and the next W withdrew the finding. */
+  it('focuses the reason field on A, and takes no key while the reason is being typed', async () => {
+    await withAnswerable()
+    const page = await shown(REVIEW)
+    press('a')
+    await settle(page)
+    expect(document.activeElement?.id).toBe('reason-3')
+    /* Even pressed at the page, not the field, W does nothing while a reason is asked for. */
+    press('w')
+    await settle(page)
+    expect(keysIn(page, '.reply-row--contested')).toEqual(['F3'])
+    expect(page.find('#reply-F3 .answers .key').exists()).toBe(false)
+  })
+
+  it('keeps a typed reason when A is pressed again, and Escape puts it away', async () => {
+    await withAnswerable()
+    const page = await shown(REVIEW)
+    press('a')
+    await settle(page)
+    const field = page.find<HTMLTextAreaElement>('#reason-3')
+    await field.setValue('Chunked upstream.')
+    await page.find('#reply-F3 .answers button:nth-child(2)').trigger('click')
+    await settle(page)
+    expect(page.find<HTMLTextAreaElement>('#reason-3').element.value).toBe('Chunked upstream.')
+    await page.find('#reason-3').trigger('keydown', { key: 'Escape' })
+    await settle(page)
+    expect(page.find('#reason-3').exists()).toBe(false)
+    expect(page.find('#reply-F3 .answers .key').exists()).toBe(true)
+  })
+
+  /* Self-review Should 2: R succeeded and the row then said "Answered · told by the author". */
+  it('draws a raised-again reply as the developer’s answer, not the author’s', async () => {
+    await withAnswerable()
+    const page = await shown(REVIEW)
+    press('r')
+    await settle(page)
+    expect(page.text()).toContain('F3 is in the review again')
+    const row = page.find('#reply-F3')
+    expect(row.classes()).toContain('reply-row--settled')
+    expect(row.find('.standing').text()).toBe('Raised again')
+    expect(row.find('.who').text()).toContain('your answer')
+    expect(row.find('.who').text()).not.toContain('told by the author')
+  })
+
+  it('draws no buttons on a posted round, and says why from the record', async () => {
+    await withAnswerable('posted')
+    const page = await shown(REVIEW)
+    const row = page.find('#reply-F3')
+    expect(row.find('.answers').exists()).toBe(false)
+    expect(row.find('.why').text()).toContain('Round 2 is posted, so its draft takes no more decisions.')
+    expect(row.find('.why').text()).toContain('Findings tab of the round that carries F3 in')
+    press('w')
+    await settle(page)
+    expect(keysIn(page, '.reply-row--contested')).toEqual(['F3'])
+  })
+
+  /* The header's Answer F3 goes to `?finding=F3` (`replyPath`). */
+  it('selects the reply the address names, and opens the history of any other', async () => {
+    await withAnswerable()
+    const page = await shown(REVIEW, '?finding=F3')
+    expect(page.find('#reply-F3').attributes('aria-current')).toBe('true')
+    expect(page.find('#reply-F3').classes()).toContain('reply-row--picked')
+
+    const quiet = await shown(REVIEW, '?finding=F13')
+    expect(quiet.find('#history-13').exists()).toBe(true)
   })
 })

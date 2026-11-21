@@ -88,9 +88,6 @@ const block = computed(() =>
   ) ?? null,
 )
 
-/** Whether this finding still stands as an open finding of this round. */
-const open = computed(() => isStillOpen(props.finding.round_status))
-
 /**
  * Why nothing can be decided, or null when something can.
  *
@@ -107,7 +104,7 @@ const refusal = computed<string | null>(() => {
     )
   }
   if (props.draftStatus === 'posted') {
-    return 'This review is posted. What the author makes of it is step 7.'
+    return 'This review is posted. What the author made of it is on the Replies tab.'
   }
   if (props.sections == null) {
     return (
@@ -203,7 +200,7 @@ const REPLIES: Array<{ value: string, label: string, key?: string }> = [
  * decisions, with Post as the way back.
  */
 const options = computed<TrackOption[]>(() => {
-  const answering = isCarried(props.finding) && !open.value
+  const answering = answersTheAuthor(props.finding)
   const all: Array<{ value: string, label: string, key?: string }> = [
     ...(answering ? REPLIES : DECISIONS),
     { value: 'to_ticket', label: 'Ticket', key: 'T' },

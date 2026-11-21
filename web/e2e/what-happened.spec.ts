@@ -267,6 +267,20 @@ test.afterAll(async () => {
   if (serving) await stop(serving)
 })
 
+/**
+ * Unfold everything the record holds on one finding (DEV-1330 folds step 7's row under each
+ * group's row), reaching a quiet row past the first four through "n more" first.
+ */
+async function historyOf(page: Page, key: string) {
+  const row = page.locator(`#reply-${key}`)
+  if (await row.count() === 0) await page.locator('.more').click()
+  const control = page.locator(`li#reply-${key} .rd-fold-line, button#reply-${key}`)
+  await control.click()
+  const history = page.locator(`#history-${key.slice(1)}`)
+  await expect(history).toBeVisible()
+  return history
+}
+
 /** Whether anything on the page is wider than the page. `header-links.spec.ts`' helper. */
 async function overflows(page: Page): Promise<{ scroll: number, client: number }> {
   return page.evaluate(() => ({
@@ -316,10 +330,14 @@ for (const { name, width, height } of WIDTHS) {
     /* The trail is there, step 7 is where you are, and it is called what it holds. */
     await expect(page.locator('.tabs [aria-current="page"]')).toContainText('Replies')
 
-    /* Seven findings had something come back; the other seven are counted and folded. */
-    await expect(page.locator('.answered-row')).toHaveCount(7)
-    await expect(page.locator('.silent-row')).toHaveCount(0)
-    await expect(page.locator('.fold')).toContainText('7 findings nothing came back on')
+    /*
+     * S09's three groups: nothing contested, F1 fixed (its thread resolved) and F2 answered,
+     * and twelve with no reply — the first four drawn, the other eight counted and folded.
+     */
+    await expect(page.locator('.reply-row--contested')).toHaveCount(0)
+    await expect(page.locator('.reply-row--settled')).toHaveCount(2)
+    await expect(page.locator('.quiet-row')).toHaveCount(4)
+    await expect(page.locator('.more')).toHaveText('8 more with no reply')
 
     /* And the fourteen posted are what the figures are about, not the sixteen recorded. */
     await expect(page.locator('.sub')).toContainText('14 findings were posted')
@@ -327,7 +345,7 @@ for (const { name, width, height } of WIDTHS) {
       '7 of them had something come back: 2 replies, 7 whose code changed',
     )
     await expect(page.locator('main')).toContainText(
-      'Outcomes on findings this page does not list',
+      'Outcomes on findings this tab does not list',
     )
     await expect(page.locator('main')).toContainText('2 outcomes')
     await expect(page.locator('main')).toContainText(
@@ -341,7 +359,7 @@ for (const { name, width, height } of WIDTHS) {
      * measured at a length no author writes at.
      */
     expect(LONG_REPLY.trim().split(/\s+/).length).toBeGreaterThan(80)
-    await expect(page.locator('.quote').first()).toContainText(LONG_REPLY)
+    await expect((await historyOf(page, 'F1')).locator('.quote').first()).toContainText(LONG_REPLY)
 
     /*
      * **The severity's hidden label keeps its space through the real build.** Vue's
@@ -351,8 +369,7 @@ for (const { name, width, height } of WIDTHS) {
      * the compiler, the bundler and the binary is a question for the thing that serves it
      * rather than for a test environment's renderer, which is why it is asserted here too.
      */
-    expect(await page.locator('.answered-row .severity').first().textContent())
-      .toBe('Severity: blocker')
+    await expect(page.locator('#reply-F1 .tag')).toContainText(/blocker/i)
 
     /* And nothing on the page is wider than the page — the measurement, at both widths. */
     const { scroll, client } = await overflows(page)
@@ -367,12 +384,15 @@ for (const { name, width, height } of WIDTHS) {
     await page.setViewportSize({ width, height })
     await page.goto(`${serving.url}reviews/${reviewId}/replies`)
 
-    await page.locator('.fold').click()
-    await expect(page.locator('.silent-row')).toHaveCount(7)
+    await page.locator('.more').click()
+    await expect(page.locator('.quiet-row')).toHaveCount(12)
 
-    /* A row opens in place and says that nothing came back, rather than showing a blank. */
-    await page.locator('.silent-row').first().click()
-    await expect(page.locator('.silent-opened')).toContainText('Nothing has come back on')
+    /*
+     * A row opens in place and says that nothing came back, rather than showing a blank.
+     * F4: no reply and no code change either — F3's history holds its code change.
+     */
+    await page.locator('button#reply-F4').click()
+    await expect(page.locator('.history')).toContainText('Nothing has come back on')
 
     const { scroll, client } = await overflows(page)
     expect(
@@ -391,8 +411,9 @@ for (const { name, width, height } of WIDTHS) {
      * a 53-character path with a line number after it, and a commit id — so it is the thing
      * worth measuring on its own as well as inside the document.
      */
+    await historyOf(page, 'F1')
     expect(
-      await tooWide(page, width, '.answered-row'),
+      await tooWide(page, width, '.reply-row'),
       `nothing in a row is wider than ${name}`,
     ).toEqual([])
   })
@@ -412,9 +433,10 @@ for (const { name, width, height } of WIDTHS) {
 test('prints no outcome’s stored detail as JSON', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto(`${serving.url}reviews/${reviewId}/replies`)
-  await expect(page.locator('.answered-row').first()).toBeVisible()
-  await page.locator('.fold').click()
-  await expect(page.locator('.silent-row')).toHaveCount(7)
+  await expect(page.locator('.reply-row').first()).toBeVisible()
+  await page.locator('.more').click()
+  await expect(page.locator('.quiet-row')).toHaveCount(12)
+  await historyOf(page, 'F1')
 
   const said = await page.locator('main').innerText()
   for (const token of ['comment_id', 'in_reply_to', 'time_basis', 'lines_changed', '"basis"']) {
@@ -443,8 +465,7 @@ test('a row reaches its finding and its comment on GitHub', async ({ page, conte
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto(`${serving.url}reviews/${reviewId}/replies`)
 
-  const row = page.locator('.answered-row').first()
-  await expect(row).toBeVisible()
+  const row = await historyOf(page, 'F1')
 
   const comment = row.getByRole('link', { name: /comment, opens in a new tab/ })
 
@@ -471,7 +492,7 @@ test('a row reaches its finding and its comment on GitHub', async ({ page, conte
   await opened.close()
 
   /* And the finding, which is on the code review page and reaches the finding itself. */
-  await row.getByRole('link', { name: /on the code review page/ }).click()
+  await row.getByRole('link', { name: /on the Findings tab/ }).click()
   await expect(page).toHaveURL(new RegExp(`/reviews/${reviewId}/findings\\?finding=F1$`))
 })
 

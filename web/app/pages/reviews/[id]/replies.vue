@@ -1,65 +1,63 @@
 <script setup lang="ts">
 /**
- * Step 7 — **What happened**. DEV-958.
+ * `/reviews/{id}/replies` — **Replies: what came back, in three groups.** DEV-1330, S09.
  *
  * ```
  *  The pull request is still open.
- *  Last read 4 days ago. 14 findings were posted. 7 of them had something come
- *  back: 2 replies, 7 whose code changed.
+ *  Last read 4 days ago. 14 findings were posted. 7 of them had something come back…
  *
- *  WHAT CAME BACK · 7 of 14 findings
- *  ──────────────────────────────────────────────────────────────────────────────
- *  F1   blocker   What F1 says is wrong                     The finding · On GitHub
- *       app/Reporting/ColumnPolicy.php:47 · Carried from round 1 · Still open
- *         A reply from dana-okoye. 1 day ago
- *         “I pushed a fix for this one but I want to flag that it is not the fix
- *          you suggested…”
- *         The thread was resolved by dana-okoye. seen 13 hours ago
- *         The code at line 47 changed in 65eff61. 5 hours ago
- *  ──────────────────────────────────────────────────────────────────────────────
- *
- *  NOTHING CAME BACK · the other 7 of 14 findings            [ Open the 7 … ]
+ *  NEEDS YOUR ANSWER 1
+ *  [should]  F3  A deleted tenant's schedule still runs                       Contested
+ *            dana-okoye · 2 hours ago
+ *            “Tenants are never hard-deleted in production…”
+ *            [R Raise it again] [A Accept their reason] [W Withdraw]   — or why not
+ *            › What came back on F3
+ *  SETTLED 2
+ *  [blocker] F9  The column policy is skipped…                                Fixed
+ *  NO REPLY YET 9
+ *  [should]  F1  An empty allowed-columns list means every column        Open
+ *  … the first four
+ *  › 5 more with no reply
  *
  *  THE ROUNDS OF THIS PULL REQUEST
  *  Round 1   11 findings · 3 replies · 2 threads resolved   nothing decided about any of them
  *  Round 2   14 findings · 2 replies · 1 thread resolved   2 fixed, 1 still open, 1 their reason accepted
  * ```
  *
- * The figures are the fixture's — `test/what-happened.nuxt.spec.ts` and
- * `e2e/what-happened.spec.ts` assert every one of them — because a sketch that disagrees
- * with the thing it is a sketch of is worse than none.
+ * It was step 7, *What happened* (DEV-958), and `/what-happened` still redirects here.
+ * `utils/replies.ts` carries the argument for the groups; what is here is the drawing.
  *
- * **Before this page there was nowhere to read what a posted review came to.** The harvest
- * ran every quarter of an hour and wrote its findings into outcomes nothing drew: the round
- * and draft pages said nothing new, the code review page drew a finding's own replies
- * behind a fold on the finding, and the whole of it on the queue was "pull request merged ·
- * replies 2 · code changed since 7 findings" — which Patrick read and said "I don't really
- * know what that means." Step 7 was the one step of seven with no page.
+ * ## Nothing step 7 drew is gone — it is folded
  *
- * ## It describes; it does not grade
+ * `docs/design.md`: a page may fold or reorder what it draws, and never remove any of it.
+ * Step 7 drew, for every posted finding, every outcome oldest first with the author's words
+ * whole, where the finding is, the round it was carried from, and its two links — or, for
+ * a finding nothing came back on, which of three reasons that is. Each row here folds
+ * exactly that (`ReplyHistory`, from `whatHappened`'s own `findingRowFor`). The headline and the
+ * line under it, the no-harvest notice, the outcomes on findings no group lists, the rounds
+ * table and the footnotes are drawn as step 7 drew them.
  *
- * The issue's own words, and three rules come out of it. `whatHappened` carries the
- * argument; what is here is the drawing:
+ * ## The keys are this tab's alone
  *
- * 1. **No good or bad colour anywhere on the page.** A severity is the record's own word in
- *    the body ink — no `SeverityTag`, no wash. `HeldBackRows` made the same call for the
- *    same reason: a colour tells a reader which of these to be afraid of, and that is a
- *    judgement about what came back rather than a report of it.
- * 2. **A finding nothing came back on says so.** It is a row in a folded group with a
- *    count on the heading, never a blank cell — "0 replies" and "nobody has looked" are
- *    different facts and this page has to be able to say which.
- * 3. **The author's words are quoted whole and interpolated.** Not clamped, not summarised,
- *    not `v-html`. The one reply in the fixtures runs to 108 words because that is the
- *    length an author really answers a blocker at, and the page is measured at 390 with it.
+ * R, A and W are bound by `DecisionTrack` on **one** row at a time — the row being answered,
+ * the first that can be on arrival — so a key never answers two findings at once. They are
+ * bound only while this page is mounted, so they never meet the list's J/K/Enter or the
+ * Findings keys, and `keyIsForThePage` keeps them out of the reason field.
  *
- * ## Two reads? No — one
+ * ## Arriving at one reply
  *
- * `GET /reviews/{id}` is the whole of it: the findings, the outcomes, the pull request's
- * state and the rounds. The draft is not read, because nothing here is decided, and
- * **nothing new is read from GitHub** — both out of DEV-958's scope. That is why this page
- * has no second resource to fail and no notice about one.
+ * `?finding=F3` — `replyPath`, which the header's *Answer F3* goes to, read by the same
+ * `findingAsked` Findings reads it with. A contested reply is selected (its buttons carry the
+ * keys); a settled or quiet one has its history opened. Either way it is scrolled into view.
+ *
+ * ## One read
+ *
+ * `GET /reviews/{id}` is the whole of it. A decision is `POST …/findings/{seq}/decide`, the
+ * same write Findings sends, through the same composable.
  */
-import type { FindingRow } from '~/utils/whatHappened'
+import type { DecideFindingRequest } from '~/types/desk'
+import type { ReplyRow } from '~/utils/replies'
+import type { TrackOption } from '~/components/DecisionTrack.vue'
 
 const route = useRoute()
 const desk = useReviewDesk()
@@ -68,104 +66,194 @@ const reviewId = computed(() => Number(route.params.id))
 const detail = desk.review(reviewId)
 
 /**
- * The whole page, worked out once.
- *
- * **Once, and that is not a performance note.** `whatHappened` words every outcome and
- * `outcomeWhen` defaults to the clock, so calling it from each of a dozen places in the
- * markup would be a dozen readings of the clock in one render — the measurement is in
- * `StepTrail`, where a title and a card built from two calls to it could say "just now"
- * and "1 min ago" about the same step. The counts would be free to disagree with the rows
- * they are counting, too, which is this issue's own defect one level up.
- *
- * Null while the read is in flight; `DeskState` draws its own state then and the slot
- * below is not rendered. The computeds under it carry the empty answer so that nothing in
- * the template has to assert a non-null.
+ * The whole page, worked out once — the clock read once per render, so the counts and the
+ * rows cannot disagree about "just now".
  */
 const page = computed(() => {
   const data = detail.data.value
-  return data == null ? null : whatHappened(data)
+  return data == null ? null : { step7: whatHappened(data), tab: repliesTab(data) }
 })
 
-const headline = computed(() => page.value?.headline ?? '')
-const sub = computed(() => page.value?.sub ?? '')
-const harvested = computed(() => page.value?.harvested ?? false)
-const nothingLooked = computed(() => page.value?.nothingLooked ?? false)
-const answered = computed(() => page.value?.answered ?? [])
-const silent = computed(() => page.value?.silent ?? [])
-const rounds = computed(() => page.value?.rounds ?? [])
-const anyObserved = computed(() => page.value?.anyObserved ?? false)
-const anyWithoutComment = computed(() => page.value?.anyWithoutComment ?? false)
-const unaddressable = computed(() => page.value?.unaddressable ?? 0)
-const noPullRequestAddress = computed(() => page.value?.noPullRequestAddress ?? false)
-const elsewhere = computed(() => page.value?.elsewhere ?? 0)
+const headline = computed(() => page.value?.step7.headline ?? '')
+/**
+ * **What came back, counted the way the line above it counts** — DEV-1344 (#88), which made
+ * step 7's section note one count with the sub-line so a code change nobody could know is
+ * said as "1 not known" rather than counted as something coming back. Kept on this tab as the
+ * line over the groups, since the section it was the note of is now three groups.
+ */
+const cameBackNote = computed(() => page.value?.step7.note ?? 'nothing yet')
+const sub = computed(() => page.value?.step7.sub ?? '')
+const harvested = computed(() => page.value?.step7.harvested ?? false)
+const nothingLooked = computed(() => page.value?.step7.nothingLooked ?? false)
+const rounds = computed(() => page.value?.step7.rounds ?? [])
+const anyObserved = computed(() => page.value?.step7.anyObserved ?? false)
+const anyWithoutComment = computed(() => page.value?.step7.anyWithoutComment ?? false)
+const unaddressable = computed(() => page.value?.step7.unaddressable ?? 0)
+const noPullRequestAddress = computed(() => page.value?.step7.noPullRequestAddress ?? false)
+const posted = computed(() => (page.value?.step7.answered.length ?? 0) + (page.value?.step7.silent.length ?? 0))
 
-/** How many findings this review posted: the denominator both section headings count out of. */
-const posted = computed(() => answered.value.length + silent.value.length)
+const needsAnswer = computed(() => page.value?.tab.needsAnswer ?? [])
+const settled = computed(() => page.value?.tab.settled ?? [])
+const noReply = computed(() => page.value?.tab.noReply ?? [])
+const elsewhere = computed(() => page.value?.tab.elsewhere ?? 0)
 
 useHead({
   title: computed(() => {
     const review = detail.data.value?.review
-    return review
-      ? `What happened · #${review.pr} · Review Desk`
-      : 'What happened · Review Desk'
+    return review ? `Replies · #${review.pr} · Review Desk` : 'Replies · Review Desk'
   }),
 })
 
-/**
- * Which finding's folded row is open, by its sequence number.
- *
- * One at a time, which is the rule every fold on these pages follows. The sequence number
- * rather than the position, because `aria-controls` keys on it and the groups do not draw
- * the rows in the record's order.
- */
+/* ------------------------------ What is open ------------------------------ */
+
+/** Which row's history is unfolded, by sequence number. One at a time. */
 const open = ref<number | null>(null)
 
-/** Whether the "nothing came back" group is unfolded. Closed on arrival: it is the quiet half. */
-const showSilent = ref(false)
+/** Whether the no-reply rows past the first four are drawn. Closed on arrival. */
+const showMore = ref(false)
 
 function toggle(seq: number) {
   open.value = open.value === seq ? null : seq
 }
 
-/**
- * Fold the quiet half, and let go of whichever row was open inside it.
- *
- * Without the second half, folding and unfolding brought back a row already open — the
- * reader closed the group and found it reopened at the row they had left, which reads as
- * the control having done nothing.
- */
-function toggleSilent() {
-  showSilent.value = !showSilent.value
-  if (!showSilent.value) open.value = null
+/** Fold the rest, and let go of a row open inside it, so reopening does not bring it back. */
+function toggleMore() {
+  showMore.value = !showMore.value
+  if (!showMore.value && noReply.value.slice(NO_REPLY_SHOWN).some(row => row.seq === open.value)) {
+    open.value = null
+  }
 }
 
+const shownNoReply = computed(() =>
+  showMore.value ? noReply.value : noReply.value.slice(0, NO_REPLY_SHOWN))
+const moreNoReply = computed(() => Math.max(0, noReply.value.length - NO_REPLY_SHOWN))
+
+function historyId(seq: number): string {
+  return `history-${seq}`
+}
+
+/* ------------------------------ The answers ------------------------------- */
+
 /**
- * Another review on the same page starts folded, with nothing open.
- *
- * **The component is reused across a parameter change**, which is the router's own
- * behaviour and not a thing to work around — but the two pieces of state here are about
- * *this* review's rows, and `open` is a sequence number, so a row left open on review 50
- * came back open on review 51 over whichever finding happened to share the number.
+ * The row R, A and W answer: the one last pressed or focused, else the first that can be
+ * answered. Only that row's buttons carry keys, so a keystroke answers one finding.
  */
-watch(reviewId, () => {
-  open.value = null
-  showSilent.value = false
+const chosen = ref<number | null>(null)
+const keyed = computed(() => {
+  const offered = needsAnswer.value.filter(row => row.answer?.offered)
+  return offered.find(row => row.seq === chosen.value)?.seq ?? offered[0]?.seq ?? null
 })
 
+const ANSWERS: Array<{ value: string, label: string, key: string }> = [
+  { value: 'raise_again', label: 'Raise it again', key: 'R' },
+  { value: 'accept_reason', label: 'Accept their reason', key: 'A' },
+  { value: 'withdraw', label: 'Withdraw', key: 'W' },
+]
+
 /**
- * The row's name for a screen reader.
- *
- * **`spoken`, not the raw line**, for the reason `HeldBackRows` carries: `OpenRow`'s
- * accessible name is a plain string and the line is recorded prose, so every rule
- * `TickedText` applies to the drawing has to reach the name as well — or a commit id is
- * shown as seven characters and announced as forty.
+ * The three buttons on one row. **Keys only on the row being answered, and none while a
+ * reason is being typed**: the field takes letters, and with the track's window listener
+ * still live a developer who pressed A and began "We…" withdrew the finding.
  */
-function said(row: FindingRow): string {
-  return `${row.key}, ${row.severity}, ${spoken(row.line)}`
+function answersFor(row: ReplyRow): TrackOption[] {
+  return ANSWERS.map(one => ({
+    value: one.value,
+    label: one.label,
+    key: row.seq === current.value && asking.value == null ? one.key : undefined,
+  }))
 }
 
-function detailId(seq: number): string {
-  return `nothing-back-${seq}`
+/** The row the keys answer and a screen reader is told is current: one answer for both. */
+const current = computed(() => keyed.value ?? chosen.value)
+
+/** The row whose reason is being asked for, and the reason as typed. */
+const asking = ref<number | null>(null)
+const note = ref('')
+const problem = ref('')
+const working = ref(false)
+const notice = ref<DeskNotice | null>(null)
+
+function pick(row: ReplyRow, decision: string) {
+  chosen.value = row.seq
+  problem.value = ''
+  if (decision === 'accept_reason') {
+    /*
+     * **Opened on the author's own words**, because that is what the record keeps as the
+     * reason: "the author's reason, in their words". The developer can cut it down. Opened
+     * again on the same row, it keeps what they typed rather than putting the quote back.
+     */
+    if (asking.value !== row.seq) note.value = row.said?.quote ?? row.said?.reason ?? ''
+    asking.value = row.seq
+    void nextTick(() => document.getElementById(`reason-${row.seq}`)?.focus())
+    return
+  }
+  void decide(row, { decision: decision as DecideFindingRequest['decision'] })
+}
+
+/** Escape, or Cancel, puts the reason away and gives the keys back. */
+function cancelReason() {
+  asking.value = null
+  problem.value = ''
+}
+
+function acceptReason(row: ReplyRow) {
+  if (note.value.trim().length === 0) {
+    problem.value = 'Say what the author’s reason was. It is what the record keeps.'
+    return
+  }
+  void decide(row, { decision: 'accept_reason', note: note.value.trim() })
+}
+
+async function decide(row: ReplyRow, request: DecideFindingRequest) {
+  working.value = true
+  const result = await desk.decideFinding(reviewId.value, row.seq, request)
+  working.value = false
+  notice.value = noticeFor(result)
+  if (result.ok) {
+    asking.value = null
+    note.value = ''
+  }
+}
+
+/* ------------------------------ Arriving at one ------------------------------ */
+
+/** The finding the address names, if this tab draws a row for it. */
+const asked = computed(() => findingAsked(route.query, route.hash))
+
+/**
+ * Select the reply the address names: a contested one takes the keys, any other has its
+ * history opened — the rest of the quiet group unfolded first if it is past the first four —
+ * and the row is scrolled into view. Run when the rows arrive and when the query changes.
+ */
+async function arrive() {
+  const seq = asked.value
+  if (seq == null || page.value == null) return
+  const { needsAnswer: needs, settled: done, noReply: quiet } = page.value.tab
+  const row = [...needs, ...done, ...quiet].find(one => one.seq === seq)
+  if (!row) return
+  if (needs.includes(row)) chosen.value = seq
+  else open.value = seq
+  if (quiet.slice(NO_REPLY_SHOWN).includes(row)) showMore.value = true
+  await nextTick()
+  if (import.meta.client) document.getElementById(`reply-${row.key}`)?.scrollIntoView?.({ block: 'center' })
+}
+
+watch([asked, () => page.value != null], () => void arrive(), { immediate: true })
+
+/** Another review on the same page starts folded, with nothing open or half-answered. */
+watch(reviewId, () => {
+  open.value = null
+  showMore.value = false
+  chosen.value = null
+  asking.value = null
+  note.value = ''
+  problem.value = ''
+  notice.value = null
+})
+
+/** The row's name for a screen reader, with the recorded prose spoken as `TickedText` draws it. */
+function said(row: ReplyRow): string {
+  return `${row.key}, ${row.severity}, ${spoken(row.line)}`
 }
 </script>
 
@@ -183,17 +271,9 @@ function detailId(seq: number): string {
         :sub="sub"
       >
         <!--
-          **A review nothing has read says so once, and in the tone of an absence.**
-          `prEndLabel` has already said it in the headline; this says what follows from it,
-          which is that every figure below would be a figure about nothing. `plain`, not
-          `problem`: nobody has done anything wrong, and the harvest is a sweep rather than
-          something the developer runs.
-        -->
-        <!--
           **`nothingLooked`, not `!harvested`.** A harvest writes the pull request's state
-          first and its read time last with no transaction across them, so a run that fails
-          part way leaves a state and no time — and this notice then sat under a headline
-          saying the pull request had merged, which only a harvest could have found out.
+          first and its read time last, so a run that fails part way leaves a state and no
+          time — and this notice then sat under a headline only a harvest could write.
         -->
         <DeskNotice
           v-if="nothingLooked"
@@ -205,331 +285,351 @@ function detailId(seq: number): string {
           than what is there — and anything in them was recorded by hand.
         </DeskNotice>
 
-        <!-- ------------------------------ What came back ------------------------------ -->
-        <DeskSection
-          heading="What came back"
-          :note="page?.note ?? 'nothing yet'"
+        <DeskNotice
+          v-if="notice"
+          :tone="notice.tone"
         >
-          <!--
-            Nothing yet, which is most posted reviews most of the time. It is a sentence and
-            not an empty table: a table with a head and no rows reads as a load that failed.
-          -->
+          {{ notice.text }}
+        </DeskNotice>
+
+        <p class="rd-meta came-back">
+          What came back · {{ cameBackNote }}
+        </p>
+
+        <!-- --------------------------- Needs your answer --------------------------- -->
+        <section
+          class="group"
+          aria-labelledby="needs-answer"
+        >
+          <h2
+            id="needs-answer"
+            class="rd-rubric group-head"
+          >
+            Needs your answer <span class="group-count">{{ needsAnswer.length }}</span>
+          </h2>
           <p
-            v-if="answered.length === 0"
+            v-if="needsAnswer.length === 0"
             class="rd-note none"
           >
-            Nothing has come back on any of the findings this review posted.
-            <template v-if="harvested">
-              The harvest has read the pull request and found no reply, no resolved thread
-              and no change to the code the findings point at.
-            </template>
+            Nothing waits on your answer: no reply from the author is the newest thing on any
+            finding.
           </p>
-
           <ul
             v-else
-            class="answered"
+            class="rows"
           >
             <li
-              v-for="row in answered"
+              v-for="row in needsAnswer"
+              :id="`reply-${row.key}`"
               :key="row.seq"
-              class="answered-row"
+              class="reply-row reply-row--contested"
+              :class="{ 'reply-row--picked': row.seq === current }"
+              :aria-current="row.seq === current ? 'true' : undefined"
+              @focusin="chosen = row.seq"
             >
               <div class="head">
-                <span class="rd-mono rd-meta key">{{ row.key }}</span>
-                <!--
-                  **The severity as a word, in the body ink.** Rule 1 at the top of this
-                  file. The record's own word, lower case as the record holds it.
-                -->
-                <!--
-                  **`{{ ' ' }}`, outside the clipped box — and it is the third form tried.**
-
-                  `rd-visually-hidden` is text in the document, so a label and its value
-                  with nothing between them read as one word: `Severity:blocker`. A newline
-                  between them is no better, because Vue's `whitespace: 'condense'` deletes
-                  a whitespace-only text node between two elements. `&#32;` looked like the
-                  answer and is one only where nothing follows it on the line: compiled
-                  with the repo's own `@vue/compiler-dom`, `</span>&#32;` followed by a
-                  newline and an element — or a *comment* — emits no text node at all, and
-                  four boundaries in this app were written exactly that way. An
-                  interpolated space is a text node wherever it is written, which is why it
-                  is this one.
-
-                  Outside the clipped box rather than inside it, because
-                  `.rd-visually-hidden` is a 1×1 `overflow: hidden` box and a trailing
-                  space at the end of one is the kind of character a renderer may drop.
-                  Visually it costs nothing: the box is `position: absolute`, so the space
-                  is the first in-flow content of the line and is collapsed away.
-                -->
-                <span class="rd-meta severity">
-                  <span class="rd-visually-hidden">Severity:</span>{{ ' ' }}{{ row.severity }}
-                </span>
+                <SeverityTag :severity="row.severity" />
+                <span class="rd-mono key">{{ row.key }}</span>
                 <span class="line">
                   <TickedText :text="row.line" />{{ ' ' }}
-                  <!--
-                    A line the page cut says so, with the whole claim within a pointer's
-                    reach. `HeldBackRows`' rule: a reader has to know the line they are
-                    reading was cut by the page and is not what the review wrote.
-
-                    The space before it is the rule this file argues for, inside a cell
-                    rather than between two: without it the row's text read
-                    `…a session really…shortened`.
-                  -->
                   <span
                     v-if="row.shortened"
                     class="rd-meta shortened"
                   >shortened</span>
                 </span>
+                <span class="standing standing--contested">{{ STANDING_WORDS.contested.word }}</span>
+              </div>
+              <div
+                v-if="row.said"
+                class="said"
+              >
                 <!--
-                  **The two links the issue asks a row for.** The finding on the code review
-                  page, which always exists; and the comment on GitHub, which is drawn only
-                  where an address can be built — see `commentUrl`, and the footnote at the
-                  foot of this page for what the absence means.
+                  **Quoted and attributed, never paraphrased.** The login the record holds —
+                  `outcomeSaid` — and their words whole, interpolated rather than `v-html`.
                 -->
-                <span class="out">
-                  <NuxtLink
-                    class="to-finding"
-                    :to="row.finding"
-                  >The finding<span class="rd-visually-hidden"> {{ row.key }} on the code review page</span></NuxtLink>
-                  <a
-                    v-if="row.comment"
-                    class="to-finding"
-                    :href="row.comment"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >On GitHub<span class="rd-visually-hidden">: {{ row.key }}’s comment, opens in a new tab</span></a>
-                </span>
+                <p class="rd-meta who">
+                  <template v-if="row.said.who">
+                    {{ row.said.who }} ·
+                  </template>{{ row.said.when }}
+                </p>
+                <blockquote
+                  v-if="row.said.quote"
+                  class="rd-recorded quote"
+                >
+                  {{ row.said.quote }}
+                </blockquote>
+                <p
+                  v-else-if="row.said.sentence"
+                  class="told"
+                >
+                  {{ row.said.sentence }}
+                </p>
               </div>
 
+              <div
+                v-if="row.answer?.offered"
+                class="answers"
+              >
+                <DecisionTrack
+                  mode="act"
+                  :options="answersFor(row)"
+                  :label="`How to answer the author on ${row.key}`"
+                  :disabled="working"
+                  @act="value => pick(row, value)"
+                />
+                <div
+                  v-if="asking === row.seq"
+                  class="asking"
+                >
+                  <label
+                    class="rd-label"
+                    :for="`reason-${row.seq}`"
+                  >The author’s reason, in their words</label>
+                  <textarea
+                    :id="`reason-${row.seq}`"
+                    v-model="note"
+                    class="rd-field"
+                    rows="3"
+                    @keydown.esc.prevent="cancelReason()"
+                  />
+                  <div class="asking-actions">
+                    <DeskButton
+                      kind="primary"
+                      :working="working"
+                      working-label="Recording"
+                      @click="acceptReason(row)"
+                    >
+                      Accept it
+                    </DeskButton>
+                    <DeskButton @click="cancelReason()">
+                      Cancel
+                    </DeskButton>
+                  </div>
+                  <p
+                    v-if="problem"
+                    class="rd-note problem"
+                  >
+                    {{ problem }}
+                  </p>
+                </div>
+              </div>
               <!--
-                **Mono only where it is a path.** `whereOf` answers "The pull request
-                itself" for a finding that names no file, and a sentence set in JetBrains
-                Mono reads as a path that happens to have spaces in it.
+                **Why not, where the record will not take them** — a sentence rather than
+                three buttons that do nothing. The reason is the record's (`answerFor`).
               -->
-              <p class="rd-meta where">
-                <span :class="{ 'rd-mono': row.inCode }">{{ row.where }}</span>
-                <template v-if="row.carried">
-                  · {{ row.carried }}
-                </template>
+              <p
+                v-else-if="row.answer"
+                class="rd-note why"
+              >
+                {{ row.answer.why }}
+                <NuxtLink
+                  v-if="row.answer.later"
+                  :to="row.answer.later.to"
+                >
+                  {{ row.key }} on round {{ row.answer.later.round }}’s Findings
+                </NuxtLink>
               </p>
 
-              <!--
-                What came back, oldest first. One block each: the sentence, when it happened,
-                and the author's words where the outcome carries them.
-              -->
-              <ol class="back">
-                <li
-                  v-for="came in row.cameBack"
-                  :key="came.id"
-                  class="came"
-                >
-                  <p class="came-said">
-                    {{ came.sentence }}
-                    <span class="rd-meta when">{{ came.when }}</span>
-                    <span
-                      v-if="came.file"
-                      class="rd-mono rd-meta came-file"
-                    >{{ came.file }}</span>
-                  </p>
-                  <!--
-                    **The author's words, whole and interpolated.** `rd-recorded` keeps the
-                    paragraph breaks the author typed and holds the line to a readable
-                    measure; nothing is handed to the browser as markup, so a reply carrying
-                    a backtick, a tag or GitHub's own markdown arrives as what was typed.
-                  -->
-                  <blockquote
-                    v-if="came.quote"
-                    class="rd-recorded quote"
-                  >
-                    {{ came.quote }}
-                  </blockquote>
-                </li>
-              </ol>
+              <button
+                type="button"
+                class="rd-fold-line"
+                :aria-expanded="open === row.seq"
+                :aria-controls="historyId(row.seq)"
+                @click="toggle(row.seq)"
+              >
+                {{ open === row.seq ? 'Fold what' : 'Everything that' }} came back on {{ row.key }}
+              </button>
+              <ReplyHistory
+                v-if="open === row.seq"
+                :id="historyId(row.seq)"
+                :row="row.history"
+              />
             </li>
           </ul>
-        </DeskSection>
+        </section>
 
-        <!-- -------------------------- Nothing came back on ---------------------------- -->
-        <!--
-          **Counted and folded**, which is the issue's own criterion. Closed on arrival: on
-          a real review this is most of the findings, and a reader who opened the page to
-          find out what came back should not have to scroll past what did not.
-        -->
-        <DeskSection
-          v-if="silent.length > 0"
-          heading="Nothing came back"
-          :note="`the other ${silent.length} of ${posted} findings`"
+        <!-- -------------------------------- Settled -------------------------------- -->
+        <section
+          class="group"
+          aria-labelledby="settled"
         >
-          <!--
-            **`nothingLooked`, not `!harvested`** — the same key the notice above wants, and
-            for the same record. A harvest writes the pull request's state first and its
-            read time last, so a run that fails part way leaves a state and no time: keyed
-            on `!harvested`, this sentence said nothing had looked under a headline saying
-            the pull request had merged and a line saying seven findings had something come
-            back. Three statements about one record, and two of them cannot be true.
-          -->
-          <p class="rd-note none">
-            No reply, no resolved thread and no change to the code these findings point at.
-            <template v-if="nothingLooked">
-              Nothing has looked, so this is an absence of a reading rather than a reading.
-            </template>
-          </p>
-
-          <button
-            type="button"
-            class="rd-btn fold"
-            :aria-expanded="showSilent"
-            aria-controls="nothing-back"
-            @click="toggleSilent()"
+          <h2
+            id="settled"
+            class="rd-rubric group-head"
           >
-            {{ showSilent ? 'Fold' : 'Open' }} the
-            {{ silent.length }} findings nothing came back on
-          </button>
-
-          <div
-            v-if="showSilent"
-            id="nothing-back"
+            Settled <span class="group-count">{{ settled.length }}</span>
+          </h2>
+          <p
+            v-if="settled.length === 0"
+            class="rd-note none"
+          >
+            Nothing is settled yet: no thread has been resolved and no reply has been followed
+            by anything.
+          </p>
+          <ul
+            v-else
             class="rows"
           >
+            <li
+              v-for="row in settled"
+              :id="`reply-${row.key}`"
+              :key="row.seq"
+              class="reply-row reply-row--settled"
+            >
+              <div class="head">
+                <SeverityTag :severity="row.severity" />
+                <span class="rd-mono key">{{ row.key }}</span>
+                <span class="line">
+                  <TickedText :text="row.line" />{{ ' ' }}
+                  <span
+                    v-if="row.shortened"
+                    class="rd-meta shortened"
+                  >shortened</span>
+                </span>
+                <span
+                  class="standing"
+                  :class="`standing--${row.standing}`"
+                  :title="row.basis ?? undefined"
+                >{{ STANDING_WORDS[row.standing!].word }}</span>
+              </div>
+              <div
+                v-if="row.said"
+                class="said"
+              >
+                <p class="rd-meta who">
+                  <template v-if="row.said.who">
+                    {{ row.said.who }} ·
+                  </template>{{ row.said.when }} · {{ row.basis }}
+                </p>
+                <blockquote
+                  v-if="row.said.quote"
+                  class="rd-recorded quote"
+                >
+                  {{ row.said.quote }}
+                </blockquote>
+                <p
+                  v-else-if="row.said.sentence"
+                  class="told"
+                >
+                  {{ row.said.sentence }}
+                </p>
+              </div>
+              <button
+                type="button"
+                class="rd-fold-line"
+                :aria-expanded="open === row.seq"
+                :aria-controls="historyId(row.seq)"
+                @click="toggle(row.seq)"
+              >
+                {{ open === row.seq ? 'Fold what' : 'Everything that' }} came back on {{ row.key }}
+              </button>
+              <ReplyHistory
+                v-if="open === row.seq"
+                :id="historyId(row.seq)"
+                :row="row.history"
+              />
+            </li>
+          </ul>
+        </section>
+
+        <!-- ------------------------------ No reply yet ----------------------------- -->
+        <section
+          v-if="noReply.length > 0"
+          class="group"
+          aria-labelledby="no-reply"
+        >
+          <h2
+            id="no-reply"
+            class="rd-rubric group-head"
+          >
+            No reply yet <span class="group-count">{{ noReply.length }}</span>
+          </h2>
+          <p
+            v-if="nothingLooked"
+            class="rd-note none"
+          >
+            Nothing has looked, so this is an absence of a reading rather than a reading.
+          </p>
+          <div class="quiet-rows">
             <template
-              v-for="row in silent"
+              v-for="row in shownNoReply"
               :key="row.seq"
             >
               <OpenRow
+                :id="`reply-${row.key}`"
                 :open="open === row.seq"
-                :controls="detailId(row.seq)"
+                :controls="historyId(row.seq)"
                 opens="Open"
                 :label="said(row)"
-                class="silent-row"
+                class="quiet-row"
                 @toggle="toggle(row.seq)"
               >
-                <!--
-                  **A space between the cells as well as inside them.** They are separated
-                  by newlines, which `whitespace: 'condense'` deletes, so the row's text —
-                  which is its accessible name — read `F4Severity: shouldWhat F4 says…`.
-                  Measured by reading a row's `textContent` out of the real binary, after
-                  fixing the label's own boundary and finding the cells still closed up.
-                -->
-                <span class="cell cell--key rd-mono rd-meta">{{ row.key }}</span>{{ ' ' }}
-                <span class="cell cell--severity rd-meta">
-                  <span class="rd-visually-hidden">Severity:</span>{{ ' ' }}{{ row.severity }}
-                </span>{{ ' ' }}
+                <span class="cell cell--tag"><SeverityTag :severity="row.severity" /></span>{{ ' ' }}
+                <span class="cell rd-mono key">{{ row.key }}</span>{{ ' ' }}
                 <span class="cell cell--line">
                   <TickedText
                     :text="row.line"
                     in-control
                   />{{ ' ' }}
-                  <!--
-                    **A line the page cut says so here too.** It is the same rule as the
-                    row above, and it was only on the open half until the browser showed
-                    F4 — the one finding with no title — reading as a sentence that
-                    trailed off for no reason a reader could see.
-                  -->
                   <span
                     v-if="row.shortened"
                     class="rd-meta shortened"
                   >shortened</span>
                 </span>
               </OpenRow>
-
-              <div
+              <ReplyHistory
                 v-if="open === row.seq"
-                :id="detailId(row.seq)"
-                class="silent-opened"
-              >
-                <p class="rd-meta where">
-                  <span :class="{ 'rd-mono': row.inCode }">{{ row.where }}</span>
-                  <template v-if="row.carried">
-                    · {{ row.carried }}
-                  </template>
-                </p>
-                <!--
-                  **Three sentences, because there are three reasons nothing came back**,
-                  and the row said the third about the second as well — which is false of
-                  it and tells the reader to stop looking. A finding raised in the body
-                  alone has no thread at all; a finding whose comment is recorded under an
-                  id no address can be built from has one, and it is reachable on the pull
-                  request.
-                -->
-                <p class="rd-note">
-                  Nothing has come back on {{ row.key }}.
-                  <template v-if="row.comment">
-                    It was posted as a comment, so a reply would be read.
-                  </template>
-                  <template v-else-if="row.postedAsComment && row.addressable">
-                    It was posted as a comment, so a reply would be read — but the id
-                    recorded for that comment is not one this page can build an address
-                    from, so there is no link to it here.
-                  </template>
-                  <!--
-                    **And the repository name can be the thing that failed**, which is
-                    neither the finding's fault nor its comment id's: a released Review
-                    Desk could store a `repo` that `prUrl` refuses, and every comment
-                    address on this page is built on top of the pull request's.
-                  -->
-                  <template v-else-if="row.postedAsComment">
-                    It was posted as a comment, so a reply would be read. There is no link
-                    to it here because this review's repository name is not one a GitHub
-                    address can be built from.
-                  </template>
-                  <template v-else>
-                    No comment on GitHub is recorded against it, so there is no thread for a
-                    reply to attach to and none could be read.
-                  </template>
-                </p>
-                <p class="out out--opened">
-                  <NuxtLink
-                    class="to-finding"
-                    :to="row.finding"
-                  >The finding<span class="rd-visually-hidden"> {{ row.key }} on the code review page</span></NuxtLink>
-                  <a
-                    v-if="row.comment"
-                    class="to-finding"
-                    :href="row.comment"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >On GitHub<span class="rd-visually-hidden">: {{ row.key }}’s comment, opens in a new tab</span></a>
-                </p>
-              </div>
+                :id="historyId(row.seq)"
+                :row="row.history"
+              />
             </template>
             <span class="end" />
           </div>
-        </DeskSection>
+          <button
+            v-if="moreNoReply > 0"
+            type="button"
+            class="rd-fold-line more"
+            :aria-expanded="showMore"
+            @click="toggleMore()"
+          >
+            {{ showMore ? `Fold the ${moreNoReply} more` : `${moreNoReply} more with no reply` }}
+          </button>
+        </section>
+        <p
+          v-else-if="posted === 0 && needsAnswer.length + settled.length === 0"
+          class="rd-note none"
+        >
+          This review posted no findings, so nothing could come back on one.
+        </p>
+        <p
+          v-else-if="harvested"
+          class="rd-note none"
+        >
+          Every posted finding has had something come back from the author.
+        </p>
 
         <!--
-          **What the record holds about findings this page draws no row for.**
-          The harvester writes against any finding of the review — `harvest_code_changes`
-          iterates all of them and asks only for a file — so a held-back nit or a finding
-          carried in as `fixed` can carry an outcome, and this page is about what came back
-          on what was *posted*. Counting those into the figures above would put numbers on
-          screen about rows that are not there; saying nothing would lose a measurement. So
-          they are counted here, and sent to the page that owns the findings.
+          **What the record holds about findings no group draws.** The harvester writes
+          against any finding of the review, so a held-back nit can carry an outcome. Counted
+          here, and sent to the tab that owns the findings, so a measurement is not lost.
         -->
         <DeskSection
           v-if="elsewhere > 0"
-          heading="Outcomes on findings this page does not list"
+          heading="Outcomes on findings this tab does not list"
           :note="count(elsewhere, 'outcome')"
         >
-          <!--
-            **The number is on the heading and not again here.** `HeldBackRows` carries the
-            measurement: its own heading said "4 nits" over a group heading that said "4
-            nits" too, three lines apart, and a reader met the same three words twice.
-          -->
           <p class="rd-note none">
-            Against findings this review did not post — a nit held back for a ticket, one
-            set aside, or one carried into this round already fixed. They are not counted
-            in the figures above, which are about the findings that were posted.
+            Against findings this review did not post and the author has not answered — a nit
+            held back for a ticket, one set aside, or one carried into this round already
+            fixed.
             <NuxtLink :to="`/reviews/${reviewId}/findings`">
-              The code review page
+              Findings
             </NuxtLink>
             lists every finding this round holds.
           </p>
         </DeskSection>
 
         <!-- ------------------------------- The rounds -------------------------------- -->
-        <!--
-          **Drawn only where the pull request has more than one round.** A timeline of one
-          round restates the page's own heading, and every review is a round.
-        -->
         <DeskSection
           v-if="rounds.length > 0"
           heading="The rounds of this pull request"
@@ -582,11 +682,6 @@ function detailId(seq: number): string {
         </DeskSection>
 
         <!-- ------------------------------- The footnotes ------------------------------ -->
-        <!--
-          **Said once, at the foot, rather than on every row.** Two things a reader needs to
-          know to read the rows above correctly, and both are properties of what GitHub
-          gives rather than of any one finding.
-        -->
         <footer
           v-if="anyObserved || anyWithoutComment || unaddressable > 0 || noPullRequestAddress"
           class="notes"
@@ -606,12 +701,6 @@ function detailId(seq: number): string {
             <strong>A finding raised in the body alone.</strong>
             A finding this review did not post as its own comment has no thread, so no
             reply could be read on it and nothing here is a link to one.
-            <!--
-              **And only where there is one to point at.** The note below says when the
-              repository name is one no GitHub address can be built from, and promising a
-              link at the top of the page that is drawn as plain text there would be the
-              page contradicting itself two paragraphs apart.
-            -->
             <template v-if="!noPullRequestAddress">
               The pull request itself is linked at the top of this page.
             </template>
@@ -624,33 +713,16 @@ function detailId(seq: number): string {
             This review's repository is recorded under a name no GitHub address can be
             built from, and every address on this page that leads to GitHub is built on top
             of the pull request's.
-            <!--
-              **And only where there is a row to say it of.** This note is drawn for a
-              review with no posted finding at all — that is what reading it off the
-              review rather than off the rows is for — and promising links on rows that
-              are not on the screen is the same shape as the sentence above it.
-            -->
             <template v-if="posted > 0">
-              The links to each finding's own row on the code review page are unaffected.
+              The links to each finding on the Findings tab are unaffected.
             </template>
             Nothing is missing from the record; what is missing is somewhere on GitHub to
             point at.
           </p>
-          <!--
-            **Counted, because it is drawn for any number of them.** It said "one of these
-            findings", and `links.ts` says a node id is what every record written before
-            anyone checked holds — so on such a review it is every posted finding, and the
-            page was stating a figure it had not counted. Everything else on this page that
-            states a number counts it.
-          -->
           <p
             v-if="unaddressable > 0"
             class="rd-meta"
           >
-            <!--
-              No `sentence()` here: it would close the count with a full stop in the middle
-              of the phrase — "14 comments. with no address." A figure needs no capital.
-            -->
             <strong>{{ count(unaddressable, 'comment') }} with no address.</strong>
             A comment is linked where the record holds GitHub's own numeric comment id for
             it. {{ unaddressable === 1 ? 'One of these findings was' : 'These findings were' }}
@@ -665,193 +737,231 @@ function detailId(seq: number): string {
 </template>
 
 <style scoped>
-/* ----------------------------- What came back ------------------------------ */
+/* ------------------------------- A group ------------------------------- */
 
-.answered {
+.came-back {
+  margin: 0;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* S09's group heading: the label, its count beside it in the quieter ink. */
+.group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.group-count {
+  color: var(--rd-ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.rows {
   display: flex;
   flex-direction: column;
   margin: 0;
   padding: 0;
   list-style: none;
+  border-top: 1px solid var(--rd-line);
+  min-width: 0;
+}
+
+.reply-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--rd-line);
   min-width: 0;
 }
 
 /*
- * One rule between rows and none above the first, so the section's own ruled heading is the
- * top line. The board's arrangement everywhere else on these pages.
+ * **The one group that waits on you is drawn as the selected thing on the page** — S09's
+ * ruled, washed card. Ink and ground, no colour that grades what the author said.
  */
-.answered-row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 16px 0 18px;
-  border-bottom: 1px solid var(--rd-line);
-  min-width: 0;
+.reply-row--contested {
+  border: 1px solid var(--rd-ink);
+  border-left-width: 3px;
+  background: var(--rd-ground);
+}
+
+/* The reply the keys answer, lifted as the chosen thing is everywhere on the desk. */
+.reply-row--picked {
+  box-shadow: var(--rd-lift-chosen);
 }
 
 .head {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   gap: 4px 12px;
   min-width: 0;
 }
 
 .key {
   flex: none;
-}
-
-/*
- * **The severity, as a word.** No wash, no border, no colour that differs by severity —
- * rule 1 at the top of this file. `min-width` so the column of them lines up down the page
- * at a width where they do not wrap.
- */
-.severity {
-  flex: none;
-  min-width: 62px;
+  color: var(--rd-ink-dim);
+  font-size: var(--rd-type-ui);
 }
 
 .line {
   flex: 1 1 22ch;
   min-width: 0;
-  font-size: 17px;
+  font-size: var(--rd-type-lead);
+  font-weight: 500;
   overflow-wrap: break-word;
 }
 
 .shortened {
   margin-left: 8px;
-  font-size: 12px;
+  font-size: var(--rd-type-meta);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
-.out {
-  display: flex;
+/* The word for where it stands. S09 washes it; the wash is the state's, not a grade. */
+.standing {
   flex: none;
-  flex-wrap: wrap;
-  gap: 4px 16px;
   margin-left: auto;
+  padding: 2px 8px;
+  border-radius: var(--rd-radius-sm);
+  font-size: var(--rd-type-ui);
+  font-weight: 500;
 }
 
-.out--opened {
-  margin: 8px 0 0;
+.standing--contested {
+  background: var(--rd-warn-wash);
+  color: var(--rd-warn-ink);
 }
 
-/*
- * **Underlined, not accent-coloured alone.** `ReviewStepPage` carries the same rule for the
- * two links in the header and the same measurement behind it: at this size a colour change
- * is the one cue a reader can miss, so the link carries the cue that survives being small
- * and being printed.
- */
-.to-finding {
-  color: var(--rd-accent);
-  font-size: 13px;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  white-space: nowrap;
+.standing--fixed {
+  background: var(--rd-accent-wash);
+  color: var(--rd-accent-dark);
 }
 
-.where {
-  margin: 0;
-  overflow-wrap: anywhere;
+.standing--answered,
+.standing--accepted,
+.standing--withdrawn,
+.standing--raised_again {
+  background: var(--rd-nit-wash);
+  color: var(--rd-nit-ink);
 }
 
-/* ------------------------- What came back, per outcome --------------------- */
-
-.back {
+.said {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin: 8px 0 0;
-  padding: 0;
-  list-style: none;
+  gap: 4px;
   min-width: 0;
 }
 
-/*
- * A quiet rule to the left of each outcome, so several under one finding read as a list of
- * things that happened rather than as more of the finding. The ink line and not a severity
- * colour, which is rule 1 again.
- */
-.came {
-  padding-left: 14px;
-  border-left: 2px solid var(--rd-line-strong);
+.who {
+  margin: 0;
+}
+
+/* The author's words: inset so a quotation reads as one, at the body's size. */
+.quote {
+  margin: 0;
+  padding: 0 0 0 12px;
+  border-left: 3px solid var(--rd-line-strong);
+  font-size: var(--rd-type-body);
+}
+
+.told {
+  margin: 0;
+  font-size: var(--rd-type-body);
+}
+
+.answers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
   min-width: 0;
 }
 
-.came-said {
+.asking {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: var(--rd-measure);
+}
+
+.asking-actions {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 10px;
+  gap: 8px;
+}
+
+.problem {
   margin: 0;
-  font-size: 15px;
-  min-width: 0;
+  color: var(--rd-warn-ink);
 }
 
-.when {
-  flex: none;
-  font-variant-numeric: tabular-nums;
-}
-
-.came-file {
-  overflow-wrap: anywhere;
-  min-width: 0;
-}
-
-/*
- * The author's words. Washed and inset so the quotation is visibly a quotation, with no
- * colour that says anything about what was said — the code review page draws a reply the
- * same way, and this is that block at the length a real reply runs to.
- */
-.quote {
-  margin: 8px 0 0;
-  padding: 10px 14px;
-  border-left: 3px solid var(--rd-line-strong);
-  border-radius: 0 var(--rd-radius-control) var(--rd-radius-control) 0;
-  background: var(--rd-ground);
-  font-size: 15px;
-}
-
-/* --------------------------- Nothing came back ----------------------------- */
-
-.none {
-  margin: 0 0 14px;
+.why {
+  margin: 4px 0 0;
   max-width: var(--rd-measure);
 }
 
 /*
- * The fold's own control. `rd-btn` carries the 44px floor every pressable thing on this
- * desk clears; `test/contrast.spec.ts` holds the token it reads that from.
+ * **The fold's own control**: a line of accent text that clears the 44px floor every
+ * pressable thing on this desk clears, with the triangle drawn rather than typed.
  */
-.fold {
+.rd-fold-line {
   align-self: flex-start;
-}
-
-.rows {
-  display: flex;
-  flex-direction: column;
-  margin-top: 16px;
-  min-width: 0;
-}
-
-/*
- * `OpenRow` draws the grid of a row; the columns are the caller's, as they are on the
- * draft page's panel. Key, severity, line — and the control's own "Open" at the end, which
- * `OpenRow` appends.
- */
-.silent-row {
-  grid-template-columns: 4ch 7ch minmax(0, 1fr) auto;
-}
-
-.silent-opened {
-  display: flex;
-  flex-direction: column;
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
-  padding: 12px 16px 16px;
+  min-height: var(--rd-control-min);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--rd-accent);
+  font: inherit;
+  font-size: var(--rd-type-ui);
+  cursor: pointer;
+}
+
+.rd-fold-line::before {
+  content: '';
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 6px solid currentColor;
+  transition: transform 0.14s ease;
+}
+
+.rd-fold-line[aria-expanded='true']::before {
+  transform: rotate(90deg);
+}
+
+.rd-fold-line:focus-visible {
+  outline: 3px solid var(--rd-focus-ring);
+  outline-offset: 2px;
+}
+
+.more {
+  margin-top: 6px;
+}
+
+/* ----------------------------- No reply yet ----------------------------- */
+
+.quiet-rows {
+  display: flex;
+  flex-direction: column;
   border-top: 1px solid var(--rd-line);
-  background: var(--rd-ground);
   min-width: 0;
+}
+
+/* `OpenRow` draws the grid; the columns are the caller's. Tag, key, line, and its "Open". */
+.quiet-row {
+  grid-template-columns: 11ch 4ch minmax(0, 1fr) auto;
 }
 
 .cell {
@@ -862,12 +972,16 @@ function detailId(seq: number): string {
   overflow-wrap: break-word;
 }
 
-/* The rule under the last row, which a row cannot draw without doubling every other. */
 .end {
   border-top: 1px solid var(--rd-line);
 }
 
-/* -------------------------------- The rounds ------------------------------- */
+.none {
+  margin: 0 0 12px;
+  max-width: var(--rd-measure);
+}
+
+/* ------------------------------ The rounds ------------------------------ */
 
 .td {
   overflow-wrap: break-word;
@@ -877,7 +991,7 @@ function detailId(seq: number): string {
   font-weight: 500;
 }
 
-/* ------------------------------- The footnotes ----------------------------- */
+/* ----------------------------- The footnotes ----------------------------- */
 
 .notes {
   display: flex;
@@ -888,43 +1002,29 @@ function detailId(seq: number): string {
   max-width: var(--rd-measure);
 }
 
-/* ---------------------------------- Narrow --------------------------------- */
+/* -------------------------------- Narrow -------------------------------- */
 
-/*
- * At a phone's width the two links leave the row's first line — `margin-left: auto` has
- * nothing to push against once the line has wrapped — and the severity's reserved column
- * is 62px of nothing. Measured at 390, which is where the one 108-word reply in the
- * fixtures is read.
- */
 @media (max-width: 560px) {
-  .out {
-    margin-left: 0;
-  }
-
-  .severity {
-    min-width: 0;
+  .reply-row {
+    padding: 12px;
   }
 
   .line {
     flex-basis: 100%;
-    font-size: 16px;
+    order: 3;
   }
 
-  .silent-row {
+  .quiet-row {
     grid-template-columns: 4ch minmax(0, 1fr) auto;
   }
 
   /*
-   * The severity leaves the narrow row rather than squeezing the line into nothing. It is
-   * in the row's accessible name either way — `said()` puts it there — and it is on the
-   * detail the row opens.
+   * The severity leaves the narrow quiet row; it is in the row's accessible name either way
+   * (`said()`), and on the history the row opens. By its own class: `OpenRow`'s first child
+   * is its visually-hidden label, so `:first-child` hid nothing and the tag sat over the line.
    */
-  .silent-row .cell--severity {
+  .quiet-row .cell--tag {
     display: none;
-  }
-
-  .quote {
-    padding: 10px 12px;
   }
 }
 </style>

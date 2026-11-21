@@ -15,6 +15,7 @@
 import type {
   Brief,
   BriefPart,
+  DraftStatus,
   Finding,
   FindingHunk,
   Review,
@@ -430,6 +431,35 @@ export function willPost(finding: Finding): boolean {
  */
 export function isCarried(finding: Finding): boolean {
   return finding.continues_review_id != null
+}
+
+/**
+ * **Whether this finding is one the author's three answers are for** — *Raise it again*,
+ * *Accept their reason*, *Withdraw*: carried from an earlier round, and settled in this one.
+ *
+ * `docs/design.md`, *A decision is one keystroke*: "the three replies, on a carried and
+ * settled finding only". One function, because two screens offer the three — `FindingCall`
+ * on Findings and the Replies tab (DEV-1330) — and a second copy of the rule is the one that
+ * would let them disagree about the same finding.
+ *
+ * **What it does not tell apart**, said because the self-review found the sentence here
+ * claiming otherwise: the store keeps one round status, so a carried finding the developer
+ * moved to a ticket this round reads as settled exactly as one an earlier round ticketed, and
+ * is offered the three. A finding *raised* this round is never here, whatever was done with
+ * it — the way back from the developer's own decision on one is Post. Set aside is a
+ * disposition, which this does not read.
+ */
+export function answersTheAuthor(finding: Finding): boolean {
+  return isCarried(finding) && !isStillOpen(finding.round_status)
+}
+
+/**
+ * Whether a draft in this status takes a decision at all — the store's
+ * `DraftStatus::is_writable`, restated. An approved draft is what the review session posts
+ * under the developer's name and a posted one has gone; no draft is nothing to change.
+ */
+export function draftTakesDecisions(status: DraftStatus | null | undefined): boolean {
+  return status != null && status !== 'approved' && status !== 'posted'
 }
 
 /** How the page words a round status. */

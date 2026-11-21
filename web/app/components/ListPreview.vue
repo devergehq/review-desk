@@ -53,7 +53,7 @@ const line = computed(() => bottomLine(detail?.data.value?.brief))
 const action = computed(() => {
   const data = detail?.data.value
   if (!data || state.value == null) return null
-  return primaryAction(data.review.id, state.value, repliesToAnswer(data.outcomes))
+  return primaryAction(data.review.id, state.value, repliesWaiting(data))
 })
 
 const waitsOnYou = computed(() =>
