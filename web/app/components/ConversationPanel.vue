@@ -117,6 +117,16 @@ function start(question: string): void {
   box.value?.focus()
 }
 
+/*
+ * **The thread opens on its newest message**, and follows a new one in, as a conversation
+ * does. Only the thread scrolls; the page under it does not move.
+ */
+const body = ref<HTMLElement | null>(null)
+function toNewest(): void {
+  if (body.value) body.value.scrollTop = body.value.scrollHeight
+}
+watch(() => thread.value.length, () => void nextTick(toNewest))
+
 /* ---- Reading it again while it is on screen, as the fold did ---- */
 
 let timer: ReturnType<typeof setInterval> | null = null
@@ -136,6 +146,7 @@ function onVisibilityChange(): void {
 onMounted(() => {
   document.addEventListener('visibilitychange', onVisibilityChange)
   begin()
+  void nextTick(toNewest)
 })
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisibilityChange)
@@ -173,7 +184,10 @@ const headingId = useId()
       </p>
     </header>
 
-    <div class="body">
+    <div
+      ref="body"
+      class="body"
+    >
       <p
         v-if="asked.length"
         class="asked-so-far rd-meta"
@@ -291,23 +305,23 @@ const headingId = useId()
           :id="fieldId"
           ref="box"
           v-model="text"
-          rows="2"
+          :rows="asks ? 2 : 3"
           :disabled="!asks"
           :placeholder="asks
             ? askPlaceholder(about, detail.review.pr)
             : 'Without Allele, Review Desk can’t reach your session. Ask in your session; what it writes lands here.'"
           @keydown="onKey"
         />
-        <div class="field-foot">
-          <span
-            v-if="asks"
-            class="rd-meta"
-          >↵ ask · ⇧↵ new line</span>
+        <div
+          v-if="asks"
+          class="field-foot"
+        >
+          <span class="rd-meta">↵ ask · ⇧↵ new line</span>
           <DeskButton
             kind="primary"
             :working="working"
             working-label="Asking"
-            :disabled="!asks || text.trim().length === 0"
+            :disabled="text.trim().length === 0"
             @click="ask()"
           >
             Ask

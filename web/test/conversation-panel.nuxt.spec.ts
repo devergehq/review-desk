@@ -94,6 +94,7 @@ describe('no agent can answer', () => {
     expect(page.find('textarea').attributes('disabled')).toBeDefined()
     expect(page.find('textarea').attributes('placeholder')).toContain('Without Allele')
     expect(page.find('[data-testid="about"]').exists()).toBe(false)
+    expect(page.findAll('button').map(one => one.text())).not.toContain('Ask')
     expect(page.text()).not.toContain('Start with one of these')
     expect(page.text()).toContain('Everything asked so far is kept here and still reads.')
   })
