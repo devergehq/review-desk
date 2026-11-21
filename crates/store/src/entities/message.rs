@@ -216,7 +216,9 @@ impl Store {
     ///
     /// **Refused whole when it breaks a rule**, naming the first one, so the session can
     /// resend; nothing is written. A `working` reply must name the question it is working
-    /// on, since that is what a later answer supersedes it by. Its `asked`, if it has one,
+    /// on, since that is what a later answer supersedes it by — and only a later reply that
+    /// names the same question does; one sent without `--to` supersedes nothing. Its `asked`,
+    /// refused alongside `--to`, if it has one,
     /// stays inside the answer as the session's own account — **no developer message is
     /// written**, so a session still cannot put words in the developer's mouth.
     pub fn answer_from_session(
@@ -233,6 +235,17 @@ impl Store {
                 field: "kind".to_string(),
                 rule: "a working reply names the question it is working on (--to), so the \
                        answer to it can replace it"
+                    .to_string(),
+            });
+        }
+        // **`asked` is one-way mode's alone.** A reply that names the developer's message has
+        // the developer's own words beside it, and a paraphrase drawn next to them would be
+        // the session's words where the developer's are.
+        if answer.asked.is_some() && in_reply_to.is_some() {
+            return Err(StoreError::NotTheContract {
+                field: "asked".to_string(),
+                rule: "asked is for one-way mode, where no developer message exists; this \
+                       reply answers one (--to), so leave asked out"
                     .to_string(),
             });
         }

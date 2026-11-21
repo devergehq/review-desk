@@ -807,3 +807,77 @@ fn the_record_refuses_a_parsed_flag_without_an_answer() {
         assert!(conn.execute_batch(broken).is_err(), "{broken} was allowed");
     }
 }
+
+#[test]
+fn asked_is_refused_on_a_reply_that_names_the_developer_s_message() {
+    let (_dir, store) = temp_store();
+    let id = review(&store);
+    let asked = store
+        .ask_session(id, ReviewLayerName::CodeReview, "Same hole on web?")
+        .unwrap()
+        .seq;
+    let body = with("asked", json!("Does the web path leak too?")).to_string();
+    assert!(matches!(
+        store.answer_from_session(id, ReviewLayerName::CodeReview, &body, Some(asked)),
+        Err(StoreError::NotTheContract { field, .. }) if field == "asked"
+    ));
+    assert_eq!(store.messages(id).unwrap().len(), 1, "nothing was kept");
+}
+
+#[test]
+fn every_pairing_of_replies_supersedes_as_the_doc_says() {
+    let working_body = working(json!(["Reading"])).to_string();
+    let cant_body = json!({ "kind": "cant", "headline": "No staging access." }).to_string();
+    let answer_body = example().to_string();
+    // (earlier, later, does the later supersede the earlier)
+    let cases = [
+        (&working_body, &working_body, true),
+        (&working_body, &answer_body, true),
+        (&working_body, &cant_body, true),
+        (&cant_body, &answer_body, true),
+        (&cant_body, &cant_body, false),
+        (&cant_body, &working_body, false),
+        (&answer_body, &answer_body, false),
+        (&answer_body, &working_body, false),
+    ];
+    for (earlier, later, supersedes) in cases {
+        let (_dir, store) = temp_store();
+        let id = review(&store);
+        let step = ReviewLayerName::CodeReview;
+        let asked = store.ask_session(id, step, "Web too?").unwrap().seq;
+        let first = store
+            .answer_from_session(id, step, earlier, Some(asked))
+            .unwrap()
+            .seq;
+        let second = store
+            .answer_from_session(id, step, later, Some(asked))
+            .unwrap()
+            .seq;
+        assert_eq!(
+            store.message(id, first).unwrap().superseded_by,
+            supersedes.then_some(second),
+            "{earlier} then {later}"
+        );
+    }
+}
+
+#[test]
+fn a_reply_without_to_supersedes_nothing() {
+    let (_dir, store) = temp_store();
+    let id = review(&store);
+    let step = ReviewLayerName::CodeReview;
+    let asked = store.ask_session(id, step, "Web too?").unwrap().seq;
+    let working_seq = store
+        .answer_from_session(
+            id,
+            step,
+            &working(json!(["Reading"])).to_string(),
+            Some(asked),
+        )
+        .unwrap()
+        .seq;
+    store
+        .answer_from_session(id, step, &example().to_string(), None)
+        .unwrap();
+    assert_eq!(store.message(id, working_seq).unwrap().superseded_by, None);
+}

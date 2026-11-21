@@ -38,7 +38,7 @@ The rules that already hold keep holding:
 | `suggests` | no | 0–3 items, from the list below | Actions the developer can accept with one click |
 | `activity` | while `kind` is `working` | ≤6 steps, each ≤60 characters | What it is doing now |
 | `about` | no | exactly one of `{"step": …}`, `{"finding": "F9"}`, `{"reply": "F3"}` | What the answer is about, so the page can link it. `step` takes a tab (`overview`, `understanding`, `findings`, `draft`, `replies`) or one of the seven step names |
-| `asked` | no | ≤200 characters | One-way mode only: the question as the session recorded it |
+| `asked` | no | ≤200 characters | One-way mode only: the question as the session recorded it. Refused on a reply that names the developer's message (`--to`) |
 
 Severity words are **blocker, should, question, nit**. Basis words are **ran, read, told**.
 
@@ -85,6 +85,8 @@ the raw message, flagged as not parsed; it never reaches a finding, a draft or a
 | `cant` | the same | no | by a later parsed `answer` to that question |
 | prose (`--body`) | the raw body alone, not parsed | never | never; it supersedes nothing either |
 
+**Only a reply that names the same question supersedes**: an `answer` sent without `--to`
+leaves an earlier `working` live, so send the answer with the `--to` the `working` reply had.
 Nothing is deleted: a superseded reply stays in the conversation, and `superseded_by` on the
 wire names the reply that replaced it.
 

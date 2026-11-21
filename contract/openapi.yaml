@@ -2940,7 +2940,10 @@ components:
       properties:
         kind: { type: string, enum: [answer, working, cant] }
         about:
-          description: What the answer is about, as the session wrote it. Exactly one key.
+          description: |
+            What the answer is about. Exactly one key. A finding or reply comes back as the
+            session wrote it; a `step` comes back as its tab, so `code_review` is served as
+            `findings`.
           oneOf:
             - type: object
               additionalProperties: false

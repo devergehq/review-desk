@@ -846,8 +846,9 @@ JSON
 **`--body` is still accepted**, and kept as the raw message alone, flagged as not parsed: the
 page draws it folded and inert, and it is never counted and never reaches a finding or a draft.
 A `working` reply needs `--to`, and the next parsed reply to that question supersedes it; a
-`cant` is superseded only by a later `answer`. `asked` stays inside the answer as the
-session's account. **It writes no developer message**, so the rule above still holds.
+`cant` is superseded only by a later `answer`, and only a reply with the same `--to` supersedes
+either. `asked` stays inside the answer as the session's account, for one-way mode, and is
+refused alongside `--to`. **It writes no developer message**, so the rule above still holds.
 
 Every message carries `about`, the tab it sits on and a finding there. The page sends it with
 an ask. Without it, an ask, and everything written before the contract, sits on its step's tab:
