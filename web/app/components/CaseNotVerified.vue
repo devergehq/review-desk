@@ -19,6 +19,9 @@ const { notChecked, layers } = defineProps<{
 }>()
 
 const said = computed(() => notVerified(notChecked, layers))
+
+/** Whether these are the session's own words, drawn as recorded text. */
+const written = computed(() => !!notChecked?.trim())
 </script>
 
 <template>
@@ -29,10 +32,10 @@ const said = computed(() => notVerified(notChecked, layers))
     <CaseBandHead :heading="bandLabel('not-verified')" />
     <p
       class="said"
-      :class="said.written ? 'rd-recorded' : 'rd-note'"
+      :class="written ? 'rd-recorded' : 'rd-note'"
     >
       <TickedText
-        v-if="said.written"
+        v-if="written"
         :text="said.says"
       />
       <template v-else>

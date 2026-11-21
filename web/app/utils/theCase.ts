@@ -385,7 +385,8 @@ export function criterionObserved(criterion: AcceptanceCriterion): CriterionObse
     case 'met':
       return { mark: 'met', says: 'yes', finding: null }
     case 'not_met': {
-      const key = criterion.finding_key ?? (criterion.finding_seq != null ? `F${criterion.finding_seq}` : null)
+      /* The contract's own key: the dashboard never computes an identifier. */
+      const key = criterion.finding_key ?? null
       return { mark: 'not_met', says: key ? `no, see ${key}` : 'no', finding: key }
     }
     default:
@@ -404,33 +405,42 @@ export function criterionWhere(criterion: AcceptanceCriterion): string | null {
 
 /* ------------------------------------ Not verified ----------------------------------------- */
 
-/** What the *Not verified* band says, and whether it is the record's own words. */
+/** What the review did not look at, as Overview's question and the band both say it. */
 export interface NotVerified {
   says: string
-  written: boolean
+  /**
+   * `written` for the session's words or a finished step's answer; `writing` while the code
+   * review runs; `not_started` before it has. Overview's `QuestionMark`, by the same name.
+   */
+  mark: 'written' | 'writing' | 'not_started'
 }
 
 /**
- * **What the review did not look at**: the review's own `not_checked`, or what its absence
- * means. The same three readings as Overview's *What wasn't checked?*, which links here:
- * the session's words; *nothing left unchecked* once the code review has finished and
- * recorded none; and *not listed yet* before it has, since a step that has not run has
- * not said what it skipped.
+ * **What the review did not look at, chosen once**: Overview's *What wasn't checked?* and the
+ * Understanding tab's *Not verified* band, which that question links to, both call this — so
+ * the answer and the band it lands on cannot word one state two ways.
+ *
+ * The session's `not_checked` when it wrote one. Otherwise by the code review's own state:
+ * finished, it recorded nothing left unchecked; running, it is being written; failed or
+ * skipped, it never got as far as saying; not yet run, it has not started.
  */
 export function notVerified(
   notChecked: string | null | undefined,
   layers: readonly Pick<ReviewLayer, 'name' | 'state'>[],
 ): NotVerified {
   const said = notChecked?.trim()
-  if (said) return { says: said, written: true }
-  const state = layers.find(layer => layer.name === 'code_review')?.state
-  if (state === 'done' || state === 'waiting_on_you') {
-    return { says: 'The review records nothing it left unchecked.', written: false }
-  }
-  return {
-    says: state === 'running'
-      ? 'Writing now. The code review lists what it did not look at when its checks finish.'
-      : 'Not listed yet. The code review lists what it did not look at when its checks finish.',
-    written: false,
+  if (said) return { says: said, mark: 'written' }
+  switch (layers.find(layer => layer.name === 'code_review')?.state) {
+    case 'done':
+    case 'waiting_on_you':
+      return { says: 'The review records nothing it left unchecked.', mark: 'written' }
+    case 'running':
+      return { says: 'Writing now.', mark: 'writing' }
+    case 'failed':
+      return { says: 'The code review failed before it listed what it did not look at.', mark: 'written' }
+    case 'skipped':
+      return { says: 'The code review was skipped, so nothing lists what it did not look at.', mark: 'written' }
+    default:
+      return { says: 'Not started. Listed once the checks finish.', mark: 'not_started' }
   }
 }

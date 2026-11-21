@@ -82,21 +82,30 @@ const COLUMNS = ['Criterion', 'Observed', 'Where']
         </td>
         <td
           role="cell"
-          class="td observed"
-          :class="`observed--${row.observed.mark}`"
+          class="td"
           data-label="Observed"
         >
+          <!--
+            **The flex is on a span inside the cell, never on the cell.** Under 760px
+            DeskTable draws each cell's column name as a block `::before`, and a flex cell
+            would set that name beside the value instead of above it.
+          -->
           <span
-            class="mark"
-            aria-hidden="true"
-          />
-          <NuxtLink
-            v-if="row.observed.finding"
-            :to="`${findings}#${row.observed.finding}`"
-          >{{ row.observed.says }}</NuxtLink>
-          <template v-else>
-            {{ row.observed.says }}
-          </template>
+            class="observed"
+            :class="`observed--${row.observed.mark}`"
+          >
+            <span
+              class="mark"
+              aria-hidden="true"
+            />
+            <NuxtLink
+              v-if="row.observed.finding"
+              :to="`${findings}#${row.observed.finding}`"
+            >{{ row.observed.says }}</NuxtLink>
+            <template v-else>
+              {{ row.observed.says }}
+            </template>
+          </span>
         </td>
         <td
           role="cell"

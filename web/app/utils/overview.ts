@@ -22,7 +22,7 @@ import type { GroupedFinding, ReplyBasis, SinceYouPosted } from './outcomes'
 import { tabPath } from './reviewTabs'
 import { stateOfReview } from './stateWord'
 import type { ListedAs, ReviewState } from './stateWord'
-import { bottomLine, builtOption, optionsOf } from './theCase'
+import { bottomLine, builtOption, notVerified, optionsOf } from './theCase'
 
 /** The parts of a review Overview reads. */
 export type OverviewSource = Pick<
@@ -366,8 +366,6 @@ export function fiveQuestions(detail: OverviewSource): Question[] {
     return `${count(posted.length, 'finding')} in the draft: ${tally}.`
   })()
 
-  const notChecked = detail.not_checked?.trim() || null
-
   return [
     {
       asks: 'What does it do?',
@@ -398,11 +396,8 @@ export function fiveQuestions(detail: OverviewSource): Question[] {
     },
     {
       asks: 'What wasn\'t checked?',
-      ...(notChecked
-        ? { answer: notChecked, mark: 'written' as const }
-        : graded
-          ? { answer: 'The review records nothing it left unchecked.', mark: 'none_recorded' as const }
-          : pending(['code_review'], 'Not started. Listed once the checks finish.')),
+      /* One reading with the band it links to: `notVerified` in `utils/theCase.ts`. */
+      ...(({ says, mark }) => ({ answer: says, mark }))(notVerified(detail.not_checked, detail.layers)),
       /*
        * **Understanding › Not verified, as S2 points it.** DEV-1327 draws `not_checked` there
        * under `#not-verified`, on a brief of any age and with no brief at all, and says what

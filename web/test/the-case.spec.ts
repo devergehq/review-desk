@@ -20,7 +20,8 @@ import {
   partsFixing,
 } from '../app/utils/theCase'
 
-import type { AcceptanceCriterion, Brief } from '../app/types/desk'
+import type { AcceptanceCriterion, Brief, ReviewLayerState } from '../app/types/desk'
+import { fiveQuestions } from '../app/utils/overview'
 
 /*
  * **The rules behind the case page's opening line, tested without rendering anything.**
@@ -394,6 +395,8 @@ describe('a criterion against what was built', () => {
   } as AcceptanceCriterion)
 
   it('reads met as yes, not met as no with its finding, and the third as not in this PR', () => {
+    /* The finding's key is the contract's; a criterion without one names no finding here. */
+    expect(criterionObserved(criterion({ status: 'not_met', finding_seq: 9 })).finding).toBeNull()
     expect(criterionObserved(criterion({}))).toEqual({ mark: 'met', says: 'yes', finding: null })
     expect(criterionObserved(criterion({ status: 'not_met', finding_seq: 9, finding_key: 'F9' })))
       .toEqual({ mark: 'not_met', says: 'no, see F9', finding: 'F9' })
@@ -409,16 +412,29 @@ describe('a criterion against what was built', () => {
 })
 
 describe('what was not verified', () => {
-  const layers = (state: 'done' | 'running' | 'not_started') =>
-    [{ name: 'code_review' as const, state }] as never
+  const layers = (state: ReviewLayerState) => [{ name: 'code_review' as const, state }]
 
   it('is the session\'s own words when it wrote them', () => {
-    expect(notVerified('The log reader.', layers('done'))).toEqual({ says: 'The log reader.', written: true })
+    expect(notVerified('The log reader.', layers('done'))).toEqual({ says: 'The log reader.', mark: 'written' })
   })
 
-  it('says what an empty field means, by the code review\'s state', () => {
+  it('says what an empty field means, by each state the code review can be in', () => {
     expect(notVerified(null, layers('done')).says).toBe('The review records nothing it left unchecked.')
-    expect(notVerified('  ', layers('running')).says).toMatch(/^Writing now\./)
-    expect(notVerified(undefined, layers('not_started')).says).toMatch(/^Not listed yet\./)
+    expect(notVerified(null, layers('waiting_on_you')).mark).toBe('written')
+    expect(notVerified('  ', layers('running'))).toEqual({ says: 'Writing now.', mark: 'writing' })
+    expect(notVerified(undefined, layers('pending'))).toEqual({
+      says: 'Not started. Listed once the checks finish.', mark: 'not_started',
+    })
+    expect(notVerified(null, layers('failed')).says).toMatch(/^The code review failed/)
+    expect(notVerified(null, layers('skipped')).says).toMatch(/^The code review was skipped/)
+  })
+
+  it('is the answer Overview gives to What wasn\'t checked?, word for word', () => {
+    for (const review of loadSource().reviews) {
+      const asked = fiveQuestions(review as never)[4]!
+      const said = notVerified(review.not_checked, review.layers)
+      expect(asked.answer, `review ${review.review.id}`).toBe(said.says)
+      expect(asked.mark, `review ${review.review.id}`).toBe(said.mark)
+    }
   })
 })

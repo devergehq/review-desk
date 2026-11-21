@@ -1429,7 +1429,7 @@ functions. That is what keeps one way into the record.
 Four screens — the Pull requests list (the queue and the reviews, one list since DEV-1325),
 one review, the draft preview and the rules — in `web/`. They read and write the JSON API that `review-desk serve` serves. A review is
 reached from the trail across the top of each of its pages: Understand, Alternatives and
-Solution map are three steps on [one page](docs/design.md#the-case-for-a-change-is-three-bands-and-a-derived-answer-line),
+Solution map are three steps on [one page](docs/design.md#the-case-for-a-change-is-five-bands-on-one-tab-and-a-derived-answer-line),
 then Code review, Draft and [What happened](#what-happened-step-7s-page).
 
 **Before you change how a screen looks, read [docs/design.md](docs/design.md).** It is the

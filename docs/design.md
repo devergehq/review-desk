@@ -336,7 +336,7 @@ Two mechanics, both learned the hard way:
   of the fold had its own grid and a 76px indent, and its sentences were a different width
   from the face row's directly above them.
 
-## The case for a change is three bands and a derived answer line
+## The case for a change is five bands on one tab and a derived answer line
 
 Understand, Alternatives and Solution map were a page each — on review #9639, 3,653 + 3,132
 + 2,768 pixels and three navigations for one review. They are one page: a band per question,
