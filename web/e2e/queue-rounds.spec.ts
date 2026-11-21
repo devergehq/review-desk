@@ -252,14 +252,27 @@ test.afterAll(async () => {
 /** The queue, loaded and settled. */
 async function queue(page: Page) {
   await page.goto(serving.url)
-  await expect(page.locator('.queue-line').first()).toBeVisible()
+  await expect(page.locator('.queue-line:visible').first()).toBeVisible()
   await page.waitForLoadState('networkidle')
 }
 
-/** The rows under one heading, whatever that group draws them from. */
+/**
+ * The rows under one heading, whatever that group draws them from.
+ *
+ * **By the section's own heading, visible or not.** The groups are tabs of one list since
+ * DEV-1325 and an inactive tab's panel is hidden, so a role query — which skips what is not
+ * rendered — would find no group but the open one. The rows are on the page either way;
+ * what a test measures it opens first, with `openTab`.
+ */
 function rowsUnder(page: Page, heading: string): Locator {
-  return page.locator('section').filter({ has: page.getByRole('heading', { name: heading }) })
-    .locator('.queue-line')
+  return page.locator(
+    `section:has(> h2:text-is("${heading}")), section:has(> .head > h2:text-is("${heading}"))`,
+  ).locator('.queue-line')
+}
+
+/** Open one of the list's tabs by its label, which it starts with before its count. */
+async function openTab(page: Page, label: string) {
+  await page.getByRole('tab', { name: new RegExp(`^${label}`) }).click()
 }
 
 /** The one row for a pull request, anywhere on the page. */
@@ -278,7 +291,7 @@ test('draws no "code changed" row for a change the posted round read', async ({ 
    * the code had changed.
    */
   await expect(rowFor(page, '751')).toHaveCount(1)
-  await expect(rowsUnder(page, 'Needs you').filter({ hasText: '#751' })).toHaveCount(0)
+  await expect(rowsUnder(page, 'Waiting on you').filter({ hasText: '#751' })).toHaveCount(0)
 
   const row = rowsUnder(page, 'Waiting on the author').filter({ hasText: '#751' })
   await expect(row).toHaveCount(1)
@@ -294,7 +307,7 @@ test('draws a change after that head as the newest round’s', async ({ page }) 
   await queue(page)
   const fixture = rounds.get('752')!
 
-  const row = rowsUnder(page, 'Needs you').filter({ hasText: '#752' })
+  const row = rowsUnder(page, 'Waiting on you').filter({ hasText: '#752' })
   await expect(row, 'one row for one pull request').toHaveCount(1)
   await expect(row).toContainText('round 2')
   await expect(row, 'the code change is the row’s next action').toContainText('changed')
@@ -316,7 +329,7 @@ test('draws an earlier round’s reply on the newest round’s row, saying which
     await queue(page)
     const fixture = rounds.get('753')!
 
-    const row = rowsUnder(page, 'Needs you').filter({ hasText: '#753' })
+    const row = rowsUnder(page, 'Waiting on you').filter({ hasText: '#753' })
     await expect(row, 'one row for one pull request').toHaveCount(1)
     /*
      * **The row is round 2: its number and its link.** The reply is on round 1 and is still
@@ -374,7 +387,7 @@ test('numbers the row for a newest round nothing else in the answer mentions',
     await queue(page)
     const fixture = rounds.get('754')!
 
-    const row = rowsUnder(page, 'Needs you').filter({ hasText: '#754' })
+    const row = rowsUnder(page, 'Waiting on you').filter({ hasText: '#754' })
     await expect(row, 'one row for one pull request').toHaveCount(1)
     /*
      * **Round 2 is in no array of its own**, so this row exists only because round 1 was
@@ -415,10 +428,11 @@ test('the heading and the repository chip count the rows drawn', async ({ page }
    * literals, which is the shape `test/screens.nuxt.spec.ts` uses and for the reason it
    * gives: a literal here has to move every time a fixture is added.
    */
-  const needing = await rowsUnder(page, 'Needs you').count()
+  const needing = await rowsUnder(page, 'Waiting on you').count()
   expect(needing, 'three of the four pull requests need the developer').toBe(3)
-  await expect(page.getByRole('heading', { level: 1 }))
-    .toHaveText(`${needing} pull requests need you`)
+  /* The count is the tab's since DEV-1325, and it counts the same rows. */
+  await expect(page.getByRole('tab', { name: /^Waiting on you/ }).locator('.tab-count'))
+    .toHaveText(String(needing))
 
   /*
    * **The chip's own count, read off the button rather than off the page's text.** The
@@ -501,8 +515,16 @@ test('every row’s title is set in one face', async ({ page }) => {
 })
 
 test('a posted row says what came back on one line', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 })
+  /*
+   * **At 1,600, S1's own width**, and it was 1,440. The preview beside the rows (DEV-1325)
+   * leaves the status track about 216 pixels at 1,440, within a few characters of this
+   * sentence — and Linux sets text wider than macOS, which is how #86's first CI run failed
+   * a wrap measurement that passed locally. At 1,600 the track is about 290.
+   */
+  await page.setViewportSize({ width: 1600, height: 1000 })
   await queue(page)
+  await openTab(page, 'Waiting on the author')
+  await expect(rowFor(page, '751')).toBeVisible()
 
   /*
    * **One line, measured.** `#751` is posted with nothing read back from GitHub, which is
@@ -558,7 +580,7 @@ test('Reviews draws one row per pull request, with the rounds behind a fold', as
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto(`${serving.url}reviews`)
-  await expect(page.locator('.queue-line').first()).toBeVisible()
+  await expect(page.locator('.queue-line:visible').first()).toBeVisible()
   await page.waitForLoadState('networkidle')
 
   /*
@@ -566,7 +588,8 @@ test('Reviews draws one row per pull request, with the rounds behind a fold', as
    * The heading counts what it draws, which is the queue's rule applied here — a count
    * that disagrees with the rows under it is worse than no count.
    */
-  const drawn = page.locator('.queue-line')
+  /* The rows of the view on screen: the list's other panels hold these pull requests too. */
+  const drawn = page.locator('#panel-every .queue-line')
   await expect(drawn).toHaveCount(4)
   const section = page.locator('section')
     .filter({ has: page.getByRole('heading', { name: 'Every pull request' }) })
@@ -577,9 +600,10 @@ test('Reviews draws one row per pull request, with the rounds behind a fold', as
    * page's promise. Eight reviews on four pull requests: the two numbers sit one above the
    * other and the line between them says why they differ.
    */
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText(/8 reviews/)
+  /* A level down since DEV-1325: it is a view under the list's own heading. */
+  await expect(page.getByRole('heading', { level: 2, name: /8 reviews/ })).toBeVisible()
 
-  const row = rowFor(page, '751')
+  const row = page.locator('#panel-every .queue-line').filter({ hasText: '#751' })
   const fold = row.locator('details.earlier')
   expect(await fold.evaluate((el: HTMLDetailsElement) => el.open), 'closed to begin with')
     .toBe(false)
@@ -607,7 +631,7 @@ test('a Reviews row says its step on one line, and nothing under it where there 
   async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto(`${serving.url}reviews`)
-    await expect(page.locator('.queue-line').first()).toBeVisible()
+    await expect(page.locator('.queue-line:visible').first()).toBeVisible()
 
     /*
      * Three lines before: the step and its outcome wrapped to two, and "step 6 of 7" took a
@@ -619,11 +643,12 @@ test('a Reviews row says its step on one line, and nothing under it where there 
      * line at all, and a cell that drew an empty one would put a blank row's worth of space
      * under every such row. `test/format.spec.ts` holds the numbered form.
      */
-    const cell = rowFor(page, '751').locator('.step').first()
+    const every = page.locator('#panel-every .queue-line').filter({ hasText: '#751' })
+    const cell = every.locator('.step').first()
     const measured = await lines(cell)
     expect(measured.drawn, `the step reads "${measured.text.trim()}"`).toBe(1)
     await expect(cell).toContainText('Not started')
-    await expect(rowFor(page, '751').locator('.step-of')).toHaveCount(0)
+    await expect(every.locator('.step-of')).toHaveCount(0)
   })
 
 for (const [label, width, height] of [
@@ -634,7 +659,7 @@ for (const [label, width, height] of [
     await page.setViewportSize({ width, height })
     for (const route of ['', 'reviews']) {
       await page.goto(`${serving.url}${route}`)
-      await expect(page.locator('.queue-line').first()).toBeVisible()
+      await expect(page.locator('.queue-line:visible').first()).toBeVisible()
       /* Every fold open, because an open fold is the widest the page gets. */
       await page.locator('details.earlier').evaluateAll(folds =>
         folds.forEach((fold) => { (fold as HTMLDetailsElement).open = true }))
@@ -646,3 +671,77 @@ for (const [label, width, height] of [
     }
   })
 }
+
+/*
+ * **J, K and Enter, in a browser** (DEV-1325). The unit test proves the router is asked;
+ * this proves the page arrives — and that a key pressed in the find field is a letter.
+ */
+test('J and K walk the list, and Enter opens the selected row’s Overview', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1000 })
+  await queue(page)
+  const rows = page.locator('#panel-waiting .queue-line')
+  await expect(rows.first()).toHaveClass(/queue-line--selected/)
+
+  await page.locator('body').press('j')
+  await expect(rows.nth(1)).toHaveClass(/queue-line--selected/)
+  await expect(page.locator('[data-testid="list-preview"]'))
+    .toContainText(await rows.nth(1).locator('.pr').innerText())
+
+  /*
+   * **Typed in the field, K is a letter.** A link is in it first, because a link narrows
+   * nothing — so the rows stay put, and only the key handler could move the selection.
+   */
+  await page.locator('input#start').fill('https://github.com/acme/portal/pull/')
+  await page.locator('input#start').press('k')
+  await expect(page.locator('input#start')).toHaveValue('https://github.com/acme/portal/pull/k')
+  await expect(rows.nth(1), 'still the second row').toHaveClass(/queue-line--selected/)
+  await page.locator('input#start').fill('')
+  await page.locator('input#start').blur()
+  await expect(rows.nth(1), 'the selection did not move').toHaveClass(/queue-line--selected/)
+
+  await page.locator('body').press('k')
+  await expect(rows.first()).toHaveClass(/queue-line--selected/)
+
+  /*
+   * **A pointer resting on a row does not take the selection back from J** (self-review
+   * round 1, F7): J scrolls, which slides a row under a pointer that has not moved, and the
+   * browser reports that as the pointer arriving. It selects only once it moves and rests.
+   */
+  /*
+   * **Short enough that J has to scroll** (self-review round 2): at 1,000 pixels every row
+   * fits, nothing slides under the pointer, and this passed without the guard it is for.
+   * At 420 the second row is below the fold, so J scrolls it up under a still pointer.
+   */
+  await page.setViewportSize({ width: 1600, height: 420 })
+  await rows.first().scrollIntoViewIfNeeded()
+  const box = (await rows.first().boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height - 4)
+  await expect(rows.first()).toHaveClass(/queue-line--selected/)
+  const before = await page.evaluate(() => window.scrollY)
+  await page.locator('body').press('j')
+  await expect(rows.nth(1)).toHaveClass(/queue-line--selected/)
+  expect(await page.evaluate(() => window.scrollY), 'J scrolled the list').toBeGreaterThan(before)
+  await page.waitForTimeout(400)
+  await expect(rows.nth(1), 'still the row J chose').toHaveClass(/queue-line--selected/)
+  await page.locator('body').press('k')
+  await expect(rows.first()).toHaveClass(/queue-line--selected/)
+  await page.setViewportSize({ width: 1600, height: 1000 })
+
+  const href = await rows.first().locator('.row').getAttribute('href')
+  await page.locator('body').press('Enter')
+  await expect(page).toHaveURL(`${serving.url}${href!.slice(1)}`)
+})
+
+test('the arrow keys move between the list’s tabs', async ({ page }) => {
+  /* Self-review round 1, F1: a keyboard reached only the open tab. */
+  await queue(page)
+  await page.getByRole('tab', { name: /^Waiting on you/ }).focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(page).toHaveURL(/\?view=reviewing$/)
+  await expect(page.getByRole('tab', { name: /^Being reviewed/ })).toBeFocused()
+  await page.keyboard.press('End')
+  await expect(page).toHaveURL(/\?view=every$/)
+  await page.keyboard.press('Home')
+  await expect(page.getByRole('tab', { name: /^Waiting on you/ })).toBeFocused()
+  await expect(page.locator('#panel-waiting')).toBeVisible()
+})

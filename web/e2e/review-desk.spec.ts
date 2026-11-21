@@ -157,9 +157,13 @@ test.describe('the whole path, on a seeded database', () => {
      * `globex/portal#9568` add nothing at all — a finished review is in no group, which is that
      * issue and is asserted below.
      */
-    await expect(
-      page.getByRole('heading', { name: '4 pull requests need you' }),
-    ).toBeVisible()
+    /*
+     * **The count is the tab's since DEV-1325**, which made Queue and Reviews one list: the
+     * heading is *Pull requests* and *Waiting on you* carries the number.
+     */
+    await expect(page.getByRole('heading', { level: 1, name: 'Pull requests' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: /^Waiting on you/ }).locator('.tab-count'))
+      .toHaveText('4')
 
     /*
      * **One row for #9541, and one round behind it.** It was one row for two rounds until
@@ -184,7 +188,9 @@ test.describe('the whole path, on a seeded database', () => {
      * **In the page, not the document**: since DEV-1323 the shell's sidebar lists every pull
      * request too, once each — `test/screens.nuxt.spec.ts` asserts that list's own one row.
      */
-    await expect(page.locator('main').getByText('Retry failed webhook deliveries')).toHaveCount(1)
+    /* And in the list's rows: the preview beside them names the selected one again. */
+    await expect(page.locator('main .queue-line').getByText('Retry failed webhook deliveries'))
+      .toHaveCount(1)
     /*
      * **Eight rows for four pull requests that need you**, which is not a contradiction:
      * the fifth is the posted review under "Waiting on the author", and the last three are
@@ -204,7 +210,9 @@ test.describe('the whole path, on a seeded database', () => {
      * not be held by this record at all.
      */
     await expect(page.locator('.row')).toHaveCount(8)
-    await expect(page.getByText('Problem brief ready')).toBeVisible()
+    /* The state word is `stateWord`'s since DEV-1325, the sidebar's word for the row. */
+    await expect(page.locator('.queue-line').filter({ hasText: '#412' }).locator('.what-title'))
+      .toHaveText('Brief ready')
     await expect(page.getByText('nothing posts until you confirm')).toBeVisible()
     await expect(page.getByText('a draft is ready behind it')).toBeVisible()
     await expect(page.getByText('Read the brief')).toBeVisible()
@@ -240,8 +248,11 @@ test.describe('the whole path, on a seeded database', () => {
      * The groups with nothing in them are not drawn: no session is running on this
      * database and the server has no source for the developer's own pull requests.
      */
-    await expect(page.getByRole('heading', { name: 'With the agent' })).toHaveCount(0)
-    await expect(page.getByRole('heading', { name: 'Your pull requests' })).toHaveCount(0)
+    await expect(page.locator('main').getByText('With the agent')).toHaveCount(0)
+    await expect(page.getByRole('tab', { name: /^Your own/ }).locator('.tab-count')).toHaveText('0')
+
+    /* The rest of the desk is under the list's other tabs (DEV-1325). */
+    await page.getByRole('tab', { name: /^Being reviewed/ }).click()
 
     /*
      * **And the group that was missing until DEV-994, with the two rows it was missing.**
@@ -279,8 +290,10 @@ test.describe('the whole path, on a seeded database', () => {
     )
     await expect(asked).toContainText('days ago')
 
-    /* And the headline still counts only what is waiting on the developer. */
-    await expect(page.getByText('3 not started')).toBeVisible()
+    /* And its own group counts it, which is not the count of what waits on the developer. */
+    await expect(page.locator('main').locator('section')
+      .filter({ has: page.getByRole('heading', { name: 'Requested, not started' }) })
+      .locator('.head .rd-meta')).toContainText('3')
 
     /*
      * **The group the board drew and the API could not fill, filled.** It said "not
@@ -288,7 +301,8 @@ test.describe('the whole path, on a seeded database', () => {
      * absence is: `GET /inbox` serves a group for a posted review whose pull request has
      * not been seen merged or closed.
      */
-    await expect(page.locator('main').getByRole('heading', { name: 'Waiting on the author' })).toBeVisible()
+    await page.getByRole('tab', { name: /^Waiting on the author/ }).click()
+    await expect(page.locator('#panel-author')).toBeVisible()
     await expect(page.getByText('Not measured yet')).toHaveCount(0)
     await expect(
       page.getByText('serves no group for a posted review awaiting a reply'),
@@ -330,7 +344,7 @@ test.describe('the whole path, on a seeded database', () => {
      * that says otherwise, and a production build has no fixtures for it to be about.
      */
     await expect(page.getByText('Sample data')).toHaveCount(0)
-    await expect(page.getByText('acme/portal', { exact: false }).first()).toBeVisible()
+    await expect(page.locator('main').getByText('acme/portal', { exact: false }).first()).toBeVisible()
   })
 
   test('the brief is confirmed in the browser, and the record says the developer did it', async ({
@@ -686,7 +700,7 @@ test.describe('the whole path, on a seeded database', () => {
     await page.goto(seeded)
     await expect(page.getByText('Confirm the problem')).toHaveCount(0)
     /*
-     * **Not in "Needs you", and since DEV-994 it is under "Requested, not started".** The
+     * **Not in "Needs you" — *Waiting on you* since DEV-1325 — and since DEV-994 it is under "Requested, not started".** The
      * claim is unchanged and is the issue's: nothing is asked of the developer, so the
      * review is in no group that asks them for anything. What changed is that a round
      * waiting on nobody now has a group of its own — before DEV-994 this review was on no
@@ -697,9 +711,7 @@ test.describe('the whole path, on a seeded database', () => {
     await expect(waived).toHaveCount(1)
     await expect(waived).toContainText('Waiting for a session')
     await expect(
-      page.locator('section').filter({ hasText: 'Needs you' })
-        .locator('.queue-line')
-        .filter({ hasText: '#418' }),
+      page.locator('#panel-waiting .queue-line').filter({ hasText: '#418' }),
     ).toHaveCount(0)
 
     await page.goto(`${seeded}reviews/${waivedReviewId}`)
@@ -3093,7 +3105,7 @@ test.describe('a drawing opens larger', () => {
  * review, which is the sentence this page deletes.
  */
 test.describe('the list of every review', () => {
-  test('is in the header, lists every review, and reaches a posted one in two clicks', async ({
+  test('is a tab of the list, lists every review, and reaches a posted one in two clicks', async ({
     page,
   }) => {
     await page.goto(seeded)
@@ -3101,12 +3113,13 @@ test.describe('the list of every review', () => {
     /*
      * **Click one.** The header item pointed at whichever review happened to be waiting
      * until DEV-930, so it could not take a reader to a *particular* review — and greyed
-     * itself out on a database with none.
+     * itself out on a database with none. Since DEV-1325 the list is the Pull requests
+     * list's *Every review* tab, and the sidebar's Reviews item is gone with the page.
      */
-    await page.getByRole('navigation', { name: 'Review Desk' })
-      .getByRole('link', { name: 'Reviews' })
-      .click()
-    await expect(page).toHaveURL(/\/reviews$/)
+    await expect(page.getByRole('navigation', { name: 'Review Desk' })
+      .getByRole('link', { name: 'Reviews' })).toHaveCount(0)
+    await page.getByRole('tab', { name: /^Every review/ }).click()
+    await expect(page).toHaveURL(/\?view=every$/)
     await expect(page.getByRole('heading', { name: /\d+ reviews?$/ })).toBeVisible()
 
     /* Every review the seed made, posted ones included. */
@@ -3116,7 +3129,7 @@ test.describe('the list of every review', () => {
       'Say "not measured" rather than null in the delivery log',
       'Record the delivery attempt count',
     ]) {
-      await expect(page.locator('main').getByText(title, { exact: false }).first()).toBeVisible()
+      await expect(page.locator('#panel-every').getByText(title, { exact: false }).first()).toBeVisible()
     }
 
     /*
@@ -3130,7 +3143,7 @@ test.describe('the list of every review', () => {
      * and "posted" and "round 1 of 3" are on that line. `.queue-line` is the whole row; the
      * `.row` inside it is where it goes.
      */
-    const posted = page.locator('.queue-line').filter({ hasText: 'Record the delivery attempt' })
+    const posted = page.locator('#panel-every .queue-line').filter({ hasText: 'Record the delivery attempt' })
     /*
      * **"Not started", and "posted" beside it, which is not a contradiction.** The seven
      * steps are the review process; this review's GitHub id was recorded by `review link`
@@ -3141,15 +3154,16 @@ test.describe('the list of every review', () => {
     await expect(posted).toContainText('posted')
     await expect(posted).not.toContainText('step 0 of 7')
 
-    const webhooks = page.locator('.queue-line').filter({ hasText: 'Retry failed webhook' })
+    const webhooks = page.locator('#panel-every .queue-line').filter({ hasText: 'Retry failed webhook' })
     await expect(webhooks).toContainText('Draft')
     await expect(webhooks).toContainText('step 6 of 7')
     /* A round is one of a total, never a bare count of rework against the author. */
     await expect(webhooks).toContainText('round 1')
 
     /* And it describes rather than grades: no bar, no findings count, no severities. */
-    await expect(page.locator('[role="img"]')).toHaveCount(0)
-    await expect(page.getByText('blocker', { exact: false })).toHaveCount(0)
+    /* Scoped to the view: the list's own Waiting on you rows do carry a severity tally. */
+    await expect(page.locator('#panel-every [role="img"]')).toHaveCount(0)
+    await expect(page.locator('#panel-every').getByText('blocker', { exact: false })).toHaveCount(0)
 
     /* **Click two**, and the review is open at Understand, where a review starts. */
     await posted.locator('.row').click()
@@ -3172,8 +3186,8 @@ test.describe('the list of every review', () => {
     const portal = page.getByRole('radio').filter({ hasText: 'acme/portal' })
     await expect(portal).toHaveCount(1)
     await portal.click()
-    await expect(page.locator('.row').first()).toBeVisible()
-    await expect(page.getByText('acme/portal', { exact: false }).first()).toBeVisible()
+    await expect(page.locator('#panel-every .row').first()).toBeVisible()
+    await expect(page.locator('#panel-every').getByText('acme/portal', { exact: false }).first()).toBeVisible()
   })
 
   /*
@@ -3190,7 +3204,7 @@ test.describe('the list of every review', () => {
 
       for (const [name, path] of [['the queue', ''], ['the reviews', 'reviews']]) {
         await page.goto(`${seeded}${path}`)
-        await expect(page.locator('.row').first()).toBeVisible()
+        await expect(page.locator('.row:visible').first()).toBeVisible()
 
         const sideways = await page.evaluate(() => ({
           scrollWidth: document.documentElement.scrollWidth,
@@ -3205,14 +3219,30 @@ test.describe('the list of every review', () => {
          * And every row is a target a finger can hit. 44px is this project's own floor for
          * anything you press, stated in `web/app/assets/css/tokens.css`.
          */
-        const rows = await page.locator('.row').all()
-        for (const row of rows) {
-          const box = await row.boundingBox()
-          expect(box, `${name} at ${width}px: a row has no box`).not.toBeNull()
-          expect(
-            box!.height,
-            `${name} at ${width}px: a row is ${box!.height}px tall`,
-          ).toBeGreaterThanOrEqual(44)
+        /*
+         * **Every tab's rows, each opened in turn** (DEV-1325): the groups are tabs of one
+         * list, and a hidden tab's rows have no box to measure. The list's own tabs are
+         * walked on `/`; `/reviews` lands on *Every review*, which is one view.
+         */
+        const tabs = path === ''
+          ? await page.getByRole('tab').evaluateAll(all => all.map(one => one.id))
+          : [null]
+        for (const tab of tabs) {
+          if (tab) {
+            /* The tab moves through the router, so wait for its own panel before measuring. */
+            await page.locator(`#${tab}`).click()
+            await expect(page.locator(`#${tab.replace('tab-', 'panel-')}`)).toBeVisible()
+            await page.waitForLoadState('networkidle')
+          }
+          const rows = await page.locator('.row:visible').all()
+          for (const row of rows) {
+            const box = await row.boundingBox()
+            expect(box, `${name} ${tab ?? ''} at ${width}px: a row has no box`).not.toBeNull()
+            expect(
+              box!.height,
+              `${name} ${tab ?? ''} at ${width}px: a row is ${box!.height}px tall`,
+            ).toBeGreaterThanOrEqual(44)
+          }
         }
       }
     })
@@ -3296,7 +3326,7 @@ test.describe('a harvested review, on the queue and in the list', () => {
       await expect(page.getByRole('heading', { name: /\d+ reviews?$/ })).toBeVisible()
       await page.waitForLoadState('networkidle')
 
-      const row = page.locator('.row').filter({ hasText: 'Record the delivery attempt' })
+      const row = page.locator('#panel-every .row').filter({ hasText: 'Record the delivery attempt' })
       await expect(row).toHaveCount(1)
       /*
        * The step, its own words, and the number of seven — never the bare state word,
@@ -3320,19 +3350,17 @@ test.describe('a database with nothing in it', () => {
   test('all five pages read as new rather than as broken', async ({ page }) => {
     await page.goto(empty)
     await expect(page.getByRole('heading', { name: 'Nothing here yet' })).toBeVisible()
-    await expect(page.getByText('This database holds no reviews')).toBeVisible()
+    await expect(page.getByText('Nothing is on the desk')).toBeVisible()
     /* The one thing that fills it, with the field to do it from. */
     await expect(page.locator('input#start-empty')).toBeVisible()
 
     /*
-     * **And the header's Reviews item is a link here**, which it was not before DEV-930:
-     * it pointed at whichever review was waiting and greyed itself out when none was. A
-     * list is somewhere worth being on an empty database, because it says so.
+     * **And every review is a link away here**, which the header's Reviews item was until
+     * DEV-1325 took that item with the page: the card says how to the list's *Every review*
+     * view. A list is somewhere worth being on an empty database, because it says so.
      */
-    await page.getByRole('navigation', { name: 'Review Desk' })
-      .getByRole('link', { name: 'Reviews' })
-      .click()
-    await expect(page).toHaveURL(`${empty}reviews`)
+    await page.getByRole('link', { name: 'Every review the record holds' }).click()
+    await expect(page).toHaveURL(`${empty}?view=every`)
     /*
      * **"No reviews in play", not "this database holds no reviews"** — which is the
      * stronger claim and one this page cannot make, because the answer it is drawn from
@@ -3787,7 +3815,7 @@ test.describe('taking a review off the desk', () => {
       await page.goto(`${seeded}reviews`)
       await expect(page.getByText('Retry failed webhook deliveries')).toHaveCount(0)
       await page.getByRole('radio').filter({ hasText: 'Dismissed' }).click()
-      const row = page.locator('.row').filter({ hasText: 'Retry failed webhook' })
+      const row = page.locator('#panel-every .row').filter({ hasText: 'Retry failed webhook' })
       await expect(row).toHaveCount(1)
       await expect(row).toContainText('Dismissed')
       await expect(row).toContainText('the pull request was closed unmerged')
@@ -3892,8 +3920,9 @@ test.describe('taking a review off the desk', () => {
     await card.getByRole('button', { name: 'Delete it for good' }).click()
 
     /* It leaves the page it was deleted from, for the list it came from — carrying the
-       one sentence an act with no undo gets, which cannot be said where it was done. */
-    await expect(page).toHaveURL(/\/reviews$/)
+       one sentence an act with no undo gets, which cannot be said where it was done. That
+       list is the Pull requests list's Every review view since DEV-1325. */
+    await expect(page).toHaveURL(/\?view=every$/)
     await expect(page.getByText('is deleted')).toBeVisible()
     await expect(page.locator('.row').filter({ hasText: '#777' })).toHaveCount(0)
     /* And no refusal was drawn over the page on the way out. */
@@ -3952,7 +3981,7 @@ test.describe('a merged pull request finishes its review', () => {
 
   test('every round of it is under Finished, posted or not', async ({ page }) => {
     await page.goto(`${seeded}reviews`)
-    await expect(page.locator('.row').first()).toBeVisible()
+    await expect(page.locator('.row:visible').first()).toBeVisible()
 
     /* Not in the default view. */
     await expect(page.getByText('#9568')).toHaveCount(0)
@@ -3967,7 +3996,7 @@ test.describe('a merged pull request finishes its review', () => {
      * four rounds of one pull request are one row rather than four. Every one of them is
      * still on the page, which is the property; where they are is the change.
      */
-    const rows = page.locator('.queue-line').filter({ hasText: '#9568' })
+    const rows = page.locator('#panel-every .queue-line').filter({ hasText: '#9568' })
     await expect(rows, '#9568 is one row').toHaveCount(1)
 
     const row = rows.first()
@@ -4477,7 +4506,7 @@ test.describe('a queue row’s links and its edges', () => {
         if (view != null) {
           await page.getByRole('radio').filter({ hasText: view }).click()
         }
-        await expect(page.locator('.queue-line').first()).toBeVisible()
+        await expect(page.locator('.queue-line:visible').first()).toBeVisible()
 
         /*
          * **Every row, measured against its own right edge rather than the viewport's.**
@@ -4674,17 +4703,26 @@ test.describe('state that belongs to one review', () => {
     : `${seeded}reviews/${id}/${TAB_OF[step]}${band(step)}`
 
   async function byTheTrail(page: Page, id: number, step: string): Promise<number> {
+    /*
+     * **Every click is in the app**, because a history jump across a full page load bypasses
+     * the router guard these tests are about. The list of every review was the sidebar's
+     * Reviews item until DEV-1325 made it the Pull requests list's *Every review* tab, so the
+     * walk is one click longer from a review's page — and how many entries it added is
+     * measured rather than written down, which a fixed 2 or 3 no longer was.
+     */
+    const before = await page.evaluate(() => history.length)
     await page.getByRole('navigation', { name: 'Review Desk' })
-      .getByRole('link', { name: 'Reviews' })
+      .getByRole('link', { name: 'Pull requests' })
       .click()
-    await expect(page).toHaveURL(/\/reviews$/)
-    await page.locator(`a[href="/reviews/${id}"]`).click()
+    await page.getByRole('tab', { name: /^Every review/ }).click()
+    await expect(page).toHaveURL(/\?view=every$/)
+    await page.locator(`#panel-every a[href="/reviews/${id}"]`).first().click()
     await expect(page).toHaveURL(`${seeded}reviews/${id}`)
-    if (step === 'understand') return 2
-
-    await page.locator(`.trail a[href="/reviews/${id}/${TAB_OF[step]}${band(step)}"]`).click()
-    await expect(page).toHaveURL(at(id, step))
-    return 3
+    if (step !== 'understand') {
+      await page.locator(`.trail a[href="/reviews/${id}/${TAB_OF[step]}${band(step)}"]`).click()
+      await expect(page).toHaveURL(at(id, step))
+    }
+    return (await page.evaluate(() => history.length)) - before
   }
 
   /** The back button's own menu: this many entries up, in one navigation. */

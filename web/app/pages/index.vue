@@ -11,8 +11,33 @@ import type {
   PrState,
 } from '~/types/desk'
 import type { DeskNotice } from '~/utils/format'
+import type { ListRow, ListView } from '~/utils/pullRequests'
+import type { ReviewState } from '~/utils/stateWord'
 
 /**
+ * **Pull requests: the one list.** DEV-1325, under DEV-1322, and the S1 screen.
+ *
+ * Queue and Reviews were two pages; they are one list now, as tabs over one table with a
+ * preview of the selected row beside it. Opening a row goes to its review's Overview
+ * (`tabPath`). `/reviews` redirects here, to the *Every review* view, which is the Reviews
+ * list drawn whole (`ReviewsList`).
+ *
+ * **What moved and what did not.** Everything below this paragraph is still the queue's,
+ * and so are its rules: which pull request is one row, which round the row is, which group
+ * it is in and what it says. The groups became tabs under the sidebar's words, so a pull
+ * request sits in the same place in both — *Needs you* is *Waiting on you*, *With the agent*
+ * and *Requested, not started* are *Being reviewed*, *Your pull requests* is *Your own* — and
+ * `test/screens.nuxt.spec.ts` asserts the tabs hold exactly `sidebarGroups`'s rows.
+ *
+ * **The status cell is the state word and one line of facts**, the word from `stateWord`.
+ * The session folds into that line rather than taking a column of its own: what a session
+ * is doing is said where what the review is waiting for is said.
+ *
+ * **Every tab's panel is drawn and the inactive ones hidden**, so a row is on the page
+ * whichever tab is open — the tabs fold the list; they do not remove any of it.
+ *
+ * ---
+ *
  * The queue: every review, grouped by who has to act, **one row each**.
  *
  * ## One row per pull request
@@ -70,10 +95,12 @@ import type { DeskNotice } from '~/utils/format'
  * Two facts the boards do not draw and the API does serve are kept as one line each at the
  * foot: what was handled without the developer, and a rule proposal waiting on them.
  */
+definePageMeta({ split: true })
+
 const desk = useReviewDesk()
 const inbox = desk.inbox()
 
-useHead({ title: 'Queue · Review Desk' })
+useHead({ title: 'Pull requests · Review Desk' })
 
 const link = ref('')
 const starting = ref(false)
@@ -511,7 +538,7 @@ const waiting = computed(() => (inbox.data.value ? needingYou(inbox.data.value) 
  * the way — the reading that precedes a sign-off.
  */
 function stepFor(row: Waiting): string {
-  return `/reviews/${row.review_id}`
+  return tabPath(row.review_id, 'overview')
 }
 
 /**
@@ -1067,13 +1094,32 @@ function oldestFirst<T>(rows: T[], at: (row: T) => string | null, id: (row: T) =
 /** One needs-you row, display-ready: the merge, its next action and what is behind it. */
 function queueRow(row: Waiting) {
   const next = nextAction(row)
+  /*
+   * **The state word, the sidebar's.** The three arrays are read in the order the sidebar
+   * claims them — the brief, then the draft, then what came back — which is also the order
+   * `nextAction` picks the next action in, so the word and the action are about one thing.
+   */
+  const state: ReviewState = row.brief ? 'brief_ready' : row.draft ? 'draft_ready' : 'replies_in'
   return {
     ...next,
+    key: `${row.repo}#${row.pr}`,
+    state,
+    repo: row.repo,
+    session: sessionLine(row.agent),
     review_id: row.review_id,
     pr: row.pr,
     title: row.title,
     about: about(row),
-    detail: [next.detail, ...alsoWaiting(row)].join(' · '),
+    /*
+     * **`what` folds into the facts when it says more than the state word.** "Problem brief
+     * ready" and "Draft ready" are the word itself; what came back names the finding —
+     * "The author replied to F1" — so that one leads the line rather than being lost.
+     */
+    detail: [
+      ...(row.brief || row.draft ? [] : [next.what]),
+      next.detail,
+      ...alsoWaiting(row),
+    ].join(' · '),
     /*
      * **The two ways out of the review, built here rather than in the template.** The pull
      * request's address is built from the row's own repository and number; the ticket's is
@@ -1180,38 +1226,6 @@ const someTimesMissing = computed(
 )
 
 /**
- * The line under the headline: what is on the desk that is not waiting on the developer.
- *
- * The board reads "2 with the agent · 2 waiting on the author · 2 of your own". Only the
- * parts with something in them are said — "0 with the agent · 0 of your own" is noise on a
- * database with one review — and since DEV-930 the author's part is one of them, where
- * before it had to be left out because nothing could count it.
- *
- * **It is also the signpost for a group that is below the fold at 390 pixels.** The posted
- * group sits under the needs-you rows, and on a phone that is off the bottom of the first
- * screen; this line is above it and says the number.
- */
-const besides = computed(() => {
-  const said: string[] = []
-  if (rows.value.withAgent.length) said.push(`${rows.value.withAgent.length} with the agent`)
-  /*
-   * **The group furthest down the page, so the line that signposts the fold says it too.**
-   * "Requested, not started" sits under "With the agent", which on a phone is below the
-   * group this line was written for — and it is the one group whose rows nobody is working
-   * on, so a reader who never scrolls to it is the reader who most needs to know it is
-   * there.
-   */
-  if (rows.value.requested.length) {
-    said.push(`${rows.value.requested.length} not started`)
-  }
-  if (rows.value.withAuthor.length) {
-    said.push(`${rows.value.withAuthor.length} waiting on the author`)
-  }
-  if (rows.value.ownPrs.length) said.push(`${rows.value.ownPrs.length} of your own`)
-  return said.join(' · ')
-})
-
-/**
  * What the right-hand cell says about a review a session is working on.
  *
  * **"Session state unknown" was all it could say until DEV-890.** Allele owns whether a
@@ -1244,9 +1258,14 @@ function sessionAction(item: InboxInProgressItem): string {
  */
 function heldBackNote(held: number, what: string): string {
   if (held === 0) return 'nothing for you to do'
+  /*
+   * **"Under an earlier tab", and it was "already drawn above".** The groups were one page
+   * read down; they are tabs now (DEV-1325), and a row held back from this one is under
+   * a tab to the left of it.
+   */
   return held === 1
-    ? `1 more is ${what} and is already drawn above`
-    : `${held} more are ${what} and are already drawn above`
+    ? `1 more is ${what} and is under an earlier tab`
+    : `${held} more are ${what} and are under an earlier tab`
 }
 
 const postedNote = computed(() => heldBackNote(rows.value.alsoPosted, 'posted'))
@@ -1266,16 +1285,6 @@ function postedTitle(item: InboxPostedItem): string {
     = item.rounds_on_pr > 1 ? `Round ${item.round} of ${item.rounds_on_pr} posted` : 'Posted'
   const event = item.posted_as == null ? null : eventLabel(item.posted_as)
   return event == null ? round : `${round} as ${event}`
-}
-
-/** The seven layers, as the bar's segments: done, the one running, then the rest. */
-function layerSegments(item: InboxInProgressItem): Array<'done' | 'now' | 'todo'> {
-  return Array.from({ length: item.layers_total }, (_, at) => {
-    const number = at + 1
-    if (number < item.layer_number) return 'done'
-    if (number === item.layer_number) return 'now'
-    return 'todo'
-  })
 }
 
 /**
@@ -1310,26 +1319,6 @@ function isEmpty(data: Inbox): boolean {
 }
 
 /**
- * What the page says when no group is asking the developer for anything.
- *
- * **The second sentence is conditional, and that is DEV-994.** "Anything a session produces
- * turns up here" was unconditional, and it can now sit directly above a populated
- * "Requested, not started" — a group of rounds a session has produced nothing for — which
- * reads as the page contradicting itself. The first sentence is true whatever else is on the
- * page, because `totals.items` counts the groups that ask the developer for something.
- * Found by a red-team pass over this change's design.
- *
- * **Assembled here rather than from `<template v-if>` fragments**, which is the correction
- * `handledLine` below carries and its reason: the linter puts those on their own lines and
- * the renderer then separates them with spaces, so the conditional sentence would have
- * arrived with a double space in front of it.
- */
-const nothingWaiting = computed(() =>
-  rows.value.requested.length
-    ? 'Nothing is waiting on you.'
-    : 'Nothing is waiting on you. Anything a session produces turns up here.')
-
-/**
  * What was dealt with without the developer, as one sentence.
  *
  * The boards do not draw this and the API serves it, so it is kept rather than dropped —
@@ -1356,374 +1345,1118 @@ function handledLine(data: Inbox): string {
     said.length ? said.join(' · ') : 'nothing has reported in yet'
   }`
 }
+
+/* -------------------------- The one list (DEV-1325) -------------------------- */
+
+/**
+ * What the record holds about a session working on this pull request, as one phrase.
+ *
+ * **The step, and how long it has been on it**, from the in-progress item — the facts the
+ * queue's *With the agent* group drew as a bar and a line. Null when no session is running a
+ * step on the row's round, which says nothing rather than "no session": the record cannot
+ * tell an idle session from none.
+ */
+function sessionLine(agent: InboxInProgressItem | null): string | null {
+  if (!agent) return null
+  const forHow = agent.in_state_since ? ` for ${forLabel(agent.in_state_since)}` : ''
+  return `on step ${agent.layer_number} of ${agent.layers_total}, `
+    + `${layerLabel(agent.layer_name).toLowerCase()}${forHow}`
+}
+
+/**
+ * The finished reviews, for *Done* — **the sidebar's read and the sidebar's filter**, so the
+ * tab and the group cannot disagree about which week a review finished in.
+ */
+const finished = desk.finishedReviews()
+
+/** The sidebar's four groups, over the same two reads. The tabs are checked against them. */
+const groups = computed(() =>
+  inbox.data.value ? sidebarGroups(inbox.data.value, finished.data.value) : null)
+
+/**
+ * *Done*'s rows: the sidebar's *Done this week*, one per pull request.
+ *
+ * **Only the ones the sidebar's group kept**, which is `doneThisWeek` minus any pull request
+ * an earlier group claimed — the sidebar's own `keep`, read back off its answer rather than
+ * worked out a second time here.
+ */
+const doneRows = computed(() => {
+  const kept = new Set(groups.value?.find(group => group.id === 'done')?.rows.map(row => row.key) ?? [])
+  return doneThisWeek(finished.data.value)
+    .filter(item => kept.has(`${item.review.repo}#${item.review.pr}`))
+    .filter(item => showing(item.review.repo))
+})
+
+/**
+ * Which tab is open, held in the address so a link, a reload and Back all keep it.
+ *
+ * **Pushed, not replaced**: a tab is a place in the list, so Back from *Every review* is
+ * *Waiting on you* again rather than wherever the reader was before the list.
+ */
+const route = useRoute()
+const router = useRouter()
+const view = computed<ListView>({
+  get: () => viewFromQuery(route.query.view),
+  set: (next) => {
+    if (next === view.value) return
+    void router.push({ query: { ...route.query, view: next === 'waiting' ? undefined : next } })
+  },
+})
+
+/**
+ * *Every review* is drawn the first time it is opened and kept after, rather than read on
+ * every visit to the list: it is a read of its own (`GET /reviews`) and most visits never
+ * open it.
+ */
+const everyOpened = ref(view.value === 'every')
+watch(view, (next) => {
+  if (next === 'every') everyOpened.value = true
+})
+
+/** The rows *Every review* reports, which it draws and reads itself. */
+const everyRows = ref<ListRow[]>([])
+
+/** What is in the find field, which is also the field a review is started from. */
+const find = computed(() => link.value)
+
+/** A list narrowed to what the find field matches, which is all of it for a link. */
+function found<T>(list: T[], of: (item: T) => { pr: number, title: string, repo: string }): T[] {
+  return list.filter(item => rowMatches(of(item), find.value))
+}
+
+/** Each tab's rows, as drawn: the queue's own, narrowed by the find field. */
+const shown = computed(() => ({
+  needsYou: found(rows.value.needsYou, row => row),
+  withAgent: found(rows.value.withAgent, item => ({
+    pr: item.pull_request.pr,
+    title: item.newest_round.title ?? '',
+    repo: item.pull_request.repo,
+  })),
+  requested: found(rows.value.requested, item => ({
+    pr: item.pull_request.pr,
+    title: item.pull_request.title ?? '',
+    repo: item.pull_request.repo,
+  })),
+  withAuthor: found(rows.value.withAuthor, item => ({
+    pr: item.pull_request.pr,
+    title: item.pull_request.title ?? '',
+    repo: item.pull_request.repo,
+  })),
+  ownPrs: found(rows.value.ownPrs, item => ({
+    pr: item.pull_request.pr,
+    title: item.pull_request.title ?? '',
+    repo: item.pull_request.repo,
+  })),
+  done: found(doneRows.value, item => ({
+    pr: item.review.pr,
+    title: item.review.title ?? '',
+    repo: item.review.repo,
+  })),
+}))
+
+/**
+ * Every tab's rows as the selection, the keys and the preview walk them, in drawn order.
+ *
+ * Built from the same arrays the template draws, so `J` moves to the row under the one
+ * selected and never to one the page is not showing.
+ */
+const viewRows = computed<Record<ListView, ListRow[]>>(() => ({
+  waiting: shown.value.needsYou.map(row => ({
+    key: row.key,
+    reviewId: row.review_id,
+    pr: row.pr,
+    repo: row.repo,
+    title: row.title,
+    state: row.state,
+    to: row.to,
+    href: null,
+    action: row.action,
+    session: row.session,
+  })),
+  reviewing: [
+    ...shown.value.withAgent.map(item => ({
+      key: prKey(item),
+      reviewId: item.newest_round.review_id,
+      pr: item.pull_request.pr,
+      repo: item.pull_request.repo,
+      title: item.newest_round.title ?? 'no title recorded',
+      state: 'being_written' as const,
+      to: tabPath(item.newest_round.review_id, 'overview'),
+      href: null,
+      action: null,
+      session: `${sessionLine(item)} · ${sessionAction(item).replace(/^./, first => first.toLowerCase())}`,
+    })),
+    ...shown.value.requested.map(item => ({
+      key: prKey(item),
+      reviewId: item.review_id ?? null,
+      pr: item.pull_request.pr,
+      repo: item.pull_request.repo,
+      title: item.pull_request.title ?? 'no title recorded',
+      state: requestedState(item),
+      to: item.link.to,
+      href: item.link.href,
+      action: item.link.action,
+      session: null,
+    })),
+  ],
+  author: shown.value.withAuthor.map(item => ({
+    key: prKey(item),
+    reviewId: item.review_id,
+    pr: item.pull_request.pr,
+    repo: item.pull_request.repo,
+    title: item.pull_request.title ?? 'no title recorded',
+    state: 'posted' as const,
+    to: tabPath(item.review_id, 'overview'),
+    href: null,
+    action: 'Read the review',
+    session: null,
+  })),
+  own: shown.value.ownPrs.map(item => ({
+    key: prKey(item),
+    reviewId: null,
+    pr: item.pull_request.pr,
+    repo: item.pull_request.repo,
+    title: item.pull_request.title ?? 'no title recorded',
+    state: null,
+    to: null,
+    href: item.link.href,
+    action: item.link.action,
+    session: null,
+  })),
+  done: shown.value.done.map(item => ({
+    key: `${item.review.repo}#${item.review.pr}`,
+    reviewId: item.review.id,
+    pr: item.review.pr,
+    repo: item.review.repo,
+    title: item.review.title ?? 'no title recorded',
+    state: item.finished_how === 'closed' ? 'closed' as const : 'merged' as const,
+    to: tabPath(item.review.id, 'overview'),
+    href: null,
+    action: 'Read the review',
+    session: null,
+  })),
+  every: everyRows.value.filter(row => rowMatches(row, find.value)),
+}))
+
+/** How many rows each tab draws, which is the number beside its name. */
+const viewCount = (which: ListView) => viewRows.value[which].length
+
+/** The age column's heading, which is a different measurement on each tab. */
+const AGE_HEADS: Record<ListView, string> = {
+  waiting: 'Waiting',
+  reviewing: 'Since',
+  author: 'Posted',
+  own: 'Open for',
+  done: 'Finished',
+  every: 'Last written',
+}
+
+/* ------------------------------ The selection ------------------------------ */
+
+/** The selected row, by `repo#pr`: the one the preview draws and `Enter` opens. */
+const selected = ref<string | null>(null)
+
+const currentRows = computed(() => viewRows.value[view.value])
+
+/**
+ * **The first row is selected whenever the selection is not on the page**: on arrival, on a
+ * change of tab, and when the find field narrows the selected row away. S1 draws the
+ * preview with the first row in it; an empty pane beside a full list would be a pane that
+ * says nothing until a reader learns to press something.
+ */
+watch(currentRows, (list) => {
+  if (!list.some(row => row.key === selected.value)) selected.value = list[0]?.key ?? null
+}, { immediate: true })
+
+const selectedRow = computed(() =>
+  currentRows.value.find(row => row.key === selected.value) ?? null)
+
+/** The row a holder element is, when it is one the open tab draws. */
+function rowKeyOf(target: EventTarget | null): string | null {
+  const holder = (target as Element | null)?.closest?.('[data-row-key]')
+  const key = holder?.getAttribute('data-row-key') ?? null
+  return key && currentRows.value.some(row => row.key === key) ? key : null
+}
+
+/** Focus arriving in a row selects it at once: a keyboard means it. */
+function selectFromFocus(event: FocusEvent) {
+  const key = rowKeyOf(event.target)
+  if (key) selected.value = key
+}
+
+/*
+ * **A pointer selects a row once it rests there, and only if it moved to get there.**
+ *
+ * Two findings of the self-review, round 1. A pointer swept down the list selected every row
+ * it crossed, and each selection is a read of that review for the preview — ten rows, ten
+ * reads, ten flashes of "Reading the review…" (F6). So it waits 120ms, which a sweep does not
+ * and a reader does. And `J` scrolls the selected row into view, which slides a different
+ * row under a pointer that has not moved; the browser reports that as the pointer entering
+ * the row, and the selection snapped back to it (F7). So a pointer selects only from a
+ * position other than where it was when a key last moved the selection.
+ */
+const RESTS_MS = 120
+let resting: ReturnType<typeof setTimeout> | null = null
+let pointer = { x: -1, y: -1 }
+let pointerAtKey = { x: -2, y: -2 }
+
+function selectFromPointer(event: MouseEvent) {
+  pointer = { x: event.clientX, y: event.clientY }
+  if (pointer.x === pointerAtKey.x && pointer.y === pointerAtKey.y) return
+  const key = rowKeyOf(event.target)
+  if (resting) clearTimeout(resting)
+  if (!key) return
+  resting = setTimeout(() => {
+    resting = null
+    selected.value = key
+  }, RESTS_MS)
+}
+
+/*
+ * **Leaving the list cancels a pending selection** (self-review round 2): a pointer that
+ * crossed a row on its way to the preview's *Open* or its next action set the timer, and
+ * nothing inside the list fired again to clear it — so the preview swapped to the crossed row
+ * under the pointer, and the click opened the wrong review.
+ */
+function leaveList() {
+  if (resting) clearTimeout(resting)
+  resting = null
+}
+
+onBeforeUnmount(leaveList)
+
+/** Open a row: its review's Overview, or the pull request on GitHub when there is no review. */
+function open(row: ListRow | null) {
+  if (!row) return
+  /* The router from setup: a window listener has no component for `navigateTo` to find. */
+  if (row.to) void router.push(row.to)
+  else if (row.href) window.open(row.href, '_blank', 'noopener,noreferrer')
+}
+
+/** Put focus on the selected row's link, so the browser's own `Enter` and Tab start there. */
+function focusSelected() {
+  const key = selected.value
+  if (!key) return
+  const holder = [...document.querySelectorAll<HTMLElement>('[data-row-key]')]
+    .find(one => one.getAttribute('data-row-key') === key && one.offsetParent !== null)
+  const link = holder?.querySelector<HTMLElement>('.row')
+  if (link && link.tagName !== 'DIV') link.focus()
+  holder?.scrollIntoView({ block: 'nearest' })
+}
+
+/**
+ * **`J` and `K` move the selection; `Enter` opens it.** `docs/design.md`'s keys table, and its
+ * one rule about when a key is not a key — `keyIsForThePage` — so none of them fires while
+ * the find field has the cursor.
+ *
+ * `Enter` on a link or a button is the browser's: a focused row is a link already, and a tab
+ * or the find field's Start are buttons. This answers `Enter` only where nothing else would.
+ */
+function onKey(event: KeyboardEvent) {
+  if (!keyIsForThePage(event)) return
+  const key = event.key.toLowerCase()
+  if (key === 'j' || key === 'k') {
+    event.preventDefault()
+    pointerAtKey = { ...pointer }
+    if (resting) clearTimeout(resting)
+    selected.value = moveSelection(currentRows.value, selected.value, key === 'j' ? 1 : -1)
+    void nextTick(focusSelected)
+    return
+  }
+  if (event.key === 'Enter') {
+    const target = event.target as HTMLElement | null
+    if (target?.closest?.('a, button, summary, [role="tab"], [role="radio"]')) return
+    event.preventDefault()
+    open(selectedRow.value)
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', onKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+
+/* ------------------------------ The list's heading ------------------------------ */
+
+/**
+ * The line under the heading, with **when GitHub was read only when the record holds it** —
+ * `githubReadAt`, the sidebar's own reading, and no clause at all when there is none.
+ */
+const subtitle = computed(() => {
+  const read = githubReadAt(inbox.data.value ?? null, finished.data.value)
+  return read
+    ? `Every pull request on the desk, and your own, read from GitHub ${sinceLabel(read)}.`
+    : 'Every pull request on the desk, and your own.'
+})
+
+/* --------------------------- Nothing needs you (S17) --------------------------- */
+
+/** Whether the desk has nothing waiting on the developer at all, whatever is filtered. */
+const nothingNeedsYou = computed(() => waiting.value.length === 0)
+
+/**
+ * One line per other group, as S17 draws them: the group, its count and its pull requests.
+ *
+ * Every figure is a count of rows the tabs draw, and every number named is one of those
+ * rows. *Being reviewed* says the step when it is one session, and *Done this week* says how
+ * many merged and how many closed; anything S17 says beyond that would be a sentence nothing
+ * in the record wrote.
+ */
+const otherGroups = computed(() => {
+  const reviewing = viewRows.value.reviewing
+  const agentOnly = shown.value.withAgent.length === 1 && shown.value.requested.length === 0
+    ? ` · a session is ${sessionLine(shown.value.withAgent[0]!)}`
+    : ''
+  const merged = shown.value.done.filter(item => item.finished_how === 'merged').length
+  const closed = shown.value.done.filter(item => item.finished_how === 'closed').length
+  const how = [merged ? `${merged} merged` : '', closed ? `${closed} closed` : '']
+    .filter(Boolean).join(', ')
+  const say = (rowsOf: ListRow[], extra = '') =>
+    rowsOf.length ? `${numbersSaid(rowsOf.map(row => row.pr))}${extra}` : 'none'
+  return [
+    { label: 'Being reviewed', count: reviewing.length, says: say(reviewing, agentOnly) },
+    { label: 'Waiting on the author', count: viewRows.value.author.length, says: say(viewRows.value.author) },
+    { label: 'Your own', count: viewRows.value.own.length, says: say(viewRows.value.own, viewRows.value.own.length ? ' · no reviewer requested' : '') },
+    { label: 'Done this week', count: viewRows.value.done.length, says: viewRows.value.done.length ? how || say(viewRows.value.done) : 'none' },
+  ]
+})
+
+/** *Since yesterday*, from recorded times only. */
+const since = computed(() =>
+  inbox.data.value ? sinceYesterday(inbox.data.value, doneRows.value) : [])
+
+/** "Review one anyway": the field is the way to, so the link puts the cursor in it. */
+function focusStart() {
+  document.getElementById('start')?.focus()
+}
+
+/**
+ * The line under each table: the order, said out loud as the queue said it. *Being
+ * reviewed*'s two groups carry their own notes beside their headings. **Assembled as
+ * strings**, for `handledLine`'s reason: `<template v-if>` fragments come out with doubled
+ * spaces.
+ */
+const order = computed(() =>
+  someTimesMissing.value ? 'Oldest first, and the rows with no recorded time last.' : 'Oldest first.')
+
+const waitingCaption = computed(() =>
+  `${order.value} Times are from when the brief or the draft was ready, or when something came back.`)
+
+const reviewingCaption = computed(() => order.value)
+
+/**
+ * The facts line of a row a session is working on: **the step and how long it has lasted,
+ * where the session is in the seven, and what the record holds about the session** —
+ * "Code review · 20 min · step 4 of 7 · Session not seen for 20 min". The first two are
+ * what the queue's *With the agent* row said beside its bar; the bar's figure is the third,
+ * in words; the fourth was that row's action, and is the session folded into the state.
+ */
+function agentFacts(item: InboxInProgressItem): string {
+  const parts = [layerLabel(item.layer_name)]
+  if (item.in_state_since) parts.push(forLabel(item.in_state_since) ?? '')
+  parts.push(`step ${item.layer_number} of ${item.layers_total}`)
+  parts.push(sessionAction(item))
+  return parts.filter(Boolean).join(' · ')
+}
+
+/**
+ * The state word of a row nobody is working on — **the sidebar's rule, read the same way**:
+ * a request GitHub made that no round exists of is *Not started*; a round opened and not
+ * picked up is *Waiting for a session*. `utils/sidebar.ts` chooses between the two on
+ * `review_id` too, so a pull request reads the same in both columns.
+ */
+function requestedState(item: InboxAwaitingSessionItem): ReviewState {
+  return item.review_id == null ? 'not_started' : 'waiting_for_session'
+}
+
+/**
+ * Whether to draw the fresh-database card: an empty inbox, **except on *Every review***.
+ *
+ * That view reads `GET /reviews` and not the inbox, and it is the one place a dismissed or
+ * finished review is found — which is exactly what a desk with an empty inbox may still
+ * hold. Drawing the card over it would make `/reviews` say "Nothing here yet" about a
+ * record holding reviews. Found by the end-to-end run on an empty database.
+ */
+function emptyHere(data: Inbox): boolean {
+  /*
+   * **And never over a desk whose only reviews finished this week** (self-review round 1,
+   * F2): the inbox leaves them out, so `isEmpty` called that desk empty while the sidebar
+   * listed them under *Done this week*. Those rows are the *Done* tab's and S17's to draw.
+   */
+  return view.value !== 'every' && isEmpty(data) && doneRows.value.length === 0
+}
+
+/**
+ * **The tabs' own keys, as the ARIA tabs pattern has them**: Left and Right move to the
+ * previous and next tab, Home and End to the first and last, and the tab is opened as focus
+ * reaches it. Self-review round 1, F1: the tabs used a roving tabindex and nothing answered
+ * the arrows, so a keyboard reached only the open tab — and five of six, *Every review* and
+ * its dismissed reviews among them, were out of its reach.
+ */
+function onTabKey(event: KeyboardEvent) {
+  /* A modifier makes it the browser's — Alt+Left is Back (self-review round 2). */
+  if (event.altKey || event.metaKey || event.ctrlKey || event.shiftKey) return
+  const at = LIST_VIEWS.findIndex(one => one.view === view.value)
+  const last = LIST_VIEWS.length - 1
+  const to = event.key === 'ArrowRight'
+    ? (at + 1) % LIST_VIEWS.length
+    : event.key === 'ArrowLeft'
+      ? (at + last) % LIST_VIEWS.length
+      : event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? last
+          : null
+  if (to == null) return
+  event.preventDefault()
+  const next = LIST_VIEWS[to]!.view
+  view.value = next
+  void nextTick(() => document.getElementById(`tab-${next}`)?.focus())
+}
 </script>
 
 <template>
-  <div class="queue">
-    <DeskState
-      :resource="inbox"
-      :is-empty="isEmpty"
-      what="the queue"
+  <div class="pull-requests">
+    <div
+      class="list"
+      @mouseover="selectFromPointer"
+      @mousemove="selectFromPointer"
+      @focusin="selectFromFocus"
+      @mouseleave="leaveList"
     >
-      <template #default="{ data }">
-        <div class="top">
-          <div class="headline">
+      <DeskState
+        :resource="inbox"
+        :is-empty="emptyHere"
+        what="the queue"
+      >
+        <template #default="{ data }">
+          <div class="top">
+            <div class="headline">
+              <h1 class="rd-display">
+                Pull requests
+              </h1>
+              <p class="rd-meta aside-line">
+                {{ subtitle }}
+              </p>
+            </div>
             <!--
-              **Pull requests, not rounds**, which is what the number has counted since the
-              merge above was keyed on the pull request: "12 reviews need you" over a list
-              naming #9541 twice and #9585 twice is the heading DEV-957's comment is about.
-              One pull request is one thing to deal with, and that is what a reader is
-              counting when they read this line.
+              **One field for both, as S1 draws it**: words narrow the list, a link starts a
+              review. `rowMatches` lets a link through unfiltered, so pasting one never empties
+              the list while it is being read.
             -->
-            <h1 class="rd-display">
-              {{ rows.needsYou.length === 1
-                ? '1 pull request needs you'
-                : `${rows.needsYou.length} pull requests need you` }}
-            </h1>
-            <p
-              v-if="besides"
-              class="rd-meta aside-line"
+            <LinkField
+              id="start"
+              v-model="link"
+              class="start"
+              label="Find a pull request, or paste a link to review one"
+              placeholder="#514, a title, or a pull request link"
+              :working="starting"
+              working-label="Reading…"
+              :refusal="notice && notice.tone !== 'plain' ? notice.text : null"
+              :hint="notice && notice.tone === 'plain' ? notice.text : null"
+              @submit="start"
+            />
+          </div>
+
+          <div
+            class="tabs"
+            role="tablist"
+            aria-label="Which pull requests to show"
+          >
+            <button
+              v-for="tab in LIST_VIEWS"
+              :id="`tab-${tab.view}`"
+              :key="tab.view"
+              type="button"
+              role="tab"
+              class="tab"
+              :class="{ 'tab--current': view === tab.view }"
+              :aria-selected="view === tab.view"
+              :aria-controls="`panel-${tab.view}`"
+              :tabindex="view === tab.view ? 0 : -1"
+              @click="view = tab.view"
+              @keydown="onTabKey"
             >
-              {{ besides }}
+              {{ tab.label }}<span
+                v-if="tab.view !== 'every'"
+                class="tab-count"
+              >{{ viewCount(tab.view) }}</span>
+            </button>
+          </div>
+
+          <div
+            v-if="view !== 'every'"
+            class="filter"
+          >
+            <DecisionTrack
+              v-model="repo"
+              label="Which repository to show"
+              :options="repoTabs(data)"
+            />
+          </div>
+
+          <!-- The column heads: one grid with the rows', so a head sits over its column. -->
+          <div
+            v-if="view !== 'every' && currentRows.length"
+            class="list-head rd-meta"
+            aria-hidden="true"
+          >
+            <span>PR</span>
+            <span>Title</span>
+            <span>State · session</span>
+            <span>{{ AGE_HEADS[view] }}</span>
+            <span>Next step</span>
+          </div>
+
+          <!-- Waiting on you: the queue's Needs you, one row per pull request. -->
+          <section
+            v-show="view === 'waiting'"
+            id="panel-waiting"
+            role="tabpanel"
+            aria-labelledby="tab-waiting"
+            class="panel"
+          >
+            <h2 class="rd-visually-hidden">
+              Waiting on you
+            </h2>
+            <div
+              v-if="nothingNeedsYou"
+              class="nothing"
+              data-testid="nothing-needs-you"
+            >
+              <h3 class="nothing-head">
+                Nothing needs you
+              </h3>
+              <p class="nothing-lead">
+                Nothing on the desk is waiting on you. A pull request appears here first when
+                it is.
+              </p>
+              <dl class="nothing-groups">
+                <div
+                  v-for="group in otherGroups"
+                  :key="group.label"
+                  class="nothing-group"
+                >
+                  <dt>{{ group.label }} · {{ group.count }}</dt>
+                  <dd>{{ group.says }}</dd>
+                </div>
+              </dl>
+              <a
+                href="#start"
+                class="nothing-link"
+                @click.prevent="focusStart"
+              >Review one anyway: paste a link in the find field.</a>
+            </div>
+            <p
+              v-else-if="!shown.needsYou.length"
+              class="rd-empty"
+            >
+              No pull request waiting on you matches.
+            </p>
+            <QueueRow
+              v-for="row in shown.needsYou"
+              :key="row.review_id"
+              :data-row-key="row.key"
+              :selected="selected === row.key"
+              emphasis
+              :pr="row.pr"
+              :title="row.title"
+              :meta="row.about"
+              :to="row.to"
+              :action="row.action"
+              action-tone="go"
+              :age="row.at ? sinceLabel(row.at) : null"
+              :age-unknown-because="row.atUnknown"
+              :pr-href="row.prHref"
+              :ticket-href="row.ticketHref"
+              :ticket-id="row.ticketId"
+            >
+              <span class="what-title">
+                <DeskPill tone="go-quiet">{{ stateWord(row.state) }}</DeskPill>
+              </span>
+              <span class="rd-meta what-detail">{{ row.detail }}</span>
+            </QueueRow>
+          </section>
+
+          <!--
+            Being reviewed: the queue's With the agent, then its Requested, not started — the
+            sidebar's group, which holds both. The session is said in the state cell.
+          -->
+          <section
+            v-show="view === 'reviewing'"
+            id="panel-reviewing"
+            role="tabpanel"
+            aria-labelledby="tab-reviewing"
+            class="panel"
+          >
+            <h2 class="rd-visually-hidden">
+              Being reviewed
+            </h2>
+            <p
+              v-if="!viewRows.reviewing.length"
+              class="rd-empty"
+            >
+              No pull request is being reviewed.
+            </p>
+            <!--
+              **Its two groups, under the queue's own headings and notes.** The sidebar's
+              *Being reviewed* holds both; the tab keeps them apart because they are not the
+              same thing to know — a session is working on one, and nobody on the other.
+            -->
+            <DeskSection
+              v-if="shown.withAgent.length"
+              heading="With the agent"
+              :count="shown.withAgent.length"
+              :note="agentNote"
+            >
+              <QueueRow
+                v-for="item in shown.withAgent"
+                :key="item.newest_round.review_id"
+                :data-row-key="prKey(item)"
+                :selected="selected === prKey(item)"
+                :pr="item.pull_request.pr"
+                :title="item.newest_round.title ?? 'no title recorded'"
+                :meta="aboutAgent(item)"
+                :to="tabPath(item.newest_round.review_id, 'overview')"
+                action="Read the review"
+                action-tone="quiet"
+                :age="item.in_state_since ? sinceLabel(item.in_state_since) : null"
+                age-unknown-because="this review was recorded before Review Desk kept when a step started"
+                :pr-href="prUrl(item.pull_request.repo, item.pull_request.pr)"
+                :ticket-href="ticketUrl(item.newest_round.ticket_url)"
+                :ticket-id="item.newest_round.ticket_id"
+              >
+                <span class="what-title">
+                  <DeskPill>{{ stateWord('being_written') }}</DeskPill>
+                </span>
+                <!--
+                **The session, folded into the state cell.** Its step, how long it has been on
+                it, and what the record holds about it — `activityLabel`, which said it in the
+                action column when this was the queue's With the agent group.
+              -->
+                <span
+                  class="rd-meta what-detail"
+                  :class="{ 'session-warn': item.session_alive === false }"
+                >{{ agentFacts(item) }}</span>
+              </QueueRow>
+            </DeskSection>
+            <DeskSection
+              v-if="shown.requested.length"
+              heading="Requested, not started"
+              :count="shown.requested.length"
+              note="waiting for a session — Review Desk does not start one"
+            >
+              <QueueRow
+                v-for="item in shown.requested"
+                :key="prKey(item)"
+                :data-row-key="prKey(item)"
+                :selected="selected === prKey(item)"
+                :pr="item.pull_request.pr"
+                :title="item.pull_request.title ?? 'no title recorded'"
+                :meta="aboutRequested(item)"
+                :to="item.link.to"
+                :href="item.link.href"
+                :action="item.link.action"
+                :action-tone="item.link.tone"
+                :age="sinceLabel(item.requested_at)"
+                :pr-href="item.link.prHref"
+                :ticket-href="ticketUrl(item.ticket_url)"
+                :ticket-id="item.ticket_id"
+              >
+                <span class="what-title">
+                  <DeskPill>{{ stateWord(requestedState(item)) }}</DeskPill>
+                </span>
+                <!--
+                Which of the two kinds of row this is, as the queue said it. The group's note
+                says the rest: Review Desk does not start a session.
+              -->
+                <span class="rd-meta what-detail">{{
+                  item.review_id == null
+                    ? 'no round has been opened'
+                    : 'no session is working on it'
+                }}</span>
+              </QueueRow>
+            </DeskSection>
+            <p
+              v-if="viewRows.reviewing.length"
+              class="rd-meta caption"
+            >
+              {{ reviewingCaption }}
+            </p>
+          </section>
+
+          <!-- Waiting on the author: posted, and the pull request not seen merged or closed. -->
+          <section
+            v-show="view === 'author'"
+            id="panel-author"
+            role="tabpanel"
+            aria-labelledby="tab-author"
+            class="panel"
+          >
+            <h2 class="rd-visually-hidden">
+              Waiting on the author
+            </h2>
+            <p
+              v-if="!shown.withAuthor.length"
+              class="rd-empty"
+            >
+              No posted review is waiting on its author.
+            </p>
+            <QueueRow
+              v-for="item in shown.withAuthor"
+              :key="item.review_id"
+              :data-row-key="prKey(item)"
+              :selected="selected === prKey(item)"
+              :pr="item.pull_request.pr"
+              :title="item.pull_request.title ?? 'no title recorded'"
+              :meta="alsoAbout(item)"
+              :to="tabPath(item.review_id, 'overview')"
+              action="Read the review"
+              action-tone="quiet"
+              :age="item.posted_at ? sinceLabel(item.posted_at) : null"
+              age-unknown-because="this review's GitHub id was recorded without a draft, so nothing holds when it was posted"
+              :pr-href="prUrl(item.pull_request.repo, item.pull_request.pr)"
+              :ticket-href="ticketUrl(item.ticket_url)"
+              :ticket-id="item.ticket_id"
+            >
+              <span class="what-title">
+                <DeskPill>{{ stateWord('posted') }}</DeskPill>
+                <span class="rd-meta state-aside">{{ postedTitle(item) }}</span>
+              </span>
+              <!--
+                **The state line carries which round posted and as what** — `postedTitle`, the
+                words this line had before the pill — and the facts line what came back, alone,
+                so it stays one line. `authorResponseLabel` keeps its rule: never a nought over
+                an unread thread.
+              -->
+              <span class="rd-meta what-detail">{{ authorResponseLabel(item) }}</span>
+            </QueueRow>
+            <p
+              v-if="shown.withAuthor.length && rows.alsoPosted"
+              class="rd-meta caption"
+            >
+              {{ postedNote }}.
+            </p>
+          </section>
+
+          <!-- Your own: the developer's pull requests. GitHub's state, which Review Desk only reads. -->
+          <section
+            v-show="view === 'own'"
+            id="panel-own"
+            role="tabpanel"
+            aria-labelledby="tab-own"
+            class="panel"
+          >
+            <h2 class="rd-visually-hidden">
+              Your own
+            </h2>
+            <p
+              v-if="!shown.ownPrs.length"
+              class="rd-empty"
+            >
+              None of your own pull requests is waiting for a reviewer.
+            </p>
+            <QueueRow
+              v-for="item in shown.ownPrs"
+              :key="`${item.pull_request.repo}-${item.pull_request.pr}`"
+              :data-row-key="prKey(item)"
+              :selected="selected === prKey(item)"
+              :pr="item.pull_request.pr"
+              :title="item.pull_request.title ?? 'no title recorded'"
+              :meta="item.pull_request.repo"
+              :href="item.link.href"
+              :action="item.link.action"
+              :action-tone="item.link.tone"
+              :age="item.opened_at ? openForLabel(item.opened_at).replace('open ', '') : null"
+              age-unknown-because="nothing has told Review Desk when this pull request was opened"
+            >
+              <span class="own">
+                <span class="own-warn">No reviewer requested</span>
+                <span class="rd-meta">· {{ descriptionLintLabel(item.description_lint) }}</span>
+              </span>
+            </QueueRow>
+          </section>
+
+          <!-- Done: the sidebar's Done this week, one row per pull request. -->
+          <section
+            v-show="view === 'done'"
+            id="panel-done"
+            role="tabpanel"
+            aria-labelledby="tab-done"
+            class="panel"
+          >
+            <h2 class="rd-visually-hidden">
+              Done
+            </h2>
+            <p
+              v-if="!shown.done.length"
+              class="rd-empty"
+            >
+              Nothing finished this week. Every finished review is under Every review.
+            </p>
+            <QueueRow
+              v-for="item in shown.done"
+              :key="item.review.id"
+              :data-row-key="`${item.review.repo}#${item.review.pr}`"
+              :selected="selected === `${item.review.repo}#${item.review.pr}`"
+              :pr="item.review.pr"
+              :title="item.review.title ?? 'no title recorded'"
+              :meta="`${item.review.repo} · round ${item.review.round} of ${item.rounds_on_pr}`"
+              :to="tabPath(item.review.id, 'overview')"
+              action="Read the review"
+              action-tone="quiet"
+              :age="item.finished_at ? sinceLabel(item.finished_at) : null"
+              :pr-href="prUrl(item.review.repo, item.review.pr)"
+              :ticket-href="ticketUrl(item.review.ticket_url)"
+              :ticket-id="item.review.ticket_id"
+            >
+              <span class="what-title">
+                <DeskPill>{{ stateWord(item.finished_how === 'closed' ? 'closed' : 'merged') }}</DeskPill>
+              </span>
+              <span class="rd-meta what-detail">No round of it can be posted.</span>
+            </QueueRow>
+            <p
+              v-if="shown.done.length"
+              class="rd-meta caption"
+            >
+              Finished in the last seven days. Every finished review is under Every review.
+            </p>
+          </section>
+
+          <!-- Every review: the Reviews list, whole. -->
+          <section
+            v-show="view === 'every'"
+            id="panel-every"
+            role="tabpanel"
+            aria-labelledby="tab-every"
+            class="panel"
+          >
+            <ReviewsList
+              v-if="everyOpened"
+              :selected="selected"
+              @rows="everyRows = $event"
+            />
+          </section>
+
+          <p
+            v-if="view === 'waiting' && shown.needsYou.length"
+            class="rd-meta caption"
+          >
+            {{ waitingCaption }}
+          </p>
+
+          <!--
+            Two facts the boards do not draw, kept rather than dropped: the API serves both,
+            and a figure that reaches the screen and is thrown away is a figure nobody can
+            act on. One quiet line each, at the foot, out of the list's way.
+          -->
+          <div class="foot">
+            <p class="rd-meta foot-line">
+              {{ handledLine(data) }}
+            </p>
+            <p
+              v-if="data.proposed_rules.length"
+              class="rd-meta foot-line"
+            >
+              {{ count(data.proposed_rules.length, 'rule proposal') }} waiting on you ·
+              <NuxtLink to="/rules">{{
+                data.proposed_rules.length === 1 ? 'decide on it' : 'decide on them'
+              }}</NuxtLink>
             </p>
           </div>
-          <LinkField
-            id="start"
-            v-model="link"
-            class="start"
-            label="Start a review"
-            :working="starting"
-            working-label="Reading…"
-            :refusal="notice && notice.tone !== 'plain' ? notice.text : null"
-            :hint="notice && notice.tone === 'plain' ? notice.text : null"
-            @submit="start"
-          />
-        </div>
+        </template>
 
-        <div class="filter">
-          <DecisionTrack
-            v-model="repo"
-            label="Which repository to show"
-            :options="repoTabs(data)"
-          />
-          <span class="rd-meta order">
-            Oldest first<template v-if="someTimesMissing">, and the rows with no recorded
-              time last</template>
-          </span>
-        </div>
-
-        <p
-          v-if="data.totals.items === 0"
-          class="rd-empty"
-        >
-          {{ nothingWaiting }}
-        </p>
-
-        <!-- Needs you: the three waiting groups, merged into one row per pull request. -->
-        <DeskSection
-          v-if="rows.needsYou.length"
-          heading="Needs you"
-          :count="rows.needsYou.length"
-        >
-          <QueueRow
-            v-for="row in rows.needsYou"
-            :key="row.review_id"
-            emphasis
-            :pr="row.pr"
-            :title="row.title"
-            :meta="row.about"
-            :to="row.to"
-            :action="row.action"
-            action-tone="go"
-            :age="row.at ? sinceLabel(row.at) : null"
-            :age-unknown-because="row.atUnknown"
-            :pr-href="row.prHref"
-            :ticket-href="row.ticketHref"
-            :ticket-id="row.ticketId"
+        <!--
+          A database with nothing in it. It reads as new rather than as broken, and it says
+          the one thing that fills it: a session recording a review.
+        -->
+        <template #empty>
+          <DeskCard
+            tone="raised"
+            class="fresh"
           >
-            <span class="what-title">{{ row.what }}</span>
-            <span class="rd-meta what-detail">{{ row.detail }}</span>
-          </QueueRow>
-        </DeskSection>
-
-        <!-- With the agent: nothing for the developer to do, and which layer is running. -->
-        <DeskSection
-          v-if="rows.withAgent.length"
-          heading="With the agent"
-          :count="rows.withAgent.length"
-          :note="agentNote"
-        >
-          <QueueRow
-            v-for="item in rows.withAgent"
-            :key="item.newest_round.review_id"
-            :pr="item.pull_request.pr"
-            :title="item.newest_round.title ?? 'no title recorded'"
-            :meta="aboutAgent(item)"
-            :to="`/reviews/${item.newest_round.review_id}`"
-            :action="sessionAction(item)"
-            :action-tone="item.session_alive === false ? 'warn' : 'quiet'"
-            :age="item.in_state_since ? sinceLabel(item.in_state_since) : null"
-            age-unknown-because="this review was recorded before Review Desk kept when a step started"
-            :pr-href="prUrl(item.pull_request.repo, item.pull_request.pr)"
-            :ticket-href="ticketUrl(item.newest_round.ticket_url)"
-            :ticket-id="item.newest_round.ticket_id"
-          >
-            <SegmentBar
-              :segments="layerSegments(item)"
-              :label="`Layer ${item.layer_number} of ${item.layers_total}, ${layerLabel(item.layer_name).toLowerCase()}`"
+            <h1 class="rd-display">
+              Nothing here yet
+            </h1>
+            <p class="rd-note rd-measure">
+              Nothing is on the desk. A review turns up here once an agent session has
+              recorded one — it writes the brief and the findings through
+              <code class="rd-mono">review-desk</code>, and what is waiting on you appears in
+              this list.
+            </p>
+            <p class="rd-note rd-measure">
+              To start one yourself, paste a pull request link below. Review Desk reads the
+              pull request through your own <code class="rd-mono">gh</code> login, records the
+              review at the problem brief, and writes nothing to GitHub.
+            </p>
+            <LinkField
+              id="start-empty"
+              v-model="link"
+              class="fresh-start"
+              label="Start a review"
+              :working="starting"
+              working-label="Reading…"
+              :refusal="notice && notice.tone !== 'plain' ? notice.text : null"
+              :hint="notice && notice.tone === 'plain' ? notice.text : null"
+              @submit="start"
             />
-            <span class="rd-meta">
-              {{ layerLabel(item.layer_name) }}
-              <!--
-                How long the review has been in its present state, beside the step it is
-                in: "Code review · 20 min". The age cell says when that began; this says
-                how long it has lasted, which is the figure Patrick asked for.
-              -->
-              <template v-if="item.in_state_since">
-                · {{ forLabel(item.in_state_since) }}
-              </template>
-            </span>
-          </QueueRow>
-        </DeskSection>
-
-        <!--
-          **Requested, not started: nobody has this.** DEV-994, and since DEV-996 two kinds
-          of row: a round Review Desk holds that no session is working on, and a review
-          GitHub has asked for that no round exists of. The group below "With the agent"
-          and above "Waiting on the author", which is where it belongs in the order the
-          page reads: who has it — you, the agent, nobody, the author.
-
-          **Hidden when empty, and empty is a claim**: the array is the pull requests on the
-          desk minus the ones every other group was served for, and then the review requests
-          nothing on the desk answers — so nothing in it says every pull request on the desk
-          is being dealt with and nothing has been asked for that nobody has started. That
-          is a true sentence rather than an unmeasured one, which is what the posted group's
-          own note argues about itself.
-
-          The note says why no row here asks the developer for anything, including the one
-          thing they cannot do about it: Review Desk does not start a session.
-        -->
-        <DeskSection
-          v-if="rows.requested.length"
-          heading="Requested, not started"
-          :count="rows.requested.length"
-          note="waiting for a session — Review Desk does not start one"
-        >
-          <QueueRow
-            v-for="item in rows.requested"
-            :key="prKey(item)"
-            :pr="item.pull_request.pr"
-            :title="item.pull_request.title ?? 'no title recorded'"
-            :meta="aboutRequested(item)"
-            :to="item.link.to"
-            :href="item.link.href"
-            :action="item.link.action"
-            :action-tone="item.link.tone"
-            :age="sinceLabel(item.requested_at)"
-            :pr-href="item.link.prHref"
-            :ticket-href="ticketUrl(item.ticket_url)"
-            :ticket-id="item.ticket_id"
-          >
-            <span class="what-title">Waiting for a session</span>
             <!--
-              **"No session is working on it", and not "nothing has picked it up".** The
-              second was here and was false of the group's most reachable member: approving a
-              draft writes step 6 `done`, so the round has no running layer, a status that is
-              not `ready` and nothing posted — it arrives here seconds after the developer's
-              own act, and told them nothing had touched a review they had just signed off.
-              It was wrong transiently for a live session too, between the two
-              `review-desk layer set` calls that finish one step and start the next. What is
-              true of every member is that no session is *working* on it, which is the same
-              reading of "running" that `reviews_in_progress` takes when it leaves the
-              harvest out. Found by a review of this change.
-
-              **And no duration beside it.** The age cell already says when the round was
-              requested; a second rendering of that same instant as "for 6 days" reads as
-              how long the work has been abandoned, which is a different measurement and one
-              this record has not got.
+              **The way to Every review from a desk with nothing on it.** The sidebar's
+              Reviews item was it until DEV-1325; a database whose only review was dismissed
+              or finished has an empty inbox and still holds that review.
             -->
-            <!--
-              **Which of the two things the row is**, said rather than left to the reader
-              to infer from an absent round. A round in this group is one Review Desk
-              holds and nobody is working on; a request is one GitHub has asked for that
-              Review Desk has never been told anything else about — no title, no ticket,
-              no round — and "no session is working on it" would read, of the second, as
-              though there were something for a session to pick up here. There is: it is
-              on GitHub, which is where the row goes. DEV-996.
-            -->
-            <span class="rd-meta what-detail">{{
-              item.review_id == null
-                ? 'no round has been opened'
-                : 'no session is working on it'
-            }}</span>
-          </QueueRow>
-        </DeskSection>
+            <p class="rd-note">
+              <NuxtLink :to="{ path: '/', query: { view: 'every' } }">Every review the record holds</NuxtLink>,
+              including any you dismissed or that finished.
+            </p>
+          </DeskCard>
+        </template>
+      </DeskState>
+    </div>
 
-        <!--
-          Waiting on the author: posted, and the pull request not seen merged or closed.
-          **Hidden when empty, like the three groups above**, and that is a change of
-          position rather than of rule. It was drawn unconditionally while nothing could
-          fill it, because hiding it would have read as "no review is waiting on an
-          author" — a claim the API could not make. It can now: an empty
-          `posted_awaiting_author` says the record holds no posted review with an open
-          pull request, so an empty group is a true sentence and "Waiting on the author ·
-          0" on a fresh database is noise.
-        -->
-        <DeskSection
-          v-if="rows.withAuthor.length"
-          heading="Waiting on the author"
-          :count="rows.withAuthor.length"
-          :note="postedNote"
+    <!--
+      **The preview, S1's right-hand column.** The selected row's bottom line, state, next
+      action and session; or, when nothing waits on the developer, what changed since
+      yesterday (S17). Not drawn under 1,200 pixels, where the table needs the width — `J`,
+      `K` and `Enter` still walk the list there.
+    -->
+    <aside
+      class="preview-column"
+      aria-label="Preview"
+    >
+      <div
+        v-if="view === 'waiting' && nothingNeedsYou && inbox.data.value"
+        class="since"
+        data-testid="since-yesterday"
+      >
+        <h2 class="since-head">
+          Since yesterday
+        </h2>
+        <ul
+          v-if="since.length"
+          class="since-list"
         >
-          <QueueRow
-            v-for="item in rows.withAuthor"
-            :key="item.review_id"
-            :pr="item.pull_request.pr"
-            :title="item.pull_request.title ?? 'no title recorded'"
-            :meta="alsoAbout(item)"
-            :to="`/reviews/${item.review_id}`"
-            action="Read the review"
-            action-tone="quiet"
-            :age="item.posted_at ? sinceLabel(item.posted_at) : null"
-            age-unknown-because="this review's GitHub id was recorded without a draft, so nothing holds when it was posted"
-            :pr-href="prUrl(item.pull_request.repo, item.pull_request.pr)"
-            :ticket-href="ticketUrl(item.ticket_url)"
-            :ticket-id="item.ticket_id"
+          <li
+            v-for="line in since"
+            :key="`${line.at}-${line.says}`"
           >
-            <span class="what-title">{{ postedTitle(item) }}</span>
-            <!--
-              What came back, and where the record has no answer, which absence it is.
-              Never a nought over an unread thread: `authorResponseLabel` holds that rule
-              and says the measurement's own time beside the figures it has.
-
-              **One line, which is what this change is for.** Three measured noughts are
-              "Nothing back" there, and the pull request's state has moved up to the line
-              under the title where the row's other facts about the pull request are. What
-              is left is what came back and when it was read.
-            -->
-            <span class="rd-meta what-detail">{{ authorResponseLabel(item) }}</span>
-          </QueueRow>
-        </DeskSection>
-
-        <!-- The developer's own pull requests. GitHub's state, which Review Desk only reads. -->
-        <DeskSection
-          v-if="rows.ownPrs.length"
-          heading="Your pull requests"
-          :count="rows.ownPrs.length"
+            {{ line.says }}
+          </li>
+        </ul>
+        <p
+          v-else
+          class="rd-meta"
         >
-          <!--
-            **The repository, with no leading separator** — the same correction `alsoAbout`
-            took. The line used to sit inside the row's own cell, where a leading dot read as
-            a continuation; it is a line of its own since DEV-957, and one beginning with a
-            middle dot reads as a stray mark.
-          -->
-          <QueueRow
-            v-for="item in rows.ownPrs"
-            :key="`${item.pull_request.repo}-${item.pull_request.pr}`"
-            :pr="item.pull_request.pr"
-            :title="item.pull_request.title ?? 'no title recorded'"
-            :meta="item.pull_request.repo"
-            :href="item.link.href"
-            :action="item.link.action"
-            :action-tone="item.link.tone"
-            :age="item.opened_at ? openForLabel(item.opened_at).replace('open ', '') : null"
-            age-unknown-because="nothing has told Review Desk when this pull request was opened"
-          >
-            <span class="own">
-              <span class="own-warn">No reviewer requested</span>
-              <span class="rd-meta">· {{ descriptionLintLabel(item.description_lint) }}</span>
-            </span>
-          </QueueRow>
-        </DeskSection>
-
-        <!--
-          Two facts the boards do not draw, kept rather than dropped: the API serves both,
-          and a figure that reaches the screen and is thrown away is a figure nobody can
-          act on. One quiet line each, at the foot, out of the groups' way.
-        -->
-        <div class="foot">
-          <p class="rd-meta foot-line">
-            {{ handledLine(data) }}
-          </p>
-          <p
-            v-if="data.proposed_rules.length"
-            class="rd-meta foot-line"
-          >
-            {{ count(data.proposed_rules.length, 'rule proposal') }} waiting on you ·
-            <NuxtLink to="/rules">{{
-              data.proposed_rules.length === 1 ? 'decide on it' : 'decide on them'
-            }}</NuxtLink>
-          </p>
-        </div>
-      </template>
-
-      <!--
-        A database with nothing in it. It reads as new rather than as broken, and it says
-        the one thing that fills it: a session recording a review.
-      -->
-      <template #empty>
-        <DeskCard
-          tone="raised"
-          class="fresh"
-        >
-          <h1 class="rd-display">
-            Nothing here yet
-          </h1>
-          <p class="rd-note rd-measure">
-            This database holds no reviews. A review turns up here once an agent session has
-            recorded one — it writes the brief and the findings through
-            <code class="rd-mono">review-desk</code>, and what is waiting on you appears in
-            this list.
-          </p>
-          <p class="rd-note rd-measure">
-            To start one yourself, paste a pull request link below. Review Desk reads the
-            pull request through your own <code class="rd-mono">gh</code> login, records the
-            review at the problem brief, and writes nothing to GitHub.
-          </p>
-          <LinkField
-            id="start-empty"
-            v-model="link"
-            class="fresh-start"
-            label="Start a review"
-            :working="starting"
-            working-label="Reading…"
-            :refusal="notice && notice.tone !== 'plain' ? notice.text : null"
-            :hint="notice && notice.tone === 'plain' ? notice.text : null"
-            @submit="start"
-          />
-        </DeskCard>
-      </template>
-    </DeskState>
+          Nothing the record keeps a time for has changed in the last day.
+        </p>
+      </div>
+      <ListPreview
+        v-else-if="selectedRow"
+        :key="selectedRow.key"
+        :row="selectedRow"
+      />
+    </aside>
   </div>
 </template>
 
 <style scoped>
-.queue {
+/*
+ * **Two columns: the list, and S1's preview beside it.** The layout gives this page the
+ * main column without its right-hand padding (`definePageMeta({ split: true })`), so the
+ * preview's rule runs the window's height at the shell's edge, as S1 draws it.
+ */
+.pull-requests {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--rd-conversation-width);
+  min-height: 100%;
+}
+
+/*
+ * **The row tracks, tightened for a list with a preview beside it.** `QueueRow` reads these
+ * (and the Every review fold, and the column heads above): 48 for the number, 80 for the
+ * age, 136 for the action and a 16-pixel gap, which hands the two text tracks the 44 pixels
+ * that keep "Nothing back · read 12 hours ago" on one line at 1,440 with the preview open.
+ * The indent is the number's track plus one gap, where a fold's summary starts.
+ */
+.list {
+  --rd-row-tracks: 48px minmax(0, 1fr) minmax(0, 1fr) 80px 136px;
+  --rd-row-gap: 16px;
+  --rd-row-indent: 64px;
+
   display: flex;
   flex-direction: column;
-  gap: 40px;
+  gap: 20px;
+  min-width: 0;
+  padding-right: 40px;
   line-height: 1.45;
+}
+
+.list > :deep(*) {
+  min-width: 0;
 }
 
 .top {
   display: flex;
   flex-wrap: wrap;
-  gap: 20px 40px;
+  gap: 16px 32px;
   align-items: flex-end;
 }
 
 .headline {
-  flex: 1 1 360px;
+  flex: 1 1 320px;
   min-width: 0;
 }
 
 .aside-line {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
 }
 
 .start {
-  flex: 1 1 360px;
+  flex: 1 1 320px;
   min-width: 0;
+}
+
+/* S1's tabs: the label, its count beside it, and a rule under the one that is open. */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 24px;
+  border-bottom: 1px solid var(--rd-line);
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--rd-control-min);
+  padding: 0;
+  color: var(--rd-ink-muted);
+  font: inherit;
+  font-size: var(--rd-type-lead);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--rd-ink);
+}
+
+.tab--current {
+  color: var(--rd-ink);
+  font-weight: 600;
+  border-bottom-color: var(--rd-ink);
+}
+
+.tab:focus-visible {
+  outline: 3px solid var(--rd-focus-ring);
+  outline-offset: 2px;
+}
+
+.tab-count {
+  color: var(--rd-ink-faint);
+  font-size: var(--rd-type-ui);
+  font-weight: 400;
 }
 
 .filter {
@@ -1734,14 +2467,36 @@ function handledLine(data: Inbox): string {
   font-size: 14px;
 }
 
-.order {
-  margin-left: auto;
+/*
+ * **The column heads, on the rows' own tracks.** `QueueRow`'s grid, with the 12 pixels the
+ * list pads each row by, so every head sits over the column it names.
+ */
+.list-head {
+  display: grid;
+  grid-template-columns: var(--rd-row-tracks);
+  gap: var(--rd-row-gap);
+  padding: 0 12px;
+  font-weight: 600;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The list's rows carry 12 pixels each side, so the selected row's bar is not on the text. */
+.panel :deep(.queue-line),
+.queue-line {
+  padding-right: 12px;
+  padding-left: 12px;
 }
 
 .what-title {
-  display: block;
+  display: flex;
   flex: 1 1 100%;
-  font-weight: 600;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  align-items: center;
 }
 
 /*
@@ -1757,6 +2512,10 @@ function handledLine(data: Inbox): string {
   text-wrap: pretty;
 }
 
+.session-warn {
+  color: var(--rd-warn-ink);
+}
+
 .own {
   display: flex;
   flex-wrap: wrap;
@@ -1769,10 +2528,61 @@ function handledLine(data: Inbox): string {
   font-weight: 600;
 }
 
+.caption {
+  margin: 0;
+  padding: 0 12px;
+}
+
+/* S17: what the table area says when nothing waits on the developer. */
+.nothing {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px 32px;
+  background: var(--rd-ground);
+  border-radius: var(--rd-radius-control);
+}
+
+.nothing-head {
+  margin: 0;
+  font-size: var(--rd-type-heading);
+  font-weight: 600;
+}
+
+.nothing-lead {
+  margin: 0;
+}
+
+.nothing-groups {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.nothing-group {
+  display: grid;
+  grid-template-columns: minmax(0, 14rem) minmax(0, 1fr);
+  gap: 4px 24px;
+}
+
+.nothing-group dt {
+  font-weight: 600;
+}
+
+.nothing-group dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.nothing-link {
+  align-self: flex-start;
+}
+
 .foot {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  padding: 0 12px;
 }
 
 .foot-line {
@@ -1791,9 +2601,97 @@ function handledLine(data: Inbox): string {
   padding-top: 8px;
 }
 
+/*
+ * **The preview column, held in view as the list scrolls.** Its own scroll when the
+ * selected review's facts are longer than the window, so the next action at its foot is
+ * always reachable.
+ */
+.preview-column {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  margin-top: -36px;
+  padding: 36px 24px 24px;
+  overflow-y: auto;
+  border-left: 1px solid var(--rd-line);
+}
+
+.since {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.since-head {
+  margin: 0;
+  color: var(--rd-ink-muted);
+  font-size: var(--rd-type-label);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.since-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 1.1em;
+}
+
+/*
+ * **Under 1,200 pixels the table takes the width.** At 1,280 the shell leaves the main
+ * column about 1,050 pixels, and a 380-pixel preview beside five tracks squeezed the status
+ * cell to a word a line. The keys still walk the list; the preview is what is folded.
+ */
+@media (max-width: 1199px) {
+  .pull-requests {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .preview-column {
+    display: none;
+  }
+
+  .list {
+    padding-right: 0;
+  }
+}
+
+/*
+ * **On a phone the tabs scroll on their own line** rather than wrapping to three: the strip
+ * is one control, and three lines of it pushed the first row below the fold. The selected
+ * row is not marked there either — with no preview beside it, a tinted first row says
+ * nothing a reader can use.
+ */
+@media (max-width: 699px) {
+  .tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .tab {
+    flex: none;
+  }
+
+  .queue-line--selected {
+    background: none;
+    box-shadow: none;
+  }
+}
+
 @media (max-width: 560px) {
-  .order {
-    margin-left: 0;
+  .list-head {
+    display: none;
+  }
+
+  .nothing {
+    padding: 20px;
+  }
+
+  .nothing-group {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 </style>

@@ -13,7 +13,7 @@ import {
 import { currentSource, loadSource } from '../app/data/sample'
 
 import Inbox from '../app/pages/index.vue'
-import Reviews from '../app/pages/reviews/index.vue'
+import Reviews from '../app/components/ReviewsList.vue'
 import OneReview from '../app/pages/reviews/[id]/index.vue'
 import DraftPreview from '../app/pages/reviews/[id]/draft.vue'
 import Rules from '../app/pages/rules.vue'
@@ -93,6 +93,19 @@ function button(page: VueWrapper, label: string) {
   return page.findAll('button').find(item => item.text() === label)
 }
 
+/**
+ * The number beside one of the Pull requests list's tabs, as the tab draws it.
+ *
+ * **The count moved from the heading to the tab** (DEV-1325): "7 pull requests need you"
+ * is *Waiting on you 7* now, and the rule it carried is the same — the number counts the
+ * rows drawn under it, each pull request once.
+ */
+function tabCount(page: VueWrapper, label: string): number | null {
+  const tab = page.findAll('[role="tab"]').find(one => one.text().startsWith(label))
+  const figure = tab?.find('.tab-count')
+  return figure?.exists() ? Number(figure.text()) : null
+}
+
 /** Click the button with this label, and let what it started finish. */
 async function click(page: VueWrapper, label: string) {
   const found = button(page, label)
@@ -128,7 +141,7 @@ describe('the shell', () => {
   it('names the places you can be', async () => {
     const page = await shown(Layout)
     const places = page.findAll('nav[aria-label="Review Desk"] .nav-label').map(one => one.text())
-    expect(places).toEqual(['Pull requests', 'Reviews', 'Rules'])
+    expect(places).toEqual(['Pull requests', 'Rules'])
   })
 
   it('keeps its places, and all of them are links, on a database with nothing in it', async () => {
@@ -141,7 +154,7 @@ describe('the shell', () => {
      * list is somewhere worth being on an empty database — it says the database is empty.
      */
     expect(page.findAll('nav[aria-label="Review Desk"] a').map(link => link.find('.nav-label').text()))
-      .toEqual(['Pull requests', 'Reviews', 'Rules'])
+      .toEqual(['Pull requests', 'Rules'])
     expect(page.find('nav span[aria-disabled="true"]').exists()).toBe(false)
   })
 
@@ -280,7 +293,7 @@ describe('the queue', () => {
     const page = await shown(Inbox)
     const row = page.findAll('.row').find(one => one.text().includes('#412'))!
     /* Layer 2 comes before layer 6, so the brief is the next thing the developer does. */
-    expect(row.text()).toContain('Problem brief ready')
+    expect(row.text()).toContain('Brief ready')
     expect(row.text()).toContain('nothing posts until you confirm')
     expect(row.text()).toContain('Read the brief')
     /* And the thing that is not the next action is still on the row, not lost. */
@@ -300,11 +313,10 @@ describe('the queue', () => {
      */
     const drawn = needsYouRows(page)
     expect(drawn.length, 'the Needs you group has rows').toBeGreaterThan(0)
-    expect(page.text()).toContain(
-      drawn.length === 1 ? '1 pull request needs you' : `${drawn.length} pull requests need you`,
-    )
-    expect(page.text()).toContain('2 with the agent')
-    expect(page.text()).toContain('2 of your own')
+    expect(tabCount(page, 'Waiting on you')).toBe(drawn.length)
+    const withAgent = page.findAll('section').find(one => one.text().startsWith('With the agent'))
+    expect(withAgent!.findAll('.queue-line')).toHaveLength(2)
+    expect(tabCount(page, 'Your own')).toBe(2)
 
     /*
      * **And each pull request once**, which is the half the number alone cannot say: five
@@ -630,19 +642,29 @@ describe('the queue', () => {
     expect(page.text(), 'no group draws a merged pull request').not.toContain('#9568')
   })
 
-  it('draws the board’s five groups, and hides a group with nothing in it', async () => {
+  it('draws the sidebar’s groups as tabs, and says when one holds nothing', async () => {
     const page = await shown(Inbox)
-    const text = page.text()
-    expect(text).toContain('Needs you')
-    expect(text).toContain('With the agent')
-    expect(text).toContain('Waiting on the author')
-    expect(text).toContain('Your pull requests')
+    /*
+     * **The groups are tabs now** (DEV-1325, S1), under the sidebar's words, and every tab
+     * is drawn whether it holds rows or not — its count says how many, and nought is an
+     * answer. The board's *With the agent* is a group inside *Being reviewed*.
+     */
+    const tabs = page.findAll('[role="tab"]').map(tab => tab.text().replace(/\d+$/, ''))
+    expect(tabs).toEqual([
+      'Waiting on you',
+      'Being reviewed',
+      'Waiting on the author',
+      'Your own',
+      'Done',
+      'Every review',
+    ])
+    expect(page.text()).toContain('With the agent')
 
-    /* With no own pull requests, that group is not drawn at all. */
+    /* With no own pull requests, the tab says nought and its panel says so in words. */
     await resetDesk({ own_prs: [] })
     const fewer = await shown(Inbox)
-    expect(fewer.findAll('h2').map(one => one.text())).not.toContain('Your pull requests')
-    expect(fewer.findAll('h2').map(one => one.text())).toContain('With the agent')
+    expect(tabCount(fewer, 'Your own')).toBe(0)
+    expect(fewer.text()).toContain('None of your own pull requests is waiting for a reviewer.')
   })
 
   /*
@@ -691,7 +713,7 @@ describe('the queue', () => {
      * "drawn above" rather than a named group: the subtraction also removes reviews a
      * session is working on, which is not something the author has done.
      */
-    expect(page.text()).toContain('1 more is posted and is already drawn above')
+    expect(page.text()).toContain('1 more is posted and is under an earlier tab')
   })
 
   /*
@@ -752,17 +774,21 @@ describe('the queue', () => {
     expect(rows).toHaveLength(1)
     expect(rows[0]!.text()).toContain('The author replied')
     expect(rows[0]!.text()).toContain('a session is on step 5 of 7')
-    expect(page.text()).toContain('1 more is with the agent and is already drawn above')
+    expect(page.text()).toContain('1 more is with the agent and is under an earlier tab')
   })
 
-  it('shows which layer each running session is on, as a bar and in words', async () => {
+  it('shows which layer each running session is on, in words', async () => {
+    /*
+     * **In words, and it was a bar and words.** S1's status cell is the state word and one
+     * line of facts (DEV-1325), so the seven-segment bar's figure is said on that line —
+     * "step 5 of 7" — beside the step's name, which the bar's label also said.
+     */
     const page = await shown(Inbox)
-    expect(page.text()).toContain('Code review')
-    const bars = page.findAll('[role="img"]')
-    const layers = bars.filter(bar => bar.attributes('aria-label')?.startsWith('Layer '))
-    expect(layers).toHaveLength(2)
-    expect(layers[0]!.attributes('aria-label')).toBe('Layer 5 of 7, code review')
-    expect(layers[0]!.findAll('.seg')).toHaveLength(7)
+    const section = page.findAll('section').find(one => one.text().startsWith('With the agent'))!
+    const facts = section.findAll('.what-detail').map(one => one.text())
+    expect(facts).toHaveLength(2)
+    expect(facts.some(line => line.startsWith('Code review') && line.includes('step 5 of 7')))
+      .toBe(true)
   })
 
   it('says what it knows about each session, and how long the record has been silent', async () => {
@@ -823,7 +849,7 @@ describe('the queue', () => {
     await billing.trigger('click')
     await settle(page)
 
-    expect(page.text()).toContain('1 pull request needs you')
+    expect(tabCount(page, 'Waiting on you')).toBe(1)
     expect(page.text()).not.toContain('#412')
     expect(page.text()).toContain('#88')
   })
@@ -861,7 +887,8 @@ describe('the queue', () => {
     const page = await shown(Inbox)
     const field = page.find('input#start')
     expect(field.exists()).toBe(true)
-    expect(page.find('label[for="start"]').text()).toBe('Start a review')
+    expect(page.find('label[for="start"]').text())
+      .toBe('Find a pull request, or paste a link to review one')
   })
 
   it('refuses a link that is not a pull request, and says what it wanted', async () => {
@@ -912,7 +939,7 @@ describe('the queue', () => {
 
   it('merges a review out of the queue once its brief is confirmed', async () => {
     const page = await shown(Inbox)
-    expect(page.text()).toContain('Problem brief ready')
+    expect(page.text()).toContain('Brief ready')
 
     /*
      * Confirmed from the data layer rather than from this screen, which has no control for
@@ -922,7 +949,7 @@ describe('the queue', () => {
     await useReviewDesk().confirmBrief(17)
     await settle(page)
 
-    expect(page.text()).not.toContain('Problem brief ready')
+    expect(page.text()).not.toContain('Brief ready')
     /*
      * **The same rows as before, which is the claim** — #412's next action is now the draft
      * its session had written, so the row stays and only its words change. Read from before
@@ -952,7 +979,7 @@ describe('the queue', () => {
      * the trail is what says which step is waiting, and it says it about all seven at once
      * where a destination could only say it about one.
      */
-    const brief = page.findAll('.row').find(one => one.text().includes('Problem brief ready'))!
+    const brief = page.findAll('.row').find(one => one.text().includes('Brief ready'))!
     expect(brief.attributes('href')).toBe('/reviews/17')
 
     const reply = page.findAll('.row').find(one => one.text().includes('The author replied'))
@@ -1007,7 +1034,7 @@ describe('the queue', () => {
     ])
   })
 
-  it('sends the header’s Reviews item to the list, and every row from it to Understand', async () => {
+  it('has no Reviews item, and every Every review row opens a review', async () => {
     /*
      * **The nav item changed kind in DEV-930 and the rule it was asserting did not.** It
      * used to point at whichever review was waiting, so the thing being checked was that
@@ -1015,9 +1042,12 @@ describe('the queue', () => {
      * the list now, and the rule moves to the list's rows: a review is still read from
      * Understand, which is where a review starts.
      */
+    /*
+     * **And there is no Reviews item any more**: the list is the *Every review* view of
+     * Pull requests (DEV-1325), and `/reviews` redirects there.
+     */
     const layout = await shown(Layout)
-    const reviews = layout.findAll('nav a').find(one => one.text() === 'Reviews')
-    expect(reviews!.attributes('href')).toBe('/reviews')
+    expect(layout.findAll('nav a').map(one => one.text())).not.toContain('Reviews')
 
     const page = await shown(Reviews)
     /*
@@ -1045,7 +1075,7 @@ describe('the queue', () => {
    * the scope.
    */
   function needsYouRows(page: VueWrapper) {
-    const group = page.findAll('section').find(one => one.text().startsWith('Needs you'))
+    const group = page.findAll('section').find(one => one.text().startsWith('Waiting on you'))
     expect(group, 'the Needs you group is on the page').toBeDefined()
     return group!.findAll('.queue-line')
   }
@@ -1321,7 +1351,12 @@ describe('the queue', () => {
     const text = page.text()
 
     expect(text).toContain('Nothing here yet')
-    expect(text).toContain('This database holds no reviews')
+    /*
+     * **"Nothing is on the desk"**, which the inbox can say, and it was "This database holds
+     * no reviews", which it cannot: a dismissed review is in no inbox array (self-review of
+     * DEV-1325, round 1, F2). The card links *Every review* for the ones that left.
+     */
+    expect(text).toContain('Nothing is on the desk')
     /* And it says the one thing that fills it, with the field to do it from. */
     expect(text).toContain('review-desk')
     expect(page.find('input#start-empty').exists()).toBe(true)
@@ -1444,7 +1479,7 @@ describe('a pull request whose later round has posted', () => {
   /** The rows of `globex/portal` the page draws anywhere, for the chip's count. */
   function globexRows(page: VueWrapper) {
     return [
-      ...rowsUnder(page, 'Needs you'),
+      ...rowsUnder(page, 'Waiting on you'),
       ...rowsUnder(page, 'With the agent'),
       ...rowsUnder(page, 'Waiting on the author'),
     ].filter(row => row.text().includes('globex/portal'))
@@ -1460,7 +1495,7 @@ describe('a pull request whose later round has posted', () => {
     })
     const page = await shown(Inbox)
 
-    const needing = rowsUnder(page, 'Needs you').filter(row => row.text().includes('#9585'))
+    const needing = rowsUnder(page, 'Waiting on you').filter(row => row.text().includes('#9585'))
     expect(needing, 'nothing about #9585 is waiting on the developer').toHaveLength(0)
 
     const posted = rowsUnder(page, 'Waiting on the author')
@@ -1486,7 +1521,7 @@ describe('a pull request whose later round has posted', () => {
     })
     const page = await shown(Inbox)
 
-    const rows = rowsUnder(page, 'Needs you').filter(row => row.text().includes('#9585'))
+    const rows = rowsUnder(page, 'Waiting on you').filter(row => row.text().includes('#9585'))
     expect(rows, 'one row for one pull request').toHaveLength(1)
     expect(rows[0]!.text()).toContain('round 2')
     expect(rows[0]!.text()).toContain('The code under F1 changed')
@@ -1506,7 +1541,7 @@ describe('a pull request whose later round has posted', () => {
     })
     const page = await shown(Inbox)
 
-    const rows = rowsUnder(page, 'Needs you').filter(row => row.text().includes('#9585'))
+    const rows = rowsUnder(page, 'Waiting on you').filter(row => row.text().includes('#9585'))
     expect(rows, 'one row for one pull request').toHaveLength(1)
     const row = rows[0]!
     /*
@@ -1558,7 +1593,7 @@ describe('a pull request whose later round has posted', () => {
     }
 
     const page = await shown(Inbox)
-    const rows = rowsUnder(page, 'Needs you').filter(row => row.text().includes('#9585'))
+    const rows = rowsUnder(page, 'Waiting on you').filter(row => row.text().includes('#9585'))
     expect(rows, 'one row for one pull request').toHaveLength(1)
     expect(rows[0]!.text()).toContain('round 2')
     expect(rows[0]!.text()).toContain('replied to round 1')
@@ -1611,7 +1646,7 @@ describe('a pull request whose later round has posted', () => {
       }
 
       const page = await shown(Inbox)
-      const rows = rowsUnder(page, 'Needs you').filter(row => row.text().includes('#9585'))
+      const rows = rowsUnder(page, 'Waiting on you').filter(row => row.text().includes('#9585'))
       expect(rows, 'one row for one pull request').toHaveLength(1)
       expect(rows[0]!.text()).toContain('The name it has now')
       expect(rows[0]!.text(), 'and not the name the round that made the row carries')
@@ -1639,7 +1674,7 @@ describe('a pull request whose later round has posted', () => {
     })
     const page = await shown(Inbox)
 
-    const rows = rowsUnder(page, 'Needs you').filter(row => row.text().includes('#9585'))
+    const rows = rowsUnder(page, 'Waiting on you').filter(row => row.text().includes('#9585'))
     expect(rows, 'one row for one pull request').toHaveLength(1)
     expect(rows[0]!.text()).toContain('The author replied to F1')
     expect(rows[0]!.text()).toContain('replied to round 1')
@@ -1669,7 +1704,7 @@ describe('a pull request whose later round has posted', () => {
     }
 
     const page = await shown(Inbox)
-    const rows = rowsUnder(page, 'Needs you').filter(row => row.text().includes('#9585'))
+    const rows = rowsUnder(page, 'Waiting on you').filter(row => row.text().includes('#9585'))
     expect(rows, 'one row for one pull request').toHaveLength(1)
     expect(rows[0]!.text()).toContain('no title recorded')
     expect(rows[0]!.text()).not.toContain('The old name')
@@ -1722,7 +1757,7 @@ describe('a pull request whose later round has posted', () => {
 
     const page = await shown(Inbox)
     expect(
-      rowsUnder(page, 'Needs you').filter(row => row.text().includes('#9585')),
+      rowsUnder(page, 'Waiting on you').filter(row => row.text().includes('#9585')),
       'nothing about #9585 is waiting on the developer',
     ).toHaveLength(0)
 
@@ -1751,10 +1786,8 @@ describe('a pull request whose later round has posted', () => {
     })
     const page = await shown(Inbox)
 
-    const drawn = rowsUnder(page, 'Needs you')
-    expect(page.text()).toContain(
-      drawn.length === 1 ? '1 pull request needs you' : `${drawn.length} pull requests need you`,
-    )
+    const drawn = rowsUnder(page, 'Waiting on you')
+    expect(tabCount(page, 'Waiting on you')).toBe(drawn.length)
     /*
      * **And the chip counts the rows pressing it shows**, which is the rule `repoTabs`
      * states. A row that had failed to merge would show here as a number one too high.
@@ -2620,13 +2653,22 @@ describe('a read that is still in flight', () => {
    * lasts. Sample mode cannot be caught in this state — it resolves in a microtask, inside
    * the mount — so this reads the real API with a `fetch` that is still waiting.
    */
-  let answer: (body: string) => void = () => {}
+  /*
+   * **Every read still waiting is answered, not the last one.** The Pull requests list reads
+   * the finished reviews as well as the inbox (DEV-1325, its *Done* tab), so the inbox is no
+   * longer the last request made; answering only the newest left it waiting for ever.
+   */
+  let waiting: Array<(body: string) => void> = []
+  const answer = (body: string) => {
+    for (const resolve of waiting.splice(0)) resolve(body)
+  }
 
   beforeEach(() => {
     useDeskSource('api')
+    waiting = []
     vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => {
-      answer = (body: string) =>
-        resolve({ ok: true, status: 200, text: () => Promise.resolve(body) } as Response)
+      waiting.push((body: string) =>
+        resolve({ ok: true, status: 200, text: () => Promise.resolve(body) } as Response))
     })))
   })
 
@@ -2845,7 +2887,8 @@ describe('a pull request nobody has picked up', () => {
     expect(row.find('.meta-text').text())
       .toBe('acme/billing-api')
     expect(row.text()).toContain('no round has been opened')
-    expect(row.text()).toContain('Waiting for a session')
+    /* *Not started*, the sidebar's word for a request with no round (DEV-1325, review F4). */
+    expect(row.text()).toContain('Not started')
 
     /*
      * **The pull request is the way out, and the only one.** There is no review page to
@@ -2880,14 +2923,14 @@ describe('a pull request nobody has picked up', () => {
     const page = await shown(Inbox)
 
     const rows = [
-      ...rowsUnder(page, 'Needs you'),
+      ...rowsUnder(page, 'Waiting on you'),
       ...rowsUnder(page, 'With the agent'),
       ...rowsUnder(page, 'Requested, not started'),
       ...rowsUnder(page, 'Waiting on the author'),
     ].filter(row => /#412(?![0-9])/.test(row.text()))
     expect(rows, 'one pull request, one row, whatever is recorded about it')
       .toHaveLength(1)
-    expect(rows[0]!.text()).toContain('Problem brief ready')
+    expect(rows[0]!.text()).toContain('Brief ready')
   })
 
   it('draws nothing for a request a round has already answered', async () => {
@@ -2949,13 +2992,13 @@ describe('a pull request nobody has picked up', () => {
      * developer cannot do about that is pick it up. The count is `totals.items`, which the
      * server leaves this group out of.
      */
-    expect(page.text()).toContain('7 pull requests need you')
+    expect(tabCount(page, 'Waiting on you')).toBe(7)
     /*
-     * And the line under it signposts the group, which is below the fold on a phone. Two
-     * since DEV-996: the untouched round and the request nobody has opened, which asks the
-     * developer for nothing either — Review Desk does not dispatch.
+     * And its own group counts it, under *Being reviewed* — the sidebar's group, which
+     * holds both kinds of row. Two since DEV-996: the untouched round and the request nobody
+     * has opened, which asks the developer for nothing either — Review Desk does not dispatch.
      */
-    expect(page.text()).toContain('2 not started')
+    expect(rowsUnder(page, 'Requested, not started')).toHaveLength(2)
   })
 
   /**
@@ -3016,7 +3059,7 @@ describe('a pull request nobody has picked up', () => {
      * A request is not a review. The assertion after the loop is where that half lives.
      */
     const drawn = [
-      ...rowsUnder(page, 'Needs you'),
+      ...rowsUnder(page, 'Waiting on you'),
       ...rowsUnder(page, 'With the agent'),
       ...rowsUnder(page, 'Requested, not started'),
       ...rowsUnder(page, 'Waiting on the author'),
@@ -3049,7 +3092,7 @@ describe('a pull request nobody has picked up', () => {
      * is asserted here rather than only in the test below it because this is where a
      * reader comes to find out what "exactly once" covers.
      */
-    const ownPrs = rowsUnder(page, 'Your pull requests').map(row => row.text())
+    const ownPrs = rowsUnder(page, 'Your own').map(row => row.text())
     expect(ownPrs.length, 'the fixtures hold some, or this assertion is vacuous')
       .toBeGreaterThan(0)
     for (const pr of ['#415', '#91']) {
@@ -3082,7 +3125,7 @@ describe('a pull request nobody has picked up', () => {
 
     const rows = [
       ...rowsUnder(page, 'Requested, not started'),
-      ...rowsUnder(page, 'Your pull requests'),
+      ...rowsUnder(page, 'Your own'),
     ].filter(row => /#415(?![0-9])/.test(row.text()))
     expect(rows, 'one pull request, one row, whichever heading it belongs under')
       .toHaveLength(1)
@@ -3201,7 +3244,7 @@ describe('a pull request nobody has picked up', () => {
     const page = await shown(Inbox)
 
     expect(
-      rowsUnder(page, 'Needs you').filter(row => row.text().includes('#407')),
+      rowsUnder(page, 'Waiting on you').filter(row => row.text().includes('#407')),
       'an approved draft is waiting on nobody, so it leaves Needs you',
     ).toHaveLength(0)
 
@@ -3283,7 +3326,7 @@ describe('a pull request nobody has picked up', () => {
      * up here, which it would be saying directly over a round no session has produced
      * anything for.
      */
-    expect(page.text()).toContain('Nothing is waiting on you.')
+    expect(page.text()).toContain('Nothing needs you')
     expect(page.text()).not.toContain('Anything a session produces turns up here')
   })
 
@@ -3349,7 +3392,7 @@ describe('a pull request nobody has picked up', () => {
     })
     const page = await shown(Inbox)
 
-    const needing = rowsUnder(page, 'Needs you').filter(row => row.text().includes('#9585'))
+    const needing = rowsUnder(page, 'Waiting on you').filter(row => row.text().includes('#9585'))
     expect(needing, 'round 1’s reply is answered by round 2, which is DEV-990')
       .toHaveLength(0)
     const author = rowsUnder(page, 'Waiting on the author')
@@ -3362,5 +3405,267 @@ describe('a pull request nobody has picked up', () => {
       .toHaveLength(1)
     expect(drawn[0]!.text()).toContain('round 3')
     expect(drawn[0]!.find('.row').attributes('href')).toBe('/reviews/71')
+  })
+})
+
+/*
+ * **The one list, DEV-1325.** Queue and Reviews became Pull requests: tabs over one table, a
+ * preview of the selected row, and J, K and Enter. The queue's own rules are tested above,
+ * unchanged; these are the rules the one list adds.
+ */
+describe('the Pull requests list', () => {
+  /*
+   * **The clock, pinned two days after `globex/portal#9568` merged** (11 October 2026), so
+   * *Done this week* holds a row. Against the real clock it is empty, and the *Done* half of
+   * the membership test compared two empty lists — the self-review's round-1 F3. Only `Date`
+   * is faked: `settle` runs on real timers.
+   */
+  beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-13T12:00:00Z'))
+    await resetDesk()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  /** The pull request numbers one tab's panel draws, in order. */
+  function panelNumbers(page: VueWrapper, view: string): string[] {
+    return page.findAll(`#panel-${view} .queue-line .pr`).map(one => one.text().replace('#', ''))
+  }
+
+  /** The pull request numbers one of the sidebar's groups draws. */
+  function sidebarNumbers(page: VueWrapper, group: string): string[] {
+    return page.findAll(`#sidebar .group--${group} .side-row`)
+      .map(one => one.text().match(/#(\d+)/)?.[1] ?? '')
+  }
+
+  it('holds exactly the sidebar’s rows under each of the sidebar’s groups', async () => {
+    /*
+     * **Contract 1 of DEV-1322's plan: the two never disagree.** The list keeps the queue's
+     * merge and the sidebar has its own, so this compares what each draws — the same pull
+     * requests, group for group, whatever order each sorts them in.
+     */
+    const layout = await shown(Layout)
+    const page = await shown(Inbox)
+    for (const [view, group] of [
+      ['waiting', 'waiting_on_you'],
+      ['reviewing', 'being_reviewed'],
+      ['author', 'waiting_on_author'],
+      ['done', 'done'],
+    ] as const) {
+      expect(panelNumbers(page, view).sort(), `${view} against the sidebar's ${group}`)
+        .toEqual(sidebarNumbers(layout, group).sort())
+    }
+    expect(panelNumbers(page, 'waiting').length).toBeGreaterThan(0)
+    expect(panelNumbers(page, 'done'), 'a Done row, so this half compares something').toContain('9568')
+  })
+
+  it('draws S17, not the empty-database card, on a desk whose only review finished this week', async () => {
+    const source = loadSource()
+    await resetDesk({
+      reviews: source.reviews.filter(detail => detail.review.pr === 9568),
+      drafts: [],
+      rules: [],
+      own_prs: [],
+      review_requests: [],
+    })
+    const page = await shown(Inbox)
+    expect(page.text()).not.toContain('Nothing here yet')
+    const lines = page.findAll('[data-testid="nothing-needs-you"] .nothing-group').map(one => one.text())
+    expect(lines[3]).toContain('Done this week · 1')
+    expect(lines[3]).toContain('1 merged')
+    expect(tabCount(page, 'Done')).toBe(1)
+  })
+
+  it('selects a row the pointer rests on, and not one it crossed on its way out of the list', async () => {
+    /*
+     * Self-review round 2: the rest timer outlived the pointer. Crossing row B on the way to
+     * the preview left a timer nothing cleared, and the preview swapped to B under the click.
+     */
+    const page = await shown(Inbox)
+    const rows = page.findAll('#panel-waiting .queue-line')
+    const selected = () => page.find('#panel-waiting .queue-line--selected .pr').text()
+    const first = selected()
+
+    await rows[1]!.find('.row').trigger('mouseover', { clientX: 300, clientY: 400 })
+    await page.find('.list').trigger('mouseleave')
+    await new Promise(resolve => setTimeout(resolve, 200))
+    await settle(page)
+    expect(selected(), 'crossed and left: nothing changes').toBe(first)
+
+    await rows[1]!.find('.row').trigger('mouseover', { clientX: 310, clientY: 410 })
+    await new Promise(resolve => setTimeout(resolve, 200))
+    await settle(page)
+    expect(selected(), 'rested: the row is selected').toBe(rows[1]!.find('.pr').text())
+  })
+
+  it('leaves a modified arrow to the browser', async () => {
+    const page = await shown(Inbox)
+    const push = vi.spyOn(page.vm.$router, 'push').mockResolvedValue(undefined)
+    await page.find('#tab-waiting').trigger('keydown', { key: 'ArrowLeft', altKey: true })
+    expect(push).not.toHaveBeenCalled()
+    push.mockRestore()
+  })
+
+  it('opens the next tab with the arrow keys, and the first and last with Home and End', async () => {
+    const page = await shown(Inbox)
+    const push = vi.spyOn(page.vm.$router, 'push').mockResolvedValue(undefined)
+    await page.find('#tab-waiting').trigger('keydown', { key: 'ArrowRight' })
+    expect(push).toHaveBeenLastCalledWith({ query: { view: 'reviewing' } })
+    await page.find('#tab-waiting').trigger('keydown', { key: 'ArrowLeft' })
+    expect(push).toHaveBeenLastCalledWith({ query: { view: 'every' } })
+    await page.find('#tab-waiting').trigger('keydown', { key: 'End' })
+    expect(push).toHaveBeenLastCalledWith({ query: { view: 'every' } })
+    push.mockRestore()
+  })
+
+  it('draws each row’s state word from stateWord, the sidebar’s word for it', async () => {
+    const page = await shown(Inbox)
+    const four12 = page.findAll('#panel-waiting .queue-line').find(one => one.text().includes('#412'))!
+    expect(four12.find('.what-title').text()).toBe(stateWord('brief_ready'))
+  })
+
+  it('opens every row at its review’s Overview', async () => {
+    const page = await shown(Inbox)
+    const rows = page.findAll('#panel-waiting .queue-line')
+    expect(rows.length).toBeGreaterThan(0)
+    for (const one of rows) {
+      const id = Number(one.find('.row').attributes('href')!.split('/').pop())
+      expect(one.find('.row').attributes('href')).toBe(tabPath(id, 'overview'))
+    }
+  })
+
+  it('selects the first row and previews it from the record, with the header’s next action', async () => {
+    const page = await shown(Inbox)
+    await settle(page)
+    const first = page.find('#panel-waiting .queue-line')
+    expect(first.classes()).toContain('queue-line--selected')
+
+    const preview = page.find('[data-testid="list-preview"]')
+    expect(preview.exists()).toBe(true)
+    const number = first.find('.pr').text()
+    expect(preview.text()).toContain(number)
+    /* The state word is the row's own, and the action is `primaryAction`'s or none. */
+    expect(preview.find('[data-testid="preview-state"]').text())
+      .toBe(first.find('.what-title').text())
+    const action = preview.find('[data-testid="preview-action"]')
+    if (action.exists()) {
+      expect(['Confirm the brief', 'Sign off and post']).toContain(action.text().replace('→', '').trim())
+    }
+  })
+
+  it('draws the bottom line from bottomLine, and nothing when the brief has earned nothing', async () => {
+    const page = await shown(Inbox)
+    const rows = page.findAll('#panel-waiting .queue-line')
+    for (const one of rows) {
+      /* Focus selects at once; a pointer waits for a rest (review F6). */
+      await one.find('.row').trigger('focusin')
+      await settle(page)
+      const id = Number(one.find('.row').attributes('href')!.split('/').pop())
+      const brief = loadSource().reviews.find(detail => detail.review.id === id)?.brief
+      const line = bottomLine(brief)
+      const drawn = page.find('[data-testid="bottom-line"]')
+      expect(drawn.exists(), `#${id}'s bottom line`).toBe(line != null)
+      if (line?.headline) expect(drawn.text()).toContain(line.headline)
+      for (const fact of line?.facts ?? []) expect(drawn.text()).toContain(fact.says)
+    }
+  })
+
+  it('moves the selection with J and K, and not while the find field has the cursor', async () => {
+    const page = await shown(Inbox, { attachTo: document.body })
+    const keys = (key: string, target: EventTarget = window) =>
+      target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+    const selectedNumber = () => page.find('#panel-waiting .queue-line--selected .pr').text()
+
+    const numbers = panelNumbers(page, 'waiting').map(pr => `#${pr}`)
+    expect(selectedNumber()).toBe(numbers[0])
+    keys('j')
+    await settle(page)
+    expect(selectedNumber()).toBe(numbers[1])
+    keys('k')
+    await settle(page)
+    expect(selectedNumber()).toBe(numbers[0])
+
+    /* Typed into the field, J is a letter. */
+    keys('j', page.find('input#start').element)
+    await settle(page)
+    expect(selectedNumber()).toBe(numbers[0])
+    page.unmount()
+  })
+
+  it('opens the selected row’s Overview with Enter', async () => {
+    const page = await shown(Inbox, { attachTo: document.body })
+    const href = page.find('#panel-waiting .queue-line--selected .row').attributes('href')
+    /*
+     * **Stubbed, not only watched.** A spy that lets the navigation run loads the review page
+     * under the test, and on Linux CI that outran the 5-second timeout (the ready PR's first
+     * run). What this test owns is that Enter asks the router for the Overview; the browser
+     * test in `queue-rounds.spec.ts` owns arriving there.
+     */
+    const push = vi.spyOn(page.vm.$router, 'push').mockResolvedValue(undefined)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+    expect(push).toHaveBeenCalledWith(href)
+    push.mockRestore()
+    page.unmount()
+  })
+
+  it('narrows every tab to what the find field matches, and a link narrows nothing', async () => {
+    const page = await shown(Inbox)
+    const all = page.findAll('.queue-line').length
+    await page.find('input#start').setValue('#412')
+    await settle(page)
+    expect(page.findAll('.queue-line').map(one => one.find('.pr').text())).toEqual(['#412'])
+
+    await page.find('input#start').setValue('https://github.com/acme/portal/pull/1')
+    await settle(page)
+    expect(page.findAll('.queue-line')).toHaveLength(all)
+  })
+
+  it('draws Every review, not the empty-database card, on a desk whose inbox is empty', async () => {
+    /*
+     * **Found by the end-to-end run on an empty database.** The card is for an inbox with
+     * nothing in it; *Every review* reads `GET /reviews`, which can still hold a dismissed
+     * or finished review — so `/reviews`, which redirects here, must never land on the card.
+     */
+    const source = loadSource()
+    const dismissed = source.reviews.map(detail => ({
+      ...detail,
+      review: { ...detail.review, dismissed_at: '2026-11-01T00:00:00Z', dismissed_reason: 'gone' },
+    }))
+    await resetDesk({ reviews: dismissed, drafts: [], rules: [], own_prs: [], review_requests: [] })
+    const card = await shown(Inbox)
+    expect(card.text()).toContain('Nothing here yet')
+    expect(card.text(), 'no claim the inbox cannot make').not.toContain('This database holds no reviews')
+    expect(card.find('a[href="/?view=every"]').exists()).toBe(true)
+
+    const page = await shown(Inbox, { route: '/?view=every' })
+    expect(page.text()).not.toContain('Nothing here yet')
+    expect(page.find('#panel-every').exists()).toBe(true)
+  })
+
+  it('says Nothing needs you, with a line for every other group, when nothing waits', async () => {
+    const source = loadSource()
+    await resetDesk({
+      reviews: source.reviews.filter(detail => detail.review.id === 70),
+      drafts: [],
+      rules: [],
+      own_prs: [],
+    })
+    const page = await shown(Inbox)
+    const card = page.find('[data-testid="nothing-needs-you"]')
+    expect(card.exists()).toBe(true)
+    const lines = card.findAll('.nothing-group').map(one => one.text())
+    expect(lines.map(line => line.split(' · ')[0])).toEqual([
+      'Being reviewed',
+      'Waiting on the author',
+      'Your own',
+      'Done this week',
+    ])
+    expect(lines[0]).toContain('#421')
+    /* And the preview says what changed since yesterday, from recorded times only. */
+    expect(page.find('[data-testid="since-yesterday"]').exists()).toBe(true)
   })
 })

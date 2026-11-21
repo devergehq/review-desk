@@ -4,6 +4,7 @@ import { loadSource } from '../app/data/sample'
 import {
   answerFacts,
   BAND_OF_STEP,
+  bottomLine,
   builtHeading,
   CASE_STEPS,
   fixedByLabel,
@@ -318,5 +319,32 @@ describe('which steps are one page', () => {
     expect(BAND_OF_STEP.understand).toBeUndefined()
     expect(BAND_OF_STEP.alternatives).toBe('what-was-chosen')
     expect(BAND_OF_STEP.solution_map).toBe('what-was-built')
+  })
+})
+
+/*
+ * **The bottom line is one helper.** DEV-1325's preview pane and DEV-1326's Overview both
+ * draw it, so it is tested here once: the brief's own headline, then `answerFacts` — nothing
+ * written for the occasion, and nothing drawn for a brief that has earned nothing.
+ */
+describe('the bottom line', () => {
+  it('is the brief’s headline and the answer line’s facts, unchanged', () => {
+    const brief = fixture(STRUCTURED)
+    const line = bottomLine(brief)!
+    expect(line.headline).toBe(brief.headline)
+    expect(line.facts).toEqual(answerFacts(brief))
+  })
+
+  it('keeps the facts a brief has earned while its headline is unwritten', () => {
+    const line = bottomLine(bare({ problems: [problem(1, 'one'), problem(2, 'two')] }))!
+    expect(line.headline).toBeNull()
+    expect(line.facts.map(fact => fact.says)).toEqual(['2 problems'])
+  })
+
+  it('is nothing at all for no brief, or a brief with nothing in it', () => {
+    expect(bottomLine(null)).toBeNull()
+    expect(bottomLine(undefined)).toBeNull()
+    expect(bottomLine(bare())).toBeNull()
+    expect(bottomLine(bare({ headline: '   ' }))).toBeNull()
   })
 })

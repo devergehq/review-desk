@@ -99,6 +99,25 @@ function finishedWithin(item: ReviewListItem, now: Date): boolean {
 }
 
 /**
+ * The finished reviews *Done this week* holds, one per pull request, as the Reviews list
+ * served them.
+ *
+ * **Exported so the Pull requests list's *Done* tab reads the same rows as the sidebar's
+ * group** (DEV-1325): the two draw one group, and two filters over one read would be two
+ * chances to disagree about which week a review finished in.
+ */
+export function doneThisWeek(finished: ReviewList | null, now: Date = new Date()): ReviewListItem[] {
+  const seen = new Set<string>()
+  return (finished?.reviews ?? []).filter((item) => {
+    if (!finishedWithin(item, now)) return false
+    const key = prKey(item.review)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+/**
  * The four groups, always four and always in this order.
  *
  * **A group with nothing in it is still returned**, empty: the sidebar draws its heading
@@ -151,9 +170,7 @@ export function sidebarGroups(
       fromInbox(item.pull_request, item.review_id, null, 'posted')),
   )
 
-  const done = keep(
-    (finished?.reviews ?? []).filter(item => finishedWithin(item, now)).map(fromFinished),
-  )
+  const done = keep(doneThisWeek(finished, now).map(fromFinished))
 
   return [
     { id: 'waiting_on_you', label: 'Waiting on you', rows: waiting },

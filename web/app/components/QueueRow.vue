@@ -125,6 +125,14 @@ const props = withDefaults(
      */
     ticketHref?: string | null
     ticketId?: string | null
+    /**
+     * Whether this is the Pull requests list's selected row, the one its preview draws.
+     *
+     * DEV-1325, S1: a bar down the row's leading edge and the ground's tint. Not focus —
+     * `J` and `K` move the selection and the focus together, but a pointer resting on a row
+     * selects it without taking focus from wherever it was.
+     */
+    selected?: boolean
   }>(),
   {
     meta: null,
@@ -134,6 +142,7 @@ const props = withDefaults(
     age: null,
     ageUnknownBecause: 'the inbox carries no time for this kind of item',
     emphasis: false,
+    selected: false,
     prHref: null,
     ticketHref: null,
     ticketId: null,
@@ -158,7 +167,7 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
 <template>
   <div
     class="queue-line"
-    :class="{ 'queue-line--emphasis': emphasis }"
+    :class="{ 'queue-line--emphasis': emphasis, 'queue-line--selected': selected }"
   >
     <component
       :is="to ? NuxtLink : href ? 'a' : 'div'"
@@ -328,6 +337,17 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
 }
 
 /*
+ * **The selected row, as S1 draws it**: the ground's tint and a bar down its leading edge.
+ * The bar is a shadow inside the row rather than a border, so selecting a row moves nothing
+ * on it by a pixel; the row's own content is not indented for it, which is why the bar sits
+ * in the 12 pixels the wrapper pads with on the list.
+ */
+.queue-line--selected {
+  background: var(--rd-ground);
+  box-shadow: inset 3px 0 0 var(--rd-ink);
+}
+
+/*
  * **The full width, so the meta line falls under it rather than beside it.** `1 1 auto`
  * let the links cell sit at the row's end, which is where DEV-957 found the GitHub link
  * "floating top right above the action".
@@ -364,10 +384,15 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
  */
 .row {
   display: grid;
-  grid-template-columns:
-    56px minmax(0, 1fr) minmax(0, 1fr) 90px 150px;
+  /*
+   * **The tracks are a variable so a list can tighten all of them at once** (DEV-1325): the
+   * Pull requests list draws a preview beside its rows and sets narrower number, age and
+   * action tracks on its own root, and every row under it — and the column heads, and the
+   * Every review fold — reads the same value, so the columns still line up.
+   */
+  grid-template-columns: var(--rd-row-tracks, 56px minmax(0, 1fr) minmax(0, 1fr) 90px 150px);
   flex: 1 1 100%;
-  gap: 6px 20px;
+  gap: 6px var(--rd-row-gap, 20px);
   align-items: center;
   min-height: var(--rd-control-min);
   min-width: 0;

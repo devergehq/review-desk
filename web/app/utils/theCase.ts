@@ -216,6 +216,33 @@ export function answerFacts(brief: Brief): AnswerFact[] {
   return facts
 }
 
+/** A review's bottom line: the brief's own headline sentence, then the derived facts. */
+export interface BottomLine {
+  /** The brief's headline, as the session wrote it, or null while it is unwritten. */
+  headline: string | null
+  /** `answerFacts`, in reading order: only the facts the brief has earned. */
+  facts: AnswerFact[]
+}
+
+/**
+ * **The bottom line, chosen once.** DEV-1325's preview pane draws it beside the list and
+ * DEV-1326's Overview draws it at the top of a review; both call this, so a review cannot
+ * have one bottom line in the list and another on its own page.
+ *
+ * It is the case page's answer line by another name, and its condition is unchanged: the
+ * headline is the brief's own sentence and every fact is `answerFacts`'s, so nothing here
+ * is written for the occasion and nothing is guessed. `null` when the brief has neither —
+ * no brief at all, or one with no headline and no fact yet — so a caller says *no brief
+ * yet* in its own words rather than drawing an empty heading.
+ */
+export function bottomLine(brief: Brief | null | undefined): BottomLine | null {
+  if (!brief) return null
+  const headline = brief.headline?.trim() ? brief.headline : null
+  const facts = answerFacts(brief)
+  if (headline == null && facts.length === 0) return null
+  return { headline, facts }
+}
+
 /* ------------------------------- What the bands head --------------------------------- */
 
 /**

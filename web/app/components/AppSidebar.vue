@@ -9,14 +9,13 @@
  * | Part | Holds |
  * | -- | -- |
  * | The wordmark | "Review Desk", **the one serif left in the app** — Patrick, 21 November 2026 |
- * | Navigation | Pull requests, Reviews, Rules |
+ * | Navigation | Pull requests, Rules |
  * | The groups | Every review on the desk, one row per pull request, under four headings |
  * | The status lines | When GitHub was last read, and whether Allele answered |
  *
- * **Reviews stays in the navigation until the list that replaces it lands** (DEV-1325, S1).
- * The S screens draw two items because by then Queue and Reviews are one page; until they
- * are, taking the link out would leave `/reviews` with no way in, and a page may fold what
- * it draws but never removes any of it.
+ * **Two places, as the S screens draw them: Pull requests and Rules.** Reviews was a third
+ * until DEV-1325 made Queue and Reviews one list (S1); every review is under that list's
+ * *Every review* view now, and `/reviews` redirects there.
  *
  * **It reads `GET /inbox` through the shared resource**, so on the queue — which reads the
  * same document — there is still one read, not two. That was the reason DEV-930 took the
@@ -52,7 +51,6 @@ const reviewId = computed(() => {
 
 const NAV = [
   { label: 'Pull requests', to: '/', icon: 'pulls' },
-  { label: 'Reviews', to: '/reviews', icon: 'reviews' },
   { label: 'Rules', to: '/rules', icon: 'rules' },
 ] as const
 
@@ -60,8 +58,7 @@ const NAV = [
  * Which item the page belongs to, which is what the item's highlight marks.
  *
  * **A review's own pages belong to Pull requests**, which is where S2 highlights them: the
- * review is one of the pull requests listed under it. Reviews owns its own list and nothing
- * under it.
+ * review is one of the pull requests listed under it.
  */
 function isSection(to: string, path: string): boolean {
   if (to === '/') return path === '/' || reviewId.value != null
@@ -124,9 +121,6 @@ const holdsOpenRow = (group: SidebarGroup) => group.rows.some(isOpenRow)
               r="1.75"
             />
             <path d="M4.5 5.75v6.5M13.5 12.25V7.5a2 2 0 00-2-2H9M10.5 3.5L8.5 5.5l2 2" />
-          </template>
-          <template v-else-if="item.icon === 'reviews'">
-            <path d="M3 4.5h12M3 9h12M3 13.5h8" />
           </template>
           <template v-else>
             <rect

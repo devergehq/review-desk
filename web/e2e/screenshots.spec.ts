@@ -57,10 +57,8 @@ test.describe.configure({ mode: 'serial' })
 test.describe('a seeded database', () => {
   test('the four pages', async ({ page }) => {
     await page.goto(seeded)
-    await expect(
-      page.getByRole('heading', { name: '4 pull requests need you' }),
-    ).toBeVisible()
-    await shot(page, 'seeded-1-queue')
+    await expect(page.getByRole('tab', { name: /^Waiting on you/ })).toBeVisible()
+    await shot(page, 'seeded-1-pull-requests')
 
     /*
      * **The code review page, which is what "the review" is in this set now.**
@@ -95,16 +93,17 @@ test.describe('a seeded database', () => {
 
     /*
      * **The Reviews list**, which DEV-930 adds: every review the record holds, including
-     * the one that was posted and had left every group the queue serves.
+     * the one that was posted and had left every group the queue serves. Since DEV-1325 it
+     * is the Pull requests list's *Every review* view, which `/reviews` redirects to.
      */
     await page.goto(`${seeded}reviews`)
     await expect(page.getByRole('heading', { name: /\d+ reviews?$/ })).toBeVisible()
-    await shot(page, 'seeded-7-reviews')
+    await shot(page, 'seeded-7-every-review')
 
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto(`${seeded}reviews`)
     await expect(page.getByRole('heading', { name: /\d+ reviews?$/ })).toBeVisible()
-    await shot(page, 'seeded-8-reviews-390')
+    await shot(page, 'seeded-8-every-review-390')
     await page.setViewportSize({ width: 1440, height: 900 })
 
     /*
@@ -114,10 +113,8 @@ test.describe('a seeded database', () => {
      */
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto(seeded)
-    await expect(
-      page.getByRole('heading', { name: '4 pull requests need you' }),
-    ).toBeVisible()
-    await shot(page, 'seeded-6-queue-390')
+    await expect(page.getByRole('tab', { name: /^Waiting on you/ })).toBeVisible()
+    await shot(page, 'seeded-6-pull-requests-390')
     await page.setViewportSize({ width: 1440, height: 900 })
 
     /*
@@ -168,6 +165,38 @@ test.describe('the shell', () => {
     await expect(page.locator('#sidebar')).toBeVisible()
     await page.waitForTimeout(200)
     await page.screenshot({ path: `${INTO}/shell-3-menu-open-390.png` })
+
+    /*
+     * **S17: nothing waits on the developer** (DEV-1325). The seed always has something
+     * waiting, so the inbox's three waiting arrays are emptied in the browser — the page is
+     * what is pictured, and it is drawn from exactly the answer it is given.
+     */
+    await page.route('**/api/v1/inbox', async (route) => {
+      const answer = await route.fetch()
+      const inbox = await answer.json()
+      await route.fulfill({
+        response: answer,
+        json: {
+          ...inbox,
+          briefs_to_confirm: [],
+          drafts_to_approve: [],
+          author_replies: [],
+          totals: { ...inbox.totals, items: 0 },
+        },
+      })
+    })
+    await page.setViewportSize({ width: 1600, height: 1000 })
+    await page.goto(seeded)
+    await expect(page.getByText('Nothing needs you')).toBeVisible()
+    await page.waitForLoadState('networkidle')
+    await page.waitForTimeout(400)
+    await page.screenshot({ path: `${INTO}/shell-4-nothing-needs-you.png` })
+
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto(seeded)
+    await expect(page.getByText('Nothing needs you')).toBeVisible()
+    await shot(page, 'shell-4-nothing-needs-you-390')
+    await page.unroute('**/api/v1/inbox')
     await page.setViewportSize({ width: 1440, height: 900 })
   })
 })
@@ -525,7 +554,7 @@ test.describe('a fresh database', () => {
   test('the four pages', async ({ page }) => {
     await page.goto(empty)
     await expect(page.getByRole('heading', { name: 'Nothing here yet' })).toBeVisible()
-    await shot(page, 'fresh-1-queue')
+    await shot(page, 'fresh-1-pull-requests')
 
     /*
      * A review and a draft that are not there. These are the same two screens as above,
