@@ -47,7 +47,7 @@ import type { GroupedFinding } from './outcomes'
 import type { RepliesWaiting } from './reviewTabs'
 
 import { answersTheAuthor, draftTakesDecisions, isCarried, mostSeriousFirst } from './findings'
-import { sentence } from './format'
+import { sentence, sinceLabel } from './format'
 import { groupsOf } from './overview'
 import { outcomeBy, outcomeSaid, outcomeWhen, repliesToAnswer } from './outcomes'
 import { findingPath } from './reviewTabs'
@@ -121,6 +121,12 @@ export interface ReplyRow {
   answer: ReplyAnswer | null
   /** Everything the record holds on it — what the step-7 page drew — folded under the row. */
   history: FindingRow
+  /**
+   * What the row's standing rests on, as its meta line says it. **The developer's answer
+   * carries its own time** (self-review round 2): the line read "the author · 17 hours ago ·
+   * your answer: …", dating the developer's act by the author's reply.
+   */
+  basis: string | null
   /** The finding itself, for the answers' writes and for the history's links. */
   finding: Finding
 }
@@ -147,12 +153,20 @@ const ANSWERED_AS: Partial<Record<Outcome['kind'], ReplyStanding>> = {
  * Whether the newest thing on a finding is the developer answering the author — and which
  * answer — or null. By time, then by id, the order `repliesToAnswer` reads.
  */
-function answeredBy(outcomes: readonly Outcome[], seq: number): ReplyStanding | null {
+function answeredBy(outcomes: readonly Outcome[], seq: number): { standing: ReplyStanding, at: string } | null {
   const newest = outcomes
     .filter(one => one.finding_seq === seq)
     .sort((one, two) => (Date.parse(two.occurred_at) - Date.parse(one.occurred_at)) || (two.id - one.id))[0]
   if (newest == null || newest.actor !== 'developer') return null
-  return ANSWERED_AS[newest.kind] ?? null
+  const standing = ANSWERED_AS[newest.kind]
+  return standing ? { standing, at: newest.occurred_at } : null
+}
+
+/** The words a standing rests on, with the time of the developer's own answer where it is theirs. */
+function basisOf(standing: ReplyStanding, answeredAt: string | undefined, now: Date): string {
+  const { basis } = STANDING_WORDS[standing]
+  if (answeredAt == null || !basis.startsWith('your answer')) return basis
+  return basis.replace('your answer', `your answer ${sinceLabel(answeredAt, now)}`)
 }
 
 /** The author's words on the outcome that grouped a finding, attributed. */
@@ -239,6 +253,7 @@ export function repliesTab(detail: ReviewDetail, now: Date = new Date()): Replie
         standing: stands,
         said: one.outcome ? saidOf(one.outcome, now) : null,
         answer: stands === 'contested' ? answerFor(detail, finding) : null,
+        basis: stands == null ? null : basisOf(stands, answeredBy(detail.outcomes, finding.seq)?.at, now),
         history,
         finding,
       }
@@ -249,7 +264,7 @@ export function repliesTab(detail: ReviewDetail, now: Date = new Date()): Replie
   const settledSeqs = new Set(groups.fixed.map(one => one.seq))
   const settled = rows(
     [...groups.fixed, ...groups.answered],
-    one => answeredBy(detail.outcomes, one.seq) ?? (settledSeqs.has(one.seq) ? 'fixed' : 'answered'),
+    one => answeredBy(detail.outcomes, one.seq)?.standing ?? (settledSeqs.has(one.seq) ? 'fixed' : 'answered'),
   )
   const noReply = rows(groups.noReply, () => null)
 

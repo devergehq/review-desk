@@ -287,6 +287,8 @@ describe('a reply the developer has answered', () => {
       const row = tab.settled.find(one => one.key === quiet.key)!
       expect(row.standing).toBe(standing)
       expect(STANDING_WORDS[standing].basis).toMatch(/^your answer/)
+      /* The developer's answer is dated by itself, not by the author's reply (round 2). */
+      expect(row.basis).toMatch(/^your answer 30 min ago: /)
       /* The author's words are still the ones quoted: their reply, not the developer's act. */
       expect(row.said!.quote).toBe('No.')
       expect(row.said!.who).toBe('dana-ruiz')

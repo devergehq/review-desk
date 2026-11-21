@@ -489,7 +489,7 @@ function said(row: ReplyRow): string {
                 <span
                   class="standing"
                   :class="`standing--${row.standing}`"
-                  :title="STANDING_WORDS[row.standing!].basis"
+                  :title="row.basis ?? undefined"
                 >{{ STANDING_WORDS[row.standing!].word }}</span>
               </div>
               <div
@@ -499,7 +499,7 @@ function said(row: ReplyRow): string {
                 <p class="rd-meta who">
                   <template v-if="row.said.who">
                     {{ row.said.who }} ·
-                  </template>{{ row.said.when }} · {{ STANDING_WORDS[row.standing!].basis }}
+                  </template>{{ row.said.when }} · {{ row.basis }}
                 </p>
                 <blockquote
                   v-if="row.said.quote"
