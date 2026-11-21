@@ -126,11 +126,11 @@ test('the keys still work after a part is chosen', async ({ page }) => {
   const select = page.locator('.parts-select')
   test.skip(await select.count() === 0, 'this review has no parts')
 
-  await select.selectOption({ index: 0 })
+  /* A part, and back to all of them: a list long enough for J to move in. */
   await select.selectOption({ index: 1 })
   await expect(select).not.toBeFocused()
-  const rows = page.locator('.row')
-  test.skip(await rows.count() < 2, 'the part holds one row')
+  await select.selectOption({ index: 0 })
+  await expect(select).not.toBeFocused()
   const first = (await picked(page).textContent())!.trim()
   await page.keyboard.press('j')
   await expect(picked(page)).not.toHaveText(first)
