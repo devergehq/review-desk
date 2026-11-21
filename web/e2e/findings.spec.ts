@@ -28,7 +28,7 @@ test('?finding= puts that finding on the bench', async ({ page }) => {
   const key = await secondKey(page)
   await page.goto(`${seeded}reviews/${id}/findings?finding=${key}`)
   await expect(picked(page)).toHaveText(key)
-  await expect(page.locator('#the-finding .head')).toContainText(key)
+  await expect(page.locator('#the-finding .finding-head')).toContainText(key)
 })
 
 test('#F9 still does, and so does the old code review address carrying it', async ({ page }) => {
@@ -84,11 +84,14 @@ test('no finding’s hunk forces the page sideways at 1,600 beside the conversat
   await page.setViewportSize({ width: 1600, height: 900 })
   await page.goto(`${seeded}reviews/${id}/findings`)
   await expect(page.locator('.shell-conversation')).toBeVisible()
+  /* The findings are read after the shell draws: measure once they are on the bench. */
+  await expect(picked(page)).toBeVisible()
 
   const lists = page.locator('.controls [role="radio"]')
   let hunks = 0
   for (let list = 0; list < await lists.count(); list += 1) {
     await lists.nth(list).click()
+    await page.waitForTimeout(100)
     const rows = page.locator('.row')
     for (let row = 0; row < await rows.count(); row += 1) {
       await rows.nth(row).click()

@@ -409,7 +409,7 @@ describe('a row in the list is one line', () => {
     const page = await codeReview(REAL)
     const detail = await showFinding(page, 'F9')
 
-    expect(detail.find('.head .basis').text()).toBe('Ran')
+    expect(detail.find('.finding-head .basis').text()).toBe('Ran')
     const facts = detail.findAll('.fact').map(one => one.text())
     expect(facts).toContain('Whereapp/Reporting/ColumnPolicy.php:52')
     expect(facts).toContain('PartAllowed columns on the report definition')
@@ -431,10 +431,10 @@ describe('a row in the list is one line', () => {
 
     const page = await codeReview(REAL)
     expect(page.findAll('.row .basis').map(one => one.text())).toEqual(['Read'])
-    expect((await showFinding(page, 'F9')).find('.head .basis').text()).toBe('Read')
+    expect((await showFinding(page, 'F9')).find('.finding-head .basis').text()).toBe('Read')
 
     const other = await showFinding(page, 'F1')
-    expect(other.find('.head .basis').exists()).toBe(false)
+    expect(other.find('.finding-head .basis').exists()).toBe(false)
     expect(page.text()).not.toMatch(/Told by/)
   })
 

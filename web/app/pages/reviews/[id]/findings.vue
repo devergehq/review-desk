@@ -841,7 +841,7 @@ function coverage(data: ReviewDetail): string | null {
                   one — `basisOf` is null for `unknown`, and S4's *Told by author* is never
                   drawn, because no record says it.
                 -->
-                <p class="head">
+                <p class="finding-head">
                   <SeverityTag :severity="shown.severity" />{{ ' ' }}
                   <span class="key rd-mono">{{ shown.key }}</span>
                   <template v-if="basisOf(shown)">
@@ -1432,6 +1432,37 @@ function coverage(data: ReviewDetail): string | null {
 }
 
 /*
+ * **On a narrow list a row is two lines**: the grade, the number and how it was checked over
+ * the title and where it is, which then has the row's whole width. Four tracks at a phone's
+ * width left a title four words wide.
+ */
+@container findings (max-width: 559px) {
+  .row {
+    grid-template-columns: auto auto minmax(0, 1fr);
+    grid-template-areas:
+      'grade key basis'
+      'said said said';
+  }
+
+  .grade {
+    grid-area: grade;
+  }
+
+  .row > .key {
+    grid-area: key;
+  }
+
+  .said {
+    grid-area: said;
+  }
+
+  .row > .basis {
+    grid-area: basis;
+    justify-self: end;
+  }
+}
+
+/*
  * **How it was checked, as S4's chip**: a filled dot for Ran, a hollow one for Read. Two
  * shapes, so the two are told apart without colour.
  */
@@ -1473,7 +1504,7 @@ function coverage(data: ReviewDetail): string | null {
   min-width: 0;
 }
 
-.head {
+.finding-head {
   display: flex;
   flex-wrap: wrap;
   gap: 6px 10px;
@@ -1496,7 +1527,8 @@ function coverage(data: ReviewDetail): string | null {
 
 .fact {
   display: grid;
-  grid-template-columns: minmax(96px, 1fr) minmax(0, 2fr);
+  /* The label as wide as its words, so a path is not broken to make room for "Where". */
+  grid-template-columns: max-content minmax(0, 1fr);
   gap: 4px 16px;
   padding: 8px 0;
   border-bottom: 1px solid var(--rd-line);

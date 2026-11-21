@@ -53,7 +53,7 @@ const INTO = resolve('../docs/screenshots')
  * `fullPage`, because these screens are tall and a viewport-height crop would cut off the
  * findings — which are the thing the One review screen is about.
  */
-async function shot(page: Page, name: string) {
+async function shot(page: Page, name: string, fullPage = true) {
   /*
    * Mermaid draws the brief's diagram after the page is otherwise ready, and the fonts are
    * bundled rather than fetched so they settle quickly. Waiting for the network to go quiet
@@ -61,7 +61,7 @@ async function shot(page: Page, name: string) {
    */
   await page.waitForLoadState('networkidle')
   await page.waitForTimeout(400)
-  await page.screenshot({ path: `${INTO}/${name}.png`, fullPage: true })
+  await page.screenshot({ path: `${INTO}/${name}.png`, fullPage })
 }
 
 test.describe.configure({ mode: 'serial' })
@@ -356,13 +356,18 @@ test.describe('the Findings tab', () => {
 
       await page.goto(`${seeded}reviews/${structuredReviewId}/findings`)
       await expect(page.locator('h2.headline')).toBeVisible()
-      await shot(page, `findings-1-list${suffix}`)
+      /*
+       * **One window at 1,600, as S4 is**, not the whole page: the call is pinned to the
+       * window's foot there, and a full-page capture freezes it wherever the first window
+       * ended, over the fields. At 390 nothing is pinned and the page is taken whole.
+       */
+      await shot(page, `findings-1-list${suffix}`, width === 390)
 
       await page.goto(`${seeded}reviews/${structuredReviewId}/findings?finding=F9`)
       await expect(page.locator('.code')).toBeVisible()
       await page.getByRole('button', { name: /The full reasoning/ }).click()
       await expect(page.locator('.blocks')).toBeVisible()
-      await shot(page, `findings-2-finding-open${suffix}`)
+      await shot(page, `findings-2-finding-open${suffix}`, width === 390)
     }
 
     /*
@@ -373,7 +378,7 @@ test.describe('the Findings tab', () => {
     await page.goto(`${seeded}reviews/${reviewId}/findings`)
     await page.locator('.row').first().click()
     await expect(page.getByText('one block of markdown')).toBeVisible()
-    await shot(page, 'findings-3-one-block-draft')
+    await shot(page, 'findings-3-one-block-draft', false)
   })
 })
 
