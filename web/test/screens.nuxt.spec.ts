@@ -3479,6 +3479,36 @@ describe('the Pull requests list', () => {
     expect(tabCount(page, 'Done')).toBe(1)
   })
 
+  it('selects a row the pointer rests on, and not one it crossed on its way out of the list', async () => {
+    /*
+     * Self-review round 2: the rest timer outlived the pointer. Crossing row B on the way to
+     * the preview left a timer nothing cleared, and the preview swapped to B under the click.
+     */
+    const page = await shown(Inbox)
+    const rows = page.findAll('#panel-waiting .queue-line')
+    const selected = () => page.find('#panel-waiting .queue-line--selected .pr').text()
+    const first = selected()
+
+    await rows[1]!.find('.row').trigger('mouseover', { clientX: 300, clientY: 400 })
+    await page.find('.list').trigger('mouseleave')
+    await new Promise(resolve => setTimeout(resolve, 200))
+    await settle(page)
+    expect(selected(), 'crossed and left: nothing changes').toBe(first)
+
+    await rows[1]!.find('.row').trigger('mouseover', { clientX: 310, clientY: 410 })
+    await new Promise(resolve => setTimeout(resolve, 200))
+    await settle(page)
+    expect(selected(), 'rested: the row is selected').toBe(rows[1]!.find('.pr').text())
+  })
+
+  it('leaves a modified arrow to the browser', async () => {
+    const page = await shown(Inbox)
+    const push = vi.spyOn(page.vm.$router, 'push')
+    await page.find('#tab-waiting').trigger('keydown', { key: 'ArrowLeft', altKey: true })
+    expect(push).not.toHaveBeenCalled()
+    push.mockRestore()
+  })
+
   it('opens the next tab with the arrow keys, and the first and last with Home and End', async () => {
     const page = await shown(Inbox)
     const push = vi.spyOn(page.vm.$router, 'push')

@@ -1612,9 +1612,18 @@ function selectFromPointer(event: MouseEvent) {
   }, RESTS_MS)
 }
 
-onBeforeUnmount(() => {
+/*
+ * **Leaving the list cancels a pending selection** (self-review round 2): a pointer that
+ * crossed a row on its way to the preview's *Open* or its next action set the timer, and
+ * nothing inside the list fired again to clear it — so the preview swapped to the crossed row
+ * under the pointer, and the click opened the wrong review.
+ */
+function leaveList() {
   if (resting) clearTimeout(resting)
-})
+  resting = null
+}
+
+onBeforeUnmount(leaveList)
 
 /** Open a row: its review's Overview, or the pull request on GitHub when there is no review. */
 function open(row: ListRow | null) {
@@ -1783,6 +1792,8 @@ function emptyHere(data: Inbox): boolean {
  * its dismissed reviews among them, were out of its reach.
  */
 function onTabKey(event: KeyboardEvent) {
+  /* A modifier makes it the browser's — Alt+Left is Back (self-review round 2). */
+  if (event.altKey || event.metaKey || event.ctrlKey || event.shiftKey) return
   const at = LIST_VIEWS.findIndex(one => one.view === view.value)
   const last = LIST_VIEWS.length - 1
   const to = event.key === 'ArrowRight'
@@ -1809,6 +1820,7 @@ function onTabKey(event: KeyboardEvent) {
       @mouseover="selectFromPointer"
       @mousemove="selectFromPointer"
       @focusin="selectFromFocus"
+      @mouseleave="leaveList"
     >
       <DeskState
         :resource="inbox"

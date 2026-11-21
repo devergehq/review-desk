@@ -707,14 +707,25 @@ test('J and K walk the list, and Enter opens the selected row’s Overview', asy
    * round 1, F7): J scrolls, which slides a row under a pointer that has not moved, and the
    * browser reports that as the pointer arriving. It selects only once it moves and rests.
    */
-  await rows.first().hover()
+  /*
+   * **Short enough that J has to scroll** (self-review round 2): at 1,000 pixels every row
+   * fits, nothing slides under the pointer, and this passed without the guard it is for.
+   * At 420 the second row is below the fold, so J scrolls it up under a still pointer.
+   */
+  await page.setViewportSize({ width: 1600, height: 420 })
+  await rows.first().scrollIntoViewIfNeeded()
+  const box = (await rows.first().boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height - 4)
   await expect(rows.first()).toHaveClass(/queue-line--selected/)
+  const before = await page.evaluate(() => window.scrollY)
   await page.locator('body').press('j')
   await expect(rows.nth(1)).toHaveClass(/queue-line--selected/)
+  expect(await page.evaluate(() => window.scrollY), 'J scrolled the list').toBeGreaterThan(before)
   await page.waitForTimeout(400)
   await expect(rows.nth(1), 'still the row J chose').toHaveClass(/queue-line--selected/)
   await page.locator('body').press('k')
   await expect(rows.first()).toHaveClass(/queue-line--selected/)
+  await page.setViewportSize({ width: 1600, height: 1000 })
 
   const href = await rows.first().locator('.row').getAttribute('href')
   await page.locator('body').press('Enter')
