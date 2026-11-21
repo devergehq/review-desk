@@ -1029,10 +1029,14 @@ describe('the figures and the rows count the same findings', () => {
     expect(page.text()).toContain('nothing yet · 1 not known')
     expect(page.text()).not.toContain('1 of 3 findings')
 
-    const rows = page.findAll('.answered-row')
-    expect(rows).toHaveLength(1)
-    expect(rows[0]!.text()).toContain('— whether the code it points at changed is not known')
-    expect(rows[0]!.text()).toContain('the history was rewritten')
+    /*
+     * DEV-1330: no reply came back, so F2 is in No reply yet; the dash and its reason are in
+     * the history its row folds, which is where step 7's row went.
+     */
+    expect(page.findAll('.reply-row')).toHaveLength(0)
+    const history = await historyOf(page, 'F2')
+    expect(history.text()).toContain('— whether the code it points at changed is not known')
+    expect(history.text()).toContain('the history was rewritten')
   })
 
   /*

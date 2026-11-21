@@ -260,7 +260,7 @@ function fromOthers(outcomes: Outcome[]): Outcome[] {
  * folds this row — every outcome, oldest first, and the links — under each one, so nothing
  * the step-7 page drew is lost to the grouping.
  */
-export function rowFor(detail: ReviewDetail, finding: Finding, now: Date = new Date()): FindingRow {
+export function findingRowFor(detail: ReviewDetail, finding: Finding, now: Date = new Date()): FindingRow {
   /*
    * Cut only where there is no title. A title is drawn whole however long it runs — the
    * contract puts no maximum on one and calls a long one a writing fault for the review
@@ -461,7 +461,7 @@ export function whatHappened(detail: ReviewDetail, now: Date = new Date()): What
    * grade, which the review made; it is not this page grading what came back.
    */
   const posted = mostSeriousFirst(detail.findings.filter(willPost))
-  const rows = posted.map(finding => rowFor(detail, finding, now))
+  const rows = posted.map(finding => findingRowFor(detail, finding, now))
   const answered = rows.filter(row => row.cameBack.length > 0)
   const silent = rows.filter(row => row.cameBack.length === 0)
 

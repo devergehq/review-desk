@@ -33,7 +33,7 @@
  * Step 7 drew, for every posted finding, every outcome oldest first with the author's words
  * whole, where the finding is, the round it was carried from, and its two links — or, for
  * a finding nothing came back on, which of three reasons that is. Each row here folds
- * exactly that (`ReplyHistory`, from `whatHappened`'s own `rowFor`). The headline and the
+ * exactly that (`ReplyHistory`, from `whatHappened`'s own `findingRowFor`). The headline and the
  * line under it, the no-harvest notice, the outcomes on findings no group lists, the rounds
  * table and the footnotes are drawn as step 7 drew them.
  *

@@ -51,7 +51,7 @@ import { sentence, sinceLabel } from './format'
 import { groupsOf } from './overview'
 import { outcomeBy, outcomeSaid, outcomeWhen, rejectionReason, repliesToAnswer } from './outcomes'
 import { findingPath } from './reviewTabs'
-import { rowFor } from './whatHappened'
+import { findingRowFor } from './whatHappened'
 
 /** How many findings with no reply are drawn before the rest fold. S09's "the first four". */
 export const NO_REPLY_SHOWN = 4
@@ -249,7 +249,7 @@ export function repliesTab(detail: ReviewDetail, now: Date = new Date()): Replie
     const order = mostSeriousFirst(known.map(one => bySeq.get(one.seq)!))
     return order.map((finding) => {
       const one = known.find(each => each.seq === finding.seq)!
-      const history = rowFor(detail, finding, now)
+      const history = findingRowFor(detail, finding, now)
       const stands = standing(one)
       return {
         seq: finding.seq,
