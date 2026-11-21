@@ -399,6 +399,39 @@ fn a_thread_measured_on_an_earlier_commit_is_refused() {
     assert!(gh.calls().is_empty(), "nothing was sent");
 }
 
+/// **A sign-off given before migration 24 recorded nothing it was of**, so there is nothing
+/// to hold the draft to: refused, nothing sent, and no attempt recorded.
+#[test]
+fn a_sign_off_that_recorded_nothing_it_was_of_is_refused() {
+    let desk = Desk::new();
+    let gh = FakeGh::new();
+    let review = approved(&desk);
+    rusqlite::Connection::open(desk.db())
+        .unwrap()
+        .execute(
+            "UPDATE drafts SET approved_body_sha256 = NULL, approved_threads_sha256 = NULL, \
+             approved_rev = NULL WHERE review_id = ?1",
+            [review],
+        )
+        .unwrap();
+    assert_eq!(desk.store().get_draft(review).unwrap().approved_shown, None);
+
+    let refused = document(&post(&desk, &gh, review, &no_allele(&desk)).assert().code(1));
+    assert_eq!(refused["error"]["code"], "draft_status", "{refused}");
+    assert!(
+        refused["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Send it back and approve it again"),
+        "{refused}"
+    );
+    assert!(gh.calls().is_empty(), "nothing was sent");
+    assert!(
+        desk.store().posted_tags(review).unwrap().is_empty(),
+        "no attempt recorded"
+    );
+}
+
 #[test]
 fn a_draft_nobody_approved_is_refused() {
     let desk = Desk::new();

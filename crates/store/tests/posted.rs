@@ -228,6 +228,29 @@ fn a_draft_changed_after_approval_is_refused_and_nothing_is_recorded() {
 }
 
 #[test]
+fn a_sign_off_that_recorded_nothing_it_was_of_is_refused() {
+    let (dir, store) = temp_store();
+    let review = approved_review(&store, 64);
+    Connection::open(common::db_path(&dir))
+        .unwrap()
+        .execute(
+            "UPDATE drafts SET approved_body_sha256 = NULL, approved_threads_sha256 = NULL, \
+             approved_rev = NULL WHERE review_id = ?1",
+            [review],
+        )
+        .unwrap();
+
+    match store.begin_post(review, &request(PostBasis::Desk)) {
+        Err(StoreError::DraftStatus { found, wanted, .. }) => {
+            assert_eq!(found, DraftStatus::Approved);
+            assert!(wanted.contains("Send it back"), "{wanted}");
+        }
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+    assert!(store.posted_tags(review).unwrap().is_empty());
+}
+
+#[test]
 fn a_draft_that_is_not_approved_is_refused() {
     let (_dir, store) = temp_store();
     let review = store

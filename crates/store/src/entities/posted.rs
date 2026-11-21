@@ -14,6 +14,7 @@ use std::io::Read;
 
 use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior};
 
+use crate::entities::shown::shown_of;
 use crate::error::{Result, StoreError};
 use crate::model::{
     DraftStatus, DraftThread, PostBasis, PostedTag, PostedTagStatus, Review, ReviewEvent,
@@ -99,9 +100,9 @@ impl Store {
             });
         }
 
-        // **What was approved, compared with what is held now.** A draft approved before
-        // DEV-1346 has no record of what was approved, and cannot be posted on the strength
-        // of one: the developer approves it again.
+        // **A sign-off given before migration 24 recorded nothing it was of**, and cannot be
+        // posted on the strength of one. Sending it back clears it; the session writes the
+        // draft ready again, and the developer approves what they are shown.
         let approved = draft
             .approved_shown
             .clone()
@@ -109,23 +110,36 @@ impl Store {
                 review_id,
                 found: draft.status,
                 wanted: "a draft approved since Review Desk records what was approved. Send it \
-                     back and approve it again",
+                         back and approve it again",
             })?;
-        self.refuse_unless_draft_shown(review_id, &approved)
-            .map_err(|error| match error {
-                StoreError::ShownMoved {
-                    what,
-                    review_id,
-                    moved,
-                } => StoreError::ShownMoved {
-                    what,
-                    review_id,
-                    moved: format!(
-                        "it is not the draft that was approved ({moved}), so nothing was posted"
-                    ),
-                },
-                other => other,
-            })?;
+
+        // **What was approved, compared with what is held now** — before the hand-over's own
+        // refusals, so a draft that moved since its sign-off says so. Hashed with `shown_of`
+        // over the draft read in this transaction and its threads.
+        let now = shown_of(&draft, &self.draft_threads(review_id)?);
+        let mut moved = Vec::new();
+        if now.draft_rev != approved.draft_rev {
+            moved.push(format!(
+                "it is revision {} and revision {} was approved",
+                now.draft_rev, approved.draft_rev
+            ));
+        }
+        if now.body_sha256 != approved.body_sha256 {
+            moved.push("the body is not the one approved".to_string());
+        }
+        if now.threads_sha256 != approved.threads_sha256 {
+            moved.push("the comments on the code are not the ones approved".to_string());
+        }
+        if !moved.is_empty() {
+            return Err(StoreError::ShownMoved {
+                what: "draft",
+                review_id,
+                moved: format!(
+                    "it is not the draft that was approved ({}), so nothing was posted",
+                    moved.join("; ")
+                ),
+            });
+        }
 
         if let Some((tag_id, since)) = self
             .conn
@@ -146,6 +160,20 @@ impl Store {
         // The hand-over holds the last two lines: an approved body its blocks no longer
         // compose to is refused there, and the threads are composed there.
         let handover = self.draft_handover(review_id)?;
+
+        // **And the hand-over is exactly what was compared.** It is read in the same
+        // transaction, so nothing can have written between; checked anyway, because the body
+        // and comments it carries are what the POST sends, and the hash is only worth what it
+        // was taken over.
+        if shown_of(&handover.draft, &handover.threads) != now {
+            return Err(StoreError::ShownMoved {
+                what: "draft",
+                review_id,
+                moved: "what would be sent is not what was compared, so nothing was posted"
+                    .to_string(),
+            });
+        }
+
         let review = handover.review;
         // **Every comment is pinned to the head, so every line must have been counted on it.**
         // A line with no recorded commit is let through, as the hand-over lets it through:
@@ -164,7 +192,7 @@ impl Store {
                 head_sha: review.head_sha.clone(),
             });
         }
-        let event = draft.event.ok_or(StoreError::DraftStatus {
+        let event = handover.draft.event.ok_or(StoreError::DraftStatus {
             review_id,
             found: draft.status,
             wanted: "an approved draft with the event it is to be posted as",
@@ -193,7 +221,7 @@ impl Store {
         };
         let rendered = tag.render();
         debug_assert!(rendered.len() <= TAG_MAX_BYTES);
-        let body = tag::tagged_body(&draft.body, &tag);
+        let body = tag::tagged_body(&handover.draft.body, &tag);
         // **What is sent must read back as this tag and no other.** A body that already holds
         // something parsing as a tag would post as two, and be rejected on the way back.
         if tag::parse(&body) != Ok(Some(tag.clone())) {
