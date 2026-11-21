@@ -55,7 +55,9 @@ look_again = 2027-10-08
 
 # ---------------------------------------------------------------------------- advisories
 #
-# None. The seven entries decided on 9 October 2026 (simple-git x3, @simple-git/argv-parser,
-# node-forge, braces, katex) were all cleared by updates on 21 November 2026, DEV-1354:
-# nuxt 4.6.4 and mermaid 12.3.0 brought their trees past every one of them, so each entry
-# matched nothing and was deleted rather than left to fail as ORPHANED.
+# None. Of the seven entries decided on 9 October 2026, six (simple-git x3,
+# @simple-git/argv-parser, node-forge, katex) were cleared by updates on 21 November 2026,
+# DEV-1354: nuxt 4.6.4 and mermaid 12.3.0 brought their trees past them. The seventh, braces,
+# was not updated - it is still 3.0.3 - but GitHub withdrew GHSA-vfj7-8cjw-p6xm on
+# 23 October 2026 with no patched version, so nothing reports it. Each entry then matched
+# nothing and was deleted rather than left to fail as ORPHANED.
