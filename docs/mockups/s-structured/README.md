@@ -40,6 +40,8 @@ if `tokens.css` has nothing close, ask on the ticket rather than inventing a tok
 | S15 | `S15-replies-in.webp` | `xdmn6` | Overview when the author's replies and commits arrive | `/reviews/[id]` |
 | S16 | `S16-round-2-sign-off.webp` | `zDcGz` | Draft for round 2: what changed since round 1, lines moved with the code, signing against the head read | `/reviews/[id]/draft` |
 | S17 | `S17-nothing-needs-you.webp` | `ZQeYR` | The list when nothing waits on you: where everything else is, and what happened since yesterday | `/` |
+| S18 | `S18-design-review.webp` | `CLMez` | A design package from Drafting Desk, reviewed before anything is built: steps covered, whose decisions, the without-Claude check, notes going back | `/designs/[key]` |
+| S19 | `S19-design-stale.webp` | `lrIxT` | The same package after the desk changed it: what moved, notes held until it sends again | `/designs/[key]` |
 
 Old routes keep working as redirects to their new tab, so links in posted reviews and in Linear
 don't break.
