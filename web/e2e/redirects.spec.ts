@@ -39,6 +39,12 @@ for (const route of ROUTES) {
   })
 }
 
+/* And the query, which `retiredRouteTarget` carries over beside the fragment. */
+test('a redirect keeps the query as well as the fragment', async ({ page }) => {
+  await page.goto(`${seeded}reviews/${id}/code-review?from=queue#F9`)
+  await expect(page).toHaveURL(`${seeded}reviews/${id}/findings?from=queue#F9`)
+})
+
 test('the review’s own address is Overview, not a redirect', async ({ page }) => {
   await page.goto(`${seeded}reviews/${id}`)
   await expect(page).toHaveURL(`${seeded}reviews/${id}`)

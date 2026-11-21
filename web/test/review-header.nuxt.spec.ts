@@ -63,13 +63,20 @@ describe('the review header', () => {
     }
   })
 
-  it('draws a time only when the record measured it', async () => {
+  it('draws how long the open wait has run, and only when the record holds its start', async () => {
     const measured = fixture(DRAFT_READY)
-    expect(measured.timings.waiting_on_you_seconds, 'the fixture measured it').not.toBeNull()
-    expect((await header(measured)).find('.facts').text()).toContain('waiting on you')
+    /* Ready three hours ago, and an earlier wait of 2 min that ended: the open one is drawn. */
+    measured.timings = {
+      ...measured.timings,
+      draft_ready_at: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
+      waiting_on_you_seconds: 120,
+    }
+    const drawn = (await header(measured)).find('.facts').text()
+    expect(drawn).toContain('3 hr waiting on you')
+    expect(drawn).not.toContain('2 min')
 
     const unmeasured = fixture(DRAFT_READY)
-    unmeasured.timings = { ...unmeasured.timings, waiting_on_you_seconds: null }
+    unmeasured.timings = { ...unmeasured.timings, draft_ready_at: null }
     const facts = (await header(unmeasured)).find('.facts').text()
     expect(facts).not.toContain('waiting on you')
     expect(facts).not.toMatch(/\d+ (sec|min|h|hr|day)/)

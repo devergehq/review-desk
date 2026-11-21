@@ -127,7 +127,8 @@ function citations(rule: Rule) {
   /* Not in the contract's `required` list, so a rule may arrive without the array. */
   return (rule.origin_findings ?? []).map(one => ({
     label: `F${one.seq}`,
-    to: `/reviews/${one.review_id}`,
+    /* The finding itself, on Findings, rather than the review's Overview. */
+    to: `${tabPath(one.review_id, 'findings')}#F${one.seq}`,
   }))
 }
 

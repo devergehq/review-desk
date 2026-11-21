@@ -38,24 +38,38 @@ const review = computed(() => props.detail.review)
 const pullRequest = computed(() => prUrl(review.value.repo, review.value.pr))
 const ticket = computed(() => ticketUrl(review.value.ticket_url))
 
-const state = computed(() => stateOfReview(props.detail))
-const word = computed(() => stateWord(state.value))
+/*
+ * **The sidebar's word, when the sidebar lists this review.** DEV-1323's round 2: a review
+ * the sidebar lists takes the sidebar's state in its own header, so the two can never say
+ * different words. The reads are the ones `AppSidebar` already holds — `useReviewDesk`
+ * shares them — so the header costs no request of its own. A round the sidebar does not
+ * open, or a read not back yet, falls to the review's own facts inside `stateOfReview`.
+ */
+const desk = useReviewDesk()
+const inbox = desk.inbox()
+const finished = desk.reviews(computed(() => ALL_REPOSITORIES), computed(() => 'finished' as const))
+const listed = computed(() =>
+  rowFor(inbox.data.value ? sidebarGroups(inbox.data.value, finished.data.value) : null, review.value))
 
-/** The three states that wait on the developer draw their word in the accent's wash. */
-const waitsOnYou = computed(() =>
-  state.value === 'brief_ready' || state.value === 'draft_ready' || state.value === 'replies_in',
-)
+const state = computed(() => stateOfReview(props.detail, listed.value))
+const word = computed(() => stateWord(state.value))
 
 const toAnswer = computed(() => repliesToAnswer(props.detail.outcomes))
 const action = computed(() => primaryAction(review.value.id, state.value, toAnswer.value))
 
 /**
+ * **The word is washed in the accent exactly when there is an action.** *Replies in* with
+ * nothing to answer — a thread resolved, code changed — is not waiting on the developer, so
+ * it draws neither. Asked by the self-review of #89.
+ */
+const waitsOnYou = computed(() => action.value != null)
+
+/**
  * The facts line, each fact only when the record holds it.
  *
  * The round and the commit read are always held. The size is held when the session wrote
- * it. **The one time is the total waiting on the developer**, and only while the review is
- * waiting on them and the record measured it — `timings` says `null` for a span it did not
- * measure, and that is drawn as nothing rather than as a guess.
+ * it. **The one time is how long the open wait has run**, from `openWait`, which answers
+ * nothing when the record holds no start for it — drawn as nothing rather than as a guess.
  */
 const facts = computed(() => {
   const parts: string[] = [`round ${review.value.round}`]
@@ -67,9 +81,7 @@ const facts = computed(() => {
   return parts
 })
 
-const waiting = computed(() =>
-  waitsOnYou.value ? durationLabel(props.detail.timings?.waiting_on_you_seconds) : null,
-)
+const waiting = computed(() => openWait(state.value, props.detail.timings))
 
 const findings = computed(() => findingsCount(props.detail))
 const replies = computed(() => toAnswer.value.length)

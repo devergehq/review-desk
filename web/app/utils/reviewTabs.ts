@@ -11,8 +11,9 @@
  */
 
 import type { LocationQuery } from 'vue-router'
-import type { ReviewDetail } from '~/types/desk'
+import type { ReviewDetail, ReviewTimings } from '~/types/desk'
 import type { ReviewState } from './stateWord'
+import { durationLabel } from './format'
 
 /** The five tabs, by the suffix their page sits at. */
 export type ReviewTab = 'overview' | 'understanding' | 'findings' | 'draft' | 'replies'
@@ -81,6 +82,29 @@ export function findingsCount(detail: Pick<ReviewDetail, 'findings'>): number | 
   return detail.findings.length > 0 ? detail.findings.length : null
 }
 
+/**
+ * **How long the developer has been waiting on now**, or `null` when the record cannot say.
+ *
+ * The open wait, not the total: `timings.waiting_on_you_seconds` sums the waits that have
+ * *ended* — the contract says "a wait still going has no length" — so drawing it beside
+ * *Draft ready* would say "2 h waiting on you" over a draft ready for five days. Found by
+ * the self-review of #89.
+ *
+ * Only *Draft ready* has a start the record holds, `timings.draft_ready_at`. A brief waiting
+ * to be confirmed and a reply waiting for an answer have none, so they draw no time rather
+ * than a guessed one — `docs/design.md`: "A time the record does not hold is left out".
+ */
+export function openWait(
+  state: ReviewState,
+  timings: Pick<ReviewTimings, 'draft_ready_at'> | null | undefined,
+  now: Date = new Date(),
+): string | null {
+  if (state !== 'draft_ready' || !timings?.draft_ready_at) return null
+  const since = Date.parse(timings.draft_ready_at)
+  if (Number.isNaN(since)) return null
+  return durationLabel(Math.max(0, Math.floor((now.getTime() - since) / 1000)))
+}
+
 /** The one next action the header draws, top right. */
 export interface PrimaryAction {
   /** The words on it, naming what it acts on. Never "Continue". */
@@ -104,7 +128,8 @@ export interface PrimaryAction {
  *
  * Every other state is nothing for the developer to do, so no action: a session working
  * or awaited (*Being written*, *Waiting for a session*), a review posted and quiet, and the
- * ways off the desk (*Merged*, *Closed*, *Dismissed*, *Out of play*).
+ * ways off the desk (*Merged*, *Closed*, *Dismissed*, *Out of play*, *Superseded* — a round a
+ * later one replaced, whose work is the later round's).
  *
  * **It links to the tab, and that is all it does yet.** DEV-1329 moves the Draft page's
  * sign-off binding into the draft-ready action, and DEV-1328 adds `?finding=` so a single

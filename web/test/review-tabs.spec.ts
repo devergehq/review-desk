@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   REVIEW_TABS,
   findingsCount,
+  openWait,
   primaryAction,
   retiredRouteTarget,
   tabPath,
@@ -61,6 +62,25 @@ describe('the step routes the tabs replaced', () => {
   })
 })
 
+describe('the open wait', () => {
+  const now = new Date('2026-11-21T12:00:00Z')
+
+  it('runs from when the draft became ready', () => {
+    expect(openWait('draft_ready', { draft_ready_at: '2026-11-21T09:00:00Z' }, now)).toBe('3 hr')
+  })
+
+  it('is nothing for a state the record holds no start for', () => {
+    for (const state of ['brief_ready', 'replies_in', 'posted'] as const) {
+      expect(openWait(state, { draft_ready_at: '2026-11-21T09:00:00Z' }, now), state).toBeNull()
+    }
+  })
+
+  it('is nothing when the draft’s ready time was not recorded', () => {
+    expect(openWait('draft_ready', { draft_ready_at: null }, now)).toBeNull()
+    expect(openWait('draft_ready', null, now)).toBeNull()
+  })
+})
+
 describe('the one next action', () => {
   it('names the brief, and goes to Understanding, while the brief waits', () => {
     expect(primaryAction(5, 'brief_ready', []))
@@ -82,7 +102,7 @@ describe('the one next action', () => {
   it('is nothing at all for a review with nothing for the developer to do', () => {
     const nothing: ReviewState[] = [
       'not_started', 'being_written', 'waiting_for_session', 'posted',
-      'merged', 'closed', 'dismissed', 'out_of_play',
+      'merged', 'closed', 'dismissed', 'out_of_play', 'superseded',
     ]
     for (const state of nothing) expect(primaryAction(5, state, ['F3']), state).toBeNull()
     expect(primaryAction(5, 'replies_in', []), 'replies with none to answer').toBeNull()
