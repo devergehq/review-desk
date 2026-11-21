@@ -256,8 +256,13 @@ watch(() => route.fullPath, () => {
       into it (DEV-1333); a complementary landmark, named by the panel's own heading.
 
       Under 700px it is the bottom sheet (DEV-1336), and a dialog while it is open. Its
-      own two children are the sheet's head — drawn only there — and the teleported panel
-      lands after them.
+      own child is the sheet's head, and the teleported panel lands after it.
+
+      **The head is always in the DOM, hidden by CSS until the sheet opens**, because the
+      sheet is a grid of the head over the panel and the order is what places them: a head
+      inserted on open lands after the panel the page teleported in, and the panel then
+      takes the head's short row. Only the chevron's drawing waits for the sheet, so a page
+      that counts its drawings above 700 counts none of the sheet's.
     -->
     <aside
       v-if="onAReview"
@@ -280,6 +285,7 @@ watch(() => route.fullPath, () => {
           @click="closeSheet()"
         >
           <svg
+            v-if="sheetOpen"
             width="18"
             height="18"
             viewBox="0 0 18 18"
@@ -389,7 +395,7 @@ watch(() => route.fullPath, () => {
   border-left: 1px solid var(--rd-line);
 }
 
-/* The sheet's head, the grabber and the chevron, is the phone's alone. */
+/* *Ask* and the sheet's head, the grabber and the chevron, are the phone's alone. */
 .sheet-head,
 .ask {
   display: none;
