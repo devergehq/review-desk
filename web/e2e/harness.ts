@@ -633,6 +633,31 @@ function seedStructured(directory: string, database: string): number {
   }))
   cli(database, ['provenance', 'sources', '--review', String(reviewId), '--file', sources])
 
+  /*
+   * **What the ticket asks for, and what the review observed** — S3's *Ticket against what
+   * was built*, DEV-1327. One of each status the contract allows, and the not-met row names
+   * F9, a finding this review holds, because the store refuses one that names none.
+   */
+  const criteria = join(directory, 'structured-criteria.json')
+  writeFileSync(criteria, JSON.stringify({
+    criteria: [
+      {
+        text: 'Scheduled exports use the schedule\'s own tenant',
+        status: 'met',
+        file: 'app/Reporting/ExportContext.php',
+        line: 42,
+      },
+      { text: 'Web exports behave as before', status: 'met' },
+      { text: 'The column policy applies on both paths', status: 'not_met', finding_seq: 9 },
+      {
+        text: 'One audit entry per export',
+        status: 'not_in_this_pr',
+        note: 'The description says the audit entry follows in ABC-405',
+      },
+    ],
+  }))
+  cli(database, ['provenance', 'criteria', '--review', String(reviewId), '--file', criteria])
+
   return reviewId
 }
 

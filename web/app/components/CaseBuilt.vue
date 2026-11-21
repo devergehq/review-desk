@@ -116,11 +116,15 @@ const fold = computed(() => foldSummary([
     id="what-was-built"
     class="band"
   >
-    <h2 class="rd-display-lead">
-      What was built<template v-if="parts.length">
-        · {{ builtHeading(brief) }}
-      </template>
-    </h2>
+    <!--
+      **Not on S3, and kept**: a page may fold or reorder what it draws and never removes any
+      of it, and the Solution redirect lands here. Headed the way S3 heads every other band,
+      the question with its size beside it.
+    -->
+    <CaseBandHead
+      :heading="bandLabel('what-was-built')"
+      :meta="parts.length ? builtHeading(brief) : null"
+    />
 
     <!--
       **The state is named from step 4's own state.** DEV-892's defect 6: the page said "The

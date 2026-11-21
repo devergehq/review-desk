@@ -919,7 +919,9 @@ test.describe('the case for one review, in three bands', () => {
 
     /* ---- band 1 · what was wrong ---- */
 
-    await expect(page.getByRole('heading', { name: 'What was wrong · 3' })).toBeVisible()
+    /* S3's words since DEV-1327: the question as the heading, the count beside it. */
+    await expect(page.getByRole('heading', { name: 'What changes', exact: true })).toBeVisible()
+    await expect(page.locator('#what-was-wrong .band-head')).toContainText('3 problems')
     await expect(page.locator('.problem')).toHaveCount(3)
     /* The join nothing drew before: which part of the change fixes this problem. */
     await expect(page.locator('.problem').first()).toContainText('parts 1, 2')
@@ -965,7 +967,7 @@ test.describe('the case for one review, in three bands', () => {
      */
     const reference = page.locator('details', { has: page.locator('.reference') }).first()
     await expect(reference.locator('summary'))
-      .toContainText('how it works today · the idea behind the change · what the review read')
+      .toContainText('the idea behind the change · what the review read')
     /*
      * **Closed, measured on the element and on a heading rather than on the prose.** A
      * closed `<details>` keeps its content in the document, so "behind a fold" is a claim
@@ -1039,11 +1041,9 @@ test.describe('the case for one review, in three bands', () => {
      * count claimed files too, so a heading counting only changed ones would not sum to the
      * column under it.
      */
-    await expect(
-      page.getByRole('heading', {
-        name: 'What was built · 7 parts · 27 files (3 not changed) · +959 −423',
-      }),
-    ).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'What was built', exact: true })).toBeVisible()
+    await expect(page.locator('#what-was-built .band-head'))
+      .toContainText('7 parts · 27 files (3 not changed) · +959 −423')
     await expect(page.locator('.part')).toHaveCount(7)
 
     /* The three groups, each from the rule and each with a row under it. */
@@ -2203,12 +2203,23 @@ test.describe('the case for one review, in three bands', () => {
      * the Linux runner in 4 (90px, 1.25x) — so the comparison below measured font hinting
      * rather than the defect. At 1,600, the shell's cap and the width the S screens are drawn
      * at, it is 2.7x on macOS. The 1.5x rule is unchanged.
+     *
+     * **And with the *On this tab* rail's column taken out (DEV-1327).** S3 sets the rail
+     * beside the bands, which takes 196px from them at 1,600 and put this line back on the
+     * same boundary: 90px as built, 113px as the defect, 1.25x. What is measured here is how
+     * a problem's detail line wraps, not where the rail is, so the bands are given the whole
+     * of the case's column again — the width 1,600 was chosen for. The rail itself is
+     * measured by its own test, below.
      */
     for (const width of [1600, 390]) {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
       await page.goto(`${seeded}reviews/${structuredReviewId}/understanding`)
       await expect(page.locator('h2.headline')).toBeVisible()
       await page.waitForLoadState('networkidle')
+      await page.addStyleTag({
+        content: '.case-grid { grid-template-columns: minmax(0, 1fr) !important }'
+          + ' .case-rail { display: none !important }',
+      })
 
       await page.getByRole('button', { name: /A scheduled export read its tenant/ }).click()
       await expect(page.locator('#problem-1')).toBeVisible()
@@ -5168,5 +5179,46 @@ test.describe('state that belongs to one review', () => {
 
     /* And nothing the developer typed reached the record. */
     untouched(first, FIRST_DRAFT)
+  })
+})
+
+/*
+ * **Understanding, to S3** — DEV-1327. The two bands the case page did not draw before, and
+ * the Overview link that now lands on one of them. Read-only against the seeded review.
+ * Nothing here measures a height or a wrap, which lay out differently on Linux.
+ */
+test.describe('the Understanding tab, to S3', () => {
+  test('draws the ticket against what was built, with the not-met row linking its finding', async ({ page }) => {
+    const { seeded, structuredReviewId } = readAddresses()
+    await page.goto(`${seeded}reviews/${structuredReviewId}/understanding#ticket-against-what-was-built`)
+    const band = page.locator('#ticket-against-what-was-built')
+    await expect(band.getByRole('heading', { name: 'Ticket against what was built' })).toBeVisible()
+    await expect(band.locator('tbody tr')).toHaveCount(4)
+    await expect(band.locator('.row--not-met')).toContainText('The column policy applies on both paths')
+    await expect(band.getByRole('link', { name: 'no, see F9' }))
+      .toHaveAttribute('href', `/reviews/${structuredReviewId}/findings#F9`)
+    await expect(band).toContainText('app/Reporting/ExportContext.php:42')
+    await expect(band).toContainText('not in this PR')
+  })
+
+  test('Overview\'s What wasn\'t checked? lands on Not verified, which holds the answer', async ({ page }) => {
+    const { seeded, structuredReviewId } = readAddresses()
+    await page.goto(`${seeded}reviews/${structuredReviewId}`)
+    await page.getByRole('link', { name: 'Understanding › Not verified' }).click()
+    await expect(page).toHaveURL(new RegExp(`/reviews/${structuredReviewId}/understanding#not-verified$`))
+    await expect(page.locator('#not-verified')).toBeVisible()
+    await expect(page.locator('#not-verified p')).not.toBeEmpty()
+  })
+
+  test('names every band in its On this tab rail at a laptop\'s width, and none at a phone\'s', async ({ page }) => {
+    const { seeded, structuredReviewId } = readAddresses()
+    await page.setViewportSize({ width: 1600, height: 1000 })
+    await page.goto(`${seeded}reviews/${structuredReviewId}/understanding`)
+    const rail = page.getByRole('navigation', { name: 'On this tab' })
+    await expect(rail.getByRole('link')).toHaveText([
+      'What changes', 'Ticket against what was built', 'Approach', 'What was built', 'Not verified',
+    ])
+    await page.setViewportSize({ width: 390, height: 900 })
+    await expect(rail).toBeHidden()
   })
 })

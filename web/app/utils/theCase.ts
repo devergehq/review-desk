@@ -25,7 +25,14 @@
  * others: the problem half alone draws "4 problems" and stops.
  */
 
-import type { Brief, BriefOption, BriefPart, ReviewLayerName } from '~/types/desk'
+import type {
+  AcceptanceCriterion,
+  Brief,
+  BriefOption,
+  BriefPart,
+  ReviewLayer,
+  ReviewLayerName,
+} from '~/types/desk'
 
 import { count } from './format'
 
@@ -42,6 +49,36 @@ export const CASE_STEPS: ReviewLayerName[] = ['understand', 'alternatives', 'sol
 export const BAND_OF_STEP: Partial<Record<ReviewLayerName, string>> = {
   alternatives: 'what-was-chosen',
   solution_map: 'what-was-built',
+}
+
+/**
+ * **The bands of the Understanding tab, in the order it draws them**, with the id each one
+ * is reached at and the words its *On this tab* rail and its heading use. DEV-1327, to S3.
+ *
+ * **The ids are a contract with two callers and outlive the words.** `RETIRED_ROUTES` sends
+ * the old Alternatives and Solution addresses to `what-was-chosen` and `what-was-built`, and
+ * Overview's questions link to `what-was-chosen` and `not-verified`. So S3 renaming *What was
+ * wrong* to *What changes* and *What was chosen* to *Approach* renames the heading and keeps
+ * the id: a link anybody holds still lands on its band.
+ *
+ * **S3 draws a sixth, *Taken as true*, and this does not.** The record holds no assumptions
+ * — no field says what a review relied on without proving it, nor its basis — and a fact the
+ * record cannot derive is left out rather than guessed. *What was built* is not on S3 and is
+ * kept, because a page may fold or reorder what it draws and never removes any of it.
+ */
+export const CASE_BANDS = [
+  { id: 'what-was-wrong', label: 'What changes' },
+  { id: 'ticket-against-what-was-built', label: 'Ticket against what was built' },
+  { id: 'what-was-chosen', label: 'Approach' },
+  { id: 'what-was-built', label: 'What was built' },
+  { id: 'not-verified', label: 'Not verified' },
+] as const
+
+export type CaseBandId = typeof CASE_BANDS[number]['id']
+
+/** The words a band is headed by, from the one list the rail reads too. */
+export function bandLabel(id: CaseBandId): string {
+  return CASE_BANDS.find(band => band.id === id)!.label
 }
 
 /** Whether this step is one of the three the case page draws. */
@@ -303,4 +340,114 @@ export function foldSummary(figures: Array<{ count: number, says: string }>): st
   const said = figures.filter(figure => figure.count > 0)
     .map(figure => `${figure.count} ${figure.says}`)
   return said.length ? said.join(' · ') : null
+}
+
+/**
+ * What the *Approach* heading carries beside it: "option C of 8 · blind pass agrees".
+ *
+ * **The blind pass's words are `answerFacts`'s own**, so the answer line and this line
+ * cannot say two things about one pass. The built option is said as *of how many*, which is
+ * what a heading over the matrix of those options is for. `null` when there are no options.
+ */
+export function approachMeta(brief: Brief): string | null {
+  const options = optionsOf(brief).length
+  if (!options) return null
+  const built = builtOption(brief)
+  const said = [built ? `option ${built.key} of ${options}` : count(options, 'option')]
+  const blind = answerFacts(brief).find(fact => fact.kind === 'blind')
+  if (blind) said.push(blind.says)
+  return said.join(' · ')
+}
+
+/* ----------------------------- Ticket against what was built ------------------------------ */
+
+/** How one criterion reads in the *Observed* column, and the mark beside it. */
+export interface CriterionObserved {
+  mark: AcceptanceCriterion['status']
+  says: string
+  /** The finding that says it is not met, for a link to it. */
+  finding: string | null
+}
+
+/**
+ * **What the review observed about one thing the ticket asked for**, in S3's words: *yes*,
+ * *no, see F9*, or *not in this PR*. Three values because `CriterionStatus` has three and
+ * refuses a fourth.
+ *
+ * S3 draws a *Claimed* column beside it and a *How* column after. **Neither is in the
+ * record**: a criterion carries what the review observed and a pointer, not what the pull
+ * request claimed and not whether the review ran or read it. Both are left out rather than
+ * guessed — a tick under *Claimed* the record cannot back is the one thing this page is
+ * built not to draw.
+ */
+export function criterionObserved(criterion: AcceptanceCriterion): CriterionObserved {
+  switch (criterion.status) {
+    case 'met':
+      return { mark: 'met', says: 'yes', finding: null }
+    case 'not_met': {
+      /* The contract's own key: the dashboard never computes an identifier. */
+      const key = criterion.finding_key ?? null
+      return { mark: 'not_met', says: key ? `no, see ${key}` : 'no', finding: key }
+    }
+    default:
+      return { mark: 'not_in_this_pr', says: 'not in this PR', finding: null }
+  }
+}
+
+/**
+ * **What answers for one criterion**, the contract's one pointer: a file and its line, or
+ * the session's note. A finding is said in *Observed* already, so it is not said twice.
+ */
+export function criterionWhere(criterion: AcceptanceCriterion): string | null {
+  if (criterion.file) return criterion.line != null ? `${criterion.file}:${criterion.line}` : criterion.file
+  return criterion.note?.trim() || null
+}
+
+/* ------------------------------------ Not verified ----------------------------------------- */
+
+/** What the review did not look at, as Overview's question and the band both say it. */
+export interface NotVerified {
+  says: string
+  /**
+   * `written` for the session's words only; `none_recorded` for a code review that is over
+   * and wrote none; `writing` while it runs; `not_started` before it has. Overview's
+   * `QuestionMark`, value for value — `none_recorded` is not counted as written there.
+   */
+  mark: 'written' | 'writing' | 'not_started' | 'none_recorded'
+}
+
+/**
+ * **What the review did not look at, chosen once**: Overview's *What wasn't checked?* and the
+ * Understanding tab's *Not verified* band, which that question links to, both call this — so
+ * the answer and the band it lands on cannot word one state two ways.
+ *
+ * The session's `not_checked` when it wrote one. Otherwise by the code review's own state:
+ * finished, it recorded nothing left unchecked; running, it is being written; failed or
+ * skipped, it never got as far as saying; not yet run, it has not started.
+ *
+ * **Only the session's words are `written`.** A finished or skipped code review that wrote
+ * none is `none_recorded`, as Overview marks a step that is over and holds no answer; a
+ * failed one is `not_started`, as Overview's other questions read it. Neither is counted in
+ * *N of 5 written*. Skipped and failed keep sentences of their own, because "no answer" over
+ * a step that never looked says less than why.
+ */
+export function notVerified(
+  notChecked: string | null | undefined,
+  layers: readonly Pick<ReviewLayer, 'name' | 'state'>[],
+): NotVerified {
+  const said = notChecked?.trim()
+  if (said) return { says: said, mark: 'written' }
+  switch (layers.find(layer => layer.name === 'code_review')?.state) {
+    case 'done':
+    case 'waiting_on_you':
+      return { says: 'The review records nothing it left unchecked.', mark: 'none_recorded' }
+    case 'running':
+      return { says: 'Writing now.', mark: 'writing' }
+    case 'failed':
+      return { says: 'The code review failed before it listed what it did not look at.', mark: 'not_started' }
+    case 'skipped':
+      return { says: 'The code review was skipped, so nothing lists what it did not look at.', mark: 'none_recorded' }
+    default:
+      return { says: 'Not started. Listed once the checks finish.', mark: 'not_started' }
+  }
 }

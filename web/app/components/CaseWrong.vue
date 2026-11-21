@@ -76,7 +76,10 @@ const hasFlows = computed(() => flowBefore.value.length > 0 || flowAfter.value.l
  */
 const reference = computed(() => {
   const said: string[] = []
-  if (props.brief.how_it_works_today) said.push('how it works today')
+  /*
+   * `how_it_works_today` is not in this list: S3 draws it open, as *Today*, at the top of
+   * the band. Moved, not dropped.
+   */
   if (props.brief.support_table) said.push('the idea behind the change')
   if (sources.value.length) said.push('what the review read')
   if (props.brief.problem) said.push('the problem as recorded')
@@ -90,11 +93,49 @@ const reference = computed(() => {
     id="what-was-wrong"
     class="band"
   >
-    <h2 class="rd-display-lead">
-      What was wrong<template v-if="problems.length">
-        · {{ problems.length }}
-      </template>
-    </h2>
+    <!--
+      **S3's heading: the question, and the count beside it.** The id is still
+      `what-was-wrong`, because the `/understand` redirect and every link anybody holds land
+      on it; the words are S3's.
+    -->
+    <CaseBandHead
+      :heading="bandLabel('what-was-wrong')"
+      :meta="problems.length ? count(problems.length, 'problem') : null"
+    />
+
+    <!--
+      **Today and After this PR, as S3 draws them**: how the system works now, and the
+      after-flow's own caption. Both are fields the session wrote — `how_it_works_today`,
+      which sat in the reference fold until this tab put it first, and `flow_after_caption`,
+      which still captions the after flow in the fold below. Drawn only when written.
+    -->
+    <div
+      v-if="brief.how_it_works_today || brief.flow_after_caption"
+      class="changes"
+    >
+      <div
+        v-if="brief.how_it_works_today"
+        class="change"
+      >
+        <h3 class="rd-rubric">
+          Today
+        </h3>
+        <p class="rd-recorded change-says">
+          <TickedText :text="brief.how_it_works_today" />
+        </p>
+      </div>
+      <div
+        v-if="brief.flow_after_caption"
+        class="change"
+      >
+        <h3 class="rd-rubric">
+          After this PR
+        </h3>
+        <p class="rd-recorded change-says">
+          <TickedText :text="brief.flow_after_caption" />
+        </p>
+      </div>
+    </div>
 
     <!--
       **No numbered problems, and the band says which nothing this is — from step 2's own
@@ -423,18 +464,6 @@ const reference = computed(() => {
 
       <div class="reference">
         <div
-          v-if="brief.how_it_works_today"
-          class="piece"
-        >
-          <h3 class="rd-rubric">
-            How it works today
-          </h3>
-          <p class="rd-recorded recorded">
-            <TickedText :text="brief.how_it_works_today" />
-          </p>
-        </div>
-
-        <div
           v-if="brief.support_table"
           class="piece"
         >
@@ -583,6 +612,33 @@ const reference = computed(() => {
   flex-direction: column;
   gap: 14px;
   min-width: 0;
+}
+
+/*
+ * **Today and After this PR: two wells side by side, one above the other on a phone.** The
+ * well is S3's grey card; `minmax(0, 1fr)` so a long sentence wraps inside its card rather
+ * than widening it.
+ */
+.changes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 12px;
+}
+
+.change {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 14px 18px;
+  border-radius: var(--rd-radius-sm);
+  background: var(--rd-ground);
+}
+
+.change-says {
+  margin: 0;
+  font-size: var(--rd-type-body);
+  line-height: 1.55;
 }
 
 /* -------------------------------- The problem rows --------------------------------- */

@@ -208,12 +208,15 @@ const fold = computed(() => {
     id="what-was-chosen"
     class="band"
   >
-    <h2 class="rd-display-lead">
-      What was chosen<template v-if="options.length">
-        ·
-        {{ count(options.length, 'option') }}
-      </template>
-    </h2>
+    <!--
+      **S3's *Approach*, at the id the Alternatives redirect and Overview's *Is it the right
+      way?* land on.** The figures beside it are `approachMeta`'s: which option was built, of
+      how many, and the blind pass in the answer line's own words.
+    -->
+    <CaseBandHead
+      :heading="bandLabel('what-was-chosen')"
+      :meta="approachMeta(brief)"
+    />
 
     <!--
       **No options, and the band says which nothing this is — from step 3's own state.**

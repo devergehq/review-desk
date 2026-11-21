@@ -32,6 +32,11 @@ for (const route of ROUTES) {
     await expect(page.locator('.tabs [aria-current="page"]')).toContainText(
       route.to.charAt(0).toUpperCase() + route.to.slice(1),
     )
+    /*
+     * **And the band is on the page it lands on** (DEV-1327): the address keeping a
+     * fragment is half of it, an element answering to that fragment is the other.
+     */
+    if (route.band) await expect(page.locator(route.band)).toBeVisible()
 
     /* With one: the same tab, and the fragment the link carried rather than the band. */
     await page.goto(`${seeded}reviews/${id}/${route.from}${route.hash}`)

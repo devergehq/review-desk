@@ -336,7 +336,7 @@ Two mechanics, both learned the hard way:
   of the fold had its own grid and a 76px indent, and its sentences were a different width
   from the face row's directly above them.
 
-## The case for a change is three bands and a derived answer line
+## The case for a change is five bands on one tab and a derived answer line
 
 Understand, Alternatives and Solution map were a page each — on review #9639, 3,653 + 3,132
 + 2,768 pixels and three navigations for one review. They are one page: a band per question,
@@ -354,6 +354,18 @@ it has earned and no others — the problem half alone draws "4 problems" and st
 
 **Three steps are one page: the class says the look, `aria-current` says the address.** The
 trail still draws three steps and they still reach three places, through `BAND_OF_STEP`.
+
+**Under S3 it is the Understanding tab, five bands with *On this tab* down the left**
+(DEV-1327): *What changes* (Today and After this PR over the numbered problems), *Ticket
+against what was built* (the review's `criteria`), *Approach*, *What was built*, and *Not
+verified* (the review's `not_checked`). Each band is headed by its question with its figures
+beside it, outside the heading. `CASE_BANDS` in `web/app/utils/theCase.ts` is the one list of
+them, and **its ids outlive its words**: `what-was-chosen` and `what-was-built` are where the
+old Alternatives and Solution addresses land, and Overview links to `what-was-chosen` and
+`not-verified`. S3's *Taken as true*, and the *Claimed* and *How* columns of its criteria
+table, are not drawn: the record holds no assumptions and a criterion carries only what was
+observed. *What was built* is not on S3 and stays, because nothing is removed. The rail is
+drawn when the case's own container is 820px wide or more, not by the window.
 
 ## If you are a session writing the content
 

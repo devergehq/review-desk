@@ -54,26 +54,19 @@ database**, written by `review-desk review open`, `brief put`, `finding add`, `l
 and `draft put`. Nothing on these screens came from a fixture — that is what the absence of
 the "Sample data" marker means.
 
-## The case page — three steps on one page, 16 October 2026
+## Understanding — the case as one tab, to S3 (DEV-1327, 21 November 2026)
 
 | File | What it is |
 | -- | -- |
-| `case-1-the-case.png`, `-390` | **The case for one change, as it opens.** The brief's own headline sentence, then one line of facts read off the record — "3 problems · option C built · fixes all 3 · blind pass agrees" — then the verdict on the approach, then three bands: what was wrong, what was chosen, what was built. Each band is the shape of its own answer rather than a summary of it, so the counts are read rather than asserted. |
-| `case-2-the-case-open.png`, `-390` | The same page with every fold open and the first row of each band open: the two flows, the reference material, the reasoning for and against each option, what the blind pass was given, and the three lists the ticket and the description left behind. **This is the cost of the page as well as its depth** — the picture is what one reader opening everything at once gets, and nothing on it is a page away. |
+| `understanding-1-the-case.png`, `-390` | **The case for one change, as it opens, at 1,600 and 390 beside `docs/mockups/s-structured/S03-understanding.webp`.** The brief's own headline, the derived answer line, the verdict on the approach, then *On this tab* down the left and five bands: What changes (Today and After this PR over the numbered problems), Ticket against what was built, Approach, What was built, and Not verified. At 390 the rail is not drawn and the bands are one column. |
+| `understanding-2-the-case-open.png`, `-390` | The same tab with every fold open and the first row of each band open: the two flows, the reference material, the reasoning for and against each option, what the blind pass was given, and the three lists the ticket and the description left behind. **This is the cost of the page as well as its depth.** |
+| `understanding-3-old-brief.png` | A brief written before the structured one existed: the recorded text as it was written, then the two bands that are the review's rather than the brief's. |
 
-**What this replaced, and what became of its pictures.** Understand, Alternatives and
-Solution were a page each: `dev-885-1` to `-3` below are of those three, and they are left
-as the record of them. On review #9639 they came to 3,653 + 3,132 + 2,768 pixels and three
-navigations for one review, and Patrick — who reads about seventy-two reviews a month —
-said of all three that the content is good and that they are "quite broad, quite large,
-you've got to dig into them". `dev-892-2-numbers-in-full.png` goes the same way: the fold it
-pictures was the Alternatives page's answer to a matrix headed by bare numbers on a page
-away from the sentences, and the sentences are now the rows of band 1 three inches above
-the matrix.
-
-**The three addresses still work and still draw this page**, so a run of this set that
-asked for `/alternatives` would take the same picture twice. Steps 3 and 4 carry a fragment
-to the band they are, which is what the trail links to.
+**What this replaced.** Understand, Alternatives and Solution were a page each — on review
+#9639, 3,653 + 3,132 + 2,768 pixels and three navigations for one review — and became one
+page on 16 October 2026, then one tab. **Their `dev-885` pictures are removed with the
+pages**: the three addresses redirect here, so a picture taken at one of them was a picture
+of this tab under another name. The `case-` pictures are these, renamed for the tab.
 
 ## The two lists — one row per pull request, one line per fact, 16 October 2026
 
@@ -133,7 +126,7 @@ before this pull request and nothing else changed.
 | -- | -- |
 | `dev-892-2-numbers-in-full.png` | The Alternatives matrix headed by its labels — "1 · the shared slot", not a sentence wrapped ten lines deep — with the fold under it open: every number, its label and the line that used to be the heading. |
 
-**The retaken `dev-885` pictures above carry the rest of it.** The matrix headings and the
+**The `understanding-` pictures above carry the rest of it.** The matrix headings and the
 part cards are what those three are pictures of, and a defect in how a page reads is fixed
 in the picture of the page rather than in a picture of its own. What changed in them:
 
@@ -155,7 +148,7 @@ in the picture of the page rather than in a picture of its own. What changed in 
 
 | File | What it is |
 | -- | -- |
-| `dev-917-1-step-card-open.png` | **All four fixes in one page.** The trail draws each step on two one-line rows and step 2's card is open over the page — the step's name, "time not recorded", and the three facts it recorded as label and value. **Nothing under the card has moved**: compare the headline's position with any of the `dev-885` pictures above, which is the acceptance criterion a test measures in `review-desk.spec.ts`. Below it: each flow box's mark is a tag carrying the problem's name, with the three listed once above both flows; `TenantContext::current()` is a code chip where the session's backticks used to be printed as characters; and "Already decided" is three levels, the third a table whose last row shortens a 40-character commit id to seven. |
+| `dev-917-1-step-card-open.png` | **All four fixes in one page.** The trail draws each step on two one-line rows and step 2's card is open over the page — the step's name, "time not recorded", and the three facts it recorded as label and value. **Nothing under the card has moved**: compare the headline's position with the `understanding-` pictures above, which is the acceptance criterion a test measures in `review-desk.spec.ts`. Below it: each flow box's mark is a tag carrying the problem's name, with the three listed once above both flows; `TenantContext::current()` is a code chip where the session's backticks used to be printed as characters; and "Already decided" is three levels, the third a table whose last row shortens a 40-character commit id to seven. |
 
 The step's duration moved onto the card, which is why the trail in these pictures has no
 figure under each step. The review's own totals are still under the trail.
