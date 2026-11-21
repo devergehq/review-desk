@@ -5284,6 +5284,19 @@ test.describe('the Draft tab of a later round', () => {
     await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
     await expect(action).toBeInViewport()
 
+    /*
+     * **Pinned only where the header fits its 120px**, from 1,024px; and the phone's section
+     * gap is still 36px on every tab, since the header became a child of the whole page.
+     * Both raised by the second round of #97's self-review.
+     */
+    const pinned = () => page.getByTestId('review-header').evaluate(element => getComputedStyle(element).position)
+    expect(await pinned()).toBe('sticky')
+    await page.setViewportSize({ width: 900, height: 900 })
+    expect(await pinned()).toBe('static')
+    await page.setViewportSize({ width: 390, height: 844 })
+    expect(await page.locator('.under').evaluate(element => getComputedStyle(element).rowGap)).toBe('36px')
+    await page.setViewportSize({ width: 1280, height: 720 })
+
     await page.getByRole('tab', { name: 'Changes since round 1' }).click()
     await expect(page.locator('.changes')).toContainText('round 1’s head and this round’s')
 

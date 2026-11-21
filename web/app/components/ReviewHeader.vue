@@ -400,10 +400,12 @@ const tabs = computed(() =>
 
 /*
  * **Pinned on the page's own ground**, so what scrolls under it is covered rather than
- * read through. Not under 700px, where the shell's own bar is the sticky top and a second
- * one would take a phone's screen.
+ * read through. **From 1,024px only**, where the header was measured at 117px, inside the
+ * 120 it may take: below that its facts line wraps and the header grows to 137px at 760 and
+ * 237px at 700 — a quarter of a window held for the whole scroll. Under 700 the shell's own
+ * bar is the sticky top. Raised by the second round of #97's self-review.
  */
-@media (min-width: 700px) {
+@media (min-width: 1024px) {
   .review-header--pinned {
     position: sticky;
     top: 0;

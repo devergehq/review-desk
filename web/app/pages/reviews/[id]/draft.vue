@@ -336,6 +336,21 @@ onBeforeRouteLeave((to, from) => (to.path === from.path ? true : askBeforeLeavin
 const keep = useTemplateRef<HTMLButtonElement>('keep')
 
 /*
+ * **A notice is brought into view when it is set.** The sign-off is pressed from the pinned
+ * header anywhere in the scroll, and the answer — a refusal above all — is in the side
+ * column; `nearest`, so a notice already on screen does not move the page. jsdom has no
+ * scrolling, hence the check.
+ */
+const noticeBox = useTemplateRef<HTMLElement>('noticeBox')
+watch(notice, async (said) => {
+  if (!said) return
+  await nextTick()
+  if (typeof noticeBox.value?.scrollIntoView === 'function') {
+    noticeBox.value.scrollIntoView({ block: 'nearest' })
+  }
+})
+
+/*
  * **Focused when it appears**, and on Keep editing rather than on Discard. The card is
  * drawn at the top of a page that is often scrolled past it, so without this the developer
  * presses a link, nothing appears to happen, and the answer is above the fold. The safe
@@ -1291,22 +1306,6 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
 
                 <aside class="aside">
                   <!--
-                    **What the last write did, first in the column**, so a press of the header's
-                    sign-off is answered where the eye goes next. It is the page's notice, not
-                    a panel's: it reports on the sign-off, the save, the send-back and both
-                    ticket asks, and it has to draw on a review nobody can sign off, where a
-                    refused save would otherwise have nowhere to be said.
-                  -->
-                  <div
-                    v-if="notice"
-                    class="side-part"
-                  >
-                    <DeskNotice :tone="notice.tone">
-                      {{ notice.text }}
-                    </DeskNotice>
-                  </div>
-
-                  <!--
                     **No verdict and no acts when nothing can post this draft**, DEV-957. Not
                     disabled: on a merged pull request there is no session coming for any of
                     them, and the header draws no sign-off either. The status line above says
@@ -1327,18 +1326,6 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                       record. Nothing has been removed.
                     </p>
                   </section>
-
-                  <!--
-                    **Why the header's sign-off is disabled**, beside the verdict it would
-                    post with and named by the button's `aria-describedby`.
-                  -->
-                  <DeskNotice
-                    v-if="dirty && !notForSigning(data)"
-                    id="sign-off-why"
-                    tone="problem"
-                  >
-                    Save or discard your changes before signing off.
-                  </DeskNotice>
 
                   <!--
                     **Post as, as S05's three segments.** Radios, so the choice is one of
@@ -1554,7 +1541,35 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                     on screen, and the foot is the note and the other two ways out. One group,
                     so neither slides over the other; it rides under the pinned header.
                   -->
-                  <div class="side-pinned">
+                  <div
+                    class="side-pinned"
+                    :class="{ 'side-pinned--held': sendingBack || ticketingRest }"
+                  >
+                    <!--
+                      **What the last write did, and why the sign-off is disabled, at the head
+                      of the group that stays in view.** The sign-off is pressed from the pinned
+                      header anywhere in the scroll, so its answer has to be where the eye can
+                      see it from anywhere too; the notice is also scrolled to when it is set.
+                      It reports on the sign-off, the save, the send-back and both ticket asks,
+                      and draws on a review nobody can sign off, where a refused save would
+                      otherwise have nowhere to be said.
+                    -->
+                    <div
+                      v-if="notice"
+                      ref="noticeBox"
+                      class="side-part"
+                    >
+                      <DeskNotice :tone="notice.tone">
+                        {{ notice.text }}
+                      </DeskNotice>
+                    </div>
+                    <DeskNotice
+                      v-if="dirty && !notForSigning(data)"
+                      id="sign-off-why"
+                      tone="problem"
+                    >
+                      Save or discard your changes before signing off.
+                    </DeskNotice>
                     <nav
                       v-if="outline.length > 0 && data.draft.body.length > 0"
                       class="side-part outline"
@@ -2067,6 +2082,15 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
   .side-pinned {
     position: sticky;
     top: 132px;
+  }
+
+  /*
+   * **Not pinned while a form is open in the foot.** Send back adds 144px and Ticket what
+   * is left 217px, which can run the stuck group past a short window with its own submit
+   * below the edge; open, the group scrolls with the page so every part of it is reachable.
+   */
+  .side-pinned--held {
+    position: static;
   }
 }
 

@@ -301,7 +301,8 @@ const stepName = computed(() => layerLabel(props.step))
 }
 
 @media (max-width: 560px) {
-  .page {
+  /* The sections' phone gap, on the block that holds them; the header's 18px is unchanged. */
+  .under {
     gap: 36px;
   }
 
