@@ -68,7 +68,8 @@ test('the list’s keys do not follow the reader onto Findings', async ({ page }
 
   await page.keyboard.press('Enter')
   await page.waitForTimeout(300)
-  await expect(page).toHaveURL(`${seeded}reviews/${id}/findings`)
+  /* Still Findings. J and K write the finding into the query, which is this page's own. */
+  await expect(page).toHaveURL(new RegExp(`/reviews/${id}/findings\\?finding=F[0-9]+$`))
 })
 
 /*
@@ -112,4 +113,25 @@ test('no finding’s hunk forces the page sideways at 1,600 beside the conversat
     }
   }
   expect(hunks, 'at least one finding drew a hunk').toBeGreaterThan(0)
+})
+
+/*
+ * **Choosing a part leaves the keys working.** A focused `<select>` is a field, and a key
+ * pressed at a field is not a key for the page, so the select gives focus back once a part
+ * is chosen. Found by this branch's self-review.
+ */
+test('the keys still work after a part is chosen', async ({ page }) => {
+  await page.goto(`${seeded}reviews/${id}/findings`)
+  await expect(picked(page)).toBeVisible()
+  const select = page.locator('.parts-select')
+  test.skip(await select.count() === 0, 'this review has no parts')
+
+  await select.selectOption({ index: 0 })
+  await select.selectOption({ index: 1 })
+  await expect(select).not.toBeFocused()
+  const rows = page.locator('.row')
+  test.skip(await rows.count() < 2, 'the part holds one row')
+  const first = (await picked(page).textContent())!.trim()
+  await page.keyboard.press('j')
+  await expect(picked(page)).not.toHaveText(first)
 })

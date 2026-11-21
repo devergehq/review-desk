@@ -123,10 +123,13 @@ describe('the one next action', () => {
       .toEqual({ label: 'Sign off and post', to: '/reviews/5/draft' })
   })
 
-  /* DEV-1328: one reply's action opens its finding, where its three replies are keys. */
-  it('opens the one finding to answer, or counts the replies and goes to Replies', () => {
+  /*
+   * **Replies, not the finding on Findings** (DEV-1328's self-review): a reply comes in on a
+   * posted review, and Findings refuses every decision on one.
+   */
+  it('names the one reply to answer, or counts them, and goes to Replies', () => {
     expect(primaryAction(5, 'replies_in', ['F3']))
-      .toEqual({ label: 'Answer F3', to: '/reviews/5/findings?finding=F3' })
+      .toEqual({ label: 'Answer F3', to: '/reviews/5/replies' })
     expect(primaryAction(5, 'replies_in', ['F3', 'F9']))
       .toEqual({ label: 'Answer 2 replies', to: '/reviews/5/replies' })
   })

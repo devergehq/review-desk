@@ -165,18 +165,19 @@ export interface PrimaryAction {
  * |---|---|---|
  * | Brief ready | Confirm the brief | Understanding, where the brief's card is |
  * | Draft ready | Sign off and post | Draft, where the sign-off is |
- * | Replies in, with a reply to answer | Answer F3, or Answer 2 replies | F3 on Findings, or Replies |
+ * | Replies in, with a reply to answer | Answer F3, or Answer 2 replies | Replies |
  *
  * Every other state is nothing for the developer to do, so no action: a session working
  * or awaited (*Being written*, *Waiting for a session*), a review posted and quiet, and the
  * ways off the desk (*Merged*, *Closed*, *Dismissed*, *Out of play*, *Superseded* — a round a
  * later one replaced, whose work is the later round's).
  *
- * **One reply to answer opens its finding** (DEV-1328): *Answer F3* goes to F3 on Findings,
- * `?finding=F3`, where its three replies are keys. More than one goes to the Replies tab,
- * which lists them. DEV-1329 moves the Draft page's sign-off binding into the draft-ready
- * action; both repoint what this answers rather than adding a second place that chooses an
- * action.
+ * **A reply is answered on Replies, so that is where both go**, one reply or several. DEV-1328
+ * considered sending *Answer F3* to F3 on Findings (`?finding=F3`) and did not: a reply comes
+ * in on a posted review, and Findings refuses every decision on one ("This review is posted").
+ * The action would have opened a page where it could not be done. DEV-1330 builds the three
+ * replies on Replies and may point this at the one reply there. DEV-1329 moves the Draft
+ * page's sign-off binding into the draft-ready action.
  *
  * `toAnswer` is the finding keys [`repliesToAnswer`] answers, passed in so this stays a
  * function of values.
@@ -193,9 +194,10 @@ export function primaryAction(
       return { label: 'Sign off and post', to: tabPath(reviewId, 'draft') }
     case 'replies_in':
       if (toAnswer.length === 0) return null
-      return toAnswer.length === 1
-        ? { label: `Answer ${toAnswer[0]}`, to: findingPath(reviewId, toAnswer[0]!) }
-        : { label: `Answer ${toAnswer.length} replies`, to: tabPath(reviewId, 'replies') }
+      return {
+        label: toAnswer.length === 1 ? `Answer ${toAnswer[0]}` : `Answer ${toAnswer.length} replies`,
+        to: tabPath(reviewId, 'replies'),
+      }
     default:
       return null
   }

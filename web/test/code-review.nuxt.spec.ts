@@ -1,7 +1,7 @@
 // @vitest-environment nuxt
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
-import { flushPromises, type VueWrapper } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, type VueWrapper } from '@vue/test-utils'
 
 import { resetDesk } from '../app/composables/useReviewDesk'
 import { loadSource } from '../app/data/sample'
@@ -10,6 +10,13 @@ import CodeReview from '../app/pages/reviews/[id]/findings.vue'
 import Draft from '../app/pages/reviews/[id]/draft.vue'
 
 import type { DraftDetail, ReviewDetail } from '../app/types/desk'
+
+/*
+ * **Every page is unmounted after its test.** A page's J and K listen on `window`, and since
+ * a chosen finding is written into the address (DEV-1328), a page left mounted by an earlier
+ * test answered the next test's keys by navigating — moving the bench under test.
+ */
+enableAutoUnmount(afterEach)
 
 /*
  * **Step 5, the code review page**, mounted against the records.
@@ -1655,5 +1662,38 @@ describe('arriving at a finding named in the query', () => {
     await flushPromises()
     await flushPromises()
     expect(page.find('.row--picked').find('.key').text()).toBe('F2')
+  })
+
+  /*
+   * **The address follows the bench, so a link back to a finding is a navigation.** Found
+   * by this branch's self-review: land on `?finding=F2`, move away, and a link to F2 had the
+   * address the page already had, so the router did nothing.
+   */
+  it('writes the finding chosen into the address, and arrives again at a link back', async () => {
+    const page = await at(REAL, '?finding=F2')
+    expect(page.find('.row--picked').find('.key').text()).toBe('F2')
+
+    await press(page, 'To post')
+    await flushPromises()
+    const other = page.findAll('.row').find(one => one.find('.key').text() === 'F6')!
+    await other.trigger('click')
+    /* A navigation resolves over more than one turn: wait for the router, not a tick. */
+    await vi.waitFor(() => expect(useRouter().currentRoute.value.query.finding).toBe('F6'))
+
+    await useRouter().push(`/reviews/${REAL}/findings?finding=F2`)
+    await flushPromises()
+    await flushPromises()
+    expect(page.find('.row--picked').find('.key').text()).toBe('F2')
+  })
+
+  it('keeps the part filter when a row is chosen', async () => {
+    const page = await codeReview(REAL)
+    await choosePart(page, 'Allowed columns on the report definition')
+    const row = page.findAll('.row').find(one => one.find('.key').text() === 'F6')!
+    await row.trigger('click')
+    await flushPromises()
+    await flushPromises()
+    expect(page.text()).toContain('Only: Allowed columns on the report definition.')
+    expect(page.find('.row--picked').find('.key').text()).toBe('F6')
   })
 })

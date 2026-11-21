@@ -108,6 +108,7 @@ import { commitLabel, movesSince, nothingMoved } from '~/utils/rounds'
 definePageMeta({ wide: true })
 
 const route = useRoute()
+const router = useRouter()
 const desk = useReviewDesk()
 
 const reviewId = computed(() => Number(route.params.id))
@@ -174,6 +175,18 @@ const sinceTheDraft = computed(() => {
 function choose(seq: number) {
   picked.value = seq
   reasoning.value = false
+  /*
+   * **And the address says which**, so a link to a finding the reader has moved away from
+   * is a navigation again. Land on `?finding=F3`, press J to F5, and the header's *Answer F3*
+   * (or a cite in the conversation) had the same address as the page — the router did
+   * nothing and the bench stayed on F5. Found by this branch's self-review. `replace`, so J
+   * down a list of fifteen is not fifteen entries in the history; the hash goes, because
+   * the query now says it and two names for one finding could disagree.
+   */
+  const key = rows.value.find(finding => finding.seq === seq)?.key
+  if (key && route.query.finding !== key) {
+    void router.replace({ query: { ...route.query, finding: key }, hash: '' })
+  }
 }
 
 /*
@@ -267,7 +280,14 @@ watch(
   () => [route.query.finding, route.hash],
   () => {
     const data = detail.data.value
-    if (data) void arriveAt(data.findings)
+    /*
+     * **Not when the address names the finding the reader chose**, which is the address
+     * `choose` writes. Arriving at it again would clear the part filter they had set, and,
+     * after a decision moved it to another list, would follow it there. `picked` and not
+     * `shown`: a decision changes what is shown without the reader choosing anything.
+     */
+    if (!data || findingAsked(route.query, route.hash) === picked.value) return
+    void arriveAt(data.findings)
   },
 )
 
@@ -714,9 +734,16 @@ function coverage(data: ReviewDetail): string | null {
                 class="parts"
               >
                 <span class="rd-visually-hidden">Show only the findings in one part</span>
+                <!--
+                  **Blurred once chosen.** A focused `<select>` is a field to `keyIsForThePage`,
+                  so every key in the table stopped working after a part was picked, and its
+                  own typeahead took T and S as the first letters of part names. Found by this
+                  branch's self-review.
+                -->
                 <select
                   v-model.number="part"
                   class="rd-field parts-select"
+                  @change="($event.target as HTMLSelectElement).blur()"
                 >
                   <option
                     v-for="tile in tiles"
@@ -942,7 +969,7 @@ function coverage(data: ReviewDetail): string | null {
                   >
                     <span class="key-cap rd-mono">J</span>
                     <span class="key-cap rd-mono">K</span>
-                    move through the list · the key on each button decides
+                    move through the list
                   </p>
                 </div>
 

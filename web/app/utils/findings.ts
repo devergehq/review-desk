@@ -456,10 +456,9 @@ export function roundStatusLabel(finding: Finding): string | null {
 
 /** The tally at the foot: "11 to post, 2 for a ticket, 1 set aside". */
 export function tally(findings: Finding[]): string {
-  const of = (list: FindingList) => findings.filter(finding => listOf(finding) === list).length
-  return (
-    `${of('post')} to post, ${of('ticket')} for a ticket, ${of('aside')} set aside`
-  )
+  /* `listCounts`, the one count of the lists, so the foot cannot disagree with the tabs. */
+  const of = listCounts(findings)
+  return `${of.post} to post, ${of.ticket} for a ticket, ${of.aside} set aside`
 }
 
 /** The severity counts of a list of findings, in the contract's own shape. */

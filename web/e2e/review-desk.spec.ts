@@ -663,7 +663,8 @@ test.describe('the whole path, on a seeded database', () => {
     await expect(
       page.locator('.title').filter({ hasText: 'A retried delivery is sent without an idempotency key' }),
     ).toBeVisible()
-    await expect(page.getByText('jobs/DeliverWebhook.php:58')).toBeVisible()
+    /* On the row, and again as the finding's *Where* (S4, DEV-1328): the row's is asserted. */
+    await expect(page.locator('.row .where').getByText('jobs/DeliverWebhook.php:58')).toBeVisible()
     await expect(
       page.getByText('The admin screens, which this change does not touch.'),
     ).toBeVisible()
