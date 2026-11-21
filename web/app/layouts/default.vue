@@ -1,111 +1,129 @@
 <script setup lang="ts">
 /**
- * The shell every screen sits in: the name, the three places you can be, and the marker
- * that says these records are invented.
+ * The shell every screen sits in: three columns, capped at `--rd-shell-wide`.
  *
- * The boards all carry the same header — the name in Newsreader at 22px, the three items
- * underlined when current, a 1px ink rule under the lot — and they name the first item
- * **Queue** rather than Inbox. That is the word this app now uses for the screen at `/`:
- * it is a queue of reviews, one row each, and "inbox" was the name of the thing that
- * listed one review three times.
+ * `docs/design.md`, *The application shell* (21 November 2026), and the S1 and S2 screens:
  *
- * **"Reviews" is a page now, and until DEV-930 it was an action.** It went to whichever
- * review happened to be waiting — the brief to confirm, else the draft to approve, else the
- * first reply — and greyed itself out on a database with none. That was the best available
- * answer while there was no index to point at: it meant the one item in the header could
- * not take a reader to a *particular* review, which is the whole of what Patrick asked for
- * after posting review 2. It points at `/reviews`.
+ * | Column | Width | Holds |
+ * | -- | -- | -- |
+ * | Sidebar | 232px | `AppSidebar`: the wordmark, the navigation, every pull request, the status lines |
+ * | Main | the rest | The page |
+ * | Conversation | 380px | **Ask this review**, on a review's pages only. Absent on the lists and Rules |
  *
- * Two things went with it, and both are a gain. The layout no longer reads `GET /inbox` on
- * every page — it did so only to work out that link, so the header now renders with the
- * server stopped. And the disabled-label branch is gone, because a list is somewhere worth
- * being on a database with nothing in it: it says so.
+ * **The conversation column is drawn empty**, as a placeholder: the second stack fills it
+ * (DEV-1322's plan). It is drawn now so that every page laid out from here on is laid out
+ * at the width it will have, and a page that fits beside an empty column fits beside a full
+ * one.
  *
- * **`current` and `section` are two questions**, and the item needs both. The underline
- * marks the part of the app you are in, so `/reviews/3/understand` still underlines
- * Reviews. `aria-current="page"` is a narrower claim — *this* is the page — and setting it
- * on a review page would tell a screen reader it was on the list.
+ * **Under 700px the shell is one column.** The sidebar goes behind a menu button in a bar
+ * at the top, and the conversation column is not drawn at all: on a phone it is a bottom
+ * sheet (S14), which is the second stack's too.
+ *
+ * **What the old header carried is all still here**: the name is the sidebar's wordmark,
+ * the three places are its navigation, and the sample-data marker is at its foot. The skip
+ * link stays first in the document.
+ *
+ * ## Wide pages
+ *
+ * A page still asks for the wider main column itself, with `definePageMeta({ wide: true })`
+ * — read off the route, so a page that is wide is wide from its first frame. A document's
+ * main column is capped at `--rd-shell-max`; a workbench's takes all the main column has.
  */
 const route = useRoute()
 
-const LINKS = [
-  { label: 'Queue', to: '/' },
-  { label: 'Reviews', to: '/reviews' },
-  { label: 'Rules', to: '/rules' },
-]
-
-/** Whether this is the page being read. The narrower claim, and `aria-current`'s. */
-const isCurrent = (to: string, path: string) => path === to
-
-/**
- * Whether this is the part of the app being read, which is what the underline marks.
- *
- * **The Queue is the exception and it is stated here rather than left to look like an
- * inconsistency**: every path starts with `/`, so the prefix rule would underline Queue on
- * every screen. It owns one path and no children.
- */
-const isSection = (to: string, path: string) =>
-  (to === '/' ? path === '/' : path.startsWith(to))
-
-/**
- * Whether this page asked for the wider shell.
- *
- * The bar above is full-bleed and always has been, so nothing moves out of line with it —
- * at a 1,440px window the wide page's content starts at the same 40px gutter the app's own
- * name does, which is closer to the bar than the 1,240px shell ever was.
- */
+/** Whether this page asked to be a workbench rather than a document. */
 const wide = computed(() => route.meta.wide === true)
+
+/** A review's pages, which are the ones the conversation sits beside. */
+const onAReview = computed(() => /^\/reviews\/\d+(?:\/|$)/.test(route.path))
+
+/** Whether the sidebar is open over the page, under 700px. Above it, it is always there. */
+const menuOpen = ref(false)
+
+/* Going somewhere is what the menu is for, so arriving closes it. */
+watch(() => route.fullPath, () => {
+  menuOpen.value = false
+})
 </script>
 
 <template>
-  <div class="shell">
+  <div
+    class="shell"
+    :class="{ 'shell--review': onAReview, 'shell--menu-open': menuOpen }"
+  >
     <a
       class="skip"
       href="#main"
     >Skip to the page</a>
-    <header class="bar">
-      <div class="name">
-        Review Desk
-      </div>
-      <nav
-        class="nav"
-        aria-label="Review Desk"
-      >
-        <NuxtLink
-          v-for="link in LINKS"
-          :key="link.label"
-          :to="link.to"
-          class="link"
-          :class="{ 'link--current': isSection(link.to, route.path) }"
-          :aria-current="isCurrent(link.to, route.path) ? 'page' : undefined"
-        >
-          {{ link.label }}
-        </NuxtLink>
-      </nav>
-      <SampleDataBadge />
-    </header>
-    <!--
-      **One page may be wider than the shell, and says so itself.**
 
-      `definePageMeta({ wide: true })` on the code review page and the draft: both are
-      workbenches — a list beside a finding, an outline beside a preview — and at 1,240px
-      the pane with the code in it shows about 45 characters. Read off the route rather
-      than set by the page into a store, so a page that is wide is wide from its first
-      frame and a page that is not never has to say so.
-    -->
+    <!-- Only drawn under 700px, where the sidebar is behind it. -->
+    <div class="topbar">
+      <button
+        type="button"
+        class="menu"
+        :aria-expanded="menuOpen"
+        aria-controls="sidebar"
+        @click="menuOpen = !menuOpen"
+      >
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 18 18"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          aria-hidden="true"
+        ><path d="M3 5h12M3 9h12M3 13h12" /></svg>
+        <span class="rd-visually-hidden">Menu</span>
+      </button>
+      <span class="topbar-name">Review Desk</span>
+    </div>
+
+    <aside
+      id="sidebar"
+      class="sidebar"
+      aria-label="Pull requests and places"
+    >
+      <AppSidebar />
+    </aside>
+
     <main
       id="main"
       class="main"
-      :class="{ 'main--wide': wide }"
     >
-      <slot />
+      <div
+        class="page"
+        :class="{ 'page--wide': wide }"
+      >
+        <slot />
+      </div>
     </main>
+
+    <!--
+      The conversation's column, on a review's pages. Empty until the second stack fills it,
+      so it is hidden from assistive technology: an empty landmark is a stop with nothing at
+      it.
+    -->
+    <div
+      v-if="onAReview"
+      class="shell-conversation"
+      aria-hidden="true"
+    />
   </div>
 </template>
 
 <style scoped>
 .shell {
+  display: grid;
+  grid-template-columns: var(--rd-sidebar-width) minmax(0, 1fr);
+  max-width: var(--rd-shell-wide);
   min-height: 100vh;
+  margin: 0 auto;
+}
+
+.shell--review {
+  grid-template-columns: var(--rd-sidebar-width) minmax(0, 1fr) var(--rd-conversation-width);
 }
 
 .skip {
@@ -116,80 +134,117 @@ const wide = computed(() => route.meta.wide === true)
 .skip:focus {
   left: 8px;
   top: 8px;
-  z-index: 2;
+  z-index: 3;
   padding: 10px 14px;
   background: var(--rd-surface);
   border: 1px solid var(--rd-control-line);
   border-radius: var(--rd-radius-sm);
 }
 
-.bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 28px;
-  padding: 14px 40px;
-  /* Ink, not the row grey: this is the line that separates the app from the page. */
-  border-bottom: 1px solid var(--rd-ink);
-}
-
-.name {
-  font-family: var(--rd-font-display);
-  font-size: 22px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-}
-
-.nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.link {
-  display: flex;
-  align-items: center;
-  padding: 12px;
-  color: var(--rd-ink-muted);
-  text-decoration: none;
-}
-
-.link:hover {
-  color: var(--rd-ink);
-}
-
-.link--current {
-  color: var(--rd-ink);
-  font-weight: 600;
-  box-shadow: inset 0 -2px 0 var(--rd-ink);
-}
-
-/* The marker sits at the far end, which is where every board puts it. */
-.bar :deep(.badge) {
-  margin-left: auto;
-}
-
-.main {
-  max-width: var(--rd-shell-max);
-  margin: 0 auto;
-  padding: 44px 40px 80px;
+.topbar {
+  display: none;
 }
 
 /*
- * The workbench screens. Capped rather than unbounded: a review read on a 27-inch monitor
- * is still read by one pair of eyes, and the cap is what the token's own note argues.
+ * The sidebar stays in view as the page scrolls, as S1 and S2 draw it: its foot is the
+ * status lines, and a reader halfway down a long review still sees them.
  */
-.main--wide {
-  max-width: var(--rd-shell-wide);
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  background: var(--rd-ground);
+  border-right: 1px solid var(--rd-line);
 }
 
-@media (max-width: 560px) {
-  .bar {
-    padding: 12px 16px;
+.main {
+  min-width: 0;
+  padding: 36px 40px 80px;
+}
+
+.page {
+  max-width: var(--rd-shell-max);
+}
+
+.page--wide {
+  max-width: none;
+}
+
+.shell-conversation {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  border-left: 1px solid var(--rd-line);
+}
+
+@media (max-width: 699px) {
+  .shell,
+  .shell--review {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px;
+    background: var(--rd-page);
+    border-bottom: 1px solid var(--rd-line);
+  }
+
+  .menu {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--rd-control-min);
+    height: var(--rd-control-min);
+    padding: 0;
+    color: var(--rd-ink);
+    background: none;
+    border: 0;
+    border-radius: var(--rd-radius-sm);
+    cursor: pointer;
+  }
+
+  .menu:hover {
+    background: var(--rd-rail-pressed);
+  }
+
+  /*
+   * The bar's name is the sans: the wordmark proper is the sidebar's, and the one serif in
+   * the app is that one element.
+   */
+  .topbar-name {
+    font-size: var(--rd-type-lead);
+    font-weight: 600;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: calc(var(--rd-control-min) + 9px);
+    bottom: 0;
+    left: 0;
+    z-index: 2;
+    display: none;
+    width: min(var(--rd-sidebar-width), 100vw);
+    height: auto;
+    box-shadow: var(--rd-lift-raised);
+  }
+
+  .shell--menu-open .sidebar {
+    display: block;
   }
 
   .main {
-    padding: 28px 16px 48px;
+    padding: 24px 16px 48px;
+  }
+
+  .shell-conversation {
+    display: none;
   }
 }
 </style>

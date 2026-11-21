@@ -9,7 +9,7 @@ import type { ReviewLayerName, ReviewDetail } from '~/types/desk'
  *  └ to GitHub ┘   └ to the tracker ┘
  *  ┌── the step trail, seven steps in two groups ──────────────┐
  *  └───────────────────────────────────────────────────────────┘
- *  The one headline sentence, in Newsreader at 40px
+ *  The one headline sentence, in the sans at the scale's title
  *  the one line under it, when the page has one
  *  …the page…
  * ```
@@ -329,9 +329,9 @@ const stepName = computed(() => layerLabel(props.step))
 }
 
 .headline {
-  /* The board's 40px rather than `.rd-display`'s 48px: this sentence runs long. */
+  /* The page's h1, at the scale's title: the S header's own size for a review's title. */
   margin: 14px 0 0;
-  font-size: 40px;
+  font-size: var(--rd-type-title);
   line-height: 1.12;
   text-wrap: balance;
   max-width: 940px;
@@ -349,7 +349,7 @@ const stepName = computed(() => layerLabel(props.step))
   }
 
   .headline {
-    font-size: 28px;
+    font-size: var(--rd-type-lead);
     margin-top: 6px;
   }
 

@@ -616,15 +616,14 @@ const fold = computed(() => foldSummary([
 }
 
 /*
- * A group's heading. The serif face the boards use for a heading, at the size that reads as
- * a divider inside a table rather than as a second page heading.
+ * A group's heading, at the size that reads as a divider inside a table rather than as a
+ * second page heading. The sans since the shell (21 November 2026): no serif but the wordmark.
  */
 .part-group {
   margin: 22px 0 6px;
   padding: 0 16px;
-  font-family: var(--rd-font-display);
-  font-weight: 400;
-  font-size: 19px;
+  font-weight: 600;
+  font-size: var(--rd-type-lead);
 }
 
 .part-group:first-of-type {

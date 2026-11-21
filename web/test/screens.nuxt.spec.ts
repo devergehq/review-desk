@@ -2,6 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { flushPromises, type VueWrapper } from '@vue/test-utils'
+import { readdirSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 import {
   resetDesk,
@@ -115,18 +117,21 @@ describe('the shell', () => {
     expect(page.find('main#main').exists()).toBe(true)
   })
 
-  it('names the three places you can be', async () => {
+  /*
+   * **Pull requests, Reviews, Rules.** The S screens draw two items, Pull requests and
+   * Rules, because by then the Queue and Reviews are one list (DEV-1325). Until they are,
+   * Reviews stays: taking it out would leave `/reviews` with no way in, and a page may fold
+   * what it draws but never removes any of it. "Pull requests" is the Queue's address under
+   * its S name — it was "Queue", not "Inbox", for DEV-876's reason, and it is the list of
+   * pull requests now.
+   */
+  it('names the places you can be', async () => {
     const page = await shown(Layout)
-    const places = page.findAll('nav a, nav span').map(link => link.text())
-    /*
-     * "Queue", not "Inbox". The approved boards name it that, and so does DEV-876: it is a
-     * queue of reviews with one row each, and "inbox" was the name of the screen that
-     * listed one review three times.
-     */
-    expect(places).toEqual(['Queue', 'Reviews', 'Rules'])
+    const places = page.findAll('nav[aria-label="Review Desk"] .nav-label').map(one => one.text())
+    expect(places).toEqual(['Pull requests', 'Reviews', 'Rules'])
   })
 
-  it('keeps its three places, and all three are links, on a database with nothing in it', async () => {
+  it('keeps its places, and all of them are links, on a database with nothing in it', async () => {
     await resetDesk({ reviews: [], drafts: [], rules: [] })
     const page = await shown(Layout)
     /*
@@ -135,9 +140,101 @@ describe('the shell', () => {
      * was no review to point at and the item was a disabled label. It is a list now, and a
      * list is somewhere worth being on an empty database — it says the database is empty.
      */
-    expect(page.findAll('nav a').map(link => link.text()))
-      .toEqual(['Queue', 'Reviews', 'Rules'])
+    expect(page.findAll('nav[aria-label="Review Desk"] a').map(link => link.find('.nav-label').text()))
+      .toEqual(['Pull requests', 'Reviews', 'Rules'])
     expect(page.find('nav span[aria-disabled="true"]').exists()).toBe(false)
+  })
+
+  /*
+   * **DEV-1323: the sidebar's groups come from the record.** The sample desk's `#412` has
+   * an unconfirmed brief *and* a draft, so it is in two inbox arrays — and it is one row,
+   * under Waiting on you, saying the brief is the thing that is ready.
+   */
+  it('lists the desk’s pull requests in four groups, one row each', async () => {
+    const page = await shown(Layout)
+    const headings = page.findAll('#sidebar .group-heading').map(one => one.text())
+    expect(headings.map(text => text.replace(/\d+$/, '').trim())).toEqual([
+      'Waiting on you',
+      'Being reviewed',
+      'Waiting on the author',
+      'Done this week',
+    ])
+    const waiting = page.find('#sidebar .group--waiting_on_you')
+    const four12 = waiting.findAll('.row').filter(row => row.text().includes('#412'))
+    expect(four12).toHaveLength(1)
+    expect(four12[0]!.text()).toContain('Brief ready')
+    expect(page.findAll('#sidebar .row').filter(row => row.text().includes('#412'))).toHaveLength(1)
+  })
+
+  it('draws every group on an empty desk, each saying it has none', async () => {
+    await resetDesk({ reviews: [], drafts: [], rules: [], review_requests: [], own_prs: [] })
+    const page = await shown(Layout)
+    expect(page.findAll('#sidebar .group')).toHaveLength(4)
+    expect(page.findAll('#sidebar .none').map(one => one.text())).toEqual(['None', 'None', 'None', 'None'])
+    /* And nothing records a read of GitHub, so there is no line claiming one. */
+    expect(page.find('#sidebar').text()).not.toContain('GitHub read')
+  })
+
+  it('opens the review being read in the sidebar', async () => {
+    const page = await shown(Layout, { route: '/reviews/17' })
+    const open = page.find('#sidebar .row[aria-current="page"]')
+    expect(open.exists()).toBe(true)
+    expect(open.text()).toContain('#412')
+  })
+
+  /*
+   * **The conversation's column is drawn empty on a review's pages**, as a placeholder the
+   * second stack fills, and not at all on the lists or Rules — `docs/design.md`'s table.
+   */
+  it('draws the conversation column on a review and nowhere else', async () => {
+    const onReview = await shown(Layout, { route: '/reviews/17' })
+    expect(onReview.find('.shell-conversation').exists()).toBe(true)
+    expect(onReview.find('.shell-conversation').text()).toBe('')
+    const onList = await shown(Layout, { route: '/' })
+    expect(onList.find('.shell-conversation').exists()).toBe(false)
+    const onRules = await shown(Layout, { route: '/rules' })
+    expect(onRules.find('.shell-conversation').exists()).toBe(false)
+  })
+
+  it('puts the sidebar behind a menu button that says whether it is open', async () => {
+    const page = await shown(Layout)
+    const menu = page.find('button.menu')
+    expect(menu.attributes('aria-controls')).toBe('sidebar')
+    expect(menu.attributes('aria-expanded')).toBe('false')
+    await menu.trigger('click')
+    expect(menu.attributes('aria-expanded')).toBe('true')
+    expect(page.find('.shell').classes()).toContain('shell--menu-open')
+  })
+
+  /*
+   * **No serif anywhere but the wordmark** — DEV-1323, and Patrick on 21 November 2026.
+   * Read off every stylesheet the app has, because jsdom computes no styles: the face is
+   * reachable only through `--rd-font-wordmark`, which only the wordmark uses, and no rule
+   * names a serif face of its own. `web/e2e/shell.spec.ts` asks the browser the same
+   * question of every element on every page.
+   */
+  it('sets the wordmark, and nothing else, in the serif', async () => {
+    const page = await shown(Layout)
+    expect(page.find('#sidebar .wordmark').text()).toBe('Review Desk')
+
+    const sources = readdirSync(resolve('app'), { recursive: true, encoding: 'utf8' })
+      .filter(name => /\.(vue|css)$/.test(name))
+      .map(name => ({ name, text: readFileSync(resolve('app', name), 'utf8') }))
+    expect(sources.length).toBeGreaterThan(40)
+
+    const usesWordmark = sources
+      .filter(file => /var\(--rd-font-wordmark\)/.test(file.text))
+      .map(file => file.name)
+    expect(usesWordmark).toEqual(['components/AppSidebar.vue'])
+    expect(readFileSync(resolve('app/components/AppSidebar.vue'), 'utf8')
+      .match(/var\(--rd-font-wordmark\)/g)).toHaveLength(1)
+
+    const namesASerif = sources
+      .filter(file => file.name !== 'assets/css/tokens.css')
+      .filter(file => /font-family:[^;]*(serif|Newsreader|georgia)/i.test(
+        file.text.replace(/sans-serif/gi, '')))
+      .map(file => file.name)
+    expect(namesASerif).toEqual([])
   })
 })
 
@@ -2287,12 +2384,16 @@ describe('the rules', () => {
     expect(text).toContain('Legacy importer calls need the tenant guard')
   })
 
-  it('sets a rule’s statement in the display face and its key in the mono one', async () => {
+  /*
+   * **The statement class, not a face.** This asserted "the display face" until DEV-1323:
+   * under the shell `.rd-display-statement` is the sans on the S scale, and the only serif
+   * left is the wordmark — which `the shell` below asserts by reading every stylesheet.
+   */
+  it('sets a rule’s statement as a statement and its key in the mono face', async () => {
     const page = await shown(Rules)
     const statement = page.findAll('.rd-display-statement')[0]!
     expect(statement.find('.rd-mono').text()).toMatch(/^R-\d+$/)
     expect(statement.text()).toContain('A new test must fail when the fix is reverted')
-    /* And the headline figure is the display face too, which is what the board draws. */
     expect(page.find('.value').classes()).toContain('value')
   })
 

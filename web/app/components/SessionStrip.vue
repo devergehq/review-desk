@@ -258,9 +258,8 @@ onBeforeUnmount(() => {
 
 .confirm-title {
   margin: 0;
-  font-family: var(--rd-font-display);
-  font-size: 24px;
-  font-weight: 400;
+  font-size: var(--rd-type-heading);
+  font-weight: 600;
 }
 
 .facts {
