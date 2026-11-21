@@ -215,16 +215,20 @@ impl<'a> Checker<'a> {
         }
 
         // Ancestry, from the comparison's status rather than from any commit's date.
+        // A comparison GitHub would not give — the posted commit gone, or a read that failed
+        // — leaves ancestry unestablished: the check ran and did not pass. Only `behind` is
+        // refused outright; contents answer the rest.
         run += 1;
         let status = self
             .range(posted)?
             .comparison
             .as_ref()
             .map(|c| c.status.clone());
-        if status.as_deref() == Some("behind") {
-            return Ok(unknown(Unknown::NotAfter, run, passed));
+        match status.as_deref() {
+            Some("behind") => return Ok(unknown(Unknown::NotAfter, run, passed)),
+            Some(_) => passed += 1,
+            None => {}
         }
-        passed += 1;
 
         run += 1;
         let (was, was_text) = match self.blob(posted, path)? {

@@ -481,9 +481,12 @@ fn a_posted_commit_that_is_gone_is_unknown_never_unchanged_and_never_nought() {
     assert_eq!(held["file"], OWN[0]);
     assert_eq!(held["line"], 40);
     assert_carries_its_method(&held);
-    assert!(
-        held["checks_passed"].as_u64() < held["checks_run"].as_u64(),
-        "an unknown is a check that did not pass: {held}"
+    // Own files 4 of 4; ancestry ran and did not pass, because the comparison from a
+    // commit that is gone answers 404; the posted blob ran and did not pass.
+    assert_eq!(held["checks_run"], 6, "{held}");
+    assert_eq!(
+        held["checks_passed"], 4,
+        "a check that could not be made is not a check that held: {held}"
     );
     assert_eq!(report.reviews[0].code_unknown_recorded, 1);
     assert!(

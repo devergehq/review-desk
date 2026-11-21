@@ -385,9 +385,26 @@ function subLine(answered: FindingRow[], posted: number, at: string | null, now:
     changed > 0 ? `${changed} whose code changed` : null,
   ].filter(Boolean).join(', ')
 
-  const back = answered.length === 0
-    ? 'Nothing has come back on any of them'
-    : `${answered.length} of them had something come back${how === '' ? '' : `: ${how}`}`
+  /*
+   * **A code change nobody could know is not something coming back.** DEV-1344. The row is
+   * still drawn, because its "—" and its reason are the record's answer; but the harvester
+   * saying it could not tell is not the author doing anything, and "1 of them had something
+   * come back" over it is the misreading the inbox's `NOT_AN_ACT` keeps off the queue.
+   */
+  const known = answered.filter(
+    row => row.cameBack.some(one => one.kind !== 'code_change_unknown'),
+  ).length
+  const unknown = answered.filter(
+    row => row.cameBack.some(one => one.kind === 'code_change_unknown')
+      && !row.cameBack.some(one => one.kind === 'code_changed_after'),
+  ).length
+
+  const back = [
+    known === 0
+      ? 'Nothing has come back on any of them'
+      : `${known} of them had something come back${how === '' ? '' : `: ${how}`}`,
+    unknown > 0 ? `for ${unknown}, whether the code changed is not known` : null,
+  ].filter(Boolean).join('; ')
 
   /*
    * **And it does not say a third time that nothing has read this.** The headline is
