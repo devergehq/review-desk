@@ -84,9 +84,14 @@ const BASIS = BASIS_WORDS
         :conversation-steps="CASE_STEPS"
         :headline="null"
       >
-        <template
+        <!--
+          **One child of the frame**, so the frame's 52px between sections falls once, above
+          Overview, and Overview spaces its own parts.
+        -->
+        <div
           v-for="view in [overviewOf(data)]"
           :key="view.state"
+          class="overview"
         >
           <!--
             **Said on Overview as it was on the case**, because a moved head is true of the
@@ -317,15 +322,19 @@ const BASIS = BASIS_WORDS
               </NuxtLink>
             </aside>
           </div>
-        </template>
+        </div>
       </ReviewStepPage>
     </template>
   </DeskState>
 </template>
 
 <style scoped>
+.overview {
+  min-width: 0;
+}
+
 .bottom {
-  margin-top: 20px;
+  margin-top: 0;
   padding: 24px 28px;
   border: 1px solid var(--rd-line);
   border-radius: var(--rd-radius-card);

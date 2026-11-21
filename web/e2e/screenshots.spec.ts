@@ -136,7 +136,7 @@ test.describe('a seeded database', () => {
      * looking at this screen has to be able to tell it from one they confirmed
      * themselves.
      */
-    await page.goto(`${seeded}reviews/${waivedReviewId}`)
+    await page.goto(`${seeded}reviews/${waivedReviewId}/understanding`)
     await expect(page.getByText('Confirmation not required.')).toBeVisible()
     await shot(page, 'seeded-5-review-no-confirmation')
   })
@@ -490,7 +490,7 @@ test.describe('a problem’s Before and After, after DEV-939', () => {
     for (const [width, suffix] of [[1440, ''], [390, '-390']] as const) {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
 
-      await page.goto(`${seeded}reviews/${structuredReviewId}`)
+      await page.goto(`${seeded}reviews/${structuredReviewId}/understanding`)
       await expect(page.locator('h2.headline')).toBeVisible()
 
       await page.getByRole('button', { name: /A scheduled export read its tenant/ }).click()
@@ -590,7 +590,7 @@ test.describe('a fresh database', () => {
 
 test.describe('the server stopped', () => {
   test('with a page already open', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${reviewId}`)
+    await page.goto(`${seeded}reviews/${reviewId}/understanding`)
     await expect(page.getByText('A webhook delivery that fails once')).toBeVisible()
 
     await page.route('**/api/v1/**', route => route.abort('connectionrefused'))

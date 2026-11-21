@@ -420,7 +420,13 @@ export interface CameBackRow {
 function saidOf(grouped: GroupedFinding): string {
   if (!grouped.outcome) return ''
   const said = outcomeSaid(grouped.outcome)
-  if (said.quote) return said.by ? `${said.by}: ${said.quote}` : said.quote
+  /*
+   * **A login as GitHub spells it, or "The author"** — the one phrase `outcomeSaid` composes
+   * itself, capitalised here because it opens the row. A login is never capitalised: it is
+   * a value, and `dana-okoye` is not `Dana-okoye`.
+   */
+  const by = said.by === 'the author' ? 'The author' : said.by
+  if (said.quote) return by ? `${by}: ${said.quote}` : said.quote
   return `${said.sentence.replace(/^./, first => first.toUpperCase())}.`
 }
 
