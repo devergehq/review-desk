@@ -92,15 +92,16 @@ test.describe('a seeded database', () => {
      * and again in the pane, and the bare text matched three elements. This project is not
      * in CI, which is why that went unnoticed until the case page was built.
      *
-     * **F1 by its address, and the pane by its id** (DEV-1336). This looked for
-     * `#finding-1`, the heading of the finding shown — which was F1 only while the page
-     * opened on the first finding. DEV-1328 opens it on the first of *To post*, so the
-     * heading was another finding's and the wait timed out. `?finding=F1` is the address
-     * every other page links a finding with (`findingPath`).
+     * **F1 by its address** (DEV-1336). This looked for `#finding-1`, the heading of the
+     * finding shown — which was F1 only while the page opened on the first finding.
+     * DEV-1328 opens it on the first of *To post*, so there was no such heading and the
+     * wait timed out. `?finding=F1` is the address every other page links a finding with
+     * (`findingPath`), and the heading is looked for inside the pane, because the pane's
+     * claim repeats the title's words.
      */
     await page.goto(`${seeded}reviews/${reviewId}/findings?finding=F1`)
     await expect(
-      page.locator('#the-finding').getByText('A retried delivery is sent without'),
+      page.locator('#the-finding #finding-1').getByText('A retried delivery is sent without'),
     ).toBeVisible()
     await shot(page, 'seeded-2-review')
 
