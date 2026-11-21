@@ -2155,7 +2155,15 @@ test.describe('the case for one review, in three bands', () => {
       }
     })
 
-    for (const width of [1440, 390]) {
+    /*
+     * **1,600, not 1,440, since the shell (DEV-1323).** A review's page now sits beside the
+     * 232px sidebar and the 380px conversation column, and at 1,440 this line lands on a wrap
+     * boundary: macOS lays the paragraph out in 3 lines (67.5px, the defect 1.67x taller) and
+     * the Linux runner in 4 (90px, 1.25x) — so the comparison below measured font hinting
+     * rather than the defect. At 1,600, the shell's cap and the width the S screens are drawn
+     * at, it is 2.7x on macOS. The 1.5x rule is unchanged.
+     */
+    for (const width of [1600, 390]) {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
       await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
       await expect(page.locator('h1')).toBeVisible()
