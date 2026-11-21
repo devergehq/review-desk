@@ -317,6 +317,10 @@ impl Store {
         // is waiting, and approving again is the only call that can put it right. A
         // *different* event is not the same approval: it would change what gets posted,
         // and the first choice has already been reported as made.
+        //
+        // **A repeat approval is the store's, not the page's.** The API approves only a
+        // `ready` draft (`draft_must_be` in `crates/server/src/api.rs`), so nothing in the
+        // dashboard reaches this arm; a caller of the store does.
         let already_approved = match draft.status {
             DraftStatus::Ready => false,
             DraftStatus::Approved if draft.event == Some(event) => true,
@@ -331,8 +335,8 @@ impl Store {
 
         // After the status, so a draft that cannot be approved at all says that rather than
         // that it moved; before any write, so a draft that moved is a refusal that changed
-        // nothing. A repeat approval is held to it too: the second click is still a click
-        // on what the page showed.
+        // nothing. A repeat approval is held to it too, for any caller of the store that
+        // makes one: it is still an approval of what the caller says was shown.
         self.refuse_unless_draft_shown(review_id, shown)?;
 
         // **A repeat approval writes when the first recorded nothing it was of.** A draft
