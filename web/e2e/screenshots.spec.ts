@@ -341,52 +341,54 @@ test.describe('what DEV-892 and DEV-917 fixed', () => {
 })
 
 /*
- * **Step 5 and step 6, which DEV-878 builds**, from the same invented example — at the
- * width of a laptop and at the width of a phone, closed and with the blocker open.
+ * **Findings, S4's bench, at 1,600 and 390.** DEV-1328. These were the code review page's
+ * pictures (`dev-878-1`, `-2` and `-4`); the page is the Findings tab now, so they are taken
+ * at DEV-1322's two widths with the conversation column beside them at 1,600, and the old
+ * names are gone with the page.
  *
- * The open one is the point. Board A8 is a page of one-line rows, and the picture that
- * matters is what happens when a reader presses one: the code with the comment on the
- * flagged line, the proof, and the reasoning behind its own word count. A picture of
- * fourteen closed rows would show the half that is always visible and none of the half
- * Patrick said he loved.
+ * The open one is the point: the code with the comment on the flagged line, the proof, and
+ * the reasoning behind its own word count, with the call pinned at the pane's foot.
  */
-test.describe('the code review page and the draft', () => {
-  test('step 5 and step 6, closed and open, at both widths', async ({ page }) => {
-    for (const [width, suffix] of [[1440, ''], [390, '-390']] as const) {
-      await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
+test.describe('the Findings tab', () => {
+  test('the list, a finding open, and a draft in one block, at both widths', async ({ page }) => {
+    for (const [width, suffix] of [[1600, ''], [390, '-390']] as const) {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 })
 
       await page.goto(`${seeded}reviews/${structuredReviewId}/findings`)
       await expect(page.locator('h2.headline')).toBeVisible()
-      await shot(page, `dev-878-1-code-review${suffix}`)
+      await shot(page, `findings-1-list${suffix}`)
 
-      /*
-       * The blocker on the bench, with its reasoning unfolded — every part of the finding
-       * in one picture, which is what "the code with the comments, the inline style" is
-       * about. Since step 1.2 of the design loop a row is the control itself: it chooses
-       * which finding the pane beside the list is drawing, rather than unfolding in place.
-       */
-      await page.locator('.row').filter({ hasText: 'F9' }).first().click()
+      await page.goto(`${seeded}reviews/${structuredReviewId}/findings?finding=F9`)
       await expect(page.locator('.code')).toBeVisible()
       await page.getByRole('button', { name: /The full reasoning/ }).click()
       await expect(page.locator('.blocks')).toBeVisible()
-      await shot(page, `dev-878-2-finding-open${suffix}`)
+      await shot(page, `findings-2-finding-open${suffix}`)
+    }
 
+    /*
+     * A draft written as one block of markdown rather than in parts — every draft written
+     * before the composition existed, and the one the per-finding decisions refuse against.
+     */
+    await page.setViewportSize({ width: 1600, height: 1000 })
+    await page.goto(`${seeded}reviews/${reviewId}/findings`)
+    await page.locator('.row').first().click()
+    await expect(page.getByText('one block of markdown')).toBeVisible()
+    await shot(page, 'findings-3-one-block-draft')
+  })
+})
+
+/*
+ * **Step 6, which DEV-878 builds**, from the same invented example, at the width of a
+ * laptop and of a phone.
+ */
+test.describe('the draft', () => {
+  test('step 6 at both widths', async ({ page }) => {
+    for (const [width, suffix] of [[1440, ''], [390, '-390']] as const) {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
       await page.goto(`${seeded}reviews/${structuredReviewId}/draft`)
       await expect(page.locator('h2.headline')).toBeVisible()
       await shot(page, `dev-878-3-draft${suffix}`)
     }
-    await page.setViewportSize({ width: 1440, height: 900 })
-
-    /*
-     * The two states of the page that the real-length example cannot show at once: a
-     * review whose step 5 has not written anything, and a draft written as one block of
-     * markdown rather than in parts — which is every draft written before the composition
-     * existed, and the one the per-finding decisions refuse against.
-     */
-    await page.goto(`${seeded}reviews/${reviewId}/findings`)
-    await page.locator('.row').first().click()
-    await expect(page.getByText('one block of markdown')).toBeVisible()
-    await shot(page, 'dev-878-4-one-block-draft')
   })
 })
 

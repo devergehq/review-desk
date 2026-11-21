@@ -126,7 +126,8 @@ describe('needs your eye', () => {
     expect(cards.length).toBeLessThanOrEqual(3)
     expect(cards.every(card => card.severity != null)).toBe(true)
     expect(cards[0]!.severity).toBe('blocker')
-    expect(cards.every(card => card.to === '/reviews/41/findings')).toBe(true)
+    /* DEV-1328: each card opens its own finding. */
+    expect(cards.map(card => card.to)).toEqual(cards.map(card => `/reviews/41/findings?finding=${card.key}`))
   })
 
   it('draws no severity while the review is being written', () => {

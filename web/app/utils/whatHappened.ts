@@ -48,6 +48,7 @@ import type { OutcomeSaid } from './outcomes'
 import { shortenClaim } from './draft'
 import { isCarried, mostSeriousFirst, roundStatusLabel, whereOf, willPost } from './findings'
 import { commentUrl, prUrl } from './links'
+import { findingPath } from './reviewTabs'
 import { count, sentence, sinceLabel } from './format'
 import { outcomeSaid, outcomeWhen, prEndLabel } from './outcomes'
 
@@ -284,7 +285,7 @@ function rowFor(detail: ReviewDetail, finding: Finding, now: Date): FindingRow {
           status,
         ].filter(Boolean).join(' · ')
       : null,
-    finding: `/reviews/${detail.review.id}/findings#${finding.key}`,
+    finding: findingPath(detail.review.id, finding.key),
     comment: commentUrl(detail.review.repo, detail.review.pr, finding.github_comment_id),
     postedAsComment: finding.github_comment_id != null,
     addressable: prUrl(detail.review.repo, detail.review.pr) != null,

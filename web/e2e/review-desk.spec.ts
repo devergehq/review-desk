@@ -1100,7 +1100,7 @@ test.describe('the case for one review, in three bands', () => {
      */
     await part.locator('.finding', { hasText: 'F9' }).click()
     await expect(page).toHaveURL(
-      `${seeded}reviews/${structuredReviewId}/findings#F9`,
+      `${seeded}reviews/${structuredReviewId}/findings?finding=F9`,
     )
     await expect(page.locator('#finding-9')).toBeVisible()
     /* `.row--picked .key` — the row's own reference, on the one the bench is drawing. The
@@ -5196,7 +5196,7 @@ test.describe('the Understanding tab, to S3', () => {
     await expect(band.locator('tbody tr')).toHaveCount(4)
     await expect(band.locator('.row--not-met')).toContainText('The column policy applies on both paths')
     await expect(band.getByRole('link', { name: 'no, see F9' }))
-      .toHaveAttribute('href', `/reviews/${structuredReviewId}/findings#F9`)
+      .toHaveAttribute('href', `/reviews/${structuredReviewId}/findings?finding=F9`)
     await expect(band).toContainText('app/Reporting/ExportContext.php:42')
     await expect(band).toContainText('not in this PR')
   })

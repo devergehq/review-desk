@@ -393,6 +393,9 @@ describe('a row in the list is one line', () => {
     expect(row.text()).toContain('The column policy is skipped entirely')
     expect(row.text()).toContain('app/Reporting/ColumnPolicy.php:52')
 
+    /* S4's chip for how it was checked, at the row's end. */
+    expect(row.find('.basis').text()).toBe('Ran')
+
     /* And none of what the pane beside it shows. */
     expect(row.text()).not.toContain('Reproduced')
     expect(row.text()).not.toContain('Allowed columns on the report definition')
@@ -402,12 +405,43 @@ describe('a row in the list is one line', () => {
     expect(row.text()).not.toContain('Your call')
   })
 
-  it('reads the method and the part on the finding instead', async () => {
+  it('reads the basis at the head of the finding, and the part among its facts', async () => {
     const page = await codeReview(REAL)
-    const about = (await showFinding(page, 'F9')).find('.about')
+    const detail = await showFinding(page, 'F9')
 
-    expect(about.text()).toContain('Reproduced')
-    expect(about.text()).toContain('Allowed columns on the report definition')
+    expect(detail.find('.head .basis').text()).toBe('Ran')
+    const facts = detail.findAll('.fact').map(one => one.text())
+    expect(facts).toContain('Whereapp/Reporting/ColumnPolicy.php:52')
+    expect(facts).toContain('PartAllowed columns on the report definition')
+    expect(facts.some(one => one.startsWith('Raised before'))).toBe(true)
+  })
+
+  /*
+   * **A basis is drawn when the record holds one, and left out when it does not.** DEV-1328's
+   * criterion. `unknown` says nothing about the method, so it draws no chip on the row or
+   * over the finding — and S4's *Told by author* is never drawn, because no record says it.
+   */
+  it('draws Read for a finding read and not run, and no chip for one that said nothing', async () => {
+    const detail = fixture(REAL)
+    detail.findings = detail.findings.map(finding =>
+      finding.key === 'F9'
+        ? { ...finding, verification: 'read_not_run' as const }
+        : { ...finding, verification: 'unknown' as const })
+    await withReview(detail)
+
+    const page = await codeReview(REAL)
+    expect(page.findAll('.row .basis').map(one => one.text())).toEqual(['Read'])
+    expect((await showFinding(page, 'F9')).find('.head .basis').text()).toBe('Read')
+
+    const other = await showFinding(page, 'F1')
+    expect(other.find('.head .basis').exists()).toBe(false)
+    expect(page.text()).not.toMatch(/Told by/)
+  })
+
+  it('says a finding raised this round was not raised before', async () => {
+    const page = await codeReview(REAL)
+    const facts = (await showFinding(page, 'F9')).findAll('.fact').map(one => one.text())
+    expect(facts).toContain('Raised beforeNo')
   })
 
   /*
@@ -884,43 +918,56 @@ describe('the code, with the comment on the line', () => {
   })
 })
 
-/* ================================ The parts strip =============================== */
+/* ================================ The parts control =============================== */
 
-describe('the parts strip', () => {
+/**
+ * Choose a part by the start of its option's words, as a reader does.
+ *
+ * **S4 folds the strip of tiles into one control, *All parts*.** Every tile is an option,
+ * with its tally — folded, not dropped.
+ */
+async function choosePart(page: Awaited<ReturnType<typeof codeReview>>, name: string) {
+  const option = page.findAll('.parts-select option').find(one => one.text().startsWith(name))
+  if (!option) throw new Error(`no part whose option starts with ${name}`)
+  await option.setSelected()
+  await flushPromises()
+}
+
+describe('the parts control', () => {
   beforeEach(async () => {
     await resetDesk()
   })
 
-  it('draws a tile per part, plus everything and what no part claims', async () => {
+  it('offers every part, plus all of them and what no part claims', async () => {
     const page = await codeReview(REAL)
-    const tiles = page.findAll('.tile-name').map(one => one.text())
+    const options = page.findAll('.parts-select option').map(one => one.text())
 
-    expect(tiles[0]).toBe('Everything')
-    expect(tiles).toContain('The export context')
-    expect(tiles).toContain('Tests and generated types')
-    expect(tiles.at(-1)).toBe('Outside the parts')
+    expect(options[0]).toMatch(/^All parts · /)
+    expect(options.some(one => one.startsWith('The export context'))).toBe(true)
+    expect(options.some(one => one.startsWith('Tests and generated types'))).toBe(true)
+    expect(options.at(-1)).toMatch(/^Outside the parts · /)
   })
 
-  it('tallies each tile, and says so when a part holds nothing', async () => {
+  it('tallies each part, and says so when a part holds nothing', async () => {
     const page = await codeReview(REAL)
-    const tiles = page.findAll('.tile').map(one => one.text())
+    const options = page.findAll('.parts-select option').map(one => one.text())
 
-    expect(tiles.find(text => text.includes('Tests and generated types')))
+    expect(options.find(text => text.startsWith('Tests and generated types')))
       .toContain('Nothing found')
-    expect(tiles.find(text => text.includes('The export context')))
+    expect(options.find(text => text.startsWith('The export context')))
       .toContain('1 to post · 1 not')
   })
 
   /*
-   * **The tiles' counts sum to the review's own total.** A finding is assigned to the first
+   * **The parts' counts sum to the review's own total.** A finding is assigned to the first
    * part that claims its file, so a file two parts both name does not put its findings in
-   * both — which would be a strip of counts that added up to more than there were.
+   * both — which would be a control whose counts added up to more than there were.
    */
   it('accounts for every finding exactly once', async () => {
     const page = await codeReview(REAL)
-    const counts = page.findAll('.tile').slice(1).map((tile) => {
-      const text = tile.find('.tile-tally').text()
-      if (text === 'Nothing found') return 0
+    const counts = page.findAll('.parts-select option').slice(1).map((option) => {
+      const text = option.text()
+      if (text.endsWith('Nothing found')) return 0
       const [, post, rest] = /(\d+) to post(?: · (\d+) not)?/.exec(text)!
       return Number(post) + Number(rest ?? 0)
     })
@@ -929,7 +976,7 @@ describe('the parts strip', () => {
 
   it('filters the rows to one part', async () => {
     const page = await codeReview(REAL)
-    await press(page, 'Allowed columns on the report definition')
+    await choosePart(page, 'Allowed columns on the report definition')
 
     expect(page.text()).toContain('Only: Allowed columns on the report definition.')
     const keys = page.findAll('.row .key').map(one => one.text())
@@ -938,7 +985,7 @@ describe('the parts strip', () => {
 
   it('says so when a part has nothing in the list showing', async () => {
     const page = await codeReview(REAL)
-    await press(page, 'Tests and generated types')
+    await choosePart(page, 'Tests and generated types')
     expect(page.find('.none').text()).toBe('Nothing here for this part.')
   })
 
@@ -946,9 +993,8 @@ describe('the parts strip', () => {
    * **And blames the list, not the part, when the list is empty everywhere.**
    *
    * A list holding nothing in the whole review holds nothing under a part either, so
-   * "Nothing here for this part" there names a filter that is not the reason — the same
-   * misattribution as the default tile's, the other way round, and reachable by choosing
-   * "For a ticket" on a review with nothing held back and then choosing a part.
+   * "Nothing here for this part" there names a filter that is not the reason — reachable by
+   * choosing "For a ticket" on a review with nothing held back and then choosing a part.
    */
   it('blames the list, not the part, when the list is empty everywhere', async () => {
     const detail = fixture(REAL)
@@ -960,13 +1006,13 @@ describe('the parts strip', () => {
     const page = await codeReview(REAL)
     await press(page, 'For a ticket')
     expect(page.find('.none').text()).toContain('Nothing in this list')
-    await press(page, 'Tests and generated types')
+    await choosePart(page, 'Tests and generated types')
     expect(page.find('.none').text()).toContain('Nothing in this list')
   })
 
-  it('draws no strip at all for a brief with no parts', async () => {
+  it('draws no parts control at all for a brief with no parts', async () => {
     const page = await codeReview(ONE_BLOCK)
-    expect(page.find('.strip').exists()).toBe(false)
+    expect(page.find('.parts-select').exists()).toBe(false)
     expect(page.find('.rows').exists()).toBe(true)
   })
 })
@@ -986,7 +1032,7 @@ describe('the three lists', () => {
     expect(segments[1]).toContain('For a ticket')
     expect(segments[2]).toContain('Set aside')
 
-    await press(page, 'The export context')
+    await choosePart(page, 'The export context')
     const narrowed = page.findAll('.controls .item').map(one => one.text())
     expect(narrowed, 'the segments are about the review, not the filter').toEqual(segments)
   })
@@ -1185,8 +1231,8 @@ describe('the developer’s decisions', () => {
     await showFinding(page, 'F9')
     expect(page.findAll('.call .item').map(one => one.text().replace(/[A-Z]$/, '')))
       .toContain('Post')
-    expect(page.find('.detail').text()).toContain('Raised in round 1 and carried into this one')
-    expect(page.find('.detail').text()).toContain('Open for 2 rounds')
+    expect(page.find('.detail').text()).toContain('In round 1, carried into this one')
+    expect(page.find('.detail').text()).toContain('open for 2 rounds')
     expect(page.find('.detail').text()).toContain('their new test fails with the fix reverted')
   })
 
@@ -1560,5 +1606,54 @@ describe('arriving at a finding named in the hash', () => {
     for (const row of rows) {
       expect(row.attributes('id')).toBe(row.find('.key').text())
     }
+  })
+})
+
+/* ===================== Arriving at a finding named in the query ===================== */
+
+/*
+ * **`?finding=F9` is how every other tab links one finding** (`findingPath`, DEV-1328): the
+ * header's *Answer F3*, Overview's *Needs your eye*, the case's finding lines and Replies.
+ */
+describe('arriving at a finding named in the query', () => {
+  beforeEach(async () => {
+    await resetDesk()
+  })
+
+  const at = (id: number, search: string) =>
+    shown(CodeReview, `/reviews/${id}/findings${search}`)
+
+  it('puts the finding the query names on the bench', async () => {
+    const page = await at(REAL, '?finding=F6')
+    expect(page.find('#finding-6').exists()).toBe(true)
+    expect(page.find('.row--picked').find('.key').text()).toBe('F6')
+  })
+
+  it('chooses the list the finding is in', async () => {
+    const page = await at(REAL, '?finding=F2')
+    expect(page.find('.row--picked').find('.key').text()).toBe('F2')
+  })
+
+  it('prefers the query to a hash naming another', async () => {
+    const page = await at(REAL, '?finding=F2#F9')
+    expect(page.find('.row--picked').find('.key').text()).toBe('F2')
+  })
+
+  it('draws the page as usual for a query naming no finding of this review', async () => {
+    const page = await at(REAL, '?finding=F999')
+    expect(page.find('.row--picked').find('.key').text()).toBe('F9')
+  })
+
+  /*
+   * **A link followed from this tab to this tab is an arrival too.** The header's
+   * *Answer F3* sits over Findings itself, and following it changes only the query.
+   */
+  it('moves to the finding a later query names, on the same page', async () => {
+    const page = await codeReview(REAL)
+    expect(page.find('.row--picked').find('.key').text()).toBe('F9')
+    await useRouter().push(`/reviews/${REAL}/findings?finding=F2`)
+    await flushPromises()
+    await flushPromises()
+    expect(page.find('.row--picked').find('.key').text()).toBe('F2')
   })
 })

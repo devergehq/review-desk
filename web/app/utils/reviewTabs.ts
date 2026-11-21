@@ -15,6 +15,8 @@ import type { ReviewDetail, ReviewTimings } from '~/types/desk'
 import type { ReviewState } from './stateWord'
 import { durationLabel } from './format'
 
+import { listCounts } from './findings'
+
 /** The five tabs, by the suffix their page sits at. */
 export type ReviewTab = 'overview' | 'understanding' | 'findings' | 'draft' | 'replies'
 
@@ -73,13 +75,52 @@ export function retiredRouteTarget(
 }
 
 /**
- * The count on the Findings tab: every finding the review recorded.
+ * The count on the Findings tab: **the findings in the *To post* list**, as S4 draws it —
+ * "Findings 12" over "To post · 12".
  *
- * `null` when there are none, so a review whose code review has not run draws the tab's
- * name alone rather than a "0" that reads as an answer.
+ * Read off `listCounts`, the same grouping the Findings page's three tabs count, so the tab
+ * and the list cannot disagree. `null` when the review recorded no findings at all, so a
+ * review whose code review has not run draws the tab's name alone rather than a "0" that
+ * reads as an answer; a review whose findings were all ticketed or set aside draws 0, which
+ * is the answer.
  */
 export function findingsCount(detail: Pick<ReviewDetail, 'findings'>): number | null {
-  return detail.findings.length > 0 ? detail.findings.length : null
+  return detail.findings.length > 0 ? listCounts(detail.findings).post : null
+}
+
+/**
+ * **Where one finding is: the Findings tab with that finding selected.** DEV-1328.
+ *
+ * `?finding=F9`, which is the address every other tab links a finding by. The page also
+ * reads `#F9`, the older form the Solution page wrote and `…/code-review#F9` still carries
+ * through its redirect, so a link already held keeps working. `findingAsked` reads both.
+ */
+export function findingPath(reviewId: number, key: string): string {
+  return `${tabPath(reviewId, 'findings')}?finding=${encodeURIComponent(key)}`
+}
+
+/**
+ * The finding an address asks for, as its `seq`: `?finding=F9` first, then `#F9`, else null.
+ *
+ * A value that does not name a finding at all is null, not an error: a stale or mistyped
+ * link lands on the list as it opens.
+ */
+export function findingAsked(query: LocationQuery, hash: string): number | null {
+  const raw = query.finding
+  const value = Array.isArray(raw) ? raw[0] : raw
+  if (typeof value === 'string') {
+    const seq = seqOfKey(value)
+    if (seq != null) return seq
+  }
+  return hash.startsWith('#') ? seqOfKey(hash.slice(1)) : null
+}
+
+/** `F9` read back as 9; anything else is null. */
+function seqOfKey(key: string): number | null {
+  const found = /^F([0-9]+)$/.exec(key)
+  if (!found) return null
+  const seq = Number(found[1])
+  return Number.isSafeInteger(seq) && seq > 0 ? seq : null
 }
 
 /**
@@ -124,17 +165,18 @@ export interface PrimaryAction {
  * |---|---|---|
  * | Brief ready | Confirm the brief | Understanding, where the brief's card is |
  * | Draft ready | Sign off and post | Draft, where the sign-off is |
- * | Replies in, with a reply to answer | Answer F3, or Answer 2 replies | Replies |
+ * | Replies in, with a reply to answer | Answer F3, or Answer 2 replies | F3 on Findings, or Replies |
  *
  * Every other state is nothing for the developer to do, so no action: a session working
  * or awaited (*Being written*, *Waiting for a session*), a review posted and quiet, and the
  * ways off the desk (*Merged*, *Closed*, *Dismissed*, *Out of play*, *Superseded* — a round a
  * later one replaced, whose work is the later round's).
  *
- * **It links to the tab, and that is all it does yet.** DEV-1329 moves the Draft page's
- * sign-off binding into the draft-ready action, and DEV-1328 adds `?finding=` so a single
- * reply's action can open its finding; both repoint what this answers rather than adding a
- * second place that chooses an action.
+ * **One reply to answer opens its finding** (DEV-1328): *Answer F3* goes to F3 on Findings,
+ * `?finding=F3`, where its three replies are keys. More than one goes to the Replies tab,
+ * which lists them. DEV-1329 moves the Draft page's sign-off binding into the draft-ready
+ * action; both repoint what this answers rather than adding a second place that chooses an
+ * action.
  *
  * `toAnswer` is the finding keys [`repliesToAnswer`] answers, passed in so this stays a
  * function of values.
@@ -151,10 +193,9 @@ export function primaryAction(
       return { label: 'Sign off and post', to: tabPath(reviewId, 'draft') }
     case 'replies_in':
       if (toAnswer.length === 0) return null
-      return {
-        label: toAnswer.length === 1 ? `Answer ${toAnswer[0]}` : `Answer ${toAnswer.length} replies`,
-        to: tabPath(reviewId, 'replies'),
-      }
+      return toAnswer.length === 1
+        ? { label: `Answer ${toAnswer[0]}`, to: findingPath(reviewId, toAnswer[0]!) }
+        : { label: `Answer ${toAnswer.length} replies`, to: tabPath(reviewId, 'replies') }
     default:
       return null
   }

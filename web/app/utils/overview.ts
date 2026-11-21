@@ -19,7 +19,7 @@ import { mostSeriousFirst, willPost } from './findings'
 import { count, severityTally } from './format'
 import { BASIS_WORDS, outcomeSaid, sinceYouPosted } from './outcomes'
 import type { GroupedFinding, ReplyBasis, SinceYouPosted } from './outcomes'
-import { tabPath } from './reviewTabs'
+import { findingPath, tabPath } from './reviewTabs'
 import { stateOfReview } from './stateWord'
 import type { ListedAs, ReviewState } from './stateWord'
 import { bottomLine, builtOption, notVerified, optionsOf } from './theCase'
@@ -433,8 +433,8 @@ export interface EyeCard {
  * Until the code review step has finished, **no severity**: the step grades findings as it
  * finishes, and a severity drawn before then is a guess the step may overturn (S12's
  * *Early · not graded yet*). Read off the step, not the Overview's state — see
- * [`findingsGraded`]. Every card links to the Findings tab; DEV-1328 adds
- * `?finding=` and repoints these at the finding itself.
+ * [`findingsGraded`]. Every card opens its own finding on the
+ * Findings tab, `findingPath` (DEV-1328).
  */
 export function needsYourEye(detail: OverviewSource): EyeCard[] {
   const graded = findingsGraded(detail)
@@ -444,7 +444,7 @@ export function needsYourEye(detail: OverviewSource): EyeCard[] {
     claim: finding.claim,
     severity: graded ? finding.severity : null,
     where: finding.file ? (finding.line == null ? finding.file : `${finding.file}:${finding.line}`) : null,
-    to: tabPath(detail.review.id, 'findings'),
+    to: findingPath(detail.review.id, finding.key),
   }))
 }
 

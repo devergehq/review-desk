@@ -7,6 +7,7 @@ import { resetDesk } from '../app/composables/useReviewDesk'
 
 import { loadSource } from '../app/data/sample'
 import ReviewHeader from '../app/components/ReviewHeader.vue'
+import { listCounts } from '../app/utils/findings'
 import { stateOfReview, stateWord } from '../app/utils/stateWord'
 
 import type { ReviewDetail } from '../app/types/desk'
@@ -136,7 +137,8 @@ describe('the review header', () => {
       .toEqual(['overview', 'understanding', 'findings', 'draft', 'replies'])
     expect(page.findAll('[aria-current="page"]').map(one => one.attributes('data-tab')))
       .toEqual(['findings'])
-    expect(tabs[2]!.find('.count').text()).toBe(String(detail.findings.length))
+    /* The *To post* list, as S4 counts it: `listCounts`, the Findings page's own count. */
+    expect(tabs[2]!.find('.count').text()).toBe(String(listCounts(detail.findings).post))
   })
 
   it('counts the replies to answer, and says none with a dash', async () => {

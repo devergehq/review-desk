@@ -675,7 +675,7 @@ describe('what came back', () => {
     const page = await shown(REVIEW)
     const first = page.findAll('.answered-row')[0]!
     const to = first.findAll('a').map(one => one.attributes('href'))
-    expect(to).toContain(`/reviews/${REVIEW}/findings#F1`)
+    expect(to).toContain(`/reviews/${REVIEW}/findings?finding=F1`)
     expect(to).toContain('https://github.com/acme/portal/pull/601#discussion_r2314990001')
   })
 
@@ -1070,7 +1070,7 @@ describe('a review whose repository name is not a repository name', () => {
     const page = await shown(REVIEW)
     expect(page.find('.notes').text()).toContain('code review page are unaffected')
     expect(page.findAll('.answered-row')[0]!.find('a').attributes('href'))
-      .toBe(`/reviews/${REVIEW}/findings#F1`)
+      .toBe(`/reviews/${REVIEW}/findings?finding=F1`)
   })
 
   it('says it on the row too, where the row has to explain itself', async () => {
@@ -1274,7 +1274,7 @@ describe('it describes and does not grade', () => {
     const links = page.findAll('.answered-row')[0]!.findAll('a')
     expect(links).toHaveLength(1)
     expect(links[0]!.text()).toContain('The finding')
-    expect(links[0]!.attributes('href')).toBe(`/reviews/${REVIEW}/findings#F1`)
+    expect(links[0]!.attributes('href')).toBe(`/reviews/${REVIEW}/findings?finding=F1`)
     expect(page.find('.notes').text()).toContain('14 comments with no address')
     expect(page.find('.notes').text()).not.toContain('raised in the body alone')
 
