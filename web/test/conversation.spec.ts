@@ -152,10 +152,16 @@ describe('one way', () => {
     expect(reference).toContain('review-desk message reply --review 41 --step code_review --answer -')
     expect(reference).toContain('README.md, “Talking to the review’s session”')
     expect(reference).not.toContain('--to')
+    expect(reference).not.toContain('The question:')
+  })
+
+  it('carries the question the ask box holds, as an accepted follow_up leaves it', () => {
+    expect(referenceFor(41, 'code_review', { tab: 'overview', finding: null }, [], { question: ' And the CSV? ' }))
+      .toContain('The question: And the CSV?')
   })
 
   it('asks for an unparsed reply again in the format', () => {
-    expect(referenceFor(41, 'draft', { tab: 'draft', finding: null }, [], { seq: 7 }))
+    expect(referenceFor(41, 'draft', { tab: 'draft', finding: null }, [], { again: { seq: 7 } }))
       .toContain('Reply 7 didn’t follow the answer format; send it again in the format.')
   })
 

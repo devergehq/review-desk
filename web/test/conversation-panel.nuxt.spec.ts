@@ -163,8 +163,10 @@ describe('your own session, one way', () => {
     await page.find('form').trigger('submit')
     await settle(page)
 
+    expect(page.find('[data-testid="one-way-question"]').text()).toBe('And the CSV download?')
     expect(clipboard).toHaveLength(1)
     expect(clipboard[0]).toContain(`Review Desk review ${REVIEW}, about F1 · app/Reporting/ExportContext.php:44.`)
+    expect(clipboard[0]).toContain('The question: And the CSV download?')
     expect(clipboard[0]).toContain(`review-desk message reply --review ${REVIEW} --step code_review`)
     expect(clipboard[0]).toContain('README.md, “Talking to the review’s session”')
 

@@ -114,7 +114,10 @@ const uncopied = ref<string | null>(null)
 
 /** Puts `referenceFor` on the clipboard. Writes nothing to the record and sends nothing. */
 async function copyReference(again: ReviewMessage | null = null): Promise<void> {
-  const reference = referenceFor(reviewId.value, props.step, about.value, props.detail.findings, again)
+  const reference = referenceFor(reviewId.value, props.step, about.value, props.detail.findings, {
+    again,
+    question: again ? '' : text.value,
+  })
   refused.value = null
   uncopied.value = null
   try {
@@ -332,6 +335,13 @@ const headingId = useId()
       >
         <p class="one-way-ask">
           Ask in your Claude Code session.
+        </p>
+        <p
+          v-if="text.trim()"
+          class="rd-recorded one-way-question"
+          data-testid="one-way-question"
+        >
+          {{ text }}
         </p>
         <div class="field-foot">
           <span class="rd-meta">Copy a reference to {{ aboutLabel(about, detail.findings) }} for your session</span>
@@ -668,6 +678,11 @@ const headingId = useId()
 
 .field--one-way {
   background: var(--rd-ground);
+}
+
+.one-way-question {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .uncopied {

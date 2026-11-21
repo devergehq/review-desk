@@ -298,8 +298,10 @@ export const CONTRACT_POINTER
  * reply` command, and a pointer to the README's contract section.
  *
  * It names what the question is about, as the chip does, so the session asked about F9 knows
- * it. Given an unparsed reply, it asks for that reply again in the format, which is what *Ask
- * it again, in the format* sends in two way. The command carries no `--to`: in one way there
+ * it, and carries the question the ask box holds — a `follow_up` the developer accepted
+ * (DEV-1334) fills that box, and in one way there is nowhere else for it to go. Given an
+ * unparsed reply, it asks for that reply again in the format, which is what *Ask it again, in
+ * the format* sends in two way. The command carries no `--to`: in one way there
  * is no question in the record to answer, and the session records what it was asked in
  * `asked` instead, which the contract refuses beside `--to`.
  *
@@ -310,10 +312,11 @@ export function referenceFor(
   step: ReviewLayerName,
   about: MessageAbout,
   findings: ReviewDetail['findings'],
-  again: Pick<ReviewMessage, 'seq'> | null = null,
+  { again = null, question = '' }: { again?: Pick<ReviewMessage, 'seq'> | null, question?: string } = {},
 ): string {
   return [
     `Review Desk review ${review}, about ${aboutLabel(about, findings)}.`,
+    ...(question.trim() ? [`The question: ${question.trim()}`] : []),
     ...(again ? [`Reply ${again.seq} didn’t follow the answer format; send it again in the format.`] : []),
     `Read the conversation: review-desk message list --review ${review}`,
     `Answer with: review-desk message reply --review ${review} --step ${step} --answer -`,
