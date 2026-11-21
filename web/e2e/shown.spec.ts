@@ -130,6 +130,17 @@ test('a draft rewritten and then re-read says so before anything is signed off',
   await expect(
     page.getByText('The draft changed while you were reading it · review the change.'),
   ).toBeVisible()
+
+  /*
+   * **And the next sign-off reads as what it is.** The developer has now seen the rewrite;
+   * signing it off is a success, not a second warning — round 3 of DEV-1346's self-review
+   * found the flag behind the warning outliving it.
+   */
+  await page.getByRole('button', { name: 'Sign off and post' }).click()
+  await expect(page.getByText(/^Signed off\./).first()).toBeVisible()
+  await expect(
+    page.getByText(/The draft changed while you were reading it/),
+  ).toHaveCount(0)
 })
 
 /*
