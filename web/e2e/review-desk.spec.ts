@@ -1818,8 +1818,12 @@ test.describe('the case for one review, in three bands', () => {
       await page.goto(`${seeded}reviews/${structuredReviewId}/findings`)
       await expect(page.locator('h2.headline')).toBeVisible()
       const bench = await page.locator('#main').evaluate(el => el.clientWidth)
-      const prose = await page.locator('.fields .rd-recorded').first()
-        .evaluate(el => el.clientWidth)
+      const { prose, cap } = await page.locator('.fields .rd-recorded').first()
+        .evaluate(el => ({
+          prose: el.clientWidth,
+          /* Rounded up: `clientWidth` is a whole pixel, the resolved cap is not (745.92). */
+          cap: Math.ceil(Number.parseFloat(getComputedStyle(el).maxWidth)),
+        }))
 
       await page.goto(`${seeded}reviews/${structuredReviewId}/understanding`)
       await expect(page.locator('h2.headline')).toBeVisible()
@@ -1842,15 +1846,15 @@ test.describe('the case for one review, in three bands', () => {
       expect(shell, 'the pages either side of it keep the shell')
         .toBeLessThanOrEqual(1240)
       /*
-       * **`--rd-measure-recorded` is 70ch, which this browser resolves to about 700px** at
-       * the 16px a claim is set in — measured, not assumed: the first bound written here
-       * was 580 and the real figure is 699. The point of the assertion is that the prose
-       * stops at *a* measure while the page does not, so the bound is the token's own
-       * figure with a little room, and a prose column that started tracking the window
-       * would be hundreds of pixels past it.
+       * **The prose stops at its own measure, `--rd-measure-recorded`, read as the browser
+       * resolved it.** 70ch was 699px in the serif-era face and is 746px in the S scale's sans
+       * at 16px; a fixed bound of 720 was the old face's figure with room, and broke once
+       * the S4 pane (DEV-1328) gave the claim the pane's full width at 1,440. Asserting the
+       * resolved cap holds on any face, including CI's Linux metrics. At a phone the column
+       * is the narrower of the two, and the prose fills it.
        */
       expect(prose, 'the reading measure did not grow with the window')
-        .toBeLessThanOrEqual(720)
+        .toBeLessThanOrEqual(cap)
     })
 
     /*

@@ -213,7 +213,7 @@ the paragraphs cap themselves. Enforced by `.columns` in
 **Under the shell, a workbench measures its own column, not the window** (DEV-1328). At a
 1,600px window the main column beside the conversation is about 920px, so a rule keyed on the
 viewport would put two columns into room for one. Findings' bench and its `.columns` are
-container queries: the list and the finding sit side by side from 760px of main column, and
+container queries: the list and the finding sit side by side from 720px of their container (1,440 is 748; 1,280 stacks), and
 the fields sit beside the hunk only from 760px of the finding's own pane — which, with the
 conversation present, is never — so the hunk always has the pane's full width.
 `web/e2e/findings.spec.ts` asserts no sideways scroll on every finding at 1,600, with 16px to

@@ -1307,7 +1307,7 @@ function coverage(data: ReviewDetail): string | null {
 /*
  * **The list is the wider of the two, as S4 draws it** — about 600 of the 920 at 1,600 — because
  * its rows carry a title on one line with a chip at each end, and the finding beside it is
- * read down. Below 760px of main column there is not room for both and the two stack, the
+ * read down. Below 720px of list column (1,440 is 748, 1,280 is 588) there is not room for both and the two stack, the
  * list first: a phone reads the list, taps, and reads the finding under it.
  */
 .bench {
@@ -1318,7 +1318,7 @@ function coverage(data: ReviewDetail): string | null {
   min-width: 0;
 }
 
-@container findings (min-width: 760px) {
+@container findings (min-width: 720px) {
   .bench {
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
     gap: 0 28px;
