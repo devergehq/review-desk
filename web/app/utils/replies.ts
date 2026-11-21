@@ -49,7 +49,7 @@ import type { RepliesWaiting } from './reviewTabs'
 import { answersTheAuthor, draftTakesDecisions, isCarried, mostSeriousFirst } from './findings'
 import { sentence, sinceLabel } from './format'
 import { groupsOf } from './overview'
-import { outcomeBy, outcomeSaid, outcomeWhen, repliesToAnswer } from './outcomes'
+import { outcomeBy, outcomeSaid, outcomeWhen, rejectionReason, repliesToAnswer } from './outcomes'
 import { findingPath } from './reviewTabs'
 import { rowFor } from './whatHappened'
 
@@ -89,6 +89,12 @@ export interface ReplySaid {
   quote: string | null
   /** The record's sentence, for an outcome with no words of its own — a resolved thread. */
   sentence: string | null
+  /**
+   * The reason a person recorded with an author's `rejected`, as typed — what *Accept their
+   * reason* opens on. Not drawn as a quote: it is the recorder's words, not necessarily the
+   * author's, so the row shows the record's sentence instead.
+   */
+  reason: string | null
 }
 
 /** Whether the three answers act on a contested finding here, and if not, why not. */
@@ -177,6 +183,7 @@ function saidOf(outcome: Outcome, now: Date): ReplySaid {
     when: outcomeWhen(said, outcome.occurred_at, now),
     quote: said.quote,
     sentence: said.quote == null ? sentence(said.sentence) : null,
+    reason: rejectionReason(outcome),
   }
 }
 

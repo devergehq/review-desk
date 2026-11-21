@@ -527,6 +527,15 @@ export function outcomeSaid(outcome: OutcomeLike): OutcomeSaid {
 }
 
 /**
+ * The reason a person recorded with a `rejected`, as they typed it, or `null` — for a field
+ * that asks for the author's reason (*Accept their reason*, DEV-1330). Through [`freeDetail`],
+ * so a structured detail is never handed back.
+ */
+export function rejectionReason(outcome: OutcomeLike): string | null {
+  return outcome.kind === 'rejected' ? freeDetail(outcome.detail) : null
+}
+
+/**
  * One outcome as one line, for a cell that has room for one.
  *
  * `F10 · the code at line 93 changed in 65eff63`, which is the issue's own example. A
@@ -730,8 +739,8 @@ export function outcomeWhen(
  * the replies that wait on an answer from the developer. The Replies tab's count and the
  * header's *Answer F3* both read this, and nothing else counts replies for them.
  *
- * Today's rule, from the outcomes the harvester already writes: a finding is contested
- * while the last thing recorded on it is the author's `replied`. Anything recorded after —
+ * The rule: a finding is contested while the last thing recorded on it is the author's
+ * `replied` or the author's `rejected` ([`CONTESTING`], decided by DEV-1330). Anything recorded after —
  * the developer raising it again, the thread being resolved, the code changing — is a
  * later fact, and the finding no longer waits on the developer in the same way.
  *
@@ -740,6 +749,22 @@ export function outcomeWhen(
  * redefining it moves the tab's count and the header's action together. Recorded in the
  * DEV-1322 plan as a cross-child contract.
  */
+/**
+ * **The kinds by which the author contests a finding**: `replied`, and `rejected` when the
+ * author is the actor. DEV-1330, asked by DEV-1326's reviewer and decided from the record:
+ *
+ * - `rejected` is "the finding was rejected, with a reason" (`OutcomeKind::Rejected`), and only
+ *   a person records it — the harvester never does (contract, `OutcomeKind`).
+ * - **The actor says whose rejection it is.** The developer's `rejected` is *Accept their
+ *   reason* (`decision.rs`), which is the answer. The author's is the author disagreeing with
+ *   a reason — exactly what *Raise it again / Accept their reason / Withdraw* answer — so
+ *   while it is the newest thing on the finding, the finding waits on the developer as a
+ *   reply does.
+ *
+ * `thread_resolved` is not here: resolving a thread is the author settling it, not contesting.
+ */
+const CONTESTING: ReadonlySet<OutcomeKind> = new Set<OutcomeKind>(['replied', 'rejected'])
+
 export function repliesToAnswer(
   outcomes: ReadonlyArray<Pick<Outcome, 'id' | 'finding_seq' | 'finding_key' | 'kind' | 'actor' | 'occurred_at'>>,
 ): string[] {
@@ -753,7 +778,7 @@ export function repliesToAnswer(
     if (later) newest.set(outcome.finding_seq, outcome)
   }
   return [...newest.values()]
-    .filter(outcome => outcome.kind === 'replied' && outcome.actor === 'author')
+    .filter(outcome => CONTESTING.has(outcome.kind) && outcome.actor === 'author')
     .sort((one, two) => one.finding_seq - two.finding_seq)
     .map(outcome => outcome.finding_key)
 }
@@ -869,7 +894,8 @@ export function sinceYouPosted(
       [...fromAuthor].reverse().find(outcome => outcome.kind === kind) ?? null
 
     if (contestedKeys.has(key)) {
-      groups.contested.push({ seq, key, basis: 'told', outcome: newest('replied') })
+      /* The author's newest word — a reply or a rejection with a reason, whichever is last. */
+      groups.contested.push({ seq, key, basis: 'told', outcome: fromAuthor[fromAuthor.length - 1] ?? null })
     }
     else if (newest('thread_resolved')) {
       groups.fixed.push({ seq, key, basis: 'told', outcome: newest('thread_resolved') })

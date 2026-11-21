@@ -17,7 +17,10 @@ import type { DraftStatus, Finding, Outcome, ReviewDetail } from '../app/types/d
  * already takes them. Both are here.
  */
 
-/** #398, posted: F1 replied to and its thread resolved, F2 replied to and then rejected. */
+/**
+ * #398, posted: F1 replied to and its thread resolved; F2 replied to and then rejected by the
+ * author — contested since DEV-1330 counts an author's `rejected` (see the last describe).
+ */
 const REPLIES = 12
 
 function fixture(id: number = REPLIES): ReviewDetail {
@@ -59,13 +62,16 @@ describe('the harvest’s outcomes, in the three groups', () => {
     const detail = fixture()
     detail.outcomes.push(reply(1, 'Tenants are never hard-deleted in production.', '2026-11-20T13:00:00Z'))
     const tab = repliesTab(detail, NOW)
-    expect(tab.needsAnswer.map(row => row.key)).toEqual(['F1'])
-    expect(tab.needsAnswer[0]!.standing).toBe('contested')
+    expect(tab.needsAnswer.map(row => row.key)).toContain('F1')
+    expect(tab.needsAnswer.every(row => row.standing === 'contested')).toBe(true)
     expect(tab.settled.map(row => row.key)).not.toContain('F1')
   })
 
   it('puts a resolved thread in Settled as Fixed, and a reply followed by more as Answered', () => {
-    const tab = repliesTab(fixture(), NOW)
+    const detail = fixture()
+    /* Something recorded on F2 after the author's last word: it no longer waits on you. */
+    detail.outcomes.push(outcome({ finding_seq: 2, kind: 'code_changed_after', actor: 'harvester', occurred_at: '2026-11-20T13:00:00Z' }))
+    const tab = repliesTab(detail, NOW)
     expect(tab.settled.map(row => [row.key, row.standing])).toEqual([
       ['F1', 'fixed'],
       ['F2', 'answered'],
@@ -248,6 +254,7 @@ describe('the header’s action, gated by the same record test', () => {
   /* Should 3, ruled: a review waiting on you has a next act; where no answer is taken, it is reading. */
   it('offers Read F1’s reply where the record would refuse every answer, and the tab still counts it', () => {
     const detail = fixture()
+    detail.outcomes = detail.outcomes.filter(one => one.finding_seq !== 2)
     detail.outcomes.push(reply(1, 'No.', '2026-11-20T13:00:00Z'))
     expect(detail.draft_status).toBe('posted')
     expect(repliesToAnswer(detail.outcomes)).toEqual(['F1'])
@@ -265,7 +272,9 @@ describe('the header’s action, gated by the same record test', () => {
 
   it('offers nothing where no reply waits at all', () => {
     expect(primaryAction(5, 'replies_in', { answer: [], read: [] })).toBeNull()
-    expect(primaryAction(5, 'replies_in', repliesWaiting(fixture()))).toBeNull()
+    const quiet = fixture()
+    quiet.outcomes = quiet.outcomes.filter(one => one.actor !== 'author')
+    expect(primaryAction(5, 'replies_in', repliesWaiting(quiet))).toBeNull()
   })
 })
 
@@ -302,6 +311,43 @@ describe('a reply the developer has answered', () => {
       outcome({ finding_seq: 1, kind: 'raised_again', actor: 'developer', occurred_at: '2026-11-20T13:30:00Z' }),
       reply(1, 'Still no.', '2026-11-20T13:45:00Z'),
     )
-    expect(repliesTab(detail, NOW).needsAnswer.map(row => row.key)).toEqual(['F1'])
+    expect(repliesTab(detail, NOW).needsAnswer.map(row => row.key)).toContain('F1')
+  })
+})
+
+/* ============ An author's `rejected` is contested (DEV-1330, asked by DEV-1326) ============ */
+
+describe('an author’s rejection with a reason', () => {
+  it('waits on the developer as a reply does, in the count, the groups and the action', () => {
+    const detail = fixture()
+    detail.outcomes = detail.outcomes.filter(one => one.finding_seq !== 2)
+    detail.outcomes.push(outcome({ finding_seq: 2, kind: 'rejected', actor: 'author', occurred_at: '2026-11-20T13:00:00Z', detail: 'The export is chunked upstream.' }))
+    expect(repliesToAnswer(detail.outcomes)).toEqual(['F2'])
+    expect(groupsOf(detail).contested.map(one => one.key)).toEqual(['F2'])
+    const row = repliesTab(detail, NOW).needsAnswer.find(one => one.key === 'F2')!
+    expect(row.standing).toBe('contested')
+    /* The recorded reason is what Accept their reason opens on — not drawn as the author's quote. */
+    expect(row.said!.reason).toBe('The export is chunked upstream.')
+    expect(row.said!.quote).toBeNull()
+  })
+
+  it('is the developer’s answer when the developer records it — Accept their reason', () => {
+    const detail = fixture()
+    detail.outcomes = detail.outcomes.filter(one => one.finding_seq !== 2)
+    detail.outcomes.push(
+      reply(2, 'No.', '2026-11-20T13:00:00Z'),
+      outcome({ finding_seq: 2, kind: 'rejected', actor: 'developer', occurred_at: '2026-11-20T13:30:00Z', detail: 'Chunked upstream.' }),
+    )
+    expect(repliesToAnswer(detail.outcomes)).toEqual([])
+    expect(groupsOf(detail).contested).toEqual([])
+    expect(repliesTab(detail, NOW).settled.find(one => one.key === 'F2')!.standing).toBe('accepted')
+  })
+
+  it('agrees across the three readers on every fixture', () => {
+    for (const each of loadSource().reviews) {
+      const count = repliesToAnswer(each.outcomes).length
+      expect(groupsOf(each).contested.length, `review ${each.review.id}`).toBe(count)
+      expect(repliesTab(each, NOW).needsAnswer.length, `review ${each.review.id}`).toBe(count)
+    }
   })
 })

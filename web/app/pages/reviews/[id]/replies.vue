@@ -182,7 +182,7 @@ function pick(row: ReplyRow, decision: string) {
      * reason: "the author's reason, in their words". The developer can cut it down. Opened
      * again on the same row, it keeps what they typed rather than putting the quote back.
      */
-    if (asking.value !== row.seq) note.value = row.said?.quote ?? ''
+    if (asking.value !== row.seq) note.value = row.said?.quote ?? row.said?.reason ?? ''
     asking.value = row.seq
     void nextTick(() => document.getElementById(`reason-${row.seq}`)?.focus())
     return
