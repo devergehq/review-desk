@@ -31,7 +31,6 @@ const rows = computed(() => [...criteria]
     where: criterionWhere(criterion),
   })))
 
-
 const meta = computed(() => {
   if (!rows.value.length) return null
   const met = rows.value.filter(row => row.observed.mark === 'met').length
