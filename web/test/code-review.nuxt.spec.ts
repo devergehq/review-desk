@@ -1652,8 +1652,8 @@ describe('arriving at a finding named in the query', () => {
   })
 
   /*
-   * **A link followed from this tab to this tab is an arrival too.** The header's
-   * *Answer F3* sits over Findings itself, and following it changes only the query.
+   * **A link followed from this tab to this tab is an arrival too**, and changes only the
+   * query. None is drawn on Findings today; the conversation's cites (stack 2) will be.
    */
   it('moves to the finding a later query names, on the same page', async () => {
     const page = await codeReview(REAL)

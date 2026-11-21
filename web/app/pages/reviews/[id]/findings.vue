@@ -584,10 +584,6 @@ function partName(finding: Finding): string {
   return at === 0 ? 'Outside the parts' : (parts.value[at - 1]?.title ?? '')
 }
 
-/**
- * S4's *Raised before*, read off the record: a carried finding names the round it came from
- * and how long it has been open; one raised this round says no.
- */
 /** Whether the parts select was last worked with the pointer. See its comment. */
 const pointerOnParts = ref(false)
 
@@ -596,6 +592,10 @@ function partChosen(event: Event) {
   pointerOnParts.value = false
 }
 
+/**
+ * S4's *Raised before*, read off the record: a carried finding names the round it came from
+ * and how long it has been open; one raised this round says no.
+ */
 function raisedBefore(finding: Finding): string {
   if (!isCarried(finding)) return 'No'
   const where = finding.continues_round
