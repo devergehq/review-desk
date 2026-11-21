@@ -423,6 +423,10 @@ export interface NotVerified {
  * The session's `not_checked` when it wrote one. Otherwise by the code review's own state:
  * finished, it recorded nothing left unchecked; running, it is being written; failed or
  * skipped, it never got as far as saying; not yet run, it has not started.
+ *
+ * **Failed and skipped are `not_started`, with words of their own.** Nothing was answered,
+ * so Overview's *N of 5 written* does not count them, and they agree with *What's wrong with
+ * it?*, which reads the same step as not graded.
  */
 export function notVerified(
   notChecked: string | null | undefined,
@@ -437,9 +441,9 @@ export function notVerified(
     case 'running':
       return { says: 'Writing now.', mark: 'writing' }
     case 'failed':
-      return { says: 'The code review failed before it listed what it did not look at.', mark: 'written' }
+      return { says: 'The code review failed before it listed what it did not look at.', mark: 'not_started' }
     case 'skipped':
-      return { says: 'The code review was skipped, so nothing lists what it did not look at.', mark: 'written' }
+      return { says: 'The code review was skipped, so nothing lists what it did not look at.', mark: 'not_started' }
     default:
       return { says: 'Not started. Listed once the checks finish.', mark: 'not_started' }
   }

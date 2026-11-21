@@ -425,8 +425,26 @@ describe('what was not verified', () => {
     expect(notVerified(undefined, layers('pending'))).toEqual({
       says: 'Not started. Listed once the checks finish.', mark: 'not_started',
     })
+    expect(notVerified(null, layers('failed'))).toMatchObject({ mark: 'not_started' })
     expect(notVerified(null, layers('failed')).says).toMatch(/^The code review failed/)
+    expect(notVerified(null, layers('skipped'))).toMatchObject({ mark: 'not_started' })
     expect(notVerified(null, layers('skipped')).says).toMatch(/^The code review was skipped/)
+  })
+
+  it('is Overview\'s answer in every state the code review can be in, not only the fixtures\' three', () => {
+    const review = loadSource().reviews.find(one => one.review.id === STRUCTURED)!
+    const states: ReviewLayerState[] = ['pending', 'running', 'done', 'waiting_on_you', 'failed', 'skipped']
+    for (const state of states) {
+      const detail = {
+        ...review,
+        not_checked: null,
+        layers: review.layers.map(layer => layer.name === 'code_review' ? { ...layer, state } : layer),
+      }
+      const asked = fiveQuestions(detail as never)[4]!
+      const said = notVerified(null, detail.layers)
+      expect(asked.answer, state).toBe(said.says)
+      expect(asked.mark, state).toBe(said.mark)
+    }
   })
 
   it('is the answer Overview gives to What wasn\'t checked?, word for word', () => {
