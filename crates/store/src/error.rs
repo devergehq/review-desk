@@ -136,6 +136,44 @@ pub enum StoreError {
         moved: String,
     },
 
+    /// A post of this review is already in flight — DEV-1347.
+    ///
+    /// `review-desk post` records the attempt before it calls GitHub, and a `pending` row is
+    /// the one state that cannot say whether the review went up: the call may have been made
+    /// and its answer lost. Posting again could put the same review up twice under the
+    /// developer's name, so it is refused until the attempt is known to have failed.
+    #[error(
+        "review {review_id} already has a post in flight (attempt {tag_id}, recorded at \
+         {since}), and it may have reached GitHub. Nothing was posted. Look for the review on \
+         the pull request before trying again"
+    )]
+    PostInFlight {
+        review_id: i64,
+        tag_id: i64,
+        since: i64,
+    },
+
+    /// A thread's line was measured on a commit that is not the one being posted — DEV-1347.
+    ///
+    /// `review-desk post` pins every comment to the reviewed head. A line counted on an
+    /// earlier commit would land on whatever that number is now, silently, so the post is
+    /// refused until the session re-reads the diff and records the line again.
+    #[error(
+        "F{finding_seq}'s line in review {review_id} was measured on {line_sha}, and the \
+         review is posted at {head_sha}, so its comment could land on the wrong line. Nothing \
+         was posted. Re-read the diff and record the finding's line on the head"
+    )]
+    ThreadOffHead {
+        review_id: i64,
+        finding_seq: i64,
+        line_sha: String,
+        head_sha: String,
+    },
+
+    /// The operating system's randomness could not be read, so no salt could be made.
+    #[error("cannot read randomness from the operating system: {0}")]
+    NoRandomness(#[source] std::io::Error),
+
     #[error("no {entity} with id {id}")]
     NotFound { entity: &'static str, id: String },
 
@@ -208,6 +246,9 @@ impl StoreError {
             StoreError::NotDismissed { .. } => "not_dismissed",
             StoreError::ReviewStarted { .. } => "review_started",
             StoreError::ShownMoved { .. } => "changed_since_shown",
+            StoreError::PostInFlight { .. } => "post_in_flight",
+            StoreError::NoRandomness(_) => "no_randomness",
+            StoreError::ThreadOffHead { .. } => "thread_off_head",
             StoreError::NotFound { .. } => "not_found",
             StoreError::UnknownParent { .. } => "unknown_parent",
             StoreError::InvalidValue { .. } => "invalid_value",
@@ -236,6 +277,8 @@ impl StoreError {
                 | StoreError::NotDismissed { .. }
                 | StoreError::ReviewStarted { .. }
                 | StoreError::ShownMoved { .. }
+                | StoreError::PostInFlight { .. }
+                | StoreError::ThreadOffHead { .. }
                 | StoreError::NotFound { .. }
                 | StoreError::UnknownParent { .. }
                 | StoreError::InvalidValue { .. }

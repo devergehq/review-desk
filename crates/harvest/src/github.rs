@@ -1,8 +1,9 @@
 //! What the harvester needs from GitHub, and nothing more.
 //!
-//! The trait is deliberately narrow: four reads, no writes. **Review Desk never posts
-//! to GitHub from here** — the harvester's whole job is to read back what a review
-//! already did.
+//! The trait is deliberately narrow: five reads, no writes. **Nothing posts to GitHub
+//! from here** — the harvester's whole job is to read back what a review already did. The
+//! one write in Review Desk, `review-desk post` (DEV-1347), is [`crate::gh::Gh::post_review`],
+//! and is deliberately not on this trait.
 //!
 //! The types are facts, not wire shapes. GitHub's JSON is turned into these in
 //! [`crate::wire`], so a change in the API's shape lands in one module and the
@@ -182,11 +183,12 @@ pub enum BlobAt {
 
 /// The reads Review Desk makes of GitHub. Five, all read-only.
 ///
-/// **There is no write here and there will not be one.** "Review Desk never posts to
-/// GitHub" is a property of this trait rather than a promise in a comment: the harvester
-/// reads back what a review already did, and the local server reads a pull request to
-/// start a review from a link. Everything outward — posting the review, asking for a
-/// reviewer, filing a ticket — belongs to whatever drives the session.
+/// **There is no write here.** "The harvester and the server never post to GitHub" is a
+/// property of this trait rather than a promise in a comment: the harvester reads back what
+/// a review already did, and the local server reads a pull request to start a review from a
+/// link. The one write — posting the approved review, through `review-desk post` — is
+/// [`crate::gh::Gh::post_review`], which neither of them is handed. Asking for a reviewer
+/// and filing a ticket still belong to whatever drives the session.
 pub trait GitHub {
     /// The pull request's state, when it reached it, where its head is now, and the title
     /// and changed-line count the local server records when it starts a review.

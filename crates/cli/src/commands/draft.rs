@@ -17,8 +17,8 @@
 //! `drafting` and `ready`, so nothing here could approve a draft even by mistake.
 //!
 //! What a review session does instead is write the draft, then read `draft show` until
-//! the status is `approved`, and then post it and report the GitHub review id with
-//! `draft posted`.
+//! the status is `approved`, and then post it with `review-desk post` — or, with raw `gh`,
+//! post it and report the GitHub review id with `draft posted`.
 
 use std::path::PathBuf;
 
@@ -101,10 +101,10 @@ pub enum DraftCommand {
 
     /// Print the body and the inline threads to post, for a draft the developer approved.
     ///
-    /// **This is the one route from Review Desk to a pull request, and it opens only
+    /// **This is the raw-`gh` route from Review Desk to a pull request, and it opens only
     /// after the sign-off.** Refused while the draft is drafting, ready or sent back; the
-    /// store holds that line, not this command. It posts nothing — Review Desk never
-    /// writes to GitHub — and what it prints is what the session posts, in one call.
+    /// store holds that line, not this command. It posts nothing — `review-desk post` is
+    /// the command that writes to GitHub — and what it prints is what raw `gh` would post.
     ///
     /// `body` is the approved body, which is `draft show`'s body: the house style's shape,
     /// composed from the blocks. `threads` is one entry per finding with a line inside the
@@ -133,9 +133,9 @@ pub enum DraftCommand {
 
     /// Mark an approved draft as posted, naming the GitHub review it became.
     ///
-    /// Refused unless the draft is approved. This is the only transition that involves
-    /// GitHub, and the session makes it: Review Desk never posts. The review's
-    /// `github_review_id` is recorded with it.
+    /// Refused unless the draft is approved. For a session that posted with raw `gh`:
+    /// `review-desk post` posts and records in one step, and tags the review it posts.
+    /// The review's `github_review_id` is recorded with it.
     Posted {
         /// The review's id.
         #[arg(long, value_name = "ID")]

@@ -28,6 +28,12 @@ serde_json.workspace = true
 # that two crates and a later post compare is the one place a home-made primitive costs
 # more than a dependency does.
 sha2 = "0.11"
+# The salted tag a posted review carries — DEV-1347. HMAC-SHA256 from the same RustCrypto
+# family as `sha2`, for the reason it gives: a keyed hash a later reader recomputes is not a
+# place for a home-made construction.
+hmac = "0.13"
+# The go-ahead line is hashed as NFC, so the same words typed on two keyboards are one line.
+unicode-normalization = "0.1.26"
 thiserror.workspace = true
 
 [dev-dependencies]

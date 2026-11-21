@@ -28,6 +28,7 @@ pub mod migrations;
 pub mod model;
 pub mod normalise;
 pub mod path;
+pub mod tag;
 
 use std::path::{Path, PathBuf};
 
@@ -42,6 +43,7 @@ pub use crate::entities::brief_structure::{
 pub use crate::entities::composition::finding_heading;
 pub use crate::entities::decision::{TicketedAndApproved, DEVELOPER_DECISIONS};
 pub use crate::entities::house_style::thread_marker;
+pub use crate::entities::posted::{PendingPost, PostRequest};
 pub use crate::entities::provenance::{
     AcceptanceCriterion, CriterionStatus, DescriptionLintResult, DescriptionLintStatus, FileChange,
     FileCheck, NewAcceptanceCriterion, NewDescriptionLintResult, NewFileChange, NewReviewSource,
@@ -59,12 +61,13 @@ pub use crate::model::{
     HunkLineMarker, LayerFact, LeftTheDesk, MessageAuthor, MessageKind, NewBrief, NewDraft,
     NewDraftSection, NewFinding, NewLayerFact, NewOutcome, NewReview, NewRoundCommit, NewRule,
     NitTicket, NitTicketStatus, NotForSigning, OpenedAction, OpenedReview, OutOfPlay, Outcome,
-    OutcomeKind, PostedReview, PrState, RepoSummary, Review, ReviewAtLayer, ReviewAtStep,
-    ReviewEvent, ReviewFacts, ReviewLayer, ReviewLayerName, ReviewLayerRun, ReviewLayerState,
-    ReviewLinks, ReviewMessage, ReviewRequest, ReviewStep, ReviewTimings, ReviewWork, ReviewsShown,
-    RoundCommit, RoundRef, RoundStatus, RoundStatusCounts, RoundSummary, Rule, RuleCounts,
-    RuleException, RuleScope, RuleStage, RulesSummary, Severity, SignOff, TidyAct, Timestamp,
-    Verification, WorkFilter, WorkItem, WorkKind, ACTIVE_RULES_CAP,
+    OutcomeKind, PostBasis, PostedReview, PostedTag, PostedTagStatus, PrState, RepoSummary, Review,
+    ReviewAtLayer, ReviewAtStep, ReviewEvent, ReviewFacts, ReviewLayer, ReviewLayerName,
+    ReviewLayerRun, ReviewLayerState, ReviewLinks, ReviewMessage, ReviewRequest, ReviewStep,
+    ReviewTimings, ReviewWork, ReviewsShown, RoundCommit, RoundRef, RoundStatus, RoundStatusCounts,
+    RoundSummary, Rule, RuleCounts, RuleException, RuleScope, RuleStage, RulesSummary, Severity,
+    SignOff, TagReading, TidyAct, Timestamp, Verification, WorkFilter, WorkItem, WorkKind,
+    ACTIVE_RULES_CAP,
 };
 /// Whether a string is a repository name — the one copy of that rule. See
 /// [`normalise::is_repo_name`].

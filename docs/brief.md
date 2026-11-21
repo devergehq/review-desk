@@ -79,7 +79,7 @@ It is not a list of pull requests. GitHub and Linear already do that. **Its unit
 | Command line | Agent sessions | Record a review: open it, write the brief, findings, layer status and the draft; read rules. **Never sign off.** |
 | Dashboard and its API | The developer | Everything the developer decides: confirm a brief, edit and approve a draft, send it back, change a finding's disposition, promote or retire a rule |
 
-**Posting.** The developer approves a draft in the dashboard. That changes the draft's status. The review session reads the approved draft and posts it to GitHub. Review Desk itself does not post.
+**Posting.** The developer approves a draft in the dashboard. That changes the draft's status. The review session reads the approved draft and posts it to GitHub with `review-desk post`, which refuses a draft that changed since approval and tags the review it posts (DEV-1347). That command is the only GitHub write in Review Desk.
 
 ## The seven layers of a review
 

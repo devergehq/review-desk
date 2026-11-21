@@ -15,9 +15,10 @@
 //! - **Broken is loud and blocks nothing.** A socket that refuses, or accepts and does not
 //!   answer within [`TIMEOUT`], reads as [`SessionStatus::Unreachable`]. The request that
 //!   asked costs at most that long, and nothing else on the page waits on it.
-//! - **One direction.** The request is `sessions_status` and nothing else. The session's
-//!   `reply_to` address is read off the answer and dropped: Review Desk reads from a
-//!   session and never writes into one.
+//! - **One direction.** The requests are `sessions_status` and, for `review-desk post`
+//!   (DEV-1347), `prompts_verify`, and nothing else. The session's `reply_to` address is
+//!   read off the answer and dropped: Review Desk reads from a session and never writes
+//!   into one.
 //!
 //! The wire is Allele's (`src/dispatch/protocol.rs` there): one JSON object per line each
 //! way, over a Unix socket at `~/.allele/control.sock`, mode 0600. Allele keeps those wire
@@ -136,6 +137,21 @@ impl Allele {
             .map(|home| Path::new(&home).join(".allele").join("control.sock"))
     }
 
+    /// Allele's socket under the developer's own home directory — the one place a go-ahead
+    /// is checked (DEV-1347).
+    ///
+    /// **From the passwd entry, not `HOME`.** `HOME` is the caller's to set, and the caller
+    /// is the session whose word is being checked: pointing it at a directory holding a
+    /// socket of its own would be enough to have its go-ahead vouched for. A test build with
+    /// `fake-allele` reads [`FAKE_ALLELE_HOME`] instead; a release build cannot have that.
+    pub fn own_socket() -> Option<PathBuf> {
+        #[cfg(feature = "fake-allele")]
+        if let Some(home) = std::env::var_os(FAKE_ALLELE_HOME).filter(|home| !home.is_empty()) {
+            return Some(Path::new(&home).join(".allele").join("control.sock"));
+        }
+        passwd_home().map(|home| home.join(".allele").join("control.sock"))
+    }
+
     /// The socket this asks, if any.
     pub fn socket(&self) -> Option<&Path> {
         self.socket.as_deref()
@@ -151,60 +167,168 @@ impl Allele {
     }
 }
 
-#[cfg(unix)]
 fn ask(socket: &Path, session_id: &str) -> Reading {
+    let request = serde_json::json!({ "op": "sessions_status", "session_id": session_id });
+    match exchange(socket, &request) {
+        Ok(line) => answer(&line),
+        Err(detail) => Reading::because(SessionStatus::Unreachable, detail),
+    }
+}
+
+/// Send one request line and read one answer line, or say what went wrong reaching Allele.
+#[cfg(unix)]
+fn exchange(socket: &Path, request: &serde_json::Value) -> Result<String, String> {
     use std::io::{BufRead, BufReader, Write};
     use std::os::unix::net::UnixStream;
 
-    let mut stream = match UnixStream::connect(socket) {
-        Ok(stream) => stream,
-        Err(error) => {
-            return Reading::because(
-                SessionStatus::Unreachable,
-                format!("Allele's socket refused the connection: {error}"),
-            )
-        }
-    };
+    let mut stream = UnixStream::connect(socket)
+        .map_err(|error| format!("Allele's socket refused the connection: {error}"))?;
 
     // Both directions, so a socket that accepts and never reads cannot hold a write either.
-    let timed = stream
+    stream
         .set_read_timeout(Some(TIMEOUT))
-        .and_then(|()| stream.set_write_timeout(Some(TIMEOUT)));
-    if let Err(error) = timed {
-        return Reading::because(SessionStatus::Unreachable, error.to_string());
-    }
+        .and_then(|()| stream.set_write_timeout(Some(TIMEOUT)))
+        .map_err(|error| error.to_string())?;
 
-    let request = serde_json::json!({ "op": "sessions_status", "session_id": session_id });
-    if let Err(error) = writeln!(stream, "{request}") {
-        return Reading::because(
-            SessionStatus::Unreachable,
-            format!("could not ask Allele: {error}"),
-        );
-    }
+    writeln!(stream, "{request}").map_err(|error| format!("could not ask Allele: {error}"))?;
 
     let mut line = String::new();
     match BufReader::new(stream).read_line(&mut line) {
-        Ok(0) => Reading::because(
-            SessionStatus::Unreachable,
-            "Allele closed the connection without answering",
-        ),
-        Ok(_) => answer(&line),
-        Err(error) => Reading::because(
-            SessionStatus::Unreachable,
-            format!(
-                "Allele did not answer within {} s: {error}",
-                TIMEOUT.as_secs()
-            ),
-        ),
+        Ok(0) => Err("Allele closed the connection without answering".to_string()),
+        Ok(_) => Ok(line),
+        Err(error) => Err(format!(
+            "Allele did not answer within {} s: {error}",
+            TIMEOUT.as_secs()
+        )),
     }
 }
 
 #[cfg(not(unix))]
-fn ask(_socket: &Path, _session_id: &str) -> Reading {
-    Reading::because(
-        SessionStatus::Unreachable,
-        "Allele's socket is a Unix socket, which this platform cannot open",
-    )
+fn exchange(_socket: &Path, _request: &serde_json::Value) -> Result<String, String> {
+    Err("Allele's socket is a Unix socket, which this platform cannot open".to_string())
+}
+
+/// Refuse a verifier that is not Allele's own kind of socket: a Unix socket only its owner
+/// can open (mode 0600), as Allele creates it.
+///
+/// **Not a defence against a process running as the developer**, which can make such a
+/// socket too, or write the database. What it rules out is a world-writable path or a plain
+/// file standing in for Allele.
+#[cfg(unix)]
+fn owners_socket(socket: &Path) -> Result<(), String> {
+    use std::os::unix::fs::{FileTypeExt, PermissionsExt};
+    let metadata = std::fs::metadata(socket).map_err(|error| error.to_string())?;
+    if !metadata.file_type().is_socket() {
+        return Err(format!("{} is not a socket", socket.display()));
+    }
+    let mode = metadata.permissions().mode() & 0o777;
+    if mode != 0o600 {
+        return Err(format!(
+            "{} is mode {mode:o}, and Allele's socket is 600",
+            socket.display()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn owners_socket(_socket: &Path) -> Result<(), String> {
+    Err("Allele's socket is a Unix socket, which this platform cannot open".to_string())
+}
+
+/// Where a `fake-allele` build looks for an Allele instead of the developer's home.
+#[cfg(feature = "fake-allele")]
+pub const FAKE_ALLELE_HOME: &str = "REVIEW_DESK_FAKE_ALLELE_HOME";
+
+// **A test-only seam, and this is what keeps it one.** A release binary with it would let the
+// environment choose the Allele that vouches for a go-ahead.
+#[cfg(all(feature = "fake-allele", not(debug_assertions)))]
+compile_error!(
+    "the `fake-allele` feature lets the environment choose which Allele vouches for a \
+     go-ahead, and is never built in release"
+);
+
+/// The current user's home directory, as the passwd entry names it.
+#[cfg(unix)]
+fn passwd_home() -> Option<PathBuf> {
+    use std::ffi::{CStr, OsStr};
+    use std::os::unix::ffi::OsStrExt;
+
+    let mut buffer = vec![0 as libc::c_char; 16 * 1024];
+    // SAFETY: `getpwuid_r` is the re-entrant lookup. It writes only into `entry` and into
+    // `buffer`, whose length is passed with it; `found` is set to `&entry` on success and to
+    // null otherwise. `pw_dir` points into `buffer`, which outlives the copy taken below.
+    unsafe {
+        let mut entry: libc::passwd = std::mem::zeroed();
+        let mut found: *mut libc::passwd = std::ptr::null_mut();
+        let status = libc::getpwuid_r(
+            libc::geteuid(),
+            &mut entry,
+            buffer.as_mut_ptr(),
+            buffer.len(),
+            &mut found,
+        );
+        if status != 0 || found.is_null() || entry.pw_dir.is_null() {
+            return None;
+        }
+        let dir = CStr::from_ptr(entry.pw_dir).to_bytes();
+        (!dir.is_empty()).then(|| PathBuf::from(OsStr::from_bytes(dir)))
+    }
+}
+
+#[cfg(not(unix))]
+fn passwd_home() -> Option<PathBuf> {
+    None
+}
+
+/// Whether Allele confirms that the developer typed a go-ahead in a session — DEV-1347.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GoAhead {
+    /// Allele says, without qualification, that this line was typed in this session.
+    Typed,
+    /// Anything else, and why. The post's basis is `desk`.
+    Unconfirmed(String),
+}
+
+impl Allele {
+    /// Ask Allele whether `line` was typed by the developer into `session_id`.
+    ///
+    /// **Only an unqualified yes is [`GoAhead::Typed`].** Allele has no prompt check yet
+    /// (allele-05-20, `prompts.verify`): today it answers this op with an error, which reads
+    /// as unconfirmed — and so does no socket, a socket that does not answer, an answer that
+    /// is not JSON, and an answer in any shape but `{"result": "prompt_verified", "typed":
+    /// true}`. The basis a post records falls toward the weaker label on every one of
+    /// them; it is never guessed upward.
+    pub fn verify_go_ahead(&self, session_id: &str, line: &str, at: Option<i64>) -> GoAhead {
+        let Some(socket) = self.socket.as_deref().filter(|socket| socket.exists()) else {
+            return GoAhead::Unconfirmed("there is no Allele on this machine to ask".to_string());
+        };
+        if let Err(why) = owners_socket(socket) {
+            return GoAhead::Unconfirmed(why);
+        }
+        let request = serde_json::json!({
+            "op": "prompts_verify",
+            "session_id": session_id,
+            "text": line,
+            "typed_at": at,
+        });
+        let line = match exchange(socket, &request) {
+            Ok(line) => line,
+            Err(detail) => return GoAhead::Unconfirmed(detail),
+        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
+            return GoAhead::Unconfirmed("Allele's answer was not JSON".to_string());
+        };
+        match (value["result"].as_str(), value["typed"].as_bool()) {
+            (Some("prompt_verified"), Some(true)) => GoAhead::Typed,
+            (Some("error"), _) => GoAhead::Unconfirmed(format!(
+                "Allele has no prompt check it would answer: {} {}",
+                value["code"].as_str().unwrap_or_default(),
+                value["message"].as_str().unwrap_or_default()
+            )),
+            _ => GoAhead::Unconfirmed("Allele did not confirm the line was typed".to_string()),
+        }
+    }
 }
 
 /// Read one line of Allele's answer.
@@ -268,6 +392,14 @@ mod tests {
     use std::time::Instant;
 
     use super::*;
+
+    /// The passwd entry names a home, and it is an absolute path — the one `own_socket`
+    /// builds Allele's socket under whatever `HOME` says.
+    #[test]
+    fn the_passwd_entry_names_an_absolute_home() {
+        let home = passwd_home().expect("the current user has a passwd entry");
+        assert!(home.is_absolute(), "{}", home.display());
+    }
 
     /// A socket that answers each connection with `reply`, once.
     ///
