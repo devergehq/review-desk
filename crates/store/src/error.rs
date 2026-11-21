@@ -185,6 +185,14 @@ pub enum StoreError {
         id: String,
     },
 
+    /// A session's reply does not follow the answer contract (`docs/answer-contract.md`).
+    ///
+    /// Its own variant, because the field is a path into the body (`suggests[1].to`) rather
+    /// than one of the store's own names, and because the session is told to resend: the
+    /// rule is the whole message, and nothing of the reply was kept.
+    #[error("the reply does not follow the answer contract, so nothing was kept: {field}: {rule}")]
+    NotTheContract { field: String, rule: String },
+
     /// A value read from the database is not one this version of the code knows.
     #[error("{field} holds {value:?}, which is not a valid {field}; expected one of: {expected}")]
     InvalidValue {
@@ -252,6 +260,7 @@ impl StoreError {
             StoreError::NotFound { .. } => "not_found",
             StoreError::UnknownParent { .. } => "unknown_parent",
             StoreError::InvalidValue { .. } => "invalid_value",
+            StoreError::NotTheContract { .. } => "not_the_contract",
             StoreError::Open { .. } => "cannot_open_database",
             StoreError::Migration { .. } => "migration_failed",
             StoreError::FromTheFuture { .. } => "database_from_the_future",
@@ -282,6 +291,7 @@ impl StoreError {
                 | StoreError::NotFound { .. }
                 | StoreError::UnknownParent { .. }
                 | StoreError::InvalidValue { .. }
+                | StoreError::NotTheContract { .. }
         )
     }
 }

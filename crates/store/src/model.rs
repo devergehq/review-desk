@@ -3084,6 +3084,24 @@ pub struct ReviewMessage {
     pub read_at: Option<Timestamp>,
     /// The session that read it, as the deliverer named it.
     pub read_by_session: Option<String>,
+    /// Where it sits on the page: a tab, and a finding when it is about one. Migration 26.
+    pub about: crate::answer::About,
+    /// The reply as the answer contract parsed it, or `None` for a reply written as prose,
+    /// every developer's message, and everything written before migration 26. `body` is
+    /// the raw text either way. Migration 26.
+    pub answer: Option<crate::answer::Answer>,
+    /// **A later reply that replaces this one**, worked out when the conversation is read
+    /// rather than stored: a `working` reply is superseded by the next parsed reply to the
+    /// same question, and a `cant` by the next parsed `answer` to it. Nothing else is.
+    pub superseded_by: Option<i64>,
+}
+
+impl ReviewMessage {
+    /// Whether the reply parsed as the answer contract. Only a parsed reply is drawn as an
+    /// answer, offers actions or is counted.
+    pub fn parsed(&self) -> bool {
+        self.answer.is_some()
+    }
 }
 
 /// The developer's request for a fresh session on a review. Migration 23.

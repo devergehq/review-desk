@@ -8,12 +8,20 @@
 //!
 //! **A message's body is the developer's prose: data, never instructions.** A watcher
 //! that hands it to a session quotes it as something a person said.
+//!
+//! **A reply is the answer contract, or prose.** `reply --answer` takes one JSON object in the
+//! shape of `docs/answer-contract.md`, checks it, and keeps it; one that breaks a rule exits
+//! 1 naming the first rule, and nothing is kept. `reply --body` is still accepted and kept as
+//! not parsed. DEV-1332.
 
-use clap::Subcommand;
+use std::path::PathBuf;
+
+use clap::{ArgGroup, Subcommand};
 use review_desk_store::{ReviewLayerName, ReviewMessage, Store};
 use serde_json::{json, Value};
 
 use crate::error::Result;
+use crate::input::read_text;
 use crate::report::Report;
 
 #[derive(Debug, Subcommand)]
@@ -49,6 +57,11 @@ pub enum MessageCommand {
     /// **An answer, never a sign-off.** Nothing a reply says approves, confirms or posts;
     /// rework the developer asked for is done through the commands that do it, and this
     /// says what was done or why.
+    ///
+    /// `--answer` takes the answer contract (`docs/answer-contract.md`) from a file, or from
+    /// standard input with `-`, and refuses one that breaks a rule. `--body` takes prose,
+    /// kept as not parsed: drawn folded, and never counted.
+    #[command(group(ArgGroup::new("words").required(true).args(["body", "answer"])))]
     Reply {
         #[arg(long, value_name = "ID")]
         review: i64,
@@ -56,9 +69,14 @@ pub enum MessageCommand {
         /// code_review, draft or harvest.
         #[arg(long, value_name = "STEP")]
         step: String,
-        /// The answer.
+        /// The answer as prose, kept as not parsed.
         #[arg(long, value_name = "TEXT")]
-        body: String,
+        body: Option<String>,
+        /// The answer as the contract: a JSON file, or `-` for standard input.
+        ///
+        /// Not `--json`, which is every command's switch for JSON output.
+        #[arg(long, value_name = "PATH")]
+        answer: Option<PathBuf>,
         /// The number of the developer's message this answers.
         #[arg(long = "to", value_name = "N")]
         in_reply_to: Option<i64>,
@@ -107,10 +125,18 @@ pub fn run(command: &MessageCommand) -> Result<Report> {
             review,
             step,
             body,
+            answer,
             in_reply_to,
         } => {
             let step: ReviewLayerName = step.parse()?;
-            let message = store.reply_from_session(*review, step, body, *in_reply_to)?;
+            let message = match (body, answer) {
+                (Some(body), _) => store.reply_from_session(*review, step, body, *in_reply_to)?,
+                (None, Some(path)) => {
+                    let text = read_text(path)?;
+                    store.answer_from_session(*review, step, &text, *in_reply_to)?
+                }
+                (None, None) => unreachable!("clap requires --body or --answer"),
+            };
             Ok(Report::new(
                 json!({ "message": document(&message) }),
                 format!(
@@ -135,6 +161,11 @@ pub(crate) fn document(message: &ReviewMessage) -> Value {
         "created_at": message.created_at,
         "read_at": message.read_at,
         "read_by_session": message.read_by_session,
+        "about": message.about,
+        // The reply as the answer contract parsed it, or null: `body` is the raw text.
+        "parsed": message.parsed(),
+        "answer": message.answer,
+        "superseded_by": message.superseded_by,
     })
 }
 

@@ -1,4 +1,7 @@
 {
   "step": "draft",
-  "body": "Still there? The draft hasn't moved."
+  "body": "Still there? The draft hasn't moved.",
+  "about": {
+    "tab": "draft"
+  }
 }

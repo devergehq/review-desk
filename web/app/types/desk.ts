@@ -155,6 +155,12 @@ export type SessionStatus = Schema['SessionStatus']
 export type FreshSessionState = Schema['FreshSessionState']
 export type ReviewMessage = Schema['ReviewMessage']
 export type MessageList = Schema['MessageList']
+/** A session's reply as the answer contract parsed it. DEV-1332. */
+export type Answer = Schema['Answer']
+/** One of the closed list of seven an answer may suggest. */
+export type Suggestion = Schema['Suggestion']
+/** Where a message sits on the page: a tab, and a finding on it. */
+export type MessageAbout = Schema['MessageAbout']
 export type AskSessionRequest = Schema['AskSessionRequest']
 export type Finding = Schema['Finding']
 /** The lines around a finding, as the pull request changed them. */
