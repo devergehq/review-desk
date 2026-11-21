@@ -1769,7 +1769,7 @@ function coverage(data: ReviewDetail): string | null {
 }
 
 .tally {
-  font-size: 24px;
+  font-size: var(--rd-type-title);
 }
 
 /*

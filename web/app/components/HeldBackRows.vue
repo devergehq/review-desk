@@ -271,16 +271,15 @@ const heading = computed(() => count(props.rows.length, 'finding'))
 }
 
 /*
- * A group's heading. The serif face the boards use, at the size that reads as a divider
- * inside a list rather than as a second panel heading — board A10's own treatment of the
- * same thing on the Solution page.
+ * A group's heading, at the size that reads as a divider inside a list rather than as a
+ * second panel heading — board A10's own treatment of the same thing on the Solution page,
+ * in the sans since the shell (21 November 2026): no serif but the wordmark.
  */
 .held-group {
   margin: 14px 0 2px;
   padding: 0 16px;
-  font-family: var(--rd-font-display);
-  font-weight: 400;
-  font-size: 17px;
+  font-weight: 600;
+  font-size: var(--rd-type-lead);
 }
 
 .held-group:first-of-type {

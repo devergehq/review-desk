@@ -129,9 +129,36 @@
   --rd-action-tall: 56px;
 
   /* ---- The three typefaces. Bundled by `nuxt.config.ts`; nothing is fetched. ---- */
-  --rd-font-display: 'Newsreader', georgia, serif;
+  /*
+   * **The wordmark's face, and nothing else's.** It was `--rd-font-display` and set every
+   * heading, figure and statement the page made in Newsreader. Under the shell the serif has
+   * one use: "Review Desk" in the sidebar — Patrick, 21 November 2026, "it's like the name
+   * of the application. So I'm happy to have it as an exception." Renamed so its name says
+   * that, and so a page reaching for a display face finds there is none.
+   */
+  --rd-font-wordmark: 'Newsreader', georgia, serif;
   --rd-font-sans: 'Instrument Sans', 'Helvetica Neue', sans-serif;
   --rd-font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+
+  /*
+   * ---- The S type scale. Seven sizes, all in the sans. ----
+   *
+   * From the S screens (`docs/mockups/s-structured`, S0 states the scale): a page title, a
+   * section heading, a lead line, the body of the app's own controls and rows, a dense
+   * row's facts, meta, and a label in capitals. A size off this scale is a size a page
+   * invented.
+   */
+  --rd-type-title: 22px;
+  --rd-type-heading: 19px;
+  --rd-type-lead: 16px;
+  --rd-type-body: 14px;
+  --rd-type-ui: 13px;
+  --rd-type-meta: 12px;
+  --rd-type-label: 11px;
+
+  /* ---- The shell's two fixed columns, at every width over 700px. ---- */
+  --rd-sidebar-width: 232px;
+  --rd-conversation-width: 380px;
 
   --rd-shell-max: 1240px;
   /*
@@ -193,62 +220,49 @@ h3 {
 }
 
 /*
- * ---- Display type. Newsreader, at the sizes the boards set. ----
+ * ---- Display type. The sans, on the S scale. ----
  *
- * **The serif is the page's own voice, and never a row's.** Every class here is a heading, a
- * figure or a statement the page is making: the h1 over a list, the headline of a review,
- * the number on a card. A *row* is one of twelve things in a column, and a reader scanning
- * that column is reading shapes — so a row whose title is set in this face reads as a
- * different kind of thing from the row under it, which is a difference that means nothing.
+ * **These were Newsreader, and under the shell there is no serif but the wordmark.**
+ * Patrick, 21 November 2026: headings, figures and titles are the sans, on the S scale; the
+ * serif is the name of the application and only that. The classes keep their names because
+ * they still say what a line *is* — the h1 over a page, the lead of a band, the heading of a
+ * card, a statement the page makes — and every caller keeps meaning the same thing.
  *
- * There was a `.rd-display-row` here, Newsreader at 21px, and it was used on exactly one
- * line: the queue's needs-you title. The design pass of 15 October 2026 found what that did
- * — "Titles switch between serif (Needs you) and sans (everything else) on the same list" —
- * and it has gone with its one caller. Emphasis inside a list is size and weight.
+ * **A token is deleted when its last caller goes.** `.rd-display-figure` had none left and
+ * is gone; `.rd-display-row` went the same way on 16 October 2026. Emphasis inside a list is
+ * size and weight, never a face, and `web/test/screens.nuxt.spec.ts` asserts no serif on a
+ * row; `web/e2e/shell.spec.ts` asserts no serif anywhere but the wordmark, in a browser.
  */
 
 .rd-display {
   margin: 0;
-  font-family: var(--rd-font-display);
-  font-weight: 400;
-  font-size: 48px;
-  line-height: 1.05;
-  letter-spacing: -0.02em;
-}
-
-.rd-display-figure {
-  font-family: var(--rd-font-display);
-  font-weight: 400;
-  font-size: 40px;
-  line-height: 1.05;
-  /*
-   * Proportional figures, not tabular: at 40px `tabular-nums` gives every digit the width
-   * of a nought and `14` reads loose. Tabular is for a column of numbers, which is what
-   * `FactRow` is.
-   */
-  font-variant-numeric: proportional-nums;
+  font-family: var(--rd-font-sans);
+  font-weight: 600;
+  font-size: var(--rd-type-title);
+  line-height: 1.25;
+  letter-spacing: -0.01em;
 }
 
 .rd-display-lead {
-  font-family: var(--rd-font-display);
-  font-weight: 400;
-  font-size: 30px;
-  line-height: 1.15;
+  font-family: var(--rd-font-sans);
+  font-weight: 600;
+  font-size: var(--rd-type-heading);
+  line-height: 1.35;
 }
 
 .rd-display-card {
-  font-family: var(--rd-font-display);
-  font-weight: 400;
-  font-size: 26px;
-  line-height: 1.15;
+  font-family: var(--rd-font-sans);
+  font-weight: 600;
+  font-size: var(--rd-type-heading);
+  line-height: 1.3;
 }
 
 .rd-display-statement {
   margin: 0;
-  font-family: var(--rd-font-display);
-  font-weight: 400;
-  font-size: 24px;
-  line-height: 1.2;
+  font-family: var(--rd-font-sans);
+  font-weight: 500;
+  font-size: var(--rd-type-lead);
+  line-height: 1.4;
 }
 
 /* ---- Primitives. A page composes these; no page restates a colour. ---- */

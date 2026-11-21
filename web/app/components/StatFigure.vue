@@ -10,7 +10,7 @@
  * last 30 days, draft to posted
  * ```
  *
- * A 1px ink rule over it, the figure in Newsreader at 40px, the label in medium weight,
+ * A 1px ink rule over it, the figure in the sans at the scale's title, the label in medium weight,
  * the note in grey. No card and no border: the boards put these four straight on the page,
  * told apart by the rule above each one.
  *
@@ -68,9 +68,8 @@ withDefaults(
 }
 
 .value {
-  font-family: var(--rd-font-display);
-  font-weight: 400;
-  font-size: 40px;
+  font-weight: 600;
+  font-size: var(--rd-type-title);
   line-height: 1.05;
   font-variant-numeric: proportional-nums;
 }
@@ -80,7 +79,7 @@ withDefaults(
 }
 
 /*
- * The unmeasured words are not a 40px number. They are a sentence where a number would
+ * The unmeasured words are not a figure-sized number. They are a sentence where a number would
  * have been, so they are set at the label's size and the figure's height is kept by the
  * line box above.
  */

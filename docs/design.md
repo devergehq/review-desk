@@ -67,6 +67,33 @@ workflow are settled; typography and styling may still move. The screens are in
 | Main | the rest | The page: a review header and its tabs, or the list |
 | Conversation | 380px | **Ask this review**, on every review tab. Absent on the list and on Rules |
 
+**How it is built** (DEV-1323). `web/app/layouts/default.vue` is the grid; `AppSidebar` is the
+first column. Six rules it keeps, each in the file that holds it:
+
+- **The groups are read off the record**, never worked out by the page: *Waiting on you* (which
+  S1 and S2 draw first and open), *Being reviewed* and *Waiting on the author* from `GET /inbox`'s
+  arrays, *Done this week* from the Reviews list's *Finished* view, one row per pull request.
+  An empty group still draws, saying *None*. `sidebarGroups` in `web/app/utils/sidebar.ts`.
+- **The state word is chosen once**, in `web/app/utils/stateWord.ts`. The sidebar's word is the
+  inbox array a pull request is in. **A review the sidebar lists takes that row's word in its own
+  header** (`stateOfReview(detail, rowFor(groups, …))`), because the inbox decides from more than
+  one round — a reply on round 1 while round 3 waits — and one review's page cannot see the others.
+  Any other round says what its own facts say, asked in `crates/store/src/entities/inbox.rs`'s
+  order, with the pull request's end read off `not_for_signing` and a later round as
+  *Superseded*. `web/test/state-word.spec.ts` bends the sample desk into the three shapes that
+  once disagreed and asserts one word by both routes.
+- **The GitHub line is drawn only when a read is recorded**: the newest `harvested_at` the two
+  reads carry, and no line when there is none. `githubReadAt`.
+- **The agent line is DEV-1140's reading**, which is per review, so it is drawn on a review's
+  pages and nowhere else; absent is silent, as on the review's own strip. `agentLine`.
+- **Reviews stays in the navigation** until the list that replaces Queue and Reviews lands
+  (DEV-1325): taking it out first would leave `/reviews` with no way in.
+- **The conversation's column is drawn empty** on a review's pages until the second stack fills
+  it, and not at all under 1,100px while it is empty. Under 700px the shell is one column: the
+  sidebar behind a menu button that closes on Escape, the sample-data marker in the bar, no
+  conversation column (S14 is a bottom sheet). `web/e2e/shell.spec.ts` measures all of it at
+  1,600, 1,280, 1,024 and 390.
+
 **A review is one header and five tabs**, replacing the step trail:
 
 | Tab | Was | What it answers |
@@ -102,8 +129,13 @@ documents, and the shell itself is capped at `--rd-shell-wide`.
 
 | Screen | Kind | Width |
 | -- | -- | -- |
-| Queue, Reviews, Rules, one review, the case, What happened | Document | `--rd-shell-max`, 1,240px |
-| Code review, Draft | Workbench | `--rd-shell-wide`, 1,600px |
+| Queue, Reviews, Rules, one review, the case, What happened | Document | The main column, capped at `--rd-shell-max`, 1,240px |
+| Code review, Draft | Workbench | All of the main column; the shell around it is capped at `--rd-shell-wide`, 1,600px |
+
+**On a review's page the split is not observable under the shell**: beside the 232px sidebar and
+the 380px conversation column the main column is under the 1,240 cap at every width (988px at the
+1,600 cap), so Code review and Draft draw at the same width as the case. It returns when the
+main column outgrows the cap — the list, or a review once the conversation column can fold.
 
 A document is read down. A workbench is worked across: a dense list on the left, the one
 thing selected drawn in full on the right, and a key for every decision. The developer
@@ -112,7 +144,7 @@ of the bench is that **Ticket and Set aside become as easy as Post**.
 
 ### Full width, and prose that does not grow with it
 
-A page asks for the wider shell itself, with `definePageMeta({ wide: true })`; the layout
+A page asks for the whole main column itself, with `definePageMeta({ wide: true })`; the layout
 reads `route.meta.wide` (`web/app/layouts/default.vue`). **Asked for by the page rather than
 set into a store, so a page that is wide is wide from its first frame** and nothing resizes
 under the reader.
@@ -219,8 +251,11 @@ Emphasis inside a list is size and weight. **Under the shell the serif goes furt
 use only, the "Review Desk" wordmark.** Patrick, 21 November 2026: *"review desk should have some
 kind of… flair… It's like the name of the application. So I'm happy to have it as an
 exception."* Headings, figures and titles are the sans, on the S type scale (22 / 19 / 16 / 14 /
-13 / 12 / 11). The rule is written over the display block in
-`tokens.css`, and `web/test/screens.nuxt.spec.ts` asserts *no serif on a row*.
+13 / 12 / 11, `--rd-type-*` in `tokens.css`). The face is `--rd-font-wordmark` and the wordmark is
+its only caller; `.rd-display-figure` went with its last caller. The rule is written over the
+display block in `tokens.css`; `web/test/screens.nuxt.spec.ts` asserts *no serif on a row* and
+reads every stylesheet for a second use of the face, and `web/e2e/shell.spec.ts` asks the browser
+for the face of every element on every page.
 
 **A status cell is a state line and one line of facts.** On the Queue, problem 05's exact
 string — "0 replies · 0 threads resolved · 0 findings with code changed since · as at 24
@@ -317,7 +352,7 @@ Neither of these is a decision against; both are waiting on real use.
 | 16 Oct 2026 | One title face in a list; a status cell is one line of facts | `tokens.css`, `format.ts` |
 | 16 Oct 2026 | One Reviews row per pull request, titled by the newest round that records one | `byPullRequest` |
 | 21 Nov 2026 | The S screens are the target: a three-column shell, a review as five tabs, the conversation beside every tab | *The application shell*; `docs/mockups/s-structured` |
-| 21 Nov 2026 | Serif only on the wordmark; everything else on the sans scale | *A row is a row* |
+| 21 Nov 2026 | Serif only on the wordmark; everything else on the sans scale | *A row is a row*; `--rd-font-wordmark` |
 | 21 Nov 2026 | `P` Promote and `N` Not a rule on Rules | The keys table |
 | 21 Nov 2026 | A session's answer follows the contract or is kept only as an unparsed message | `docs/answer-contract.md` |
 | 15 Nov 2026 | Review Desk never starts, resumes or drives Claude itself; without Allele the conversation is one way | *The application shell*; S11 |

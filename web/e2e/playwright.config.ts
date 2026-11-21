@@ -76,7 +76,7 @@ export default defineConfig({
        * argument in its own header.
        */
       name: 'desk',
-      testMatch: /(review-desk|header-links|what-happened|rounds|queue-rounds)\.spec\.ts/,
+      testMatch: /(review-desk|header-links|what-happened|rounds|queue-rounds|shell)\.spec\.ts/,
     },
     {
       /*

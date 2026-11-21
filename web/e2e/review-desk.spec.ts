@@ -180,8 +180,11 @@ test.describe('the whole path, on a seeded database', () => {
      * developer for two things at once — and `GET /inbox` really does serve it in two of
      * its five arrays. One row, showing the earlier layer's action, saying the other is
      * behind it. The screen this replaced drew the title twice.
+     *
+     * **In the page, not the document**: since DEV-1323 the shell's sidebar lists every pull
+     * request too, once each — `test/screens.nuxt.spec.ts` asserts that list's own one row.
      */
-    await expect(page.getByText('Retry failed webhook deliveries')).toHaveCount(1)
+    await expect(page.locator('main').getByText('Retry failed webhook deliveries')).toHaveCount(1)
     /*
      * **Eight rows for four pull requests that need you**, which is not a contradiction:
      * the fifth is the posted review under "Waiting on the author", and the last three are
@@ -285,7 +288,7 @@ test.describe('the whole path, on a seeded database', () => {
      * absence is: `GET /inbox` serves a group for a posted review whose pull request has
      * not been seen merged or closed.
      */
-    await expect(page.getByRole('heading', { name: 'Waiting on the author' })).toBeVisible()
+    await expect(page.locator('main').getByRole('heading', { name: 'Waiting on the author' })).toBeVisible()
     await expect(page.getByText('Not measured yet')).toHaveCount(0)
     await expect(
       page.getByText('serves no group for a posted review awaiting a reply'),
@@ -319,7 +322,7 @@ test.describe('the whole path, on a seeded database', () => {
     /* And it is one click from the queue, which is the whole of what was asked for. */
     await posted.click()
     await expect(page).toHaveURL(new RegExp(`/reviews/${postedReviewId}/understand$`))
-    await expect(page.getByText('Record the delivery attempt count')).toBeVisible()
+    await expect(page.locator('main').getByText('Record the delivery attempt count')).toBeVisible()
     await page.goBack()
 
     /*
@@ -776,7 +779,7 @@ test.describe('the whole path, on a seeded database', () => {
     await expect(page).toHaveURL(/\/rules$/)
     expect(await leavings()).toEqual({ orphans: [], bombs: 0, saysSyntaxError: false })
 
-    await page.getByRole('link', { name: 'Queue' }).click()
+    await page.getByRole('link', { name: /^Pull requests/ }).click()
     await expect(page).toHaveURL(new RegExp(`^${seeded}$`))
     expect(await leavings()).toEqual({ orphans: [], bombs: 0, saysSyntaxError: false })
   })
@@ -1739,7 +1742,7 @@ test.describe('the case for one review, in three bands', () => {
          * And with every fold open, which is where the long file paths and the four-column
          * tables are. A page that fits closed and overflows open fits nothing.
          */
-        const folds = page.locator('button[aria-expanded="false"]')
+        const folds = page.locator('main button[aria-expanded="false"]')
         for (let at = 0; at < await folds.count(); at += 1) {
           await folds.nth(0).click()
         }
@@ -1765,7 +1768,7 @@ test.describe('the case for one review, in three bands', () => {
      * not, and the prose inside it did not grow with the window, which is the half that
      * makes "contained" mean anything.
      */
-    test(`the bench is wider than the shell, and its prose is not, at ${label}`, async ({
+    test(`the bench is never narrower than a document, and its prose is capped, at ${label}`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height })
@@ -1780,9 +1783,19 @@ test.describe('the case for one review, in three bands', () => {
       await expect(page.locator('h1')).toBeVisible()
       const shell = await page.locator('#main').evaluate(el => el.clientWidth)
 
-      if (width > 1240) {
-        expect(bench, 'the bench takes the window').toBeGreaterThan(shell)
-      }
+      /*
+       * **Under the shell (DEV-1323) a review's page is the main column**, beside a 232px
+       * sidebar and the 380px conversation column, so it is narrower than the 1,240 cap at
+       * every width the shell allows: 988px at the 1,600 cap. The bench and the pages either
+       * side of it are then the same width, and "wider" is not something a review's page
+       * can be until the main column outgrows the cap. What still holds, and is asserted:
+       * the bench is never narrower, a document never passes the cap, and the prose stops
+       * at its measure. **On a review's page the two are equal by construction** — both are
+       * the main column's track — so the first of these is a guard against a regression,
+       * not a measurement of the split; `docs/design.md`, *Two kinds of screen*, records the
+       * split as unobservable on a review's page until the main column outgrows 1,240.
+       */
+      expect(bench, 'the bench is never narrower than a document').toBeGreaterThanOrEqual(shell)
       expect(bench, 'and stops at the cap').toBeLessThanOrEqual(1600)
       expect(shell, 'the pages either side of it keep the shell')
         .toBeLessThanOrEqual(1240)
@@ -2142,7 +2155,15 @@ test.describe('the case for one review, in three bands', () => {
       }
     })
 
-    for (const width of [1440, 390]) {
+    /*
+     * **1,600, not 1,440, since the shell (DEV-1323).** A review's page now sits beside the
+     * 232px sidebar and the 380px conversation column, and at 1,440 this line lands on a wrap
+     * boundary: macOS lays the paragraph out in 3 lines (67.5px, the defect 1.67x taller) and
+     * the Linux runner in 4 (90px, 1.25x) — so the comparison below measured font hinting
+     * rather than the defect. At 1,600, the shell's cap and the width the S screens are drawn
+     * at, it is 2.7x on macOS. The 1.5x rule is unchanged.
+     */
+    for (const width of [1600, 390]) {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
       await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
       await expect(page.locator('h1')).toBeVisible()
@@ -2695,9 +2716,10 @@ test.describe('a drawing opens larger', () => {
      * **The same element, not a copy.** One drawing in the document is the property the
      * whole design turns on: a copy would need a second `v-html`, and mermaid scopes its own
      * stylesheet by the figure's id so a clone either renders unstyled or duplicates every
-     * id on the page.
+     * id on the page. **Not counting the shell's own icons** (DEV-1323): the sidebar's three
+     * and the menu button's are drawn, not typed, and are no copy of anything.
      */
-    await expect(page.locator('svg')).toHaveCount(1)
+    await expect(page.locator('svg:not(#sidebar svg):not(.topbar svg)')).toHaveCount(1)
     await expect(sheet.locator('svg')).toHaveCount(1)
 
     /* It fills the window, rather than the 560-pixel pane it came out of. */
@@ -3083,7 +3105,7 @@ test.describe('the list of every review', () => {
       'Say "not measured" rather than null in the delivery log',
       'Record the delivery attempt count',
     ]) {
-      await expect(page.getByText(title, { exact: false }).first()).toBeVisible()
+      await expect(page.locator('main').getByText(title, { exact: false }).first()).toBeVisible()
     }
 
     /*
@@ -3121,7 +3143,7 @@ test.describe('the list of every review', () => {
     /* **Click two**, and the review is open at Understand, where a review starts. */
     await posted.locator('.row').click()
     await expect(page).toHaveURL(new RegExp(`/reviews/${postedReviewId}/understand$`))
-    await expect(page.getByText('Record the delivery attempt count')).toBeVisible()
+    await expect(page.locator('main').getByText('Record the delivery attempt count')).toBeVisible()
   })
 
   test('filters by repository, and says the order out loud', async ({ page }) => {

@@ -493,8 +493,8 @@ test('a review that is not on the desk says so', async ({ page }) => {
   await expect(page.locator('main')).toContainText('Not on the desk')
   await expect(page.locator('main')).toContainText('No review with id 987654')
 
-  /* And the two ways out: the header's navigation, and the notice's own retry. */
-  await expect(page.getByRole('link', { name: 'Queue' })).toBeVisible()
+  /* And the two ways out: the sidebar's navigation, and the notice's own retry. */
+  await expect(page.getByRole('link', { name: /^Pull requests/ })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible()
 })
 

@@ -134,6 +134,45 @@ test.describe('a seeded database', () => {
 })
 
 /*
+ * **The shell, DEV-1323**: the sidebar and the three columns, at the S screens' own width
+ * and at a phone's. The list (S1's place) and a review (S2's), and on the phone the sidebar
+ * opened from its menu button — the one state of the shell a closed page cannot show.
+ * Viewport-high rather than full-page at 1,600, so the sidebar's foot — the GitHub and
+ * agent lines — is in the picture where S1 and S2 draw it.
+ */
+test.describe('the shell', () => {
+  test('the list and a review, at 1,600 and 390', async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 1000 })
+    await page.goto(seeded)
+    await expect(page.locator('#sidebar .wordmark')).toBeVisible()
+    await page.waitForLoadState('networkidle')
+    await page.waitForTimeout(400)
+    await page.screenshot({ path: `${INTO}/shell-1-pull-requests.png` })
+
+    await page.goto(`${seeded}reviews/${reviewId}/code-review`)
+    await expect(page.locator('.shell-conversation')).toBeVisible()
+    await page.waitForLoadState('networkidle')
+    await page.waitForTimeout(400)
+    await page.screenshot({ path: `${INTO}/shell-2-review.png` })
+
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto(seeded)
+    await expect(page.getByRole('button', { name: 'Menu' })).toBeVisible()
+    await shot(page, 'shell-1-pull-requests-390')
+
+    await page.goto(`${seeded}reviews/${reviewId}/code-review`)
+    await expect(page.getByRole('button', { name: 'Menu' })).toBeVisible()
+    await shot(page, 'shell-2-review-390')
+
+    await page.getByRole('button', { name: 'Menu' }).click()
+    await expect(page.locator('#sidebar')).toBeVisible()
+    await page.waitForTimeout(200)
+    await page.screenshot({ path: `${INTO}/shell-3-menu-open-390.png` })
+    await page.setViewportSize({ width: 1440, height: 900 })
+  })
+})
+
+/*
  * **The three step pages DEV-885 builds**, at the width of a laptop and at the width of a
  * phone, from the contract's invented example.
  *
