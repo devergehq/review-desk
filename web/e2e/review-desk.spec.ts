@@ -4668,7 +4668,10 @@ test.describe('state that belongs to one review', () => {
     'draft': 'draft',
   }
 
-  const at = (id: number, step: string) => `${seeded}reviews/${id}/${TAB_OF[step]}${band(step)}`
+  /* Understand is where `byTheTrail` stops: the review's own address, which draws the case. */
+  const at = (id: number, step: string) => step === 'understand'
+    ? `${seeded}reviews/${id}`
+    : `${seeded}reviews/${id}/${TAB_OF[step]}${band(step)}`
 
   async function byTheTrail(page: Page, id: number, step: string): Promise<number> {
     await page.getByRole('navigation', { name: 'Review Desk' })

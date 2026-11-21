@@ -81,7 +81,8 @@ describe('the one next action', () => {
 
   it('is nothing at all for a review with nothing for the developer to do', () => {
     const nothing: ReviewState[] = [
-      'not_started', 'being_written', 'posted', 'merged', 'closed', 'dismissed',
+      'not_started', 'being_written', 'waiting_for_session', 'posted',
+      'merged', 'closed', 'dismissed', 'out_of_play',
     ]
     for (const state of nothing) expect(primaryAction(5, state, ['F3']), state).toBeNull()
     expect(primaryAction(5, 'replies_in', []), 'replies with none to answer').toBeNull()

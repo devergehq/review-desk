@@ -102,6 +102,10 @@ export interface PrimaryAction {
  * | Draft ready | Sign off and post | Draft, where the sign-off is |
  * | Replies in, with a reply to answer | Answer F3, or Answer 2 replies | Replies |
  *
+ * Every other state is nothing for the developer to do, so no action: a session working
+ * or awaited (*Being written*, *Waiting for a session*), a review posted and quiet, and the
+ * ways off the desk (*Merged*, *Closed*, *Dismissed*, *Out of play*).
+ *
  * **It links to the tab, and that is all it does yet.** DEV-1329 moves the Draft page's
  * sign-off binding into the draft-ready action, and DEV-1328 adds `?finding=` so a single
  * reply's action can open its finding; both repoint what this answers rather than adding a
