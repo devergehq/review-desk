@@ -10,7 +10,7 @@
  * | Part | From |
  * | -- | -- |
  * | The bottom line | `bottomLine`, the one helper DEV-1326's Overview also draws it with |
- * | The state | The row's own word where its tab is read off an inbox array, as the sidebar's is; else `stateOfReview`, as the header's is |
+ * | The state | The row's own word where its tab is read off an inbox array, as the sidebar's is; else `stateOfReview` with `rowFor`, as the header's is |
  * | Findings | `finding_severities`, through `severityTally`, when any finding is recorded |
  * | Not checked | `not_checked`, when the session wrote it |
  * | Session | The row's own session line, from the inbox |
@@ -31,10 +31,21 @@ const props = defineProps<{ row: ListRow }>()
 const desk = useReviewDesk()
 const detail = props.row.reviewId != null ? desk.review(props.row.reviewId) : null
 
+/*
+ * **The header's own derivation, with the sidebar's row**, where the row did not bring a
+ * word from an inbox array: `stateOfReview(detail, rowFor(...))` is what the review header
+ * calls, so the preview and the header say one word. Both reads are shared, so this asks
+ * the server for nothing the sidebar has not already.
+ */
+const inbox = desk.inbox()
+const finished = desk.finishedReviews()
+const groups = computed(() =>
+  inbox.data.value ? sidebarGroups(inbox.data.value, finished.data.value) : null)
+
 const state = computed(() => {
   if (props.row.state) return props.row.state
   const data = detail?.data.value
-  return data ? stateOfReview(data) : null
+  return data ? stateOfReview(data, rowFor(groups.value, data.review)) : null
 })
 
 const line = computed(() => bottomLine(detail?.data.value?.brief))
