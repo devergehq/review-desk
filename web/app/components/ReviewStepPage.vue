@@ -8,7 +8,7 @@ import type { ActOnTab, ReviewTab } from '~/utils/reviewTabs'
  * ```
  *  ┌── ReviewHeader: crumb, #number and title, state word, facts, action, five tabs ──┐
  *  └───────────────────────────────────────────────────────────────────────────────────┘
- *  the round switcher, timings, the session, the conversation
+ *  the round switcher, timings, the session  (the conversation: the shell's right column)
  *  The tab's one heading, in the sans at the scale's title
  *  the one line under it, when the tab has one
  *  …the tab…
@@ -33,15 +33,6 @@ const props = defineProps<{
   /** Which of the five tabs this page is. The header's tab strip marks it. */
   tab: ReviewTab
   /**
-   * The steps whose conversation this tab holds, when it holds more than `step`'s.
-   *
-   * **Understanding is three steps' worth of conversation.** Alternatives and Solution each
-   * had an address, and a message asked on either was kept under its own step; with the
-   * three on one tab, a conversation fold that read `step` alone would hide those. The fold
-   * reads all of them and asks under `step`.
-   */
-  conversationSteps?: ReviewLayerName[]
-  /**
    * The page's one heading, or `null` for a tab that opens on something else.
    *
    * **Overview has none** (DEV-1326): it opens on *The bottom line*, which is its own box
@@ -63,6 +54,15 @@ const props = defineProps<{
  * `briefWrittenEarlier` holds that rule, so every page gets the same answer.
  */
 const writtenEarlier = computed(() => briefWrittenEarlier(props.detail, props.step))
+
+/**
+ * Whether the shell's conversation column is there to draw into. It is drawn after the page
+ * in the layout, so it is looked for once the page is mounted.
+ */
+const column = ref(false)
+onMounted(() => {
+  column.value = document.getElementById('conversation') != null
+})
 
 /** The step's name as the notice above writes it, from the one place that words them. */
 const stepName = computed(() => layerLabel(props.step))
@@ -117,15 +117,23 @@ const stepName = computed(() => layerLabel(props.step))
         />
 
         <!--
-        **The conversation with that session, on this step**, folded under the strip that
-        says whether anything can read it. DEV-1141.
+        **The conversation with that session sits in the shell's right-hand column**, not
+        here: DEV-1333 moved it out of the fold under the strip. The page draws it because
+        the page holds the review, the step and the tab; the layout holds the column, so it
+        is teleported there once the page is mounted, when the column is sure to exist —
+        and not at all where there is none, as when a test mounts the page alone. Keyed by the review so another review's page never draws this one's thread.
       -->
-        <StepConversation
-          :key="`conversation-${detail.review.id}-${step}`"
-          :review-id="detail.review.id"
-          :step="step"
-          :steps="conversationSteps"
-        />
+        <Teleport
+          v-if="column"
+          to="#conversation"
+        >
+          <ConversationPanel
+            :key="`conversation-${detail.review.id}`"
+            :detail="detail"
+            :step="step"
+            :tab="tab"
+          />
+        </Teleport>
 
         <!--
         The headline and the line under it are a session's prose, so the backtick pairs in

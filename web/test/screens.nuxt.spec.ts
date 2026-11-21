@@ -196,13 +196,14 @@ describe('the shell', () => {
   })
 
   /*
-   * **The conversation's column is drawn empty on a review's pages**, as a placeholder the
-   * second stack fills, and not at all on the lists or Rules — `docs/design.md`'s table.
+   * **The conversation's column is drawn on a review's pages**, as the place the review's
+   * page draws *Ask this review* into (DEV-1333), and not at all on the lists or Rules —
+   * `docs/design.md`'s table. The layout alone holds the column and nothing in it.
    */
   it('draws the conversation column on a review and nowhere else', async () => {
     const onReview = await shown(Layout, { route: '/reviews/17' })
-    expect(onReview.find('.shell-conversation').exists()).toBe(true)
-    expect(onReview.find('.shell-conversation').text()).toBe('')
+    expect(onReview.find('#conversation.shell-conversation').exists()).toBe(true)
+    expect(onReview.find('#conversation').attributes('aria-label')).toBe('Ask this review')
     const onList = await shown(Layout, { route: '/' })
     expect(onList.find('.shell-conversation').exists()).toBe(false)
     const onRules = await shown(Layout, { route: '/rules' })

@@ -66,6 +66,7 @@ import type {
   FindingDecisionMade,
   FoldedRound,
   Inbox,
+  MessageAbout,
   NitTicket,
   RepoName,
   RepoSummary,
@@ -775,9 +776,10 @@ export function useReviewDesk() {
     id: number,
     step: ReviewLayerName,
     body: string,
+    about?: MessageAbout,
   ): Promise<WriteResult> {
     return write(
-      to => to.askSession(id, step, body),
+      to => to.askSession(id, step, body, about),
       () => 'Asked. It is with the review until the session reads it.',
     )
   }

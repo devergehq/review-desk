@@ -23,6 +23,7 @@ import type {
   FindingDecisionMade,
   FoldedRound,
   Inbox,
+  MessageAbout,
   NitTicket,
   OutcomeKind,
   RepoSummary,
@@ -105,9 +106,16 @@ export interface DeskBackend {
   /**
    * `POST /reviews/{id}/messages` — the developer asks the review's session something.
    *
-   * **Stored and nothing more.** Locus delivers it; no message signs anything off.
+   * **Stored and nothing more.** Locus delivers it; no message signs anything off. `about`
+   * is the tab and finding the page's About chip names (DEV-1333); left out, the server
+   * keeps it under the tab `step` now lives on.
    */
-  askSession: (reviewId: number, step: ReviewLayerName, body: string) => Promise<ReviewMessage>
+  askSession: (
+    reviewId: number,
+    step: ReviewLayerName,
+    body: string,
+    about?: MessageAbout,
+  ) => Promise<ReviewMessage>
   /**
    * `POST /reviews/{id}/fresh-session` — ask for a fresh session, because Allele says the
    * review's session is gone. The server asks Allele itself first; the dispatcher starts it.
