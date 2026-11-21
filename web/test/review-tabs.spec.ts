@@ -123,7 +123,7 @@ describe('the one next action', () => {
       .toEqual({
         label: 'Sign off and post',
         to: '/reviews/5/draft',
-        note: 'The session posts it under your name, with no bot banner.',
+        note: 'The review session posts it under your name, with no bot banner.',
       })
   })
 
@@ -134,7 +134,7 @@ describe('the one next action', () => {
   it('names a later round, and the commit it read, in the sign-off', () => {
     const action = primaryAction(5, 'draft_ready', [], { round: 2, head: '3c1e2a9f00' })
     expect(action?.label).toBe('Sign off round 2 and post')
-    expect(action?.note).toBe('The session posts round 2 under your name, with no bot banner. '
+    expect(action?.note).toBe('The review session posts round 2 under your name, with no bot banner. '
       + 'If the head moves past 3c1e2a9 after you sign, the sign-off is withdrawn and nothing posts.')
     expect(primaryAction(5, 'draft_ready', [], { round: 1, head: '7f3c2d1' })?.label)
       .toBe('Sign off and post')
@@ -143,7 +143,7 @@ describe('the one next action', () => {
   /* A round with no head recorded names no commit, rather than naming nothing. */
   it('leaves the commit out of the note when the round recorded none', () => {
     expect(primaryAction(5, 'draft_ready', [], { round: 3, head: null })?.note)
-      .toBe('The session posts round 3 under your name, with no bot banner.')
+      .toBe('The review session posts round 3 under your name, with no bot banner.')
   })
 
   /*

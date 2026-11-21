@@ -1996,6 +1996,72 @@ export function seedReadyDraft(
 }
 
 /**
+ * **A second round of a posted pull request, as S16 draws it** (DEV-1329).
+ *
+ * Round 1 carries the contract's code review example and is posted; the author pushes, and
+ * round 2 carries five of its findings forward with what became of each — S16's own cases:
+ * F9 fixed in a commit, F5 answered, F3 raised again, F1 asked again, F10 to a ticket — and
+ * F6 still open. Its draft is ready, so the Draft tab is round 2's sign-off.
+ *
+ * **No commits between the rounds are recorded**, because `round commits` reads GitHub and a
+ * seed cannot; the *Changes since round 1* view says so rather than inventing any.
+ */
+export function seedRoundTwoDraft(database: string): { reviewId: number, previousId: number, pr: number } {
+  const directory = scratch()
+  const { reviewId: previousId, pr } = openAFreshReview(database, 'Give a scheduled export its own context')
+
+  structuredFindings().forEach((finding, index) => {
+    const path = join(directory, `round-one-finding-${index}.json`)
+    writeFileSync(path, JSON.stringify(finding))
+    cli(database, ['finding', 'add', '--review', String(previousId), '--file', path])
+  })
+  cli(database, ['review', 'link', '--review', String(previousId), '--github-review', 'PRR_round_one'])
+
+  const opened = cli(database, [
+    'review', 'open', '--repo', 'acme/portal', '--pr', String(pr), '--head', '3c1e2a9',
+    '--title', 'Give a scheduled export its own context',
+  ])
+  const reviewId = Number(opened.match(/\d+/)?.[0])
+  if (!Number.isInteger(reviewId) || reviewId === previousId) {
+    throw new Error(`review open printed no new round: ${opened}`)
+  }
+
+  const carry = (seq: number, status: string, by: string, more: string[] = []) =>
+    cli(database, [
+      'finding', 'carry', '--review', String(reviewId), '--from', String(previousId),
+      '--finding', String(seq), '--status', status, '--by', by, ...more,
+    ])
+  carry(9, 'fixed', 'agent', ['--checked', 'a new test fails with the fix reverted', '--commit', '3c1e2a9'])
+  carry(5, 'accepted', 'developer', ['--checked', 'the author named the unique index'])
+  carry(3, 'still_open', 'agent')
+  carry(1, 'still_open', 'agent')
+  carry(6, 'still_open', 'agent')
+  carry(10, 'ticketed', 'developer')
+  cli(database, [
+    'outcome', 'add', '--review', String(reviewId), '--finding', '3',
+    '--kind', 'raised_again', '--by', 'developer', '--detail', 'the code still allows it',
+  ])
+
+  const sections = join(directory, 'round-two-sections.json')
+  writeFileSync(
+    sections,
+    JSON.stringify([
+      {
+        kind: 'prose',
+        text: '**Round 2.** Thanks for the fixes: F9 is fixed in 3c1e2a9 with a test, and F5 is '
+          + 'answered. One finding is raised again, one is asked again, and one still stands.',
+      },
+      { kind: 'finding', finding_seq: 1, text: 'Still open from round 1, with no reply yet: an empty allowed-columns list should mean none, so a new definition cannot leak by omission.' },
+      { kind: 'finding', finding_seq: 3, text: 'A schedule whose tenant has gone is still dispatched. Your reply says purge does not run in production; the code still allows it.' },
+      { kind: 'finding', finding_seq: 6, text: 'Unchanged since round 1: the hidden column is still selected before it is dropped.' },
+    ]),
+  )
+  cli(database, ['draft', 'put', '--review', String(reviewId), '--sections', sections])
+
+  return { reviewId, previousId, pr }
+}
+
+/**
  * Another review carrying the same structured brief and findings as the seeded one.
  *
  * **Two reviews of the same shape is what DEV-960 has to be tested against**, and a second

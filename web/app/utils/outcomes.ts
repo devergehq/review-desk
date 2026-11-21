@@ -1005,12 +1005,12 @@ export function sinceRoundLines(since: SinceRound): string[] {
   for (const one of since.fixed) resolved.push(one.commit ? `${one.key} fixed in ${one.commit}` : `${one.key} fixed`)
   if (since.answered.length) resolved.push(`${keys(since.answered)} answered`)
   if (since.withdrawn.length) resolved.push(`${keys(since.withdrawn)} withdrawn`)
-  if (resolved.length) lines.push(`${listed(resolved)}.`)
+  if (resolved.length) lines.push(`${resolved.join(', ')}.`)
 
   const again: string[] = []
   if (since.raisedAgain.length) again.push(`${keys(since.raisedAgain)} raised again`)
   if (since.askedAgain.length) again.push(`${keys(since.askedAgain)} asked again`)
-  if (again.length) lines.push(`${listed(again)}.`)
+  if (again.length) lines.push(`${again.join(', ')}.`)
 
   if (since.ticketed.length) lines.push(`${keys(since.ticketed)} still ${since.ticketed.length === 1 ? 'goes' : 'go'} to a ticket.`)
   return lines

@@ -2290,7 +2290,7 @@ describe('the draft preview', () => {
     expect(page.text()).toContain(
       'Signed off. Will be posted as "Comment" — waiting for the session to post it.',
     )
-    expect(page.text()).toContain('The session posts it under your name')
+    expect(page.text()).toContain('The review session posts it under your name')
     expect(signOff(page).exists()).toBe(false)
     expect(page.findAll('button').some(one => one.text().startsWith('Sign off'))).toBe(false)
   })
@@ -2384,7 +2384,7 @@ describe('the draft preview', () => {
     expect(signOff(page).text()).toContain('Sign off round 2 and post')
     expect(page.find('[data-testid="since-round"]').text()).toContain('Since round 1')
     expect(page.find('[data-testid="since-round"]').text()).toContain('F1 asked again.')
-    expect(page.find('.sign-off-note').text()).toContain('The session posts round 2 under your name')
+    expect(page.find('.sign-off-note').text()).toContain('The review session posts round 2 under your name')
 
     expect(page.findAll('[role="tab"]').map(one => one.text())).toContain('Changes since round 1')
     await viewTab(page, 'Changes since round 1').trigger('click')

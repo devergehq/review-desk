@@ -851,13 +851,23 @@ function raisedBefore(data: DraftDetail): string {
  * S05's *Lines moved since read*, said as what the record measures: **which threads had
  * their line counted on a commit other than the head**. A thread whose commit was not
  * recorded makes the figure unmeasured rather than "none".
+ *
+ * **Failing only for a thread raised in this round.** A carried finding's line is counted on
+ * the earlier round's head by construction — a carry copies it and re-measures nothing — so
+ * naming it is a fact and not a fault; its row says *carried from round N*.
  */
-function readElsewhere(data: DraftDetail): string {
-  if (data.threads.length === 0) return 'None'
-  if (data.threads.some(one => one.line_sha == null || one.line_sha.length === 0)) return 'Not measured'
+function readElsewhere(data: DraftDetail): { value: string, failing: boolean } {
+  if (data.threads.length === 0) return { value: 'None', failing: false }
+  if (data.threads.some(one => one.line_sha == null || one.line_sha.length === 0)) {
+    return { value: 'Not measured', failing: false }
+  }
   const head = data.review.head_sha
-  const keys = data.threads.filter(one => !sameCommit(one.line_sha!, head)).map(one => one.finding_key)
-  return keys.length ? keys.join(', ') : 'None'
+  const elsewhere = data.threads.filter(one => !sameCommit(one.line_sha!, head))
+  if (elsewhere.length === 0) return { value: 'None', failing: false }
+  return {
+    value: elsewhere.map(one => one.finding_key).join(', '),
+    failing: elsewhere.some(one => carriedFrom.value[one.finding_key] == null),
+  }
 }
 
 /**
@@ -1344,9 +1354,9 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                     </p>
                     <FactRow
                       label="Lines read on another commit"
-                      :value="readElsewhere(data)"
+                      :value="readElsewhere(data).value"
                       numeric
-                      :failing="!['None', 'Not measured'].includes(readElsewhere(data))"
+                      :failing="readElsewhere(data).failing"
                     />
                     <!--
                 `lint` is null until the review-craft lint has run over this body, and a
@@ -1427,9 +1437,14 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                     …/nit-ticket` is refused on a review that has left the desk, so the rows
                     stay and only the button goes.
                   -->
-                  <section
+                  <!--
+                    A card, unlike the other parts of this column: `HeldBackRows` draws each
+                    row's rule to its card's edges with a negative margin, and without the
+                    card's padding the rows would reach past the column.
+                  -->
+                  <DeskCard
                     v-if="data.held_back.length"
-                    class="side-part"
+                    class="panel"
                   >
                     <!--
                       **The rows, and the join that makes them possible.** `HeldBackFinding`
@@ -1461,7 +1476,7 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                             : `Filed as ${data.nit_ticket.ticket_id}`
                       }}
                     </button>
-                  </section>
+                  </DeskCard>
 
                   <section class="side-part">
                     <p class="rd-rubric">
@@ -1762,7 +1777,8 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
  * A container query on the tab's own width, as Findings' bench is (DEV-1328): beside the
  * conversation the main column is about 920px at a 1,600px window, so a rule keyed on the
  * viewport would put two columns into room for one. From 760px of the tab the side column
- * takes 300px; under it the side column follows the preview.
+ * takes 320px, the width *Post as*'s three segments need on one line; under it the side
+ * column follows the preview.
  */
 .draft {
   container: draft / inline-size;
@@ -1778,7 +1794,7 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
 
 @container draft (min-width: 760px) {
   .bench {
-    grid-template-columns: minmax(0, 1fr) 300px;
+    grid-template-columns: minmax(0, 1fr) 320px;
     gap: 0;
     align-items: stretch;
   }
@@ -1834,7 +1850,7 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
 
 .segment,
 .verdict-segment {
-  padding: 5px 12px;
+  padding: 5px 10px;
   border: 0;
   border-radius: var(--rd-radius-sm);
   background: transparent;
@@ -1999,6 +2015,14 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
 
 .since {
   margin: 0;
+}
+
+/* The held-back card: its own padding, which `HeldBackRows`' row rules reach to. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
 }
 
 /* The foot sits at the end of the column, as S05 sets the note and its two links. */

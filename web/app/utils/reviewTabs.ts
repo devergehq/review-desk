@@ -193,7 +193,7 @@ function signOff(read: ReadAt | undefined): { label: string, note: string } {
   const later = read != null && read.round > 1
   const label = later ? `Sign off round ${read.round} and post` : 'Sign off and post'
   const what = later ? `round ${read.round}` : 'it'
-  const posts = `The session posts ${what} under your name, with no bot banner.`
+  const posts = `The review session posts ${what} under your name, with no bot banner.`
   const commit = shortCommit(read?.head ?? null)
   const note = commit
     ? `${posts} If the head moves past ${commit} after you sign, the sign-off is withdrawn and nothing posts.`

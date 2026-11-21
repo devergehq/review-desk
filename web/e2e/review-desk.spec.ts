@@ -12,6 +12,7 @@ import {
   readAddresses,
   scratch,
   seedReadyDraft,
+  seedRoundTwoDraft,
   seedStructuredReview,
   serversUnderTest,
   stillServing,
@@ -570,7 +571,8 @@ test.describe('the whole path, on a seeded database', () => {
     expect(before.draft.approved_by).toBeNull()
 
     await page.goto(`${seeded}reviews/${reviewId}/draft`)
-    await page.locator('select#event').selectOption('request_changes')
+    /* Post as is three segments (DEV-1329); the sign-off is the header's action. */
+    await page.locator('label.verdict-segment', { hasText: 'Request changes' }).click()
     await page.getByRole('button', { name: 'Sign off and post' }).click()
 
     await expect(
@@ -581,7 +583,11 @@ test.describe('the whole path, on a seeded database', () => {
     await expect(
       page.getByText('The review session posts it under your name, with no bot banner.'),
     ).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Sign off and post' })).toBeDisabled()
+    /*
+     * **Not twice.** Signed off, the review waits on the session and not on the developer,
+     * so the header draws no sign-off at all (DEV-1329) rather than a disabled one.
+     */
+    await expect(page.getByRole('button', { name: 'Sign off and post' })).toHaveCount(0)
 
     const record = reviewRecord()
     expect(record.draft.status).toBe('approved')
@@ -2466,6 +2472,8 @@ test.describe('the body is an index and the findings live on the code', () => {
       await expect(
         threads.getByText('app/Reporting/ColumnPolicy.php:52', { exact: true }),
       ).toBeVisible()
+      /* Each comment is folded under its row (DEV-1329, S05's table): open F9's to read it. */
+      await threads.locator('#thread-F9 summary').click()
       await expect(threads.getByText('Blocker · F9', { exact: false }).first()).toBeVisible()
 
       /* It describes rather than grades: no severity tag anywhere in the card. */
@@ -3568,7 +3576,7 @@ test.describe('the draft page after a sign-off', () => {
   /** Sign off in the browser, which is the only place a draft can be signed off. */
   async function signOff(page: Page, id: number, event: string) {
     await page.goto(`${seeded}reviews/${id}/draft`)
-    await page.locator('select#event').selectOption(event)
+    await page.locator('label.verdict-segment', { has: page.locator(`input[value="${event}"]`) }).click()
     await page.getByRole('button', { name: 'Sign off and post' }).click()
     /*
      * **The status line, which is drawn.** This waited on the live region's sentence, and
@@ -4283,10 +4291,15 @@ test.describe('a round whose head moved', () => {
         'the page names the commit they approved',
       ).toBeVisible()
       await expect(page.getByText('has moved to f2a3b42')).toBeVisible()
+      /*
+       * **And nothing to sign off until the session has re-read it.** The withdrawal puts the
+       * draft back to `drafting`; the page drew a disabled sign-off there, and since DEV-1329
+       * the sign-off is the header's action, drawn only for a draft that is ready.
+       */
       await expect(
         page.getByRole('button', { name: 'Sign off and post' }),
-        'and it is theirs to sign off again, on the code that would post',
-      ).toBeVisible()
+        'and nothing to sign off until the session marks the draft ready on the new head',
+      ).toHaveCount(0)
 
       /*
        * **And the code review shows the push that did it**, which is the other half of the
@@ -5225,5 +5238,45 @@ test.describe('the Understanding tab, to S3', () => {
     ])
     await page.setViewportSize({ width: 390, height: 900 })
     await expect(rail).toBeHidden()
+  })
+})
+
+/*
+ * **A later round's Draft tab, against the binary** (DEV-1329, S16). The sign-off is the
+ * header's action and names the round; *Since round 1* is read off the carried findings'
+ * own statuses; the carried threads say which round they came from; and pressing the
+ * header's button signs off the round, as the page's own button did.
+ */
+test.describe('the Draft tab of a later round', () => {
+  test('names the round, says what became of round 1, and signs off from the header', async ({ page }) => {
+    const { reviewId } = seedRoundTwoDraft(seededDatabase)
+    await page.goto(`${seeded}reviews/${reviewId}/draft`)
+
+    const action = page.getByTestId('primary-action')
+    await expect(action).toHaveAccessibleName('Sign off round 2 and post')
+    await expect(page.getByRole('button', { name: /^Sign off/ })).toHaveCount(1)
+
+    const since = page.getByTestId('since-round')
+    await expect(since).toContainText('Since round 1')
+    await expect(since).toContainText('F9 fixed in 3c1e2a9, F5 answered.')
+    await expect(since).toContainText('F3 raised again, F1 and F6 asked again.')
+    await expect(since).toContainText('F10 still goes to a ticket.')
+
+    await expect(page.locator('#thread-F3 .state')).toHaveText('carried from round 1')
+    await expect(page.getByText('thread continues')).toHaveCount(0)
+
+    await page.getByRole('tab', { name: 'Changes since round 1' }).click()
+    await expect(page.locator('.changes')).toContainText('round 1’s head and this round’s')
+
+    await page.locator('label.verdict-segment', { hasText: 'Comment' }).click()
+    await action.click()
+    await expect(page.getByText('Signed off. Will be posted as "Comment"')).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Sign off/ })).toHaveCount(0)
+
+    const record = cliJson(seededDatabase, ['draft', 'show', '--review', String(reviewId)]) as unknown as {
+      draft: { status: string, event: string | null }
+    }
+    expect(record.draft.status).toBe('approved')
+    expect(record.draft.event).toBe('comment')
   })
 })

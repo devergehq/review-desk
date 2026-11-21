@@ -11,6 +11,7 @@ import {
   readAddresses,
   scratch,
   seedReadyDraft,
+  seedRoundTwoDraft,
   seedStructuredReview,
   serve,
   stop,
@@ -398,6 +399,30 @@ test.describe('the draft', () => {
 })
 
 /*
+ * **The Draft tab, round 1 and round 2** (DEV-1329): S05 and S16, at the laptop width the
+ * targets are drawn at and at a phone's. Round 1 is the seeded structured review; round 2
+ * is a second round of a posted pull request, carrying five findings with what became of
+ * each.
+ */
+test.describe('the Draft tab', () => {
+  test('round 1 and round 2, at 1,600 and 390', async ({ page }) => {
+    const { reviewId: roundTwo } = seedRoundTwoDraft(seededDatabase)
+    for (const [width, suffix] of [[1600, ''], [390, '-390']] as const) {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 })
+
+      await page.goto(`${seeded}reviews/${structuredReviewId}/draft`)
+      await expect(page.getByRole('button', { name: 'Sign off and post' })).toBeVisible()
+      await shot(page, `draft-1-round-1${suffix}`)
+
+      await page.goto(`${seeded}reviews/${roundTwo}/draft`)
+      await expect(page.getByRole('button', { name: 'Sign off round 2 and post' })).toBeVisible()
+      await expect(page.getByTestId('since-round')).toContainText('F9 fixed in 3c1e2a9')
+      await shot(page, `draft-2-round-2${suffix}`)
+    }
+  })
+})
+
+/*
  * **What GitHub receives, in two pictures at each width.**
  *
  * DEV-929: a real review went out as 309 lines with no index and two threads. The thing
@@ -641,7 +666,7 @@ test.describe('waiting for the session that posts it', () => {
   async function signOff(page: Page, id: number) {
     await page.clock.install()
     await page.goto(`${seeded}reviews/${id}/draft`)
-    await page.locator('select#event').selectOption('request_changes')
+    await page.locator('label.verdict-segment', { hasText: 'Request changes' }).click()
     await page.getByRole('button', { name: 'Sign off and post' }).click()
     /* The status line, which is drawn; the live region is hidden and always was 1px. */
     await expect(page.getByText('— waiting for the session to post it.')).toBeVisible()

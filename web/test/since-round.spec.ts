@@ -79,8 +79,8 @@ describe('since the round before', () => {
     ], [raisedAgain(3)])!
 
     expect(sinceRoundLines(since)).toEqual([
-      'F9 fixed in 3c1e2a9 and F5 answered.',
-      'F3 raised again and F1 asked again.',
+      'F9 fixed in 3c1e2a9, F5 answered.',
+      'F3 raised again, F1 asked again.',
       'F10 still goes to a ticket.',
     ])
     expect(sinceRoundLines(sinceRound([carried(2, { round_status: 'still_open' })], [])!))
