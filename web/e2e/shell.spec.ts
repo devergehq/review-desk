@@ -132,6 +132,13 @@ test.describe('under 700 wide', () => {
     await menu.click()
     await expect(page.locator('main#main')).toHaveAttribute('inert', '')
 
+    /* Turned to landscape with it open: it closes, and the page is reachable again. */
+    await page.setViewportSize({ width: 844, height: 390 })
+    await expect(page.locator('main#main')).not.toHaveAttribute('inert')
+    await page.setViewportSize({ width: 390, height: 844 })
+    await expect(menu).toHaveAttribute('aria-expanded', 'false')
+    await menu.click()
+
     /* Going somewhere is what the menu is for, so arriving closes it. */
     await page.locator('#sidebar').getByRole('link', { name: /Rules/ }).click()
     await expect(page).toHaveURL(/\/rules$/)

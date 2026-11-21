@@ -9,7 +9,7 @@ import type {
   ReviewLayerState,
 } from '../app/types/desk'
 import { loadSource, resetSource, sampleBackend } from '../app/data/sample'
-import { sidebarGroups } from '../app/utils/sidebar'
+import { rowFor, sidebarGroups } from '../app/utils/sidebar'
 import { STATE_WORDS, stateOfReview, stateWord, type StateSource } from '../app/utils/stateWord'
 
 /*
@@ -61,6 +61,7 @@ function source(over: {
     outcomes: (over.outcomes ?? []) as Outcome[],
     draft_status: over.draft_status ?? null,
     brief: (over.brief ?? null) as Brief | null,
+    not_for_signing: null,
   }
 }
 
@@ -145,12 +146,58 @@ describe('stateOfReview', () => {
 
 /*
  * **The contract this file exists for: one review, one word, whichever path drew it.**
- * Every review the sample desk's sidebar lists, read whole and run through
- * `stateOfReview`, says what its sidebar row says.
+ *
+ * Two halves. A review the sidebar lists takes the sidebar's row word in its header —
+ * `stateOfReview(detail, rowFor(...))` — which is agreement by construction. And the same
+ * review's *own facts*, asked in the inbox's order, give that word too: the half that
+ * would catch `stateOfReview` drifting from `crates/store/src/entities/inbox.rs`.
+ *
+ * **The desk is bent into F1's three shapes first** (#86's self-review), because the sample
+ * desk as it stands holds none of them and an agreement test over it could not tell the
+ * layer-reading function this replaced from this one:
+ *
+ * | Case | Review | Bent to |
+ * | -- | -- | -- |
+ * | A | 18 | draft approved, nothing running: `awaiting_session` |
+ * | B | 15 | brief unconfirmed, draft ready and its layer waiting: the brief wins |
+ * | C | 17 | brief confirmed, draft `ready`, draft layer still `pending` |
  */
+function bentDesk() {
+  const desk = loadSource()
+  const byId = (id: number) => desk.reviews.find(one => one.review.id === id)!
+  const draftOf = (id: number) => desk.drafts.find(one => one.draft.review_id === id)
+
+  /* A: an approved draft with nothing running. */
+  const a = byId(18)
+  a.draft_status = 'approved'
+  a.layers = a.layers.map(layer => ({ ...layer, state: layer.state === 'running' ? 'done' : layer.state }))
+  if (draftOf(18)) draftOf(18)!.draft.status = 'approved'
+
+  /* B: the brief unconfirmed under a waiting draft. */
+  const b = byId(15)
+  b.brief = { ...b.brief!, confirmed: false, confirmation_required: true }
+
+  /* C: a ready draft whose layer has not moved. */
+  const c = byId(17)
+  c.brief = { ...c.brief!, confirmed: true, confirmation_required: true }
+  c.layers = c.layers.map(layer => layer.name === 'understand' ? { ...layer, state: 'done' } : layer)
+
+  return desk
+}
+
 describe('the sidebar and the header agree', () => {
-  it('gives every sample review the same word by both paths', async () => {
-    resetSource(loadSource())
+  it('lists the three bent shapes where the inbox puts them', async () => {
+    resetSource(bentDesk())
+    const backend = sampleBackend()
+    const groups = sidebarGroups(await backend.getInbox(), await backend.listReviews(null, 'finished'))
+    const stateOf = (id: number) => groups.flatMap(g => g.rows).find(row => row.reviewId === id)?.state
+    expect(stateOf(18), 'case A').toBe('waiting_for_session')
+    expect(stateOf(15), 'case B').toBe('brief_ready')
+    expect(stateOf(17), 'case C').toBe('draft_ready')
+  })
+
+  it('gives every listed review the row’s word, by construction and on its own facts', async () => {
+    resetSource(bentDesk())
     const backend = sampleBackend()
     const groups = sidebarGroups(await backend.getInbox(), await backend.listReviews(null, 'finished'))
     const rows = groups.flatMap(group => group.rows).filter(row => row.reviewId != null)
@@ -158,8 +205,31 @@ describe('the sidebar and the header agree', () => {
 
     for (const row of rows) {
       const detail = await backend.getReview(row.reviewId!)
-      expect(stateWord(stateOfReview(detail)), `review ${row.reviewId} (#${row.pr})`)
+      const label = `review ${row.reviewId} (#${row.pr})`
+      expect(stateWord(stateOfReview(detail, rowFor(groups, detail.review))), label)
+        .toBe(stateWord(row.state))
+      expect(stateWord(stateOfReview(detail)), `${label}, on its own facts`)
         .toBe(stateWord(row.state))
     }
+  })
+
+  /*
+   * **A reply on round 1 while round 3 waits** (#86's self-review, round 2): the inbox
+   * lists the pull request under Replies in and opens round 3, whose own facts hold no
+   * reply. The header takes the row's word, which is the only way it can know.
+   */
+  it('takes the row’s word for the round the row opens, and only for that round', () => {
+    const round3 = source({ review: { id: 3 } })
+    expect(stateOfReview(round3)).toBe('waiting_for_session')
+    expect(stateOfReview(round3, { reviewId: 3, state: 'replies_in' })).toBe('replies_in')
+    expect(stateOfReview(round3, { reviewId: 1, state: 'replies_in' })).toBe('waiting_for_session')
+  })
+
+  /* N2: the pull request's end, read off the pull request rather than this round. */
+  it('reads a finished or superseded round from `not_for_signing`', () => {
+    expect(stateOfReview({ ...source(), not_for_signing: { reason: 'finished', how: 'merged' } }))
+      .toBe('merged')
+    expect(stateOfReview({ ...source(), not_for_signing: { reason: 'superseded', by_round: 2 } }))
+      .toBe('superseded')
   })
 })

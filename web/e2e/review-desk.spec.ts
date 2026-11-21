@@ -1768,7 +1768,7 @@ test.describe('the case for one review, in three bands', () => {
      * not, and the prose inside it did not grow with the window, which is the half that
      * makes "contained" mean anything.
      */
-    test(`the bench is wider than the shell, and its prose is not, at ${label}`, async ({
+    test(`the bench is never narrower than a document, and its prose is capped, at ${label}`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height })
@@ -1790,7 +1790,10 @@ test.describe('the case for one review, in three bands', () => {
        * side of it are then the same width, and "wider" is not something a review's page
        * can be until the main column outgrows the cap. What still holds, and is asserted:
        * the bench is never narrower, a document never passes the cap, and the prose stops
-       * at its measure.
+       * at its measure. **On a review's page the two are equal by construction** — both are
+       * the main column's track — so the first of these is a guard against a regression,
+       * not a measurement of the split; `docs/design.md`, *Two kinds of screen*, records the
+       * split as unobservable on a review's page until the main column outgrows 1,240.
        */
       expect(bench, 'the bench is never narrower than a document').toBeGreaterThanOrEqual(shell)
       expect(bench, 'and stops at the cap').toBeLessThanOrEqual(1600)

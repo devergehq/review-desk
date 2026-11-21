@@ -66,8 +66,26 @@ function onKey(event: KeyboardEvent) {
   if (event.key === 'Escape') closeMenu()
 }
 
-onMounted(() => window.addEventListener('keydown', onKey))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+/*
+ * **Widening past 700px closes it**, without moving focus: the button and the scrim are not
+ * drawn above 700, so an open menu there would leave `main` inert with nothing on screen
+ * to close it — a phone turned from 390 to 844, or a window dragged wider (#86's
+ * self-review, round 2).
+ */
+let phone: MediaQueryList | null = null
+function onWidth(event: MediaQueryListEvent) {
+  if (!event.matches) closeMenu(false)
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onKey)
+  phone = window.matchMedia?.('(max-width: 699px)') ?? null
+  phone?.addEventListener('change', onWidth)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKey)
+  phone?.removeEventListener('change', onWidth)
+})
 
 /* Going somewhere is what the menu is for, so arriving closes it. Focus stays on the page. */
 watch(() => route.fullPath, () => closeMenu(false))

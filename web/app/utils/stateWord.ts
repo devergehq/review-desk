@@ -42,6 +42,7 @@ export type ReviewState
     | 'closed'
     | 'dismissed'
     | 'out_of_play'
+    | 'superseded'
 
 /**
  * The words, written once.
@@ -63,6 +64,7 @@ export const STATE_WORDS: Record<ReviewState, string> = {
   closed: 'Closed',
   dismissed: 'Dismissed',
   out_of_play: 'Out of play',
+  superseded: 'Superseded',
 }
 
 /** The one word for a state. The only route from a [`ReviewState`] to a screen. */
@@ -83,21 +85,36 @@ const HARVEST = 'harvest'
 /** The parts of one review this needs, so a test can hand it no more than that. */
 export type StateSource = Pick<
   ReviewDetail,
-  'review' | 'layers' | 'outcomes' | 'draft_status' | 'brief'
+  'review' | 'layers' | 'outcomes' | 'draft_status' | 'brief' | 'not_for_signing'
 >
 
 /**
- * Where one review stands, from `GET /reviews/{id}`.
+ * What the sidebar lists for a pull request: the round its row opens, and the row's state.
+ * `SidebarRow` in `utils/sidebar.ts` is one; `rowFor` there finds it.
+ */
+export interface ListedAs {
+  reviewId: number | null
+  state: ReviewState
+}
+
+/**
+ * Where one review stands, as its header says it.
  *
- * **The same facts as `GET /inbox`, asked in the same order**, so a review's header says
- * the word the sidebar says for it. The sidebar's word is the inbox array the review was
- * served in (`utils/sidebar.ts`), and `crates/store/src/entities/inbox.rs` is what chooses
- * the array — so this reads what that file reads, not the layers' states, which can say
- * something else: a draft can be `ready` with its layer still `pending`.
+ * **When the sidebar lists the review's pull request and this is the round its row opens,
+ * the answer is the row's state** — `listed`, from `rowFor` in `utils/sidebar.ts`. That is
+ * the one-word rule by construction rather than by agreement: the inbox decides a pull
+ * request's state from more than one round (a reply left on round 1 while round 3 waits,
+ * a running layer on an older round, what a later posted round already answered), and no
+ * single `GET /reviews/{id}` can see those rounds. Asking the same answer twice is the only
+ * way two places cannot differ.
+ *
+ * **Otherwise the review's own facts**, for a round the sidebar does not open (a superseded
+ * one) or a pull request no group holds. They are asked in the inbox's order, so a review
+ * that *is* listed would get the same word from them on its own facts:
  *
  * | Order | Fact | Inbox array | State |
  * | -- | -- | -- | -- |
- * | 1 | Dismissed, out of play, merged or closed | none: off the desk | the way it left |
+ * | 1 | Dismissed; out of play; the pull request finished (`not_for_signing`, read off the pull request, not this round); superseded by a later round | none: off the desk | the way it left |
  * | 2 | A brief that needs confirming and is not confirmed | `briefs_to_confirm` | `brief_ready` |
  * | 3 | The draft's status is `ready` | `drafts_to_approve` | `draft_ready` |
  * | 4 | The author or the harvester recorded something | `author_replies` | `replies_in` |
@@ -107,23 +124,24 @@ export type StateSource = Pick<
  *
  * Order 2 before 3 is the queue's: a review with an unconfirmed brief and a ready draft is
  * one row, and the brief is the next thing the developer does.
- *
- * **Two things the inbox knows that one review does not**, and where this can differ:
- * `author_replies` leaves out what a later posted round has already answered
- * (`ALREADY_REVIEWED`), and the brief and draft arrays hold only a pull request's newest
- * round. Both need other rounds of the pull request to decide, which `GET /reviews/{id}`
- * does not serve; on a superseded round the header can say *Brief ready* where the
- * sidebar lists the newer round instead. `test/state-word.spec.ts` runs every sample
- * review through both paths and asserts the same word.
  */
-export function stateOfReview(detail: StateSource): ReviewState {
+export function stateOfReview(detail: StateSource, listed?: ListedAs | null): ReviewState {
   const { review, layers, outcomes, brief } = detail
-  const draftStatus = detail.draft_status ?? null
+  if (listed && listed.reviewId === review.id) return listed.state
 
-  if (review.dismissed_at) return 'dismissed'
+  const draftStatus = detail.draft_status ?? null
+  const stop = detail.not_for_signing ?? null
+
+  if (review.dismissed_at || stop?.reason === 'dismissed') return 'dismissed'
   if (review.out_of_play) return 'out_of_play'
-  if (review.pr_state === 'merged') return 'merged'
-  if (review.pr_state === 'closed') return 'closed'
+  /*
+   * The pull request's end, read off the pull request — `not_for_signing.how` — before this
+   * round's own `pr_state`, which three of four rounds of a merged pull request hold null.
+   */
+  const ended = stop?.reason === 'finished' ? stop.how : review.pr_state
+  if (ended === 'merged') return 'merged'
+  if (ended === 'closed') return 'closed'
+  if (stop?.reason === 'superseded') return 'superseded'
 
   if (brief && brief.confirmation_required && !brief.confirmed) return 'brief_ready'
   if (draftStatus === 'ready') return 'draft_ready'

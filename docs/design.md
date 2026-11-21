@@ -74,12 +74,14 @@ first column. Six rules it keeps, each in the file that holds it:
   S1 and S2 draw first and open), *Being reviewed* and *Waiting on the author* from `GET /inbox`'s
   arrays, *Done this week* from the Reviews list's *Finished* view, one row per pull request.
   An empty group still draws, saying *None*. `sidebarGroups` in `web/app/utils/sidebar.ts`.
-- **The state word is chosen once**, in `web/app/utils/stateWord.ts`, and read off the same facts
-  by both paths: the sidebar from the inbox array a review is in, the review header from
-  `stateOfReview`, which asks what `crates/store/src/entities/inbox.rs` asks in the order it asks
-  it. `web/test/state-word.spec.ts` runs every sample review through both and expects one word.
-  The one place they can differ is a superseded round, which the inbox leaves out and a review's
-  own page cannot tell.
+- **The state word is chosen once**, in `web/app/utils/stateWord.ts`. The sidebar's word is the
+  inbox array a pull request is in. **A review the sidebar lists takes that row's word in its own
+  header** (`stateOfReview(detail, rowFor(groups, …))`), because the inbox decides from more than
+  one round — a reply on round 1 while round 3 waits — and one review's page cannot see the others.
+  Any other round says what its own facts say, asked in `crates/store/src/entities/inbox.rs`'s
+  order, with the pull request's end read off `not_for_signing` and a later round as
+  *Superseded*. `web/test/state-word.spec.ts` bends the sample desk into the three shapes that
+  once disagreed and asserts one word by both routes.
 - **The GitHub line is drawn only when a read is recorded**: the newest `harvested_at` the two
   reads carry, and no line when there is none. `githubReadAt`.
 - **The agent line is DEV-1140's reading**, which is per review, so it is drawn on a review's
@@ -129,6 +131,11 @@ documents, and the shell itself is capped at `--rd-shell-wide`.
 | -- | -- | -- |
 | Queue, Reviews, Rules, one review, the case, What happened | Document | The main column, capped at `--rd-shell-max`, 1,240px |
 | Code review, Draft | Workbench | All of the main column; the shell around it is capped at `--rd-shell-wide`, 1,600px |
+
+**On a review's page the split is not observable under the shell**: beside the 232px sidebar and
+the 380px conversation column the main column is under the 1,240 cap at every width (988px at the
+1,600 cap), so Code review and Draft draw at the same width as the case. It returns when the
+main column outgrows the cap — the list, or a review once the conversation column can fold.
 
 A document is read down. A workbench is worked across: a dense list on the left, the one
 thing selected drawn in full on the right, and a key for every decision. The developer

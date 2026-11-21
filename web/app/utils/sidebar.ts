@@ -209,3 +209,22 @@ export function agentLine(reading: SessionReading | null | undefined): AgentLine
   if (reading.status === 'unreachable') return { tone: 'off', text: 'Can\'t reach Allele' }
   return { tone: 'on', text: 'Allele running' }
 }
+
+/**
+ * The sidebar's row for one pull request, or null when no group lists it.
+ *
+ * **What the review header passes to `stateOfReview`**, so that a review the sidebar lists
+ * says the sidebar's word in its own header — read from the same groups, never re-derived.
+ */
+export function rowFor(
+  groups: SidebarGroup[] | null,
+  pullRequest: { repo: string, pr: number },
+): SidebarRow | null {
+  if (!groups) return null
+  const key = prKey(pullRequest)
+  for (const group of groups) {
+    const row = group.rows.find(one => one.key === key)
+    if (row) return row
+  }
+  return null
+}
