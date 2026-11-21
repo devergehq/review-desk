@@ -48,7 +48,7 @@ useHead({
  * header's word: the same shared reads, `rowFor`, and `stateOfReview` under both.
  */
 const inbox = desk.inbox()
-const finished = desk.reviews(computed(() => ALL_REPOSITORIES), computed(() => 'finished' as const))
+const finished = desk.finishedReviews()
 const sidebar = computed(() => inbox.data.value ? sidebarGroups(inbox.data.value, finished.data.value) : null)
 
 /** Everything the page draws, worked out once per review. */
