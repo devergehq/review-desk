@@ -153,6 +153,23 @@ pub enum StoreError {
         since: i64,
     },
 
+    /// A thread's line was measured on a commit that is not the one being posted — DEV-1347.
+    ///
+    /// `review-desk post` pins every comment to the reviewed head. A line counted on an
+    /// earlier commit would land on whatever that number is now, silently, so the post is
+    /// refused until the session re-reads the diff and records the line again.
+    #[error(
+        "F{finding_seq}'s line in review {review_id} was measured on {line_sha}, and the \
+         review is posted at {head_sha}, so its comment could land on the wrong line. Nothing \
+         was posted. Re-read the diff and record the finding's line on the head"
+    )]
+    ThreadOffHead {
+        review_id: i64,
+        finding_seq: i64,
+        line_sha: String,
+        head_sha: String,
+    },
+
     /// The operating system's randomness could not be read, so no salt could be made.
     #[error("cannot read randomness from the operating system: {0}")]
     NoRandomness(#[source] std::io::Error),
@@ -231,6 +248,7 @@ impl StoreError {
             StoreError::ShownMoved { .. } => "changed_since_shown",
             StoreError::PostInFlight { .. } => "post_in_flight",
             StoreError::NoRandomness(_) => "no_randomness",
+            StoreError::ThreadOffHead { .. } => "thread_off_head",
             StoreError::NotFound { .. } => "not_found",
             StoreError::UnknownParent { .. } => "unknown_parent",
             StoreError::InvalidValue { .. } => "invalid_value",
@@ -260,6 +278,7 @@ impl StoreError {
                 | StoreError::ReviewStarted { .. }
                 | StoreError::ShownMoved { .. }
                 | StoreError::PostInFlight { .. }
+                | StoreError::ThreadOffHead { .. }
                 | StoreError::NotFound { .. }
                 | StoreError::UnknownParent { .. }
                 | StoreError::InvalidValue { .. }

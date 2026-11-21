@@ -187,6 +187,17 @@ pub fn blob(json: &str) -> Result<BlobAt> {
     })
 }
 
+/// One `{id, body}` line of a pull request's reviews.
+pub fn review_body(json: &str) -> Result<(String, String)> {
+    #[derive(Deserialize)]
+    struct Line {
+        id: u64,
+        body: Option<String>,
+    }
+    let line = read::<Line>(json, "review")?;
+    Ok((line.id.to_string(), line.body.unwrap_or_default()))
+}
+
 /// The id of the review a `POST pulls/<n>/reviews` created — DEV-1347.
 ///
 /// A number on GitHub's side and a string in the record, which is how `github_review_id`

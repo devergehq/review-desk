@@ -702,13 +702,19 @@ It does these steps in order, and stops at the first one that fails:
    in one `POST repos/<repo>/pulls/<n>/reviews`. **The tag is already at the end of the
    body**, so no edit follows the post.
 4. It marks the row `posted` with the GitHub review id, which marks the draft `posted` in
-   the same transaction. A refused or unreachable call marks it `failed` instead, and
-   leaves no `github_review_id`.
+   the same transaction. **Only a call GitHub certainly refused is marked `failed`**: a 4xx,
+   or `gh` missing or logged out. A failed row has no `github_review_id`.
 
-**While a `pending` row exists, a second `post` is refused** with `post_in_flight`. A
-pending row is a call that may have reached GitHub: `gh` answered with something that
-could not be read, or the process died mid-call. Check the pull request before you go on.
-A `failed` row may be retried, and each retry gets a new salt.
+**Anything else leaves the row `pending`**: a 5xx, a timeout, an answer that could not be
+read, or a process that died mid-call. Each of these may have created the review. While the
+row is under two minutes old, a second `post` is refused with `post_in_flight`, because it
+may still be in flight. After that, the next `post` looks on the pull request for a review
+carrying that attempt's tag. If it finds one, it records that review as posted and sends
+nothing. If not, it marks the attempt `failed` and posts afresh. Every attempt gets a new
+salt.
+
+**A thread whose line was measured on another commit is refused** with `thread_off_head`.
+Every comment is pinned to the head, so such a line could land on the wrong code.
 
 **The tag** is one HTML comment at the end of the body. It is at most 220 bytes, with no
 newline. GitHub does not draw it:
@@ -736,9 +742,10 @@ newline. GitHub does not draw it:
 * `install` is random, written once per database by migration 25. It says which Mac's
   record a tag belongs to.
 * `basis=typed` only when Allele confirms that the developer typed the go-ahead in that
-  session. Anything less is `basis=desk`, and that includes Allele having no such check,
-  which is the case today (`prompts.verify` is not built). It always falls to the weaker
-  label.
+  session. `post` asks only at `~/.allele/control.sock`, and only a socket of mode 600 counts.
+  There is no flag to name another verifier. Anything less is `basis=desk`, and that
+  includes Allele having no such check (`prompts.verify` is not built as of 21 November
+  2026). It always falls to the weaker label.
 
 A reader (`Store::read_tag`) rejects unknown keys such as `seq=` or `key=`, any `sha256:`
 value, and a second tag. It reads a body back as one of these:
@@ -1083,6 +1090,7 @@ With `--json`, the document carries the reason as well:
 | `gh_failed` | `gh` ran and failed for some other reason |
 | `github_response_unreadable` | A response from GitHub was not the shape it had to be |
 | `post_in_flight` | `post` was refused: an earlier post of this review is still `pending`, and may have reached GitHub |
+| `thread_off_head` | `post` was refused: a thread's line was measured on a commit other than the one being posted |
 | `no_randomness` | The operating system's randomness could not be read, so `post` could not make a salt |
 
 `kind` is `refused` for exit 1 and `broken` for exit 2, so a caller reading only standard

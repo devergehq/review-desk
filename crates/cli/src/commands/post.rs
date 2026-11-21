@@ -13,7 +13,9 @@
 //! 3. This sends the body, **with the tag already at its end**, the threads, the event and
 //!    `commit_id` pinned to the reviewed head, in one call.
 //! 4. The answer is recorded: `posted` with the GitHub review's id, which marks the draft
-//!    posted in the same transaction, or `failed` with what `gh` said.
+//!    posted in the same transaction, or `failed` when GitHub certainly created nothing.
+//!    Any other outcome stays `pending`, and the next `post` looks for that attempt's tag on
+//!    the pull request before it sends anything.
 //!
 //! **It signs nothing off.** The draft was approved in the dashboard before this ran, and
 //! `crates/cli/tests/signoff.rs` still holds that line over this file.
@@ -26,10 +28,9 @@ use std::path::PathBuf;
 
 use clap::Args;
 use review_desk_harvest::gh::Gh;
-use review_desk_harvest::HarvestError;
 use review_desk_server::allele::GoAhead;
 use review_desk_server::Allele;
-use review_desk_store::{PostBasis, PostRequest, Store};
+use review_desk_store::{tag, PostBasis, PostRequest, Store};
 use serde_json::json;
 
 use crate::error::Result;
@@ -54,13 +55,15 @@ pub struct PostArgs {
     /// input. Kept in the record and never posted: the tag carries only a salted HMAC of it.
     #[arg(long = "go-ahead-file", value_name = "PATH")]
     go_ahead_file: Option<PathBuf>,
-
-    /// Where to ask Allele whether that line was typed in that session. Defaults to
-    /// `~/.allele/control.sock`. With no Allele, or an Allele that cannot say, the post's
-    /// basis is `desk`.
-    #[arg(long, value_name = "PATH")]
-    allele_socket: Option<PathBuf>,
 }
+
+/// How old a `pending` attempt has to be before `post` goes and looks for it on the pull
+/// request, in seconds.
+///
+/// **Younger than this, it may still be in flight** in another process, and a lookup that
+/// missed it would mark a live call failed and let a second one start. `gh`'s own calls give
+/// up well inside two minutes.
+const RECONCILE_AFTER: i64 = 120;
 
 pub fn run(args: &PostArgs) -> Result<Report> {
     // Read before the database is opened, as every command does.
@@ -75,11 +78,11 @@ pub fn run(args: &PostArgs) -> Result<Report> {
     // **The basis falls toward the weaker label.** `typed` only when there is a line, the
     // session posting is the session the review is linked to, and Allele says without
     // qualification that the developer typed that line there.
-    let allele = args
-        .allele_socket
-        .clone()
-        .or_else(Allele::default_socket)
-        .map_or_else(Allele::none, Allele::at);
+    //
+    // **Allele is asked at its own socket and nowhere else.** There is no flag to point this
+    // at another one: the session whose word is being checked would be choosing who checks
+    // it. `verify_go_ahead` also refuses a socket that is not the owner's alone (0600).
+    let allele = Allele::default_socket().map_or_else(Allele::none, Allele::at);
     let (basis, basis_because) = match line.as_deref().map(str::trim) {
         None | Some("") => (PostBasis::Desk, "no go-ahead line was given".to_string()),
         Some(_) if review.session_id.as_deref() != Some(args.session.trim()) => (
@@ -91,6 +94,42 @@ pub fn run(args: &PostArgs) -> Result<Report> {
             GoAhead::Unconfirmed(why) => (PostBasis::Desk, why),
         },
     };
+
+    let gh = Gh::new();
+
+    // **An attempt whose outcome is unknown is settled before another is made.** It may be
+    // up: look on the pull request for a review carrying its tag. Found, it is recorded as
+    // posted and nothing is sent; not found, it is marked failed and this post goes ahead.
+    // An attempt younger than [`RECONCILE_AFTER`] is left alone, and the store refuses.
+    if let Some(earlier) = store.pending_post(args.review)? {
+        if review_desk_store::now() - earlier.created_at >= RECONCILE_AFTER {
+            let reviews = gh.review_bodies(&review.repo, review.pr)?;
+            let found = reviews.into_iter().find(|(_, body)| {
+                tag::parse(body).is_ok_and(|tag| {
+                    tag.is_some_and(|tag| tag.statement_hmac == earlier.statement_hmac)
+                })
+            });
+            match found {
+                Some((github_review_id, _)) => {
+                    let posted = store.finish_post(earlier.id, &github_review_id)?;
+                    return Ok(Report::new(
+                        json!({ "posted": posted, "reconciled": true }),
+                        format!(
+                            "review {} was already up on {}#{} as GitHub review {}, from an \
+                             earlier attempt; nothing was sent",
+                            posted.review_id, review.repo, review.pr, github_review_id
+                        ),
+                    ));
+                }
+                None => {
+                    store.fail_post(
+                        earlier.id,
+                        "not on the pull request when the next post looked for it",
+                    )?;
+                }
+            }
+        }
+    }
 
     let pending = store.begin_post(
         args.review,
@@ -118,20 +157,22 @@ pub fn run(args: &PostArgs) -> Result<Report> {
             .collect::<Vec<_>>(),
     });
 
-    let posted = match Gh::new().post_review(
+    let posted = match gh.post_review(
         &pending.review.repo,
         pending.review.pr,
         &payload.to_string(),
     ) {
         Ok(github_review_id) => store.finish_post(pending.tag_id, &github_review_id)?,
-        // **`gh` answered, and the answer could not be read.** The review may well be up, so
-        // the attempt stays `pending` and the next post is refused: that is the one outcome
-        // that must not be retried blind.
-        Err(error @ HarvestError::Unreadable { .. }) => return Err(error.into()),
-        Err(error) => {
+        // **Only a call GitHub certainly refused is `failed`.** A 4xx, or `gh` missing or
+        // logged out: nothing was created, and a retry is safe.
+        Err(error) if error.certainly_not_sent() => {
             store.fail_post(pending.tag_id, &error.to_string())?;
             return Err(error.into());
         }
+        // **Anything else may have created the review** — a 5xx, a timeout, an answer that
+        // could not be read. The attempt stays `pending`, and the next post looks for it on
+        // the pull request before it sends anything.
+        Err(error) => return Err(error.into()),
     };
 
     Ok(Report::new(

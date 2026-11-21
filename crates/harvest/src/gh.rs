@@ -93,6 +93,25 @@ impl Gh {
         wire::created_review_id(&answer)
     }
 
+    /// Every review on a pull request, as its id and its body — DEV-1347.
+    ///
+    /// Read by `review-desk post` before it retries an attempt whose outcome was unknown, to
+    /// find out whether that attempt's review is already up.
+    pub fn review_bodies(&self, repo: &str, pr: i64) -> Result<Vec<(String, String)>> {
+        let answer = self.run([
+            "api",
+            "--paginate",
+            &format!("repos/{repo}/pulls/{pr}/reviews"),
+            "--jq",
+            ".[] | {id: .id, body: .body}",
+        ])?;
+        answer
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(wire::review_body)
+            .collect()
+    }
+
     /// Run `gh` with these arguments and return its standard output.
     fn run<I, S>(&self, args: I) -> Result<String>
     where
@@ -263,6 +282,25 @@ mod tests {
         assert!(is_logged_out("error: not logged in to any hosts"));
         assert!(is_logged_out("HTTP 401: Requires authentication"));
         assert!(!is_logged_out("HTTP 404: Not Found"));
+    }
+
+    #[test]
+    fn a_4xx_is_certainly_not_sent_and_a_5xx_or_a_timeout_may_have_been() {
+        let failed = |stderr: &str| HarvestError::GhFailed {
+            args: String::new(),
+            status: "exit 1".to_string(),
+            stderr: stderr.to_string(),
+        };
+        assert_eq!(
+            failed("gh: Validation Failed (HTTP 422)").http_status(),
+            Some(422)
+        );
+        assert_eq!(failed("HTTP 404: Not Found").http_status(), Some(404));
+        assert!(failed("gh: Validation Failed (HTTP 422)").certainly_not_sent());
+        assert!(!failed("gh: Bad Gateway (HTTP 502)").certainly_not_sent());
+        assert!(!failed("HTTP 408: Request Timeout").certainly_not_sent());
+        assert!(!failed("Post \"https://api.github.com/...\": i/o timeout").certainly_not_sent());
+        assert!(HarvestError::GhNotAuthenticated.certainly_not_sent());
     }
 
     #[test]

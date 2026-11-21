@@ -76,6 +76,34 @@ pub enum HarvestError {
 }
 
 impl HarvestError {
+    /// The HTTP status `gh` reported for a failed call, when it reported one.
+    ///
+    /// `gh api` ends its error with `(HTTP 422)` or starts it with `HTTP 422:`, depending on
+    /// the version. Read for `review-desk post` (DEV-1347), which must tell a refusal GitHub
+    /// made (nothing was created) from a call whose outcome is unknown.
+    pub fn http_status(&self) -> Option<u16> {
+        let HarvestError::GhFailed { stderr, .. } = self else {
+            return None;
+        };
+        let at = stderr.find("HTTP ")? + "HTTP ".len();
+        stderr.get(at..at + 3)?.parse().ok()
+    }
+
+    /// Whether GitHub certainly created nothing: `gh` never ran, nobody was logged in, or
+    /// GitHub answered with a 4xx that is a refusal. **Anything else may have created the
+    /// review** — a 5xx, a timeout, a connection dropped after the request went out — and
+    /// is not this.
+    pub fn certainly_not_sent(&self) -> bool {
+        match self {
+            HarvestError::GhMissing | HarvestError::GhNotAuthenticated => true,
+            // 408 is the server giving up on a request it may have started on.
+            HarvestError::GhFailed { .. } => {
+                matches!(self.http_status(), Some(status) if (400..500).contains(&status) && status != 408)
+            }
+            _ => false,
+        }
+    }
+
     /// True when the request was understood and refused, rather than Review Desk being
     /// unable to run. Exit 1 for the first, 2 for the second.
     pub fn is_refusal(&self) -> bool {

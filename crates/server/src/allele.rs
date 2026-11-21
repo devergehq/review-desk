@@ -193,6 +193,34 @@ fn exchange(_socket: &Path, _request: &serde_json::Value) -> Result<String, Stri
     Err("Allele's socket is a Unix socket, which this platform cannot open".to_string())
 }
 
+/// Refuse a verifier that is not Allele's own kind of socket: a Unix socket only its owner
+/// can open (mode 0600), as Allele creates it.
+///
+/// **Not a defence against a process running as the developer**, which can make such a
+/// socket too, or write the database. What it rules out is a world-writable path or a plain
+/// file standing in for Allele.
+#[cfg(unix)]
+fn owners_socket(socket: &Path) -> Result<(), String> {
+    use std::os::unix::fs::{FileTypeExt, PermissionsExt};
+    let metadata = std::fs::metadata(socket).map_err(|error| error.to_string())?;
+    if !metadata.file_type().is_socket() {
+        return Err(format!("{} is not a socket", socket.display()));
+    }
+    let mode = metadata.permissions().mode() & 0o777;
+    if mode != 0o600 {
+        return Err(format!(
+            "{} is mode {mode:o}, and Allele's socket is 600",
+            socket.display()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn owners_socket(_socket: &Path) -> Result<(), String> {
+    Err("Allele's socket is a Unix socket, which this platform cannot open".to_string())
+}
+
 /// Whether Allele confirms that the developer typed a go-ahead in a session — DEV-1347.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GoAhead {
@@ -215,6 +243,9 @@ impl Allele {
         let Some(socket) = self.socket.as_deref().filter(|socket| socket.exists()) else {
             return GoAhead::Unconfirmed("there is no Allele on this machine to ask".to_string());
         };
+        if let Err(why) = owners_socket(socket) {
+            return GoAhead::Unconfirmed(why);
+        }
         let request = serde_json::json!({
             "op": "prompts_verify",
             "session_id": session_id,

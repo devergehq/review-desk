@@ -35,9 +35,6 @@ pub const APPROVAL_SCHEMA: &str = "review-desk/approval@1";
 /// What every tag starts with.
 const OPENING: &str = "<!-- review-desk:posted";
 
-/// The text that identifies a tag anywhere in a body, well-formed or not.
-const MARKER: &str = "review-desk:posted";
-
 const STATEMENT_DOMAIN: &str = "review-desk/statement";
 const LINE_DOMAIN: &str = "review-desk/line";
 
@@ -208,26 +205,43 @@ pub fn tagged_body(body: &str, tag: &Tag) -> String {
 /// `Ok(None)` is a body with no tag. `Err` is a body that has something claiming to be one
 /// and is refused, with why.
 pub fn parse(body: &str) -> Result<Option<Tag>, String> {
-    let count = body.matches(MARKER).count();
-    if count == 0 {
+    let openings: Vec<usize> = body.match_indices(OPENING).map(|(at, _)| at).collect();
+    let Some(&last) = openings.last() else {
         return Ok(None);
-    }
-    if count > 1 {
-        return Err(format!(
-            "the body carries {count} tags, and a review is posted once"
-        ));
-    }
+    };
 
-    let start = body
-        .find(OPENING)
-        .ok_or("the tag does not open with `<!-- review-desk:posted`")?;
-    let rest = &body[start..];
-    let end = rest.find("-->").ok_or("the tag is not closed")? + "-->".len();
-    let tag = &rest[..end];
+    // Whether the comment opening at `at` reads, on its own, as a complete tag.
+    let complete = |at: usize| {
+        let rest = &body[at..];
+        rest.find("-->")
+            .is_some_and(|end| fields(&rest[..end + "-->".len()]).is_ok())
+    };
 
-    if !rest[end..].trim().is_empty() {
-        return Err("the tag is not at the end of the body".to_string());
+    let rest = &body[last..];
+    let end = rest.find("-->").map(|end| end + "-->".len());
+    let at_the_end = end.is_some_and(|end| rest[end..].trim().is_empty());
+
+    // **A mention of the grammar is not a tag.** Prose or a code span describing it —
+    // `install=<id>` — reads as nothing, so a review that talks about tags is "no tag" and
+    // can still carry one. Only something that parses as a complete tag counts.
+    if !at_the_end {
+        return if openings.iter().any(|&at| complete(at)) {
+            Err("the tag is not at the end of the body".to_string())
+        } else {
+            Ok(None)
+        };
     }
+    if openings[..openings.len() - 1]
+        .iter()
+        .any(|&at| complete(at))
+    {
+        return Err("the body carries two tags, and a review is posted once".to_string());
+    }
+    fields(&rest[..end.unwrap_or(rest.len())]).map(Some)
+}
+
+/// One complete tag's fields, or why it is not one.
+fn fields(tag: &str) -> Result<Tag, String> {
     if tag.len() > TAG_MAX_BYTES {
         return Err(format!(
             "the tag is {} bytes, and v1 allows {TAG_MAX_BYTES}",
@@ -284,8 +298,7 @@ pub fn parse(body: &str) -> Result<Option<Tag>, String> {
         return Err("only v=1 is read".to_string());
     }
     let install = value("install").unwrap_or_default();
-    if install.is_empty()
-        || install.len() > 13
+    if install.len() != 12
         || !install
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
@@ -301,12 +314,12 @@ pub fn parse(body: &str) -> Result<Option<Tag>, String> {
         .map(|line| hmac_value("line", line))
         .transpose()?;
 
-    Ok(Some(Tag {
+    Ok(Tag {
         install: install.to_string(),
         basis,
         statement_hmac: statement,
         line_hmac: line,
-    }))
+    })
 }
 
 /// `hmac:<64 lower-case hex>`, or why not.
@@ -352,6 +365,24 @@ mod tests {
             parse(&tagged_body("Body.", &a_tag(false))),
             Ok(Some(a_tag(false)))
         );
+    }
+
+    /// **A review that talks about the grammar can still carry a tag.** Only an earlier
+    /// comment that parses as a complete tag counts as a second one.
+    #[test]
+    fn a_mention_of_the_grammar_is_not_a_second_tag() {
+        let mention = "The tag reads `<!-- review-desk:posted v=1 install=<id> basis=desk \
+                       statement=hmac:<64 hex> -->`, and review-desk:posted is its name.";
+        let body = tagged_body(mention, &a_tag(false));
+        assert_eq!(parse(&body), Ok(Some(a_tag(false))));
+        assert_eq!(parse(mention), Ok(None), "a mention alone is no tag");
+    }
+
+    #[test]
+    fn an_install_id_that_is_not_twelve_characters_is_refused() {
+        let good = a_tag(false).render();
+        assert!(parse(&good.replace("install=0123456789ab", "install=0123456789abc")).is_err());
+        assert!(parse(&good.replace("install=0123456789ab", "install=0123456789a")).is_err());
     }
 
     #[test]

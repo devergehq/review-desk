@@ -147,6 +147,23 @@ impl Store {
         // compose to is refused there, and the threads are composed there.
         let handover = self.draft_handover(review_id)?;
         let review = handover.review;
+        // **Every comment is pinned to the head, so every line must have been counted on it.**
+        // A line with no recorded commit is let through, as the hand-over lets it through:
+        // nothing backfills the column, and refusing every older finding would refuse every
+        // post. One recorded on another commit is the case that can land silently wrong.
+        if let Some(thread) = handover.threads.iter().find(|thread| {
+            thread
+                .line_sha
+                .as_deref()
+                .is_some_and(|sha| !sha.is_empty() && !same_commit(sha, &review.head_sha))
+        }) {
+            return Err(StoreError::ThreadOffHead {
+                review_id,
+                finding_seq: thread.finding_seq,
+                line_sha: thread.line_sha.clone().unwrap_or_default(),
+                head_sha: review.head_sha.clone(),
+            });
+        }
         let event = draft.event.ok_or(StoreError::DraftStatus {
             review_id,
             found: draft.status,
@@ -176,6 +193,16 @@ impl Store {
         };
         let rendered = tag.render();
         debug_assert!(rendered.len() <= TAG_MAX_BYTES);
+        let body = tag::tagged_body(&draft.body, &tag);
+        // **What is sent must read back as this tag and no other.** A body that already holds
+        // something parsing as a tag would post as two, and be rejected on the way back.
+        if tag::parse(&body) != Ok(Some(tag.clone())) {
+            return Err(StoreError::InvalidValue {
+                field: "body",
+                value: "a body that already carries a review-desk:posted tag".to_string(),
+                expected: "a body with no tag of its own; the post adds the one tag".to_string(),
+            });
+        }
 
         let at = self.now();
         self.conn.execute(
@@ -204,7 +231,7 @@ impl Store {
 
         Ok(PendingPost {
             tag_id,
-            body: tag::tagged_body(&draft.body, &tag),
+            body,
             review,
             event,
             threads: handover.threads,
@@ -252,6 +279,20 @@ impl Store {
         )?;
         tx.commit()?;
         self.get_posted_tag(tag_id)
+    }
+
+    /// The attempt still in flight for this review, if there is one.
+    pub fn pending_post(&self, review_id: i64) -> Result<Option<PostedTag>> {
+        Ok(self
+            .conn
+            .query_row(
+                &format!(
+                    "SELECT {COLUMNS} FROM posted_tags WHERE review_id = ?1 AND status = 'pending'"
+                ),
+                params![review_id],
+                row_to_posted_tag,
+            )
+            .optional()?)
     }
 
     /// One attempt, by its id.
@@ -332,6 +373,19 @@ impl Store {
         }
         Ok(row)
     }
+}
+
+/// Whether two commits are the same one, when either may be abbreviated.
+///
+/// The rule `same_commit` in `crates/cli/src/commands/draft.rs` states, for the same pair:
+/// a case-insensitive prefix match on the shorter, and blank matches nothing.
+fn same_commit(one: &str, two: &str) -> bool {
+    let shortest = one.len().min(two.len());
+    shortest > 0
+        && one
+            .get(..shortest)
+            .zip(two.get(..shortest))
+            .is_some_and(|(one, two)| one.eq_ignore_ascii_case(two))
 }
 
 /// 32 bytes from the operating system.
