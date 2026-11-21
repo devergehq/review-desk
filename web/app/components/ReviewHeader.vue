@@ -283,6 +283,11 @@ const tabs = computed(() =>
   text-underline-offset: 2px;
 }
 
+/* The number stays muted beside the title, as S2 draws it, and keeps its underline. */
+.number.header-out {
+  color: var(--rd-ink-muted);
+}
+
 .action {
   flex: none;
   display: inline-flex;

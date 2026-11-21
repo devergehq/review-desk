@@ -412,7 +412,8 @@ test.describe('the solution as a table', () => {
     for (const [width, suffix] of [[1440, ''], [390, '-390']] as const) {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
 
-      await page.goto(`${seeded}reviews/${structuredReviewId}/understanding#what-was-built`)
+      /* The tab's top, which is where `/solution` landed: the picture is the whole page. */
+      await page.goto(`${seeded}reviews/${structuredReviewId}/understanding`)
       await expect(page.locator('h2.headline')).toBeVisible()
       await expect(page.locator('.part')).toHaveCount(7)
       await shot(page, `dev-919-1-table${suffix}`)
