@@ -80,13 +80,20 @@ const state = computed(() => stateOfReview(props.detail, listed.value))
 const settled = computed(() => inbox.loaded.value)
 const word = computed(() => stateWord(state.value))
 
+/**
+ * **Two readings, on purpose.** The Replies tab's count is every reply that waits on the
+ * developer (`repliesToAnswer`, the number in *Needs your answer*); the action is only the
+ * ones the record would take an answer on here (`answerableReplies`, DEV-1330), so the header
+ * never offers *Answer F3* over a round that refuses it.
+ */
 const toAnswer = computed(() => repliesToAnswer(props.detail.outcomes))
+const answerable = computed(() => answerableReplies(props.detail))
 const action = computed(() =>
   settled.value
     ? primaryAction(
         review.value.id,
         state.value,
-        toAnswer.value,
+        answerable.value,
         { round: review.value.round, head: review.value.head_sha },
       )
     : null)

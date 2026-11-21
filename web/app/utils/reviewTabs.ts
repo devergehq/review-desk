@@ -101,6 +101,16 @@ export function findingPath(reviewId: number, key: string): string {
 }
 
 /**
+ * **Where one reply is: the Replies tab with that finding's reply selected.** DEV-1330.
+ *
+ * The same `?finding=F3` the Findings tab reads, read by the same [`findingAsked`], so one
+ * address shape names a finding on either tab. The header's *Answer F3* goes here.
+ */
+export function replyPath(reviewId: number, key: string): string {
+  return `${tabPath(reviewId, 'replies')}?finding=${encodeURIComponent(key)}`
+}
+
+/**
  * The finding an address asks for, as its `seq`: `?finding=F9` first, then `#F9`, else null.
  *
  * A value that does not name a finding at all is null, not an error: a stale or mistyped
@@ -221,12 +231,11 @@ function signOff(read: ReadAt | undefined): { label: string, note: string } {
  * ways off the desk (*Merged*, *Closed*, *Dismissed*, *Out of play*, *Superseded* — a round a
  * later one replaced, whose work is the later round's).
  *
- * **A reply is answered on Replies, so that is where both go**, one reply or several. DEV-1328
- * considered sending *Answer F3* to F3 on Findings (`?finding=F3`) and did not: a reply comes
- * in on a posted review, and Findings refuses every decision on one ("This review is posted").
- * The action would have opened a page where it could not be done. DEV-1330 builds the three
- * replies on Replies and may point this at the one reply there. DEV-1329 moves the Draft
- * page's sign-off binding into the draft-ready action.
+ * **A reply is answered on Replies.** *Answer F3* goes to F3's reply there, `?finding=F3`
+ * (DEV-1330, [`replyPath`]); more than one goes to the tab, which lists them. Not to F3 on
+ * Findings: a reply comes in on a posted review, and Findings refuses every decision on one. DEV-1329 moves the Draft page's sign-off binding into the draft-ready
+ * action; both repoint what this answers rather than adding a second place that chooses an
+ * action.
  *
  * `toAnswer` is the finding keys [`repliesToAnswer`] answers, passed in so this stays a
  * function of values. `read` is the round and its head, which the sign-off's label and note
@@ -245,10 +254,9 @@ export function primaryAction(
       return { ...signOff(read), to: tabPath(reviewId, 'draft') }
     case 'replies_in':
       if (toAnswer.length === 0) return null
-      return {
-        label: toAnswer.length === 1 ? `Answer ${toAnswer[0]}` : `Answer ${toAnswer.length} replies`,
-        to: tabPath(reviewId, 'replies'),
-      }
+      return toAnswer.length === 1
+        ? { label: `Answer ${toAnswer[0]}`, to: replyPath(reviewId, toAnswer[0]!) }
+        : { label: `Answer ${toAnswer.length} replies`, to: tabPath(reviewId, 'replies') }
     default:
       return null
   }

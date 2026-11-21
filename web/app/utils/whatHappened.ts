@@ -253,8 +253,14 @@ function fromOthers(outcomes: Outcome[]): Outcome[] {
   return outcomes.filter(outcome => outcome.actor !== 'developer')
 }
 
-/** One posted finding's row, with whatever came back on it. */
-function rowFor(detail: ReviewDetail, finding: Finding, now: Date): FindingRow {
+/**
+ * One finding's row, with whatever came back on it.
+ *
+ * Exported for the Replies tab (DEV-1330), which groups the findings by what came back and
+ * folds this row — every outcome, oldest first, and the links — under each one, so nothing
+ * the step-7 page drew is lost to the grouping.
+ */
+export function rowFor(detail: ReviewDetail, finding: Finding, now: Date = new Date()): FindingRow {
   /*
    * Cut only where there is no title. A title is drawn whole however long it runs — the
    * contract puts no maximum on one and calls a long one a writing fault for the review

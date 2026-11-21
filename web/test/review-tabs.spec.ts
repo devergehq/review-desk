@@ -147,12 +147,12 @@ describe('the one next action', () => {
   })
 
   /*
-   * **Replies, not the finding on Findings** (DEV-1328's self-review): a reply comes in on a
-   * posted review, and Findings refuses every decision on one.
+   * DEV-1330: a reply is answered on Replies — one reply's action selects it there, not on
+   * Findings, which refuses every decision on the posted review a reply arrives on.
    */
-  it('names the one reply to answer, or counts them, and goes to Replies', () => {
+  it('opens the one reply to answer on Replies, or counts the replies and goes to Replies', () => {
     expect(primaryAction(5, 'replies_in', ['F3']))
-      .toEqual({ label: 'Answer F3', to: '/reviews/5/replies' })
+      .toEqual({ label: 'Answer F3', to: '/reviews/5/replies?finding=F3' })
     expect(primaryAction(5, 'replies_in', ['F3', 'F9']))
       .toEqual({ label: 'Answer 2 replies', to: '/reviews/5/replies' })
   })
