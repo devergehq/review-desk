@@ -12,7 +12,7 @@ import type { ReviewTab } from '~/utils/reviewTabs'
  *
  * ```
  *  Ask this review
- *  ● who is answering · their state           ← answering(), from Allele's reading
+ *  ● who is answering · their state           ← answering(), from Allele's reading and the record
  *  Asked so far: Understanding 3  Findings 3  ← askedSoFar(), by each question's tab
  *  …the thread, or the questions to start with…
  *  About: F9 · ColumnPolicy.php:52  ×         ← the tab, and the finding selected on it
@@ -21,8 +21,14 @@ import type { ReviewTab } from '~/utils/reviewTabs'
  * ```
  *
  * **Every question goes through `send`**, the composer's and *Ask it again, in the format*
- * alike, and `send` asks `asksFromHere` first: DEV-1335 gates it there. Review Desk only
- * stores the question; it never starts, resumes or drives a session.
+ * alike, and `send` asks `canAsk` first. Review Desk only stores the question; it never
+ * starts, resumes or drives a session.
+ *
+ * **One way (DEV-1335, S13)** is the same column with no send in it: *From your session*,
+ * what the session wrote counted under *Written so far*, and a composer that says to ask in
+ * the developer's own session and offers *Copy a reference* — text for the clipboard, which
+ * `referenceFor` writes. Where Allele cannot be asked for a fresh session, one way and none
+ * show the command a session the developer starts would run (`freshSessionCommand`).
  *
  * **Its width is the column's, whatever that is.** Nothing here is sized to 380px, so the
  * phone's bottom sheet (DEV-1336) hosts this same component.
@@ -41,12 +47,13 @@ const conversation = desk.messages(reviewId.value)
 const session = desk.session(reviewId.value)
 const route = useRoute()
 
-const header = computed(() => answering(session.data.value?.reading))
-const asks = computed(() => asksFromHere(header.value.mode))
-
 const messages = computed<ReviewMessage[]>(() => conversation.data.value?.messages ?? [])
+const header = computed(() => answering(session.data.value?.reading, messages.value))
+const asks = computed(() => canAsk(header.value.mode))
+const oneWay = computed(() => header.value.mode === 'one_way')
+
 const thread = computed(() => threadOf(messages.value))
-const asked = computed(() => askedSoFar(messages.value))
+const asked = computed(() => oneWay.value ? writtenSoFar(messages.value) : askedSoFar(messages.value))
 const suggestions = computed(() => suggestedQuestions(props.detail))
 const suggestionsFrom = computed(() => suggestedFrom(suggestions.value))
 
@@ -94,8 +101,35 @@ async function ask(): Promise<void> {
   if (await send(text.value)) text.value = ''
 }
 
+/** *Ask it again, in the format* in two way; in one way the same button copies a reference. */
 function askAgain(reply: ReviewMessage): void {
-  void send(askAgainInTheFormat(reply))
+  if (oneWay.value) void copyReference(reply)
+  else void send(askAgainInTheFormat(reply))
+}
+
+/* ---- One way: a reference for the developer's own session ---- */
+
+/** The reference the clipboard would not take, drawn for the developer to select instead. */
+const uncopied = ref<string | null>(null)
+
+/** Puts `referenceFor` on the clipboard. Writes nothing to the record and sends nothing. */
+async function copyReference(again: ReviewMessage | null = null): Promise<void> {
+  const reference = referenceFor(reviewId.value, props.step, about.value, props.detail.findings, {
+    again,
+    question: again ? '' : text.value,
+  })
+  refused.value = null
+  uncopied.value = null
+  try {
+    await navigator.clipboard.writeText(reference)
+    said.value = `Copied a reference to ${aboutLabel(about.value, props.detail.findings)}. Paste it into your session.`
+    /* It is on the clipboard now, as a sent question leaves the box: the next copy starts clean. */
+    if (!again) text.value = ''
+  }
+  catch {
+    said.value = null
+    uncopied.value = reference
+  }
 }
 
 /** Enter asks and Shift+Enter is a new line, as S6's hint says; not while an IME composes. */
@@ -169,7 +203,7 @@ const headingId = useId()
         :id="headingId"
         class="title"
       >
-        Ask this review
+        {{ header.title }}
       </h2>
       <p
         class="answering rd-meta"
@@ -193,7 +227,7 @@ const headingId = useId()
         class="asked-so-far rd-meta"
         data-testid="asked-so-far"
       >
-        Asked so far:
+        {{ oneWay ? 'Written so far:' : 'Asked so far:' }}
         <span
           v-for="one in asked"
           :key="one.tab"
@@ -231,7 +265,7 @@ const headingId = useId()
             v-else
             :message="message"
             :source="detail"
-            :asks="asks"
+            :again="asks ? 'ask' : oneWay ? 'copy' : null"
             @ask-again="askAgain"
           />
         </template>
@@ -281,7 +315,7 @@ const headingId = useId()
       @submit.prevent="ask()"
     >
       <p
-        v-if="asks"
+        v-if="asks || oneWay"
         class="about"
         data-testid="about"
       >
@@ -296,11 +330,45 @@ const headingId = useId()
           ×
         </button>
       </p>
+      <div
+        v-if="oneWay"
+        class="field field--one-way"
+        data-testid="one-way"
+      >
+        <p class="one-way-ask">
+          Ask in your Claude Code session.
+        </p>
+        <p
+          v-if="text.trim()"
+          class="one-way-question"
+          data-testid="one-way-question"
+        >
+          <span class="rd-recorded">{{ text }}</span>
+          <button
+            type="button"
+            class="unpin"
+            aria-label="Clear this question"
+            @click="text = ''"
+          >
+            ×
+          </button>
+        </p>
+        <div class="field-foot">
+          <span class="rd-meta">Copy a reference to {{ aboutLabel(about, detail.findings) }} for your session</span>
+          <DeskButton @click="copyReference()">
+            Copy a reference
+          </DeskButton>
+        </div>
+      </div>
       <label
+        v-if="!oneWay"
         :for="fieldId"
         class="rd-visually-hidden"
       >Ask the review’s session</label>
-      <div class="field">
+      <div
+        v-if="!oneWay"
+        class="field"
+      >
         <textarea
           :id="fieldId"
           ref="box"
@@ -342,10 +410,34 @@ const headingId = useId()
       >
         {{ said }}
       </p>
+      <div
+        v-if="uncopied"
+        class="uncopied"
+        data-testid="uncopied"
+      >
+        <p class="rd-meta">
+          The clipboard wasn’t available. Select this and copy it:
+        </p>
+        <pre class="rd-recorded">{{ uncopied }}</pre>
+      </div>
       <p class="rd-meta note">
-        {{ asks
-          ? 'Answers stay with this review, in its own session.'
-          : 'Everything asked so far is kept here and still reads.' }}
+        <template v-if="asks">
+          Answers stay with this review, in its own session.
+        </template>
+        <template v-else-if="oneWay">
+          Your session writes here with <code>review-desk message reply</code>.
+        </template>
+        <template v-else>
+          Everything asked so far is kept here and still reads.
+        </template>
+      </p>
+      <p
+        v-if="!asks"
+        class="rd-meta note"
+        data-testid="fresh-session"
+      >
+        A fresh session is one you start yourself. Have it run
+        <code>{{ freshSessionCommand(detail.review.id) }}</code>.
       </p>
     </form>
   </section>
@@ -400,6 +492,10 @@ const headingId = useId()
 
 .dot[data-tone='stopped'] {
   background: var(--rd-wrong);
+}
+
+.dot[data-tone='quiet'] {
+  background: var(--rd-ink-faint);
 }
 
 .body {
@@ -583,5 +679,43 @@ const headingId = useId()
 
 .refused {
   color: var(--rd-warn-ink);
+}
+
+.one-way-ask {
+  margin: 0;
+  color: var(--rd-ink);
+}
+
+.field--one-way {
+  background: var(--rd-ground);
+}
+
+.one-way-question {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.uncopied {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.uncopied p,
+.uncopied pre {
+  margin: 0;
+}
+
+.uncopied pre {
+  padding: 8px 10px;
+  border-radius: var(--rd-radius-xs);
+  background: var(--rd-ground);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: all;
 }
 </style>

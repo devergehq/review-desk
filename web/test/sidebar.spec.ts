@@ -145,4 +145,11 @@ describe('agentLine', () => {
   it('says when Allele could not be reached', () => {
     expect(agentLine(reading('unreachable'))).toEqual({ tone: 'off', text: 'Can\'t reach Allele' })
   })
+
+  it('says one way, as the conversation’s header does, when a session wrote and Allele did not answer', () => {
+    expect(agentLine(null, [{ author: 'developer' }, { author: 'session' }]))
+      .toEqual({ tone: 'off', text: 'Your own session · one way' })
+    expect(agentLine(null, [{ author: 'developer' }])).toBeNull()
+    expect(agentLine(reading('finished'), [{ author: 'session' }])).toEqual({ tone: 'on', text: 'Allele running' })
+  })
 })

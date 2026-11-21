@@ -24,8 +24,11 @@ import type { CiteSource } from '~/utils/cites'
 const props = defineProps<{
   message: ReviewMessage
   source: CiteSource
-  /** Whether a question can be sent from here, which the one button needs. */
-  asks: boolean
+  /**
+   * What the one button on an unparsed reply does: `ask` it again in two way, `copy` a
+   * reference asking for it again in one way (DEV-1335), or nothing where nobody answers.
+   */
+  again: 'ask' | 'copy' | null
 }>()
 
 const emit = defineEmits<{ 'ask-again': [message: ReviewMessage] }>()
@@ -234,10 +237,10 @@ const activity = computed(() => answer.value?.activity ?? [])
       </p>
       <DeskButton
         kind="quiet"
-        :disabled="!asks"
+        :disabled="again == null"
         @click="emit('ask-again', message)"
       >
-        Ask it again, in the format
+        {{ again === 'copy' ? 'Copy a reference' : 'Ask it again, in the format' }}
       </DeskButton>
     </div>
   </li>

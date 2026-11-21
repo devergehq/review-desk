@@ -85,6 +85,7 @@ describe('the words', () => {
     expect(dismissLabel(ALL[0]!)).toBe('Dismiss')
     expect(acceptLabel(ALL[1]!)).toBe('Regrade')
     expect(acceptLabel(ALL[5]!)).toBe('Put in the ask box')
+    expect(acceptLabel(ALL[5]!, 'one_way')).toBe('Put in the reference')
   })
 
   it('draws an accepted finding as S8’s line', () => {
