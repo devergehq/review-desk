@@ -181,6 +181,8 @@ const note = ref('')
  */
 const askingCall = ref<ReplyCall>('accept_reason')
 const prompted = ref<PromptedBy | null>(null)
+/** The session's drafted words, drawn above the field as the session's. */
+const drafted = ref<string | null>(null)
 const replyFill = useState<ReplyFill | null>(`reply-fill:${reviewId.value}`, () => null)
 const problem = ref('')
 const working = ref(false)
@@ -191,13 +193,17 @@ function pick(row: ReplyRow, decision: string) {
   problem.value = ''
   if (prompted.value != null && asking.value !== row.seq) prompted.value = null
   if (decision === 'accept_reason') {
-    askingCall.value = 'accept_reason'
     /*
      * **Opened on the author's own words**, because that is what the record keeps as the
      * reason: "the author's reason, in their words". The developer can cut it down. Opened
-     * again on the same row, it keeps what they typed rather than putting the quote back.
+     * again on the same row, it keeps what they typed rather than putting the quote back —
+     * unless the field held another call's words, such as a session's drafted *why it still
+     * stands*, which are not the author's reason (self-review F2).
      */
-    if (asking.value !== row.seq) note.value = row.said?.quote ?? row.said?.reason ?? ''
+    if (asking.value !== row.seq || askingCall.value !== 'accept_reason') {
+      note.value = row.said?.quote ?? row.said?.reason ?? ''
+    }
+    askingCall.value = 'accept_reason'
     asking.value = row.seq
     void nextTick(() => document.getElementById(`reason-${row.seq}`)?.focus())
     return
@@ -209,6 +215,7 @@ function pick(row: ReplyRow, decision: string) {
 function cancelReason() {
   asking.value = null
   prompted.value = null
+  drafted.value = null
   problem.value = ''
 }
 
@@ -238,6 +245,7 @@ async function decide(row: ReplyRow, request: DecideFindingRequest) {
     asking.value = null
     note.value = ''
     prompted.value = null
+    drafted.value = null
   }
 }
 
@@ -268,19 +276,36 @@ watch([asked, () => page.value != null], () => void arrive(), { immediate: true 
 
 /**
  * **A reply the conversation filled in** (`draft_reply`, DEV-1334) opens on its row, in the
- * field, with the session's words in it and the call it drafted on the button. Taken once:
- * the fill is cleared as it is read, so coming back to Replies does not open it again.
+ * field, with the call it drafted on the button. Taken once: the fill is cleared as it is
+ * read, so coming back to Replies does not open it again.
+ *
+ * **Whose words go in the field depends on what the record keeps there.** For `raise_again`
+ * and `withdraw` the note is the developer's own *why*, so the session's draft is put in it
+ * to edit. For `accept_reason` the note is *the author's reason, in their words*, which the
+ * feedback loop reads, so the field opens on the author's quote as A does, and the session's
+ * draft is drawn above it as the session's (self-review F2).
+ *
+ * **A fill with no row to land on says so** rather than vanishing: the finding may have been
+ * answered on this page since the session drafted it (self-review F1).
  */
 function takeTheFill() {
   const fill = replyFill.value
   if (fill == null || page.value == null) return
   const row = page.value.tab.needsAnswer.find(one => one.seq === fill.seq && one.answer?.offered)
   replyFill.value = null
-  if (!row) return
+  if (!row) {
+    notice.value = {
+      text: `F${fill.seq} has no author’s reply waiting on an answer here, so the session’s `
+        + 'draft was not filled in. Nothing was sent.',
+      tone: 'plain',
+    }
+    return
+  }
   chosen.value = row.seq
   asking.value = row.seq
   askingCall.value = fill.call
-  note.value = fill.words
+  drafted.value = fill.words
+  note.value = fill.call === 'accept_reason' ? row.said?.quote ?? row.said?.reason ?? '' : fill.words
   prompted.value = fill.prompted_by
   problem.value = ''
   void nextTick(() => document.getElementById(`reason-${row.seq}`)?.focus())
@@ -436,12 +461,19 @@ function said(row: ReplyRow): string {
                   v-if="asking === row.seq"
                   class="asking"
                 >
-                  <p
-                    v-if="prompted"
-                    class="rd-meta drafted"
-                  >
-                    Drafted by the session. Edit it, then send it — nothing is sent until you do.
-                  </p>
+                  <template v-if="prompted">
+                    <p class="rd-meta drafted">
+                      {{ askingCall === 'accept_reason'
+                        ? 'The session drafted this. The field keeps the author’s own reason, which is what the record holds — nothing is sent until you do.'
+                        : 'Drafted by the session. Edit it, then send it — nothing is sent until you do.' }}
+                    </p>
+                    <blockquote
+                      v-if="askingCall === 'accept_reason' && drafted"
+                      class="rd-recorded drafted-words"
+                    >
+                      {{ drafted }}
+                    </blockquote>
+                  </template>
                   <label
                     class="rd-label"
                     :for="`reason-${row.seq}`"
@@ -951,6 +983,12 @@ function said(row: ReplyRow): string {
   flex-direction: column;
   gap: 8px;
   max-width: var(--rd-measure);
+}
+
+.drafted-words {
+  margin: 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--rd-line);
 }
 
 .asking-actions {

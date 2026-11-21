@@ -1530,14 +1530,14 @@ describe('a reply the session drafted', () => {
 
   const DRAFTED = 'Fair: the tenant row is soft-deleted, so the schedule finds it.'
 
-  async function filled(call: 'accept_reason' | 'withdraw') {
+  async function filled(call: 'accept_reason' | 'withdraw', seq = 3) {
     const { detail, draft } = answerable()
     const source = loadSource()
     const answer = {
       kind: 'answer' as const,
       headline: 'The author is right about soft deletes.',
       cites: ['F3'],
-      suggests: [{ type: 'draft_reply' as const, finding: 'F3', call, words: DRAFTED }],
+      suggests: [{ type: 'draft_reply' as const, finding: `F${seq}`, call, words: DRAFTED }],
     }
     await resetDesk({
       reviews: [...source.reviews, detail],
@@ -1550,14 +1550,20 @@ describe('a reply the session drafted', () => {
       }],
     })
     useState(`reply-fill:${REVIEW}`).value = {
-      seq: 3, call, words: DRAFTED, prompted_by: { message: 1, suggestion: 1 },
+      seq, call, words: DRAFTED, prompted_by: { message: 1, suggestion: 1 },
     }
   }
 
-  it('opens on the row with the session’s words, editable, and sends nothing on arrival', async () => {
+  /*
+   * Self-review F2: the field of an `accept_reason` is *the author's reason, in their words*,
+   * which the feedback loop reads. So it opens on the author's quote, as A does, and the
+   * session's draft is drawn above it as the session's.
+   */
+  it('opens an accepted reason on the author’s words, with the session’s draft beside it, and sends nothing', async () => {
     await filled('accept_reason')
     const page = await shown(REVIEW)
-    expect(page.find<HTMLTextAreaElement>('#reason-3').element.value).toBe(DRAFTED)
+    expect(page.find<HTMLTextAreaElement>('#reason-3').element.value).toBe(SHORT_REPLY)
+    expect(page.find('#reply-F3 .drafted-words').text()).toBe(DRAFTED)
     expect(page.find('#reply-F3 .drafted').text()).toContain('nothing is sent until you do')
     expect(keysIn(page, '.reply-row--contested')).toEqual(['F3'])
     expect(useState(`reply-fill:${REVIEW}`).value).toBeNull()
@@ -1567,6 +1573,7 @@ describe('a reply the session drafted', () => {
     await filled('withdraw')
     const page = await shown(REVIEW)
     const field = page.find<HTMLTextAreaElement>('#reason-3')
+    expect(field.element.value).toBe(DRAFTED)
     expect(page.find('#reply-F3 .asking label').text()).toBe('Why you withdraw it, in your words')
     await field.setValue('Soft deletes keep the row, so this was never a bug.')
     const send = page.findAll('#reply-F3 .asking-actions button').find(one => one.text() === 'Withdraw it')!
@@ -1577,5 +1584,24 @@ describe('a reply the session drafted', () => {
     const messages = useReviewDesk().messages(REVIEW)
     await messages.refresh()
     expect(messages.data.value!.messages[0]!.suggestion_answers[0]).toMatchObject({ suggestion: 1, verdict: 'accepted' })
+  })
+
+  /* Self-review F1: a draft with no row to land on says so, rather than vanishing. */
+  it('says so when the finding has no author’s reply waiting here', async () => {
+    await filled('withdraw', 5)
+    const page = await shown(REVIEW)
+    expect(page.find('#reason-5').exists()).toBe(false)
+    expect(page.text()).toContain('F5 has no author’s reply waiting on an answer here')
+    expect(page.text()).toContain('Nothing was sent.')
+  })
+
+  /* Self-review F2's other path: A after a drafted *why it still stands* is the author's words. */
+  it('puts the author’s words back when A follows another call’s draft', async () => {
+    await filled('withdraw')
+    const page = await shown(REVIEW)
+    expect(page.find<HTMLTextAreaElement>('#reason-3').element.value).toBe(DRAFTED)
+    await page.find('#reply-F3 .answers button:nth-child(2)').trigger('click')
+    await settle(page)
+    expect(page.find<HTMLTextAreaElement>('#reason-3').element.value).toBe(SHORT_REPLY)
   })
 })

@@ -90,7 +90,7 @@ async function accept(): Promise<void> {
       return
     case 'fill-reply':
       replyFill.value = acting.fill
-      filled.value = 'Filled on Replies. Nothing is sent until you send it there.'
+      filled.value = 'Taken to Replies to fill. Nothing is sent until you send it there.'
       await router.push(replyPath(reviewId.value, `F${acting.fill.seq}`))
       return
     case 'open':

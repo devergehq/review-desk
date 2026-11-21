@@ -153,7 +153,13 @@ impl Store {
         let finding = self.get_finding(review_id, seq)?;
         let draft = self.get_draft(review_id)?;
         if let Some(prompted) = prompted {
-            self.check_decision_prompt(review_id, seq, decision.decision, prompted)?;
+            self.check_decision_prompt(
+                review_id,
+                seq,
+                decision.decision,
+                decision.severity,
+                prompted,
+            )?;
         }
 
         if !draft.status.is_writable() {

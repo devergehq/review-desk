@@ -28,7 +28,7 @@ use crate::entities::only_the_developer;
 use crate::error::{Result, StoreError};
 use crate::model::{
     Actor, DeveloperFinding, Disposition, Finding, FindingDecision, NewFinding, PromptedBy,
-    SuggestionAnswer, SuggestionVerdict, Timestamp, Verification,
+    Severity, SuggestionAnswer, SuggestionVerdict, Timestamp, Verification,
 };
 use crate::Store;
 
@@ -121,7 +121,7 @@ impl Store {
     /// Dismiss one suggestion, with the developer's reason when they give one.
     ///
     /// **One click, and the reason after it.** Dismissing a suggestion already dismissed
-    /// keeps the dismissal and says the reason again, so the card can take a reason after
+    /// keeps the dismissal and replaces the reason when one is given, so the card can take a reason after
     /// the click rather than asking for one before it. An accepted suggestion is not
     /// dismissed: the decision it prompted is in the record.
     pub fn dismiss_suggestion(
@@ -160,8 +160,9 @@ impl Store {
                 });
             }
             Some(_) => {
+                // A reason said again replaces the last; no reason keeps it (self-review F5).
                 tx.execute(
-                    "UPDATE suggestion_answers SET reason = ?4
+                    "UPDATE suggestion_answers SET reason = COALESCE(?4, reason)
                       WHERE review_id = ?1 AND message_seq = ?2 AND suggestion = ?3",
                     params![review_id, message, suggestion, reason],
                 )?;
@@ -290,6 +291,7 @@ impl Store {
         review_id: i64,
         seq: i64,
         decision: FindingDecision,
+        severity: Option<Severity>,
         prompted: PromptedBy,
     ) -> Result<()> {
         if prompted.suggestion.is_none() {
@@ -304,7 +306,14 @@ impl Store {
                 Accepting::Decides(decisions) => decisions.contains(&decision),
                 _ => false,
             };
-            decides && suggestion.finding() == Some(seq)
+            // A regrade is accepted at the severity it suggested and no other, so the line
+            // the card draws from the suggestion is what the record holds (self-review F4).
+            // A `draft_reply` deliberately takes any of its three calls.
+            let at_its_severity = match suggestion {
+                Suggestion::Regrade { to, .. } => severity == Some(*to),
+                _ => true,
+            };
+            decides && at_its_severity && suggestion.finding() == Some(seq)
         })?;
         Ok(())
     }

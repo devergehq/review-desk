@@ -397,11 +397,11 @@ fn accepting_a_regrade_is_the_developers_regrade_with_the_prompt_beside_it() {
     assert_eq!(answers[0].outcome_id, Some(made.outcome.id));
     assert_eq!(answers[0].verdict, SuggestionVerdict::Accepted);
 
-    // Accepted once.
+    // Accepted once: the same Accept again is refused as answered.
     let again = store.decide_finding_prompted(
         review,
         1,
-        &regrade_to(Severity::Should),
+        &regrade_to(Severity::Blocker),
         Some(prompt(reply, Some(1))),
         Actor::Developer,
     );
@@ -432,6 +432,8 @@ fn a_prompt_must_be_the_suggestion_this_decision_accepts() {
         ),
         (1, regrade_to(Severity::Blocker), prompt(reply, None)),
         (1, regrade_to(Severity::Blocker), prompt(reply, Some(2))),
+        // A regrade to a severity the suggestion did not name (self-review F4).
+        (1, regrade_to(Severity::Nit), prompt(reply, Some(1))),
     ] {
         let refused =
             store.decide_finding_prompted(review, seq, &decision, Some(prompted), Actor::Developer);
@@ -508,6 +510,12 @@ fn a_dismissal_is_kept_with_the_reason_said_after_the_click() {
         .expect("the reason after");
     assert_eq!(said.reason.as_deref(), Some("F1 stays a should."));
     assert_eq!(store.suggestion_answers(review).expect("answers").len(), 1);
+
+    // Dismissed again with no reason, the reason stays (self-review F5).
+    let again = store
+        .dismiss_suggestion(review, reply, 1, None, Actor::Developer)
+        .expect("dismissing again");
+    assert_eq!(again.reason.as_deref(), Some("F1 stays a should."));
 
     // A dismissed suggestion is not accepted afterwards.
     let refused = store.decide_finding_prompted(

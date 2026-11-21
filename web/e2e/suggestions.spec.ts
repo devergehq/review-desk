@@ -130,7 +130,9 @@ test('a drafted reply fills the field on Replies, and only the developer sends i
 
   await panel.getByTestId('accept-draft_reply').click()
   const field = page.locator('#reason-9')
-  await expect(field).toHaveValue(DRAFTED)
+  /* The field keeps the author's reason; the session's draft is drawn above it as the session's. */
+  await expect(field).toHaveValue('Tenants are never hard-deleted, so the schedule cannot outlive one.')
+  await expect(page.locator('#reply-F9 .drafted-words')).toHaveText(DRAFTED)
   await expect(page.locator('#reply-F9 .drafted')).toContainText('nothing is sent until you do')
   /* Nothing written yet: F9 still waits on an answer. */
   await expect(page.locator('.reply-row--contested#reply-F9')).toBeVisible()

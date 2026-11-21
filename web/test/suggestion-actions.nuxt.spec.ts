@@ -124,6 +124,8 @@ describe('accepting', () => {
     const added = await findingNow(16)
     expect(added).toMatchObject({ disposition: 'in_draft', prompted_by: 1, file: 'ExportController.php', line: 41 })
     expect(added?.round_status_by).toBeNull()
+    /* And the same answer no longer offers to add it a second time (self-review F3). */
+    expect(page.find('[data-testid="turn-into-a-finding"]').exists()).toBe(false)
   })
 
   it('fills the ask box with a follow-up and writes nothing', async () => {

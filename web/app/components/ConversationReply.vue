@@ -39,8 +39,14 @@ const answer = computed(() => props.message.answer ?? null)
  */
 const desk = useReviewDesk()
 const turned = computed(() => turnedInto(props.message, props.source.findings))
+/*
+ * Not offered once a suggestion on this answer has added a finding: the two would add the
+ * same finding twice (self-review F3). The card's own line says which finding it is.
+ */
 const toFinding = computed(() =>
-  answer.value ? turnIntoFinding(answer.value, props.message) : null)
+  answer.value && !props.message.suggestion_answers.some(one => one.finding_seq != null)
+    ? turnIntoFinding(answer.value, props.message)
+    : null)
 const turning = ref(false)
 const turnProblem = ref<string | null>(null)
 async function turn(): Promise<void> {
