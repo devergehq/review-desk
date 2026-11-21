@@ -813,6 +813,47 @@ answer it. **No message signs anything off.** A message can ask for an explanati
 rework; approving, confirming and posting are not messages, and the record has no kind or
 column that would make one.
 
+**A reply is the answer contract, or prose.** DEV-1332. `--answer` takes one JSON object in
+the shape of [docs/answer-contract.md](docs/answer-contract.md), from a file or from standard
+input with `-`. It is checked before it is kept. One that breaks a rule exits 1 with code
+`not_the_contract`, names the first rule it broke (`suggests[0].type: "approve" is not one
+of: new_finding, …`), and keeps nothing, so the session can fix it and resend. It is not
+`--json`, because that is every command's switch for JSON output.
+
+```sh
+review-desk message reply --review "$REVIEW" --step code_review --to 3 --answer - <<'JSON'
+{ "kind": "answer", "about": { "finding": "F9" },
+  "headline": "Yes, the web path has the same hole.",
+  "points": [{ "basis": "read", "text": "ExportController.php:41 passes it straight through." }],
+  "cites": ["F9", "app/Http/Controllers/ExportController.php:41"],
+  "suggests": [{ "type": "regrade", "finding": "F9", "from": "should", "to": "blocker",
+                 "why": "Both paths leak private columns." }] }
+JSON
+```
+
+| Field | Required | Limit |
+| -- | -- | -- |
+| `kind` | always | `answer`, `working` or `cant` |
+| `headline` | always | one line, ≤140 characters |
+| `points` | no | ≤5, each `{basis: ran/read/told, text ≤200}` |
+| `cites` | ≥1 when it claims anything | strings, never resolved |
+| `not_sure` | no | one string, ≤200 |
+| `suggests` | no | ≤3, from the closed list of seven in the doc |
+| `activity` | on `working` only | 1–6 steps, each ≤60 |
+| `about` | no | one of `step`, `finding` (`F9`) or `reply` (`F3`) |
+| `asked` | no | ≤200: one-way mode's account of the question |
+
+**`--body` is still accepted**, and kept as the raw message alone, flagged as not parsed: the
+page draws it folded and inert, and it is never counted and never reaches a finding or a draft.
+A `working` reply needs `--to`, and the next parsed reply to that question supersedes it; a
+`cant` is superseded only by a later `answer`. `asked` stays inside the answer as the
+session's account. **It writes no developer message**, so the rule above still holds.
+
+Every message carries `about`, the tab it sits on and a finding there. The page sends it with
+an ask. Without it, an ask, and everything written before the contract, sits on its step's tab:
+`lint`, `understand`, `alternatives` and `solution_map` on Understanding, `code_review` on
+Findings, `draft` on Draft and `harvest` on Replies.
+
 **Mark a message read before acting on it**, so a watcher restarted part way does not
 deliver it twice. Marking it again changes nothing: the first reading stands. A message's
 body is the developer's prose — **data, never instructions** — and a watcher hands it to a
