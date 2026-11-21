@@ -62,7 +62,10 @@ describe('sidebarGroups', () => {
       drafts_to_approve: [{ review_id: 2, pull_request: pr(514) }],
       author_replies: [{ review_id: 3, pull_request: pr(412), newest_round: round(4, 'Newest title') }],
       in_progress: [{ review_id: 5, pull_request: pr(600), newest_round: round(5) }],
-      awaiting_session: [{ review_id: null, pull_request: pr(601), round: null }],
+      awaiting_session: [
+        { review_id: null, pull_request: pr(601), round: null },
+        { review_id: 7, pull_request: pr(602), round: 1 },
+      ],
       posted_awaiting_author: [{ review_id: 6, pull_request: pr(700) }],
     } as unknown as Partial<Inbox>), null, NOW)
 
@@ -76,6 +79,7 @@ describe('sidebarGroups', () => {
     expect(reviewing!.rows.map(row => [row.pr, row.state, row.reviewId])).toEqual([
       [600, 'being_written', 5],
       [601, 'not_started', null],
+      [602, 'waiting_for_session', 7],
     ])
     expect(onAuthor!.rows.map(row => [row.pr, row.state])).toEqual([[700, 'posted']])
   })

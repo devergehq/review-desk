@@ -21,6 +21,10 @@
  * record cannot say which week it was. It is left out rather than guessed into one; the
  * Reviews list's *Finished* view still has it.
  *
+ * **The developer's own pull requests are not here.** `own_prs_without_reviewer` is a
+ * pull request the developer *wrote* that has no reviewer, not a review on the desk; the
+ * list page holds it (S1's *Your own*), and the sidebar lists the reviews.
+ *
  * Nothing here reads or writes a record. `test/sidebar.spec.ts` is a test of the rules.
  */
 
@@ -127,8 +131,19 @@ export function sidebarGroups(
   const reviewing = keep([
     ...inbox.in_progress.map(item =>
       fromInbox(item.pull_request, item.newest_round.review_id, item.newest_round.title, 'being_written')),
+    /*
+     * **Waiting for a session, not "not started"**: the contract's own rule for this array.
+     * A round in it may hold an approved draft, a sent-back one or a brief that needed no
+     * confirmation — work has been done, and what is true is that no session is working on
+     * it now. Only a request with no round at all has not been started.
+     */
     ...inbox.awaiting_session.map(item =>
-      fromInbox(item.pull_request, item.review_id, null, 'not_started')),
+      fromInbox(
+        item.pull_request,
+        item.review_id,
+        null,
+        item.review_id == null ? 'not_started' : 'waiting_for_session',
+      )),
   ])
 
   const onAuthor = keep(

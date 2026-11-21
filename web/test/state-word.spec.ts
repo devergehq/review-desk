@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
-import type { Outcome, Review, ReviewLayer, ReviewLayerName, ReviewLayerState } from '../app/types/desk'
+import type {
+  Brief,
+  Outcome,
+  Review,
+  ReviewLayer,
+  ReviewLayerName,
+  ReviewLayerState,
+} from '../app/types/desk'
+import { loadSource, resetSource, sampleBackend } from '../app/data/sample'
+import { sidebarGroups } from '../app/utils/sidebar'
 import { STATE_WORDS, stateOfReview, stateWord, type StateSource } from '../app/utils/stateWord'
 
 /*
@@ -28,6 +37,7 @@ function source(over: {
   layers?: ReviewLayer[]
   outcomes?: Partial<Outcome>[]
   draft_status?: StateSource['draft_status']
+  brief?: Partial<Brief> | null
 } = {}): StateSource {
   return {
     review: {
@@ -50,8 +60,11 @@ function source(over: {
     layers: over.layers ?? layers(),
     outcomes: (over.outcomes ?? []) as Outcome[],
     draft_status: over.draft_status ?? null,
+    brief: (over.brief ?? null) as Brief | null,
   }
 }
+
+const UNCONFIRMED = { confirmed: false, confirmation_required: true }
 
 describe('stateWord', () => {
   it('words every state, and no two alike', () => {
@@ -63,28 +76,47 @@ describe('stateWord', () => {
 })
 
 describe('stateOfReview', () => {
-  it('is not started while every layer is pending', () => {
-    expect(stateOfReview(source())).toBe('not_started')
+  /*
+   * **The same facts `GET /inbox` asks, in the same order** — `crates/store/src/entities/
+   * inbox.rs` — so the header says the sidebar's word. These cases are the three the
+   * self-review of #86 found disagreeing when this read the layers instead.
+   */
+  it('is waiting for a session when nothing asks anything of anyone', () => {
+    expect(stateOfReview(source())).toBe('waiting_for_session')
+    /* An approved draft with no session working: the contract's `awaiting_session`, case A. */
+    expect(stateOfReview(source({
+      draft_status: 'approved',
+      layers: layers({ lint: 'done', understand: 'done', draft: 'done' }),
+    }))).toBe('waiting_for_session')
   })
 
-  it('is being written once any layer has run', () => {
+  it('is being written while one of layers 1 to 6 runs, and not for a harvest', () => {
     expect(stateOfReview(source({ layers: layers({ lint: 'done', understand: 'running' }) })))
       .toBe('being_written')
+    expect(stateOfReview(source({ draft_status: 'posted', layers: layers({ harvest: 'running' }) })))
+      .toBe('posted')
   })
 
-  it('is brief ready when the understand layer waits on the developer', () => {
-    expect(stateOfReview(source({ layers: layers({ lint: 'done', understand: 'waiting_on_you' }) })))
-      .toBe('brief_ready')
+  it('is brief ready while a brief that needs confirming is not confirmed', () => {
+    expect(stateOfReview(source({ brief: UNCONFIRMED }))).toBe('brief_ready')
+    expect(stateOfReview(source({ brief: { confirmed: false, confirmation_required: false } })))
+      .toBe('waiting_for_session')
+    expect(stateOfReview(source({ brief: { confirmed: true, confirmation_required: true } })))
+      .toBe('waiting_for_session')
   })
 
-  it('is draft ready when the draft layer waits, even with the brief still waiting', () => {
+  it('reads the brief before the draft, as the queue does (case B)', () => {
+    expect(stateOfReview(source({ brief: UNCONFIRMED, draft_status: 'ready' }))).toBe('brief_ready')
+  })
+
+  it('is draft ready on the draft’s status, whatever its layer says (case C)', () => {
     expect(stateOfReview(source({
-      layers: layers({ understand: 'waiting_on_you', draft: 'waiting_on_you' }),
+      draft_status: 'ready',
+      layers: layers({ lint: 'done', understand: 'done', draft: 'pending' }),
     }))).toBe('draft_ready')
   })
 
-  it('is posted once the draft is, and replies in once something came back', () => {
-    expect(stateOfReview(source({ draft_status: 'posted' }))).toBe('posted')
+  it('is replies in once the author or the harvester recorded something', () => {
     expect(stateOfReview(source({
       draft_status: 'posted',
       outcomes: [{ kind: 'kept', actor: 'developer' }],
@@ -93,19 +125,41 @@ describe('stateOfReview', () => {
       draft_status: 'posted',
       outcomes: [{ kind: 'replied', actor: 'author' }],
     }))).toBe('replies_in')
+    expect(stateOfReview(source({
+      draft_status: 'posted',
+      outcomes: [{ kind: 'code_changed_after', actor: 'harvester' }],
+    }))).toBe('replies_in')
   })
 
-  it('reads the pull request’s end over posting', () => {
+  it('reads the ways off the desk over everything, a dismissal first', () => {
     expect(stateOfReview(source({ draft_status: 'posted', review: { pr_state: 'merged' } })))
       .toBe('merged')
     expect(stateOfReview(source({ review: { pr_state: 'closed' } }))).toBe('closed')
-    expect(stateOfReview(source({ review: { pr_state: 'open' }, draft_status: 'posted' })))
-      .toBe('posted')
-  })
-
-  it('reads a dismissal over everything, as `LeftTheDesk` does', () => {
+    expect(stateOfReview(source({ review: { out_of_play: 'withdrawn' }, draft_status: 'posted' })))
+      .toBe('out_of_play')
     expect(stateOfReview(source({
       review: { pr_state: 'merged', dismissed_at: '2026-11-20T10:00:00Z' },
     }))).toBe('dismissed')
+  })
+})
+
+/*
+ * **The contract this file exists for: one review, one word, whichever path drew it.**
+ * Every review the sample desk's sidebar lists, read whole and run through
+ * `stateOfReview`, says what its sidebar row says.
+ */
+describe('the sidebar and the header agree', () => {
+  it('gives every sample review the same word by both paths', async () => {
+    resetSource(loadSource())
+    const backend = sampleBackend()
+    const groups = sidebarGroups(await backend.getInbox(), await backend.listReviews(null, 'finished'))
+    const rows = groups.flatMap(group => group.rows).filter(row => row.reviewId != null)
+    expect(rows.length).toBeGreaterThan(5)
+
+    for (const row of rows) {
+      const detail = await backend.getReview(row.reviewId!)
+      expect(stateWord(stateOfReview(detail)), `review ${row.reviewId} (#${row.pr})`)
+        .toBe(stateWord(row.state))
+    }
   })
 })

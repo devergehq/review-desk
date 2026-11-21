@@ -27,8 +27,8 @@ defineProps<{
       <component
         :is="row.reviewId != null ? resolveComponent('NuxtLink') : 'div'"
         :to="row.reviewId != null ? `/reviews/${row.reviewId}` : undefined"
-        class="row"
-        :class="{ 'row--open': row.reviewId != null && row.reviewId === openReviewId }"
+        class="side-row"
+        :class="{ 'side-row--open': row.reviewId != null && row.reviewId === openReviewId }"
         :aria-current="row.reviewId != null && row.reviewId === openReviewId ? 'page' : undefined"
       >
         <span class="line">
@@ -51,7 +51,7 @@ defineProps<{
   list-style: none;
 }
 
-.row {
+.side-row {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -61,16 +61,16 @@ defineProps<{
   text-decoration: none;
 }
 
-a.row:hover {
+a.side-row:hover {
   color: var(--rd-ink);
   background: var(--rd-rail-pressed);
 }
 
-.row--open {
+.side-row--open {
   background: var(--rd-rail);
 }
 
-.row--open .title {
+.side-row--open .title {
   font-weight: 600;
 }
 

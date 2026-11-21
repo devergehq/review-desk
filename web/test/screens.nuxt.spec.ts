@@ -160,10 +160,10 @@ describe('the shell', () => {
       'Done this week',
     ])
     const waiting = page.find('#sidebar .group--waiting_on_you')
-    const four12 = waiting.findAll('.row').filter(row => row.text().includes('#412'))
+    const four12 = waiting.findAll('.side-row').filter(row => row.text().includes('#412'))
     expect(four12).toHaveLength(1)
     expect(four12[0]!.text()).toContain('Brief ready')
-    expect(page.findAll('#sidebar .row').filter(row => row.text().includes('#412'))).toHaveLength(1)
+    expect(page.findAll('#sidebar .side-row').filter(row => row.text().includes('#412'))).toHaveLength(1)
   })
 
   it('draws every group on an empty desk, each saying it has none', async () => {
@@ -177,7 +177,7 @@ describe('the shell', () => {
 
   it('opens the review being read in the sidebar', async () => {
     const page = await shown(Layout, { route: '/reviews/17' })
-    const open = page.find('#sidebar .row[aria-current="page"]')
+    const open = page.find('#sidebar .side-row[aria-current="page"]')
     expect(open.exists()).toBe(true)
     expect(open.text()).toContain('#412')
   })
@@ -204,6 +204,26 @@ describe('the shell', () => {
     await menu.trigger('click')
     expect(menu.attributes('aria-expanded')).toBe('true')
     expect(page.find('.shell').classes()).toContain('shell--menu-open')
+  })
+
+  it('closes the menu on Escape', async () => {
+    const page = await shown(Layout, { attachTo: document.body })
+    await page.find('button.menu').trigger('click')
+    expect(page.find('.shell').classes()).toContain('shell--menu-open')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await page.vm.$nextTick()
+    expect(page.find('.shell').classes()).not.toContain('shell--menu-open')
+    page.unmount()
+  })
+
+  /*
+   * **The marker is on every screen at every width** (#86's self-review, F3): the sidebar's
+   * foot is behind the menu under 700px, so the bar there carries it too.
+   */
+  it('carries the sample-data marker in the phone bar as well as the sidebar', async () => {
+    const page = await shown(Layout)
+    expect(page.find('.topbar').text()).toContain('Sample data')
+    expect(page.find('#sidebar').text()).toContain('Sample data')
   })
 
   /*

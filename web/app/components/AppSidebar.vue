@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The shell's first column: the name, where you can go, every pull request on the desk,
+ * The shell's first column: the name, where you can go, every review on the desk,
  * and what is connected.
  *
  * `docs/design.md`, *The application shell*, and the S1 and S2 screens. Four parts, top to
@@ -10,7 +10,7 @@
  * | -- | -- |
  * | The wordmark | "Review Desk", **the one serif left in the app** — Patrick, 21 November 2026 |
  * | Navigation | Pull requests, Reviews, Rules |
- * | The groups | Every pull request on the desk, one row each, under four headings |
+ * | The groups | Every review on the desk, one row per pull request, under four headings |
  * | The status lines | When GitHub was last read, and whether Allele answered |
  *
  * **Reviews stays in the navigation until the list that replaces it lands** (DEV-1325, S1).
@@ -151,17 +151,17 @@ const holdsOpenRow = (group: SidebarGroup) => group.rows.some(isOpenRow)
       v-if="groups"
       class="groups"
     >
-      <section
+      <div
         v-for="group in groups"
         :key="group.id"
         class="group"
         :class="`group--${group.id}`"
-        :aria-label="group.label"
       >
         <!--
           **Waiting on you is open; the other three fold**, which is how S1 and S2 draw them.
           An empty group does not fold — there is nothing to open — and says "None" under its
-          heading, so an empty group is told from a missing one.
+          heading, so an empty group is told from a missing one. **Every group's name is an
+          `h2`**, the folded ones inside their `summary`, so heading navigation finds all four.
         -->
         <template v-if="group.id === 'waiting_on_you' || group.rows.length === 0">
           <h2
@@ -191,16 +191,18 @@ const holdsOpenRow = (group: SidebarGroup) => group.rows.some(isOpenRow)
           class="fold"
           :open="holdsOpenRow(group) || undefined"
         >
-          <summary class="group-heading">
-            <span>{{ group.label }}</span>
-            <span class="group-count">{{ group.rows.length }}</span>
+          <summary>
+            <h2 class="group-heading">
+              <span>{{ group.label }}</span>
+              <span class="group-count">{{ group.rows.length }}</span>
+            </h2>
           </summary>
           <SidebarRows
             :rows="group.rows"
             :open-review-id="reviewId"
           />
         </details>
-      </section>
+      </div>
     </div>
     <p
       v-else-if="inbox.error.value"
@@ -343,7 +345,7 @@ const holdsOpenRow = (group: SidebarGroup) => group.rows.some(isOpenRow)
 }
 
 /* A chevron, drawn, as `.rd-fold` draws its triangle: it needs no glyph and turns with the fold. */
-.fold > summary > span:first-child::before {
+.fold > summary .group-heading > span:first-child::before {
   content: '';
   display: inline-block;
   width: 6px;
@@ -355,12 +357,12 @@ const holdsOpenRow = (group: SidebarGroup) => group.rows.some(isOpenRow)
   transition: transform 120ms ease;
 }
 
-.fold[open] > summary > span:first-child::before {
+.fold[open] > summary .group-heading > span:first-child::before {
   transform: rotate(45deg);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fold > summary > span:first-child::before {
+  .fold > summary .group-heading > span:first-child::before {
     transition: none;
   }
 }

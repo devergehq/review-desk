@@ -15,13 +15,18 @@
  * at the width it will have, and a page that fits beside an empty column fits beside a full
  * one.
  *
+ * **Under 1,100px the empty conversation column is not drawn**, while it is empty: at 1,024
+ * it would leave a review's page 332px, and nothing in it is worth that. The second stack
+ * decides what the column does at those widths once it holds something.
+ *
  * **Under 700px the shell is one column.** The sidebar goes behind a menu button in a bar
- * at the top, and the conversation column is not drawn at all: on a phone it is a bottom
- * sheet (S14), which is the second stack's too.
+ * at the top; the conversation is a bottom sheet there (S14), which is the second stack's.
+ * The open sidebar behaves as a dialog would: Escape or a press outside it closes it, focus
+ * goes into it and comes back to the button, and the page behind is `inert` meanwhile.
  *
  * **What the old header carried is all still here**: the name is the sidebar's wordmark,
- * the three places are its navigation, and the sample-data marker is at its foot. The skip
- * link stays first in the document.
+ * the three places are its navigation, and the sample-data marker is at its foot — and in
+ * the bar under 700px, so it is on every screen at every width. The skip link stays first.
  *
  * ## Wide pages
  *
@@ -40,10 +45,32 @@ const onAReview = computed(() => /^\/reviews\/\d+(?:\/|$)/.test(route.path))
 /** Whether the sidebar is open over the page, under 700px. Above it, it is always there. */
 const menuOpen = ref(false)
 
-/* Going somewhere is what the menu is for, so arriving closes it. */
-watch(() => route.fullPath, () => {
+const menuButton = ref<HTMLButtonElement | null>(null)
+const sidebar = ref<HTMLElement | null>(null)
+
+/** Open it and put focus in it; the first link is Pull requests. */
+async function openMenu() {
+  menuOpen.value = true
+  await nextTick()
+  sidebar.value?.querySelector<HTMLElement>('a, button, summary')?.focus()
+}
+
+/** Close it, and give focus back to the button that opened it, if focus was inside. */
+function closeMenu(returnFocus = true) {
+  if (!menuOpen.value) return
   menuOpen.value = false
-})
+  if (returnFocus) menuButton.value?.focus()
+}
+
+function onKey(event: KeyboardEvent) {
+  if (event.key === 'Escape') closeMenu()
+}
+
+onMounted(() => window.addEventListener('keydown', onKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+
+/* Going somewhere is what the menu is for, so arriving closes it. Focus stays on the page. */
+watch(() => route.fullPath, () => closeMenu(false))
 </script>
 
 <template>
@@ -59,11 +86,12 @@ watch(() => route.fullPath, () => {
     <!-- Only drawn under 700px, where the sidebar is behind it. -->
     <div class="topbar">
       <button
+        ref="menuButton"
         type="button"
         class="menu"
         :aria-expanded="menuOpen"
         aria-controls="sidebar"
-        @click="menuOpen = !menuOpen"
+        @click="menuOpen ? closeMenu() : openMenu()"
       >
         <svg
           width="18"
@@ -78,10 +106,20 @@ watch(() => route.fullPath, () => {
         <span class="rd-visually-hidden">Menu</span>
       </button>
       <span class="topbar-name">Review Desk</span>
+      <SampleDataBadge />
     </div>
+
+    <!-- Under 700px, with the menu open: the page behind it, which a press closes it from. -->
+    <div
+      v-if="menuOpen"
+      class="scrim"
+      aria-hidden="true"
+      @click="closeMenu()"
+    />
 
     <aside
       id="sidebar"
+      ref="sidebar"
       class="sidebar"
       aria-label="Pull requests and places"
     >
@@ -91,6 +129,7 @@ watch(() => route.fullPath, () => {
     <main
       id="main"
       class="main"
+      :inert="menuOpen || undefined"
     >
       <div
         class="page"
@@ -124,6 +163,21 @@ watch(() => route.fullPath, () => {
 
 .shell--review {
   grid-template-columns: var(--rd-sidebar-width) minmax(0, 1fr) var(--rd-conversation-width);
+}
+
+/* While the column is empty it is not worth a narrow page's width. See the note above. */
+@media (max-width: 1099px) {
+  .shell--review {
+    grid-template-columns: var(--rd-sidebar-width) minmax(0, 1fr);
+  }
+
+  .shell-conversation {
+    display: none;
+  }
+}
+
+.scrim {
+  display: none;
 }
 
 .skip {
@@ -221,6 +275,18 @@ watch(() => route.fullPath, () => {
   .topbar-name {
     font-size: var(--rd-type-lead);
     font-weight: 600;
+  }
+
+  .topbar :deep(.badge) {
+    margin-left: auto;
+  }
+
+  .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    display: block;
+    background: rgb(20 23 26 / 24%);
   }
 
   .sidebar {

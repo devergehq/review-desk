@@ -74,9 +74,12 @@ first column. Six rules it keeps, each in the file that holds it:
   S1 and S2 draw first and open), *Being reviewed* and *Waiting on the author* from `GET /inbox`'s
   arrays, *Done this week* from the Reviews list's *Finished* view, one row per pull request.
   An empty group still draws, saying *None*. `sidebarGroups` in `web/app/utils/sidebar.ts`.
-- **The state word is chosen once**, in `web/app/utils/stateWord.ts`: the sidebar and the review
-  header both go through `stateWord`, so a review cannot be *Draft ready* in one and *Posted* in
-  the other.
+- **The state word is chosen once**, in `web/app/utils/stateWord.ts`, and read off the same facts
+  by both paths: the sidebar from the inbox array a review is in, the review header from
+  `stateOfReview`, which asks what `crates/store/src/entities/inbox.rs` asks in the order it asks
+  it. `web/test/state-word.spec.ts` runs every sample review through both and expects one word.
+  The one place they can differ is a superseded round, which the inbox leaves out and a review's
+  own page cannot tell.
 - **The GitHub line is drawn only when a read is recorded**: the newest `harvested_at` the two
   reads carry, and no line when there is none. `githubReadAt`.
 - **The agent line is DEV-1140's reading**, which is per review, so it is drawn on a review's
@@ -84,9 +87,10 @@ first column. Six rules it keeps, each in the file that holds it:
 - **Reviews stays in the navigation** until the list that replaces Queue and Reviews lands
   (DEV-1325): taking it out first would leave `/reviews` with no way in.
 - **The conversation's column is drawn empty** on a review's pages until the second stack fills
-  it, and under 700px the shell is one column: the sidebar behind a menu button, no
+  it, and not at all under 1,100px while it is empty. Under 700px the shell is one column: the
+  sidebar behind a menu button that closes on Escape, the sample-data marker in the bar, no
   conversation column (S14 is a bottom sheet). `web/e2e/shell.spec.ts` measures all of it at
-  1,600, 1,280 and 390.
+  1,600, 1,280, 1,024 and 390.
 
 **A review is one header and five tabs**, replacing the step trail:
 

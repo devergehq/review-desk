@@ -467,7 +467,12 @@ const groups = computed(() => [
 .steps {
   display: grid;
   grid-template-columns: repeat(var(--columns), minmax(0, 1fr));
-  gap: 12px;
+  /*
+   * 8px, from 12, since the shell (DEV-1323): a review's page sits beside the 380px
+   * conversation column, and at 1,440 a step 7 reading "3 replies back" needed 97px of a
+   * 95px cell. The gap is what gives; the step's own words are the store's and fixed.
+   */
+  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;

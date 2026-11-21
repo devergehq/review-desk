@@ -66,6 +66,24 @@ for (const width of [1600, 1280] as const) {
 }
 
 /*
+ * **Between 700 and 1,100 the empty conversation column is not drawn**, while it is empty:
+ * at 1,024 it would leave a review's page 332px (the self-review of #86, F4).
+ */
+test.describe('at 1024 wide', () => {
+  test.use({ viewport: { width: 1024, height: 800 } })
+
+  for (const one of PAGES) {
+    test(`${one.name} keeps its width`, async ({ page }) => {
+      await open(page, one.path)
+      await expect(page.locator('.shell-conversation')).toBeHidden()
+      const main = await page.locator('main#main').boundingBox()
+      expect(Math.round(main!.width)).toBe(1024 - 232)
+      expect(await sideways(page), 'the page scrolls sideways').toBe(0)
+    })
+  }
+})
+
+/*
  * **No serif anywhere but the wordmark.** Asked of every element on every page, after the
  * fonts have loaded, by the face the browser resolved the element's `font-family` to first.
  * The screens spec reads the stylesheets; this reads what they came to.
@@ -105,6 +123,14 @@ test.describe('under 700 wide', () => {
     await menu.click()
     await expect(menu).toHaveAttribute('aria-expanded', 'true')
     await expect(page.locator('#sidebar')).toBeVisible()
+    /* Focus goes into it; Escape closes it and gives focus back (#86's self-review, F5). */
+    await expect(page.locator('#sidebar a').first()).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(page.locator('#sidebar')).toBeHidden()
+    await expect(menu).toBeFocused()
+    /* And while it is open, the page behind it is out of reach. */
+    await menu.click()
+    await expect(page.locator('main#main')).toHaveAttribute('inert', '')
 
     /* Going somewhere is what the menu is for, so arriving closes it. */
     await page.locator('#sidebar').getByRole('link', { name: /Rules/ }).click()
