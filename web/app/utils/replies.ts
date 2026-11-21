@@ -44,24 +44,36 @@
 import type { Finding, Outcome, ReviewDetail, Severity } from '~/types/desk'
 import type { FindingRow } from './whatHappened'
 import type { GroupedFinding } from './outcomes'
+import type { RepliesWaiting } from './reviewTabs'
 
 import { answersTheAuthor, draftTakesDecisions, isCarried, mostSeriousFirst } from './findings'
 import { sentence } from './format'
 import { groupsOf } from './overview'
 import { outcomeBy, outcomeSaid, outcomeWhen, repliesToAnswer } from './outcomes'
+import { findingPath } from './reviewTabs'
 import { rowFor } from './whatHappened'
 
 /** How many findings with no reply are drawn before the rest fold. S09's "the first four". */
 export const NO_REPLY_SHOWN = 4
 
 /** What a row in Needs your answer or Settled stands at, as its word says it. */
-export type ReplyStanding = 'contested' | 'fixed' | 'answered'
+export type ReplyStanding = 'contested' | 'fixed' | 'answered' | 'raised_again' | 'accepted' | 'withdrawn'
 
 /** The word for each, and what it rests on — the words Overview's figures use. */
 export const STANDING_WORDS: Record<ReplyStanding, { word: string, basis: string }> = {
   contested: { word: 'Contested', basis: 'told by the author' },
   fixed: { word: 'Fixed', basis: 'told by the author, not re-run' },
   answered: { word: 'Answered', basis: 'told by the author, not re-checked' },
+  /*
+   * **The developer's own answers, said as theirs.** After R, A or W the newest thing on the
+   * finding is the developer's decision, so `repliesToAnswer` no longer counts it and the
+   * shared grouping puts it with the answered. Drawn as "Answered · told by the author" it
+   * credited the author with the developer's act — and said "settled" of a finding Raise it
+   * again had just reopened. The word and the basis say what the record holds.
+   */
+  raised_again: { word: 'Raised again', basis: 'your answer: it posts again in this round' },
+  accepted: { word: 'Reason accepted', basis: 'your answer: their reason is recorded' },
+  withdrawn: { word: 'Withdrawn', basis: 'your answer: the record says you withdrew it' },
 }
 
 /** What the author said, as the row quotes it. */
@@ -84,6 +96,13 @@ export interface ReplyAnswer {
   offered: boolean
   /** Null when offered. Otherwise one or two sentences, from the record. */
   why: string | null
+  /**
+   * **Where the answer really is**, when the record names it: a later round of this pull
+   * request, whose Findings tab carries the three answers on its copy of the finding. A
+   * finding keeps its number when carried, so `findingPath` to that round names it. Null
+   * when no later round exists yet, and the sentence says it in words instead.
+   */
+  later: { round: number, to: string } | null
 }
 
 /** One finding in one of the three groups. */
@@ -117,6 +136,25 @@ export interface RepliesTab {
   elsewhere: number
 }
 
+/** The developer's three answers, by the outcome kind each records (`decision.rs`). */
+const ANSWERED_AS: Partial<Record<Outcome['kind'], ReplyStanding>> = {
+  raised_again: 'raised_again',
+  rejected: 'accepted',
+  withdrawn: 'withdrawn',
+}
+
+/**
+ * Whether the newest thing on a finding is the developer answering the author — and which
+ * answer — or null. By time, then by id, the order `repliesToAnswer` reads.
+ */
+function answeredBy(outcomes: readonly Outcome[], seq: number): ReplyStanding | null {
+  const newest = outcomes
+    .filter(one => one.finding_seq === seq)
+    .sort((one, two) => (Date.parse(two.occurred_at) - Date.parse(one.occurred_at)) || (two.id - one.id))[0]
+  if (newest == null || newest.actor !== 'developer') return null
+  return ANSWERED_AS[newest.kind] ?? null
+}
+
 /** The author's words on the outcome that grouped a finding, attributed. */
 function saidOf(outcome: Outcome, now: Date): ReplySaid {
   const said = outcomeSaid(outcome)
@@ -135,23 +173,40 @@ function saidOf(outcome: Outcome, now: Date): ReplySaid {
  * first, because no finding on a posted or signed-off round takes a decision; then whether
  * this is a finding the three answers are for at all.
  */
-export function answerFor(detail: Pick<ReviewDetail, 'review' | 'draft_status'>, finding: Finding): ReplyAnswer {
+export function answerFor(
+  detail: Pick<ReviewDetail, 'review' | 'draft_status'> & Partial<Pick<ReviewDetail, 'rounds'>>,
+  finding: Finding,
+): ReplyAnswer {
   const round = detail.review.round
   const status = detail.draft_status ?? null
   const forThem = answersTheAuthor(finding)
-  if (draftTakesDecisions(status) && forThem) return { offered: true, why: null }
+  if (draftTakesDecisions(status) && forThem) return { offered: true, why: null, later: null }
 
-  const tail = 'Raise it again, Accept their reason and Withdraw answer a finding carried in from '
-    + 'an earlier round and settled in this one.'
   let lead: string
   if (status === 'posted') lead = `Round ${round} is posted, so its draft takes no more decisions.`
   else if (status === 'approved') lead = `Round ${round} is signed off, so its draft takes no more decisions until it is sent back.`
   else if (status == null) lead = `Round ${round} has no draft yet, so a decision would have nothing to change.`
   else if (!isCarried(finding)) lead = `${finding.key} was raised in this round.`
-  else lead = `${finding.key} is still open in this round, so it posts as it stands — Findings is where it is decided.`
+  else return {
+    offered: false,
+    why: `${finding.key} is still open in this round, so it posts as it stands. Findings is where it is decided.`,
+    later: null,
+  }
 
-  const later = !forThem && !isCarried(finding) ? ` A later round that carries ${finding.key} in is where they are.` : ''
-  return { offered: false, why: `${lead} ${tail}${later}` }
+  /*
+   * **Where the answer is, not only that it is not here** (DEV-1330 self-review, Question 4,
+   * ruled by the coordinator). The record decides R/A/W per round and a round's outcomes are
+   * its own, so the answer to a reply on a posted round is given on a later round's Findings
+   * tab, on the finding that round carried in — never on its Replies tab.
+   */
+  const next = (detail.rounds ?? [])
+    .filter(one => one.round > round && !one.dismissed)
+    .sort((one, two) => two.round - one.round)[0]
+  const later = next ? { round: next.round, to: findingPath(next.review_id, finding.key) } : null
+  const where = later
+    ? `Raise it again, Accept their reason and Withdraw are on round ${later.round}'s Findings tab, if it carries ${finding.key} in.`
+    : `Raise it again, Accept their reason and Withdraw are on the Findings tab of the round that carries ${finding.key} in.`
+  return { offered: false, why: `${lead} ${where}`, later }
 }
 
 /**
@@ -192,7 +247,10 @@ export function repliesTab(detail: ReviewDetail, now: Date = new Date()): Replie
 
   const needsAnswer = rows(groups.contested, () => 'contested')
   const settledSeqs = new Set(groups.fixed.map(one => one.seq))
-  const settled = rows([...groups.fixed, ...groups.answered], one => settledSeqs.has(one.seq) ? 'fixed' : 'answered')
+  const settled = rows(
+    [...groups.fixed, ...groups.answered],
+    one => answeredBy(detail.outcomes, one.seq) ?? (settledSeqs.has(one.seq) ? 'fixed' : 'answered'),
+  )
   const noReply = rows(groups.noReply, () => null)
 
   const drawn = new Set([...needsAnswer, ...settled, ...noReply].map(row => row.seq))
@@ -221,4 +279,14 @@ export function answerableReplies(
     const finding = byKey.get(key)
     return finding != null && answerFor(detail, finding).offered
   })
+}
+
+/**
+ * The replies waiting on the developer, as the header's action reads them: the ones the record
+ * would take an answer on here, and all of them. DEV-1330 self-review, Should 3.
+ */
+export function repliesWaiting(
+  detail: Pick<ReviewDetail, 'review' | 'draft_status' | 'findings' | 'outcomes'>,
+): RepliesWaiting {
+  return { answer: answerableReplies(detail), read: repliesToAnswer(detail.outcomes) }
 }

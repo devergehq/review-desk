@@ -150,13 +150,21 @@ const ANSWERS: Array<{ value: string, label: string, key: string }> = [
   { value: 'withdraw', label: 'Withdraw', key: 'W' },
 ]
 
+/**
+ * The three buttons on one row. **Keys only on the row being answered, and none while a
+ * reason is being typed**: the field takes letters, and with the track's window listener
+ * still live a developer who pressed A and began "We…" withdrew the finding.
+ */
 function answersFor(row: ReplyRow): TrackOption[] {
   return ANSWERS.map(one => ({
     value: one.value,
     label: one.label,
-    key: row.seq === keyed.value ? one.key : undefined,
+    key: row.seq === current.value && asking.value == null ? one.key : undefined,
   }))
 }
+
+/** The row the keys answer and a screen reader is told is current: one answer for both. */
+const current = computed(() => keyed.value ?? chosen.value)
 
 /** The row whose reason is being asked for, and the reason as typed. */
 const asking = ref<number | null>(null)
@@ -171,13 +179,21 @@ function pick(row: ReplyRow, decision: string) {
   if (decision === 'accept_reason') {
     /*
      * **Opened on the author's own words**, because that is what the record keeps as the
-     * reason: "the author's reason, in their words". The developer can cut it down.
+     * reason: "the author's reason, in their words". The developer can cut it down. Opened
+     * again on the same row, it keeps what they typed rather than putting the quote back.
      */
+    if (asking.value !== row.seq) note.value = row.said?.quote ?? ''
     asking.value = row.seq
-    note.value = row.said?.quote ?? ''
+    void nextTick(() => document.getElementById(`reason-${row.seq}`)?.focus())
     return
   }
   void decide(row, { decision: decision as DecideFindingRequest['decision'] })
+}
+
+/** Escape, or Cancel, puts the reason away and gives the keys back. */
+function cancelReason() {
+  asking.value = null
+  problem.value = ''
 }
 
 function acceptReason(row: ReplyRow) {
@@ -307,8 +323,8 @@ function said(row: ReplyRow): string {
               :id="`reply-${row.key}`"
               :key="row.seq"
               class="reply-row reply-row--contested"
-              :class="{ 'reply-row--picked': row.seq === keyed || (keyed == null && row.seq === chosen) }"
-              :aria-current="row.seq === chosen ? 'true' : undefined"
+              :class="{ 'reply-row--picked': row.seq === current }"
+              :aria-current="row.seq === current ? 'true' : undefined"
               @focusin="chosen = row.seq"
             >
               <div class="head">
@@ -374,6 +390,7 @@ function said(row: ReplyRow): string {
                     v-model="note"
                     class="rd-field"
                     rows="3"
+                    @keydown.esc.prevent="cancelReason()"
                   />
                   <div class="asking-actions">
                     <DeskButton
@@ -384,7 +401,7 @@ function said(row: ReplyRow): string {
                     >
                       Accept it
                     </DeskButton>
-                    <DeskButton @click="asking = null">
+                    <DeskButton @click="cancelReason()">
                       Cancel
                     </DeskButton>
                   </div>
@@ -405,6 +422,12 @@ function said(row: ReplyRow): string {
                 class="rd-note why"
               >
                 {{ row.answer.why }}
+                <NuxtLink
+                  v-if="row.answer.later"
+                  :to="row.answer.later.to"
+                >
+                  {{ row.key }} on round {{ row.answer.later.round }}’s Findings
+                </NuxtLink>
               </p>
 
               <button
@@ -414,7 +437,7 @@ function said(row: ReplyRow): string {
                 :aria-controls="historyId(row.seq)"
                 @click="toggle(row.seq)"
               >
-                {{ open === row.seq ? 'Fold' : 'Everything' }} that came back on {{ row.key }}
+                {{ open === row.seq ? 'Fold what' : 'Everything that' }} came back on {{ row.key }}
               </button>
               <ReplyHistory
                 v-if="open === row.seq"
@@ -498,7 +521,7 @@ function said(row: ReplyRow): string {
                 :aria-controls="historyId(row.seq)"
                 @click="toggle(row.seq)"
               >
-                {{ open === row.seq ? 'Fold' : 'Everything' }} that came back on {{ row.key }}
+                {{ open === row.seq ? 'Fold what' : 'Everything that' }} came back on {{ row.key }}
               </button>
               <ReplyHistory
                 v-if="open === row.seq"
@@ -822,7 +845,10 @@ function said(row: ReplyRow): string {
   color: var(--rd-accent-dark);
 }
 
-.standing--answered {
+.standing--answered,
+.standing--accepted,
+.standing--withdrawn,
+.standing--raised_again {
   background: var(--rd-nit-wash);
   color: var(--rd-nit-ink);
 }

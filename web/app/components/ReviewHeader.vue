@@ -82,18 +82,18 @@ const word = computed(() => stateWord(state.value))
 
 /**
  * **Two readings, on purpose.** The Replies tab's count is every reply that waits on the
- * developer (`repliesToAnswer`, the number in *Needs your answer*); the action is only the
- * ones the record would take an answer on here (`answerableReplies`, DEV-1330), so the header
- * never offers *Answer F3* over a round that refuses it.
+ * developer (`repliesToAnswer`, the number in *Needs your answer*). The action answers only
+ * the ones the record would take an answer on here (`answerableReplies`, DEV-1330) and
+ * otherwise reads them — *Read F3's reply* — so the header never offers *Answer F3* over a
+ * round that refuses it, and never draws nothing over a review waiting on you.
  */
 const toAnswer = computed(() => repliesToAnswer(props.detail.outcomes))
-const answerable = computed(() => answerableReplies(props.detail))
 const action = computed(() =>
   settled.value
     ? primaryAction(
         review.value.id,
         state.value,
-        answerable.value,
+        repliesWaiting(props.detail),
         { round: review.value.round, head: review.value.head_sha },
       )
     : null)
@@ -101,7 +101,8 @@ const action = computed(() =>
 /**
  * **The word is washed in the accent exactly when there is an action.** *Replies in* with
  * nothing to answer — a thread resolved, code changed — is not waiting on the developer, so
- * it draws neither. Asked by the self-review of #89.
+ * it draws neither. Asked by the self-review of #89. With DEV-1330's *Read F3's reply*, a
+ * reply waiting always has an action, so the wash and the word agree.
  */
 const waitsOnYou = computed(() => action.value != null)
 

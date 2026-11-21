@@ -1362,7 +1362,18 @@ describe('it describes and does not grade', () => {
  */
 function answerable(status: ReviewDetail['draft_status'] = 'ready'): { detail: ReviewDetail, draft: unknown } {
   const findings = Array.from({ length: 14 }, (_, at) => finding(at + 1))
-  findings[2] = { ...findings[2]!, continues_review_id: 12, continues_round: 1, round_status: 'fixed' }
+  /*
+   * With a paragraph to post: Raise it again writes F3 a block, and the store refuses one
+   * with no words ("F3 has no paragraph to post") — which is why the self-review's probe of R
+   * was refused until the fixture carried one. Carry copies it, so a real carried finding has it.
+   */
+  findings[2] = {
+    ...findings[2]!,
+    continues_review_id: 12,
+    continues_round: 1,
+    round_status: 'fixed',
+    why_it_matters: 'A deleted tenant’s schedule still runs, so its export is sent to nobody.',
+  } as Finding
   const contested = outcome({
     finding_seq: 3,
     kind: 'replied',
@@ -1429,12 +1440,57 @@ describe('answering a reply', () => {
     expect(keysIn(page, '.reply-row--contested')).toEqual(['F3'])
   })
 
+  /* Self-review Should 1: A left the field unfocused, and the next W withdrew the finding. */
+  it('focuses the reason field on A, and takes no key while the reason is being typed', async () => {
+    await withAnswerable()
+    const page = await shown(REVIEW)
+    press('a')
+    await settle(page)
+    expect(document.activeElement?.id).toBe('reason-3')
+    /* Even pressed at the page, not the field, W does nothing while a reason is asked for. */
+    press('w')
+    await settle(page)
+    expect(keysIn(page, '.reply-row--contested')).toEqual(['F3'])
+    expect(page.find('#reply-F3 .answers .key').exists()).toBe(false)
+  })
+
+  it('keeps a typed reason when A is pressed again, and Escape puts it away', async () => {
+    await withAnswerable()
+    const page = await shown(REVIEW)
+    press('a')
+    await settle(page)
+    const field = page.find<HTMLTextAreaElement>('#reason-3')
+    await field.setValue('Chunked upstream.')
+    await page.find('#reply-F3 .answers button:nth-child(2)').trigger('click')
+    await settle(page)
+    expect(page.find<HTMLTextAreaElement>('#reason-3').element.value).toBe('Chunked upstream.')
+    await page.find('#reason-3').trigger('keydown', { key: 'Escape' })
+    await settle(page)
+    expect(page.find('#reason-3').exists()).toBe(false)
+    expect(page.find('#reply-F3 .answers .key').exists()).toBe(true)
+  })
+
+  /* Self-review Should 2: R succeeded and the row then said "Answered · told by the author". */
+  it('draws a raised-again reply as the developer’s answer, not the author’s', async () => {
+    await withAnswerable()
+    const page = await shown(REVIEW)
+    press('r')
+    await settle(page)
+    expect(page.text()).toContain('F3 is in the review again')
+    const row = page.find('#reply-F3')
+    expect(row.classes()).toContain('reply-row--settled')
+    expect(row.find('.standing').text()).toBe('Raised again')
+    expect(row.find('.who').text()).toContain('your answer')
+    expect(row.find('.who').text()).not.toContain('told by the author')
+  })
+
   it('draws no buttons on a posted round, and says why from the record', async () => {
     await withAnswerable('posted')
     const page = await shown(REVIEW)
     const row = page.find('#reply-F3')
     expect(row.find('.answers').exists()).toBe(false)
     expect(row.find('.why').text()).toContain('Round 2 is posted, so its draft takes no more decisions.')
+    expect(row.find('.why').text()).toContain('Findings tab of the round that carries F3 in')
     press('w')
     await settle(page)
     expect(keysIn(page, '.reply-row--contested')).toEqual(['F3'])

@@ -4,7 +4,7 @@ import { loadSource } from '../app/data/sample'
 import { answersTheAuthor, draftTakesDecisions } from '../app/utils/findings'
 import { repliesToAnswer } from '../app/utils/outcomes'
 import { groupsOf } from '../app/utils/overview'
-import { answerableReplies, answerFor, NO_REPLY_SHOWN, repliesTab } from '../app/utils/replies'
+import { answerableReplies, answerFor, NO_REPLY_SHOWN, repliesTab, repliesWaiting, STANDING_WORDS } from '../app/utils/replies'
 import { primaryAction, replyPath, tabPath } from '../app/utils/reviewTabs'
 
 import type { DraftStatus, Finding, Outcome, ReviewDetail } from '../app/types/desk'
@@ -173,7 +173,7 @@ function at(status: DraftStatus | null, round = 2): Pick<ReviewDetail, 'review' 
 describe('the three answers act only where the record takes them', () => {
   it('are offered on a carried, settled finding on a draft that takes decisions', () => {
     for (const status of ['drafting', 'ready', 'sent_back'] as const) {
-      expect(answerFor(at(status), carried()), status).toEqual({ offered: true, why: null })
+      expect(answerFor(at(status), carried()), status).toEqual({ offered: true, why: null, later: null })
     }
     for (const settled of ['fixed', 'accepted', 'withdrawn', 'ticketed'] as const) {
       expect(answerFor(at('ready'), carried({ round_status: settled })).offered, settled).toBe(true)
@@ -194,7 +194,21 @@ describe('the three answers act only where the record takes them', () => {
     const raised = answerFor(at('ready', 1), carried({ continues_review_id: null, continues_round: null, round_status: 'new' }))
     expect(raised.offered).toBe(false)
     expect(raised.why).toContain('raised in this round')
-    expect(raised.why).toContain('A later round that carries F1 in is where they are.')
+    expect(raised.why).toContain('on the Findings tab of the round that carries F1 in')
+    expect(raised.later).toBeNull()
+  })
+
+  /* Question 4, ruled: the answer is on the later round's Findings, linked where the record names it. */
+  it('links the later round’s Findings tab where the record names one', () => {
+    const detail = fixture()
+    const here = { ...at('posted', 1), rounds: [
+      { ...(detail.rounds?.[0] ?? {}), review_id: detail.review.id, round: 1, dismissed: false },
+      { ...(detail.rounds?.[0] ?? {}), review_id: 4242, round: 2, dismissed: false },
+    ] } as unknown as Parameters<typeof answerFor>[0]
+    const answer = answerFor(here, carried({ continues_review_id: null, round_status: 'new' }))
+    expect(answer.offered).toBe(false)
+    expect(answer.why).toContain('on round 2\'s Findings tab, if it carries F1 in')
+    expect(answer.later).toEqual({ round: 2, to: '/reviews/4242/findings?finding=F1' })
   })
 
   it('are not offered on a carried finding still open, which Post decides', () => {
@@ -231,12 +245,61 @@ describe('the header’s action, gated by the same record test', () => {
     expect(replyPath(detail.review.id, 'F1')).toBe(`${tabPath(detail.review.id, 'replies')}?finding=F1`)
   })
 
-  it('offers nothing where the record would refuse every answer, while the tab still counts it', () => {
+  /* Should 3, ruled: a review waiting on you has a next act; where no answer is taken, it is reading. */
+  it('offers Read F1’s reply where the record would refuse every answer, and the tab still counts it', () => {
     const detail = fixture()
     detail.outcomes.push(reply(1, 'No.', '2026-11-20T13:00:00Z'))
     expect(detail.draft_status).toBe('posted')
     expect(repliesToAnswer(detail.outcomes)).toEqual(['F1'])
     expect(answerableReplies(detail)).toEqual([])
-    expect(primaryAction(detail.review.id, 'replies_in', answerableReplies(detail))).toBeNull()
+    expect(primaryAction(detail.review.id, 'replies_in', repliesWaiting(detail)))
+      .toEqual({ label: 'Read F1’s reply', to: replyPath(detail.review.id, 'F1') })
+  })
+
+  it('counts several replies to read, and sends them to the tab', () => {
+    expect(primaryAction(5, 'replies_in', { answer: [], read: ['F1', 'F3'] }))
+      .toEqual({ label: 'Read 2 replies', to: tabPath(5, 'replies') })
+    expect(primaryAction(5, 'replies_in', { answer: ['F3'], read: ['F1', 'F3'] }))
+      .toEqual({ label: 'Answer F3', to: replyPath(5, 'F3') })
+  })
+
+  it('offers nothing where no reply waits at all', () => {
+    expect(primaryAction(5, 'replies_in', { answer: [], read: [] })).toBeNull()
+    expect(primaryAction(5, 'replies_in', repliesWaiting(fixture()))).toBeNull()
+  })
+})
+
+/* =================== The developer's answers, said as theirs =================== */
+
+describe('a reply the developer has answered', () => {
+  /* Self-review Should 2: after R, A or W the row said "Answered · told by the author". */
+  for (const [kind, standing] of [['raised_again', 'raised_again'], ['rejected', 'accepted'], ['withdrawn', 'withdrawn']] as const) {
+    it(`reads as ${STANDING_WORDS[standing].word} after ${kind}, on the developer's word`, () => {
+      const detail = fixture()
+      /* F2: replied to and then rejected by the author — answered, with no resolved thread. */
+      const quiet = { seq: 2, key: 'F2' }
+      detail.outcomes.push(
+        reply(quiet.seq, 'No.', '2026-11-20T13:00:00Z'),
+        outcome({ finding_seq: quiet.seq, kind, actor: 'developer', occurred_at: '2026-11-20T13:30:00Z' }),
+      )
+      const tab = repliesTab(detail, NOW)
+      expect(tab.needsAnswer.map(row => row.key)).not.toContain(quiet.key)
+      const row = tab.settled.find(one => one.key === quiet.key)!
+      expect(row.standing).toBe(standing)
+      expect(STANDING_WORDS[standing].basis).toMatch(/^your answer/)
+      /* The author's words are still the ones quoted: their reply, not the developer's act. */
+      expect(row.said!.quote).toBe('No.')
+      expect(row.said!.who).toBe('dana-ruiz')
+    })
+  }
+
+  it('is the author’s again once the author answers after it', () => {
+    const detail = fixture()
+    detail.outcomes.push(
+      reply(1, 'No.', '2026-11-20T13:00:00Z'),
+      outcome({ finding_seq: 1, kind: 'raised_again', actor: 'developer', occurred_at: '2026-11-20T13:30:00Z' }),
+      reply(1, 'Still no.', '2026-11-20T13:45:00Z'),
+    )
+    expect(repliesTab(detail, NOW).needsAnswer.map(row => row.key)).toEqual(['F1'])
   })
 })
