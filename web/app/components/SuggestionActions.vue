@@ -77,6 +77,15 @@ const paragraph = computed<string | null>(() => {
 const replyFill = useState<ReplyFill | null>(`reply-fill:${reviewId.value}`, () => null)
 const { fill } = useAskBox(reviewId.value)
 
+/*
+ * The panel's mode, read off the same shared session reading and messages the panel reads
+ * (DEV-1335), so a follow-up says where it went in the words the panel draws.
+ */
+const session = desk.session(reviewId.value)
+const conversation = desk.messages(reviewId.value)
+const mode = computed(() =>
+  answeringMode(session.data.value?.reading, conversation.data.value?.messages ?? []))
+
 async function accept(): Promise<void> {
   if (working.value) return
   problem.value = null
@@ -95,7 +104,7 @@ async function accept(): Promise<void> {
     case 'fill-ask':
       // The composer's own gate decides whether it can be sent: nothing is sent from here.
       fill(acting.question)
-      filled.value = 'In the ask box. Nothing is sent until you ask.'
+      filled.value = followUpFilled(mode.value)
       return
     case 'fill-reply':
       replyFill.value = acting.fill
@@ -226,7 +235,7 @@ function sendWhy(): void {
         :data-testid="`accept-${suggestion.type}`"
         @click="accept"
       >
-        {{ acceptLabel(suggestion) }}
+        {{ acceptLabel(suggestion, mode) }}
       </DeskButton>
       <DeskButton
         kind="secondary"

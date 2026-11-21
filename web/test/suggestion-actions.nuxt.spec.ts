@@ -128,15 +128,39 @@ describe('accepting', () => {
     expect(page.find('[data-testid="turn-into-a-finding"]').exists()).toBe(false)
   })
 
-  it('fills the ask box with a follow-up and writes nothing', async () => {
-    await resetDesk({ messages: [suggesting(FOLLOW)] })
+  it('fills the ask box with a follow-up and writes nothing, with Allele', async () => {
+    await resetDesk({
+      messages: [suggesting(FOLLOW)],
+      session_readings: {
+        [REVIEW]: { status: 'finished', allele_state: 'idle', state_age_secs: 5, detail: null, read_at: '2026-11-21T06:00:00Z' },
+      },
+    })
     const page = await panel()
+    expect(page.find('[data-testid="accept-follow_up"]').text()).toBe('Put in the ask box')
 
     await page.find('[data-testid="accept-follow_up"]').trigger('click')
     await settle(page)
 
     expect(useAskBox(REVIEW).text.value).toBe('Does the CSV download use a third path?')
-    expect(page.find('[data-testid="suggestion-actions"]').text()).toContain('Nothing is sent until you ask.')
+    expect((page.find('textarea').element as HTMLTextAreaElement).value).toBe('Does the CSV download use a third path?')
+    expect(page.find('[data-testid="suggestion-actions"]').text()).toContain('In the ask box. Nothing is sent until you ask.')
+    const messages = useReviewDesk().messages(REVIEW)
+    await messages.refresh()
+    expect(messages.data.value!.messages).toHaveLength(1)
+  })
+
+  it('puts a follow-up in the reference in one way, says so, and writes nothing', async () => {
+    await resetDesk({ messages: [suggesting(FOLLOW)] })
+    const page = await panel()
+    expect(page.find('[data-testid="accept-follow_up"]').text()).toBe('Put in the reference')
+
+    await page.find('[data-testid="accept-follow_up"]').trigger('click')
+    await settle(page)
+
+    expect(page.find('[data-testid="one-way-question"]').text()).toContain('Does the CSV download use a third path?')
+    const said = page.find('[data-testid="suggestion-actions"]').text()
+    expect(said).toContain('In the reference. Copy it and ask in your Claude Code session.')
+    expect(said).not.toContain('ask box')
     const messages = useReviewDesk().messages(REVIEW)
     await messages.refresh()
     expect(messages.data.value!.messages).toHaveLength(1)
