@@ -33,10 +33,13 @@ what the Locus dispatcher polls — see
 
 ```sh
 cargo build              # build the workspace
-cargo test               # run every test
+cargo test --all-features   # run every test, as CI does
 cargo fmt --all --check  # the format check CI runs
 cargo clippy --all-targets -- -D warnings
 ```
+
+`--all-features` turns on `fake-allele`, which `review-desk post`'s Allele tests need, and
+`e2e`. Neither can be built in release. A plain `cargo test` skips the tests that need them.
 
 SQLite is compiled in through `rusqlite`'s `bundled` feature, so a clean clone needs
 nothing on the machine but a Rust toolchain.
@@ -742,8 +745,9 @@ newline. GitHub does not draw it:
 * `install` is random, written once per database by migration 25. It says which Mac's
   record a tag belongs to.
 * `basis=typed` only when Allele confirms that the developer typed the go-ahead in that
-  session. `post` asks only at `~/.allele/control.sock`, and only a socket of mode 600 counts.
-  There is no flag to name another verifier. Anything less is `basis=desk`, and that
+  session. `post` asks only at `.allele/control.sock` under the home directory the passwd
+  entry names, not `$HOME`, and only a socket of mode 600 counts. There is no flag or
+  environment variable to name another verifier in a release build. Anything less is `basis=desk`, and that
   includes Allele having no such check (`prompts.verify` is not built as of 21 November
   2026). It always falls to the weaker label.
 

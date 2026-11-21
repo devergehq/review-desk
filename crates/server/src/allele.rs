@@ -137,6 +137,21 @@ impl Allele {
             .map(|home| Path::new(&home).join(".allele").join("control.sock"))
     }
 
+    /// Allele's socket under the developer's own home directory — the one place a go-ahead
+    /// is checked (DEV-1347).
+    ///
+    /// **From the passwd entry, not `HOME`.** `HOME` is the caller's to set, and the caller
+    /// is the session whose word is being checked: pointing it at a directory holding a
+    /// socket of its own would be enough to have its go-ahead vouched for. A test build with
+    /// `fake-allele` reads [`FAKE_ALLELE_HOME`] instead; a release build cannot have that.
+    pub fn own_socket() -> Option<PathBuf> {
+        #[cfg(feature = "fake-allele")]
+        if let Some(home) = std::env::var_os(FAKE_ALLELE_HOME).filter(|home| !home.is_empty()) {
+            return Some(Path::new(&home).join(".allele").join("control.sock"));
+        }
+        passwd_home().map(|home| home.join(".allele").join("control.sock"))
+    }
+
     /// The socket this asks, if any.
     pub fn socket(&self) -> Option<&Path> {
         self.socket.as_deref()
@@ -219,6 +234,51 @@ fn owners_socket(socket: &Path) -> Result<(), String> {
 #[cfg(not(unix))]
 fn owners_socket(_socket: &Path) -> Result<(), String> {
     Err("Allele's socket is a Unix socket, which this platform cannot open".to_string())
+}
+
+/// Where a `fake-allele` build looks for an Allele instead of the developer's home.
+#[cfg(feature = "fake-allele")]
+pub const FAKE_ALLELE_HOME: &str = "REVIEW_DESK_FAKE_ALLELE_HOME";
+
+// **A test-only seam, and this is what keeps it one.** A release binary with it would let the
+// environment choose the Allele that vouches for a go-ahead.
+#[cfg(all(feature = "fake-allele", not(debug_assertions)))]
+compile_error!(
+    "the `fake-allele` feature lets the environment choose which Allele vouches for a \
+     go-ahead, and is never built in release"
+);
+
+/// The current user's home directory, as the passwd entry names it.
+#[cfg(unix)]
+fn passwd_home() -> Option<PathBuf> {
+    use std::ffi::{CStr, OsStr};
+    use std::os::unix::ffi::OsStrExt;
+
+    let mut buffer = vec![0 as libc::c_char; 16 * 1024];
+    // SAFETY: `getpwuid_r` is the re-entrant lookup. It writes only into `entry` and into
+    // `buffer`, whose length is passed with it; `found` is set to `&entry` on success and to
+    // null otherwise. `pw_dir` points into `buffer`, which outlives the copy taken below.
+    unsafe {
+        let mut entry: libc::passwd = std::mem::zeroed();
+        let mut found: *mut libc::passwd = std::ptr::null_mut();
+        let status = libc::getpwuid_r(
+            libc::geteuid(),
+            &mut entry,
+            buffer.as_mut_ptr(),
+            buffer.len(),
+            &mut found,
+        );
+        if status != 0 || found.is_null() || entry.pw_dir.is_null() {
+            return None;
+        }
+        let dir = CStr::from_ptr(entry.pw_dir).to_bytes();
+        (!dir.is_empty()).then(|| PathBuf::from(OsStr::from_bytes(dir)))
+    }
+}
+
+#[cfg(not(unix))]
+fn passwd_home() -> Option<PathBuf> {
+    None
 }
 
 /// Whether Allele confirms that the developer typed a go-ahead in a session — DEV-1347.
@@ -332,6 +392,14 @@ mod tests {
     use std::time::Instant;
 
     use super::*;
+
+    /// The passwd entry names a home, and it is an absolute path — the one `own_socket`
+    /// builds Allele's socket under whatever `HOME` says.
+    #[test]
+    fn the_passwd_entry_names_an_absolute_home() {
+        let home = passwd_home().expect("the current user has a passwd entry");
+        assert!(home.is_absolute(), "{}", home.display());
+    }
 
     /// A socket that answers each connection with `reply`, once.
     ///

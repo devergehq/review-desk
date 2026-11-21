@@ -8,7 +8,7 @@
 
 mod common;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use common::Desk;
 use review_desk_store::{Actor, DraftStatus, NewDraft, NewReview, PostedTagStatus, ReviewEvent};
@@ -118,27 +118,32 @@ fn approved(desk: &Desk) -> i64 {
     review
 }
 
-/// `review-desk post` with the fake `gh` alone on `PATH` and `HOME` at `home`.
-fn post(desk: &Desk, gh: &FakeGh, review: i64, home: &Path) -> assert_cmd::Command {
-    let line = desk.write_file("go-ahead.txt", "nothing, post it\n");
+/// `review-desk post` with the fake `gh` alone on `PATH`.
+///
+/// **With no Allele, no go-ahead line is given**, so the binary never asks any Allele —
+/// including the developer's real one, which `post` finds through the passwd entry whatever
+/// `HOME` says. With one, the line is given and the `fake-allele` build is pointed at the
+/// test's own home.
+fn post(desk: &Desk, gh: &FakeGh, review: i64, allele: &Option<PathBuf>) -> assert_cmd::Command {
     let mut command = desk.command();
-    command.env("PATH", gh.dir.path()).env("HOME", home).args([
-        "post",
-        &review.to_string(),
-        "--session",
-        "session-1",
-        "--go-ahead-at",
-        "1763700000",
-        "--go-ahead-file",
-        line.to_str().unwrap(),
-        "--json",
-    ]);
+    command
+        .env("PATH", gh.dir.path())
+        .env("HOME", desk.dir())
+        .args(["post", &review.to_string(), "--session", "session-1"])
+        .args(["--go-ahead-at", "1763700000", "--json"]);
+    if let Some(home) = allele {
+        let line = desk.write_file("go-ahead.txt", "nothing, post it\n");
+        command
+            .env("REVIEW_DESK_FAKE_ALLELE_HOME", home)
+            .arg("--go-ahead-file")
+            .arg(line);
+    }
     command
 }
 
-/// A home with no Allele in it.
-fn no_allele(desk: &Desk) -> PathBuf {
-    desk.dir().to_path_buf()
+/// No Allele, and so no go-ahead line.
+fn no_allele(_desk: &Desk) -> Option<PathBuf> {
+    None
 }
 
 /// Make the review's attempt in flight old enough that the next post goes looking for it.
@@ -172,7 +177,7 @@ fn an_approved_review_is_posted_with_its_tag_at_the_reviewed_head() {
     assert_eq!(done["posted"]["github_review_id"], "4140231301");
     assert_eq!(
         done["posted"]["basis"], "desk",
-        "no Allele, so desk: {done}"
+        "no go-ahead line, so desk: {done}"
     );
 
     assert_eq!(
@@ -191,10 +196,6 @@ fn an_approved_review_is_posted_with_its_tag_at_the_reviewed_head() {
     assert!(
         tag.starts_with("<!-- review-desk:posted v=1 install="),
         "{tag}"
-    );
-    assert!(
-        !body.contains("nothing, post it"),
-        "the line itself never posts"
     );
 
     let store = desk.store();
@@ -422,10 +423,13 @@ fn a_draft_nobody_approved_is_refused() {
     assert!(gh.calls().is_empty());
 }
 
-#[cfg(unix)]
+/// **Run with `--features fake-allele`**, which CI's `--all-features` does: these stand up an
+/// Allele of their own, and only a test build can be pointed at one.
+#[cfg(all(unix, feature = "fake-allele"))]
 mod allele {
     use std::io::{BufRead, BufReader, Write};
     use std::os::unix::net::UnixListener;
+    use std::path::Path;
     use std::thread;
 
     use super::*;
@@ -467,13 +471,20 @@ mod allele {
             r#"{"result": "prompt_verified", "typed": true}"#,
         );
 
-        let done = document(&post(&desk, &gh, review, &socket).assert().success());
+        let done = document(&post(&desk, &gh, review, &Some(socket)).assert().success());
         assert_eq!(done["posted"]["basis"], "typed", "{done}");
         assert!(gh.payload()["body"]
             .as_str()
             .unwrap()
             .contains(" basis=typed "));
 
+        assert!(
+            !gh.payload()["body"]
+                .as_str()
+                .unwrap()
+                .contains("nothing, post it"),
+            "the line itself never posts"
+        );
         let asked: Value = serde_json::from_str(&asked.join().unwrap()).unwrap();
         assert_eq!(asked["op"], "prompts_verify");
         assert_eq!(asked["session_id"], "session-1");
@@ -493,7 +504,7 @@ mod allele {
             r#"{"result": "error", "code": "bad_request", "message": "unknown op prompts_verify"}"#,
         );
 
-        let done = document(&post(&desk, &gh, review, &socket).assert().success());
+        let done = document(&post(&desk, &gh, review, &Some(socket)).assert().success());
         assert_eq!(done["posted"]["basis"], "desk", "{done}");
         assert!(
             done["basis_because"]
@@ -502,6 +513,29 @@ mod allele {
                 .contains("no prompt check"),
             "{done}"
         );
+    }
+
+    /// **`HOME` does not choose the Allele.** A socket that would vouch for the line sits
+    /// under `HOME`, and the Allele this build is pointed at has none: the answer is `desk`.
+    #[test]
+    fn an_allele_under_home_is_not_asked() {
+        let desk = Desk::new();
+        let gh = FakeGh::new();
+        let review = approved(&desk);
+        let planted = TempDir::new().unwrap();
+        let (planted, _asked) = allele(
+            planted.path(),
+            r#"{"result": "prompt_verified", "typed": true}"#,
+        );
+        let elsewhere = TempDir::new().unwrap();
+
+        let done = document(
+            &post(&desk, &gh, review, &Some(elsewhere.path().to_path_buf()))
+                .env("HOME", &planted)
+                .assert()
+                .success(),
+        );
+        assert_eq!(done["posted"]["basis"], "desk", "{done}");
     }
 
     /// **A socket anyone may open is not Allele's**, whatever it answers.
@@ -517,7 +551,7 @@ mod allele {
             0o666,
         );
 
-        let done = document(&post(&desk, &gh, review, &home).assert().success());
+        let done = document(&post(&desk, &gh, review, &Some(home)).assert().success());
         assert_eq!(done["posted"]["basis"], "desk", "{done}");
         assert!(
             done["basis_because"].as_str().unwrap().contains("600"),
@@ -537,7 +571,7 @@ mod allele {
             r#"{"result": "prompt_verified", "typed": "yes"}"#,
         );
 
-        let done = document(&post(&desk, &gh, review, &socket).assert().success());
+        let done = document(&post(&desk, &gh, review, &Some(socket)).assert().success());
         assert_eq!(done["posted"]["basis"], "desk", "{done}");
     }
 }

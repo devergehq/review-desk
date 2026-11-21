@@ -27,7 +27,7 @@
 use std::path::PathBuf;
 
 use clap::Args;
-use review_desk_harvest::gh::Gh;
+use review_desk_harvest::gh::{Gh, POST_DEADLINE};
 use review_desk_server::allele::GoAhead;
 use review_desk_server::Allele;
 use review_desk_store::{tag, PostBasis, PostRequest, Store};
@@ -61,9 +61,11 @@ pub struct PostArgs {
 /// request, in seconds.
 ///
 /// **Younger than this, it may still be in flight** in another process, and a lookup that
-/// missed it would mark a live call failed and let a second one start. `gh`'s own calls give
-/// up well inside two minutes.
+/// missed it would mark a live call failed and let a second one start. Every write is killed
+/// at [`POST_DEADLINE`], so an attempt older than this has certainly finished one way or the
+/// other; the assertion below keeps the two in that order.
 const RECONCILE_AFTER: i64 = 120;
+const _: () = assert!(RECONCILE_AFTER as u64 >= 2 * POST_DEADLINE.as_secs());
 
 pub fn run(args: &PostArgs) -> Result<Report> {
     // Read before the database is opened, as every command does.
@@ -79,10 +81,11 @@ pub fn run(args: &PostArgs) -> Result<Report> {
     // session posting is the session the review is linked to, and Allele says without
     // qualification that the developer typed that line there.
     //
-    // **Allele is asked at its own socket and nowhere else.** There is no flag to point this
-    // at another one: the session whose word is being checked would be choosing who checks
-    // it. `verify_go_ahead` also refuses a socket that is not the owner's alone (0600).
-    let allele = Allele::default_socket().map_or_else(Allele::none, Allele::at);
+    // **Allele is asked at its own socket and nowhere else.** No flag and no `HOME` can point
+    // this at another one: the session whose word is being checked would be choosing who
+    // checks it. `own_socket` reads the passwd entry, and `verify_go_ahead` also refuses a
+    // socket that is not the owner's alone (0600).
+    let allele = Allele::own_socket().map_or_else(Allele::none, Allele::at);
     let (basis, basis_because) = match line.as_deref().map(str::trim) {
         None | Some("") => (PostBasis::Desk, "no go-ahead line was given".to_string()),
         Some(_) if review.session_id.as_deref() != Some(args.session.trim()) => (

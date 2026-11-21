@@ -16,6 +16,11 @@ path = "src/lib.rs"
 # reading a terminal. `src/developer.rs` refuses to compile it without debug assertions.
 [features]
 e2e = []
+# **`review-desk post`'s tests, and never a release build** — DEV-1347. With it, the Allele
+# a go-ahead is checked against is looked for under `REVIEW_DESK_FAKE_ALLELE_HOME` rather
+# than the developer's own home, so a test can stand one up. `src/allele.rs` refuses to
+# compile it without debug assertions, as `e2e` is refused.
+fake-allele = []
 
 [dependencies]
 review-desk-store = { path = "../store" }
@@ -31,6 +36,12 @@ axum = { version = "0.8.9", default-features = false, features = ["http1", "toki
 # `rt` for the runtime and its blocking pool, `net` for the listener, `sync` for the one
 # notification that stops a spawned server. No `rt-multi-thread`: see `src/lib.rs`.
 tokio = { version = "1.53.2", default-features = false, features = ["rt", "net", "sync"] }
+
+# The developer's home directory from the passwd entry, for the one Allele socket a
+# go-ahead may be checked against (DEV-1347). `HOME` is the caller's to set; the passwd
+# entry is not. Already in the tree as a dependency of tokio and getrandom.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 # The conformance test reads contract/openapi.yaml and validates responses against it.
 # Both of these are test-only on purpose: the shipped binary gains neither, and a schema

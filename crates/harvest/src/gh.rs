@@ -12,6 +12,7 @@
 use std::ffi::{OsStr, OsString};
 use std::io::Write;
 use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use crate::error::{HarvestError, Result};
 use crate::github::{BlobAt, CommitFiles, Comparison, GitHub, PullRequest, ReviewThread};
@@ -51,10 +52,20 @@ query($owner: String!, $name: String!, $commit: String!, $file: String!) {
   }
 }";
 
+/// How long the one write may take before `gh` is killed — DEV-1347.
+///
+/// **A bound the code enforces, not one it assumes of `gh`.** `review-desk post` settles an
+/// attempt whose outcome is unknown by looking for it on the pull request, but only once the
+/// attempt is older than its own window. That lookup is safe only if no call outlives that
+/// window, so the call is killed here, well inside it. A killed call is not a refusal: it may
+/// have reached GitHub, and is left for the lookup to settle.
+pub const POST_DEADLINE: Duration = Duration::from_secs(60);
+
 /// GitHub, read by running `gh`.
 #[derive(Debug, Clone)]
 pub struct Gh {
     program: OsString,
+    post_deadline: Duration,
 }
 
 impl Gh {
@@ -62,6 +73,7 @@ impl Gh {
     pub fn new() -> Self {
         Self {
             program: OsString::from("gh"),
+            post_deadline: POST_DEADLINE,
         }
     }
 
@@ -69,7 +81,16 @@ impl Gh {
     pub fn with_program(program: impl Into<OsString>) -> Self {
         Self {
             program: program.into(),
+            post_deadline: POST_DEADLINE,
         }
+    }
+
+    /// The same, with a shorter deadline on the write. For the unit test that proves the
+    /// deadline holds; [`POST_DEADLINE`] is what ships, and nothing can lengthen it.
+    #[cfg(test)]
+    fn with_post_deadline(mut self, deadline: Duration) -> Self {
+        self.post_deadline = deadline.min(POST_DEADLINE);
+        self
     }
 
     /// Post a review on a pull request: `POST repos/<repo>/pulls/<pr>/reviews`, with
@@ -89,6 +110,7 @@ impl Gh {
                 "-",
             ],
             Some(payload.as_bytes()),
+            Some(self.post_deadline),
         )?;
         wire::created_review_id(&answer)
     }
@@ -118,11 +140,17 @@ impl Gh {
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
     {
-        self.run_with_input(args, None)
+        self.run_with_input(args, None, None)
     }
 
-    /// Run `gh`, writing `input` to its standard input when there is any.
-    fn run_with_input<I, S>(&self, args: I, input: Option<&[u8]>) -> Result<String>
+    /// Run `gh`, writing `input` to its standard input when there is any, and killing it if
+    /// it has not finished by `deadline`.
+    fn run_with_input<I, S>(
+        &self,
+        args: I,
+        input: Option<&[u8]>,
+        deadline: Option<Duration>,
+    ) -> Result<String>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
@@ -154,11 +182,59 @@ impl Gh {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(spawn_error)?;
+        // **Written on a thread of its own**, so a `gh` that never reads its input cannot hold
+        // the parent past the deadline below. The pipe closes when the thread ends, which lets
+        // `gh` read to EOF. A write that fails is not reported here: `gh` exited early, and its
+        // exit status says why.
         if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
-            // Dropped at the end of this block, which closes it and lets `gh` read to EOF.
-            stdin.write_all(input).map_err(spawn_error)?;
+            let input = input.to_vec();
+            std::thread::spawn(move || {
+                let _ = stdin.write_all(&input);
+            });
         }
-        let output = child.wait_with_output().map_err(spawn_error)?;
+        let output = match deadline {
+            None => child.wait_with_output().map_err(spawn_error)?,
+            Some(deadline) => {
+                // The pipes are drained on threads so a `gh` writing more than a pipe holds
+                // cannot stall against a parent that is only polling for its exit.
+                let drain = |pipe: Option<Box<dyn std::io::Read + Send>>| {
+                    std::thread::spawn(move || {
+                        let mut bytes = Vec::new();
+                        if let Some(mut pipe) = pipe {
+                            let _ = pipe.read_to_end(&mut bytes);
+                        }
+                        bytes
+                    })
+                };
+                let stdout = drain(child.stdout.take().map(|pipe| Box::new(pipe) as _));
+                let stderr = drain(child.stderr.take().map(|pipe| Box::new(pipe) as _));
+                let started = Instant::now();
+                let status = loop {
+                    if let Some(status) = child.try_wait().map_err(spawn_error)? {
+                        break status;
+                    }
+                    if started.elapsed() >= deadline {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return Err(HarvestError::GhFailed {
+                            args: describe(&args),
+                            status: "killed".to_string(),
+                            stderr: format!(
+                                "gh had not answered after {} s and was stopped; the call may \
+                                 still have reached GitHub",
+                                deadline.as_secs_f32()
+                            ),
+                        });
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                };
+                std::process::Output {
+                    status,
+                    stdout: stdout.join().unwrap_or_default(),
+                    stderr: stderr.join().unwrap_or_default(),
+                }
+            }
+        };
 
         if output.status.success() {
             return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
@@ -301,6 +377,42 @@ mod tests {
         assert!(!failed("HTTP 408: Request Timeout").certainly_not_sent());
         assert!(!failed("Post \"https://api.github.com/...\": i/o timeout").certainly_not_sent());
         assert!(HarvestError::GhNotAuthenticated.certainly_not_sent());
+    }
+
+    /// **A write that hangs is stopped at the deadline**, and what it leaves is an outcome
+    /// nobody knows — never a refusal that would let a retry go ahead.
+    #[cfg(unix)]
+    #[test]
+    fn a_post_that_hangs_is_killed_at_the_deadline_and_is_not_a_refusal() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::TempDir::new().unwrap();
+        let script = dir.path().join("gh");
+        std::fs::write(
+            &script,
+            "#!/bin/sh\n/bin/cat > /dev/null\nexec /bin/sleep 30\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let gh = Gh::with_program(&script).with_post_deadline(Duration::from_millis(300));
+        let started = Instant::now();
+        let error = gh
+            .post_review("devergehq/locus", 64, "{}")
+            .expect_err("killed");
+
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "{:?}",
+            started.elapsed()
+        );
+        assert!(
+            error.to_string().contains("may still have reached GitHub"),
+            "{error}"
+        );
+        assert!(
+            !error.certainly_not_sent(),
+            "a killed call may have been sent"
+        );
     }
 
     #[test]
