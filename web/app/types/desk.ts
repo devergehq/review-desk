@@ -147,6 +147,8 @@ export type BriefOpenChoice = Schema['BriefOpenChoice']
 export type BriefDisagreement = Schema['BriefDisagreement']
 /** The problem half on its own, which is what a blind pass may be handed. */
 export type ProblemStatement = Schema['ProblemStatement']
+/** One thing the ticket asks for, and whether the change does it. */
+export type AcceptanceCriterion = Schema['AcceptanceCriterion']
 export type ReviewSession = Schema['ReviewSession']
 export type SessionReading = Schema['SessionReading']
 export type SessionStatus = Schema['SessionStatus']

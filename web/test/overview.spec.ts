@@ -164,6 +164,10 @@ describe('the five questions', () => {
     expect(questions[1]!.link!.to).toBe('/reviews/41/understanding#what-was-chosen')
     expect(questions[2]!.link!.to).toBe('/reviews/41/findings')
     expect(questions[3]!.link!.to).toBe('/reviews/41/draft')
+    expect(questions[4]!.link).toEqual({
+      label: 'Understanding › Not verified',
+      to: '/reviews/41/understanding#not-verified',
+    })
     expect(questions.every(one => one.mark === 'written' || one.mark === 'none_recorded')).toBe(true)
   })
 

@@ -7,6 +7,7 @@ import { flushPromises, type VueWrapper } from '@vue/test-utils'
 
 import { resetDesk } from '../app/composables/useReviewDesk'
 import { loadSource } from '../app/data/sample'
+import { CASE_BANDS } from '../app/utils/theCase'
 
 import Understand from '../app/pages/reviews/[id]/understanding.vue'
 import Overview from '../app/pages/reviews/[id]/index.vue'
@@ -882,9 +883,37 @@ describe('Understand', () => {
     expect(before!.find('.tag--wrong .circle').text()).toMatch(/^\d+$/)
   })
 
+  it('draws S3\'s five bands in order, each at the id a link lands on, with a rail naming them', async () => {
+    const page = await understand(STRUCTURED)
+    const ids = page.findAll('.bands > section').map(band => band.attributes('id'))
+    expect(ids).toEqual(CASE_BANDS.map(band => band.id))
+    const rail = page.find('nav[aria-label="On this tab"]')
+    expect(rail.findAll('a').map(link => [link.text(), link.attributes('href')])).toEqual(
+      CASE_BANDS.map(band => [band.label, `#${band.id}`]),
+    )
+  })
+
+  it('opens What changes on Today and After this PR, from the brief\'s own fields', async () => {
+    const page = await understand(STRUCTURED)
+    const brief = loadSource().reviews.find(one => one.review.id === STRUCTURED)!.brief!
+    const cards = page.findAll('#what-was-wrong .change')
+    expect(cards.map(card => card.find('h3').text())).toEqual(['Today', 'After this PR'])
+    expect(cards[0]!.text()).toContain(brief.how_it_works_today!.slice(0, 40))
+    expect(cards[1]!.text()).toContain(brief.flow_after_caption!)
+  })
+
+  it('draws what was not verified in the review\'s own words', async () => {
+    const page = await understand(STRUCTURED)
+    const review = loadSource().reviews.find(one => one.review.id === STRUCTURED)!
+    expect(page.find('#not-verified').text()).toContain(review.not_checked!)
+  })
+
   it('lists what was wrong and what it is now, one line each', async () => {
     const page = await understand(STRUCTURED)
-    expect(page.text()).toContain('What was wrong · 3')
+    /* S3's words, DEV-1327: the question as the heading, the count beside it. */
+    const head = page.find('#what-was-wrong .band-head')
+    expect(head.find('h2').text()).toBe('What changes')
+    expect(head.text()).toContain('3 problems')
     const rows = page.findAll('.problem')
     expect(rows).toHaveLength(3)
     expect(rows[0]!.text()).toContain(

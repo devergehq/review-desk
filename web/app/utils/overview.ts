@@ -404,12 +404,11 @@ export function fiveQuestions(detail: OverviewSource): Question[] {
           ? { answer: 'The review records nothing it left unchecked.', mark: 'none_recorded' as const }
           : pending(['code_review'], 'Not started. Listed once the checks finish.')),
       /*
-       * **No link: no tab draws `not_checked` yet.** S2 points at *Understanding › Not
-       * verified*, which DEV-1327 builds. A link to a tab that does not hold the answer would
-       * send a reader looking for something that is not there, so the answer is drawn here in
-       * full until it is.
+       * **Understanding › Not verified, as S2 points it.** DEV-1327 draws `not_checked` there
+       * under `#not-verified`, on a brief of any age and with no brief at all, and says what
+       * an empty field means — so the link always lands on the answer it names.
        */
-      link: null,
+      link: { label: 'Understanding › Not verified', to: `${understanding}#not-verified` },
     },
   ]
 }

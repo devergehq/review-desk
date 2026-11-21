@@ -3,7 +3,13 @@ import { describe, expect, it } from 'vitest'
 import { loadSource } from '../app/data/sample'
 import {
   answerFacts,
+  approachMeta,
   BAND_OF_STEP,
+  bandLabel,
+  CASE_BANDS,
+  criterionObserved,
+  criterionWhere,
+  notVerified,
   bottomLine,
   builtHeading,
   CASE_STEPS,
@@ -14,7 +20,7 @@ import {
   partsFixing,
 } from '../app/utils/theCase'
 
-import type { Brief } from '../app/types/desk'
+import type { AcceptanceCriterion, Brief } from '../app/types/desk'
 
 /*
  * **The rules behind the case page's opening line, tested without rendering anything.**
@@ -346,5 +352,73 @@ describe('the bottom line', () => {
     expect(bottomLine(undefined)).toBeNull()
     expect(bottomLine(bare())).toBeNull()
     expect(bottomLine(bare({ headline: '   ' }))).toBeNull()
+  })
+})
+
+/* --------------------------------- DEV-1327: S3's bands ---------------------------------- */
+
+describe('the Understanding tab\'s bands', () => {
+  it('keeps every id a link lands on: the redirects\' two bands and Overview\'s two', () => {
+    const ids = CASE_BANDS.map(band => band.id)
+    expect(ids).toEqual([
+      'what-was-wrong', 'ticket-against-what-was-built', 'what-was-chosen', 'what-was-built', 'not-verified',
+    ])
+    expect(ids).toContain(BAND_OF_STEP.alternatives)
+    expect(ids).toContain(BAND_OF_STEP.solution_map)
+  })
+
+  it('heads them in S3\'s words, and draws no Taken as true the record cannot hold', () => {
+    expect(bandLabel('what-was-wrong')).toBe('What changes')
+    expect(bandLabel('what-was-chosen')).toBe('Approach')
+    expect(CASE_BANDS.map(band => band.label)).not.toContain('Taken as true')
+  })
+})
+
+describe('the Approach heading\'s figures', () => {
+  it('says the built option of how many, then the blind pass in the answer line\'s words', () => {
+    const brief = fixture(STRUCTURED)
+    const blind = answerFacts(brief).find(fact => fact.kind === 'blind')
+    const meta = approachMeta(brief)!
+    expect(meta).toMatch(/^option [A-Z] of \d+/)
+    if (blind) expect(meta.endsWith(blind.says)).toBe(true)
+  })
+
+  it('says nothing when there are no options', () => {
+    expect(approachMeta(bare())).toBeNull()
+  })
+})
+
+describe('a criterion against what was built', () => {
+  const criterion = (over: Partial<AcceptanceCriterion>): AcceptanceCriterion => ({
+    position: 1, text: 'Scheduled exports use the schedule\'s own tenant', status: 'met', ...over,
+  } as AcceptanceCriterion)
+
+  it('reads met as yes, not met as no with its finding, and the third as not in this PR', () => {
+    expect(criterionObserved(criterion({}))).toEqual({ mark: 'met', says: 'yes', finding: null })
+    expect(criterionObserved(criterion({ status: 'not_met', finding_seq: 9, finding_key: 'F9' })))
+      .toEqual({ mark: 'not_met', says: 'no, see F9', finding: 'F9' })
+    expect(criterionObserved(criterion({ status: 'not_in_this_pr' })).says).toBe('not in this PR')
+  })
+
+  it('points at the file and line, else the note, else nothing', () => {
+    expect(criterionWhere(criterion({ file: 'app/Export.php', line: 61 }))).toBe('app/Export.php:61')
+    expect(criterionWhere(criterion({ file: 'app/Export.php' }))).toBe('app/Export.php')
+    expect(criterionWhere(criterion({ note: 'Follows in ABC-240' }))).toBe('Follows in ABC-240')
+    expect(criterionWhere(criterion({}))).toBeNull()
+  })
+})
+
+describe('what was not verified', () => {
+  const layers = (state: 'done' | 'running' | 'not_started') =>
+    [{ name: 'code_review' as const, state }] as never
+
+  it('is the session\'s own words when it wrote them', () => {
+    expect(notVerified('The log reader.', layers('done'))).toEqual({ says: 'The log reader.', written: true })
+  })
+
+  it('says what an empty field means, by the code review\'s state', () => {
+    expect(notVerified(null, layers('done')).says).toBe('The review records nothing it left unchecked.')
+    expect(notVerified('  ', layers('running')).says).toMatch(/^Writing now\./)
+    expect(notVerified(undefined, layers('not_started')).says).toMatch(/^Not listed yet\./)
   })
 })

@@ -163,6 +163,19 @@ function headline(brief: Brief): string {
         <MovedHead :detail="data" />
 
         <!--
+          **Not the brief's, so drawn without one**: criteria and what was not checked are
+          the code review's, and Overview links here for the second whatever the brief.
+        -->
+        <CaseCriteria
+          :review-id="data.review.id"
+          :criteria="data.criteria ?? []"
+        />
+        <CaseNotVerified
+          :not-checked="data.not_checked"
+          :layers="data.layers"
+        />
+
+        <!--
           **The one page a never-started review has**, and so the one place it can be taken
           off the desk.
         -->
@@ -246,6 +259,20 @@ function headline(brief: Brief): string {
           :brief="data.brief"
         />
 
+        <!--
+          **The two bands that are the review's rather than the brief's**, so a brief of any
+          age draws them — and Overview's *What wasn't checked?* lands on `#not-verified`
+          whichever brief the review holds.
+        -->
+        <CaseCriteria
+          :review-id="data.review.id"
+          :criteria="data.criteria ?? []"
+        />
+        <CaseNotVerified
+          :not-checked="data.not_checked"
+          :layers="data.layers"
+        />
+
         <RemoveReview :detail="data" />
       </ReviewStepPage>
 
@@ -280,18 +307,39 @@ function headline(brief: Brief): string {
 
         <MovedHead :detail="data" />
 
-        <CaseWrong
-          :detail="data"
-          :brief="data.brief"
-        />
-        <CaseChosen
-          :brief="data.brief"
-          :layers="data.layers"
-        />
-        <CaseBuilt
-          :detail="data"
-          :brief="data.brief"
-        />
+        <!--
+          **S3's body: *On this tab* down the left, the five bands down the right.** The rail
+          is drawn only when the case's container has room for it, so at a phone's width and
+          in a narrow main column this is the one column of bands it always was.
+        -->
+        <div class="case">
+          <CaseRail
+            class="case-rail"
+            :bands="CASE_BANDS"
+          />
+          <div class="bands">
+            <CaseWrong
+              :detail="data"
+              :brief="data.brief"
+            />
+            <CaseCriteria
+              :review-id="data.review.id"
+              :criteria="data.criteria ?? []"
+            />
+            <CaseChosen
+              :brief="data.brief"
+              :layers="data.layers"
+            />
+            <CaseBuilt
+              :detail="data"
+              :brief="data.brief"
+            />
+            <CaseNotVerified
+              :not-checked="data.not_checked"
+              :layers="data.layers"
+            />
+          </div>
+        </div>
 
         <!--
           **Last on the page, and that is the whole of its placement argument.** Dismissing a
@@ -304,6 +352,39 @@ function headline(brief: Brief): string {
 </template>
 
 <style scoped>
+/*
+ * **The case is its own container**, so the rail is decided by the room the bands have,
+ * not by the window. 52px between bands, as `ReviewStepPage` sets between its sections.
+ */
+.case {
+  container-type: inline-size;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 32px;
+  min-width: 0;
+}
+
+.bands {
+  display: flex;
+  flex-direction: column;
+  gap: 52px;
+  min-width: 0;
+}
+
+.case-rail {
+  display: none;
+}
+
+/*
+ * S3's rail is 200px beside about 1,000 of bands. Under 900px of container the bands would
+ * be squeezed to keep it, so it goes and the bands take the column.
+ */
+@container (min-width: 900px) {
+  .case-rail {
+    display: flex;
+  }
+}
+
 .recorded {
   margin: 0;
   color: var(--rd-ink-dim);

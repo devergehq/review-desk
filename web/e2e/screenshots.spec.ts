@@ -77,7 +77,7 @@ test.describe('a seeded database', () => {
      *
      * This pointed at `/reviews/{id}` and was repointed to `/understand` when that address
      * became a redirect — which made it a byte-identical copy of
-     * `dev-885-4-understand-old-brief.png`, since the seeded review's brief is an old-style
+     * `understanding-3-old-brief.png` (then `dev-885-4-understand-old-brief.png`), since the seeded review's brief is an old-style
      * one. Two names for one picture, and neither of them showed a finding. Step 5 is the
      * page this set was missing.
      */
@@ -257,18 +257,17 @@ test.describe('the review header', () => {
  */
 test.describe('the case page', () => {
   /**
-   * **Three pages became one on 16 October 2026**, so three pictures became two states of
-   * one page: the case as it opens, and the case with everything a reader can open opened.
+   * **Three pages became one on 16 October 2026, and one tab under S3** (DEV-1327), so the
+   * pictures are two states of the Understanding tab: as it opens, and with everything a
+   * reader can open opened. At 1,600 and 390, the widths S3 is put beside.
    *
-   * The `dev-885-1` to `-3` pictures are of the three pages this replaced and are left as
-   * the record of them. What they were pictures of — a matrix headed by labels, the part
-   * cards, "Already decided" — is on this page or argued away in the components that draw
-   * it.
+   * The `dev-885` pictures of the three pages this replaced are gone with the pages: their
+   * addresses redirect here, so a picture of one was a picture of this tab.
    */
   test('the three bands, closed and open', async ({ page }) => {
-    for (const width of [1440, 390] as const) {
-      await page.setViewportSize({ width, height: width === 1440 ? 900 : 844 })
-      const suffix = width === 1440 ? '' : '-390'
+    for (const width of [1600, 390] as const) {
+      await page.setViewportSize({ width, height: width === 1600 ? 1000 : 844 })
+      const suffix = width === 1600 ? '' : '-390'
 
       await page.goto(`${seeded}reviews/${structuredReviewId}/understanding`)
       await expect(page.locator('h2.headline')).toBeVisible()
@@ -278,7 +277,7 @@ test.describe('the case page', () => {
        * to compare against the three it replaced.
        */
       await expect(page.locator('.answer')).toBeVisible()
-      await shot(page, `case-1-the-case${suffix}`)
+      await shot(page, `understanding-1-the-case${suffix}`)
 
       /*
        * **And with every fold open**, because a fold is half of what this page is for:
@@ -292,7 +291,7 @@ test.describe('the case page', () => {
       for (const selector of ['button.problem', 'button.option', 'button.part']) {
         await page.locator(selector).first().click()
       }
-      await shot(page, `case-2-the-case-open${suffix}`)
+      await shot(page, `understanding-2-the-case-open${suffix}`)
     }
     await page.setViewportSize({ width: 1440, height: 900 })
 
@@ -303,7 +302,7 @@ test.describe('the case page', () => {
      */
     await page.goto(`${seeded}reviews/${reviewId}/understanding`)
     await expect(page.getByText('Written before the structured brief.')).toBeVisible()
-    await shot(page, 'dev-885-4-understand-old-brief')
+    await shot(page, 'understanding-3-old-brief')
   })
 })
 
@@ -313,7 +312,7 @@ test.describe('the case page', () => {
  * Some of these defects are things a reader sees and a test can only approximate: a step's
  * one line with its facts on a card over the page, a matrix headed by numbers and two-word
  * labels instead of by sentences, and a grid of part cards whose heads all read the same way
- * and whose rows line up. The retaken `dev-885` pictures above show them in place; these
+ * and whose rows line up. The `understanding-` pictures above show them in place; these
  * show what opens.
  */
 test.describe('what DEV-892 and DEV-917 fixed', () => {
