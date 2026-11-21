@@ -129,6 +129,29 @@ first column. Six rules it keeps, each in the file that holds it:
 | Draft | Draft | What would post |
 | Replies | What happened | What came back, and the three replies |
 
+**Overview is three pages, chosen from the record** (DEV-1326; S2, S12, S15). Every rule is in
+`web/app/utils/overview.ts` and is read through `stateOfReview`, so Overview cannot draw
+*Since you posted* under a header saying *Draft ready*:
+
+| Overview | When | Opens on | Then |
+| -- | -- | -- | -- |
+| Ready | brief or draft ready, posted, or off the desk | *The bottom line*: the brief's headline, and `answerFacts` as figures | *What you'd be asked*: five questions, each with its answer and the tab that holds it |
+| Being written | a session is writing it, or none has picked it up | *Not written yet*, and the facts earned so far | The same questions, marked *Writing now* or *Not started*; findings with **no severity** |
+| Replies in | the author or the harvester recorded something | *Since you posted*: fixed, answered, contested, no reply, new commits | *What came back*, a row per finding with its basis |
+
+- **The outcome groups are one function**, `sinceYouPosted` in `web/app/utils/outcomes.ts`.
+  *Contested* is `repliesToAnswer` by construction, so the Replies tab's count, the header's
+  *Answer F3* and Overview cannot disagree. *Since round 1* (DEV-1329) and the Replies groups
+  (DEV-1330) read it rather than grouping again.
+- **Every outcome states its basis**: *ran*, *read*, *told* or *not re-checked*. The record holds
+  no re-run, so nothing today says *ran*.
+- **"New code under F6" only when the comparison says the finding's lines moved** —
+  `lines_changed: true` on a `code_changed_after`. A file that changed around an unmoved line
+  has no row.
+- **Where it stands replaces the trail as the answer to *where is it***: Brief ready → Code
+  review → Draft ready → Posted → Replies in. The seven-step trail is folded under it, because
+  it still says what each step came to and how long it took, and nothing else does.
+
 **The header's rules**, from the 15 November rules for every screen:
 
 - **One state word**, the same word everywhere that review appears.
@@ -382,4 +405,5 @@ Neither of these is a decision against; both are waiting on real use.
 | 21 Nov 2026 | `P` Promote and `N` Not a rule on Rules | The keys table |
 | 21 Nov 2026 | A session's answer follows the contract or is kept only as an unparsed message | `docs/answer-contract.md` |
 | 21 Nov 2026 | Queue and Reviews are one Pull requests list with a preview; the bottom line is one helper | *The application shell*; `pages/index.vue`, `bottomLine` |
+| 21 Nov 2026 | Overview is three pages chosen from the record; outcomes are grouped once, each with its basis | `overview.ts`, `sinceYouPosted` |
 | 15 Nov 2026 | Review Desk never starts, resumes or drives Claude itself; without Allele the conversation is one way | *The application shell*; S11 |
