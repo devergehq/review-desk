@@ -43,15 +43,24 @@ useHead({
   }),
 })
 
+/*
+ * **The sidebar's row, read the way the header reads it**, so Overview's state is the
+ * header's word: the same shared reads, `rowFor`, and `stateOfReview` under both.
+ */
+const inbox = desk.inbox()
+const finished = desk.reviews(computed(() => ALL_REPOSITORIES), computed(() => 'finished' as const))
+const sidebar = computed(() => inbox.data.value ? sidebarGroups(inbox.data.value, finished.data.value) : null)
+
 /** Everything the page draws, worked out once per review. */
 function overviewOf(data: ReviewDetail) {
-  const state = overviewState(data)
+  const listed = rowFor(sidebar.value, data.review)
+  const state = overviewState(data, listed)
   const groups = state === 'replies_in' ? groupsOf(data) : null
   const questions = fiveQuestions(data)
   return {
     state,
     bottom: groups ? sinceBottomLine(data, groups) : readyBottomLine(data, state),
-    stages: whereItStands(data),
+    stages: whereItStands(data, listed),
     questions,
     written: questions.filter(question => question.mark === 'written').length,
     cameBack: groups ? whatCameBack(data, groups) : [],
@@ -177,7 +186,6 @@ const BASIS = BASIS_WORDS
                     {{ stage.label }}
                   </li>
                 </ol>
-
               </section>
 
               <section

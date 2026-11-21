@@ -21,13 +21,14 @@ import { BASIS_WORDS, outcomeSaid, sinceYouPosted } from './outcomes'
 import type { GroupedFinding, ReplyBasis, SinceYouPosted } from './outcomes'
 import { tabPath } from './reviewTabs'
 import { stateOfReview } from './stateWord'
-import type { ReviewState } from './stateWord'
+import type { ListedAs, ReviewState } from './stateWord'
 import { bottomLine, builtOption, optionsOf } from './theCase'
 
 /** The parts of a review Overview reads. */
 export type OverviewSource = Pick<
   ReviewDetail,
   'review' | 'layers' | 'outcomes' | 'draft_status' | 'brief' | 'findings' | 'finding_severities' | 'not_checked'
+  | 'not_for_signing'
 >
 
 /* ------------------------------------ The state ------------------------------------- */
@@ -41,13 +42,17 @@ export type OverviewSource = Pick<
  * | `being_written` | a session is still writing it, or nothing has run yet | S12 |
  * | `ready` | everything else: brief or draft ready, posted, or off the desk | S2 |
  *
- * **Read off [`stateOfReview`]**, the one place a review's state is chosen, so Overview
- * cannot draw *Since you posted* under a header saying *Draft ready*.
+ * **Read off [`stateOfReview`]**, the one place a review's state is chosen, and with the
+ * same `listed` row the header passes it, so Overview cannot draw *Since you posted* under a
+ * header saying *Draft ready*.
  */
 export type OverviewState = 'ready' | 'being_written' | 'replies_in'
 
-export function overviewState(detail: Parameters<typeof stateOfReview>[0]): OverviewState {
-  const state = stateOfReview(detail)
+export function overviewState(
+  detail: Parameters<typeof stateOfReview>[0],
+  listed?: ListedAs | null,
+): OverviewState {
+  const state = stateOfReview(detail, listed)
   if (state === 'replies_in') return 'replies_in'
   if (UNWRITTEN.has(state)) return 'being_written'
   return 'ready'
@@ -100,8 +105,8 @@ const STAGE_OF_STATE: Partial<Record<ReviewState, number>> = {
  * stage: its current one is the first stage not reached, marked *writing* when one of the
  * steps behind it is running and left plain when none is.
  */
-export function whereItStands(detail: OverviewSource): Stage[] {
-  const state = stateOfReview(detail)
+export function whereItStands(detail: OverviewSource, listed?: ListedAs | null): Stage[] {
+  const state = stateOfReview(detail, listed)
   const stateOf = (name: ReviewLayerName) => detail.layers.find(layer => layer.name === name)?.state
   const finished = (name: ReviewLayerName) => {
     const one = stateOf(name)
