@@ -145,7 +145,7 @@ function confirming(extra: ExtraRound, act: 'fold' | 'dismiss'): boolean {
             <span class="rd-meta">holds {{ extra.holds }}</span>
             <NuxtLink
               class="rd-meta read-it"
-              :to="`/reviews/${extra.review_id}/understand`"
+              :to="`/reviews/${extra.review_id}`"
             >
               Read it
             </NuxtLink>

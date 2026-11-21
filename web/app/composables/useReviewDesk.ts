@@ -412,6 +412,21 @@ export function useReviewDesk() {
   }
 
   /**
+   * `GET /reviews?show=finished` across every repository — the one fixed read the shell
+   * makes, **shared** the way `inbox()` is.
+   *
+   * The sidebar's *Done this week* and the review header's state word both group the inbox
+   * with this list (`sidebarGroups`), so they must group the same answer. Through `reviews()`
+   * each caller built its own resource and read it on its own — two requests on every review
+   * page, and two answers that could differ while one was in flight (DEV-1324's round-2
+   * self-review). A fixed key rather than a reactive one: neither caller has a picker.
+   */
+  function finishedReviews(): DeskResource<ReviewList> {
+    return sharing('reviews:all:finished', () =>
+      resource(from => from.listReviews(null, 'finished')))
+  }
+
+  /**
    * `GET /duplicate-rounds` — the one-off tidy's proposal, per pull request.
    *
    * **The seventh read, and the only one that is not a screen's.** It follows the Reviews
@@ -823,6 +838,7 @@ export function useReviewDesk() {
     useSampleRecords,
     inbox,
     reviews,
+    finishedReviews,
     review,
     draft,
     session,

@@ -171,7 +171,7 @@ test.describe('the whole path, on a seeded database', () => {
     await expect(moved).toContainText('round 1')
     await expect(moved.locator('.row')).toHaveAttribute(
       'href',
-      `/reviews/${movedHeadReviewId}/understand`,
+      `/reviews/${movedHeadReviewId}`,
     )
 
     /*
@@ -233,7 +233,7 @@ test.describe('the whole path, on a seeded database', () => {
      */
     await expect(page.locator('.row').first()).toHaveAttribute(
       'href',
-      `/reviews/${reviewId}/understand`,
+      `/reviews/${reviewId}`,
     )
 
     /*
@@ -259,7 +259,7 @@ test.describe('the whole path, on a seeded database', () => {
     await expect(unstarted).toContainText('no session is working on it')
     await expect(unstarted.locator('.row')).toHaveAttribute(
       'href',
-      `/reviews/${requestedReviewId}/understand`,
+      `/reviews/${requestedReviewId}`,
     )
     await expect(page.locator('.queue-line').filter({ hasText: '#418' })).toHaveCount(1)
 
@@ -313,7 +313,7 @@ test.describe('the whole path, on a seeded database', () => {
      * a sibling of this anchor, so it is found on the whole row rather than inside it.
      */
     await expect(posted).toContainText('Not read back from GitHub yet')
-    await expect(posted).toHaveAttribute('href', `/reviews/${postedReviewId}/understand`)
+    await expect(posted).toHaveAttribute('href', `/reviews/${postedReviewId}`)
 
     const postedLine = page.locator('.queue-line')
       .filter({ hasText: 'Record the delivery attempt' })
@@ -321,7 +321,7 @@ test.describe('the whole path, on a seeded database', () => {
 
     /* And it is one click from the queue, which is the whole of what was asked for. */
     await posted.click()
-    await expect(page).toHaveURL(new RegExp(`/reviews/${postedReviewId}/understand$`))
+    await expect(page).toHaveURL(new RegExp(`/reviews/${postedReviewId}$`))
     await expect(page.locator('main').getByText('Record the delivery attempt count')).toBeVisible()
     await page.goBack()
 
@@ -347,7 +347,7 @@ test.describe('the whole path, on a seeded database', () => {
      * dashboard unable to confirm a brief at all — one of only two acts in the whole
      * system that record the developer's sign-off.
      */
-    await page.goto(`${seeded}reviews/${reviewId}/understand`)
+    await page.goto(`${seeded}reviews/${reviewId}`)
     await expect(page.getByText('Confirm the problem before anything is posted')).toBeVisible()
     await expect(
       page.getByText('A webhook delivery that fails once is never tried again'),
@@ -436,7 +436,7 @@ test.describe('the whole path, on a seeded database', () => {
      */
     await expect(webhooks.getByText('Read and sign off')).toBeVisible()
     await webhooks.click()
-    await expect(page).toHaveURL(`${seeded}reviews/${reviewId}/understand`)
+    await expect(page).toHaveURL(`${seeded}reviews/${reviewId}`)
 
     await page.locator('.trail').getByRole('link', { name: /6 Draft/ }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${reviewId}/draft`)
@@ -446,8 +446,8 @@ test.describe('the whole path, on a seeded database', () => {
      * the review" link instead, because it was outside the shell; inside it, that link
      * beside a trail whose first step is the review would be the same door twice.
      */
-    await page.locator('.trail').getByRole('link', { name: /2 Understand/ }).click()
-    await expect(page).toHaveURL(`${seeded}reviews/${reviewId}/understand`)
+    await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${reviewId}`)
     await page.locator('.trail').getByRole('link', { name: /6 Draft/ }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${reviewId}/draft`)
     await expect(
@@ -512,9 +512,10 @@ test.describe('the whole path, on a seeded database', () => {
      * line in the trail — which is the trail doing exactly what it is for.
      */
     await expect(page.locator('.sent-back')).toContainText(note)
-    await expect(page.locator('.trail')).toContainText(note)
 
-    await page.goto(`${seeded}reviews/${reviewId}/understand`)
+    await page.goto(`${seeded}reviews/${reviewId}`)
+    /* The trail is on Overview since DEV-1324, and still says the draft was sent back. */
+    await expect(page.locator('.trail')).toContainText(note)
     const layers = await trail(page)
     expect(layers[5]).toContain('Draft')
     expect(layers[5]).toContain(note)
@@ -572,7 +573,7 @@ test.describe('the whole path, on a seeded database', () => {
     expect(record.draft.approved_by).toBe('developer')
 
     /* Layer 6 is finished with, and the note the developer wrote earlier is gone from it. */
-    await page.goto(`${seeded}reviews/${reviewId}/understand`)
+    await page.goto(`${seeded}reviews/${reviewId}`)
     const layers = await trail(page)
     expect(layers[5]).toContain('signed off by the developer')
 
@@ -638,7 +639,7 @@ test.describe('the whole path, on a seeded database', () => {
   })
 
   test('the code review page shows the findings and what was not checked', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${reviewId}/code-review`)
+    await page.goto(`${seeded}reviews/${reviewId}/findings`)
 
     /* The tally at the foot, which is the three lists in one line. */
     await expect(page.getByText('2 to post, 1 for a ticket, 0 set aside')).toBeVisible()
@@ -650,8 +651,12 @@ test.describe('the whole path, on a seeded database', () => {
       page.getByText('The admin screens, which this change does not touch.'),
     ).toBeVisible()
 
-    /* The seven steps of the trail, as the command line set them. */
-    await expect(page.locator('.steps li')).toHaveCount(7)
+    /*
+     * **The five tabs, with Findings marked**, where the trail's seven steps were: the trail
+     * is on Overview since DEV-1324, and its seven steps are asserted there.
+     */
+    await expect(page.locator('.tabs a')).toHaveCount(5)
+    await expect(page.locator('.tabs [aria-current="page"]')).toContainText('Findings')
   })
 
   /*
@@ -659,9 +664,10 @@ test.describe('the whole path, on a seeded database', () => {
    * in links people have and in anything written down; a route that 404s is worse than one
    * that lands somewhere useful, and every queue row already lands on Understand.
    */
-  test('the retired one-page review redirects to Understand', async ({ page }) => {
+  /* `/reviews/{id}` is Overview since DEV-1324, which draws the trail until DEV-1326. */
+  test('the review’s own address is Overview, with the trail on it', async ({ page }) => {
     await page.goto(`${seeded}reviews/${reviewId}`)
-    await expect(page).toHaveURL(`${seeded}reviews/${reviewId}/understand`)
+    await expect(page).toHaveURL(`${seeded}reviews/${reviewId}`)
     await expect(page.locator('.trail')).toBeVisible()
   })
 
@@ -696,7 +702,7 @@ test.describe('the whole path, on a seeded database', () => {
         .filter({ hasText: '#418' }),
     ).toHaveCount(0)
 
-    await page.goto(`${seeded}reviews/${waivedReviewId}/understand`)
+    await page.goto(`${seeded}reviews/${waivedReviewId}`)
     await expect(page.getByText('Confirmation not required.')).toBeVisible()
     /*
      * `.first()`, because the reason is legitimately in two places on this screen: the
@@ -754,7 +760,7 @@ test.describe('the whole path, on a seeded database', () => {
      * diagram would be, nothing of mermaid's is outside the component, and the graphic is
      * still absent two navigations later.
      */
-    await page.goto(`${seeded}reviews/${waivedReviewId}/understand`)
+    await page.goto(`${seeded}reviews/${waivedReviewId}`)
 
     const figure = page.locator('figure')
     await expect(figure.locator('pre')).toContainText(
@@ -791,7 +797,7 @@ test.describe('the whole path, on a seeded database', () => {
      * only thing in this repository that can say it was drawn — jsdom has no `getBBox`, so
      * the component tests cannot.
      */
-    await page.goto(`${seeded}reviews/${reviewId}/understand`)
+    await page.goto(`${seeded}reviews/${reviewId}`)
     const drawing = page.locator('figure svg')
     await expect(drawing).toBeVisible()
     await expect(drawing).toContainText('Deliver')
@@ -861,14 +867,14 @@ test.describe('the whole path, on a seeded database', () => {
  */
 test.describe('the case for one review, in three bands', () => {
   test('all three bands on one page, and the trail says so', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
+    await page.goto(`${seeded}reviews/${structuredReviewId}`)
 
     /* ---- the opening: the headline, the derived line, the verdict ---- */
 
     await expect(
       page.getByRole('heading', {
         name: /Scheduled exports get their own context/,
-        level: 1,
+        level: 2,
       }),
     ).toBeVisible()
 
@@ -965,7 +971,7 @@ test.describe('the case for one review, in three bands', () => {
      */
     await page.locator('.trail').getByRole('link', { name: /3 Alternatives/ }).click()
     await expect(page).toHaveURL(
-      `${seeded}reviews/${structuredReviewId}/alternatives#what-was-chosen`,
+      `${seeded}reviews/${structuredReviewId}/understanding#what-was-chosen`,
     )
     await expect(page.locator('#what-was-chosen')).toBeVisible()
 
@@ -996,9 +1002,10 @@ test.describe('the case for one review, in three bands', () => {
 
     /* ---- band 3 · what was built, reached by the trail ---- */
 
+    await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
     await page.locator('.trail').getByRole('link', { name: /4 Solution/ }).click()
     await expect(page).toHaveURL(
-      `${seeded}reviews/${structuredReviewId}/solution#what-was-built`,
+      `${seeded}reviews/${structuredReviewId}/understanding#what-was-built`,
     )
 
     /*
@@ -1068,7 +1075,7 @@ test.describe('the case for one review, in three bands', () => {
      */
     await part.locator('.finding', { hasText: 'F9' }).click()
     await expect(page).toHaveURL(
-      `${seeded}reviews/${structuredReviewId}/code-review#F9`,
+      `${seeded}reviews/${structuredReviewId}/findings#F9`,
     )
     await expect(page.locator('#finding-9')).toBeVisible()
     /* `.row--picked .key` — the row's own reference, on the one the bench is drawing. The
@@ -1116,21 +1123,22 @@ test.describe('the case for one review, in three bands', () => {
      * these two links are what stop the queue leading somewhere a reader cannot leave.
      * Both pages carry the trail themselves, so there is no way out of it at all.
      */
+    await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
     await page.locator('.trail').getByRole('link', { name: /5 Code review/ }).click()
-    await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/code-review`)
+    await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/findings`)
     /*
      * **And back by the trail, not by a link of the page's own.** Both screens carried one
      * — "Back to Understand" here, "Back to the review" on the draft — because neither was
      * inside the shell. Both are now, so the way back is the trail, and a link beside a
      * trail whose first step is the review would be the same door twice.
      */
-    await expect(page.locator('.trail')).toBeVisible()
+    await expect(page.locator('.tabs')).toBeVisible()
     await expect(
       page.getByRole('link', { name: /^Back to / }),
       'the back links went with the dead ends they were for',
     ).toHaveCount(0)
-    await page.locator('.trail').getByRole('link', { name: /2 Understand/ }).click()
-    await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/understand`)
+    await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}`)
 
     /* ---- and back to 2 · Understand, which is what "move back freely" means ---- */
 
@@ -1140,12 +1148,13 @@ test.describe('the case for one review, in three bands', () => {
      * the navigation to `/alternatives` finished and the closing assertion would pass
      * either way.
      */
+    await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
     await page.locator('.trail').getByRole('link', { name: /3 Alternatives/ }).click()
     await expect(page).toHaveURL(
-      `${seeded}reviews/${structuredReviewId}/alternatives#what-was-chosen`,
+      `${seeded}reviews/${structuredReviewId}/understanding#what-was-chosen`,
     )
-    await page.locator('.trail').getByRole('link', { name: /2 Understand/ }).click()
-    await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/understand`)
+    await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}`)
 
     /*
      * **And step 6 is a link, which it was not before DEV-878.** It was guarded on the
@@ -1154,20 +1163,22 @@ test.describe('the case for one review, in three bands', () => {
      * screen is step 6 now and carries the trail either way, so the guard went with the
      * dead end it was for.
      */
+    await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
     await page.locator('.trail').getByRole('link', { name: /6 Draft/ }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/draft`)
-    await page.locator('.trail').getByRole('link', { name: /2 Understand/ }).click()
-    await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/understand`)
+    await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}`)
 
     /*
      * **And step 7 is a link since DEV-958**, which is the issue that gave it a page:
      * "What happened" is the whole of what came back on a posted review, and
      * `e2e/what-happened.spec.ts` measures it at both widths against a seed of its own.
      */
+    await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
     await page.locator('.trail').getByRole('link', { name: /7 What happened/ }).click()
-    await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/what-happened`)
-    await page.locator('.trail').getByRole('link', { name: /2 Understand/ }).click()
-    await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/understand`)
+    await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/replies`)
+    await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}`)
 
     /* Lint alone is a label, not a link: it is the one step with no page of its own. */
     await expect(page.locator('.trail').getByRole('link', { name: /1 Lint/ })).toHaveCount(0)
@@ -1212,8 +1223,8 @@ test.describe('the case for one review, in three bands', () => {
     test('is one line at both widths, and moves the headline nowhere', async ({ page }) => {
     /** The step's line and the page's headline, as the browser lays them out. */
       const measure = async () => {
-        await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
-        await expect(page.locator('h1')).toBeVisible()
+        await page.goto(`${seeded}reviews/${structuredReviewId}`)
+        await expect(page.locator('h2.headline')).toBeVisible()
         await page.waitForLoadState('networkidle')
         const step = page.locator('.steps li').nth(1)
         await expect(step).toContainText('2 Understand')
@@ -1230,7 +1241,7 @@ test.describe('the case for one review, in three bands', () => {
               textOverflow: style.textOverflow,
             }
           }),
-          headline: await page.locator('h1').evaluate(
+          headline: await page.locator('h2.headline').evaluate(
             element => Math.round(element.getBoundingClientRect().top + window.scrollY),
           ),
         }
@@ -1285,8 +1296,8 @@ test.describe('the case for one review, in three bands', () => {
    * asked for the rest of a note.
    */
   test('opening a step’s card moves nothing else', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
-    await expect(page.locator('h1')).toBeVisible()
+    await page.goto(`${seeded}reviews/${structuredReviewId}`)
+    await expect(page.locator('h2.headline')).toBeVisible()
     await page.waitForLoadState('networkidle')
 
     /* Every element with a box on this page, by where it is. */
@@ -1332,8 +1343,8 @@ test.describe('the case for one review, in three bands', () => {
    * keyboard has no hover, and a reader on a phone has no pointer at all.
    */
   test('a step’s card opens and closes by keyboard, and returns the focus', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
-    await expect(page.locator('h1')).toBeVisible()
+    await page.goto(`${seeded}reviews/${structuredReviewId}`)
+    await expect(page.locator('h2.headline')).toBeVisible()
 
     const control = page.locator('.steps li').nth(1).locator('.outcome')
     await control.focus()
@@ -1371,7 +1382,7 @@ test.describe('the case for one review, in three bands', () => {
      * whose target turns out to be a link is the failure this is avoiding, so the test
      * fails on it instead of opening a tab.
      */
-    const at = await page.locator('.where').boundingBox()
+    const at = await page.locator('[data-testid="review-header"]').boundingBox()
     expect(at, 'the line naming the review is drawn').not.toBeNull()
     const beside = { x: 4, y: at!.y + at!.height / 2 }
 
@@ -1396,8 +1407,8 @@ test.describe('the case for one review, in three bands', () => {
    * the one step that can draw a card without facts.
    */
   test('a step with nothing behind it draws no control', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
-    await expect(page.locator('h1')).toBeVisible()
+    await page.goto(`${seeded}reviews/${structuredReviewId}`)
+    await expect(page.locator('h2.headline')).toBeVisible()
 
     for (const index of [3, 6]) {
       const step = page.locator('.steps li').nth(index)
@@ -1457,7 +1468,7 @@ test.describe('the case for one review, in three bands', () => {
     })
 
     test('draws on the trail and moves nothing', async ({ page }) => {
-      const understand = `${seeded}reviews/${structuredReviewId}/understand`
+      const understand = `${seeded}reviews/${structuredReviewId}`
 
       /* Every element with a box on this page, by where it is. */
       const positions = () => page.evaluate(() =>
@@ -1476,7 +1487,7 @@ test.describe('the case for one review, in three bands', () => {
         /* What the trail looks like for a review no harvest has read. */
         setStepSeven('pending', 'posted, waiting for the harvest', ['--clear-facts'])
         await page.goto(understand)
-        await expect(page.locator('h1')).toBeVisible()
+        await expect(page.locator('h2.headline')).toBeVisible()
         await page.waitForLoadState('networkidle')
         const step = page.locator('.steps li').nth(6)
         await expect(step).toContainText('7 What happened')
@@ -1497,7 +1508,7 @@ test.describe('the case for one review, in three bands', () => {
           'Code changed since=3 findings',
         ])
         await page.reload()
-        await expect(page.locator('h1')).toBeVisible()
+        await expect(page.locator('h2.headline')).toBeVisible()
         await page.waitForLoadState('networkidle')
         /*
            **The line is the store's four words and nothing else, and it fits.** That is
@@ -1552,7 +1563,7 @@ test.describe('the case for one review, in three bands', () => {
         */
         setStepSeven('running', 'nothing back yet', ['--clear-facts'])
         await page.reload()
-        await expect(page.locator('h1')).toBeVisible()
+        await expect(page.locator('h2.headline')).toBeVisible()
         await page.waitForLoadState('networkidle')
         await expect(step.locator('.outcome')).toHaveText(/^nothing back yet/)
         /* Under a pointer as well as a click: the card is drawn on `opens`, and so is
@@ -1593,8 +1604,8 @@ test.describe('the case for one review, in three bands', () => {
   ] as const) {
     test(`a part’s one line stays one line at ${label}`, async ({ page }) => {
       await page.setViewportSize({ width, height })
-      await page.goto(`${seeded}reviews/${structuredReviewId}/solution`)
-      await expect(page.locator('h1')).toBeVisible()
+      await page.goto(`${seeded}reviews/${structuredReviewId}/understanding#what-was-built`)
+      await expect(page.locator('h2.headline')).toBeVisible()
       await expect(page.locator('.part').first()).toBeVisible()
 
       const lines = page.locator('.part .one-line')
@@ -1664,8 +1675,8 @@ test.describe('the case for one review, in three bands', () => {
     page,
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
-    await page.goto(`${seeded}reviews/${structuredReviewId}/solution`)
-    await expect(page.locator('h1')).toBeVisible()
+    await page.goto(`${seeded}reviews/${structuredReviewId}/understanding#what-was-built`)
+    await expect(page.locator('h2.headline')).toBeVisible()
 
     const row = page.locator('.part').first()
     await row.focus()
@@ -1698,8 +1709,8 @@ test.describe('the case for one review, in three bands', () => {
    */
   test('opening a second row folds the first', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
-    await page.goto(`${seeded}reviews/${structuredReviewId}/solution`)
-    await expect(page.locator('h1')).toBeVisible()
+    await page.goto(`${seeded}reviews/${structuredReviewId}/understanding#what-was-built`)
+    await expect(page.locator('h2.headline')).toBeVisible()
 
     await page.getByRole('button', { name: /The export context/ }).click()
     await expect(page.locator('#part-0')).toBeVisible()
@@ -1726,7 +1737,7 @@ test.describe('the case for one review, in three bands', () => {
 
       for (const step of ['understand', 'alternatives', 'solution', 'code-review', 'draft']) {
         await page.goto(`${seeded}reviews/${structuredReviewId}/${step}`)
-        await expect(page.locator('h1')).toBeVisible()
+        await expect(page.locator('h2.headline')).toBeVisible()
         await page.waitForLoadState('networkidle')
 
         const overflow = await page.evaluate(() => ({
@@ -1773,14 +1784,14 @@ test.describe('the case for one review, in three bands', () => {
     }) => {
       await page.setViewportSize({ width, height })
 
-      await page.goto(`${seeded}reviews/${structuredReviewId}/code-review`)
-      await expect(page.locator('h1')).toBeVisible()
+      await page.goto(`${seeded}reviews/${structuredReviewId}/findings`)
+      await expect(page.locator('h2.headline')).toBeVisible()
       const bench = await page.locator('#main').evaluate(el => el.clientWidth)
       const prose = await page.locator('.fields .rd-recorded').first()
         .evaluate(el => el.clientWidth)
 
-      await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
-      await expect(page.locator('h1')).toBeVisible()
+      await page.goto(`${seeded}reviews/${structuredReviewId}`)
+      await expect(page.locator('h2.headline')).toBeVisible()
       const shell = await page.locator('#main').evaluate(el => el.clientWidth)
 
       /*
@@ -1823,8 +1834,8 @@ test.describe('the case for one review, in three bands', () => {
      */
     test(`only the code block scrolls sideways at ${label}`, async ({ page }) => {
       await page.setViewportSize({ width, height })
-      await page.goto(`${seeded}reviews/${structuredReviewId}/code-review`)
-      await expect(page.locator('h1')).toBeVisible()
+      await page.goto(`${seeded}reviews/${structuredReviewId}/findings`)
+      await expect(page.locator('h2.headline')).toBeVisible()
 
       /* The blocker, which is the finding with the widest hunk. */
       await page.locator('.row').filter({ hasText: 'F9' }).first().click()
@@ -1859,7 +1870,7 @@ test.describe('the case for one review, in three bands', () => {
       page,
     }) => {
       await page.setViewportSize({ width, height })
-      await page.goto(`${seeded}reviews/${structuredReviewId}/code-review`)
+      await page.goto(`${seeded}reviews/${structuredReviewId}/findings`)
       await page.locator('.row').filter({ hasText: 'F9' }).first().click()
       await expect(page.locator('.note .card')).toBeVisible()
 
@@ -1891,7 +1902,7 @@ test.describe('the case for one review, in three bands', () => {
   test('a finding is decided on in the browser, and the record says the developer did', async ({
     page,
   }) => {
-    await page.goto(`${seeded}reviews/${structuredReviewId}/code-review`)
+    await page.goto(`${seeded}reviews/${structuredReviewId}/findings`)
 
     /* F10, a nit: cutting it takes it out of the review and off this list. */
     await page.locator('.row').filter({ hasText: 'F10' }).first().click()
@@ -1938,7 +1949,7 @@ test.describe('the case for one review, in three bands', () => {
    * which is the second half of the claim.
    */
   test('the bench moves on J and K, and a ticket is one key', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${structuredReviewId}/code-review`)
+    await page.goto(`${seeded}reviews/${structuredReviewId}/findings`)
     const showing = page.locator('.row--picked').locator('.key')
     const leads = await showing.innerText()
 
@@ -1984,7 +1995,7 @@ test.describe('the case for one review, in three bands', () => {
    * and by now it is approved, which is a different refusal and the one that wins.
    */
   test('a signed-off draft refuses every decision, and says why', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${reviewId}/code-review`)
+    await page.goto(`${seeded}reviews/${reviewId}/findings`)
     await page.locator('.row').first().click()
 
     await expect(page.getByText('You have signed this draft off')).toBeVisible()
@@ -2001,7 +2012,7 @@ test.describe('the case for one review, in three bands', () => {
    * that it still shows: never a blank page and never an error.
    */
   test('a brief written before the structured one still shows', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${reviewId}/understand`)
+    await page.goto(`${seeded}reviews/${reviewId}`)
 
     await expect(page.getByText('Written before the structured brief.')).toBeVisible()
     /* The seed's own wording, written by `brief put` before any of this ran. */
@@ -2165,8 +2176,8 @@ test.describe('the case for one review, in three bands', () => {
      */
     for (const width of [1600, 390]) {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
-      await page.goto(`${seeded}reviews/${structuredReviewId}/understand`)
-      await expect(page.locator('h1')).toBeVisible()
+      await page.goto(`${seeded}reviews/${structuredReviewId}`)
+      await expect(page.locator('h2.headline')).toBeVisible()
       await page.waitForLoadState('networkidle')
 
       await page.getByRole('button', { name: /A scheduled export read its tenant/ }).click()
@@ -2323,7 +2334,7 @@ test.describe('the case for one review, in three bands', () => {
 async function draftPage(page: Page, width = 1440) {
   await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
   await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
-  await expect(page.locator('h1')).toBeVisible()
+  await expect(page.locator('h2.headline')).toBeVisible()
   await page.waitForLoadState('networkidle')
 }
 
@@ -2347,7 +2358,7 @@ test.describe('the body is an index and the findings live on the code', () => {
     test(`the index and the threads both read at ${label}`, async ({ page }) => {
       await page.setViewportSize({ width, height })
       await page.goto(`${seeded}reviews/${structuredReviewId}/draft`)
-      await expect(page.locator('h1')).toBeVisible()
+      await expect(page.locator('h2.headline')).toBeVisible()
 
       /*
        * The body: the session's prose, then the index. The glyph and the word together, the
@@ -2445,7 +2456,7 @@ test.describe('the body is an index and the findings live on the code', () => {
    */
   test('an outline row brings its part of the post into view', async ({ page }) => {
     await page.goto(`${seeded}reviews/${structuredReviewId}/draft`)
-    await expect(page.locator('h1')).toBeVisible()
+    await expect(page.locator('h2.headline')).toBeVisible()
 
     const last = page.locator('.outline-go').last()
     const anchor = await last.getAttribute('aria-controls')
@@ -2470,7 +2481,7 @@ test.describe('the body is an index and the findings live on the code', () => {
     const threadsBefore = await page.locator('.threads .thread').count()
     expect(threadsBefore).toBeGreaterThan(0)
 
-    await page.goto(`${seeded}reviews/${structuredReviewId}/code-review`)
+    await page.goto(`${seeded}reviews/${structuredReviewId}/findings`)
     await page.locator('.row').filter({ hasText: 'F9' }).first().click()
     await page.getByRole('group', { name: /How to decide on F9/ })
       .getByRole('button', { name: 'Set aside' })
@@ -2486,7 +2497,7 @@ test.describe('the body is an index and the findings live on the code', () => {
      * Put it back, because every test in this file reads the same database — and the way
      * back is the page, not the command line: nothing there can decide about a finding.
      */
-    await page.goto(`${seeded}reviews/${structuredReviewId}/code-review`)
+    await page.goto(`${seeded}reviews/${structuredReviewId}/findings`)
     await page.getByRole('radio', { name: /Set aside/ }).click()
     await page.locator('.row').filter({ hasText: 'F9' }).first().click()
     await page.getByRole('group', { name: /How to decide on F9/ })
@@ -2926,8 +2937,8 @@ test.describe('a drawing opens larger', () => {
    */
   test('the diagram on the Understand page opens larger too', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
-    await page.goto(`${seeded}reviews/${reviewId}/understand`)
-    await expect(page.locator('h1')).toBeVisible()
+    await page.goto(`${seeded}reviews/${reviewId}`)
+    await expect(page.locator('h2.headline')).toBeVisible()
     await page.waitForLoadState('networkidle')
 
     const canvas = page.locator('button.canvas').first()
@@ -2972,8 +2983,8 @@ test.describe('a drawing opens larger', () => {
    * promising a larger view of it would be a lie the page tells.
    */
   test('a sketch offers nothing to enlarge', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${waivedReviewId}/understand`)
-    await expect(page.locator('h1')).toBeVisible()
+    await page.goto(`${seeded}reviews/${waivedReviewId}`)
+    await expect(page.locator('h2.headline')).toBeVisible()
     await page.waitForLoadState('networkidle')
 
     await expect(page.locator('pre.written')).toBeVisible()
@@ -3033,10 +3044,10 @@ test.describe('a drawing opens larger', () => {
   test('it leaves nothing over the page when the page goes away open', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     /* A page to come back to, so leaving is a navigation rather than a fresh load. */
-    await page.goto(`${seeded}reviews/${heldBackReviewId}/code-review`)
-    await expect(page.locator('h1')).toBeVisible()
+    await page.goto(`${seeded}reviews/${heldBackReviewId}/findings`)
+    await expect(page.locator('h2.headline')).toBeVisible()
     await page.goto(`${seeded}reviews/${heldBackReviewId}/draft`)
-    await expect(page.locator('h1')).toBeVisible()
+    await expect(page.locator('h2.headline')).toBeVisible()
     await page.waitForLoadState('networkidle')
 
     await page.locator('button.canvas').first().click()
@@ -3063,12 +3074,12 @@ test.describe('a drawing opens larger', () => {
 
     /* Away by the browser's own Back, with the view still open. */
     await page.goBack()
-    await expect(page).toHaveURL(`${seeded}reviews/${heldBackReviewId}/code-review`)
+    await expect(page).toHaveURL(`${seeded}reviews/${heldBackReviewId}/findings`)
     await expect(page.locator('.over')).toHaveCount(0)
     await expect(page.getByRole('dialog')).toHaveCount(0)
     /* And the page is usable: the body scroll was given back. */
     expect(await page.evaluate(() => document.body.style.overflow)).not.toBe('hidden')
-    await expect(page.locator('h1')).toBeVisible()
+    await expect(page.locator('h2.headline')).toBeVisible()
   })
 })
 
@@ -3142,7 +3153,7 @@ test.describe('the list of every review', () => {
 
     /* **Click two**, and the review is open at Understand, where a review starts. */
     await posted.locator('.row').click()
-    await expect(page).toHaveURL(new RegExp(`/reviews/${postedReviewId}/understand$`))
+    await expect(page).toHaveURL(new RegExp(`/reviews/${postedReviewId}$`))
     await expect(page.locator('main').getByText('Record the delivery attempt count')).toBeVisible()
   })
 
@@ -3353,7 +3364,7 @@ test.describe('a database with nothing in it', () => {
      */
     await page.goto(`${empty}reviews/1`)
     /* The retired address redirects, and the refusal is on the page it lands on. */
-    await expect(page).toHaveURL(`${empty}reviews/1/understand`)
+    await expect(page).toHaveURL(`${empty}reviews/1`)
     await expect(page.getByText('Not on the desk')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible()
 
@@ -3377,7 +3388,7 @@ test.describe('a database with nothing in it', () => {
 
 test.describe('the server stops while a page is open', () => {
   test('a message, the command that fixes it, and a retry that works', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${reviewId}/understand`)
+    await page.goto(`${seeded}reviews/${reviewId}`)
     await expect(page.getByText('A webhook delivery that fails once')).toBeVisible()
 
     /*
@@ -3740,7 +3751,7 @@ test.describe('taking a review off the desk', () => {
    */
   test('a review is dismissed with a reason, says so, and is brought back', async ({ page }) => {
     try {
-      await page.goto(`${seeded}reviews/${reviewId}/understand`)
+      await page.goto(`${seeded}reviews/${reviewId}`)
 
       const card = page.locator('#remove-review')
       await expect(card).toContainText('Take this review off the desk')
@@ -3765,7 +3776,7 @@ test.describe('taking a review off the desk', () => {
       await expect(card).toContainText('the pull request was closed unmerged')
 
       /* The page says it on every one of the review's pages, not only on this one. */
-      await page.goto(`${seeded}reviews/${reviewId}/code-review`)
+      await page.goto(`${seeded}reviews/${reviewId}/findings`)
       await expect(page.getByText('This review is dismissed')).toBeVisible()
 
       /* It is out of the queue, and the row it had there is gone. */
@@ -3796,7 +3807,7 @@ test.describe('taking a review off the desk', () => {
        * dismiss button. Waiting for the card's own heading settles the read, and only then
        * is the undo's absence an answer about the review rather than about the timing.
        */
-      await page.goto(`${seeded}reviews/${reviewId}/understand`)
+      await page.goto(`${seeded}reviews/${reviewId}`)
       const card = page.locator('#remove-review')
       await expect(card).toContainText('Take this review off the desk')
       const undo = card.getByRole('button', { name: 'Bring it back' })
@@ -3825,7 +3836,7 @@ test.describe('taking a review off the desk', () => {
        * and two buttons and the delete's question with its two answers are both reachable
        * without this test depending on what another one left behind.
        */
-      await page.goto(`${seeded}reviews/${requestedReviewId}/understand`)
+      await page.goto(`${seeded}reviews/${requestedReviewId}`)
       const card = page.locator('#remove-review')
       await expect(card).toContainText('Take this review off the desk')
 
@@ -3858,7 +3869,7 @@ test.describe('taking a review off the desk', () => {
     })
   }
   test('a review that never started is deleted, after asking twice', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${requestedReviewId}/understand`)
+    await page.goto(`${seeded}reviews/${requestedReviewId}`)
 
     /* Nothing has been written about it, which is the page this review has. */
     await expect(page.getByText('Nothing has been written about this problem yet')).toBeVisible()
@@ -3967,7 +3978,7 @@ test.describe('a merged pull request finishes its review', () => {
       ...(await row.locator('.earlier-link').all()).map(link => link.getAttribute('href')),
     ])
     for (const id of mergedReviewIds) {
-      expect(reachable, `round ${id} is reachable`).toContain(`/reviews/${id}/understand`)
+      expect(reachable, `round ${id} is reachable`).toContain(`/reviews/${id}`)
     }
 
     /* And each says what happened, in the words of the thing that happened. */
@@ -3981,7 +3992,7 @@ test.describe('a merged pull request finishes its review', () => {
   })
 
   test('step 7 of the round that posted reads done, and says how it ended', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${mergedReviewIds[0]}/understand`)
+    await page.goto(`${seeded}reviews/${mergedReviewIds[0]}`)
     const steps = await trail(page)
     expect(steps[6], 'step 7').toContain('merged')
   })
@@ -4085,7 +4096,7 @@ test.describe('a merged pull request finishes its review', () => {
 test.describe('a round whose head moved', () => {
   test('the code review says it was updated, and names the commit it was opened on',
     async ({ page }) => {
-      await page.goto(`${seeded}reviews/${movedHeadReviewId}/code-review`)
+      await page.goto(`${seeded}reviews/${movedHeadReviewId}/findings`)
 
       const timeline = page.locator('.timeline')
       await expect(timeline).toBeVisible()
@@ -4124,7 +4135,7 @@ test.describe('a round whose head moved', () => {
     expect(found.reviews[0]!.head_sha, 'the commit the real push moved it to').toBe('c3d4e53')
     expect(found.reviews[0]!.started, 'and a caller can see somebody has begun').toBe(true)
 
-    await page.goto(`${seeded}reviews/${movedHeadReviewId}/understand`)
+    await page.goto(`${seeded}reviews/${movedHeadReviewId}`)
     await expect(page.getByText('Updated since a1b2c31')).toBeVisible()
   })
 
@@ -4219,7 +4230,7 @@ test.describe('a round whose head moved', () => {
        * writes the draft in the same transaction as the move, so the draft's time equalled
        * the move's and a strict comparison filtered out the one move the section is for.
        */
-      await page.goto(`${seeded}reviews/${reviewId}/code-review`)
+      await page.goto(`${seeded}reviews/${reviewId}/findings`)
       const since = page.locator('.since-draft')
       await expect(since).toBeVisible()
       await expect(since).toContainText('e1f2a31')
@@ -4268,14 +4279,14 @@ test.describe('a round whose head moved', () => {
     expect(two.action, 'round 1 posted, so this is a round of its own').toBe('created')
 
     /* Dismissed through the dashboard: the developer's act, on the review's own page. */
-    await page.goto(`${seeded}reviews/${two.review.id}/understand`)
+    await page.goto(`${seeded}reviews/${two.review.id}`)
     await page.getByRole('button', { name: 'Dismiss this review' }).click()
     await page.getByLabel(/Why are you dismissing/).fill('superseded, waiting for the rewrite')
     await page.getByRole('button', { name: 'Dismiss it' }).click()
     await expect(page.getByText(/Dismissed/).first()).toBeVisible()
 
     /* And the timeline on round 1's page draws it as dismissed, in the word and the line. */
-    await page.goto(`${seeded}reviews/${one.review.id}/code-review`)
+    await page.goto(`${seeded}reviews/${one.review.id}/findings`)
     const chips = page.locator('.chip')
     await expect(chips).toHaveCount(2)
     await expect(chips.nth(1)).toContainText('Round 2')
@@ -4648,18 +4659,30 @@ test.describe('state that belongs to one review', () => {
   /** Every other step lands at the top of its own page, so it carries no fragment. */
   const band = (step: string) => BAND[step] ?? ''
 
-  const at = (id: number, step: string) => `${seeded}reviews/${id}/${step}${band(step)}`
+  /** Where the trail sends each step since DEV-1324: its tab, at its band where it has one. */
+  const TAB_OF: Record<string, string> = {
+    'understand': 'understanding',
+    'alternatives': 'understanding',
+    'solution': 'understanding',
+    'code-review': 'findings',
+    'draft': 'draft',
+  }
+
+  /* Understand is where `byTheTrail` stops: the review's own address, which draws the case. */
+  const at = (id: number, step: string) => step === 'understand'
+    ? `${seeded}reviews/${id}`
+    : `${seeded}reviews/${id}/${TAB_OF[step]}${band(step)}`
 
   async function byTheTrail(page: Page, id: number, step: string): Promise<number> {
     await page.getByRole('navigation', { name: 'Review Desk' })
       .getByRole('link', { name: 'Reviews' })
       .click()
     await expect(page).toHaveURL(/\/reviews$/)
-    await page.locator(`a[href="/reviews/${id}/understand"]`).click()
-    await expect(page).toHaveURL(`${seeded}reviews/${id}/understand`)
+    await page.locator(`a[href="/reviews/${id}"]`).click()
+    await expect(page).toHaveURL(`${seeded}reviews/${id}`)
     if (step === 'understand') return 2
 
-    await page.locator(`.trail a[href="/reviews/${id}/${step}${band(step)}"]`).click()
+    await page.locator(`.trail a[href="/reviews/${id}/${TAB_OF[step]}${band(step)}"]`).click()
     await expect(page).toHaveURL(at(id, step))
     return 3
   }
@@ -4707,8 +4730,8 @@ test.describe('state that belongs to one review', () => {
       await expect(page).toHaveURL(at(first, step))
 
       /* The arriving review has been read: its own pull request number is in the frame. */
-      await expect(page.getByText(`· #${firstPr}`).first()).toBeVisible()
-      await expect(page.getByText(`· #${secondPr}`)).toHaveCount(0)
+      await expect(page.locator('[data-testid="review-header"] h1')).toContainText(`#${firstPr}`)
+      await expect(page.locator('[data-testid="review-header"] h1')).not.toContainText(`#${secondPr}`)
 
       /*
        * **And this row exists here**, so the assertion is about something: both reviews carry
@@ -4754,9 +4777,9 @@ test.describe('state that belongs to one review', () => {
     await expect(page.locator('.row--picked').locator('.key')).toHaveText(another)
 
     await jump(page, -entries)
-    await expect(page).toHaveURL(`${seeded}reviews/${first}/code-review`)
-    await expect(page.getByText(`· #${firstPr}`).first()).toBeVisible()
-    await expect(page.getByText(`· #${secondPr}`)).toHaveCount(0)
+    await expect(page).toHaveURL(`${seeded}reviews/${first}/findings`)
+    await expect(page.locator('[data-testid="review-header"] h1')).toContainText(`#${firstPr}`)
+    await expect(page.locator('[data-testid="review-header"] h1')).not.toContainText(`#${secondPr}`)
 
     await expect(page.locator('.row--picked').locator('.key')).toHaveText(leads)
   })
@@ -4991,7 +5014,7 @@ test.describe('state that belongs to one review', () => {
     await page.getByRole('tab', { name: 'Rendered' }).click()
     await expect(page.locator('textarea#draft-body')).toHaveCount(0)
 
-    await page.locator(`.trail a[href="/reviews/${first}/code-review"]`).click()
+    await page.locator(`.tabs a[href="/reviews/${first}/findings"]`).click()
     await expect(page.getByRole('button', { name: 'Keep editing' })).toBeVisible()
 
     await page.getByRole('button', { name: 'Keep editing' }).click()
@@ -5077,7 +5100,7 @@ test.describe('state that belongs to one review', () => {
     const editor = page.locator('textarea#draft-body')
     await editor.fill(`${bodyOf(first)}\n\n${TYPED}`)
 
-    const codeReview = page.locator(`.trail a[href="/reviews/${first}/code-review"]`)
+    const codeReview = page.locator(`.tabs a[href="/reviews/${first}/findings"]`)
     await codeReview.click()
     await expect(page.getByRole('button', { name: 'Keep editing' })).toBeVisible()
     await expect(page).toHaveURL(`${seeded}reviews/${first}/draft`)
@@ -5088,7 +5111,7 @@ test.describe('state that belongs to one review', () => {
 
     await codeReview.click()
     await page.getByRole('button', { name: 'Discard the edits' }).click()
-    await expect(page).toHaveURL(`${seeded}reviews/${first}/code-review`)
+    await expect(page).toHaveURL(`${seeded}reviews/${first}/findings`)
 
     /* And nothing the developer typed reached the record. */
     untouched(first, FIRST_DRAFT)

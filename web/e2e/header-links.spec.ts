@@ -158,9 +158,9 @@ async function tooWide(page: Page, edge: number, within?: string): Promise<strin
 for (const { name, width, height } of WIDTHS) {
   test(`the header fits at ${name} with a long repository name and a ticket id`, async ({ page }) => {
     await page.setViewportSize({ width, height })
-    await page.goto(`${serving.url}reviews/${reviewId}/understand`)
+    await page.goto(`${serving.url}reviews/${reviewId}`)
 
-    const header = page.locator('.where')
+    const header = page.locator('[data-testid="review-header"]')
     await expect(header).toBeVisible()
 
     /* The two links are there, and they are what the criterion is about. */
@@ -295,5 +295,5 @@ test('pressing a row’s link opens that link, and leaves the review alone', asy
 
   /* The row's own link still does open the review, which is what the row is for. */
   await row.locator('.row').click()
-  await expect(page).toHaveURL(new RegExp(`/reviews/${reviewId}/understand$`))
+  await expect(page).toHaveURL(new RegExp(`/reviews/${reviewId}$`))
 })

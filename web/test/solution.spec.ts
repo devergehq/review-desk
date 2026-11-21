@@ -309,7 +309,7 @@ describe('a problem’s name, for the tag on a row', () => {
 
 describe('the link from a finding line to that finding', () => {
   it('names the finding in the hash, not just the page', () => {
-    expect(findingLink(41, finding(9))).toBe('/reviews/41/code-review#F9')
+    expect(findingLink(41, finding(9))).toBe('/reviews/41/findings#F9')
   })
 
   it('reads its own hash back', () => {

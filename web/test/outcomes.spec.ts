@@ -793,7 +793,7 @@ describe('no screen reads a stored detail for itself', () => {
     expect(found.length).toBeGreaterThan(40)
     /* The one that was missed: a screen in a directory the old list did not name. */
     expect(found).toContain(join('pages', 'reviews', 'index.vue'))
-    expect(found).toContain(join('pages', 'reviews', '[id]', 'what-happened.vue'))
+    expect(found).toContain(join('pages', 'reviews', '[id]', 'replies.vue'))
     expect(found.some(path => path.startsWith(`data${sep}`))).toBe(false)
   })
 

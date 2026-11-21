@@ -20,10 +20,11 @@ const PAGES = [
   { name: 'reviews', path: 'reviews', review: false },
   { name: 'rules', path: 'rules', review: false },
   { name: 'a review', path: `reviews/${reviewId}`, review: true },
-  { name: 'the case', path: `reviews/${structuredReviewId}/understand`, review: true },
-  { name: 'code review', path: `reviews/${reviewId}/code-review`, review: true },
+  { name: 'overview', path: `reviews/${structuredReviewId}`, review: true },
+  { name: 'the case', path: `reviews/${structuredReviewId}/understanding`, review: true },
+  { name: 'code review', path: `reviews/${reviewId}/findings`, review: true },
   { name: 'the draft', path: `reviews/${reviewId}/draft`, review: true },
-  { name: 'what happened', path: `reviews/${reviewId}/what-happened`, review: true },
+  { name: 'what happened', path: `reviews/${reviewId}/replies`, review: true },
 ]
 
 /** The page, loaded and settled: fonts in, Mermaid drawn, nothing still reading. */
@@ -60,6 +61,17 @@ for (const width of [1600, 1280] as const) {
         }
 
         expect(await sideways(page), 'the page scrolls sideways').toBe(0)
+
+        /*
+         * **The review header is never taller than 120px at 1,600** — DEV-1324's first
+         * criterion and `docs/design.md`'s header rule. Measured on every tab, because each
+         * one's facts and action differ.
+         */
+        if (one.review && width === 1600) {
+          const header = await page.locator('[data-testid="review-header"]').boundingBox()
+          expect(header, 'the review header is drawn').not.toBeNull()
+          expect(header!.height, 'the header is no taller than 120px').toBeLessThanOrEqual(120)
+        }
       })
     }
   })
@@ -111,7 +123,7 @@ test.describe('under 700 wide', () => {
   test.use({ viewport: { width: 390, height: 844 } })
 
   test('the sidebar is behind a menu button, and the conversation is not drawn', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${reviewId}/code-review`)
+    await page.goto(`${seeded}reviews/${reviewId}/findings`)
     await page.waitForLoadState('networkidle')
 
     const menu = page.getByRole('button', { name: 'Menu' })

@@ -175,7 +175,7 @@ describe('where the component is used, and the one place it is not', () => {
     ['app/components/CaseChosen.vue', 'an option’s arguments'],
     ['app/components/CaseBuilt.vue', 'a part’s summary'],
     ['app/components/ReviewCase.vue', 'an old brief’s recorded problem'],
-    ['app/pages/reviews/[id]/code-review.vue', 'a finding’s claim, evidence and title'],
+    ['app/pages/reviews/[id]/findings.vue', 'a finding’s claim, evidence and title'],
   ])('%s draws %s through it', (path) => {
     expect(read(path)).toContain('<TickedText')
   })

@@ -1,85 +1,51 @@
 <script setup lang="ts">
 import type { ReviewLayerName, ReviewDetail } from '~/types/desk'
+import type { ReviewTab } from '~/utils/reviewTabs'
 
 /**
- * The shell every step page of a review sits in.
+ * The frame every tab of a review sits in.
  *
  * ```
- *  ACME/PORTAL · #514 · ABC-402 · GIVE A SCHEDULED EXPORT ITS OWN CONTEXT
- *  └ to GitHub ┘   └ to the tracker ┘
- *  ┌── the step trail, seven steps in two groups ──────────────┐
- *  └───────────────────────────────────────────────────────────┘
- *  The one headline sentence, in the sans at the scale's title
- *  the one line under it, when the page has one
- *  …the page…
+ *  ┌── ReviewHeader: crumb, #number and title, state word, facts, action, five tabs ──┐
+ *  └───────────────────────────────────────────────────────────────────────────────────┘
+ *  the round switcher, the trail (Overview only), timings, the session, the conversation
+ *  The tab's one heading, in the sans at the scale's title
+ *  the one line under it, when the tab has one
+ *  …the tab…
  * ```
  *
- * **Which review you are in, which step you are on, and where the other steps are** — the
- * three things that have to be on every one of these pages, so they are here once instead
- * of three times. Patrick's reason for the whole design is that someone outside the domain
- * can pick a review up cold and move back to these pages freely while reading the
- * findings; the trail is what "freely" means.
+ * **Which review you are in, which tab you are on, and where the others are** — the three
+ * things every one of these pages has to say, so they are here once. Since DEV-1324 the
+ * header says them: it replaced the top line that named the review and the step trail that
+ * linked the steps. The trail's *other* job, saying where each step stands, stays on
+ * Overview until DEV-1326 gives Overview its own *Where it stands*.
  *
- * **Every page of a review is inside this, including the draft.** DEV-878 brought the last
- * two in: the code review page is step 5, the draft screen is step 6, and the one-page
- * review at `/reviews/{id}` is a redirect to Understand. That is what lets the trail link
- * all five steps that have a page unconditionally — a step can no longer lead somewhere
- * that carries no way back, because there is nowhere left like that.
- *
- * ## The two links, and why they are here rather than on one page
- *
- * **The pull request and the ticket are the two places a reader leaves a review for**, and
- * until DEV-936 the top line named both and linked neither: the repository and the number
- * were plain text, the ticket was nowhere near the top, and the only way out to GitHub was
- * a row in a table at the foot of the Understand page. Patrick, 12 October 2026: "at a
- * minimum, the link at the very top or somewhere prominent that's always going to be shown
- * on every page… And then if there is a ticket, like MOB-999, a link to Linear." This is
- * the one line every page of a review already has, which is the whole reason it is the
- * place to put them.
- *
- * They arrive by opposite routes, and `app/utils/links.ts` holds that difference: the pull
- * request's address is **built** from `repo` and `pr`, and the ticket's is **stored**,
- * because nothing can turn an opaque `ABC-402` into an address. A review with an id and no
- * address draws the id as text — which is every review opened before the field existed,
- * and is not a broken link.
+ * **The two ways out — the pull request and the ticket — are in the header**, for the
+ * reason DEV-936 put them at the top: Patrick, 12 October 2026, "at a minimum, the link at
+ * the very top or somewhere prominent that's always going to be shown on every page… And
+ * then if there is a ticket, like MOB-999, a link to Linear." `app/utils/links.ts` holds the
+ * difference between them: the pull request's address is built, the ticket's is stored.
  */
 const props = defineProps<{
   detail: ReviewDetail
   /** Which step this is. The trail marks it and the document title says it. */
   step: ReviewLayerName
+  /** Which of the five tabs this page is. The header's tab strip marks it. */
+  tab: ReviewTab
   /**
-   * Every step this one page draws, when it draws more than one. Defaults to `step` alone.
+   * The steps whose conversation this tab holds, when it holds more than `step`'s.
    *
-   * **Steps 2, 3 and 4 are one page since the case page**, and the trail has to be able to
-   * say so: a reader who pressed step 3 and arrived on a page the trail drew as step 2
-   * would read the trail as broken. `step` stays the one the route is for — it is what
-   * `aria-current` names and what the document title says — and this is what the trail
-   * washes.
+   * **Understanding is three steps' worth of conversation.** Alternatives and Solution each
+   * had an address, and a message asked on either was kept under its own step; with the
+   * three on one tab, a conversation fold that read `step` alone would hide those. The fold
+   * reads all of them and asks under `step`.
    */
-  here?: ReviewLayerName[]
+  conversationSteps?: ReviewLayerName[]
   /** The page's one heading. */
   headline: string
   /** The line under the heading, when the page has one. */
   sub?: string | null
 }>()
-
-/**
- * Where this review's pull request is. Built from the record, never read from it.
- *
- * `null` for a `repo` that is not a repository name, which `prUrl` refuses rather than
- * building a link to somewhere else out of — the header then draws the repository and the
- * number as text, which is what it does for a ticket it cannot link.
- */
-const pullRequest = computed(() => prUrl(props.detail.review.repo, props.detail.review.pr))
-
-/**
- * Where this review's ticket is, or `null` for a review that has no address to draw.
- *
- * Null for two different reviews, and the header treats them the same because there is
- * nothing to tell a reader apart: one was never given an address, and one holds a value
- * that is not `https` and so is refused at render as well as at the write.
- */
-const ticket = computed(() => ticketUrl(props.detail.review.ticket_url))
 
 /**
  * The earlier round that wrote the brief this round has none of, or null.
@@ -99,61 +65,35 @@ const stepName = computed(() => layerLabel(props.step))
   <div class="page">
     <header class="top">
       <!--
-        **Which review you are in, and the two ways out of it.** The repository and the
-        number are the link to the pull request; the ticket's id is the link to the
-        tracker, and is drawn as text when the record holds no address for it. Both say
-        where they go and that they open elsewhere, because "opens in a new tab" is not
-        something a reader can see coming.
+        **Which review, where it stands, what to do next, and the five tabs** — DEV-1324's
+        header, which replaced the top line naming the review and the step trail. The two
+        ways out the top line held since DEV-936, the pull request and the ticket, are in it.
       -->
-      <p class="rd-rubric where">
-        <a
-          v-if="pullRequest"
-          class="header-out"
-          :href="pullRequest"
-          target="_blank"
-          rel="noopener noreferrer"
-        >{{ detail.review.repo }} · #{{ detail.review.pr }}<span class="rd-visually-hidden">, on GitHub, opens in a new tab</span></a>
-        <template v-else>
-          {{ detail.review.repo }} · #{{ detail.review.pr }}
-        </template>
-
-        <template v-if="detail.review.ticket_id">
-          ·
-          <a
-            v-if="ticket"
-            class="header-out"
-            :href="ticket"
-            target="_blank"
-            rel="noopener noreferrer"
-          >{{ detail.review.ticket_id }}<span class="rd-visually-hidden">, on the tracker, opens in a new tab</span></a>
-          <template v-else>
-            {{ detail.review.ticket_id }}
-          </template>
-        </template>
-
-        <template v-if="detail.review.title">
-          · {{ detail.review.title }}
-        </template>
-      </p>
+      <ReviewHeader
+        :detail="detail"
+        :tab="tab"
+      />
 
       <!--
         **Which round of the pull request this is, and the same step of every other one.**
-        Here because the three lines of this header descend in scope: which pull request,
-        which round of it, which step of that round. Drawn once for all six step pages, and
-        drawing nothing at all on a review whose pull request has one round.
-
-        Its own component and its own block, because DEV-962 is changing this header too.
+        Under the header now, because the header has a height it may not pass and this draws
+        nothing at all on a review whose pull request has one round.
       -->
       <RoundSwitcher
         :detail="detail"
         :step="step"
       />
 
+      <!--
+        **The seven steps, on Overview alone, until Overview's own *Where it stands* lands
+        (DEV-1326).** The tabs replace the trail as the way between pages; what the trail
+        also said — each step's state, what it came to and how long it took — has no other
+        home yet, and a page may fold or move what it draws but never drop it.
+      -->
       <StepTrail
+        v-if="tab === 'overview'"
         :layers="detail.layers"
         :review-id="detail.review.id"
-        :active="step"
-        :here="here ?? [step]"
         :round="detail.review.round"
         :off-the-desk="detail.not_for_signing != null"
       />
@@ -184,6 +124,7 @@ const stepName = computed(() => layerLabel(props.step))
         :key="`conversation-${detail.review.id}-${step}`"
         :review-id="detail.review.id"
         :step="step"
+        :steps="conversationSteps"
       />
 
       <!--
@@ -191,9 +132,13 @@ const stepName = computed(() => layerLabel(props.step))
         them are drawn as code — `TickedText` owns that, and every field on these four
         pages that a session wrote goes through it.
       -->
-      <h1 class="rd-display headline">
+      <!--
+        **An h2 now**: the review's title in the header is the page's one h1, and this is
+        the tab's own heading under it.
+      -->
+      <h2 class="rd-display headline">
         <TickedText :text="headline" />
-      </h1>
+      </h2>
       <!--
         **Between the headline and the line under it**, which is the one place a reader's eye
         is already going. The case page puts its derived answer line here — the facts the
@@ -233,10 +178,10 @@ const stepName = computed(() => layerLabel(props.step))
       <strong>This review is dismissed.</strong>
       It is out of the queue, no session will be started for it, and it is not in the
       Reviews list's default view. Everything on it has been kept.
-      <NuxtLink :to="`/reviews/${detail.review.id}/understand#remove-review`">
+      <NuxtLink :to="`/reviews/${detail.review.id}/understanding#remove-review`">
         Bring it back
       </NuxtLink>
-      on Understand.
+      on Understanding.
     </DeskNotice>
 
     <!--

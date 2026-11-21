@@ -284,7 +284,7 @@ function rowFor(detail: ReviewDetail, finding: Finding, now: Date): FindingRow {
           status,
         ].filter(Boolean).join(' · ')
       : null,
-    finding: `/reviews/${detail.review.id}/code-review#${finding.key}`,
+    finding: `/reviews/${detail.review.id}/findings#${finding.key}`,
     comment: commentUrl(detail.review.repo, detail.review.pr, finding.github_comment_id),
     postedAsComment: finding.github_comment_id != null,
     addressable: prUrl(detail.review.repo, detail.review.pr) != null,

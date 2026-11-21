@@ -189,7 +189,7 @@ export function startedReviewLine(review: {
      * **It names the review**, because the developer cannot otherwise find it: a
      * dismissed review is in neither the queue nor the Reviews list's default view, so
      * "bring it back from its own page" without an id is a sentence they can read and
-     * not act on. The id is an address — `/reviews/{id}/understand` — and the number is
+     * not act on. The id is an address — `/reviews/{id}` — and the number is
      * what the rest of the desk calls a review by.
      */
     return `${review.repo}#${review.pr} is already on the desk as review ${review.id}, `

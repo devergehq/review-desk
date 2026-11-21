@@ -63,7 +63,7 @@
 
 import { dayLabel, sinceLabel } from './format'
 
-import type { Actor, Instant, OutcomeKind } from '~/types/desk'
+import type { Actor, Instant, Outcome, OutcomeKind } from '~/types/desk'
 
 /**
  * As much of an outcome as any of this needs.
@@ -722,4 +722,37 @@ export function outcomeWhen(
 ): string {
   const when = sinceLabel(at, now)
   return said.observed ? `seen ${when}` : when
+}
+
+/**
+ * **The findings whose newest outcome is the author replying**, by key, in finding order —
+ * the replies that wait on an answer from the developer. The Replies tab's count and the
+ * header's *Answer F3* both read this, and nothing else counts replies for them.
+ *
+ * Today's rule, from the outcomes the harvester already writes: a finding is contested
+ * while the last thing recorded on it is the author's `replied`. Anything recorded after —
+ * the developer raising it again, the thread being resolved, the code changing — is a
+ * later fact, and the finding no longer waits on the developer in the same way.
+ *
+ * **DEV-1330 owns this function and may redefine it**, when the Replies tab grows its three
+ * answers (*Raise it again*, *Accept their reason*, *Withdraw*). It is one function so that
+ * redefining it moves the tab's count and the header's action together. Recorded in the
+ * DEV-1322 plan as a cross-child contract.
+ */
+export function repliesToAnswer(
+  outcomes: ReadonlyArray<Pick<Outcome, 'id' | 'finding_seq' | 'finding_key' | 'kind' | 'actor' | 'occurred_at'>>,
+): string[] {
+  const newest = new Map<number, (typeof outcomes)[number]>()
+  for (const outcome of outcomes) {
+    const held = newest.get(outcome.finding_seq)
+    const at = Date.parse(outcome.occurred_at)
+    const heldAt = held == null ? Number.NEGATIVE_INFINITY : Date.parse(held.occurred_at)
+    /* By time, then by id: two acts in one second are told apart by the order written. */
+    const later = held == null || at > heldAt || (at === heldAt && outcome.id > held.id)
+    if (later) newest.set(outcome.finding_seq, outcome)
+  }
+  return [...newest.values()]
+    .filter(outcome => outcome.kind === 'replied' && outcome.actor === 'author')
+    .sort((one, two) => one.finding_seq - two.finding_seq)
+    .map(outcome => outcome.finding_key)
 }

@@ -511,7 +511,7 @@ const waiting = computed(() => (inbox.data.value ? needingYou(inbox.data.value) 
  * the way — the reading that precedes a sign-off.
  */
 function stepFor(row: Waiting): string {
-  return `/reviews/${row.review_id}/understand`
+  return `/reviews/${row.review_id}`
 }
 
 /**
@@ -753,7 +753,7 @@ function aboutRequested(item: InboxAwaitingSessionItem): string {
  * it and the action says so. A request has no round to open — DEV-996 — so the row is the
  * pull request itself, the way a row of "Your pull requests" is, and the action says that
  * instead. A row whose `to` was built from a null review id would be the string
- * `/reviews/null/understand`, which `QueueRow` would happily make an anchor to a page that
+ * `/reviews/null`, which `QueueRow` would happily make an anchor to a page that
  * does not exist; a row with neither would be a `div` still captioned "Open the round",
  * which is an action it cannot perform.
  *
@@ -767,7 +767,7 @@ function aboutRequested(item: InboxAwaitingSessionItem): string {
 function requestedLink(item: InboxAwaitingSessionItem) {
   if (item.review_id != null) {
     return {
-      to: `/reviews/${item.review_id}/understand`,
+      to: `/reviews/${item.review_id}`,
       href: null,
       action: 'Open the round',
       tone: 'quiet' as const,
@@ -1459,7 +1459,7 @@ function handledLine(data: Inbox): string {
             :pr="item.pull_request.pr"
             :title="item.newest_round.title ?? 'no title recorded'"
             :meta="aboutAgent(item)"
-            :to="`/reviews/${item.newest_round.review_id}/understand`"
+            :to="`/reviews/${item.newest_round.review_id}`"
             :action="sessionAction(item)"
             :action-tone="item.session_alive === false ? 'warn' : 'quiet'"
             :age="item.in_state_since ? sinceLabel(item.in_state_since) : null"
@@ -1581,7 +1581,7 @@ function handledLine(data: Inbox): string {
             :pr="item.pull_request.pr"
             :title="item.pull_request.title ?? 'no title recorded'"
             :meta="alsoAbout(item)"
-            :to="`/reviews/${item.review_id}/understand`"
+            :to="`/reviews/${item.review_id}`"
             action="Read the review"
             action-tone="quiet"
             :age="item.posted_at ? sinceLabel(item.posted_at) : null"

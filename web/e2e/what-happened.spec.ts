@@ -311,10 +311,10 @@ async function tooWide(page: Page, edge: number, within?: string): Promise<strin
 for (const { name, width, height } of WIDTHS) {
   test(`the page holds fourteen findings at ${name}`, async ({ page }) => {
     await page.setViewportSize({ width, height })
-    await page.goto(`${serving.url}reviews/${reviewId}/what-happened`)
+    await page.goto(`${serving.url}reviews/${reviewId}/replies`)
 
     /* The trail is there, step 7 is where you are, and it is called what it holds. */
-    await expect(page.locator('.face[aria-current="page"] .name')).toHaveText('7 What happened')
+    await expect(page.locator('.tabs [aria-current="page"]')).toContainText('Replies')
 
     /* Seven findings had something come back; the other seven are counted and folded. */
     await expect(page.locator('.answered-row')).toHaveCount(7)
@@ -365,7 +365,7 @@ for (const { name, width, height } of WIDTHS) {
 
   test(`the folded half opens and fits at ${name}`, async ({ page }) => {
     await page.setViewportSize({ width, height })
-    await page.goto(`${serving.url}reviews/${reviewId}/what-happened`)
+    await page.goto(`${serving.url}reviews/${reviewId}/replies`)
 
     await page.locator('.fold').click()
     await expect(page.locator('.silent-row')).toHaveCount(7)
@@ -384,7 +384,7 @@ for (const { name, width, height } of WIDTHS) {
 
   test(`a row's own content fits at ${name}`, async ({ page }) => {
     await page.setViewportSize({ width, height })
-    await page.goto(`${serving.url}reviews/${reviewId}/what-happened`)
+    await page.goto(`${serving.url}reviews/${reviewId}/replies`)
 
     /*
      * **The row, not the page.** A row carries the longest unbroken tokens on the screen —
@@ -411,7 +411,7 @@ for (const { name, width, height } of WIDTHS) {
  */
 test('prints no outcome’s stored detail as JSON', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.goto(`${serving.url}reviews/${reviewId}/what-happened`)
+  await page.goto(`${serving.url}reviews/${reviewId}/replies`)
   await expect(page.locator('.answered-row').first()).toBeVisible()
   await page.locator('.fold').click()
   await expect(page.locator('.silent-row')).toHaveCount(7)
@@ -441,7 +441,7 @@ test('a row reaches its finding and its comment on GitHub', async ({ page, conte
   await context.route('https://**', route => route.abort())
 
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.goto(`${serving.url}reviews/${reviewId}/what-happened`)
+  await page.goto(`${serving.url}reviews/${reviewId}/replies`)
 
   const row = page.locator('.answered-row').first()
   await expect(row).toBeVisible()
@@ -472,7 +472,7 @@ test('a row reaches its finding and its comment on GitHub', async ({ page, conte
 
   /* And the finding, which is on the code review page and reaches the finding itself. */
   await row.getByRole('link', { name: /on the code review page/ }).click()
-  await expect(page).toHaveURL(new RegExp(`/reviews/${reviewId}/code-review#F1$`))
+  await expect(page).toHaveURL(new RegExp(`/reviews/${reviewId}/findings#F1$`))
 })
 
 /**
@@ -487,7 +487,7 @@ test('a row reaches its finding and its comment on GitHub', async ({ page, conte
  */
 test('a review that is not on the desk says so', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.goto(`${serving.url}reviews/987654/what-happened`)
+  await page.goto(`${serving.url}reviews/987654/replies`)
 
   /*
    * **A notice, not a heading**, which is what this looked at rather than assumed: the
@@ -511,11 +511,11 @@ test('a review that is not on the desk says so', async ({ page }) => {
  */
 test('the trail’s step 7 opens the page', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.goto(`${serving.url}reviews/${reviewId}/understand`)
+  await page.goto(`${serving.url}reviews/${reviewId}`)
 
   await page.locator('.trail').getByRole('link', { name: '7 What happened' }).click()
-  await expect(page).toHaveURL(new RegExp(`/reviews/${reviewId}/what-happened$`))
-  await expect(page.locator('h1')).toHaveText(
+  await expect(page).toHaveURL(new RegExp(`/reviews/${reviewId}/replies$`))
+  await expect(page.locator('h2.headline')).toHaveText(
     'Nothing has read this pull request back from GitHub',
   )
 })

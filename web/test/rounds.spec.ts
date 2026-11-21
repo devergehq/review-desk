@@ -256,15 +256,15 @@ describe('the links to the other rounds', () => {
    */
   it('links each other round to the same step', () => {
     expect(here('alternatives').map(one => one.to))
-      .toEqual(['/reviews/701/alternatives', null, '/reviews/703/alternatives'])
+      .toEqual(['/reviews/701/understanding', null, '/reviews/703/understanding'])
     expect(here('solution_map').map(one => one.to))
-      .toEqual(['/reviews/701/solution', null, '/reviews/703/solution'])
+      .toEqual(['/reviews/701/understanding', null, '/reviews/703/understanding'])
     expect(here('code_review').map(one => one.to))
-      .toEqual(['/reviews/701/code-review', null, '/reviews/703/code-review'])
+      .toEqual(['/reviews/701/findings', null, '/reviews/703/findings'])
     expect(here('draft').map(one => one.to))
       .toEqual(['/reviews/701/draft', null, '/reviews/703/draft'])
     expect(here('harvest').map(one => one.to))
-      .toEqual(['/reviews/701/what-happened', null, '/reviews/703/what-happened'])
+      .toEqual(['/reviews/701/replies', null, '/reviews/703/replies'])
   })
 
   /** The round being read is not a link: a link to the page you are on does nothing. */
@@ -422,7 +422,7 @@ describe('the links to the other rounds', () => {
        * was kept, so what the word changes is what a reader expects of the round, not where
        * the chip goes.
        */
-      expect(links[0]!.to).toBe('/reviews/701/understand')
+      expect(links[0]!.to).toBe('/reviews/701/understanding')
     })
 
     it('is not marked where the round was not dismissed', () => {
@@ -449,13 +449,13 @@ describe('where a step was written, when it was not written here', () => {
     const later = detail(43, { review: { ...detail(43).review, id: 703, round: 3 }, rounds: THREE })
     expect(later.brief, 'review 43 has no brief').toBeNull()
     expect(briefWrittenEarlier(later, 'understand')).toMatchObject(
-      { round: 1, to: '/reviews/701/understand' },
+      { round: 1, to: '/reviews/701/understanding' },
     )
     expect(briefWrittenEarlier(later, 'alternatives')).toMatchObject(
-      { round: 1, to: '/reviews/701/alternatives' },
+      { round: 1, to: '/reviews/701/understanding' },
     )
     expect(briefWrittenEarlier(later, 'solution_map')).toMatchObject(
-      { round: 1, to: '/reviews/701/solution' },
+      { round: 1, to: '/reviews/701/understanding' },
     )
   })
 
@@ -473,7 +473,7 @@ describe('where a step was written, when it was not written here', () => {
     ]
     const later = detail(43, { review: { ...detail(43).review, id: 703, round: 3 }, rounds: rewritten })
     expect(briefWrittenEarlier(later, 'understand')).toMatchObject(
-      { round: 2, to: '/reviews/702/understand' },
+      { round: 2, to: '/reviews/702/understanding' },
     )
   })
 

@@ -15,7 +15,12 @@
 import type { ReviewLayer, ReviewLayerName } from '~/types/desk'
 
 /**
- * The six steps that have somewhere to go, by the suffix their page sits at.
+ * The six steps that have somewhere to go, by the suffix of the tab that draws them.
+ *
+ * **Since DEV-1324 a suffix is a tab's.** Steps 2 to 4 are all Understanding, step 5 is
+ * Findings and step 7 is Replies; the old step suffixes redirect, and `RETIRED_ROUTES` in
+ * `utils/reviewTabs.ts` is where they go. Linking the tab directly saves every link a
+ * round trip through a page that draws nothing.
  *
  * A suffix each, now that every one of them is a suffix: step 5 was the base route while
  * the one-page review was where the findings were, and `/reviews/{id}` is a redirect to
@@ -30,12 +35,12 @@ import type { ReviewLayer, ReviewLayerName } from '~/types/desk'
  * a reader to a page the other knows is not there.
  */
 export const PAGE_OF_STEP: Partial<Record<ReviewLayerName, string>> = {
-  understand: 'understand',
-  alternatives: 'alternatives',
-  solution_map: 'solution',
-  code_review: 'code-review',
+  understand: 'understanding',
+  alternatives: 'understanding',
+  solution_map: 'understanding',
+  code_review: 'findings',
   draft: 'draft',
-  harvest: 'what-happened',
+  harvest: 'replies',
 }
 
 /**

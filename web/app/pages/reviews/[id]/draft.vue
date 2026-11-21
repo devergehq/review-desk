@@ -829,6 +829,7 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
       <ReviewStepPage
         :detail="owner"
         step="draft"
+        tab="draft"
         :headline="heading"
         :sub="detail.data.value ? statusLine(detail.data.value) : null"
       >
