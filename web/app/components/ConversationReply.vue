@@ -31,6 +31,32 @@ const props = defineProps<{
 const emit = defineEmits<{ 'ask-again': [message: ReviewMessage] }>()
 
 const answer = computed(() => props.message.answer ?? null)
+
+/*
+ * **Turn into a finding** — DEV-1334, S6's fourth panel. The same one call Accept on a
+ * `new_finding` makes (`addFinding`), so a finding the developer adds has one way in. Offered on
+ * an `answer` that cites somewhere to put it; once taken, the line says which finding it is.
+ */
+const desk = useReviewDesk()
+const turned = computed(() => turnedInto(props.message, props.source.findings))
+/*
+ * Not offered once a suggestion on this answer has added a finding: the two would add the
+ * same finding twice (self-review F3). The card's own line says which finding it is.
+ */
+const toFinding = computed(() =>
+  answer.value && !props.message.suggestion_answers.some(one => one.finding_seq != null)
+    ? turnIntoFinding(answer.value, props.message)
+    : null)
+const turning = ref(false)
+const turnProblem = ref<string | null>(null)
+async function turn(): Promise<void> {
+  if (!toFinding.value || turning.value) return
+  turning.value = true
+  turnProblem.value = null
+  const result = await desk.addFinding(props.source.review.id, toFinding.value)
+  turning.value = false
+  if (!result.ok) turnProblem.value = refusal(result.error)
+}
 const folded = computed(() => (answer.value ? null : foldedReply(props.message.body)))
 const activity = computed(() => answer.value?.activity ?? [])
 </script>
@@ -129,6 +155,33 @@ const activity = computed(() => answer.value?.activity ?? [])
         <span><span class="rd-visually-hidden">Not sure: </span>{{ answer.not_sure }}</span>
       </p>
 
+      <p
+        v-if="turned || toFinding"
+        class="turn"
+        data-testid="turn-into-a-finding"
+      >
+        <template v-if="turned">
+          <span>✓ Added as {{ turned.key }}</span>
+          <NuxtLink :to="findingPath(source.review.id, turned.key)">
+            Open {{ turned.key }}
+          </NuxtLink>
+        </template>
+        <DeskButton
+          v-else
+          kind="quiet"
+          :working="turning"
+          working-label="Adding"
+          @click="turn"
+        >
+          Turn into a finding
+        </DeskButton>
+        <span
+          v-if="turnProblem"
+          class="turn-problem"
+          role="alert"
+        >{{ turnProblem }}</span>
+      </p>
+
       <section
         v-if="answer.suggests?.length"
         class="suggests"
@@ -142,7 +195,16 @@ const activity = computed(() => answer.value?.activity ?? [])
             v-for="(suggestion, index) in answer.suggests"
             :key="index"
             :suggestion="suggestion"
-          />
+          >
+            <template #actions>
+              <SuggestionActions
+                :suggestion="suggestion"
+                :place="index + 1"
+                :message="message"
+                :source="source"
+              />
+            </template>
+          </SuggestionCard>
         </ul>
       </section>
     </template>
@@ -298,6 +360,25 @@ const activity = computed(() => answer.value?.activity ?? [])
   margin: 0;
   color: var(--rd-warn-ink);
   overflow-wrap: anywhere;
+}
+
+.turn {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: center;
+  margin: 0;
+  color: var(--rd-accent-dark);
+  font-size: var(--rd-type-ui);
+}
+
+.turn a {
+  color: var(--rd-accent-dark);
+}
+
+.turn-problem {
+  flex-basis: 100%;
+  color: var(--rd-warn-ink);
 }
 
 .suggests {

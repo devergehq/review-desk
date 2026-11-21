@@ -55,7 +55,8 @@
  * `GET /reviews/{id}` is the whole of it. A decision is `POST …/findings/{seq}/decide`, the
  * same write Findings sends, through the same composable.
  */
-import type { DecideFindingRequest } from '~/types/desk'
+import type { DecideFindingRequest, PromptedBy } from '~/types/desk'
+import type { ReplyCall, ReplyFill } from '~/utils/suggestionActions'
 import type { ReplyRow } from '~/utils/replies'
 import type { TrackOption } from '~/components/DecisionTrack.vue'
 
@@ -169,6 +170,20 @@ const current = computed(() => keyed.value ?? chosen.value)
 /** The row whose reason is being asked for, and the reason as typed. */
 const asking = ref<number | null>(null)
 const note = ref('')
+/**
+ * **Which of the three the open field sends**, and the suggestion that filled it — DEV-1334.
+ *
+ * The field opens for `accept_reason` when the developer presses A. A `draft_reply` the
+ * session suggested opens it for whichever call it drafted, with its words in it: Accept in
+ * the conversation fills the reply here and sends nothing, and the developer edits it and
+ * sends it with the button, which is the same `decideFinding` R, A and W send. The suggestion
+ * is named on that write as `prompted_by`; the decision is the developer's.
+ */
+const askingCall = ref<ReplyCall>('accept_reason')
+const prompted = ref<PromptedBy | null>(null)
+/** The session's drafted words, drawn above the field as the session's. */
+const drafted = ref<string | null>(null)
+const replyFill = useState<ReplyFill | null>(`reply-fill:${reviewId.value}`, () => null)
 const problem = ref('')
 const working = ref(false)
 const notice = ref<DeskNotice | null>(null)
@@ -176,13 +191,26 @@ const notice = ref<DeskNotice | null>(null)
 function pick(row: ReplyRow, decision: string) {
   chosen.value = row.seq
   problem.value = ''
+  if (prompted.value != null && asking.value !== row.seq) prompted.value = null
   if (decision === 'accept_reason') {
     /*
      * **Opened on the author's own words**, because that is what the record keeps as the
      * reason: "the author's reason, in their words". The developer can cut it down. Opened
-     * again on the same row, it keeps what they typed rather than putting the quote back.
+     * again on the same row, it keeps what they typed rather than putting the quote back —
+     * unless the field held another call's words, such as a session's drafted *why it still
+     * stands*, which are not the author's reason (self-review F2).
      */
-    if (asking.value !== row.seq) note.value = row.said?.quote ?? row.said?.reason ?? ''
+    if (asking.value !== row.seq || askingCall.value !== 'accept_reason') {
+      note.value = row.said?.quote ?? row.said?.reason ?? ''
+      /*
+       * **A different call from the one the session drafted is not accepting its draft**
+       * (self-review round 2, Q1): the developer chose otherwise, so nothing names the
+       * suggestion as accepted, and its words are not drawn over the author's.
+       */
+      prompted.value = null
+      drafted.value = null
+    }
+    askingCall.value = 'accept_reason'
     asking.value = row.seq
     void nextTick(() => document.getElementById(`reason-${row.seq}`)?.focus())
     return
@@ -193,15 +221,26 @@ function pick(row: ReplyRow, decision: string) {
 /** Escape, or Cancel, puts the reason away and gives the keys back. */
 function cancelReason() {
   asking.value = null
+  prompted.value = null
+  drafted.value = null
   problem.value = ''
 }
 
 function acceptReason(row: ReplyRow) {
+  if (askingCall.value !== 'accept_reason') {
+    const said = note.value.trim()
+    void decide(row, {
+      decision: askingCall.value,
+      note: said.length > 0 ? said : null,
+      prompted_by: prompted.value,
+    })
+    return
+  }
   if (note.value.trim().length === 0) {
     problem.value = 'Say what the author’s reason was. It is what the record keeps.'
     return
   }
-  void decide(row, { decision: 'accept_reason', note: note.value.trim() })
+  void decide(row, { decision: 'accept_reason', note: note.value.trim(), prompted_by: prompted.value })
 }
 
 async function decide(row: ReplyRow, request: DecideFindingRequest) {
@@ -212,6 +251,8 @@ async function decide(row: ReplyRow, request: DecideFindingRequest) {
   if (result.ok) {
     asking.value = null
     note.value = ''
+    prompted.value = null
+    drafted.value = null
   }
 }
 
@@ -240,6 +281,51 @@ async function arrive() {
 
 watch([asked, () => page.value != null], () => void arrive(), { immediate: true })
 
+/**
+ * **A reply the conversation filled in** (`draft_reply`, DEV-1334) opens on its row, in the
+ * field, with the call it drafted on the button. Taken once: the fill is cleared as it is
+ * read, so coming back to Replies does not open it again.
+ *
+ * **Whose words go in the field depends on what the record keeps there.** For `raise_again`
+ * and `withdraw` the note is the developer's own *why*, so the session's draft is put in it
+ * to edit. For `accept_reason` the note is *the author's reason, in their words*, which the
+ * feedback loop reads, so the field opens on the author's quote as A does, and the session's
+ * draft is drawn above it as the session's (self-review F2).
+ *
+ * **A fill with no row to land on says so** rather than vanishing: the finding may have been
+ * answered on this page since the session drafted it (self-review F1).
+ */
+function takeTheFill() {
+  const fill = replyFill.value
+  if (fill == null || page.value == null) return
+  const row = page.value.tab.needsAnswer.find(one => one.seq === fill.seq && one.answer?.offered)
+  replyFill.value = null
+  if (!row) {
+    notice.value = {
+      text: `F${fill.seq} has no author’s reply waiting on an answer here, so the session’s `
+        + 'draft was not filled in. Nothing was sent.',
+      tone: 'plain',
+    }
+    return
+  }
+  chosen.value = row.seq
+  asking.value = row.seq
+  askingCall.value = fill.call
+  drafted.value = fill.words
+  note.value = fill.call === 'accept_reason' ? row.said?.quote ?? row.said?.reason ?? '' : fill.words
+  prompted.value = fill.prompted_by
+  problem.value = ''
+  void nextTick(() => document.getElementById(`reason-${row.seq}`)?.focus())
+}
+watch([replyFill, () => page.value != null], takeTheFill, { immediate: true })
+
+/** The field's label and its button, for the call it sends. */
+const FIELD = {
+  accept_reason: { label: 'The author’s reason, in their words', send: 'Accept it' },
+  raise_again: { label: 'Why it still stands, in your words', send: 'Raise it again' },
+  withdraw: { label: 'Why you withdraw it, in your words', send: 'Withdraw it' },
+} as const
+
 /** Another review on the same page starts folded, with nothing open or half-answered. */
 watch(reviewId, () => {
   open.value = null
@@ -249,6 +335,7 @@ watch(reviewId, () => {
   note.value = ''
   problem.value = ''
   notice.value = null
+  prompted.value = null
 })
 
 /** The row's name for a screen reader, with the recorded prose spoken as `TickedText` draws it. */
@@ -381,10 +468,23 @@ function said(row: ReplyRow): string {
                   v-if="asking === row.seq"
                   class="asking"
                 >
+                  <template v-if="prompted">
+                    <p class="rd-meta drafted">
+                      {{ askingCall === 'accept_reason'
+                        ? 'The session drafted this. The field keeps the author’s own reason, which is what the record holds — nothing is sent until you do.'
+                        : 'Drafted by the session. Edit it, then send it — nothing is sent until you do.' }}
+                    </p>
+                    <blockquote
+                      v-if="askingCall === 'accept_reason' && drafted"
+                      class="rd-recorded drafted-words"
+                    >
+                      {{ drafted }}
+                    </blockquote>
+                  </template>
                   <label
                     class="rd-label"
                     :for="`reason-${row.seq}`"
-                  >The author’s reason, in their words</label>
+                  >{{ FIELD[askingCall].label }}</label>
                   <textarea
                     :id="`reason-${row.seq}`"
                     v-model="note"
@@ -399,7 +499,7 @@ function said(row: ReplyRow): string {
                       working-label="Recording"
                       @click="acceptReason(row)"
                     >
-                      Accept it
+                      {{ FIELD[askingCall].send }}
                     </DeskButton>
                     <DeskButton @click="cancelReason()">
                       Cancel
@@ -890,6 +990,12 @@ function said(row: ReplyRow): string {
   flex-direction: column;
   gap: 8px;
   max-width: var(--rd-measure);
+}
+
+.drafted-words {
+  margin: 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--rd-line);
 }
 
 .asking-actions {

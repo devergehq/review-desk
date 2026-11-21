@@ -2024,6 +2024,47 @@ UPDATE review_messages SET tab = CASE step
 END;
 "#,
     },
+    Migration {
+        version: 27,
+        name: "suggestion-answers",
+        sql: r#"
+-- **What the developer made of what a session suggested** — DEV-1334, under DEV-1331.
+--
+-- Patrick, 21 November 2026: "An accepted suggestion stays the developer's decision. A new
+-- `prompted_by` field holds the sequence number of the message that suggested it. No
+-- session's name goes on a developer's decision." So an acceptance writes exactly what the
+-- page's own control writes — an outcome by the developer, or a finding — and this table
+-- only says which reply, and which of its suggestions, prompted it.
+--
+-- `findings.prompted_by` is the reply a finding the developer added came from: Accept on a
+-- `new_finding`, or *Turn into a finding* on an answer. Null on every finding a session
+-- raised, which is every finding before this migration.
+ALTER TABLE findings ADD COLUMN prompted_by INTEGER CHECK (prompted_by IS NULL OR prompted_by >= 1);
+
+-- One row per suggestion the developer answered, and at most one per answer turned into a
+-- finding (`suggestion` null). A dismissal keeps the developer's optional reason; only a
+-- dismissal has one. An acceptance names what it wrote: the outcome a decision recorded,
+-- or the finding it added. Nothing here is deleted, like the findings and outcomes it names.
+CREATE TABLE suggestion_answers (
+    review_id   INTEGER NOT NULL,
+    message_seq INTEGER NOT NULL,
+    suggestion  INTEGER CHECK (suggestion IS NULL OR suggestion BETWEEN 1 AND 3),
+    verdict     TEXT    NOT NULL CHECK (verdict IN ('accepted', 'dismissed')),
+    reason      TEXT,
+    finding_seq INTEGER,
+    outcome_id  INTEGER REFERENCES outcomes (id) ON DELETE CASCADE,
+    answered_at INTEGER NOT NULL,
+    FOREIGN KEY (review_id, message_seq)
+        REFERENCES review_messages (review_id, seq) ON DELETE CASCADE,
+    CHECK (verdict = 'dismissed' OR reason IS NULL),
+    CHECK (verdict = 'accepted' OR (finding_seq IS NULL AND outcome_id IS NULL)),
+    CHECK (suggestion IS NOT NULL OR verdict = 'accepted')
+);
+
+CREATE UNIQUE INDEX suggestion_answers_one
+    ON suggestion_answers (review_id, message_seq, COALESCE(suggestion, 0));
+"#,
+    },
 ];
 
 /// The version a freshly created database lands on.

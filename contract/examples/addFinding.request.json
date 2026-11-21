@@ -1,0 +1,10 @@
+{
+  "severity": "should",
+  "title": "The web path exports private columns when none are set",
+  "where": "app/Http/Controllers/ExportController.php:41",
+  "basis": "ran",
+  "prompted_by": {
+    "message": 5,
+    "suggestion": null
+  }
+}

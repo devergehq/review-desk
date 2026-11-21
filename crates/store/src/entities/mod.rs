@@ -24,6 +24,7 @@ pub(crate) mod review;
 mod round;
 mod rule;
 pub(crate) mod shown;
+pub(crate) mod suggestion;
 mod tidy;
 mod timings;
 mod work;

@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { flushPromises, type VueWrapper } from '@vue/test-utils'
 
-import { resetDesk } from '../app/composables/useReviewDesk'
+import { resetDesk, useReviewDesk } from '../app/composables/useReviewDesk'
 import { loadSource } from '../app/data/sample'
 import drafts from '../app/data/drafts.json'
 import { NO_REPLY_SHOWN } from '../app/utils/replies'
@@ -68,11 +68,15 @@ async function settle(page: VueWrapper) {
   }
 }
 
+/** Every page this file mounted, so a test that needs to be the only one can say so. */
+const opened: VueWrapper[] = []
+
 async function shown(id: number, search = '') {
   const page = await mountSuspended(WhatHappened, {
     route: `/reviews/${id}/replies${search}`,
     attachTo: document.body,
   })
+  opened.push(page)
   await settle(page)
   return page
 }
@@ -1509,5 +1513,98 @@ describe('answering a reply', () => {
 
     const quiet = await shown(REVIEW, '?finding=F13')
     expect(quiet.find('#history-13').exists()).toBe(true)
+  })
+})
+
+/*
+ * **DEV-1334: a reply the session drafted opens here filled, and is the developer's to send.**
+ * Accept on a `draft_reply` in the conversation fills `reply-fill:{id}` and comes here; nothing
+ * is written until the button sends the same `decideFinding` R, A and W send, naming the
+ * suggestion as `prompted_by`.
+ */
+describe('a reply the session drafted', () => {
+  /* Pages this file left mounted would each take the fill; the real app mounts one. */
+  beforeEach(() => {
+    while (opened.length) opened.pop()!.unmount()
+  })
+
+  const DRAFTED = 'Fair: the tenant row is soft-deleted, so the schedule finds it.'
+
+  async function filled(call: 'accept_reason' | 'withdraw', seq = 3) {
+    const { detail, draft } = answerable()
+    const source = loadSource()
+    const answer = {
+      kind: 'answer' as const,
+      headline: 'The author is right about soft deletes.',
+      cites: ['F3'],
+      suggests: [{ type: 'draft_reply' as const, finding: `F${seq}`, call, words: DRAFTED }],
+    }
+    await resetDesk({
+      reviews: [...source.reviews, detail],
+      drafts: [...source.drafts, draft],
+      messages: [{
+        review_id: REVIEW, seq: 1, step: 'harvest', author: 'session', kind: 'reply',
+        body: JSON.stringify(answer), in_reply_to: null, created_at: '2026-11-21T06:00:00Z',
+        read_at: null, read_by_session: null, about: { tab: 'replies', finding: 3 },
+        parsed: true, answer, superseded_by: null, suggestion_answers: [],
+      }],
+    })
+    useState(`reply-fill:${REVIEW}`).value = {
+      seq, call, words: DRAFTED, prompted_by: { message: 1, suggestion: 1 },
+    }
+  }
+
+  /*
+   * Self-review F2: the field of an `accept_reason` is *the author's reason, in their words*,
+   * which the feedback loop reads. So it opens on the author's quote, as A does, and the
+   * session's draft is drawn above it as the session's.
+   */
+  it('opens an accepted reason on the author’s words, with the session’s draft beside it, and sends nothing', async () => {
+    await filled('accept_reason')
+    const page = await shown(REVIEW)
+    expect(page.find<HTMLTextAreaElement>('#reason-3').element.value).toBe(SHORT_REPLY)
+    expect(page.find('#reply-F3 .drafted-words').text()).toBe(DRAFTED)
+    expect(page.find('#reply-F3 .drafted').text()).toContain('nothing is sent until you do')
+    expect(keysIn(page, '.reply-row--contested')).toEqual(['F3'])
+    expect(useState(`reply-fill:${REVIEW}`).value).toBeNull()
+  })
+
+  it('sends the call it drafted, with the developer’s edit, through the page’s own decision', async () => {
+    await filled('withdraw')
+    const page = await shown(REVIEW)
+    const field = page.find<HTMLTextAreaElement>('#reason-3')
+    expect(field.element.value).toBe(DRAFTED)
+    expect(page.find('#reply-F3 .asking label').text()).toBe('Why you withdraw it, in your words')
+    await field.setValue('Soft deletes keep the row, so this was never a bug.')
+    const send = page.findAll('#reply-F3 .asking-actions button').find(one => one.text() === 'Withdraw it')!
+    await send.trigger('click')
+    await settle(page)
+    expect(page.text()).toContain('F3 is withdrawn')
+    expect(keysIn(page, '.reply-row--settled')).toContain('F3')
+    const messages = useReviewDesk().messages(REVIEW)
+    await messages.refresh()
+    expect(messages.data.value!.messages[0]!.suggestion_answers[0]).toMatchObject({ suggestion: 1, verdict: 'accepted' })
+  })
+
+  /* Self-review F1: a draft with no row to land on says so, rather than vanishing. */
+  it('says so when the finding has no author’s reply waiting here', async () => {
+    await filled('withdraw', 5)
+    const page = await shown(REVIEW)
+    expect(page.find('#reason-5').exists()).toBe(false)
+    expect(page.text()).toContain('F5 has no author’s reply waiting on an answer here')
+    expect(page.text()).toContain('Nothing was sent.')
+  })
+
+  /* Self-review F2's other path: A after a drafted *why it still stands* is the author's words. */
+  it('puts the author’s words back when A follows another call’s draft', async () => {
+    await filled('withdraw')
+    const page = await shown(REVIEW)
+    expect(page.find<HTMLTextAreaElement>('#reason-3').element.value).toBe(DRAFTED)
+    await page.find('#reply-F3 .answers button:nth-child(2)').trigger('click')
+    await settle(page)
+    expect(page.find<HTMLTextAreaElement>('#reason-3').element.value).toBe(SHORT_REPLY)
+    /* Round 2, Q1: a different call is not the draft accepted, so it is no longer drawn as one. */
+    expect(page.find('#reply-F3 .drafted').exists()).toBe(false)
+    expect(page.find('#reply-F3 .drafted-words').exists()).toBe(false)
   })
 })

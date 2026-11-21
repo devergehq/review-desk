@@ -172,6 +172,7 @@ impl From<StoreError> for ApiError {
             | StoreError::DraftStatus { .. }
             | StoreError::NoDraftSection { .. }
             | StoreError::AlreadyDismissed { .. }
+            | StoreError::SuggestionAnswered { .. }
             | StoreError::DismissedReview { .. }
             | StoreError::FinishedReview { .. }
             | StoreError::SupersededRound { .. }

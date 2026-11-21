@@ -1,4 +1,4 @@
-//! Every one of the contract's thirty-one operations is routed and answers.
+//! Every one of the contract's thirty-three operations is routed and answers.
 //!
 //! This walks `Operation::ALL` rather than listing routes by hand, so an operation added
 //! to the contract and not to the server fails here instead of 404ing in a browser.
@@ -10,11 +10,11 @@ use std::collections::BTreeSet;
 use review_desk_server::route::Operation;
 use serde_json::Value;
 
-/// The thirty-one operations, as `contract/README.md` counts them. DEV-1346 added the
-/// thirty-first, `signIn`.
+/// The thirty-three operations. DEV-1346 added the thirty-first, `signIn`; DEV-1334 the
+/// thirty-second and thirty-third, `addFinding` and `dismissSuggestion`.
 #[test]
-fn the_contract_has_thirty_one_operations() {
-    assert_eq!(Operation::ALL.len(), 31);
+fn the_contract_has_thirty_three_operations() {
+    assert_eq!(Operation::ALL.len(), 33);
 }
 
 /// The contract's own `paths` and this crate's `Operation` name the same set.
@@ -274,7 +274,7 @@ pub fn call(
     let (method, path) = route.split_once(' ').expect("a method and a path");
 
     // **Signing in is asked of a server that has not been signed in to.** Every harness
-    // spends its own token at start, which is what lets the other thirty send the cookie;
+    // spends its own token at start, which is what lets the other thirty-two send the cookie;
     // a second trade of the same token is refused, correctly, as spent.
     if operation == Operation::SignIn {
         let (unspent, token) = common::start_holding_its_token();
@@ -290,6 +290,12 @@ pub fn call(
     // one, and it has none. Each is pointed at a review it can succeed on, so that this
     // test goes on being about whether the operation is routed and answers.
     let path = match operation {
+        // **A suggestion is answered on a session's reply that parsed**, and the seeded
+        // review has none: one is written, suggesting a finding, and the path names it.
+        Operation::AddFinding { .. } | Operation::DismissSuggestion { .. } => {
+            let reply = suggesting_reply(&harness.store, seeded.review_id);
+            path.replace("/messages/1/", &format!("/messages/{reply}/"))
+        }
         // A review of its own, with nothing written to it: what the Locus dispatcher
         // leaves behind when it records a request, and the only thing a delete is for.
         Operation::DeleteReview { .. } => {
@@ -362,6 +368,23 @@ pub fn call(
         // Cut, which is the decision that needs the least beside it — and the seeded
         // draft is written in parts, so F1 has a block to cut.
         Operation::DecideFinding { .. } => Some(r#"{"decision":"cut"}"#.to_string()),
+        Operation::AddFinding { .. } => Some(
+            serde_json::json!({
+                "severity": "should",
+                "title": "The web path exports private columns when none are set",
+                "where": "app/Http/Controllers/ExportController.php:41",
+                "basis": "ran",
+                "prompted_by": {
+                    "message": harness.store.messages(seeded.review_id).expect("messages")
+                        .last().expect("the reply written above").seq,
+                    "suggestion": 1
+                }
+            })
+            .to_string(),
+        ),
+        Operation::DismissSuggestion { .. } => {
+            Some(r#"{"reason":"F9 already covers it"}"#.to_string())
+        }
         Operation::TicketRestAndApprove { .. } => Some("{}".to_string()),
         // The seeded rule is `active`, so the stage that follows it is `lint`.
         Operation::PromoteRule { .. } => Some(r#"{"to_stage":"lint"}"#.to_string()),
@@ -376,4 +399,21 @@ pub fn call(
     };
 
     harness.api(method, path, body.as_deref())
+}
+
+/// A session's reply that parsed, suggesting one new finding. Its number on the review.
+fn suggesting_reply(store: &review_desk_store::Store, review_id: i64) -> i64 {
+    store
+        .answer_from_session(
+            review_id,
+            review_desk_store::ReviewLayerName::CodeReview,
+            r#"{"kind":"answer","headline":"Yes, the web path has the same hole.",
+                "cites":["app/Http/Controllers/ExportController.php:41"],
+                "suggests":[{"type":"new_finding","severity":"should",
+                  "title":"The web path exports private columns when none are set",
+                  "where":"app/Http/Controllers/ExportController.php:41","basis":"ran"}]}"#,
+            None,
+        )
+        .expect("a reply in the contract's shape")
+        .seq
 }

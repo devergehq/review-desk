@@ -19,7 +19,7 @@ pub(super) const COLUMNS: &str = "review_id, seq, lens, severity, file, line, li
                        verification, suggested_fix, continues_review_id, round_status, \
                        round_status_by, round_status_checked, round_status_at, \
                        round_status_commit, introduced_by_commit, introduced_by_seq, \
-                       created_at";
+                       prompted_by, created_at";
 
 impl Store {
     /// Add a finding to a review, assigning the next sequence number **unused on the pull
@@ -53,7 +53,25 @@ impl Store {
         // wait without risking deadlock. IMMEDIATE takes the write lock up front, so a
         // second caller queues on the busy handler instead of failing.
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+        let seq = self.insert_finding(&tx, review_id, &new, None)?;
+        self.mark_review_active(review_id)?;
+        tx.commit()?;
+        self.get_finding(review_id, seq)
+    }
 
+    /// Write one finding inside the caller's transaction, and return its number.
+    ///
+    /// **The one insert both doors share**: [`Store::add_finding`], the session's, and
+    /// [`Store::add_finding_from_conversation`], the developer's (DEV-1334). The second only
+    /// adds `prompted_by`, so a finding the developer adds is numbered, checked and stored
+    /// exactly as one a session raises. The caller has validated `new`.
+    pub(super) fn insert_finding(
+        &self,
+        tx: &Transaction<'_>,
+        review_id: i64,
+        new: &NewFinding,
+        prompted_by: Option<i64>,
+    ) -> Result<i64> {
         // Checked inside the transaction, so a rule that is not there is named as the
         // missing parent it is. The foreign key would refuse the row too, but it
         // arrives as one violation among several and the message would blame the
@@ -127,9 +145,10 @@ impl Store {
                  (review_id, seq, lens, severity, file, line, line_sha, claim, title,
                   evidence, disposition, disposition_reason, rule_id, flagged_line,
                   inline_comment, why_it_matters, proof, proof_note, verification,
-                  suggested_fix, introduced_by_commit, introduced_by_seq, created_at)
+                  suggested_fix, introduced_by_commit, introduced_by_seq, prompted_by,
+                  created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                     ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
+                     ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
             params![
                 review_id,
                 seq,
@@ -156,6 +175,7 @@ impl Store {
                 new.suggested_fix,
                 introduced_by,
                 new.introduced_by_seq,
+                prompted_by,
                 created_at,
             ],
         )
@@ -173,7 +193,7 @@ impl Store {
 
         // In the same transaction as the finding, for the reason the module says: a
         // finding stored with half a hunk attached is a worse record than one with none.
-        finding_evidence::write(&tx, review_id, seq, &new)?;
+        finding_evidence::write(tx, review_id, seq, new)?;
 
         if let Some(rule_id) = new.rule_id {
             // MAX, not an assignment: findings can be added in any order, and a rule's
@@ -187,9 +207,7 @@ impl Store {
             )?;
         }
 
-        self.mark_review_active(review_id)?;
-        tx.commit()?;
-        self.get_finding(review_id, seq)
+        Ok(seq)
     }
 
     /// Read one finding. Fails with [`StoreError::NotFound`] if it is not there.
@@ -403,6 +421,7 @@ pub(super) fn row_to_finding(row: &Row<'_>) -> rusqlite::Result<Finding> {
         round_status_commit: row.get("round_status_commit")?,
         introduced_by_commit: row.get("introduced_by_commit")?,
         introduced_by_seq: row.get("introduced_by_seq")?,
+        prompted_by: row.get("prompted_by")?,
         created_at: row.get("created_at")?,
     })
 }
