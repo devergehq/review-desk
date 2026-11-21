@@ -1405,6 +1405,13 @@ pub struct Finding {
     /// The earlier finding whose fix caused this one, by its number. A number alone is
     /// enough: after migration 7 a number is an identity across the whole pull request.
     pub introduced_by_seq: Option<i64>,
+    /// **The message that suggested it**, by its number on this review, when the developer
+    /// added it by accepting a session's suggestion or turning an answer into a finding —
+    /// DEV-1334, migration 27. `None` for every finding a session raised itself.
+    ///
+    /// Provenance only. Adding it was the developer's act, and nothing here names a session:
+    /// Patrick, 21 November 2026, "no session's name goes on a developer's decision".
+    pub prompted_by: Option<i64>,
     pub created_at: Timestamp,
 }
 
@@ -3084,6 +3091,24 @@ pub struct ReviewMessage {
     pub read_at: Option<Timestamp>,
     /// The session that read it, as the deliverer named it.
     pub read_by_session: Option<String>,
+    /// Where it sits on the page: a tab, and a finding when it is about one. Migration 26.
+    pub about: crate::answer::About,
+    /// The reply as the answer contract parsed it, or `None` for a reply written as prose,
+    /// every developer's message, and everything written before migration 26. `body` is
+    /// the raw text either way. Migration 26.
+    pub answer: Option<crate::answer::Answer>,
+    /// **A later reply that replaces this one**, worked out when the conversation is read
+    /// rather than stored: a `working` reply is superseded by the next parsed reply to the
+    /// same question, and a `cant` by the next parsed `answer` to it. Nothing else is.
+    pub superseded_by: Option<i64>,
+}
+
+impl ReviewMessage {
+    /// Whether the reply parsed as the answer contract. Only a parsed reply is drawn as an
+    /// answer, offers actions or is counted.
+    pub fn parsed(&self) -> bool {
+        self.answer.is_some()
+    }
 }
 
 /// The developer's request for a fresh session on a review. Migration 23.
@@ -3193,4 +3218,57 @@ impl TagReading {
             }
         }
     }
+}
+
+/// **Which message prompted a developer's act**, and which of its suggestions — DEV-1334.
+///
+/// `message` is the reply's number on the review. `suggestion` is the suggestion's place in
+/// that reply's `suggests`, from 1, or `None` when the developer turned the whole answer into
+/// a finding rather than accepting one thing it suggested.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PromptedBy {
+    pub message: i64,
+    #[serde(default)]
+    pub suggestion: Option<i64>,
+}
+
+string_enum! {
+    /// What the developer made of one suggestion.
+    SuggestionVerdict as "verdict" {
+        /// Taken: the decision it suggested is in the record, through the page's own call.
+        Accepted => "accepted",
+        /// Not taken, with the developer's reason when they gave one.
+        Dismissed => "dismissed",
+    }
+}
+
+/// The developer's answer to one suggestion, or to a whole answer turned into a finding.
+/// Migration 27.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SuggestionAnswer {
+    pub review_id: i64,
+    /// The reply the suggestion is in.
+    pub message: i64,
+    /// Its place in the reply's `suggests`, from 1, or `None` for the whole answer.
+    pub suggestion: Option<i64>,
+    pub verdict: SuggestionVerdict,
+    /// Why it was dismissed, in the developer's words. Only ever on a dismissal.
+    pub reason: Option<String>,
+    /// The finding an acceptance added, when it added one.
+    pub finding_seq: Option<i64>,
+    /// The outcome an acceptance recorded, when it was a decision on a finding.
+    pub outcome_id: Option<i64>,
+    pub answered_at: Timestamp,
+}
+
+/// A finding the developer adds from the conversation: what `new_finding` carries, and what
+/// *Turn into a finding* asks for. DEV-1334.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeveloperFinding {
+    pub severity: Severity,
+    pub title: String,
+    /// Where it is, as the session would cite it: `path/to/file.php:41`, or a phrase.
+    #[serde(rename = "where")]
+    pub at: String,
+    pub basis: crate::answer::Basis,
 }

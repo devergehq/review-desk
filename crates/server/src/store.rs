@@ -550,9 +550,10 @@ impl Records {
         &self,
         review_id: i64,
         step: ReviewLayerName,
+        about: Option<review_desk_store::About>,
         body: &str,
     ) -> Result<ReviewMessage, ApiError> {
-        self.with(|store| store.ask_session(review_id, step, body))
+        self.with(|store| store.ask_session_about(review_id, step, about, body))
     }
 
     /// The blocks the draft body is composed of, in order.
@@ -580,7 +581,55 @@ impl Records {
         seq: i64,
         decision: &Decision,
     ) -> Result<DecisionMade, ApiError> {
-        self.with(|store| store.decide_finding(review_id, seq, decision, DECIDING_ACTOR))
+        self.decide_finding_prompted(review_id, seq, decision, None)
+    }
+
+    /// [`Records::decide_finding`], with the suggestion that prompted it — DEV-1334. The
+    /// same store call; the prompt only adds which reply's suggestion it was.
+    pub fn decide_finding_prompted(
+        &self,
+        review_id: i64,
+        seq: i64,
+        decision: &Decision,
+        prompted: Option<review_desk_store::PromptedBy>,
+    ) -> Result<DecisionMade, ApiError> {
+        self.with(|store| {
+            store.decide_finding_prompted(review_id, seq, decision, prompted, DECIDING_ACTOR)
+        })
+    }
+
+    /// Add a finding the developer chose from the conversation — DEV-1334. Recorded as
+    /// [`DECIDING_ACTOR`]: adding a finding to *To post* is a decision like the others.
+    pub fn add_finding_from_conversation(
+        &self,
+        review_id: i64,
+        finding: &review_desk_store::DeveloperFinding,
+        prompted: review_desk_store::PromptedBy,
+    ) -> Result<Finding, ApiError> {
+        self.with(|store| {
+            store.add_finding_from_conversation(review_id, finding, prompted, DECIDING_ACTOR)
+        })
+    }
+
+    /// Dismiss one suggestion, with the developer's reason when they give one.
+    pub fn dismiss_suggestion(
+        &self,
+        review_id: i64,
+        seq: i64,
+        suggestion: i64,
+        reason: Option<&str>,
+    ) -> Result<review_desk_store::SuggestionAnswer, ApiError> {
+        self.with(|store| {
+            store.dismiss_suggestion(review_id, seq, suggestion, reason, DECIDING_ACTOR)
+        })
+    }
+
+    /// What the developer made of each suggestion on one review.
+    pub fn suggestion_answers(
+        &self,
+        review_id: i64,
+    ) -> Result<Vec<review_desk_store::SuggestionAnswer>, ApiError> {
+        self.with(|store| store.suggestion_answers(review_id))
     }
 
     /// File what is left of the review as one ticket and approve the draft, in one step.

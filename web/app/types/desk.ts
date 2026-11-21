@@ -155,7 +155,19 @@ export type SessionStatus = Schema['SessionStatus']
 export type FreshSessionState = Schema['FreshSessionState']
 export type ReviewMessage = Schema['ReviewMessage']
 export type MessageList = Schema['MessageList']
+/** A session's reply as the answer contract parsed it. DEV-1332. */
+export type Answer = Schema['Answer']
+/** One of the closed list of six an answer may suggest. */
+export type Suggestion = Schema['Suggestion']
+/** Where a message sits on the page: a tab, and a finding on it. */
+export type MessageAbout = Schema['MessageAbout']
 export type AskSessionRequest = Schema['AskSessionRequest']
+/** What the developer made of one suggestion, or of a whole answer turned into a finding. DEV-1334. */
+export type SuggestionAnswer = Schema['SuggestionAnswer']
+/** Which reply, and which of its suggestions, prompted the developer's act. DEV-1334. */
+export type PromptedBy = Schema['PromptedBy']
+/** A finding the developer adds from the conversation. DEV-1334. */
+export type AddFindingRequest = Schema['AddFindingRequest']
 export type Finding = Schema['Finding']
 /** The lines around a finding, as the pull request changed them. */
 export type FindingHunk = Schema['FindingHunk']
@@ -382,6 +394,13 @@ export interface DeskSource {
   handled_without_you: InboxHandled
   /** What Allele would tell the server about each running session, by review id. */
   session_liveness: Record<string, boolean | null>
+  /**
+   * Allele's reading of a review's session, by review id, **for tests only**. Empty when the
+   * desk loads, so sample mode reads as a machine without Allele: no fixture says what a
+   * session is doing. A test puts one here through `resetDesk` to reach the conversation's
+   * two-way states. DEV-1333.
+   */
+  session_readings?: Record<string, SessionReading>
   /**
    * Whether the server could read GitHub. It stands in for the developer's environment —
    * `gh` present and logged in — which is what `POST /reviews` needs to resolve a head

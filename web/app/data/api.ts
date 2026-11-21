@@ -30,6 +30,9 @@ import type { DraftEditToRecord } from './backend'
 import { DeskRequestError, NOT_LISTENING, fault } from './fault'
 
 import type {
+  AddFindingRequest,
+  SuggestionAnswer,
+
   ApproveDraftRequest,
   Brief,
   DecideFindingRequest,
@@ -56,6 +59,7 @@ import type {
   ReviewSession,
   MessageList,
   ReviewMessage,
+  MessageAbout,
   ReviewLayerName,
   AskSessionRequest,
   Rule,
@@ -341,8 +345,9 @@ export function askSession(
   reviewId: number,
   step: ReviewLayerName,
   body: string,
+  about?: MessageAbout,
 ): Promise<ReviewMessage> {
-  const request: AskSessionRequest = { step, body }
+  const request: AskSessionRequest = about ? { step, body, about } : { step, body }
   return send<ReviewMessage>('POST', `/reviews/${reviewId}/messages`, request)
 }
 
@@ -437,6 +442,36 @@ export function decideFinding(
     'POST',
     `/reviews/${reviewId}/findings/${seq}/decide`,
     request,
+  )
+}
+
+/**
+ * `POST /reviews/{id}/findings` — the developer adds a finding from the conversation.
+ * DEV-1334.
+ *
+ * **The one developer-side call that adds a finding**: Accept on a `new_finding` suggestion
+ * and *Turn into a finding* on an answer both send it. The finding goes into *To post* and
+ * carries the reply that prompted it as `prompted_by`.
+ */
+export function addFinding(reviewId: number, request: AddFindingRequest): Promise<Finding> {
+  return send<Finding>('POST', `/reviews/${reviewId}/findings`, request)
+}
+
+/**
+ * `POST /reviews/{id}/messages/{seq}/suggestions/{n}/dismiss` — dismiss one suggestion, with
+ * the developer's reason when they give one. Said again, it keeps the dismissal and replaces
+ * the reason. DEV-1334.
+ */
+export function dismissSuggestion(
+  reviewId: number,
+  seq: number,
+  suggestion: number,
+  reason: string | null,
+): Promise<SuggestionAnswer> {
+  return send<SuggestionAnswer>(
+    'POST',
+    `/reviews/${reviewId}/messages/${seq}/suggestions/${suggestion}/dismiss`,
+    { reason },
   )
 }
 

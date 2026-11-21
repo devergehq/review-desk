@@ -1,0 +1,10 @@
+{
+  "message": 5,
+  "suggestion": 1,
+  "verdict": "dismissed",
+  "reason": "F9 already says it",
+  "finding_seq": null,
+  "finding_key": null,
+  "outcome_id": null,
+  "answered_at": "2026-11-21T09:12:00Z"
+}

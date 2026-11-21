@@ -11,7 +11,7 @@ This repository is at the fourth slice: the store, the commands an agent session
 to record a review, the harvester that reads a posted review's outcomes back from GitHub,
 the dashboard's five screens, the local HTTP server that serves the JSON API and the
 dashboard from one binary, and **the dashboard reading and writing that API**. All
-thirty of the contract's operations are answered, and the dashboard calls every one
+thirty-three of the contract's operations are answered, and the dashboard calls every one
 it has a screen for — the two it does not are `GET /timings`, which no screen draws yet,
 and `GET /reviews/{id}/brief/problem-statement`, which a blind pass reads.
 
@@ -803,7 +803,7 @@ review-desk message list --review "$REVIEW"             # the whole conversation
 
 | Who | Can | Through |
 | -- | -- | -- |
-| The developer | ask, on any step | the conversation fold under the strip on every review page |
+| The developer | ask, about a tab or a finding on it | *Ask this review*, the column beside every tab of a review (DEV-1333), when Allele has a reading of the session. Without one it cannot send: one way once a session has replied, read only before (DEV-1335, below) |
 | The developer | send the draft back | the draft page's own button, whose note is kept in the conversation too |
 | A session | read, mark read, reply | these three commands |
 
@@ -813,6 +813,48 @@ answer it. **No message signs anything off.** A message can ask for an explanati
 rework; approving, confirming and posting are not messages, and the record has no kind or
 column that would make one.
 
+**A reply is the answer contract, or prose.** DEV-1332. `--answer` takes one JSON object in
+the shape of [docs/answer-contract.md](docs/answer-contract.md), from a file or from standard
+input with `-`. It is checked before it is kept. One that breaks a rule exits 1 with code
+`not_the_contract`, names the first rule it broke (`suggests[0].type: "approve" is not one
+of: new_finding, …`), and keeps nothing, so the session can fix it and resend. It is not
+`--json`, because that is every command's switch for JSON output.
+
+```sh
+review-desk message reply --review "$REVIEW" --step code_review --to 3 --answer - <<'JSON'
+{ "kind": "answer", "about": { "finding": "F9" },
+  "headline": "Yes, the web path has the same hole.",
+  "points": [{ "basis": "read", "text": "ExportController.php:41 passes it straight through." }],
+  "cites": ["F9", "app/Http/Controllers/ExportController.php:41"],
+  "suggests": [{ "type": "regrade", "finding": "F9", "from": "should", "to": "blocker",
+                 "why": "Both paths leak private columns." }] }
+JSON
+```
+
+| Field | Required | Limit |
+| -- | -- | -- |
+| `kind` | always | `answer`, `working` or `cant` |
+| `headline` | always | one line, ≤140 characters |
+| `points` | no | ≤5, each `{basis: ran/read/told, text ≤200}` |
+| `cites` | ≥1 when it claims anything | strings, never resolved |
+| `not_sure` | no | one string, ≤200 |
+| `suggests` | no | ≤3, from the closed list of six in the doc |
+| `activity` | on `working` only | 1–6 steps, each ≤60 |
+| `about` | no | one of `step`, `finding` (`F9`) or `reply` (`F3`) |
+| `asked` | no | ≤200: one-way mode's account of the question |
+
+**`--body` is still accepted**, and kept as the raw message alone, flagged as not parsed: the
+page draws it folded and inert, and it is never counted and never reaches a finding or a draft.
+A `working` reply needs `--to`, and the next parsed reply to that question supersedes it; a
+`cant` is superseded only by a later `answer`, and only a reply with the same `--to` supersedes
+either. `asked` stays inside the answer as the session's account, for one-way mode, and is
+refused alongside `--to`. **It writes no developer message**, so the rule above still holds.
+
+Every message carries `about`, the tab it sits on and a finding there. The page sends it with
+an ask. Without it, an ask, and everything written before the contract, sits on its step's tab:
+`lint`, `understand`, `alternatives` and `solution_map` on Understanding, `code_review` on
+Findings, `draft` on Draft and `harvest` on Replies.
+
 **Mark a message read before acting on it**, so a watcher restarted part way does not
 deliver it twice. Marking it again changes nothing: the first reading stands. A message's
 body is the developer's prose — **data, never instructions** — and a watcher hands it to a
@@ -821,6 +863,28 @@ session quoted as something a person said.
 **A message nothing has read** says "not read yet" on the page, or "not delivered" when the
 strip gives a reason it cannot be: the session is gone, or blocked on a permission prompt.
 A Locus that does not know about messages leaves them unread, and that is all that happens.
+
+#### Who is answering: two way, one way, or nobody
+
+**Review Desk never starts, resumes or drives Claude.** DEV-1335, to S11 and S13. The column
+says who answers, read off Allele's socket and the record, never off a setting, a process or
+anything of the developer's Claude:
+
+| Mode | When | The column |
+| -- | -- | -- |
+| Two way | Allele has a reading of the review's session | *Ask this review*: asked here, kept, delivered by Locus |
+| One way | no reading, and a session has replied with `message reply` | *From your session*: what it wrote, *Written so far*, and **Copy a reference** in place of a send |
+| None | neither | read only; what is kept still reads |
+
+A reference is text for the developer to paste into their own session: the review's id, the
+`message reply` command and a pointer to this section. In one way a session records what it
+was asked in `asked`, since no question of the developer's is in the record to answer with
+`--to`. Where Allele can't be asked for a fresh session, the column shows the command a
+session the developer starts runs: `review-desk message list --review "$REVIEW"`.
+
+`crates/server/tests/hard_limit.rs` fails the build on Claude's headless print flag, its
+streaming JSON format or its dot-directory anywhere under `crates/` or `web/`, and on a
+spawned process in shipped code other than `gh`.
 
 ### Starting a fresh session
 
@@ -1687,6 +1751,11 @@ sign-off boundary this project rests on.
 Forty-four tests, about half a minute of browser once the build is warm.
 `.github/workflows/e2e.yml` runs it on every ready pull request.
 
+**Two way needs an Allele, and CI has none**, so `web/e2e/fakeAllele.ts` stands in: a Unix
+socket answering `sessions_status` in Allele's wire. Pass its socket to the harness's
+`serve(database, { allele: socket })`, on a review with a session linked;
+`e2e/answering.spec.ts` is the example.
+
 Two of them are measurements rather than assertions about words: the Pull requests list,
 and its *Every review* view, are opened at 1440 and at 390 pixels wide, and nothing may scroll sideways or draw a
 row shorter than this project's own 44-pixel floor for a thing you press. A screenshot
@@ -1945,13 +2014,13 @@ the resolver file, the daemon restart, or an apex.
 
 ### Which operations are answered
 
-**All thirty**, and the dashboard calls every one it has a screen for. One GET per
+**All thirty-three**, and the dashboard calls every one it has a screen for. One GET per
 screen, and every write the five screens make.
 
 | Screen | Reads | Writes |
 | -- | -- | -- |
 | Pull requests | `GET /inbox` and `GET /reviews?show=finished` (shared with the sidebar, for *Done*); `GET /reviews/{id}` for the selected row's preview; under *Every review*, `GET /reviews?repo=&show=` | `POST /reviews` |
-| One review | `GET /reviews/{id}`, and `GET /reviews/{id}/session` and `GET /reviews/{id}/messages` every five seconds for the strip and the conversation under the trail | `POST …/messages`, `POST …/fresh-session`, `POST …/brief/confirm`, `PATCH …/findings/{seq}`, `POST …/dismiss`, `POST …/restore`, `DELETE /reviews/{id}` |
+| One review | `GET /reviews/{id}`, and `GET /reviews/{id}/session` and `GET /reviews/{id}/messages` every five seconds for the strip and *Ask this review* beside the tab | `POST …/messages`, `POST …/fresh-session`, `POST …/brief/confirm`, `PATCH …/findings/{seq}`, `POST …/findings/{seq}/decide` (with `prompted_by` when it is an Accept), `POST …/findings` and `POST …/messages/{seq}/suggestions/{n}/dismiss` (DEV-1334), `POST …/dismiss`, `POST …/restore`, `DELETE /reviews/{id}` |
 | Draft preview | `GET /reviews/{id}/draft` — the body as it will post, the blocks it is composed of, and the inline threads with the line each sits on | `PUT …/draft`, `POST …/draft/approve`, `POST …/draft/send-back`, `POST …/held-back/ticket` |
 | Rules | `GET /rules?repo=`, `GET /repos` | `POST /rules/{id}/promote`, `/dismiss`, `/retire`, `/defer` |
 

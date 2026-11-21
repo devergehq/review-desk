@@ -692,6 +692,51 @@ paths:
         '500':
           $ref: '#/components/responses/StoreUnavailable'
 
+  /reviews/{reviewId}/messages/{seq}/suggestions/{suggestion}/dismiss:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+      - name: seq
+        in: path
+        required: true
+        description: The reply's number on the review.
+        schema: { type: integer, format: int64, minimum: 1 }
+      - name: suggestion
+        in: path
+        required: true
+        description: The suggestion's place in the reply's `suggests`, from 1.
+        schema: { type: integer, format: int64, minimum: 1, maximum: 3 }
+    post:
+      operationId: dismissSuggestion
+      tags: [review]
+      summary: The developer dismisses one suggestion, with their reason when they give one
+      description: |
+        DEV-1334. **One click, and the reason after it**: said again on a suggestion already
+        dismissed, it keeps the dismissal and replaces the reason. Refused with `409` on a
+        suggestion already accepted, since the decision it prompted is in the record.
+        Writes nothing but the dismissal.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DismissSuggestionRequest' }
+      responses:
+        '200':
+          description: The dismissal, as kept.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuggestionAnswer' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The suggestion was accepted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
   /reviews/{reviewId}/fresh-session:
     parameters:
       - $ref: '#/components/parameters/ReviewId'
@@ -722,6 +767,45 @@ paths:
           description: |
             Allele does not say the session is gone — it is running, waiting, finished, or
             there is no Allele or no session to ask about — or the review is out of play.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
+  /reviews/{reviewId}/findings:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+    post:
+      operationId: addFinding
+      tags: [findings]
+      summary: The developer adds a finding from the conversation
+      description: |
+        DEV-1334. **The one developer-side call that adds a finding** (Patrick, 21 November
+        2026): behind Accept on a `new_finding` suggestion and *Turn into a finding* on an
+        answer. The finding goes into *To post* with no block of the draft — Post on
+        Findings writes one, as for any other — and carries `prompted_by`.
+
+        A session raises findings with `review-desk finding add`, which never reaches this
+        server. Refused when the draft is approved or posted, and with `409` when the
+        prompt has been answered already, so a second click adds nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddFindingRequest' }
+      responses:
+        '201':
+          description: The finding, as added.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Finding' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The draft is approved or posted, or the prompt was answered already.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -2854,10 +2938,15 @@ components:
     ReviewMessage:
       type: object
       additionalProperties: false
-      required: [review_id, seq, step, author, kind, body, in_reply_to, created_at, read_at, read_by_session]
+      required: [review_id, seq, step, author, kind, body, in_reply_to, created_at, read_at, read_by_session, about, parsed, answer, superseded_by, suggestion_answers]
       description: |
         One message on a review. The developer writes `ask` and `send_back`; the session
         writes `reply`. The record refuses any other pairing.
+
+        **A reply is checked against the answer contract before it is kept** (DEV-1332,
+        `docs/answer-contract.md`). `answer` is the reply as the server parsed it, and
+        `body` is the raw text either way. The page draws `answer`; it never re-validates
+        or repairs it, and draws a reply with `parsed: false` folded and inert.
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         seq:
@@ -2885,6 +2974,250 @@ components:
         read_by_session:
           type: [string, 'null']
           description: The session it was delivered to, as the deliverer named it.
+        about: { $ref: '#/components/schemas/MessageAbout' }
+        parsed:
+          type: boolean
+          description: |
+            True when this is a session's reply that parsed as the answer contract. False
+            for a reply written as prose, for every developer's message, and for everything
+            written before the contract. A reply that is not parsed is never counted and
+            never reaches a finding or a draft.
+        answer:
+          oneOf:
+            - $ref: '#/components/schemas/Answer'
+            - type: 'null'
+          description: The parsed answer, or null exactly when `parsed` is false.
+        superseded_by:
+          type: [integer, 'null']
+          minimum: 1
+          description: |
+            The `seq` of a later reply that replaces this one, worked out on read. A
+            `working` reply is superseded by the next parsed reply to the same question; a
+            `cant` by the next parsed `answer` to it. Null for everything else.
+        suggestion_answers:
+          type: array
+          maxItems: 4
+          items: { $ref: '#/components/schemas/SuggestionAnswer' }
+          description: |
+            What the developer made of this reply's suggestions, and whether its whole
+            answer was turned into a finding (DEV-1334). Empty until they answer one, and
+            always empty on a developer's message.
+    SuggestionAnswer:
+      type: object
+      additionalProperties: false
+      required: [message, suggestion, verdict, reason, finding_seq, finding_key, outcome_id, answered_at]
+      description: |
+        The developer's answer to one suggestion, or to a whole answer turned into a
+        finding (DEV-1334). **Nothing here is a session's act**: an acceptance wrote the
+        decision or the finding the page's own control writes, recorded as the developer's,
+        and this only says which reply prompted it.
+      properties:
+        message: { type: integer, minimum: 1, description: The reply's `seq`. }
+        suggestion:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 3
+          description: |
+            The suggestion's place in the reply's `suggests`, from 1. Null when the
+            developer turned the whole answer into a finding.
+        verdict: { type: string, enum: [accepted, dismissed] }
+        reason:
+          type: [string, 'null']
+          maxLength: 200
+          description: Why it was dismissed, in the developer's words. Only on a dismissal.
+        finding_seq:
+          type: [integer, 'null']
+          minimum: 1
+          description: The finding an acceptance added, when it added one.
+        finding_key:
+          type: [string, 'null']
+          pattern: '^F[0-9]+$'
+          description: That finding's display key.
+        outcome_id:
+          type: [integer, 'null']
+          minimum: 1
+          description: The outcome an acceptance recorded, when it was a decision on a finding.
+        answered_at: { type: string, format: date-time }
+    PromptedBy:
+      type: object
+      additionalProperties: false
+      required: [message]
+      description: |
+        Which reply, and which of its suggestions, prompted the developer's act (DEV-1334).
+        Patrick, 21 November 2026: "No session's name goes on a developer's decision" — this
+        is provenance, and the act stays the developer's.
+      properties:
+        message: { type: integer, minimum: 1, description: The reply's `seq`. }
+        suggestion:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 3
+          description: |
+            The suggestion's place in the reply's `suggests`, from 1. Left out or null on
+            `addFinding` for *Turn into a finding*, which acts on the whole answer; a
+            decision always names one.
+    AddFindingRequest:
+      type: object
+      additionalProperties: false
+      required: [severity, title, where, basis, prompted_by]
+      description: |
+        A finding the developer adds from the conversation: what a `new_finding` suggestion
+        carries, or what *Turn into a finding* asks for.
+      properties:
+        severity: { $ref: '#/components/schemas/Severity' }
+        title: { type: string, minLength: 1, maxLength: 100 }
+        where:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: |
+            Where it is: `path/to/file.php:41` is stored as a file and a line, anything else
+            as the file.
+        basis: { type: string, enum: [ran, read, told] }
+        prompted_by: { $ref: '#/components/schemas/PromptedBy' }
+    DismissSuggestionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        reason:
+          type: [string, 'null']
+          maxLength: 200
+          description: Why not, in the developer's words. Optional.
+    MessageAbout:
+      type: object
+      additionalProperties: false
+      required: [tab]
+      description: |
+        Where a message sits on the page: one of the five tabs, and a finding when it is
+        about one — a finding on `findings`, or the reply on one on `replies`. Every
+        message has one. A message written before the contract, and an ask or reply that
+        names none, takes the tab its step now lives on: `lint`, `understand`,
+        `alternatives` and `solution_map` are on `understanding`, `code_review` on
+        `findings`, `draft` on `draft` and `harvest` on `replies`.
+      properties:
+        tab: { $ref: '#/components/schemas/ReviewTab' }
+        finding:
+          type: [integer, 'null']
+          minimum: 1
+          description: The finding's number on the review. Only on `findings` or `replies`.
+    ReviewTab:
+      type: string
+      enum: [overview, understanding, findings, draft, replies]
+    Answer:
+      type: object
+      additionalProperties: false
+      required: [kind, headline]
+      description: |
+        A session's reply in the shape of `docs/answer-contract.md`, as the server checked
+        it. Fields left out are omitted. Cites are checked for being there, never resolved.
+      properties:
+        kind: { type: string, enum: [answer, working, cant] }
+        about:
+          description: |
+            What the answer is about. Exactly one key. A finding or reply comes back as the
+            session wrote it; a `step` comes back as its tab, so `code_review` is served as
+            `findings`.
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [step]
+              properties: { step: { $ref: '#/components/schemas/ReviewTab' } }
+            - type: object
+              additionalProperties: false
+              required: [finding]
+              properties: { finding: { $ref: '#/components/schemas/FindingNumber' } }
+            - type: object
+              additionalProperties: false
+              required: [reply]
+              properties: { reply: { $ref: '#/components/schemas/FindingNumber' } }
+        headline: { type: string, minLength: 1, maxLength: 140 }
+        points:
+          type: array
+          maxItems: 5
+          items:
+            type: object
+            additionalProperties: false
+            required: [basis, text]
+            properties:
+              basis: { $ref: '#/components/schemas/AnswerBasis' }
+              text: { type: string, minLength: 1, maxLength: 200 }
+        cites:
+          type: array
+          items: { type: string, minLength: 1 }
+        not_sure: { type: string, minLength: 1, maxLength: 200 }
+        suggests:
+          type: array
+          maxItems: 3
+          items: { $ref: '#/components/schemas/Suggestion' }
+        activity:
+          type: array
+          minItems: 1
+          maxItems: 6
+          items: { type: string, minLength: 1, maxLength: 60 }
+        asked:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: |
+            The session's own account of what it was asked, for one-way mode. Drawn as the
+            session's — never a developer's message.
+    AnswerBasis:
+      type: string
+      enum: [ran, read, told]
+    FindingNumber:
+      type: string
+      pattern: '^F[1-9][0-9]*$'
+    Suggestion:
+      description: |
+        One of the closed list of six, and only these. None of them signs off, approves
+        or posts.
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [type, severity, title, where, basis]
+          properties:
+            type: { const: new_finding }
+            severity: { $ref: '#/components/schemas/Severity' }
+            title: { type: string, minLength: 1, maxLength: 100 }
+            where: { type: string, minLength: 1, maxLength: 200 }
+            basis: { $ref: '#/components/schemas/AnswerBasis' }
+        - type: object
+          additionalProperties: false
+          required: [type, finding, from, to, why]
+          properties:
+            type: { const: regrade }
+            finding: { $ref: '#/components/schemas/FindingNumber' }
+            from: { $ref: '#/components/schemas/Severity' }
+            to: { $ref: '#/components/schemas/Severity' }
+            why: { type: string, minLength: 1, maxLength: 200 }
+        - type: object
+          additionalProperties: false
+          required: [type]
+          properties:
+            type: { const: add_to_draft }
+            finding: { $ref: '#/components/schemas/FindingNumber' }
+            text: { type: string, minLength: 1, maxLength: 200 }
+        - type: object
+          additionalProperties: false
+          required: [type, finding, why]
+          properties:
+            type: { const: set_aside }
+            finding: { $ref: '#/components/schemas/FindingNumber' }
+            why: { type: string, minLength: 1, maxLength: 200 }
+        - type: object
+          additionalProperties: false
+          required: [type, finding, call, words]
+          properties:
+            type: { const: draft_reply }
+            finding: { $ref: '#/components/schemas/FindingNumber' }
+            call: { type: string, enum: [raise_again, accept_reason, withdraw] }
+            words: { type: string, minLength: 1, maxLength: 600 }
+        - type: object
+          additionalProperties: false
+          required: [type, question]
+          properties:
+            type: { const: follow_up }
+            question: { type: string, minLength: 1, maxLength: 200 }
     AskSessionRequest:
       type: object
       additionalProperties: false
@@ -2892,6 +3225,11 @@ components:
       properties:
         step: { $ref: '#/components/schemas/ReviewLayerName' }
         body: { type: string, minLength: 1 }
+        about:
+          $ref: '#/components/schemas/MessageAbout'
+          description: |
+            What the ask is about: the tab it was asked on, and a finding there. Left out,
+            the tab `step` now lives on.
     ReviewSession:
       type: object
       additionalProperties: false
@@ -3441,6 +3779,13 @@ components:
           type: [string, 'null']
           pattern: '^F[0-9]+$'
           description: That finding's display key, derived as `F` plus the number.
+        prompted_by:
+          type: [integer, 'null']
+          minimum: 1
+          description: |
+            The `seq` of the session's reply that prompted the developer to add this finding
+            — Accept on a `new_finding`, or *Turn into a finding* (DEV-1334). Null on every
+            finding a session raised. Provenance only: adding it was the developer's act.
         late:
           type: [boolean, 'null']
           description: |
@@ -4217,6 +4562,16 @@ components:
             with no reason is the one outcome the feedback loop cannot learn from.
             Optional everywhere else — the designs are one click, and the outcome's kind
             and actor are themselves the signal.
+        prompted_by:
+          oneOf:
+            - $ref: '#/components/schemas/PromptedBy'
+            - type: 'null'
+          description: |
+            DEV-1334. The suggestion this decision accepts, when it is an Accept in the
+            conversation: `regrade`, `add_to_draft`, `set_aside` or a `draft_reply` sent from
+            Replies. **The same call the page's own buttons make**; this only records which
+            reply prompted it, beside the outcome. Refused when the suggestion is not one
+            this decision accepts on this finding, or has been answered already.
 
     FindingDecisionMade:
       type: object

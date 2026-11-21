@@ -56,6 +56,8 @@ import { count, startedReviewLine } from '~/utils/format'
 import type {
   Brief,
   DecideFindingRequest,
+  AddFindingRequest,
+  SuggestionAnswer,
   ReviewsShown,
   FindingDecision,
   DeskError,
@@ -66,6 +68,7 @@ import type {
   FindingDecisionMade,
   FoldedRound,
   Inbox,
+  MessageAbout,
   NitTicket,
   RepoName,
   RepoSummary,
@@ -686,6 +689,34 @@ export function useReviewDesk() {
   }
 
   /**
+   * `POST /reviews/{id}/findings` — the developer adds a finding from the conversation.
+   * DEV-1334: Accept on a `new_finding`, and *Turn into a finding*. It says which number the
+   * finding was given, since that is what the developer goes to look for.
+   */
+  async function addFinding(reviewId: number, request: AddFindingRequest): Promise<WriteResult> {
+    return write(
+      to => to.addFinding(reviewId, request),
+      (made: Finding) => `Added as ${made.key}, in To post. You decide it like any other.`,
+    )
+  }
+
+  /**
+   * `POST …/messages/{seq}/suggestions/{n}/dismiss` — dismiss one suggestion. DEV-1334.
+   * Said again with a reason, it keeps the dismissal and records why.
+   */
+  async function dismissSuggestion(
+    reviewId: number,
+    seq: number,
+    suggestion: number,
+    reason: string | null,
+  ): Promise<WriteResult> {
+    return write(
+      to => to.dismissSuggestion(reviewId, seq, suggestion, reason),
+      (made: SuggestionAnswer) => (made.reason ? 'Dismissed, with your reason.' : 'Dismissed.'),
+    )
+  }
+
+  /**
    * `POST /reviews/{id}/draft/ticket-and-approve` — file what is left, and approve.
    *
    * A sign-off. It neither posts nor files anything: the findings are recorded as ticketed,
@@ -775,9 +806,10 @@ export function useReviewDesk() {
     id: number,
     step: ReviewLayerName,
     body: string,
+    about?: MessageAbout,
   ): Promise<WriteResult> {
     return write(
-      to => to.askSession(id, step, body),
+      to => to.askSession(id, step, body, about),
       () => 'Asked. It is with the review until the session reads it.',
     )
   }
@@ -870,6 +902,8 @@ export function useReviewDesk() {
     confirmBrief,
     setFindingDisposition,
     decideFinding,
+    addFinding,
+    dismissSuggestion,
     ticketRestAndApprove,
     saveDraft,
     approveDraft,

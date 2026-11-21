@@ -13,6 +13,7 @@
  */
 
 import type {
+  AddFindingRequest,
   Brief,
   DecideFindingRequest,
   ReviewsShown,
@@ -23,6 +24,7 @@ import type {
   FindingDecisionMade,
   FoldedRound,
   Inbox,
+  MessageAbout,
   NitTicket,
   OutcomeKind,
   RepoSummary,
@@ -38,6 +40,7 @@ import type {
   RuleStage,
   RulesPage,
   ShownDraft,
+  SuggestionAnswer,
   TicketedAndApproved,
 } from '~/types/desk'
 
@@ -94,6 +97,19 @@ export interface DeskBackend {
     seq: number,
     request: DecideFindingRequest,
   ) => Promise<FindingDecisionMade>
+  /**
+   * `POST /reviews/{id}/findings` — the developer adds a finding from the conversation: the
+   * one developer-side call that adds one (DEV-1334). Accept on `new_finding` and *Turn into
+   * a finding* both send it.
+   */
+  addFinding: (reviewId: number, request: AddFindingRequest) => Promise<Finding>
+  /** `POST …/messages/{seq}/suggestions/{n}/dismiss` — kept with the optional reason. */
+  dismissSuggestion: (
+    reviewId: number,
+    seq: number,
+    suggestion: number,
+    reason: string | null,
+  ) => Promise<SuggestionAnswer>
   saveDraft: (
     reviewId: number,
     body: string,
@@ -105,9 +121,16 @@ export interface DeskBackend {
   /**
    * `POST /reviews/{id}/messages` — the developer asks the review's session something.
    *
-   * **Stored and nothing more.** Locus delivers it; no message signs anything off.
+   * **Stored and nothing more.** Locus delivers it; no message signs anything off. `about`
+   * is the tab and finding the page's About chip names (DEV-1333); left out, the server
+   * keeps it under the tab `step` now lives on.
    */
-  askSession: (reviewId: number, step: ReviewLayerName, body: string) => Promise<ReviewMessage>
+  askSession: (
+    reviewId: number,
+    step: ReviewLayerName,
+    body: string,
+    about?: MessageAbout,
+  ) => Promise<ReviewMessage>
   /**
    * `POST /reviews/{id}/fresh-session` — ask for a fresh session, because Allele says the
    * review's session is gone. The server asks Allele itself first; the dispatcher starts it.

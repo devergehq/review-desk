@@ -1409,6 +1409,7 @@ fn finding_document(store: &Store, finding: &Finding) -> Value {
         "introduced_by_seq": finding.introduced_by_seq,
         // Derived: `F` and the number it was introduced by.
         "introduced_by_key": finding.introduced_by_seq.map(|seq| format!("F{seq}")),
+        "prompted_by": finding.prompted_by,
         // Derived from the carry chain and the round's commits.
         "continues_round": found.continues_round,
         "rounds_open": found.rounds_open,
@@ -2557,6 +2558,65 @@ fn every_response_example_can_be_produced_from_the_store() {
         store
             .record_send_back_message(review, "Regrade it.")
             .expect("a send-back note");
+        // An ask about a finding, and the session's answer to it in the contract's shape.
+        let about_f13 = review_desk_store::About {
+            tab: review_desk_store::ReviewTab::Findings,
+            finding: Some(13),
+        };
+        let asked = store
+            .ask_session_about(
+                review,
+                ReviewLayerName::Draft,
+                Some(about_f13),
+                "Every tenant?",
+            )
+            .expect("asking about a finding");
+        store
+            .answer_from_session(
+                review,
+                ReviewLayerName::Draft,
+                &std::fs::read_to_string(examples().join("listMessages.response.json"))
+                    .map(|text| {
+                        let example: Value = serde_json::from_str(&text).expect("JSON");
+                        example["messages"][4]["body"]
+                            .as_str()
+                            .expect("the example's answer body")
+                            .to_string()
+                    })
+                    .expect("the example"),
+                Some(asked.seq),
+            )
+            .expect("answering in the contract's shape");
+        let answered = store
+            .messages(review)
+            .expect("the conversation")
+            .last()
+            .expect("the answer just written")
+            .seq;
+        // DEV-1334: the developer dismisses what the answer suggests, with a reason.
+        let dismissed = store
+            .dismiss_suggestion(
+                review,
+                answered,
+                1,
+                Some("F9 already says it"),
+                Actor::Developer,
+            )
+            .expect("dismissing the suggestion");
+        let suggestion_answer = |answer: &review_desk_store::SuggestionAnswer| {
+            json!({
+                "message": answer.message,
+                "suggestion": answer.suggestion,
+                "verdict": answer.verdict.as_str(),
+                "reason": answer.reason,
+                "finding_seq": answer.finding_seq,
+                "finding_key": answer.finding_seq.map(|seq| format!("F{seq}")),
+                "outcome_id": answer.outcome_id,
+                "answered_at": answer.answered_at,
+            })
+        };
+        fields += check("dismissSuggestion", &suggestion_answer(&dismissed));
+        let answers = store.suggestion_answers(review).expect("the answers");
         let messages = store.messages(review).expect("the conversation");
         let document = |message: &review_desk_store::ReviewMessage| {
             json!({
@@ -2570,6 +2630,15 @@ fn every_response_example_can_be_produced_from_the_store() {
                 "created_at": message.created_at,
                 "read_at": message.read_at,
                 "read_by_session": message.read_by_session,
+                "about": message.about,
+                "parsed": message.parsed(),
+                "answer": message.answer,
+                "superseded_by": message.superseded_by,
+                "suggestion_answers": answers
+                    .iter()
+                    .filter(|answer| answer.message == message.seq)
+                    .map(suggestion_answer)
+                    .collect::<Vec<_>>(),
             })
         };
         fields += check(
@@ -2583,6 +2652,25 @@ fn every_response_example_can_be_produced_from_the_store() {
             .ask_session(review, ReviewLayerName::Draft, "Still there?")
             .expect("asking again");
         fields += check("askSession", &document(&fresh));
+
+        // DEV-1334: the developer turns the same answer into a finding.
+        let added = store
+            .add_finding_from_conversation(
+                review,
+                &review_desk_store::DeveloperFinding {
+                    severity: Severity::Should,
+                    title: "The web path exports private columns when none are set".to_string(),
+                    at: "app/Http/Controllers/ExportController.php:41".to_string(),
+                    basis: review_desk_store::Basis::Ran,
+                },
+                review_desk_store::PromptedBy {
+                    message: answered,
+                    suggestion: None,
+                },
+                Actor::Developer,
+            )
+            .expect("turning the answer into a finding");
+        fields += check("addFinding", &finding_document(&store, &added));
     }
 
     // The fresh session the developer asked for: the record's half of
@@ -2971,6 +3059,8 @@ fn every_response_example_is_checked() {
         "deleteReview",
         "listDuplicateRounds",
         "foldRound",
+        "addFinding",
+        "dismissSuggestion",
     ]
     .into_iter()
     .collect();

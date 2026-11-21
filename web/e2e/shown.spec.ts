@@ -55,7 +55,6 @@ test.beforeAll(async () => {
   anotherId = openReview('735', 'b8c9d01')
   putDraft('A draft for the browser that has no cookie.', anotherId)
   redrawnId = openReview('736', 'c9d0e12')
-  putDraft('The draft as it was when the page opened.', redrawnId)
   ticketedId = openReview('737', 'd0e1f23')
   const nit = join(directory, 'shown-nit.json')
   writeFileSync(nit, JSON.stringify({
@@ -67,6 +66,9 @@ test.beforeAll(async () => {
     disposition: 'held_back',
   }))
   cli(database, ['finding', 'add', '--review', String(ticketedId), '--file', nit])
+  /* The redrawn one holds a nit too, so it has a write that does not move its draft. */
+  cli(database, ['finding', 'add', '--review', String(redrawnId), '--file', nit])
+  putDraft('The draft as it was when the page opened.', redrawnId)
   putDraft('The draft before the nit ticket was asked for.', ticketedId)
   serving = await serve(database)
 })
@@ -121,10 +123,12 @@ test('a draft rewritten and then re-read says so before anything is signed off',
 
   putDraft('Rewritten behind the page.', redrawnId)
 
-  /* Any write re-reads every open screen: here, asking the session something. */
-  await page.getByText('Ask the agent about Draft').click()
-  await page.getByPlaceholder('Ask why, or ask for rework').fill('Why F1?')
-  await page.getByRole('button', { name: 'Ask', exact: true }).click()
+  /*
+   * Any write re-reads every open screen: here, asking for the nit ticket, which writes
+   * nothing to the draft. It was asking the session something until DEV-1333: with no Allele,
+   * as here, *Ask this review* is read only, so asking is no longer a write this page can make.
+   */
+  await page.getByRole('button', { name: 'File as one ticket for an agent' }).click()
 
   await expect(page.getByText('Rewritten behind the page.')).toBeVisible()
   await expect(

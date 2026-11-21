@@ -80,6 +80,11 @@ describe('whether a message has reached the session', () => {
     created_at: '2026-10-30T11:00:00Z',
     read_at: null,
     read_by_session: null,
+    about: { tab: 'draft', finding: null },
+    parsed: false,
+    answer: null,
+    superseded_by: null,
+    suggestion_answers: [],
   }
   const now = new Date('2026-10-30T11:05:00Z')
 

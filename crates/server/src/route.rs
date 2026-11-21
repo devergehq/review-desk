@@ -1,4 +1,4 @@
-//! The contract's thirty-one operations, as a type.
+//! The contract's thirty-three operations, as a type.
 //!
 //! [`Operation::ALL`] is the point of this module: a test walks every operation the
 //! contract declares and asserts that each one is routed and answers, rather than the set
@@ -26,31 +26,87 @@ pub enum Operation {
     ListReviews,
     StartReview,
     ListDuplicateRounds,
-    GetReview { review_id: i64 },
-    DismissReview { review_id: i64 },
-    RestoreReview { review_id: i64 },
-    DeleteReview { review_id: i64 },
-    FoldRound { review_id: i64 },
-    ConfirmBrief { review_id: i64 },
-    GetProblemStatement { review_id: i64 },
-    GetReviewSession { review_id: i64 },
-    ListMessages { review_id: i64 },
-    AskSession { review_id: i64 },
-    RequestFreshSession { review_id: i64 },
-    SetFindingDisposition { review_id: i64, seq: i64 },
-    DecideFinding { review_id: i64, seq: i64 },
-    GetDraft { review_id: i64 },
-    SaveDraft { review_id: i64 },
-    ApproveDraft { review_id: i64 },
-    SendBackDraft { review_id: i64 },
-    RequestNitTicket { review_id: i64 },
-    TicketRestAndApprove { review_id: i64 },
+    GetReview {
+        review_id: i64,
+    },
+    DismissReview {
+        review_id: i64,
+    },
+    RestoreReview {
+        review_id: i64,
+    },
+    DeleteReview {
+        review_id: i64,
+    },
+    FoldRound {
+        review_id: i64,
+    },
+    ConfirmBrief {
+        review_id: i64,
+    },
+    GetProblemStatement {
+        review_id: i64,
+    },
+    GetReviewSession {
+        review_id: i64,
+    },
+    ListMessages {
+        review_id: i64,
+    },
+    AskSession {
+        review_id: i64,
+    },
+    RequestFreshSession {
+        review_id: i64,
+    },
+    SetFindingDisposition {
+        review_id: i64,
+        seq: i64,
+    },
+    DecideFinding {
+        review_id: i64,
+        seq: i64,
+    },
+    AddFinding {
+        review_id: i64,
+    },
+    DismissSuggestion {
+        review_id: i64,
+        seq: i64,
+        suggestion: i64,
+    },
+    GetDraft {
+        review_id: i64,
+    },
+    SaveDraft {
+        review_id: i64,
+    },
+    ApproveDraft {
+        review_id: i64,
+    },
+    SendBackDraft {
+        review_id: i64,
+    },
+    RequestNitTicket {
+        review_id: i64,
+    },
+    TicketRestAndApprove {
+        review_id: i64,
+    },
     ListReviewTimings,
     ListRules,
-    PromoteRule { rule_id: i64 },
-    DismissRule { rule_id: i64 },
-    RetireRule { rule_id: i64 },
-    DeferRule { rule_id: i64 },
+    PromoteRule {
+        rule_id: i64,
+    },
+    DismissRule {
+        rule_id: i64,
+    },
+    RetireRule {
+        rule_id: i64,
+    },
+    DeferRule {
+        rule_id: i64,
+    },
     SignIn,
 }
 
@@ -80,6 +136,12 @@ impl Operation {
         Operation::DecideFinding {
             review_id: 1,
             seq: 1,
+        },
+        Operation::AddFinding { review_id: 1 },
+        Operation::DismissSuggestion {
+            review_id: 1,
+            seq: 1,
+            suggestion: 1,
         },
         Operation::GetDraft { review_id: 1 },
         Operation::SaveDraft { review_id: 1 },
@@ -117,6 +179,8 @@ impl Operation {
             Operation::RequestFreshSession { .. } => "requestFreshSession",
             Operation::SetFindingDisposition { .. } => "setFindingDisposition",
             Operation::DecideFinding { .. } => "decideFinding",
+            Operation::AddFinding { .. } => "addFinding",
+            Operation::DismissSuggestion { .. } => "dismissSuggestion",
             Operation::GetDraft { .. } => "getDraft",
             Operation::SaveDraft { .. } => "saveDraft",
             Operation::ApproveDraft { .. } => "approveDraft",
@@ -210,6 +274,14 @@ impl Operation {
             }
             Operation::DecideFinding { review_id, seq } => {
                 format!("POST /reviews/{review_id}/findings/{seq}/decide")
+            }
+            Operation::AddFinding { review_id } => format!("POST /reviews/{review_id}/findings"),
+            Operation::DismissSuggestion {
+                review_id,
+                seq,
+                suggestion,
+            } => {
+                format!("POST /reviews/{review_id}/messages/{seq}/suggestions/{suggestion}/dismiss")
             }
             Operation::GetDraft { review_id } => format!("GET /reviews/{review_id}/draft"),
             Operation::SaveDraft { review_id } => format!("PUT /reviews/{review_id}/draft"),
@@ -384,6 +456,26 @@ pub fn match_route(method: &str, path: &str) -> Target {
             ),
             None => (Target::Unknown, true),
         },
+        ["reviews", id, "findings"] => match number(id) {
+            Some(review_id) => (
+                Target::Operation(Operation::AddFinding { review_id }),
+                method == "POST",
+            ),
+            None => (Target::Unknown, true),
+        },
+        ["reviews", id, "messages", seq, "suggestions", suggestion, "dismiss"] => {
+            match (number(id), number(seq), number(suggestion)) {
+                (Some(review_id), Some(seq), Some(suggestion)) => (
+                    Target::Operation(Operation::DismissSuggestion {
+                        review_id,
+                        seq,
+                        suggestion,
+                    }),
+                    method == "POST",
+                ),
+                _ => (Target::Unknown, true),
+            }
+        }
         ["reviews", id, "findings", seq] => match (number(id), number(seq)) {
             (Some(review_id), Some(seq)) => (
                 Target::Operation(Operation::SetFindingDisposition { review_id, seq }),

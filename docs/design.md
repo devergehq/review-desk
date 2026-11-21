@@ -88,11 +88,12 @@ first column. Six rules it keeps, each in the file that holds it:
   pages and nowhere else; absent is silent, as on the review's own strip. `agentLine`.
 - **Two places in the navigation, Pull requests and Rules.** Reviews was a third until the
   one list landed (DEV-1325); `/reviews` redirects to that list's *Every review* view.
-- **The conversation's column is drawn empty** on a review's pages until the second stack fills
-  it, and not at all under 1,100px while it is empty. Under 700px the shell is one column: the
-  sidebar behind a menu button that closes on Escape, the sample-data marker in the bar, no
-  conversation column (S14 is a bottom sheet). `web/e2e/shell.spec.ts` measures all of it at
-  1,600, 1,280, 1,024 and 390.
+- **The conversation's column holds *Ask this review*** on a review's pages (DEV-1333): the
+  layout draws the column and the review's page teleports `ConversationPanel` into it. Between
+  700 and 1,100px it sits under the page, at the main column's width. Under 700px the shell is
+  one column: the sidebar behind a menu button that closes on Escape, the sample-data marker
+  in the bar, and the conversation a bottom sheet behind the bar's *Ask* (S14, DEV-1336, below).
+  `web/e2e/shell.spec.ts` measures all of it at 1,600, 1,280, 1,024 and 390.
 
 **Queue and Reviews are one list, Pull requests** (DEV-1325, S1 and S17), at `/`:
 
@@ -168,6 +169,44 @@ by the developer. **Who answers is the developer's choice, and Review Desk never
 or drives Claude on its own** (S11): with Allele the conversation is two way; with the
 developer's own session it is one way, and the developer asks there; with neither it is read
 only. Under 700px wide the conversation is a bottom sheet (S14).
+
+## Ask this review is the conversation, drawn as the contract shapes it
+
+**S6's panel beside every tab** (DEV-1333), drawing what `GET /reviews/{id}/messages` served
+and never re-checking it. Each rule is in the file named:
+
+- **Who is answering is one helper**, `answering` in `web/app/utils/answering.ts`, read off
+  Allele's reading of the session and nothing else: a reading is two way, none is read only
+  (*No agent connected · you can read, not ask*). Every question, the box's and *Ask it again,
+  in the format*, leaves through the panel's one `send`, which asks `asksFromHere` first.
+- **A reply is drawn in the shape the server parsed**: the headline, each point after its
+  basis, the cites, *not sure*, the suggestions (which act, below); `working` as its activity steps; `cant`
+  as *can't answer yet*; a reply that did not parse folded after ~200 characters with one
+  button. A reply the server marks `superseded_by` is not drawn. `web/app/components/ConversationReply.vue`.
+- **A cite is a link only when the record holds what it names**, and the session's words
+  otherwise: `citeTarget` in `web/app/utils/cites.ts`. `F9` selects the finding through
+  `findingPath`.
+- **The questions an empty conversation starts with are offered only when the record holds
+  their reason**, and *Asked so far* counts the developer's questions by the tab each was
+  about. `suggestedQuestions` and `askedSoFar` in `web/app/utils/conversation.ts`.
+- **Nothing in it is sized to the column**, so the phone's sheet hosts the same component.
+- **On a phone it is a bottom sheet over the dimmed review** (DEV-1336, S14), opened by *Ask*
+  in the bar on a review's pages. **The sheet is the column, not a copy of it**: under 700px
+  `#conversation` is drawn fixed to the window's foot instead of not at all, so the panel
+  the page teleported there is the one the sheet shows, with its thread and its ask box's
+  text. The layout owns the container and nothing inside it — the grabber, the chevron that
+  closes it, the scrim, `inert` on the page, and every `env(safe-area-inset-*)`. Escape,
+  the scrim, going somewhere and widening past 700 close it, as they close the menu.
+  `web/app/layouts/default.vue`; `web/e2e/phone-sheet.spec.ts` asks from it two way, and
+  `web/e2e/shell.spec.ts` opens it on every tab at 390 and finds no sideways scroll.
+- **A suggestion is accepted through the page's own control, and dismissed with one click**
+  (DEV-1334, S8). Accept on `regrade`, `add_to_draft` and `set_aside` is the decision `G`, `E`
+  and `S` make; on `new_finding`, and *Turn into a finding* on an answer, it is the one call
+  that adds a finding, and Findings marks the finding *new*; a `draft_reply` fills the reply on
+  Replies for the developer to send; a `follow_up` fills the ask box. An answered suggestion is
+  drawn as one line in place of its buttons (*Added as F16 · should · ran*). The reason for a
+  dismissal is asked after the click, never before it. **No Undo**: the page's decisions have
+  none. `accepting` in `web/app/utils/suggestionActions.ts`; `SuggestionActions.vue`.
 
 ## Two kinds of screen
 
@@ -477,6 +516,7 @@ Neither of these is a decision against; both are waiting on real use.
 | 21 Nov 2026 | `P` Promote and `N` Not a rule on Rules | The keys table |
 | 21 Nov 2026 | Draft's sign-off is the header's action; a later round names itself and says what became of the last | *Draft is what posts beside what you decide*; `primaryAction`, `sinceRound` |
 | 21 Nov 2026 | A session's answer follows the contract or is kept only as an unparsed message | `docs/answer-contract.md` |
+| 21 Nov 2026 | A suggestion is accepted through the page's own control and stays the developer's decision; `prompted_by` names the reply | *Ask this review*; `accepting`, `addFinding` |
 | 21 Nov 2026 | Queue and Reviews are one Pull requests list with a preview; the bottom line is one helper | *The application shell*; `pages/index.vue`, `bottomLine` |
 | 21 Nov 2026 | Overview is three pages chosen from the record; outcomes are grouped once, each with its basis | `overview.ts`, `sinceYouPosted` |
 | 15 Nov 2026 | Review Desk never starts, resumes or drives Claude itself; without Allele the conversation is one way | *The application shell*; S11 |

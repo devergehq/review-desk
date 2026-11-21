@@ -59,6 +59,22 @@ pub enum StoreError {
     )]
     AlreadyDismissed { review_id: i64 },
 
+    /// A suggestion the developer has already answered — DEV-1334.
+    ///
+    /// An accepted suggestion is a decision in the record and is not taken twice; a
+    /// dismissed one is not accepted afterwards, and an accepted one is not dismissed. Only
+    /// a dismissal's reason may be said again.
+    #[error(
+        "the suggestion {which} of message {message} on review {review_id} is already {answered}"
+    )]
+    SuggestionAnswered {
+        review_id: i64,
+        message: i64,
+        /// `1`, `2`, `3`, or "behind the whole answer" for *Turn into a finding*.
+        which: String,
+        answered: &'static str,
+    },
+
     /// An act that needs an agent afterwards was asked for on a dismissed review.
     #[error(
         "review {review_id} is dismissed, so no session will be started for it and \
@@ -185,6 +201,14 @@ pub enum StoreError {
         id: String,
     },
 
+    /// A session's reply does not follow the answer contract (`docs/answer-contract.md`).
+    ///
+    /// Its own variant, because the field is a path into the body (`suggests[1].to`) rather
+    /// than one of the store's own names, and because the session is told to resend: the
+    /// rule is the whole message, and nothing of the reply was kept.
+    #[error("the reply does not follow the answer contract, so nothing was kept: {field}: {rule}")]
+    NotTheContract { field: String, rule: String },
+
     /// A value read from the database is not one this version of the code knows.
     #[error("{field} holds {value:?}, which is not a valid {field}; expected one of: {expected}")]
     InvalidValue {
@@ -240,6 +264,7 @@ impl StoreError {
             StoreError::DraftStatus { .. } => "draft_status",
             StoreError::NoDraftSection { .. } => "no_draft_section",
             StoreError::AlreadyDismissed { .. } => "already_dismissed",
+            StoreError::SuggestionAnswered { .. } => "suggestion_answered",
             StoreError::DismissedReview { .. } => "dismissed_review",
             StoreError::FinishedReview { .. } => "finished_review",
             StoreError::SupersededRound { .. } => "superseded_round",
@@ -252,6 +277,7 @@ impl StoreError {
             StoreError::NotFound { .. } => "not_found",
             StoreError::UnknownParent { .. } => "unknown_parent",
             StoreError::InvalidValue { .. } => "invalid_value",
+            StoreError::NotTheContract { .. } => "not_the_contract",
             StoreError::Open { .. } => "cannot_open_database",
             StoreError::Migration { .. } => "migration_failed",
             StoreError::FromTheFuture { .. } => "database_from_the_future",
@@ -271,6 +297,7 @@ impl StoreError {
                 | StoreError::DraftStatus { .. }
                 | StoreError::NoDraftSection { .. }
                 | StoreError::AlreadyDismissed { .. }
+                | StoreError::SuggestionAnswered { .. }
                 | StoreError::DismissedReview { .. }
                 | StoreError::FinishedReview { .. }
                 | StoreError::SupersededRound { .. }
@@ -282,6 +309,7 @@ impl StoreError {
                 | StoreError::NotFound { .. }
                 | StoreError::UnknownParent { .. }
                 | StoreError::InvalidValue { .. }
+                | StoreError::NotTheContract { .. }
         )
     }
 }

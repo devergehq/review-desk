@@ -91,7 +91,6 @@ const MARK_WORDS: Record<QuestionMark, string> = {
         :detail="data"
         step="understand"
         tab="overview"
-        :conversation-steps="CASE_STEPS"
         :headline="null"
       >
         <!--

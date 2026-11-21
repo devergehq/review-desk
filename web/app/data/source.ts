@@ -168,6 +168,8 @@ export async function loadBackend(): Promise<DeskBackend> {
     signIn: api.signIn,
     setFindingDisposition: api.setFindingDisposition,
     decideFinding: api.decideFinding,
+    addFinding: api.addFinding,
+    dismissSuggestion: api.dismissSuggestion,
     saveDraft: api.saveDraft,
     approveDraft: api.approveDraft,
     sendBackDraft: api.sendBackDraft,

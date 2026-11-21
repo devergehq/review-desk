@@ -92,6 +92,10 @@
 //! Version 25 is the first record of a GitHub *write*: one row per attempt to post a
 //! review through `review-desk post` (DEV-1347), with the salt its hidden tag was keyed
 //! with, and the one random id that tells this database's tags from another Mac's.
+//!
+//! Version 26 is the answer contract (DEV-1332): a session's reply kept as the contract
+//! parsed it, beside its raw body, with the flag that says whether it parsed — and, on every
+//! message, the tab it sits on and the finding it is about, backfilled from its step.
 
 use rusqlite::Connection;
 
@@ -1976,6 +1980,89 @@ CREATE TABLE installation (
     install_id TEXT    NOT NULL CHECK (length(install_id) = 12)
 );
 INSERT INTO installation (id, install_id) VALUES (1, lower(hex(randomblob(6))));
+"#,
+    },
+    Migration {
+        version: 26,
+        name: "answer-contract",
+        sql: r#"
+-- **A session's reply is checked against the answer contract before it is kept** —
+-- DEV-1332, under DEV-1331. The contract is `docs/answer-contract.md`.
+--
+-- `answer` is the reply as the contract parsed it, as JSON, beside `body`, which stays the
+-- raw text the session sent. `parsed` says which of the two the page may draw as an
+-- answer: a reply written as prose (`message reply --body`), and every message written
+-- before this, is not parsed, has no `answer`, and is never counted and never reaches a
+-- finding or a draft. A developer's message is never parsed: the contract is the shape of
+-- a session's reply and nothing else.
+--
+-- `tab` and `about_finding` are where a message sits on the page: one of the five tabs
+-- the step trail became (DEV-1324), and a finding on it when the message is about one —
+-- a finding on `findings`, or the reply on one on `replies`. The page sends them with an
+-- ask; an answer's own `about` gives them for a reply. Every row already held is
+-- backfilled from its step, by the same table as `ReviewTab::for_step`.
+ALTER TABLE review_messages ADD COLUMN answer TEXT;
+ALTER TABLE review_messages ADD COLUMN parsed INTEGER NOT NULL DEFAULT 0
+    CHECK (parsed IN (0, 1)
+       AND (parsed = 1) = (answer IS NOT NULL)
+       AND (parsed = 0 OR author = 'session'));
+ALTER TABLE review_messages ADD COLUMN tab TEXT NOT NULL DEFAULT 'overview'
+    CHECK (tab IN ('overview', 'understanding', 'findings', 'draft', 'replies'));
+ALTER TABLE review_messages ADD COLUMN about_finding INTEGER
+    CHECK (about_finding IS NULL
+        OR (about_finding >= 1 AND tab IN ('findings', 'replies')));
+
+UPDATE review_messages SET tab = CASE step
+    WHEN 'lint'         THEN 'understanding'
+    WHEN 'understand'   THEN 'understanding'
+    WHEN 'alternatives' THEN 'understanding'
+    WHEN 'solution_map' THEN 'understanding'
+    WHEN 'code_review'  THEN 'findings'
+    WHEN 'draft'        THEN 'draft'
+    WHEN 'harvest'      THEN 'replies'
+    ELSE 'overview'
+END;
+"#,
+    },
+    Migration {
+        version: 27,
+        name: "suggestion-answers",
+        sql: r#"
+-- **What the developer made of what a session suggested** — DEV-1334, under DEV-1331.
+--
+-- Patrick, 21 November 2026: "An accepted suggestion stays the developer's decision. A new
+-- `prompted_by` field holds the sequence number of the message that suggested it. No
+-- session's name goes on a developer's decision." So an acceptance writes exactly what the
+-- page's own control writes — an outcome by the developer, or a finding — and this table
+-- only says which reply, and which of its suggestions, prompted it.
+--
+-- `findings.prompted_by` is the reply a finding the developer added came from: Accept on a
+-- `new_finding`, or *Turn into a finding* on an answer. Null on every finding a session
+-- raised, which is every finding before this migration.
+ALTER TABLE findings ADD COLUMN prompted_by INTEGER CHECK (prompted_by IS NULL OR prompted_by >= 1);
+
+-- One row per suggestion the developer answered, and at most one per answer turned into a
+-- finding (`suggestion` null). A dismissal keeps the developer's optional reason; only a
+-- dismissal has one. An acceptance names what it wrote: the outcome a decision recorded,
+-- or the finding it added. Nothing here is deleted, like the findings and outcomes it names.
+CREATE TABLE suggestion_answers (
+    review_id   INTEGER NOT NULL,
+    message_seq INTEGER NOT NULL,
+    suggestion  INTEGER CHECK (suggestion IS NULL OR suggestion BETWEEN 1 AND 3),
+    verdict     TEXT    NOT NULL CHECK (verdict IN ('accepted', 'dismissed')),
+    reason      TEXT,
+    finding_seq INTEGER,
+    outcome_id  INTEGER REFERENCES outcomes (id) ON DELETE CASCADE,
+    answered_at INTEGER NOT NULL,
+    FOREIGN KEY (review_id, message_seq)
+        REFERENCES review_messages (review_id, seq) ON DELETE CASCADE,
+    CHECK (verdict = 'dismissed' OR reason IS NULL),
+    CHECK (verdict = 'accepted' OR (finding_seq IS NULL AND outcome_id IS NULL)),
+    CHECK (suggestion IS NOT NULL OR verdict = 'accepted')
+);
+
+CREATE UNIQUE INDEX suggestion_answers_one
+    ON suggestion_answers (review_id, message_seq, COALESCE(suggestion, 0));
 "#,
     },
 ];
