@@ -157,7 +157,7 @@ export type ReviewMessage = Schema['ReviewMessage']
 export type MessageList = Schema['MessageList']
 /** A session's reply as the answer contract parsed it. DEV-1332. */
 export type Answer = Schema['Answer']
-/** One of the closed list of seven an answer may suggest. */
+/** One of the closed list of six an answer may suggest. */
 export type Suggestion = Schema['Suggestion']
 /** Where a message sits on the page: a tab, and a finding on it. */
 export type MessageAbout = Schema['MessageAbout']

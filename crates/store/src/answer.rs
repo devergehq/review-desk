@@ -18,7 +18,7 @@
 //!
 //! **The closed list of suggestions is [`SuggestionType::ALL`], here and nowhere else.** A
 //! test that wants to say "no suggestion signs off, approves or posts" imports it rather
-//! than copying seven words that can drift.
+//! than copying six words that can drift.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -42,8 +42,6 @@ pub const ACTIVITY_LINE_MAX: usize = 60;
 pub const TITLE_MAX: usize = 100;
 /// The longest the words of a suggested reply may be.
 pub const WORDS_MAX: usize = 600;
-/// How many questions Overview asks, so `answer_question` can name one of them.
-pub const OVERVIEW_QUESTIONS: i64 = 5;
 
 string_enum! {
     /// What a reply is: an answer, word that the session is still working, or why it can't.
@@ -112,15 +110,14 @@ string_enum! {
     /// makes the whole answer not parse. None of them signs off, approves or posts:
     /// accepting one records a decision the developer could already make on the page.
     ///
-    /// `answer_question` is provisional — DEV-1331 asked whether to drop it, since nothing
-    /// stores a tick on Overview's questions yet. Removing it is this variant, its arm in
-    /// [`Suggestion`] and [`parse_suggestion`], and one row of the doc's table.
+    /// **`answer_question` is not on it.** Patrick dropped it on 21 November 2026 (DEV-1331),
+    /// since nothing stores a tick on Overview's questions to accept one into; a reply that
+    /// suggests it now fails as an unknown type.
     SuggestionType as "type" {
         NewFinding => "new_finding",
         Regrade => "regrade",
         AddToDraft => "add_to_draft",
         SetAside => "set_aside",
-        AnswerQuestion => "answer_question",
         DraftReply => "draft_reply",
         FollowUp => "follow_up",
     }
@@ -288,8 +285,6 @@ pub enum Suggestion {
     },
     /// Set a finding aside.
     SetAside { finding: FindingNumber, why: String },
-    /// Answer one of Overview's five questions. Provisional; see [`SuggestionType`].
-    AnswerQuestion { question: i64, answer: String },
     /// Fill the reply to an author's answer on Replies.
     DraftReply {
         finding: FindingNumber,
@@ -308,7 +303,6 @@ impl Suggestion {
             Suggestion::Regrade { .. } => SuggestionType::Regrade,
             Suggestion::AddToDraft { .. } => SuggestionType::AddToDraft,
             Suggestion::SetAside { .. } => SuggestionType::SetAside,
-            Suggestion::AnswerQuestion { .. } => SuggestionType::AnswerQuestion,
             Suggestion::DraftReply { .. } => SuggestionType::DraftReply,
             Suggestion::FollowUp { .. } => SuggestionType::FollowUp,
         }
@@ -649,7 +643,6 @@ fn parse_suggestion(value: &Value, field: &str) -> Result<Suggestion> {
         SuggestionType::Regrade => &["type", "finding", "from", "to", "why"],
         SuggestionType::AddToDraft => &["type", "finding", "text"],
         SuggestionType::SetAside => &["type", "finding", "why"],
-        SuggestionType::AnswerQuestion => &["type", "question", "answer"],
         SuggestionType::DraftReply => &["type", "finding", "call", "words"],
         SuggestionType::FollowUp => &["type", "question"],
     };
@@ -696,27 +689,6 @@ fn parse_suggestion(value: &Value, field: &str) -> Result<Suggestion> {
             finding: finding_field(one, field)?,
             why: required_line(one, "why", field, LINE_MAX)?,
         },
-        SuggestionType::AnswerQuestion => {
-            let path = format!("{field}.question");
-            let question = match one.get("question") {
-                None => return Err(broken(path, "required")),
-                Some(value) => value
-                    .as_i64()
-                    .filter(|n| (1..=OVERVIEW_QUESTIONS).contains(n))
-                    .ok_or_else(|| {
-                        broken(
-                            path,
-                            format!(
-                                "which of Overview's questions, from 1 to {OVERVIEW_QUESTIONS}"
-                            ),
-                        )
-                    })?,
-            };
-            Suggestion::AnswerQuestion {
-                question,
-                answer: required_line(one, "answer", field, LINE_MAX)?,
-            }
-        }
         SuggestionType::DraftReply => {
             let finding = finding_field(one, field)?;
             let call: ReplyCall = required_closed(one, "call", field)?;

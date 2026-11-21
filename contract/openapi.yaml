@@ -2996,8 +2996,8 @@ components:
       pattern: '^F[1-9][0-9]*$'
     Suggestion:
       description: |
-        One of the closed list of seven, and only these. None of them signs off, approves
-        or posts. `answer_question` is provisional.
+        One of the closed list of six, and only these. None of them signs off, approves
+        or posts.
       oneOf:
         - type: object
           additionalProperties: false
@@ -3031,13 +3031,6 @@ components:
             type: { const: set_aside }
             finding: { $ref: '#/components/schemas/FindingNumber' }
             why: { type: string, minLength: 1, maxLength: 200 }
-        - type: object
-          additionalProperties: false
-          required: [type, question, answer]
-          properties:
-            type: { const: answer_question }
-            question: { type: integer, minimum: 1, maximum: 5 }
-            answer: { type: string, minLength: 1, maxLength: 200 }
         - type: object
           additionalProperties: false
           required: [type, finding, call, words]

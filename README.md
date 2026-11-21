@@ -838,7 +838,7 @@ JSON
 | `points` | no | ≤5, each `{basis: ran/read/told, text ≤200}` |
 | `cites` | ≥1 when it claims anything | strings, never resolved |
 | `not_sure` | no | one string, ≤200 |
-| `suggests` | no | ≤3, from the closed list of seven in the doc |
+| `suggests` | no | ≤3, from the closed list of six in the doc |
 | `activity` | on `working` only | 1–6 steps, each ≤60 |
 | `about` | no | one of `step`, `finding` (`F9`) or `reply` (`F3`) |
 | `asked` | no | ≤200: one-way mode's account of the question |

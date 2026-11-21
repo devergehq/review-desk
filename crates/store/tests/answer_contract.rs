@@ -280,14 +280,13 @@ fn a_suggestion_of_any_other_type_makes_the_whole_answer_not_parse() {
 }
 
 #[test]
-fn the_closed_list_is_seven_and_each_parses() {
+fn the_closed_list_is_six_and_each_parses() {
     let every = [
         json!({ "type": "new_finding", "severity": "should", "title": "CSV export leaks columns",
                 "where": "app/Http/Controllers/CsvController.php:12", "basis": "read" }),
         json!({ "type": "regrade", "finding": "F9", "from": "should", "to": "blocker", "why": "It leaks." }),
         json!({ "type": "add_to_draft", "finding": "F9" }),
         json!({ "type": "set_aside", "finding": "F4", "why": "The author fixed it in 3a1b." }),
-        json!({ "type": "answer_question", "question": 3, "answer": "Yes, both paths are covered." }),
         json!({ "type": "draft_reply", "finding": "F3", "call": "raise_again", "words": "This still skips tenants." }),
         json!({ "type": "follow_up", "question": "Should the CSV path be checked too?" }),
     ];
@@ -393,21 +392,23 @@ fn set_aside_carries_a_finding_and_why() {
 }
 
 #[test]
-fn answer_question_names_one_of_the_five_and_answers_it() {
-    for bad in [json!(0), json!(6), json!("3")] {
-        assert_eq!(
-            refused(&suggesting(
-                json!({ "type": "answer_question", "question": bad, "answer": "Yes." })
-            )),
-            "suggests[0].question"
-        );
-    }
-    assert_eq!(
-        refused(&suggesting(
-            json!({ "type": "answer_question", "question": 2 })
-        )),
-        "suggests[0].answer"
-    );
+fn answer_question_is_dropped_and_fails_as_an_unknown_type() {
+    // Dropped on Patrick's decision of 21 November 2026 (DEV-1331): nothing stores a tick on
+    // Overview's questions, so there is nothing to accept one into.
+    assert!(!SuggestionType::ALL
+        .iter()
+        .any(|kind| kind.as_str() == "answer_question"));
+    let field = match Answer::parse(
+        &suggesting(json!({ "type": "answer_question", "question": 3, "answer": "Yes." }))
+            .to_string(),
+    ) {
+        Err(StoreError::NotTheContract { field, rule }) => {
+            assert!(rule.contains("is not one of"), "{rule}");
+            field
+        }
+        other => panic!("answer_question still parses: {other:?}"),
+    };
+    assert_eq!(field, "suggests[0].type");
 }
 
 #[test]

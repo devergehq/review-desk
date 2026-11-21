@@ -58,14 +58,14 @@ resolved** against the record: a SHA, `criterion 3` or a finding from another ro
 | `regrade` | `finding`, `from`, `to` (not `from`), `why` (≤200) | regrades the finding | `G` |
 | `add_to_draft` | `finding`, or `text` (one sentence, ≤200), or both | edits the finding's wording | `E` |
 | `set_aside` | `finding`, `why` (≤200) | sets the finding aside | `S` |
-| `answer_question` | `question` (1–5), `answer` (≤200) | ticks it on Overview | — |
 | `draft_reply` | `finding`, `call` (`raise_again`, `accept_reason` or `withdraw`: `R`/`A`/`W`), `words` (≤600) | fills the reply on Replies | `R` `A` `W` |
 | `follow_up` | `question` (≤200) | fills the ask box | — |
 
 A `finding` is written `F` and its number, as `F9`. Every field a row names is required unless
 the row says "or". The list is defined once, as `SuggestionType` in
-`crates/store/src/answer.rs`; anything that needs it imports it. `answer_question` is
-provisional (DEV-1331).
+`crates/store/src/answer.rs`; anything that needs it imports it. `answer_question` (tick one
+of Overview's five questions) was dropped by Patrick on 21 November 2026 (DEV-1331): nothing
+stores a tick for it to accept into, so a reply that suggests it does not parse.
 
 A suggestion of any other type makes the whole answer not parse.
 
