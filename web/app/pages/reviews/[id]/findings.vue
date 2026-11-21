@@ -108,7 +108,6 @@ import { commitLabel, movesSince, nothingMoved } from '~/utils/rounds'
 definePageMeta({ wide: true })
 
 const route = useRoute()
-const router = useRouter()
 const desk = useReviewDesk()
 
 const reviewId = computed(() => Number(route.params.id))
@@ -175,18 +174,6 @@ const sinceTheDraft = computed(() => {
 function choose(seq: number) {
   picked.value = seq
   reasoning.value = false
-  /*
-   * **And the address says which**, so a link to a finding the reader has moved away from
-   * is a navigation again. Land on `?finding=F3`, press J to F5, and the header's *Answer F3*
-   * (or a cite in the conversation) had the same address as the page — the router did
-   * nothing and the bench stayed on F5. Found by this branch's self-review. `replace`, so J
-   * down a list of fifteen is not fifteen entries in the history; the hash goes, because
-   * the query now says it and two names for one finding could disagree.
-   */
-  const key = rows.value.find(finding => finding.seq === seq)?.key
-  if (key && route.query.finding !== key) {
-    void router.replace({ query: { ...route.query, finding: key }, hash: '' })
-  }
 }
 
 /*
@@ -272,21 +259,24 @@ watch(
 )
 
 /**
- * **A link followed while already on this tab is an arrival too.** The header's *Answer F3*
- * and a conversation's cite go to `?finding=F3`; on this page that changes the query and
- * nothing else, so the page is reused and the watch above, once-only, would ignore it.
+ * **A link followed while already on this tab is an arrival too.** A link to `?finding=F3`
+ * from this page changes the query and nothing else, so the page is reused and the watch
+ * above, once-only, would ignore it.
+ *
+ * **The address names the arrival, not the bench.** Choosing a row does not rewrite it. That
+ * was tried on this branch and taken out (#96's self-review, round 2), because Nuxt's
+ * scroll rule for a same-page navigation that drops the hash sends the window to the top,
+ * and the address went stale whenever the list, the part or a decision moved the bench. The
+ * cost is that a link to the finding the reader arrived at, followed after they moved away,
+ * is the page's own address and does nothing. No such link is drawn on this page today. The
+ * conversation's cites (stack 2) are the first that would be, and that is where to write
+ * the bench into the address, with a router `scrollBehavior` that leaves the window alone.
  */
 watch(
   () => [route.query.finding, route.hash],
   () => {
     const data = detail.data.value
-    /*
-     * **Not when the address names the finding the reader chose**, which is the address
-     * `choose` writes. Arriving at it again would clear the part filter they had set, and,
-     * after a decision moved it to another list, would follow it there. `picked` and not
-     * `shown`: a decision changes what is shown without the reader choosing anything.
-     */
-    if (!data || findingAsked(route.query, route.hash) === picked.value) return
+    if (!data) return
     void arriveAt(data.findings)
   },
 )
@@ -598,6 +588,14 @@ function partName(finding: Finding): string {
  * S4's *Raised before*, read off the record: a carried finding names the round it came from
  * and how long it has been open; one raised this round says no.
  */
+/** Whether the parts select was last worked with the pointer. See its comment. */
+const pointerOnParts = ref(false)
+
+function partChosen(event: Event) {
+  if (pointerOnParts.value) (event.target as HTMLSelectElement).blur()
+  pointerOnParts.value = false
+}
+
 function raisedBefore(finding: Finding): string {
   if (!isCarried(finding)) return 'No'
   const where = finding.continues_round
@@ -735,15 +733,20 @@ function coverage(data: ReviewDetail): string | null {
               >
                 <span class="rd-visually-hidden">Show only the findings in one part</span>
                 <!--
-                  **Blurred once chosen.** A focused `<select>` is a field to `keyIsForThePage`,
-                  so every key in the table stopped working after a part was picked, and its
-                  own typeahead took T and S as the first letters of part names. Found by this
-                  branch's self-review.
+                  **Blurred once chosen with the pointer, and only then.** A focused `<select>`
+                  is a field to `keyIsForThePage`, so after a part was picked with the mouse
+                  every key in the table stopped working, and the select's typeahead took T
+                  and S. A keyboard user keeps the select's own keys: on Windows and Linux an
+                  arrow on a closed select changes it and fires `change` on every press, and
+                  blurring then would throw their focus off the control after the first
+                  arrow. Both found by this branch's self-review.
                 -->
                 <select
                   v-model.number="part"
                   class="rd-field parts-select"
-                  @change="($event.target as HTMLSelectElement).blur()"
+                  @pointerdown="pointerOnParts = true"
+                  @keydown="pointerOnParts = false"
+                  @change="partChosen"
                 >
                   <option
                     v-for="tile in tiles"

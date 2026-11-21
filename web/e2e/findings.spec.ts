@@ -68,8 +68,7 @@ test('the list’s keys do not follow the reader onto Findings', async ({ page }
 
   await page.keyboard.press('Enter')
   await page.waitForTimeout(300)
-  /* Still Findings. J and K write the finding into the query, which is this page's own. */
-  await expect(page).toHaveURL(new RegExp(`/reviews/${id}/findings\\?finding=F[0-9]+$`))
+  await expect(page).toHaveURL(`${seeded}reviews/${id}/findings`)
 })
 
 /*
@@ -116,22 +115,34 @@ test('no finding’s hunk forces the page sideways at 1,600 beside the conversat
 })
 
 /*
- * **Choosing a part leaves the keys working.** A focused `<select>` is a field, and a key
- * pressed at a field is not a key for the page, so the select gives focus back once a part
- * is chosen. Found by this branch's self-review.
+ * **Choosing a part with the pointer leaves the keys working.** A focused `<select>` is a
+ * field, and a key pressed at a field is not a key for the page, so the select gives focus
+ * back once a part is chosen with the pointer. A keyboard user keeps it, because an arrow on
+ * a closed select fires `change` on Windows and Linux. Found by this branch's self-review.
  */
-test('the keys still work after a part is chosen', async ({ page }) => {
+test('the keys still work after a part is chosen with the pointer', async ({ page }) => {
   await page.goto(`${seeded}reviews/${id}/findings`)
   await expect(picked(page)).toBeVisible()
   const select = page.locator('.parts-select')
-  test.skip(await select.count() === 0, 'this review has no parts')
+  await expect(select, 'the seeded review describes its change in parts').toHaveCount(1)
 
   /* A part, and back to all of them: a list long enough for J to move in. */
-  await select.selectOption({ index: 1 })
-  await expect(select).not.toBeFocused()
-  await select.selectOption({ index: 0 })
-  await expect(select).not.toBeFocused()
+  for (const index of [1, 0]) {
+    await select.dispatchEvent('pointerdown')
+    await select.selectOption({ index })
+    await expect(select).not.toBeFocused()
+  }
   const first = (await picked(page).textContent())!.trim()
   await page.keyboard.press('j')
   await expect(picked(page)).not.toHaveText(first)
+})
+
+test('a keyboard user keeps focus on the parts control', async ({ page }) => {
+  await page.goto(`${seeded}reviews/${id}/findings`)
+  await expect(picked(page)).toBeVisible()
+  const select = page.locator('.parts-select')
+  await select.focus()
+  await select.press('ArrowDown')
+  await select.selectOption({ index: 1 })
+  await expect(select).toBeFocused()
 })

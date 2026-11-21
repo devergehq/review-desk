@@ -1,5 +1,5 @@
 // @vitest-environment nuxt
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { enableAutoUnmount, flushPromises, type VueWrapper } from '@vue/test-utils'
 
@@ -1665,25 +1665,18 @@ describe('arriving at a finding named in the query', () => {
   })
 
   /*
-   * **The address follows the bench, so a link back to a finding is a navigation.** Found
-   * by this branch's self-review: land on `?finding=F2`, move away, and a link to F2 had the
-   * address the page already had, so the router did nothing.
+   * **Choosing a row leaves the address alone**: it names the arrival, not the bench (#96's
+   * self-review, round 2: rewriting it scrolled the window to the top and went stale).
    */
-  it('writes the finding chosen into the address, and arrives again at a link back', async () => {
+  it('does not rewrite the address when a finding is chosen', async () => {
     const page = await at(REAL, '?finding=F2')
-    expect(page.find('.row--picked').find('.key').text()).toBe('F2')
-
     await press(page, 'To post')
     await flushPromises()
     const other = page.findAll('.row').find(one => one.find('.key').text() === 'F6')!
     await other.trigger('click')
-    /* A navigation resolves over more than one turn: wait for the router, not a tick. */
-    await vi.waitFor(() => expect(useRouter().currentRoute.value.query.finding).toBe('F6'))
-
-    await useRouter().push(`/reviews/${REAL}/findings?finding=F2`)
     await flushPromises()
-    await flushPromises()
-    expect(page.find('.row--picked').find('.key').text()).toBe('F2')
+    expect(page.find('.row--picked').find('.key').text()).toBe('F6')
+    expect(useRouter().currentRoute.value.query.finding).toBe('F2')
   })
 
   it('keeps the part filter when a row is chosen', async () => {
