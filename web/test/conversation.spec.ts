@@ -149,6 +149,13 @@ describe('where a cite goes', () => {
     expect(citeTarget('abc1234', { ...SOURCE, rounds }).kind).toBe('away')
   })
 
+  it('links a commit a finding’s line was read at, and a full SHA the record holds short', () => {
+    const findings = [...FINDINGS, { key: 'F20', seq: 20, file: 'a.php', line: 1, line_sha: 'c0ffee1234' }] as unknown as ReviewDetail['findings']
+    expect(citeTarget('c0ffee1', { ...SOURCE, findings }).kind).toBe('away')
+    const short = { ...SOURCE, review: { ...SOURCE.review, head_sha: '7f3c2d1' } }
+    expect(citeTarget('7f3c2d1a9b8e0011', short).kind).toBe('away')
+  })
+
   it('draws a commit the record does not hold as text, never a link to a 404', () => {
     expect(citeTarget('1234567', SOURCE)).toEqual({ kind: 'text', text: '1234567' })
     expect(citeTarget('deadbee', SOURCE).kind).toBe('text')
