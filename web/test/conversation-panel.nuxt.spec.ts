@@ -1,5 +1,5 @@
 // @vitest-environment nuxt
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { flushPromises, type VueWrapper } from '@vue/test-utils'
 
@@ -91,20 +91,98 @@ beforeEach(async () => {
 describe('no agent can answer', () => {
   it('says so in the header and takes no question', async () => {
     const page = await panel()
-    expect(page.find('[data-testid="answering"]').text()).toBe('No agent connected · you can read, not ask')
+    expect(page.find('h2').text()).toBe('Ask this review')
+    expect(page.find('[data-testid="answering"]').text()).toBe('No agent connected · read only')
     expect(page.find('textarea').attributes('disabled')).toBeDefined()
     expect(page.find('textarea').attributes('placeholder')).toContain('Without Allele')
     expect(page.find('[data-testid="about"]').exists()).toBe(false)
     expect(page.findAll('button').map(one => one.text())).not.toContain('Ask')
     expect(page.text()).not.toContain('Start with one of these')
     expect(page.text()).toContain('Everything asked so far is kept here and still reads.')
+    expect(page.find('[data-testid="fresh-session"]').text()).toContain(`review-desk message list --review ${REVIEW}`)
   })
 
-  it('still draws everything already said', async () => {
-    await resetDesk({ messages: [ASK, answered(2, { kind: 'answer', headline: 'Yes, the same hole.', cites: ['F1'] })] })
+  it('still draws what the developer asked before Allele went', async () => {
+    await resetDesk({ messages: [ASK] })
     const page = await panel()
+    expect(page.find('[data-testid="answering"]').text()).toBe('No agent connected · read only')
     expect(page.text()).toContain('Does it also happen on the web path?')
-    expect(page.text()).toContain('Yes, the same hole.')
+  })
+})
+
+describe('your own session, one way', () => {
+  const WRITTEN = answered(2, {
+    kind: 'answer',
+    headline: 'Yes, the same hole.',
+    cites: ['F1'],
+    asked: 'Does it also happen on the web path?',
+  }, { about: { tab: 'findings', finding: 1 } })
+
+  /* What the clipboard was given, in place of the browser's. */
+  let clipboard: string[] = []
+  beforeEach(() => {
+    clipboard = []
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      clipboard: { writeText: async (text: string) => void clipboard.push(text) },
+    })
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('says who in S13’s words, and counts what the session wrote', async () => {
+    await resetDesk({ messages: [WRITTEN] })
+    const page = await panel()
+    expect(page.find('[data-testid="conversation-panel"]').attributes('data-mode')).toBe('one_way')
+    expect(page.find('h2').text()).toBe('From your session')
+    expect(page.find('[data-testid="answering"]').text()).toBe('Your own Claude Code session · one way · no Allele')
+    expect(page.find('[data-testid="asked-so-far"]').text()).toBe('Written so far: Findings 1')
+    expect(page.text()).toContain('Your question, as your session recorded it')
+    expect(page.text()).toContain('Your session writes here with review-desk message reply.')
+    expect(page.find('[data-testid="fresh-session"]').exists()).toBe(true)
+  })
+
+  it('has no box to type in and no Ask, only Copy a reference', async () => {
+    await resetDesk({ messages: [WRITTEN] })
+    const page = await panel('findings', `/reviews/${REVIEW}/findings?finding=F1`)
+    expect(page.find('textarea').exists()).toBe(false)
+    expect(page.find('[data-testid="one-way"]').text()).toContain('Ask in your Claude Code session.')
+    expect(page.find('[data-testid="about"]').text()).toContain('About: F1 · app/Reporting/ExportContext.php:44')
+    expect(page.findAll('button').map(one => one.text())).not.toContain('Ask')
+  })
+
+  it('copies a reference and creates no message', async () => {
+    await resetDesk({ messages: [WRITTEN] })
+    const page = await panel('findings', `/reviews/${REVIEW}/findings?finding=F1`)
+    useAskBox(REVIEW).fill('And the CSV download?')
+    await settle(page)
+
+    const copy = page.findAll('button').find(one => one.text() === 'Copy a reference')!
+    await copy.trigger('click')
+    await page.find('form').trigger('submit')
+    await settle(page)
+
+    expect(clipboard).toHaveLength(1)
+    expect(clipboard[0]).toContain(`Review Desk review ${REVIEW}, about F1 · app/Reporting/ExportContext.php:44.`)
+    expect(clipboard[0]).toContain(`review-desk message reply --review ${REVIEW} --step code_review`)
+    expect(clipboard[0]).toContain('README.md, “Talking to the review’s session”')
+
+    const kept = useReviewDesk().messages(REVIEW)
+    await kept.refresh()
+    expect(kept.data.value!.messages.map(one => one.seq)).toEqual([2])
+  })
+
+  it('draws the reference to select when the clipboard refuses it', async () => {
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      clipboard: { writeText: async () => { throw new Error('denied') } },
+    })
+    await resetDesk({ messages: [WRITTEN] })
+    const page = await panel()
+    await page.findAll('button').find(one => one.text() === 'Copy a reference')!.trigger('click')
+    await settle(page)
+    expect(page.find('[data-testid="uncopied"]').text()).toContain(`Review Desk review ${REVIEW}`)
   })
 })
 
@@ -112,7 +190,7 @@ describe('nothing asked yet', () => {
   it('offers only the questions this review can support, and fills the box with one', async () => {
     await resetDesk({ session_readings: { [REVIEW]: IDLE } })
     const page = await panel('overview')
-    expect(page.find('[data-testid="answering"]').text()).toBe('The session that wrote this review · idle')
+    expect(page.find('[data-testid="answering"]').text()).toBe('The session that wrote this review · idle · via Allele')
     const offered = page.findAll('.suggested').map(one => one.text().replace('↗', '').trim())
     expect(offered).toContain('Why option C over the other seven?')
     expect(offered).not.toContain('Where did the second reader disagree?')
@@ -253,7 +331,7 @@ describe('a reply that did not follow the format', () => {
   const long = `So looking at this more broadly, ${'the export pipeline has several layers '.repeat(30)}end.`
 
   it('is folded and inert, with one button', async () => {
-    await resetDesk({ messages: [ASK, said(2, { body: long })] })
+    await resetDesk({ messages: [ASK, said(2, { body: long })], session_readings: { [REVIEW]: IDLE } })
     const page = await panel()
     const reply = page.find('[data-kind="not_parsed"]')
     expect(reply.text()).toContain('This answer didn’t follow the format')
@@ -274,9 +352,23 @@ describe('a reply that did not follow the format', () => {
     expect(last.body).toContain('reply 2')
   })
 
-  it('cannot ask again where nobody can be asked', async () => {
-    await resetDesk({ messages: [ASK, said(2, { body: long })] })
+  it('copies a reference asking for it again in one way, and creates no message', async () => {
+    const clipboard: string[] = []
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      clipboard: { writeText: async (text: string) => void clipboard.push(text) },
+    })
+    await resetDesk({ messages: [said(2, { body: long })] })
     const page = await panel()
-    expect(page.find('[data-kind="not_parsed"] button').attributes('disabled')).toBeDefined()
+    const button = page.find('[data-kind="not_parsed"] button')
+    expect(button.text()).toBe('Copy a reference')
+    await button.trigger('click')
+    await settle(page)
+    vi.unstubAllGlobals()
+
+    expect(clipboard[0]).toContain('Reply 2 didn’t follow the answer format')
+    const kept = useReviewDesk().messages(REVIEW)
+    await kept.refresh()
+    expect(kept.data.value!.messages.map(one => one.seq)).toEqual([2])
   })
 })

@@ -10,14 +10,18 @@
  * - **A reply something later replaced is not drawn.** The server works out `superseded_by`:
  *   a `working` reply is replaced by the next parsed reply to the same question, a `cant` by
  *   the next parsed `answer`. So the thread draws the newest word on each question.
- * - **Asked so far counts the developer's questions**, by the tab each was asked about.
+ * - **Asked so far counts the developer's questions**, by the tab each was asked about. In
+ *   one way there are none to count — the developer asks in their own session — so the line
+ *   is *Written so far*, counting what the session wrote here (DEV-1335, S13).
+ * - **A reference is what one way hands the developer's session** instead of a question:
+ *   the review, the command that writes here, and where the contract is (DEV-1335).
  * - **A suggested question is offered only when the record can say why it is worth
  *   asking** — `design.md`: a fact the record cannot derive is left out.
  *
  * Nothing here reads or writes a record.
  */
 
-import type { MessageAbout, ReviewDetail, ReviewMessage, Suggestion } from '~/types/desk'
+import type { MessageAbout, ReviewDetail, ReviewLayerName, ReviewMessage, Suggestion } from '~/types/desk'
 
 import { whereOf } from './findings'
 import { REVIEW_TABS } from './reviewTabs'
@@ -53,6 +57,24 @@ export function askedSoFar(messages: readonly ReviewMessage[]): AskedOnTab[] {
       label,
       count: messages.filter(message =>
         message.author === 'developer' && message.kind === 'ask' && message.about.tab === tab).length,
+    }))
+    .filter(one => one.count > 0)
+}
+
+/**
+ * **What the session wrote about each tab**, for one way's *Written so far* line (S13).
+ *
+ * A session's reply by its `about.tab`, the newest word on each question only — a `working`
+ * a later reply replaced is not counted twice. Laid out as `askedSoFar` is: the strip's order,
+ * a tab with nothing left off, no line for an empty conversation.
+ */
+export function writtenSoFar(messages: readonly ReviewMessage[]): AskedOnTab[] {
+  return REVIEW_TABS
+    .map(({ tab, label }) => ({
+      tab,
+      label,
+      count: messages.filter(message =>
+        message.author === 'session' && message.superseded_by == null && message.about.tab === tab).length,
     }))
     .filter(one => one.count > 0)
 }
@@ -262,4 +284,50 @@ export function suggestionLine(suggestion: Suggestion): { line: string, why: str
     case 'follow_up':
       return { line: `Ask next: ${suggestion.question}`, why: null }
   }
+}
+
+/* ---------------------------------- One way ------------------------------------ */
+
+/** Where the reply command and its contract are written up, for a session reading a reference. */
+export const CONTRACT_POINTER
+  = 'README.md, “Talking to the review’s session”, and docs/answer-contract.md'
+
+/**
+ * **What *Copy a reference* puts on the clipboard**, for the developer to paste into their own
+ * session. DEV-1335, to Patrick's Q4 on DEV-1331: the review's id, the `review-desk message
+ * reply` command, and a pointer to the README's contract section.
+ *
+ * It names what the question is about, as the chip does, so the session asked about F9 knows
+ * it. Given an unparsed reply, it asks for that reply again in the format, which is what *Ask
+ * it again, in the format* sends in two way. The command carries no `--to`: in one way there
+ * is no question in the record to answer, and the session records what it was asked in
+ * `asked` instead, which the contract refuses beside `--to`.
+ *
+ * Text only. Review Desk hands it to the developer; it sends it nowhere.
+ */
+export function referenceFor(
+  review: number,
+  step: ReviewLayerName,
+  about: MessageAbout,
+  findings: ReviewDetail['findings'],
+  again: Pick<ReviewMessage, 'seq'> | null = null,
+): string {
+  return [
+    `Review Desk review ${review}, about ${aboutLabel(about, findings)}.`,
+    ...(again ? [`Reply ${again.seq} didn’t follow the answer format; send it again in the format.`] : []),
+    `Read the conversation: review-desk message list --review ${review}`,
+    `Answer with: review-desk message reply --review ${review} --step ${step} --answer -`,
+    '(one JSON object; put the question you were asked in "asked")',
+    `The contract: ${CONTRACT_POINTER}.`,
+  ].join('\n')
+}
+
+/**
+ * **A fresh session, where Review Desk cannot ask Allele for one**: the command a session
+ * the developer starts runs to pick the review up (S11's *Shown as a command you run
+ * yourself*). Review Desk starts nothing; with Allele, DEV-1142's request row on the strip is
+ * the way.
+ */
+export function freshSessionCommand(review: number): string {
+  return `review-desk message list --review ${review}`
 }

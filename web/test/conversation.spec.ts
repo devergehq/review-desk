@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Answer, MessageAbout, ReviewDetail, ReviewMessage, SessionReading, Suggestion } from '../app/types/desk'
-import { answering, asksFromHere } from '../app/utils/answering'
+import { answering, answeringMode, canAsk } from '../app/utils/answering'
 import { citeTarget, type CiteSource } from '../app/utils/cites'
 import {
   aboutHere,
@@ -11,10 +11,13 @@ import {
   askedSoFar,
   askPlaceholder,
   foldedReply,
+  freshSessionCommand,
+  referenceFor,
   suggestedFrom,
   suggestedQuestions,
   suggestionLine,
   threadOf,
+  writtenSoFar,
 } from '../app/utils/conversation'
 
 /*
@@ -84,30 +87,80 @@ function reading(over: Partial<SessionReading>): SessionReading {
 }
 
 describe('who is answering', () => {
-  it('reads no Allele reading as nobody to ask: read only', () => {
+  it('reads no reading and nothing a session wrote as nobody: read only', () => {
     expect(answering(null)).toEqual({
       mode: 'none',
+      title: 'Ask this review',
       who: 'No agent connected',
-      state: 'you can read, not ask',
-      tone: 'stopped',
+      state: 'read only',
+      tone: 'quiet',
     })
-    expect(asksFromHere('none')).toBe(false)
+    expect(answering(null, [message({ author: 'developer' })]).mode).toBe('none')
+    expect(canAsk('none')).toBe(false)
   })
 
-  it('reads a reading as two way, with S6’s words for the state', () => {
+  it('reads no reading and a session’s reply in the record as one way, in S13’s words', () => {
+    expect(answering(null, [reply(null)])).toEqual({
+      mode: 'one_way',
+      title: 'From your session',
+      who: 'Your own Claude Code session',
+      state: 'one way · no Allele',
+      tone: 'quiet',
+    })
+    expect(canAsk('one_way')).toBe(false)
+  })
+
+  it('reads any reading as two way, whatever the record holds', () => {
+    for (const status of ['running', 'finished', 'awaiting_input', 'gone', 'unknown', 'unreachable'] as const) {
+      expect(answeringMode(reading({ status }), [reply(null)])).toBe('two_way')
+      expect(answeringMode(reading({ status }), [])).toBe('two_way')
+    }
+    expect(canAsk('two_way')).toBe(true)
+  })
+
+  it('says S6’s words for the state, and that it is via Allele', () => {
     expect(answering(reading({ status: 'finished' }))).toMatchObject({
       mode: 'two_way',
+      title: 'Ask this review',
       who: 'The session that wrote this review',
-      state: 'idle',
+      state: 'idle · via Allele',
     })
-    expect(answering(reading({ status: 'running' })).state).toBe('working')
-    expect(asksFromHere('two_way')).toBe(true)
+    expect(answering(reading({ status: 'running' })).state).toBe('working · via Allele')
   })
 
   it('says a suspended session from a gone one, as the strip does', () => {
-    expect(answering(reading({ status: 'gone', allele_state: 'suspended' })).state).toBe('suspended in Allele')
-    expect(answering(reading({ status: 'gone', allele_state: 'done' })).state).toBe('gone')
+    expect(answering(reading({ status: 'gone', allele_state: 'suspended' })).state).toBe('suspended in Allele · via Allele')
+    expect(answering(reading({ status: 'gone', allele_state: 'done' })).state).toBe('gone · via Allele')
     expect(answering(reading({ status: 'unreachable' })).state).toBe('can’t reach Allele')
+  })
+})
+
+describe('one way', () => {
+  it('counts what the session wrote by tab, the newest word on each question only', () => {
+    const written = writtenSoFar([
+      message({ author: 'developer', kind: 'ask', about: { tab: 'findings', finding: null } }),
+      reply(null, { seq: 2, about: { tab: 'findings', finding: 9 }, superseded_by: 3 }),
+      reply(null, { seq: 3, about: { tab: 'findings', finding: 9 } }),
+      reply(null, { seq: 4, about: { tab: 'understanding', finding: null } }),
+    ])
+    expect(written.map(one => [one.label, one.count])).toEqual([['Understanding', 1], ['Findings', 1]])
+  })
+
+  it('writes a reference with the review, the reply command and the README’s contract section', () => {
+    const reference = referenceFor(41, 'code_review', { tab: 'findings', finding: 9 }, [])
+    expect(reference).toContain('Review Desk review 41, about F9.')
+    expect(reference).toContain('review-desk message reply --review 41 --step code_review --answer -')
+    expect(reference).toContain('README.md, “Talking to the review’s session”')
+    expect(reference).not.toContain('--to')
+  })
+
+  it('asks for an unparsed reply again in the format', () => {
+    expect(referenceFor(41, 'draft', { tab: 'draft', finding: null }, [], { seq: 7 }))
+      .toContain('Reply 7 didn’t follow the answer format; send it again in the format.')
+  })
+
+  it('shows a fresh session as a command, which starts nothing', () => {
+    expect(freshSessionCommand(41)).toBe('review-desk message list --review 41')
   })
 })
 

@@ -34,9 +34,11 @@ import type {
   Instant,
   ReviewList,
   ReviewListItem,
+  ReviewMessage,
   SessionReading,
 } from '~/types/desk'
 
+import { answeringMode } from './answering'
 import type { ReviewState } from './stateWord'
 
 /** One pull request in the sidebar. */
@@ -201,30 +203,42 @@ export function githubReadAt(inbox: Inbox | null, finished: ReviewList | null): 
     new Date(at).getTime() > new Date(newest).getTime() ? at : newest)
 }
 
-/** The sidebar's agent line: whether Allele answered, in a few words. */
+/** The sidebar's agent line: who answers this review, in a few words. */
 export interface AgentLine {
-  /** `on` is Allele answered; `off` is it could not be reached. */
+  /** `on` is Allele answered; `off` is it could not be reached, or there is no Allele. */
   tone: 'on' | 'off'
   text: string
 }
 
 /**
- * The agent line for one review's session reading, or null for no line.
+ * The agent line for one review, or null for no line.
  *
- * **Read from the reading DEV-1140 serves** (`GET /reviews/{id}/session`), the only place
- * the record says anything about Allele, and that reading is per review — so the line is
- * drawn on a review's pages and nowhere else. Off them nothing has asked Allele anything,
- * and a line there would be a claim nobody measured.
+ * **The conversation header's mode, said shorter** (`answeringMode` in `utils/answering.ts`,
+ * DEV-1335), so the two cannot disagree: read from the reading DEV-1140 serves (`GET
+ * /reviews/{id}/session`) and the review's messages. Both are per review, so the line is drawn
+ * on a review's pages and nowhere else. Off them nothing has asked Allele anything, and a line
+ * there would be a claim nobody measured.
  *
- * Absent is silent, as it is on the review's own strip: no socket, or no session recorded,
- * serves `reading: null` and draws nothing. Any other answer is Allele answering, which is
- * what *Allele running* says — whatever the session itself is doing is the strip's to say.
- * Unreachable is the one reading where Allele did not answer, and it says so.
+ * | Mode | Line |
+ * | -- | -- |
+ * | two way | *Allele running*, or *Can't reach Allele* when the socket did not answer |
+ * | one way | S13's *Your own session · one way* |
+ * | none | nothing: absent is silent, as on the review's own strip (`docs/design.md`) |
  */
-export function agentLine(reading: SessionReading | null | undefined): AgentLine | null {
-  if (reading == null) return null
-  if (reading.status === 'unreachable') return { tone: 'off', text: 'Can\'t reach Allele' }
-  return { tone: 'on', text: 'Allele running' }
+export function agentLine(
+  reading: SessionReading | null | undefined,
+  messages: ReadonlyArray<Pick<ReviewMessage, 'author'>> = [],
+): AgentLine | null {
+  switch (answeringMode(reading, messages)) {
+    case 'none':
+      return null
+    case 'one_way':
+      return { tone: 'off', text: 'Your own session · one way' }
+    case 'two_way':
+      return reading?.status === 'unreachable'
+        ? { tone: 'off', text: 'Can\'t reach Allele' }
+        : { tone: 'on', text: 'Allele running' }
+  }
 }
 
 /**
