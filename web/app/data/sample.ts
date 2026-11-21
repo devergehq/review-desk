@@ -2119,7 +2119,11 @@ function answer(
 function addFinding(reviewId: number, request: AddFindingRequest): Finding {
   const owner = reviewById(reviewId)
   if (!owner) throw notFound(`review ${reviewId}`)
-  prompting(reviewId, request.prompted_by)
+  const message = prompting(reviewId, request.prompted_by)
+  /* One answer adds one finding, whichever door came first — as `suggestion.rs` refuses. */
+  if (message.suggestion_answers.some(one => one.finding_seq != null)) {
+    throw conflict(`Message ${request.prompted_by.message} already added a finding.`)
+  }
   const drafted = draftById(reviewId)
   if (drafted && (drafted.draft.status === 'approved' || drafted.draft.status === 'posted')) {
     throw conflict(`This draft is ${drafted.draft.status}, so no finding can be added to it.`)

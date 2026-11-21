@@ -246,6 +246,33 @@ fn turning_an_answer_into_a_finding_uses_the_same_call() {
     assert_eq!(store.list_findings(review).expect("findings").len(), 3);
 }
 
+/// Self-review round 2, S1: whichever door is used first, one answer adds one finding.
+#[test]
+fn one_answer_adds_one_finding_whichever_door_comes_first() {
+    let (_dir, store) = temp_store();
+    let review = review(&store);
+    let reply = answer(&store, review, json!([new_finding()]));
+    store
+        .add_finding_from_conversation(
+            review,
+            &suggested_finding(),
+            prompt(reply, None),
+            Actor::Developer,
+        )
+        .expect("turning the answer into a finding");
+    let refused = store.add_finding_from_conversation(
+        review,
+        &suggested_finding(),
+        prompt(reply, Some(1)),
+        Actor::Developer,
+    );
+    assert!(
+        matches!(refused, Err(StoreError::SuggestionAnswered { .. })),
+        "{refused:?}"
+    );
+    assert_eq!(store.list_findings(review).expect("findings").len(), 3);
+}
+
 #[test]
 fn a_working_reply_is_not_turned_into_a_finding() {
     let (_dir, store) = temp_store();

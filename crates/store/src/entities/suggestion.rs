@@ -87,6 +87,25 @@ impl Store {
                 Accepting::AddsAFinding
             )
         })?;
+        // **One answer adds one finding**, whichever door was used first: Accept on its
+        // `new_finding` and *Turn into a finding* would otherwise each add one (self-review
+        // round 2, S1). The suggestion's own place is already refused as answered above.
+        if let Some(added) = self
+            .suggestion_answers(review_id)?
+            .into_iter()
+            .find(|one| one.message == prompted.message && one.finding_seq.is_some())
+        {
+            return Err(StoreError::SuggestionAnswered {
+                review_id,
+                message: prompted.message,
+                which: which(prompted.suggestion),
+                answered: if added.suggestion.is_none() {
+                    "covered: the whole answer was turned into a finding"
+                } else {
+                    "covered: a suggestion on this answer already added a finding"
+                },
+            });
+        }
         // *Turn into a finding* is offered on an answer, not on word that the session is
         // still working or on why it can't: neither says anything to raise.
         if prompted.suggestion.is_none()

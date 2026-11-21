@@ -164,6 +164,16 @@ describe('dismissing', () => {
 })
 
 describe('turn into a finding', () => {
+  /* Self-review round 2, S1: after Turn, the answer's own new_finding offers no second add. */
+  it('leaves no Accept on a suggested finding once the answer was turned into one', async () => {
+    await resetDesk({ messages: [suggesting(NEW)] })
+    const page = await panel()
+    await page.find('[data-testid="turn-into-a-finding"] button').trigger('click')
+    await settle(page)
+    expect(page.find('[data-testid="accept-new_finding"]').exists()).toBe(false)
+    expect(page.find('[data-testid="suggestion-actions"]').text()).toContain('Already added from this answer as F16')
+  })
+
   it('adds the answer as a finding through the same call, once', async () => {
     await resetDesk({ messages: [suggesting()] })
     const page = await panel()

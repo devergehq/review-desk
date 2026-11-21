@@ -43,6 +43,15 @@ const prompted = computed(() => ({ message: props.message.seq, suggestion: props
 const answered = computed(() => answerAt(props.message, props.place))
 const line = computed(() => (answered.value ? answeredLine(props.suggestion, answered.value) : null))
 const added = computed(() => answered.value?.finding_key ?? null)
+/*
+ * **One answer adds one finding.** A `new_finding` whose answer was already turned into a
+ * finding (or whose sibling added one) offers no Accept; the store refuses it too
+ * (self-review round 2, S1).
+ */
+const covered = computed(() => {
+  if (props.suggestion.type !== 'new_finding' || answered.value) return null
+  return props.message.suggestion_answers.find(one => one.finding_key != null)?.finding_key ?? null
+})
 
 const working = ref(false)
 const problem = ref<string | null>(null)
@@ -193,6 +202,18 @@ function sendWhy(): void {
     >
       {{ filled }}
     </p>
+
+    <template v-else-if="covered">
+      <p class="answered rd-meta">
+        Already added from this answer as {{ covered }}
+      </p>
+      <NuxtLink
+        class="link"
+        :to="findingPath(reviewId, covered)"
+      >
+        Open {{ covered }}
+      </NuxtLink>
+    </template>
 
     <div
       v-else

@@ -1603,5 +1603,8 @@ describe('a reply the session drafted', () => {
     await page.find('#reply-F3 .answers button:nth-child(2)').trigger('click')
     await settle(page)
     expect(page.find<HTMLTextAreaElement>('#reason-3').element.value).toBe(SHORT_REPLY)
+    /* Round 2, Q1: a different call is not the draft accepted, so it is no longer drawn as one. */
+    expect(page.find('#reply-F3 .drafted').exists()).toBe(false)
+    expect(page.find('#reply-F3 .drafted-words').exists()).toBe(false)
   })
 })

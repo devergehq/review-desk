@@ -202,6 +202,13 @@ function pick(row: ReplyRow, decision: string) {
      */
     if (asking.value !== row.seq || askingCall.value !== 'accept_reason') {
       note.value = row.said?.quote ?? row.said?.reason ?? ''
+      /*
+       * **A different call from the one the session drafted is not accepting its draft**
+       * (self-review round 2, Q1): the developer chose otherwise, so nothing names the
+       * suggestion as accepted, and its words are not drawn over the author's.
+       */
+      prompted.value = null
+      drafted.value = null
     }
     askingCall.value = 'accept_reason'
     asking.value = row.seq
