@@ -92,8 +92,8 @@ first column. Six rules it keeps, each in the file that holds it:
   layout draws the column and the review's page teleports `ConversationPanel` into it. Between
   700 and 1,100px it sits under the page, at the main column's width. Under 700px the shell is
   one column: the sidebar behind a menu button that closes on Escape, the sample-data marker
-  in the bar, no conversation column (S14 is a bottom sheet, DEV-1336). `web/e2e/shell.spec.ts`
-  measures all of it at 1,600, 1,280, 1,024 and 390.
+  in the bar, and the conversation a bottom sheet behind the bar's *Ask* (S14, DEV-1336, below).
+  `web/e2e/shell.spec.ts` measures all of it at 1,600, 1,280, 1,024 and 390.
 
 **Queue and Reviews are one list, Pull requests** (DEV-1325, S1 and S17), at `/`:
 
@@ -190,6 +190,15 @@ and never re-checking it. Each rule is in the file named:
   their reason**, and *Asked so far* counts the developer's questions by the tab each was
   about. `suggestedQuestions` and `askedSoFar` in `web/app/utils/conversation.ts`.
 - **Nothing in it is sized to the column**, so the phone's sheet hosts the same component.
+- **On a phone it is a bottom sheet over the dimmed review** (DEV-1336, S14), opened by *Ask*
+  in the bar on a review's pages. **The sheet is the column, not a copy of it**: under 700px
+  `#conversation` is drawn fixed to the window's foot instead of not at all, so the panel
+  the page teleported there is the one the sheet shows, with its thread and its ask box's
+  text. The layout owns the container and nothing inside it — the grabber, the chevron that
+  closes it, the scrim, `inert` on the page, and every `env(safe-area-inset-*)`. Escape,
+  the scrim, going somewhere and widening past 700 close it, as they close the menu.
+  `web/app/layouts/default.vue`; `web/e2e/phone-sheet.spec.ts` asks from it two way, and
+  `web/e2e/shell.spec.ts` opens it on every tab at 390 and finds no sideways scroll.
 - **A suggestion is accepted through the page's own control, and dismissed with one click**
   (DEV-1334, S8). Accept on `regrade`, `add_to_draft` and `set_aside` is the decision `G`, `E`
   and `S` make; on `new_finding`, and *Turn into a finding* on an answer, it is the one call

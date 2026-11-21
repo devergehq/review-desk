@@ -161,6 +161,20 @@ function toNewest(): void {
 }
 watch(() => thread.value.length, () => void nextTick(toNewest))
 
+/*
+ * **And it opens on its newest message whenever it is shown**, not only when it mounts. A
+ * host may hold the panel hidden — the phone's sheet (DEV-1336) is `display: none` until
+ * *Ask* opens it — and a hidden thread has no height to scroll, so the scroll at mount
+ * left it at the top. The thread going from no height to some is what being shown is.
+ */
+let shown: ResizeObserver | null = null
+let wasHidden = true
+function onResize(): void {
+  const hidden = (body.value?.clientHeight ?? 0) === 0
+  if (wasHidden && !hidden) toNewest()
+  wasHidden = hidden
+}
+
 /* ---- Reading it again while it is on screen, as the fold did ---- */
 
 let timer: ReturnType<typeof setInterval> | null = null
@@ -181,10 +195,15 @@ onMounted(() => {
   document.addEventListener('visibilitychange', onVisibilityChange)
   begin()
   void nextTick(toNewest)
+  if (typeof ResizeObserver !== 'undefined' && body.value) {
+    shown = new ResizeObserver(onResize)
+    shown.observe(body.value)
+  }
 })
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisibilityChange)
   stop()
+  shown?.disconnect()
 })
 
 const fieldId = useId()
