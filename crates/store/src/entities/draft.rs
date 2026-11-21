@@ -336,8 +336,9 @@ impl Store {
         self.refuse_unless_draft_shown(review_id, shown)?;
 
         // **A repeat approval writes when the first recorded nothing it was of.** A draft
-        // approved before migration 24 has `approved_shown` empty; approving it again, from a
-        // page that showed it, is the one way to give that sign-off a draft to be held to.
+        // approved before migration 24 has `approved_shown` empty, and this gives it a draft to
+        // be held to. Store callers only: the API approves only a `ready` draft, so from the
+        // page the way is send back, rewrite, approve — see `Draft::approved_shown`.
         if !already_approved || draft.approved_shown.is_none() {
             write_approval(&self.conn, review_id, event, by, self.now(), shown)?;
         }

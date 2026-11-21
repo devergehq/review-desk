@@ -2174,8 +2174,10 @@ pub struct Draft {
     /// `Some` while the draft is approved or posted, **except on a sign-off given before
     /// migration 24**, which recorded nothing it was of and reads `None`. SQLite has no
     /// SHA-256 to backfill it with. Such a sign-off is of no recorded draft, so a post should
-    /// refuse it rather than guess; the developer approving it again, from the page, records
-    /// it — see [`crate::Store::approve_draft`].
+    /// refuse it rather than guess. **From the page the way out is a send-back**: the API
+    /// approves only a `ready` draft, so the developer sends it back, the session writes it
+    /// ready again, and the developer approves what is then shown. (A repeat
+    /// [`crate::Store::approve_draft`] records it too, for a caller of the store.)
     ///
     /// **This is what a post is held to** (DEV-1347): a draft whose
     /// [`crate::Store::draft_shown`] no longer equals this has changed since it was signed
