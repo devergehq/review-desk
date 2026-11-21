@@ -161,6 +161,31 @@ describe('accepting', () => {
     const said = page.find('[data-testid="suggestion-actions"]').text()
     expect(said).toContain('In the reference. Copy it and ask in your Claude Code session.')
     expect(said).not.toContain('ask box')
+
+    /* Once the question has left the box, the line no longer says where it is (round 2, N2). */
+    await page.find('[aria-label="Clear this question"]').trigger('click')
+    await settle(page)
+    expect(page.find('[data-testid="suggestion-actions"]').text()).not.toContain('In the reference')
+  })
+
+  it('says the panel’s mode as it is now, not as it was at Accept', async () => {
+    await resetDesk({
+      messages: [suggesting(FOLLOW)],
+      session_readings: {
+        [REVIEW]: { status: 'finished', allele_state: 'idle', state_age_secs: 5, detail: null, read_at: '2026-11-21T06:00:00Z' },
+      },
+    })
+    const page = await panel()
+    await page.find('[data-testid="accept-follow_up"]').trigger('click')
+    await settle(page)
+    expect(page.find('[data-testid="suggestion-actions"]').text()).toContain('In the ask box.')
+
+    /* Allele quits: the shared reading the panel and the card both hold now reads nothing. */
+    const session = useReviewDesk().session(REVIEW)
+    session.data.value = { ...session.data.value!, reading: null }
+    await settle(page)
+    expect(page.find('[data-testid="conversation-panel"]').attributes('data-mode')).toBe('one_way')
+    expect(page.find('[data-testid="suggestion-actions"]').text()).toContain('In the reference.')
     const messages = useReviewDesk().messages(REVIEW)
     await messages.refresh()
     expect(messages.data.value!.messages).toHaveLength(1)

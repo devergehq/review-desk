@@ -12,7 +12,7 @@
  * | `add_to_draft` | `decideFinding` `rewrite`, the sentence added to the finding's paragraph | `E` on Findings |
  * | `set_aside` | `decideFinding` `cut`, with the session's why as the note | `S` on Findings |
  * | `draft_reply` | fills the reply on Replies; the developer sends it | `R` `A` `W` on Replies |
- * | `follow_up` | fills the ask box; nothing is written | the composer |
+ * | `follow_up` | fills the ask box, or in one way the one-way box a reference carries; nothing is written | the composer |
  *
  * An `add_to_draft` that names no finding, or names one with no words to add, has no one-click
  * write on the page behind it, so its Accept opens the place where the developer makes it.
