@@ -44,6 +44,12 @@ const props = defineProps<{
    * - `disabled` is every gate the old button had, decided by the page that owns them.
    */
   act?: ActOnTab | null
+  /**
+   * **Pinned to the top while the tab scrolls** (DEV-1329): on Draft, so the sign-off stays
+   * in reach for the whole of a long draft, which the old aside's `.pinned` panel was for —
+   * the design pass measured it out of reach for three quarters of a 4,305px page.
+   */
+  pinned?: boolean
 }>()
 
 const review = computed(() => props.detail.review)
@@ -153,6 +159,7 @@ const tabs = computed(() =>
 <template>
   <header
     class="review-header"
+    :class="{ 'review-header--pinned': pinned }"
     data-testid="review-header"
   >
     <div class="head">
@@ -226,6 +233,7 @@ const tabs = computed(() =>
         class="action"
         data-testid="primary-action"
         :disabled="act.disabled"
+        :aria-describedby="act.disabled && act.describedBy ? act.describedBy : undefined"
         @click="act.press"
       >
         {{ act.working ? 'Working…' : actLabel }}
@@ -388,6 +396,20 @@ const tabs = computed(() =>
 
 .action:hover {
   background: var(--rd-accent-hover);
+}
+
+/*
+ * **Pinned on the page's own ground**, so what scrolls under it is covered rather than
+ * read through. Not under 700px, where the shell's own bar is the sticky top and a second
+ * one would take a phone's screen.
+ */
+@media (min-width: 700px) {
+  .review-header--pinned {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--rd-page);
+  }
 }
 
 /* The act drawn as a button on its own tab (DEV-1329): the same look as the link. */

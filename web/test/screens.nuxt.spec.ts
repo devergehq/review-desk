@@ -2170,10 +2170,12 @@ describe('the draft preview', () => {
    * was built last and drawn last. `.pinned` first, with the act inside it.
    */
   /*
-   * **DEV-1329 moved the act out of the aside and into the header**, which is where it is in
-   * reach for the whole scroll — the problem the pinned panel above solved for the aside.
-   * So: the sign-off is the header's action, there is no second one in the page, and the
-   * side column opens on the verdict it will post with, above the checks.
+   * **DEV-1329 moved the act out of the aside and into the header**, and the header is
+   * pinned on this tab so the act stays in reach for the whole scroll — the reach the old
+   * aside's `.pinned` panel gave, measured by the design pass at a quarter of a 4,305px page
+   * without it. jsdom computes no layout, so what is held is the part a template decides:
+   * the header carries the pinned class here, there is no second sign-off, and the side
+   * column opens on the verdict, above the checks. The sticking is `e2e`'s to measure.
    */
   it('makes the sign-off the header’s action, with Post as first in the side column', async () => {
     const page = await open(41)
@@ -2181,6 +2183,7 @@ describe('the draft preview', () => {
 
     expect(signOff(page).exists()).toBe(true)
     expect(signOff(page).text()).toContain('Sign off and post')
+    expect(page.find('[data-testid="review-header"]').classes()).toContain('review-header--pinned')
     expect(page.findAll('button').filter(one => one.text().startsWith('Sign off'))).toHaveLength(1)
     expect(aside.findAll('button').some(one => one.text().startsWith('Sign off'))).toBe(false)
 
@@ -2303,6 +2306,9 @@ describe('the draft preview', () => {
 
     expect(page.text()).toContain('Save or discard your changes before signing off.')
     expect(signOff(page).attributes('disabled')).toBeDefined()
+    /* And the disabled button says why, by the sentence beside the verdict. */
+    expect(signOff(page).attributes('aria-describedby')).toBe('sign-off-why')
+    expect(page.find('#sign-off-why').text()).toContain('Save or discard your changes')
   })
 
   /* The verdict is three radios under one legend: one of three, and the same `event`. */

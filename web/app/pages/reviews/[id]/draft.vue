@@ -474,8 +474,14 @@ async function goTo(anchor: string) {
   view.value = 'rendered'
   await nextTick()
   const found = document.getElementById(anchor)
-  /* A thread's comment is folded under its row: reaching it opens it. */
-  const fold = found?.querySelector('details')
+  /*
+   * A thread's comment is folded under its row: reaching it opens it. **Only a thread's own
+   * fold** — a body block's markdown carries folds of its own (the open index, a proof), and
+   * those stay as the body draws them.
+   */
+  const fold = anchor.startsWith('thread-')
+    ? found?.querySelector<HTMLDetailsElement>(':scope > details')
+    : null
   if (fold) fold.open = true
   if (typeof found?.scrollIntoView === 'function') {
     found.scrollIntoView({ block: 'start', behavior: 'smooth' })
@@ -785,21 +791,27 @@ const openFindings = computed(
  * is decided, while there are unsaved edits, or while a write is in flight. The header
  * draws the label `primaryAction` gives, so the page has no second sign-off button.
  *
- * **Offered only for a draft that is ready and can post.** Once it is signed off, sent back
+ * **Offered only for a draft that is ready and can post.** While edits are unsaved, the
+ * disabled button is described by the sentence saying so, which sits beside *Post as*. Once it is signed off, sent back
  * or posted, the review no longer waits on the developer for it and the header draws its
  * state's own action instead; a draft nothing can post draws none. While the draft has not
  * read yet, the review's own `draft_status` decides, and the button waits disabled.
  */
 const signOffAct = computed<ActOnTab>(() => {
   const data = detail.data.value
+  /*
+   * A draft read that failed outright offers nothing: the page says the read failed, and a
+   * button disabled until a read that is not coming would be a control that never works.
+   */
   const offered = data
     ? data.draft.status === 'ready' && !notForSigning(data)
-    : review.data.value?.draft_status === 'ready'
+    : review.data.value?.draft_status === 'ready' && detail.error.value == null
   return {
     press: approve,
     disabled: !data || decided(data) || dirty.value || working.value,
     working: working.value,
     offered,
+    describedBy: dirty.value ? 'sign-off-why' : null,
   }
 })
 
@@ -1317,6 +1329,18 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                   </section>
 
                   <!--
+                    **Why the header's sign-off is disabled**, beside the verdict it would
+                    post with and named by the button's `aria-describedby`.
+                  -->
+                  <DeskNotice
+                    v-if="dirty && !notForSigning(data)"
+                    id="sign-off-why"
+                    tone="problem"
+                  >
+                    Save or discard your changes before signing off.
+                  </DeskNotice>
+
+                  <!--
                     **Post as, as S05's three segments.** Radios, so the choice is one of
                     three to a screen reader and the arrow keys move it; `event` is the same
                     value the sign-off has always sent.
@@ -1524,93 +1548,94 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                     remove what it draws; it is the side column's last part so it sits under
                     what S05 puts first.
                   -->
-                  <nav
-                    v-if="outline.length > 0 && data.draft.body.length > 0"
-                    class="side-part outline"
-                    aria-label="What this draft posts"
-                  >
-                    <p class="rd-rubric outline-label">
-                      {{ data.draft.status === 'posted' ? 'What was posted' : 'What posts' }}
-                    </p>
-                    <ol class="outline-rows">
-                      <li
-                        v-for="row in outline"
-                        :key="row.anchor"
-                        class="outline-row"
-                      >
-                        <!--
+                  <!--
+                    **The outline and the foot stay in view together** (DEV-1329): the
+                    outline is the place you are in the post, which the three-pane draft kept
+                    on screen, and the foot is the note and the other two ways out. One group,
+                    so neither slides over the other; it rides under the pinned header.
+                  -->
+                  <div class="side-pinned">
+                    <nav
+                      v-if="outline.length > 0 && data.draft.body.length > 0"
+                      class="side-part outline"
+                      aria-label="What this draft posts"
+                    >
+                      <p class="rd-rubric outline-label">
+                        {{ data.draft.status === 'posted' ? 'What was posted' : 'What posts' }}
+                      </p>
+                      <ol class="outline-rows">
+                        <li
+                          v-for="row in outline"
+                          :key="row.anchor"
+                          class="outline-row"
+                        >
+                          <!--
                         `aria-controls` is the part of the post this row reaches, which is
                         true of it and is also the only thing in the markup that says where
                         a row goes — the browser test reads it to check that pressing a row
                         brings that part into view, which is the half jsdom cannot hold.
                       -->
-                        <button
-                          type="button"
-                          class="outline-go"
-                          :class="{ 'outline-go--reached': reached === row.anchor }"
-                          :aria-controls="row.anchor"
-                          :aria-current="reached === row.anchor ? 'true' : undefined"
-                          @click="goTo(row.anchor)"
-                        >
-                          <span class="outline-top">
-                            <SeverityTag
-                              v-if="row.severity"
-                              :severity="row.severity"
-                            />
-                            <span
-                              v-if="row.key"
-                              class="outline-key rd-mono"
-                            >{{ row.key }}</span>
-                            <!--
+                          <button
+                            type="button"
+                            class="outline-go"
+                            :class="{ 'outline-go--reached': reached === row.anchor }"
+                            :aria-controls="row.anchor"
+                            :aria-current="reached === row.anchor ? 'true' : undefined"
+                            @click="goTo(row.anchor)"
+                          >
+                            <span class="outline-top">
+                              <SeverityTag
+                                v-if="row.severity"
+                                :severity="row.severity"
+                              />
+                              <span
+                                v-if="row.key"
+                                class="outline-key rd-mono"
+                              >{{ row.key }}</span>
+                              <!--
                             Which half of the post this is, on the row rather than as two
                             headed groups: the order is the order it posts in, and grouping
                             would have to break that to say the same thing.
                           -->
-                            <span
-                              v-if="row.lands"
-                              class="outline-lands"
-                            >{{ row.lands }}</span>
-                          </span>
-                          <span class="outline-label-text">{{ row.label }}</span>
-                        </button>
-                      </li>
-                    </ol>
-                  </nav>
+                              <span
+                                v-if="row.lands"
+                                class="outline-lands"
+                              >{{ row.lands }}</span>
+                            </span>
+                            <span class="outline-label-text">{{ row.label }}</span>
+                          </button>
+                        </li>
+                      </ol>
+                    </nav>
 
-                  <!--
+                    <!--
                     **The foot: what the sign-off does, and the two other ways out of the
                     draft** — S05's note and its two links. The sign-off itself is the
                     header's action.
                   -->
-                  <div
-                    v-if="!notForSigning(data)"
-                    class="side-part foot-acts"
-                  >
-                    <DeskNotice
-                      v-if="dirty"
-                      tone="problem"
+                    <div
+                      v-if="!notForSigning(data)"
+                      class="side-part foot-acts"
                     >
-                      Save or discard your changes before signing off.
-                    </DeskNotice>
-                    <!--
+                      <!--
                       **What happens after the press, kept current.** DEV-932: it asks this
                       page to read again; it writes nothing.
                     -->
-                    <PostingWatch
-                      :draft="data.draft"
-                      :review="data.review"
-                      :last-activity-at="review.data.value?.timings.last_activity_at"
-                      :body-is-stale="data.body_is_stale"
-                      :record-is-current="recordIsCurrent"
-                      :reread="reread"
-                    />
-                    <p
-                      v-if="signOffNote"
-                      class="rd-meta sign-off-note"
-                    >
-                      {{ signOffNote }}
-                    </p>
-                    <!--
+                      <PostingWatch
+                        :draft="data.draft"
+                        :review="data.review"
+                        :last-activity-at="review.data.value?.timings.last_activity_at"
+                        :body-is-stale="data.body_is_stale"
+                        :record-is-current="recordIsCurrent"
+                        :reread="reread"
+                      />
+                      <p
+                        v-if="signOffNote"
+                        class="rd-meta sign-off-note"
+                      >
+                        {{ signOffNote }}
+                      </p>
+                      <!--
                   **"Ticket what is left, and sign off" — one act, and a sign-off.**
 
                   Drawn only while there is something left to file. The API refuses a review
@@ -1619,58 +1644,58 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                   is sometimes a refusal, and the two things it would do are already the two
                   buttons above it.
                 -->
-                    <template v-if="openFindings && !ticketingRest">
-                      <button
-                        type="button"
-                        class="link-act"
-                        :disabled="decided(data) || dirty || working"
-                        @click="ticketingRest = true"
+                      <template v-if="openFindings && !ticketingRest">
+                        <button
+                          type="button"
+                          class="link-act"
+                          :disabled="decided(data) || dirty || working"
+                          @click="ticketingRest = true"
+                        >
+                          Ticket what is left, and sign off
+                        </button>
+                      </template>
+                      <div
+                        v-else-if="ticketingRest"
+                        class="send-back"
                       >
-                        Ticket what is left, and sign off
-                      </button>
-                    </template>
-                    <div
-                      v-else-if="ticketingRest"
-                      class="send-back"
-                    >
-                      <label
-                        class="rd-meta"
-                        for="ticket-rest-note"
-                      >Why is the rest going to a ticket? Optional.</label>
-                      <textarea
-                        id="ticket-rest-note"
-                        v-model="ticketNote"
-                        class="rd-field"
-                        rows="2"
-                      />
-                      <p class="rd-meta">
-                        Every open finding is held back and recorded as ticketed this round,
-                        and the draft is signed off. The event is not yours to choose here —
-                        the control above is set to Approve, because a request for changes
-                        that ticketed everything it asked for would contradict itself.
-                        Review Desk files no ticket; an agent does, and the sign-off cannot
-                        link to one that does not exist yet.
-                      </p>
-                      <div class="send-back-actions">
-                        <button
-                          type="button"
-                          class="rd-btn rd-btn--primary"
-                          :disabled="working"
-                          @click="ticketRest"
-                        >
-                          Ticket it and sign off
-                        </button>
-                        <button
-                          type="button"
-                          class="rd-btn"
-                          @click="ticketingRest = false"
-                        >
-                          Cancel
-                        </button>
+                        <label
+                          class="rd-meta"
+                          for="ticket-rest-note"
+                        >Why is the rest going to a ticket? Optional.</label>
+                        <textarea
+                          id="ticket-rest-note"
+                          v-model="ticketNote"
+                          class="rd-field"
+                          rows="2"
+                        />
+                        <p class="rd-meta">
+                          Every open finding is held back and recorded as ticketed this round,
+                          and the draft is signed off. The event is not yours to choose here —
+                          the control above is set to Approve, because a request for changes
+                          that ticketed everything it asked for would contradict itself.
+                          Review Desk files no ticket; an agent does, and the sign-off cannot
+                          link to one that does not exist yet.
+                        </p>
+                        <div class="send-back-actions">
+                          <button
+                            type="button"
+                            class="rd-btn rd-btn--primary"
+                            :disabled="working"
+                            @click="ticketRest"
+                          >
+                            Ticket it and sign off
+                          </button>
+                          <button
+                            type="button"
+                            class="rd-btn"
+                            @click="ticketingRest = false"
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       </div>
-                    </div>
 
-                    <!--
+                      <!--
                         **The one transition out of a sign-off.** A draft that is approved and
                         not yet posted can be sent back, which takes the sign-off with it —
                         and without that a draft the hand-over refuses has nowhere to go at
@@ -1679,36 +1704,36 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                         The label says what the button does, because taking back a sign-off is
                         not the same act as sending back a draft nobody has signed.
                       -->
-                    <template v-if="!sendingBack">
-                      <button
-                        type="button"
-                        class="link-act"
-                        :disabled="!canSendBack(data) || working"
-                        @click="sendingBack = true"
+                      <template v-if="!sendingBack">
+                        <button
+                          type="button"
+                          class="link-act"
+                          :disabled="!canSendBack(data) || working"
+                          @click="sendingBack = true"
+                        >
+                          {{
+                            data.draft.status === 'approved'
+                              ? 'Take back the sign-off and send it back'
+                              : 'Send back with a note'
+                          }}
+                        </button>
+                      </template>
+                      <div
+                        v-else
+                        class="send-back"
                       >
-                        {{
-                          data.draft.status === 'approved'
-                            ? 'Take back the sign-off and send it back'
-                            : 'Send back with a note'
-                        }}
-                      </button>
-                    </template>
-                    <div
-                      v-else
-                      class="send-back"
-                    >
-                      <label
-                        class="rd-meta"
-                        for="send-back-note"
-                      >What is the session to change?</label>
-                      <textarea
-                        id="send-back-note"
-                        v-model="note"
-                        class="rd-field"
-                        rows="3"
-                      />
-                      <div class="send-back-actions">
-                        <!--
+                        <label
+                          class="rd-meta"
+                          for="send-back-note"
+                        >What is the session to change?</label>
+                        <textarea
+                          id="send-back-note"
+                          v-model="note"
+                          class="rd-field"
+                          rows="3"
+                        />
+                        <div class="send-back-actions">
+                          <!--
                             **Guarded like the button that opened it**, which it did not need
                             to be until this page started re-reading. The form opens on a
                             draft that is `approved`, and the status can now move underneath
@@ -1716,21 +1741,22 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                             flips to "Posted", and an enabled Send back over a posted draft
                             buys the developer a refusal from the server.
                           -->
-                        <button
-                          type="button"
-                          class="rd-btn rd-btn--primary"
-                          :disabled="working || !canSendBack(data)"
-                          @click="sendBack"
-                        >
-                          Send back
-                        </button>
-                        <button
-                          type="button"
-                          class="rd-btn"
-                          @click="sendingBack = false"
-                        >
-                          Cancel
-                        </button>
+                          <button
+                            type="button"
+                            class="rd-btn rd-btn--primary"
+                            :disabled="working || !canSendBack(data)"
+                            @click="sendBack"
+                          >
+                            Send back
+                          </button>
+                          <button
+                            type="button"
+                            class="rd-btn"
+                            @click="sendingBack = false"
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -2025,9 +2051,26 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
   min-width: 0;
 }
 
-/* The foot sits at the end of the column, as S05 sets the note and its two links. */
+/*
+ * **The outline and the foot, pinned under the header while the preview scrolls.** 132px
+ * is the pinned header's 113 and a gap. Only beside the preview: under it the column is
+ * the foot of the page, and a pinned group there would float over what was just reached.
+ */
+.side-pinned {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+
+@container draft (min-width: 760px) {
+  .side-pinned {
+    position: sticky;
+    top: 132px;
+  }
+}
+
 .foot-acts {
-  margin-top: auto;
   padding-top: 16px;
   border-top: 1px solid var(--rd-line);
 }
@@ -2070,7 +2113,8 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
   list-style: none;
   border-top: 1px solid var(--rd-ink);
   min-width: 0;
-  max-height: 320px;
+  /* With the foot under it, the pinned group fits a 900px window: 132 + 360 + ~260. */
+  max-height: max(120px, min(360px, calc(100vh - 460px)));
   overflow-y: auto;
   overscroll-behavior: contain;
 }

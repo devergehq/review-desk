@@ -170,6 +170,8 @@ export interface ActOnTab {
   disabled: boolean
   working: boolean
   offered: boolean
+  /** The id of the sentence saying why it is disabled, when the page draws one. */
+  describedBy?: string | null
 }
 
 /** Which round the review is, and the commit it read, for the sign-off's words. */

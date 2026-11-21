@@ -70,73 +70,79 @@ const stepName = computed(() => layerLabel(props.step))
 
 <template>
   <div class="page">
-    <header class="top">
-      <!--
-        **Which review, where it stands, what to do next, and the five tabs** — DEV-1324's
-        header, which replaced the top line naming the review and the step trail. The two
-        ways out the top line held since DEV-936, the pull request and the ticket, are in it.
-      -->
-      <ReviewHeader
-        :detail="detail"
-        :tab="tab"
-        :act="act"
-      />
+    <!--
+      **Which review, where it stands, what to do next, and the five tabs** — DEV-1324's
+      header, which replaced the top line naming the review and the step trail. The two
+      ways out the top line held since DEV-936, the pull request and the ticket, are in it.
 
-      <!--
+      **A child of the whole page, not of the block under it** (DEV-1329). A sticky element
+      sticks only while its parent is on screen, and the header is pinned on a tab whose act
+      it carries — the Draft tab's sign-off — so its parent has to be as tall as the tab.
+    -->
+    <ReviewHeader
+      :detail="detail"
+      :tab="tab"
+      :act="act"
+      :pinned="act?.offered === true"
+    />
+
+    <div class="under">
+      <header class="top">
+        <!--
         **Which round of the pull request this is, and the same step of every other one.**
         Under the header now, because the header has a height it may not pass and this draws
         nothing at all on a review whose pull request has one round.
       -->
-      <RoundSwitcher
-        :detail="detail"
-        :step="step"
-      />
+        <RoundSwitcher
+          :detail="detail"
+          :step="step"
+        />
 
-      <!--
+        <!--
         How long the review has taken, under the trail it is about: the total with the
         agent and the total waiting on the developer. Here rather than on one page, because
         it is a fact about the review and every one of these pages is the review.
       -->
-      <ReviewTimings :timings="detail.timings" />
+        <ReviewTimings :timings="detail.timings" />
 
-      <!--
+        <!--
         **What the review's session is doing, from Allele**, under how long it has taken.
         Draws nothing when there is no Allele or no session, so a review page on a machine
         without Allele is as it was. Keyed by the review so a page reused for another one
         cannot draw the last review's session for a moment.
       -->
-      <SessionStrip
-        :key="detail.review.id"
-        :review-id="detail.review.id"
-      />
+        <SessionStrip
+          :key="detail.review.id"
+          :review-id="detail.review.id"
+        />
 
-      <!--
+        <!--
         **The conversation with that session, on this step**, folded under the strip that
         says whether anything can read it. DEV-1141.
       -->
-      <StepConversation
-        :key="`conversation-${detail.review.id}-${step}`"
-        :review-id="detail.review.id"
-        :step="step"
-        :steps="conversationSteps"
-      />
+        <StepConversation
+          :key="`conversation-${detail.review.id}-${step}`"
+          :review-id="detail.review.id"
+          :step="step"
+          :steps="conversationSteps"
+        />
 
-      <!--
+        <!--
         The headline and the line under it are a session's prose, so the backtick pairs in
         them are drawn as code — `TickedText` owns that, and every field on these four
         pages that a session wrote goes through it.
       -->
-      <!--
+        <!--
         **An h2 now**: the review's title in the header is the page's one h1, and this is
         the tab's own heading under it.
       -->
-      <h2
-        v-if="headline != null"
-        class="rd-display headline"
-      >
-        <TickedText :text="headline" />
-      </h2>
-      <!--
+        <h2
+          v-if="headline != null"
+          class="rd-display headline"
+        >
+          <TickedText :text="headline" />
+        </h2>
+        <!--
         **Between the headline and the line under it**, which is the one place a reader's eye
         is already going. The case page puts its derived answer line here — the facts the
         record already holds, under the sentence the session wrote and above the verdict on
@@ -146,17 +152,17 @@ const stepName = computed(() => layerLabel(props.step))
         page that had to flatten them into a sentence to pass them in would be writing the
         summary this page exists not to write.
       -->
-      <slot name="beneath" />
+        <slot name="beneath" />
 
-      <p
-        v-if="sub"
-        class="sub"
-      >
-        <TickedText :text="sub" />
-      </p>
-    </header>
+        <p
+          v-if="sub"
+          class="sub"
+        >
+          <TickedText :text="sub" />
+        </p>
+      </header>
 
-    <!--
+      <!--
       **A dismissed review says so on every one of its pages**, and says it under the trail
       rather than in the card at the foot that undoes it. A developer arriving from the
       Reviews list's dismissed view, or from a link, is reading a review that is in nobody's
@@ -168,20 +174,20 @@ const stepName = computed(() => layerLabel(props.step))
       about the same review — and this notice is then on all five step pages without any of
       them gaining a write.
     -->
-    <DeskNotice
-      v-if="detail.review.dismissed_at"
-      tone="problem"
-    >
-      <strong>This review is dismissed.</strong>
-      It is out of the queue, no session will be started for it, and it is not in the
-      Reviews list's default view. Everything on it has been kept.
-      <NuxtLink :to="`/reviews/${detail.review.id}/understanding#remove-review`">
-        Bring it back
-      </NuxtLink>
-      on Understanding.
-    </DeskNotice>
+      <DeskNotice
+        v-if="detail.review.dismissed_at"
+        tone="problem"
+      >
+        <strong>This review is dismissed.</strong>
+        It is out of the queue, no session will be started for it, and it is not in the
+        Reviews list's default view. Everything on it has been kept.
+        <NuxtLink :to="`/reviews/${detail.review.id}/understanding#remove-review`">
+          Bring it back
+        </NuxtLink>
+        on Understanding.
+      </DeskNotice>
 
-    <!--
+      <!--
       **Where this round's understanding was written, when it was not written here.**
       Nothing carries a brief between rounds: `briefs` is keyed by the review id, as is
       every record behind steps 1 to 4, and opening a round copies none of it. So a later
@@ -205,8 +211,8 @@ const stepName = computed(() => layerLabel(props.step))
       `brief_written` measures — round 2 may hold a brief with no options at all, and the
       fixtures have exactly that. A second review of this branch caught it.
     -->
-    <DeskNotice v-if="writtenEarlier">
-      <!--
+      <DeskNotice v-if="writtenEarlier">
+        <!--
         **Closed hard against the full stop**, for the reason `RoundSwitcher`'s own comment
         gives: Vue's `whitespace: 'condense'` condenses the whitespace around an
         interpolation rather than deleting it, so a closing tag on its own line leaves a
@@ -214,10 +220,11 @@ const stepName = computed(() => layerLabel(props.step))
         Neither the component nor the browser assertions see it, because both match on the
         accessible name and that normalises whitespace.
       -->
-      <NuxtLink :to="writtenEarlier.to">Open round {{ writtenEarlier.round }}’s {{ stepName }}</NuxtLink>.
-    </DeskNotice>
+        <NuxtLink :to="writtenEarlier.to">Open round {{ writtenEarlier.round }}’s {{ stepName }}</NuxtLink>.
+      </DeskNotice>
 
-    <slot />
+      <slot />
+    </div>
   </div>
 </template>
 
@@ -228,6 +235,14 @@ const stepName = computed(() => layerLabel(props.step))
  * "your cognitive load is much lower".
  */
 .page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+/* Everything under the header: the sections the boards set 52px apart. */
+.under {
   display: flex;
   flex-direction: column;
   gap: 52px;

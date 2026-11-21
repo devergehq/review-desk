@@ -37,6 +37,9 @@ const carried = (seq: number, fields: Partial<Finding>) =>
 const raisedAgain = (seq: number) =>
   ({ finding_seq: seq, kind: 'raised_again' }) as Pick<Outcome, 'finding_seq' | 'kind'>
 
+const ticketedNow = (seq: number) =>
+  ({ finding_seq: seq, kind: 'ticketed' }) as Pick<Outcome, 'finding_seq' | 'kind'>
+
 describe('since the round before', () => {
   it('is nothing for a round that carried nothing', () => {
     expect(sinceRound([finding(1, {}), finding(2, {})], [])).toBeNull()
@@ -48,7 +51,7 @@ describe('since the round before', () => {
       carried(5, { round_status: 'accepted' }),
       carried(3, { round_status: 'still_open' }),
       carried(1, { round_status: 'still_open' }),
-      carried(10, { round_status: 'ticketed', disposition: 'to_ticket' }),
+      carried(10, { round_status: 'ticketed', disposition: 'held_back' }),
       finding(12, {}),
     ], [raisedAgain(3)])!
 
@@ -65,7 +68,7 @@ describe('since the round before', () => {
    * is not being asked, and its disposition already says where it went.
    */
   it('counts a still-open finding as asked again only when it posts', () => {
-    const since = sinceRound([carried(4, { round_status: 'still_open', disposition: 'cut' })], [])!
+    const since = sinceRound([carried(4, { round_status: 'still_open', disposition: 'suppressed' })], [])!
     expect(since.askedAgain).toEqual([])
   })
 
@@ -75,7 +78,7 @@ describe('since the round before', () => {
       carried(5, { round_status: 'accepted' }),
       carried(3, { round_status: 'still_open' }),
       carried(1, { round_status: 'still_open' }),
-      carried(10, { round_status: 'ticketed', disposition: 'to_ticket' }),
+      carried(10, { round_status: 'ticketed', disposition: 'held_back' }),
     ], [raisedAgain(3)])!
 
     expect(sinceRoundLines(since)).toEqual([
@@ -90,5 +93,25 @@ describe('since the round before', () => {
   /* A carry from round 2 into round 3 is "since round 2". */
   it('names the round the findings came from', () => {
     expect(sinceRound([carried(2, { continues_round: 2, round_status: 'fixed' })], [])!.from).toBe(2)
+  })
+
+  /*
+   * **Raised again, then set aside: not named.** Outcomes are append-only, so the
+   * `raised_again` stays on the record after a later cut; the column names only what posts.
+   * Raised by the self-review of #97.
+   */
+  it('does not name a finding raised again and then set aside', () => {
+    const since = sinceRound([carried(3, { round_status: 'still_open', disposition: 'suppressed' })], [raisedAgain(3)])!
+    expect(since.raisedAgain).toEqual([])
+    expect(since.askedAgain).toEqual([])
+  })
+
+  /* "Still" only for what was already going to a ticket; a ticket this round is news. */
+  it('says a ticket of this round without "still"', () => {
+    const since = sinceRound([
+      carried(1, { round_status: 'ticketed', disposition: 'held_back' }),
+      carried(10, { round_status: 'ticketed', disposition: 'held_back' }),
+    ], [ticketedNow(1)])!
+    expect(sinceRoundLines(since)).toEqual(['F1 goes to a ticket.', 'F10 still goes to a ticket.'])
   })
 })

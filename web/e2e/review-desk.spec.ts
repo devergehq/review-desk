@@ -2520,6 +2520,18 @@ test.describe('the body is an index and the findings live on the code', () => {
     await last.click()
     await expect(page.locator(`#${anchor}`)).toBeInViewport()
     await expect(last).toHaveAttribute('aria-current', 'true')
+
+    /*
+     * **A thread's row opens that thread's fold, and a body block's opens nothing.** The body
+     * carries folds the preview keeps closed on purpose — the open index above all. Raised by
+     * the self-review of #97 (DEV-1329).
+     */
+    expect(anchor).toMatch(/^thread-/)
+    await expect(page.locator(`#${anchor} > details`)).toHaveAttribute('open', '')
+    const index = page.locator('.block details').filter({ has: page.locator('summary', { hasText: 'Index ·' }) })
+    const block = await index.evaluate(element => element.closest('.block')!.id)
+    await page.locator(`.outline-go[aria-controls="${block}"]`).click()
+    await expect(index).not.toHaveAttribute('open', '')
   })
 
   /*
@@ -5264,6 +5276,13 @@ test.describe('the Draft tab of a later round', () => {
 
     await expect(page.locator('#thread-F3 .state')).toHaveText('carried from round 1')
     await expect(page.getByText('thread continues')).toHaveCount(0)
+
+    /*
+     * **The sign-off stays in reach for the whole scroll**: the header is pinned on Draft,
+     * which is what the old aside's `.pinned` panel was for. Measured at the foot of the page.
+     */
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+    await expect(action).toBeInViewport()
 
     await page.getByRole('tab', { name: 'Changes since round 1' }).click()
     await expect(page.locator('.changes')).toContainText('round 1’s head and this round’s')

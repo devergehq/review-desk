@@ -413,7 +413,9 @@ tab's own width, a container query as Findings' bench is.
   `primaryAction` in `web/app/utils/reviewTabs.ts`. A later round reads *Sign off round 2
   and post*, and the note names the commit the round read, because a sign-off is withdrawn
   when the head moves past it (DEV-962). A draft that is signed off, sent back or being
-  rewritten has no sign-off, not a disabled one.
+  rewritten has no sign-off, not a disabled one. **On Draft the header is pinned** from 700px
+  up, so the act stays in reach for the whole scroll, as the old aside's pinned panel kept it;
+  the outline and the foot ride under it in the side column.
 - **Post as is three segments**, radios under one legend, carrying the same `event`.
 - **Each comment on the code is folded under its row**, never dropped. The row says *line
   unchanged* when the line was counted at the head, and a carried finding says *carried

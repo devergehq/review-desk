@@ -917,6 +917,8 @@ export interface CarriedFinding {
   key: string
   /** `round_status_commit`, at seven characters — "F9 fixed in 3c1e2a". Null when none. */
   commit: string | null
+  /** Ticketed by an act of this round (a `ticketed` outcome), not carried as ticketed. */
+  thisRound?: boolean
 }
 
 /**
@@ -936,16 +938,19 @@ export interface CarriedFinding {
  * |---|---|
  * | fixed | carried, `round_status` `fixed` |
  * | answered | carried, `accepted`: their reason was taken |
- * | raisedAgain | carried, still open, with a `raised_again` outcome on this round |
+ * | raisedAgain | carried, still open, posting again, with a `raised_again` outcome on this round |
  * | askedAgain | carried, still open, posting again, and not raised again |
  * | withdrawn | carried, `withdrawn` |
- * | ticketed | carried, `ticketed` |
+ * | ticketed | carried, `ticketed` — this round when this round records a `ticketed` outcome on it |
  *
  * **Not here, because no record holds them:** *re-anchored* and *moved from :n*. A carry
  * copies the earlier line and the commit it was counted on and re-measures nothing, so no
  * field says a carried finding's line moved. A carried finding that is still open and not
- * posting (set aside or ticketed this round) is in no group: its disposition says where it
- * went, and the draft's held-back list draws it.
+ * posting — held back or suppressed this round — is in no group: its disposition says where
+ * it went, and the draft's held-back list draws it. **Raised again needs it to post too**:
+ * outcomes are append-only, so a finding raised again and then set aside still carries its
+ * `raised_again` outcome, and naming it would name something the draft does not hold.
+ * (A finding ticketed this round takes `round_status` `ticketed` and is in that group.)
  *
  * `null` for a round that carried nothing, so a page draws no section rather than an empty
  * one.
@@ -969,6 +974,7 @@ export function sinceRound(
   if (carried.length === 0) return null
 
   const raised = new Set(outcomes.filter(one => one.kind === 'raised_again').map(one => one.finding_seq))
+  const ticketedHere = new Set(outcomes.filter(one => one.kind === 'ticketed').map(one => one.finding_seq))
   const groups: SinceRound = {
     from: Math.max(...carried.map(one => one.continues_round ?? 0)),
     fixed: [], answered: [], raisedAgain: [], askedAgain: [], withdrawn: [], ticketed: [],
@@ -985,9 +991,10 @@ export function sinceRound(
     if (status === 'fixed') groups.fixed.push(one)
     else if (status === 'accepted') groups.answered.push(one)
     else if (status === 'withdrawn') groups.withdrawn.push(one)
-    else if (status === 'ticketed') groups.ticketed.push(one)
+    else if (status === 'ticketed') groups.ticketed.push({ ...one, thisRound: ticketedHere.has(finding.seq) })
+    else if (!willPost(finding)) continue
     else if (raised.has(finding.seq)) groups.raisedAgain.push(one)
-    else if (willPost(finding)) groups.askedAgain.push(one)
+    else groups.askedAgain.push(one)
   }
   return groups
 }
@@ -1012,7 +1019,11 @@ export function sinceRoundLines(since: SinceRound): string[] {
   if (since.askedAgain.length) again.push(`${keys(since.askedAgain)} asked again`)
   if (again.length) lines.push(`${again.join(', ')}.`)
 
-  if (since.ticketed.length) lines.push(`${keys(since.ticketed)} still ${since.ticketed.length === 1 ? 'goes' : 'go'} to a ticket.`)
+  /* "still" only for what was already going to a ticket; this round's ticket is news. */
+  const now = since.ticketed.filter(one => one.thisRound)
+  const before = since.ticketed.filter(one => !one.thisRound)
+  if (now.length) lines.push(`${keys(now)} ${now.length === 1 ? 'goes' : 'go'} to a ticket.`)
+  if (before.length) lines.push(`${keys(before)} still ${before.length === 1 ? 'goes' : 'go'} to a ticket.`)
   return lines
 }
 
