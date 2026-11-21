@@ -162,6 +162,12 @@ export type Suggestion = Schema['Suggestion']
 /** Where a message sits on the page: a tab, and a finding on it. */
 export type MessageAbout = Schema['MessageAbout']
 export type AskSessionRequest = Schema['AskSessionRequest']
+/** What the developer made of one suggestion, or of a whole answer turned into a finding. DEV-1334. */
+export type SuggestionAnswer = Schema['SuggestionAnswer']
+/** Which reply, and which of its suggestions, prompted the developer's act. DEV-1334. */
+export type PromptedBy = Schema['PromptedBy']
+/** A finding the developer adds from the conversation. DEV-1334. */
+export type AddFindingRequest = Schema['AddFindingRequest']
 export type Finding = Schema['Finding']
 /** The lines around a finding, as the pull request changed them. */
 export type FindingHunk = Schema['FindingHunk']

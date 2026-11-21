@@ -844,6 +844,18 @@ function coverage(data: ReviewDetail): string | null {
                           {{ roundStatusLabel(finding) }}
                         </DeskPill>
                       </template>
+                      <!--
+                        **S8's "new": the developer added it from the conversation** — Accept on a
+                        `new_finding`, or Turn into a finding (DEV-1334). Read off `prompted_by`,
+                        which only a finding the developer added carries.
+                      -->
+                      <template v-if="finding.prompted_by != null">
+                        {{ ' ' }}<span
+                          class="new"
+                          data-testid="finding-new"
+                          :title="`You added it from the conversation, at the session's reply ${finding.prompted_by}`"
+                        >new</span>
+                      </template>
                     </span>
                     <template v-if="basisOf(finding)">
                       {{ ' ' }}<span
@@ -1510,6 +1522,16 @@ function coverage(data: ReviewDetail): string | null {
 
 .basis--ran {
   color: var(--rd-accent-dark);
+}
+
+.new {
+  padding: 2px 9px;
+  color: var(--rd-accent-dark);
+  font-size: 12px;
+  white-space: nowrap;
+  background: var(--rd-accent-wash);
+  border: 1px solid var(--rd-accent-pale);
+  border-radius: 999px;
 }
 
 .dot {

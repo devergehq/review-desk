@@ -189,13 +189,14 @@ describe('an answer in the contract’s shape', () => {
     expect(cites[0]!.attributes('href')).toBe(`/reviews/${REVIEW}/findings?finding=F1`)
   })
 
-  it('draws a suggestion with nothing to press', async () => {
+  /* DEV-1333 drew it inert; DEV-1334 gives the same card its two buttons, in the slot it left. */
+  it('draws a suggestion as one card, with its Accept and its Dismiss', async () => {
     await resetDesk({ messages: [ASK, answered(2, answer)] })
     const page = await panel()
     const card = page.find('.suggestion')
+    expect(page.findAll('.suggestion')).toHaveLength(1)
     expect(card.text()).toContain('Regrade F1 from should to blocker')
-    expect(card.findAll('button')).toHaveLength(0)
-    expect(card.text()).not.toMatch(/Accept|Dismiss/)
+    expect(card.findAll('button').map(one => one.text())).toEqual(['Regrade', 'Keep as should'])
   })
 
   it('draws what the session says it was asked as the session’s', async () => {

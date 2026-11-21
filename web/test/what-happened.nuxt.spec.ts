@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { flushPromises, type VueWrapper } from '@vue/test-utils'
 
-import { resetDesk } from '../app/composables/useReviewDesk'
+import { resetDesk, useReviewDesk } from '../app/composables/useReviewDesk'
 import { loadSource } from '../app/data/sample'
 import drafts from '../app/data/drafts.json'
 import { NO_REPLY_SHOWN } from '../app/utils/replies'
@@ -68,11 +68,15 @@ async function settle(page: VueWrapper) {
   }
 }
 
+/** Every page this file mounted, so a test that needs to be the only one can say so. */
+const opened: VueWrapper[] = []
+
 async function shown(id: number, search = '') {
   const page = await mountSuspended(WhatHappened, {
     route: `/reviews/${id}/replies${search}`,
     attachTo: document.body,
   })
+  opened.push(page)
   await settle(page)
   return page
 }
@@ -1509,5 +1513,69 @@ describe('answering a reply', () => {
 
     const quiet = await shown(REVIEW, '?finding=F13')
     expect(quiet.find('#history-13').exists()).toBe(true)
+  })
+})
+
+/*
+ * **DEV-1334: a reply the session drafted opens here filled, and is the developer's to send.**
+ * Accept on a `draft_reply` in the conversation fills `reply-fill:{id}` and comes here; nothing
+ * is written until the button sends the same `decideFinding` R, A and W send, naming the
+ * suggestion as `prompted_by`.
+ */
+describe('a reply the session drafted', () => {
+  /* Pages this file left mounted would each take the fill; the real app mounts one. */
+  beforeEach(() => {
+    while (opened.length) opened.pop()!.unmount()
+  })
+
+  const DRAFTED = 'Fair: the tenant row is soft-deleted, so the schedule finds it.'
+
+  async function filled(call: 'accept_reason' | 'withdraw') {
+    const { detail, draft } = answerable()
+    const source = loadSource()
+    const answer = {
+      kind: 'answer' as const,
+      headline: 'The author is right about soft deletes.',
+      cites: ['F3'],
+      suggests: [{ type: 'draft_reply' as const, finding: 'F3', call, words: DRAFTED }],
+    }
+    await resetDesk({
+      reviews: [...source.reviews, detail],
+      drafts: [...source.drafts, draft],
+      messages: [{
+        review_id: REVIEW, seq: 1, step: 'harvest', author: 'session', kind: 'reply',
+        body: JSON.stringify(answer), in_reply_to: null, created_at: '2026-11-21T06:00:00Z',
+        read_at: null, read_by_session: null, about: { tab: 'replies', finding: 3 },
+        parsed: true, answer, superseded_by: null, suggestion_answers: [],
+      }],
+    })
+    useState(`reply-fill:${REVIEW}`).value = {
+      seq: 3, call, words: DRAFTED, prompted_by: { message: 1, suggestion: 1 },
+    }
+  }
+
+  it('opens on the row with the session’s words, editable, and sends nothing on arrival', async () => {
+    await filled('accept_reason')
+    const page = await shown(REVIEW)
+    expect(page.find<HTMLTextAreaElement>('#reason-3').element.value).toBe(DRAFTED)
+    expect(page.find('#reply-F3 .drafted').text()).toContain('nothing is sent until you do')
+    expect(keysIn(page, '.reply-row--contested')).toEqual(['F3'])
+    expect(useState(`reply-fill:${REVIEW}`).value).toBeNull()
+  })
+
+  it('sends the call it drafted, with the developer’s edit, through the page’s own decision', async () => {
+    await filled('withdraw')
+    const page = await shown(REVIEW)
+    const field = page.find<HTMLTextAreaElement>('#reason-3')
+    expect(page.find('#reply-F3 .asking label').text()).toBe('Why you withdraw it, in your words')
+    await field.setValue('Soft deletes keep the row, so this was never a bug.')
+    const send = page.findAll('#reply-F3 .asking-actions button').find(one => one.text() === 'Withdraw it')!
+    await send.trigger('click')
+    await settle(page)
+    expect(page.text()).toContain('F3 is withdrawn')
+    expect(keysIn(page, '.reply-row--settled')).toContain('F3')
+    const messages = useReviewDesk().messages(REVIEW)
+    await messages.refresh()
+    expect(messages.data.value!.messages[0]!.suggestion_answers[0]).toMatchObject({ suggestion: 1, verdict: 'accepted' })
   })
 })
