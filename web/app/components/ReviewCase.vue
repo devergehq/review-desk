@@ -66,11 +66,10 @@ const { step = 'understand', tab } = defineProps<{
    */
   step?: ReviewLayerName
   /**
-   * Which tab draws the case. **Understanding**, and — until DEV-1326 builds Overview's own
-   * page — **Overview** as well, so that `/reviews/{id}` arrives at what it arrived at
-   * before: the case, which is where a review starts.
+   * Which tab draws the case: **Understanding**, alone since DEV-1326 gave Overview its own
+   * page. Every question on Overview links here.
    */
-  tab: 'overview' | 'understanding'
+  tab: 'understanding'
 }>()
 
 const route = useRoute()

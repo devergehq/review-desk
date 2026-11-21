@@ -1829,17 +1829,68 @@ describe('the review’s own address, which is Overview', () => {
   })
 
   /*
-   * **`/reviews/{id}` is a page again** (DEV-1324): Overview, the first of the five tabs,
-   * where every pull request opens. It redirected to Understand from DEV-878 to DEV-1324,
-   * and until DEV-1326 builds Overview's own body it draws what that redirect arrived at —
-   * the case — with the step trail under the header.
+   * **`/reviews/{id}` is Overview** (DEV-1326): the bottom line, where it stands, and the
+   * five questions — or, once replies are in, *Since you posted* and *What came back*. Each
+   * of the three is chosen from the record alone; `test/overview.spec.ts` holds the rules,
+   * and these assert that the page draws what they answer, one review per state.
    */
-  it('draws the header with Overview marked, the trail, and the case under it', async () => {
+  it('draws the header with Overview marked, and the case one link away', async () => {
     const page = await shown(OneReview, { route: '/reviews/17' })
     expect(page.find('[data-testid="review-header"]').exists()).toBe(true)
     expect(page.find('.tabs [aria-current="page"]').text()).toBe('Overview')
-    expect(page.find('.trail').exists(), 'the trail, until Where it stands').toBe(true)
-    expect(page.text()).toContain('Confirm the problem')
+    const links = page.find('[data-testid="questions"]').findAll('a').map(one => one.attributes('href'))
+    expect(links).toContain('/reviews/17/understanding')
+    expect(links).toContain('/reviews/17/understanding#what-was-chosen')
+  })
+
+  it('keeps the seven-step trail, folded under Where it stands', async () => {
+    const page = await shown(OneReview, { route: '/reviews/17' })
+    const fold = page.find('[data-testid="seven-steps"]')
+    expect(fold.element.tagName).toBe('DETAILS')
+    expect(fold.find('.trail').exists(), 'the trail moved, it did not vanish').toBe(true)
+  })
+
+  it('ready: the brief\'s headline, its facts, the five stages and five questions', async () => {
+    const page = await shown(OneReview, { route: '/reviews/41' })
+    const bottom = page.find('[data-testid="bottom-line"]')
+    expect(bottom.attributes('data-state')).toBe('ready')
+    expect(bottom.text()).toContain('The bottom line')
+    expect(bottom.text()).not.toContain('Not written yet')
+    expect(page.findAll('[data-testid="where-it-stands"] li').map(one => one.text()))
+      .toEqual(['Brief ready', 'Code review', 'Draft ready', 'Posted', 'Replies in'])
+    expect(page.find('[data-testid="where-it-stands"] [aria-current="step"]').text()).toBe('Draft ready')
+    expect(page.findAll('[data-testid="questions"] .row')).toHaveLength(5)
+    expect(page.find('[data-testid="came-back"]').exists()).toBe(false)
+    const eye = page.find('[data-testid="needs-your-eye"]')
+    expect(eye.text()).toContain('Needs your eye')
+    expect(eye.findAll('.card').length).toBeGreaterThan(0)
+    expect(eye.findAll('.card').length).toBeLessThanOrEqual(3)
+    expect(eye.findAll('.tag').length, 'graded findings carry their severity').toBe(eye.findAll('.card').length)
+  })
+
+  it('being written: says the bottom line is not written, marks what is writing, and draws no action', async () => {
+    const page = await shown(OneReview, { route: '/reviews/19' })
+    const bottom = page.find('[data-testid="bottom-line"]')
+    expect(bottom.attributes('data-state')).toBe('being_written')
+    expect(bottom.text()).toContain('Not written yet.')
+    expect(page.find('[data-testid="where-it-stands"] [aria-current="step"]').text()).toBe('Brief · writing')
+    expect(page.findAll('[data-testid="questions"] .row[data-mark="writing"]').length).toBeGreaterThan(0)
+    expect(page.find('[data-testid="primary-action"]').exists()).toBe(false)
+  })
+
+  it('replies in: Since you posted, What came back with a basis on every row, and no questions', async () => {
+    const page = await shown(OneReview, { route: '/reviews/12' })
+    const bottom = page.find('[data-testid="bottom-line"]')
+    expect(bottom.attributes('data-state')).toBe('replies_in')
+    expect(bottom.text()).toContain('Since you posted')
+    expect(page.find('[data-testid="questions"]').exists()).toBe(false)
+    const rows = page.findAll('[data-testid="came-back"] .row')
+    expect(rows.length).toBeGreaterThan(0)
+    for (const row of rows) {
+      expect(row.find('[data-testid="basis"]').text()).toMatch(/^(ran|read|told|not re-checked)$/)
+    }
+    expect(page.find('[data-testid="came-back"]').text(), 'nothing claims a re-run').not.toMatch(/\bran\b/)
+    expect(page.find('[data-testid="where-it-stands"] [aria-current="step"]').text()).toBe('Replies in')
   })
 })
 

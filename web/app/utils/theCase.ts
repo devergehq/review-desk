@@ -123,6 +123,13 @@ export interface AnswerFact {
   kind: AnswerFactKind
   /** What the line says, as it is drawn. */
   says: string
+  /**
+   * **The same fact split for a cell**: the figure, then what it counts. Overview's bottom
+   * line draws each fact as a figure over a label (S2), and the case page's line draws
+   * `says`. One fact, two layouts, so the two cannot come to disagree. Added by DEV-1326.
+   */
+  figure: string
+  label: string
 }
 
 /**
@@ -161,10 +168,25 @@ export function answerFacts(brief: Brief): AnswerFact[] {
   const facts: AnswerFact[] = []
 
   const problems = problemsOf(brief).length
-  if (problems) facts.push({ kind: 'problems', says: count(problems, 'problem') })
+  if (problems) {
+    facts.push({
+      kind: 'problems',
+      says: count(problems, 'problem'),
+      figure: String(problems),
+      label: problems === 1 ? 'problem' : 'problems',
+    })
+  }
 
   const built = builtOption(brief)
-  if (built) facts.push({ kind: 'built', says: `option ${built.key} built` })
+  if (built) {
+    const options = optionsOf(brief).length
+    facts.push({
+      kind: 'built',
+      says: `option ${built.key} built`,
+      figure: `Option ${built.key}`,
+      label: `built, of ${count(options, 'option')} weighed`,
+    })
+  }
 
   const fixes = fixesOf(brief)
   if (fixes) {
@@ -177,6 +199,8 @@ export function answerFacts(brief: Brief): AnswerFact[] {
       says: fixes.fixed === fixes.of
         ? `fixes all ${fixes.of}`
         : `fixes ${fixes.fixed} of ${fixes.of}`,
+      figure: fixes.fixed === fixes.of ? `All ${fixes.of}` : `${fixes.fixed} of ${fixes.of}`,
+      label: fixes.of === 1 ? 'problem it fixes' : 'problems it fixes',
     })
   }
 
@@ -199,6 +223,8 @@ export function answerFacts(brief: Brief): AnswerFact[] {
         says: pick.chosen
           ? 'blind pass agrees'
           : `blind pass would pick ${pick.key}`,
+        figure: pick.chosen ? 'Agrees' : `Would pick ${pick.key}`,
+        label: 'blind pass',
       })
     }
     /*
@@ -209,7 +235,7 @@ export function answerFacts(brief: Brief): AnswerFact[] {
      * same null.
      */
     else if (brief.blind_pass && brief.blind_pass.pick_key == null) {
-      facts.push({ kind: 'blind', says: 'blind pass picked none of them' })
+      facts.push({ kind: 'blind', says: 'blind pass picked none of them', figure: 'None', label: 'blind pass picked' })
     }
   }
 

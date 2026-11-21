@@ -7,6 +7,7 @@ import {
   cli,
   cliJson,
   draftStamps,
+  openSteps,
   pinClockAt,
   readAddresses,
   scratch,
@@ -73,9 +74,10 @@ const {
  * `undefined` on an index and points at the trail rather than at the timing.
  */
 async function trail(page: import('@playwright/test').Page): Promise<string[]> {
-  const steps = page.locator('nav[aria-label="The seven steps of this review"] .steps li')
-  await expect(steps).toHaveCount(7)
-  return steps.allTextContents()
+  await openSteps(page)
+  const items = page.locator('nav[aria-label="The seven steps of this review"] .steps li')
+  await expect(items).toHaveCount(7)
+  return items.allTextContents()
 }
 
 /** What `work list` says is waiting for an agent, read through the binary. */
@@ -452,7 +454,7 @@ test.describe('the whole path, on a seeded database', () => {
     await webhooks.click()
     await expect(page).toHaveURL(`${seeded}reviews/${reviewId}`)
 
-    await page.locator('.trail').getByRole('link', { name: /6 Draft/ }).click()
+    await (await openSteps(page)).getByRole('link', { name: /6 Draft/ }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${reviewId}/draft`)
 
     /*
@@ -462,7 +464,7 @@ test.describe('the whole path, on a seeded database', () => {
      */
     await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${reviewId}`)
-    await page.locator('.trail').getByRole('link', { name: /6 Draft/ }).click()
+    await (await openSteps(page)).getByRole('link', { name: /6 Draft/ }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${reviewId}/draft`)
     await expect(
       page.getByText('Nothing has been posted. This is what GitHub will show.'),
@@ -529,7 +531,7 @@ test.describe('the whole path, on a seeded database', () => {
 
     await page.goto(`${seeded}reviews/${reviewId}`)
     /* The trail is on Overview since DEV-1324, and still says the draft was sent back. */
-    await expect(page.locator('.trail')).toContainText(note)
+    await expect((await openSteps(page))).toContainText(note)
     const layers = await trail(page)
     expect(layers[5]).toContain('Draft')
     expect(layers[5]).toContain(note)
@@ -678,11 +680,17 @@ test.describe('the whole path, on a seeded database', () => {
    * in links people have and in anything written down; a route that 404s is worse than one
    * that lands somewhere useful, and every queue row already lands on Understand.
    */
-  /* `/reviews/{id}` is Overview since DEV-1324, which draws the trail until DEV-1326. */
-  test('the review’s own address is Overview, with the trail on it', async ({ page }) => {
+  /*
+   * `/reviews/{id}` is Overview since DEV-1324. Since DEV-1326 it opens on the bottom line
+   * and where it stands, with the trail folded under it.
+   */
+  test('the review’s own address is Overview, with the trail folded on it', async ({ page }) => {
     await page.goto(`${seeded}reviews/${reviewId}`)
     await expect(page).toHaveURL(`${seeded}reviews/${reviewId}`)
-    await expect(page.locator('.trail')).toBeVisible()
+    await expect(page.getByTestId('bottom-line')).toBeVisible()
+    await expect(page.getByTestId('where-it-stands')).toBeVisible()
+    await expect(page.locator('.trail')).toBeHidden()
+    await expect((await openSteps(page))).toBeVisible()
   })
 
   test('a brief that needed no confirmation is in nobody’s queue, and says so', async ({
@@ -981,7 +989,7 @@ test.describe('the case for one review, in three bands', () => {
      * **The trail's step 3 lands on this page at its band**, which is what the fragment is
      * for: three steps, one page, three places.
      */
-    await page.locator('.trail').getByRole('link', { name: /3 Alternatives/ }).click()
+    await (await openSteps(page)).getByRole('link', { name: /3 Alternatives/ }).click()
     await expect(page).toHaveURL(
       `${seeded}reviews/${structuredReviewId}/understanding#what-was-chosen`,
     )
@@ -1015,7 +1023,7 @@ test.describe('the case for one review, in three bands', () => {
     /* ---- band 3 · what was built, reached by the trail ---- */
 
     await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
-    await page.locator('.trail').getByRole('link', { name: /4 Solution/ }).click()
+    await (await openSteps(page)).getByRole('link', { name: /4 Solution/ }).click()
     await expect(page).toHaveURL(
       `${seeded}reviews/${structuredReviewId}/understanding#what-was-built`,
     )
@@ -1136,7 +1144,7 @@ test.describe('the case for one review, in three bands', () => {
      * Both pages carry the trail themselves, so there is no way out of it at all.
      */
     await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
-    await page.locator('.trail').getByRole('link', { name: /5 Code review/ }).click()
+    await (await openSteps(page)).getByRole('link', { name: /5 Code review/ }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/findings`)
     /*
      * **And back by the trail, not by a link of the page's own.** Both screens carried one
@@ -1161,7 +1169,7 @@ test.describe('the case for one review, in three bands', () => {
      * either way.
      */
     await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
-    await page.locator('.trail').getByRole('link', { name: /3 Alternatives/ }).click()
+    await (await openSteps(page)).getByRole('link', { name: /3 Alternatives/ }).click()
     await expect(page).toHaveURL(
       `${seeded}reviews/${structuredReviewId}/understanding#what-was-chosen`,
     )
@@ -1176,7 +1184,7 @@ test.describe('the case for one review, in three bands', () => {
      * dead end it was for.
      */
     await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
-    await page.locator('.trail').getByRole('link', { name: /6 Draft/ }).click()
+    await (await openSteps(page)).getByRole('link', { name: /6 Draft/ }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/draft`)
     await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}`)
@@ -1187,13 +1195,13 @@ test.describe('the case for one review, in three bands', () => {
      * `e2e/what-happened.spec.ts` measures it at both widths against a seed of its own.
      */
     await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
-    await page.locator('.trail').getByRole('link', { name: /7 What happened/ }).click()
+    await (await openSteps(page)).getByRole('link', { name: /7 What happened/ }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/replies`)
     await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}`)
 
     /* Lint alone is a label, not a link: it is the one step with no page of its own. */
-    await expect(page.locator('.trail').getByRole('link', { name: /1 Lint/ })).toHaveCount(0)
+    await expect((await openSteps(page)).getByRole('link', { name: /1 Lint/ })).toHaveCount(0)
   })
 
   /*
@@ -1427,7 +1435,7 @@ test.describe('the case for one review, in three bands', () => {
       await expect(step.locator('.outcome')).toBeVisible()
       await expect(step.locator('button')).toHaveCount(0)
     }
-    await expect(page.locator('.trail button')).toHaveCount(5)
+    await expect((await openSteps(page)).locator('button')).toHaveCount(5)
   })
 
   /*
@@ -4719,7 +4727,7 @@ test.describe('state that belongs to one review', () => {
     await page.locator(`#panel-every a[href="/reviews/${id}"]`).first().click()
     await expect(page).toHaveURL(`${seeded}reviews/${id}`)
     if (step !== 'understand') {
-      await page.locator(`.trail a[href="/reviews/${id}/${TAB_OF[step]}${band(step)}"]`).click()
+      await (await openSteps(page)).locator(`a[href="/reviews/${id}/${TAB_OF[step]}${band(step)}"]`).click()
       await expect(page).toHaveURL(at(id, step))
     }
     return (await page.evaluate(() => history.length)) - before

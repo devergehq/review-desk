@@ -2102,3 +2102,14 @@ async function signIn(url: string, token: string): Promise<string> {
   }
   return cookie
 }
+
+/**
+ * **The seven-step trail, opened.** Overview folds it under the bottom line since DEV-1326,
+ * so a test that reads or clicks the trail opens the fold first. Waits for the fold to be
+ * drawn, opens it only when it is closed, and answers the trail.
+ */
+export async function openSteps(page: Page) {
+  const fold = page.getByTestId('seven-steps')
+  if ((await fold.getAttribute('open')) == null) await fold.locator('summary').click()
+  return page.locator('.trail')
+}
