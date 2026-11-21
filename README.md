@@ -11,7 +11,7 @@ This repository is at the fourth slice: the store, the commands an agent session
 to record a review, the harvester that reads a posted review's outcomes back from GitHub,
 the dashboard's five screens, the local HTTP server that serves the JSON API and the
 dashboard from one binary, and **the dashboard reading and writing that API**. All
-thirty of the contract's operations are answered, and the dashboard calls every one
+thirty-three of the contract's operations are answered, and the dashboard calls every one
 it has a screen for — the two it does not are `GET /timings`, which no screen draws yet,
 and `GET /reviews/{id}/brief/problem-statement`, which a blind pass reads.
 
@@ -1987,13 +1987,13 @@ the resolver file, the daemon restart, or an apex.
 
 ### Which operations are answered
 
-**All thirty**, and the dashboard calls every one it has a screen for. One GET per
+**All thirty-three**, and the dashboard calls every one it has a screen for. One GET per
 screen, and every write the five screens make.
 
 | Screen | Reads | Writes |
 | -- | -- | -- |
 | Pull requests | `GET /inbox` and `GET /reviews?show=finished` (shared with the sidebar, for *Done*); `GET /reviews/{id}` for the selected row's preview; under *Every review*, `GET /reviews?repo=&show=` | `POST /reviews` |
-| One review | `GET /reviews/{id}`, and `GET /reviews/{id}/session` and `GET /reviews/{id}/messages` every five seconds for the strip and *Ask this review* beside the tab | `POST …/messages`, `POST …/fresh-session`, `POST …/brief/confirm`, `PATCH …/findings/{seq}`, `POST …/dismiss`, `POST …/restore`, `DELETE /reviews/{id}` |
+| One review | `GET /reviews/{id}`, and `GET /reviews/{id}/session` and `GET /reviews/{id}/messages` every five seconds for the strip and *Ask this review* beside the tab | `POST …/messages`, `POST …/fresh-session`, `POST …/brief/confirm`, `PATCH …/findings/{seq}`, `POST …/findings/{seq}/decide` (with `prompted_by` when it is an Accept), `POST …/findings` and `POST …/messages/{seq}/suggestions/{n}/dismiss` (DEV-1334), `POST …/dismiss`, `POST …/restore`, `DELETE /reviews/{id}` |
 | Draft preview | `GET /reviews/{id}/draft` — the body as it will post, the blocks it is composed of, and the inline threads with the line each sits on | `PUT …/draft`, `POST …/draft/approve`, `POST …/draft/send-back`, `POST …/held-back/ticket` |
 | Rules | `GET /rules?repo=`, `GET /repos` | `POST /rules/{id}/promote`, `/dismiss`, `/retire`, `/defer` |
 

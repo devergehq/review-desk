@@ -69,6 +69,36 @@ stores a tick for it to accept into, so a reply that suggests it does not parse.
 
 A suggestion of any other type makes the whole answer not parse.
 
+## What accepting writes, and what dismissing keeps
+
+DEV-1334. Patrick, 21 November 2026: *"An accepted suggestion stays the developer's decision.
+A new `prompted_by` field holds the sequence number of the message that suggested it. No
+session's name goes on a developer's decision."*
+
+**Every Accept is a control the page already has, through the same store call.** `regrade`,
+`add_to_draft` and `set_aside` are `decideFinding` with `regrade`, `rewrite` and `cut` — the
+calls behind `G`, `E` and `S` — and the outcome they record is the developer's. A `draft_reply`
+fills the reply on Replies, where it stays editable, and is sent by the developer with the same
+`decideFinding` `R`, `A` and `W` send; nothing is sent on Accept. A `follow_up` fills the ask
+box and writes nothing. A `new_finding` is added to *To post* by `addFinding`, **the one
+developer-side call that adds a finding**, which *Turn into a finding* on an answer uses too;
+the finding gets no block of the draft until the developer posts it, like any other.
+
+**Each write names the reply and the suggestion that prompted it** (`prompted_by`): on the
+decision's request, and on a finding the developer added as `Finding.prompted_by`, which is the
+*new* marker on Findings. `GET …/messages` carries `suggestion_answers` on each reply: accepted,
+with the outcome or finding it wrote, or dismissed.
+
+**A dismissal is kept with the developer's optional reason**, given after the click.
+A suggestion is answered once: accepted is not dismissed, and dismissed is not accepted.
+
+**There is no Undo.** The page's own decisions have none — the way back from *Set aside* is
+*Post*, a decision of its own — and a finding is never deleted, so a finding added by mistake
+is set aside on Findings like any other.
+
+Nothing here starts, resumes or drives a session. A session reads what the developer decided
+from the record, as it reads everything else.
+
 ## When it doesn't fit
 
 **An answer that doesn't parse is drawn folded and inert:** the first ~200 characters, a
