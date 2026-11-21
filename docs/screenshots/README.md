@@ -11,16 +11,18 @@ cd web && pnpm run e2e:screenshots
 
 | File | What it is |
 | -- | -- |
-| `seeded-1-queue.png` | The queue, on a database an agent session has recorded one review into. **One row**, not two: that session wrote the draft before the brief was confirmed, so the review is waiting on the developer for two things and the row shows the earlier one. |
+| `seeded-1-pull-requests.png` | The Pull requests list (the queue, since DEV-1325 made Queue and Reviews one list), on a database an agent session has recorded one review into. **One row**, not two: that session wrote the draft before the brief was confirmed, so the review is waiting on the developer for two things and the row shows the earlier one. The preview beside it draws the selected row. |
 | `seeded-2-review.png` | One review, with the brief unconfirmed — the control only the dashboard has. Each finding's evidence is its own block below the one-line facts, keeping the paragraphs the session wrote. |
 | `seeded-3-draft.png` | The draft preview, before anything is posted: the checks, the nit held back, and the event it would be posted as. |
 | `seeded-4-rules.png` | Rules, on a database with reviews and no rules. The repository came from the review; the command line cannot write a rule, which is a gap rather than an empty screen. The populated page is in `uplift/`. |
 | `seeded-5-review-no-confirmation.png` | One review whose brief the session recorded as needing no confirmation, with the reason it gave. Layer 2 is finished with and nobody signed it, so the card is dashed and offers no button. Its `diagram` is the text sketch from DEV-880, shown as written — **this one is from the binary**, so it is the sketch state drawn from a real database rather than a fixture. |
-| `fresh-1-queue.png` | The queue on a database with nothing in it. It reads as new rather than as broken, and says the one thing that fills it. |
+| `fresh-1-pull-requests.png` | The Pull requests list on a database with nothing in it. It reads as new rather than as broken, and says the one thing that fills it. |
 | `fresh-2-review.png` | A review that is not there. `not_found` and an empty review are different answers. |
 | `fresh-3-draft.png` | A draft that is not there. |
 | `fresh-4-rules.png` | Rules with nothing learned yet. |
-| `seeded-6-queue-390.png` | The queue at a phone's width, which DEV-876 asks for. Every cell wraps onto its own line in reading order; `e2e/review-desk.spec.ts` asserts that nothing scrolls sideways. |
+| `seeded-6-pull-requests-390.png` | The Pull requests list at a phone's width, which DEV-876 asks for. The tabs scroll on their own line and every cell wraps onto its own line in reading order; `e2e/queue-rounds.spec.ts` asserts that nothing scrolls sideways. |
+| `seeded-7-every-review.png`, `seeded-8-every-review-390.png` | The list's *Every review* view, which is the Reviews list drawn whole and where `/reviews` now lands: every review the record holds, one row per pull request, earlier rounds folded. |
+| `shell-4-nothing-needs-you.png`, `-390` | **S17, DEV-1325**: nothing waits on the developer. *Nothing needs you*, a line per other group, and *Since yesterday* in the preview from the times the record keeps. The seed always has something waiting, so the picture empties the three waiting arrays in the browser. |
 | `server-stopped.png` | `review-desk serve` stopped while a page was open: what is wrong, the command that fixes it, and a retry. |
 | `dev-929-1-index.png`, `-390` | **The body as it will post, after DEV-929.** The session's verdict line and `### Problem fit` with its diagram, then an index of all twelve findings — the glyph and the word, the place in the code as a link, and whether the finding is on the code or in the body — then the three sections for the findings the diff cannot anchor. |
 | `dev-929-2-threads.png`, `-390` | The other half of what posts: nine inline threads, each with the line it sits on and the comment as the author will read it. None of them is in the body. |
@@ -77,8 +79,8 @@ to the band they are, which is what the trail links to.
 
 | File | What it is |
 | -- | -- |
-| `seeded-1-queue.png`, `seeded-6-queue-390.png` | **The queue, after step 1.5 of the design loop.** Every row's title in one face — it was Newsreader under "Needs you" and the sans everywhere else, on one column of titles — and the five cells on a grid, so a column is the same width on every row of every group. The status cell is a state and one line of facts under it. |
-| `seeded-7-reviews.png`, `seeded-8-reviews-390.png` | **The Reviews list, one row per pull request.** The step carries its number on the state line — "What happened 7/7" — and what the step says is the line under it, where it was a third line reading "step 7 of 7". |
+| `seeded-1-pull-requests.png`, `seeded-6-pull-requests-390.png` | **The queue, after step 1.5 of the design loop** (redrawn as the one list by DEV-1325). Every row's title in one face — it was Newsreader under "Needs you" and the sans everywhere else, on one column of titles — and the five cells on a grid, so a column is the same width on every row of every group. The status cell is a state and one line of facts under it. |
+| `seeded-7-every-review.png`, `seeded-8-every-review-390.png` | **The Reviews list, one row per pull request** (its *Every review* view since DEV-1325). The step carries its number on the state line — "What happened 7/7" — and what the step says is the line under it, where it was a third line reading "step 7 of 7". |
 | `dev-957-1-queue.png`, `-390` | The queue's row for a pull request whose head has moved. The pull request's state — `open`, `merged`, `closed` — is on the row's own pull-request line beside the repository now, not in the status cell. |
 | `dev-957-2-finished.png`, `-390` | **Four rounds of a merged pull request as one row, with the fold open.** It was four rows. The fold's own line says how many rounds are behind it, which they are and what became of them — "3 earlier rounds · rounds 1 to 3 · 3 finished" — so a reader never has to open it to find out whether it matters. Each round inside it keeps its own step, its own sentence and its own link, on the row's own columns. |
 

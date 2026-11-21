@@ -86,13 +86,38 @@ first column. Six rules it keeps, each in the file that holds it:
   reads carry, and no line when there is none. `githubReadAt`.
 - **The agent line is DEV-1140's reading**, which is per review, so it is drawn on a review's
   pages and nowhere else; absent is silent, as on the review's own strip. `agentLine`.
-- **Reviews stays in the navigation** until the list that replaces Queue and Reviews lands
-  (DEV-1325): taking it out first would leave `/reviews` with no way in.
+- **Two places in the navigation, Pull requests and Rules.** Reviews was a third until the
+  one list landed (DEV-1325); `/reviews` redirects to that list's *Every review* view.
 - **The conversation's column is drawn empty** on a review's pages until the second stack fills
   it, and not at all under 1,100px while it is empty. Under 700px the shell is one column: the
   sidebar behind a menu button that closes on Escape, the sample-data marker in the bar, no
   conversation column (S14 is a bottom sheet). `web/e2e/shell.spec.ts` measures all of it at
   1,600, 1,280, 1,024 and 390.
+
+**Queue and Reviews are one list, Pull requests** (DEV-1325, S1 and S17), at `/`:
+
+- **Its tabs are the sidebar's groups, under the sidebar's words** — *Waiting on you*, *Being
+  reviewed*, *Waiting on the author* — then *Your own*, *Done* (the sidebar's *Done this week*)
+  and **Every review**, which is the Reviews list drawn whole (`ReviewsList`): the dismissed,
+  the finished before this week, the out of play and every earlier round are in no group, and
+  the list must still reach every row the two pages drew. `test/screens.nuxt.spec.ts` asserts
+  the tabs hold `sidebarGroups`'s rows. Every panel is drawn and the inactive ones hidden: the
+  tabs fold the list, they do not remove any of it.
+- **A status cell is the state word and one line of facts.** The word is `stateWord`'s; the
+  session folds into the facts — its step, and what the record holds about it — rather than
+  taking a column.
+- **A row opens its review's Overview** (`tabPath`). `J` and `K` move the selection, `Enter`
+  opens it, under `keyIsForThePage`.
+- **The preview beside it draws the selected row from the record**: the bottom line from
+  `bottomLine` in `web/app/utils/theCase.ts` — the brief's headline and `answerFacts`, and the
+  one helper the Overview draws it with too — the state, the findings, what was not checked,
+  the session, and `primaryAction`. A fact with no field is left out. It is not drawn under
+  1,200px, where the table needs the width. The page asks for its column with
+  `definePageMeta({ split: true })`.
+- **When nothing waits on the developer** the table reads *Nothing needs you*, a line for each
+  other group, and the preview *Since yesterday* — built from the three times the record keeps
+  (posted, came back, finished) and nothing forecast. `sinceYesterday` in
+  `web/app/utils/pullRequests.ts`.
 
 **A review is one header and five tabs**, replacing the step trail:
 
@@ -129,7 +154,7 @@ documents, and the shell itself is capped at `--rd-shell-wide`.
 
 | Screen | Kind | Width |
 | -- | -- | -- |
-| Queue, Reviews, Rules, one review, the case, What happened | Document | The main column, capped at `--rd-shell-max`, 1,240px |
+| Pull requests, Rules, one review, the case, What happened | Document | The main column, capped at `--rd-shell-max`, 1,240px |
 | Code review, Draft | Workbench | All of the main column; the shell around it is capped at `--rd-shell-wide`, 1,600px |
 
 **On a review's page the split is not observable under the shell**: beside the 232px sidebar and
@@ -220,7 +245,7 @@ built to this rule:
 | Page | What is folded | What the fold's line says | What asserts nothing was lost |
 | -- | -- | -- | -- |
 | Draft | The open index's heading and its table | How many findings it lists | `test/draft.spec.ts`: *draws every part of the stored body* |
-| Reviews | Every round of a pull request but the newest in the answer | How many, which, and what became of them | Every round's link is reachable, face row and fold together |
+| Every review (was Reviews) | Every round of a pull request but the newest in the answer | How many, which, and what became of them | Every round's link is reachable, face row and fold together |
 | The case | The two flows, and each band's reference material | The pieces behind it, named | The summary interpolates the list of them |
 
 Three mechanics that go with it:
@@ -232,15 +257,15 @@ Three mechanics that go with it:
 - **A fold's summary names the states behind it when any of them is load-bearing.** A
   dismissal carries the developer's own words and a supersession says where a round went;
   "4 earlier rounds" alone would make a reader open every one to find out whether any
-  mattered. `earlierSummary` in `web/app/pages/reviews/index.vue`.
+  mattered. `earlierSummary` in `web/app/components/ReviewsList.vue`.
 - **The Draft's fold is markdown, not a control of the app's** — the `<details>` GitHub
   itself renders, written into the body. A preview whose job is fidelity folds the way the
   thing it previews folds. `foldOpenIndex` in `web/app/utils/draft.ts`.
 
 ## A row is a row
 
-Both lists — the Queue and Reviews — are a column of rows, and a reader scanning a column
-is reading shapes. Four rules, all from the design pass's problems 05 and 07.
+Both lists — the Queue and Reviews, one list since DEV-1325 — are a column of rows, and a
+reader scanning a column is reading shapes. Four rules, all from the design pass's problems 05 and 07.
 
 **One title face.** The serif is the page's own voice — an h1, a headline, the figure on a
 card — and never a row's. A row whose title is set in a different face from the row under it
@@ -355,4 +380,5 @@ Neither of these is a decision against; both are waiting on real use.
 | 21 Nov 2026 | Serif only on the wordmark; everything else on the sans scale | *A row is a row*; `--rd-font-wordmark` |
 | 21 Nov 2026 | `P` Promote and `N` Not a rule on Rules | The keys table |
 | 21 Nov 2026 | A session's answer follows the contract or is kept only as an unparsed message | `docs/answer-contract.md` |
+| 21 Nov 2026 | Queue and Reviews are one Pull requests list with a preview; the bottom line is one helper | *The application shell*; `pages/index.vue`, `bottomLine` |
 | 15 Nov 2026 | Review Desk never starts, resumes or drives Claude itself; without Allele the conversation is one way | *The application shell*; S11 |

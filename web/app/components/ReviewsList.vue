@@ -844,7 +844,7 @@ function nothingHere(answer: { repo: string | null, show: ReviewsShown }): strin
  * gap, which is what `QueueRow`'s repository line uses.
  */
 .earlier > summary {
-  padding-left: 76px;
+  padding-left: var(--rd-row-indent, 76px);
 }
 
 @media (max-width: 560px) {
@@ -874,9 +874,8 @@ function nothingHere(answer: { repo: string | null, show: ReviewsShown }): strin
  */
 .earlier-round {
   display: grid;
-  grid-template-columns:
-    56px minmax(0, 1fr) minmax(0, 1fr) 90px 150px;
-  gap: 2px 20px;
+  grid-template-columns: var(--rd-row-tracks, 56px minmax(0, 1fr) minmax(0, 1fr) 90px 150px);
+  gap: 2px var(--rd-row-gap, 20px);
   align-items: baseline;
 }
 

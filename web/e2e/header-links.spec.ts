@@ -211,7 +211,7 @@ for (const { name, width, height } of WIDTHS) {
      */
     await page.goto(`${serving.url}reviews`)
 
-    const row = page.locator('.queue-line').filter({ hasText: '#1284' })
+    const row = page.locator('#panel-every .queue-line').filter({ hasText: '#1284' })
     await expect(row).toBeVisible()
     await expect(row.getByRole('link', { name: /pull request #1284/ })).toHaveAttribute(
       'href',
@@ -266,7 +266,7 @@ test('pressing a row’s link opens that link, and leaves the review alone', asy
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto(`${serving.url}reviews`)
 
-  const row = page.locator('.queue-line').filter({ hasText: '#1284' })
+  const row = page.locator('#panel-every .queue-line').filter({ hasText: '#1284' })
   await expect(row).toBeVisible()
   const before = page.url()
 

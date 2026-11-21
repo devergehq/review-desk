@@ -1426,8 +1426,8 @@ functions. That is what keeps one way into the record.
 
 ## The dashboard
 
-Five screens — the queue, the reviews, one review, the draft preview and the rules — in
-`web/`. They read and write the JSON API that `review-desk serve` serves. A review is
+Four screens — the Pull requests list (the queue and the reviews, one list since DEV-1325),
+one review, the draft preview and the rules — in `web/`. They read and write the JSON API that `review-desk serve` serves. A review is
 reached from the trail across the top of each of its pages: Understand, Alternatives and
 Solution map are three steps on [one page](docs/design.md#the-case-for-a-change-is-three-bands-and-a-derived-answer-line),
 then Code review, Draft and [What happened](#what-happened-step-7s-page).
@@ -1672,8 +1672,8 @@ sign-off boundary this project rests on.
 Forty-four tests, about half a minute of browser once the build is warm.
 `.github/workflows/e2e.yml` runs it on every ready pull request.
 
-Two of them are measurements rather than assertions about words: the queue and the Reviews
-list are opened at 1440 and at 390 pixels wide, and nothing may scroll sideways or draw a
+Two of them are measurements rather than assertions about words: the Pull requests list,
+and its *Every review* view, are opened at 1440 and at 390 pixels wide, and nothing may scroll sideways or draw a
 row shorter than this project's own 44-pixel floor for a thing you press. A screenshot
 cannot show a sideways scroll and a click count cannot see one.
 
@@ -1935,8 +1935,7 @@ screen, and every write the five screens make.
 
 | Screen | Reads | Writes |
 | -- | -- | -- |
-| Queue | `GET /inbox` | `POST /reviews` |
-| Reviews | `GET /reviews?repo=&show=` | — |
+| Pull requests | `GET /inbox` and `GET /reviews?show=finished` (shared with the sidebar, for *Done*); `GET /reviews/{id}` for the selected row's preview; under *Every review*, `GET /reviews?repo=&show=` | `POST /reviews` |
 | One review | `GET /reviews/{id}`, and `GET /reviews/{id}/session` and `GET /reviews/{id}/messages` every five seconds for the strip and the conversation under the trail | `POST …/messages`, `POST …/fresh-session`, `POST …/brief/confirm`, `PATCH …/findings/{seq}`, `POST …/dismiss`, `POST …/restore`, `DELETE /reviews/{id}` |
 | Draft preview | `GET /reviews/{id}/draft` — the body as it will post, the blocks it is composed of, and the inline threads with the line each sits on | `PUT …/draft`, `POST …/draft/approve`, `POST …/draft/send-back`, `POST …/held-back/ticket` |
 | Rules | `GET /rules?repo=`, `GET /repos` | `POST /rules/{id}/promote`, `/dismiss`, `/retire`, `/defer` |

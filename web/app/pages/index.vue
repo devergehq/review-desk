@@ -1575,7 +1575,8 @@ function selectFrom(event: Event) {
 /** Open a row: its review's Overview, or the pull request on GitHub when there is no review. */
 function open(row: ListRow | null) {
   if (!row) return
-  if (row.to) void navigateTo(row.to)
+  /* The router from setup: a window listener has no component for `navigateTo` to find. */
+  if (row.to) void router.push(row.to)
   else if (row.href) window.open(row.href, '_blank', 'noopener,noreferrer')
 }
 
@@ -1710,6 +1711,18 @@ function agentFacts(item: InboxInProgressItem): string {
 function requestedState(item: InboxAwaitingSessionItem): ReviewState {
   return item.review_id == null ? 'not_started' : 'waiting_for_session'
 }
+
+/**
+ * Whether to draw the fresh-database card: an empty inbox, **except on *Every review***.
+ *
+ * That view reads `GET /reviews` and not the inbox, and it is the one place a dismissed or
+ * finished review is found — which is exactly what a desk with an empty inbox may still
+ * hold. Drawing the card over it would make `/reviews` say "Nothing here yet" about a
+ * record holding reviews. Found by the end-to-end run on an empty database.
+ */
+function emptyHere(data: Inbox): boolean {
+  return view.value !== 'every' && isEmpty(data)
+}
 </script>
 
 <template>
@@ -1721,7 +1734,7 @@ function requestedState(item: InboxAwaitingSessionItem): ReviewState {
     >
       <DeskState
         :resource="inbox"
-        :is-empty="isEmpty"
+        :is-empty="emptyHere"
         what="the queue"
       >
         <template #default="{ data }">
@@ -2015,14 +2028,15 @@ function requestedState(item: InboxAwaitingSessionItem): ReviewState {
             >
               <span class="what-title">
                 <DeskPill>{{ stateWord('posted') }}</DeskPill>
+                <span class="rd-meta state-aside">{{ postedTitle(item) }}</span>
               </span>
               <!--
-                What was posted and what came back, as one line: `postedTitle` was the state
-                line's words and the pill says *Posted* now, so the round and the event lead
-                the facts. `authorResponseLabel` keeps its rule — never a nought over an unread
-                thread.
+                **The state line carries which round posted and as what** — `postedTitle`, the
+                words this line had before the pill — and the facts line what came back, alone,
+                so it stays one line. `authorResponseLabel` keeps its rule: never a nought over
+                an unread thread.
               -->
-              <span class="rd-meta what-detail">{{ postedTitle(item) }} · {{ authorResponseLabel(item) }}</span>
+              <span class="rd-meta what-detail">{{ authorResponseLabel(item) }}</span>
             </QueueRow>
             <p
               v-if="shown.withAuthor.length && rows.alsoPosted"
@@ -2193,6 +2207,15 @@ function requestedState(item: InboxAwaitingSessionItem): ReviewState {
               :hint="notice && notice.tone === 'plain' ? notice.text : null"
               @submit="start"
             />
+            <!--
+              **The way to Every review from a desk with nothing on it.** The sidebar's
+              Reviews item was it until DEV-1325; a database whose only review was dismissed
+              or finished has an empty inbox and still holds that review.
+            -->
+            <p class="rd-note">
+              <NuxtLink :to="{ path: '/', query: { view: 'every' } }">Every review the record holds</NuxtLink>,
+              including any you dismissed or that finished.
+            </p>
           </DeskCard>
         </template>
       </DeskState>
@@ -2255,7 +2278,18 @@ function requestedState(item: InboxAwaitingSessionItem): ReviewState {
   min-height: 100%;
 }
 
+/*
+ * **The row tracks, tightened for a list with a preview beside it.** `QueueRow` reads these
+ * (and the Every review fold, and the column heads above): 48 for the number, 80 for the
+ * age, 136 for the action and a 16-pixel gap, which hands the two text tracks the 44 pixels
+ * that keep "Nothing back · read 12 hours ago" on one line at 1,440 with the preview open.
+ * The indent is the number's track plus one gap, where a fold's summary starts.
+ */
 .list {
+  --rd-row-tracks: 48px minmax(0, 1fr) minmax(0, 1fr) 80px 136px;
+  --rd-row-gap: 16px;
+  --rd-row-indent: 64px;
+
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -2348,8 +2382,8 @@ function requestedState(item: InboxAwaitingSessionItem): ReviewState {
  */
 .list-head {
   display: grid;
-  grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) 90px 150px;
-  gap: 20px;
+  grid-template-columns: var(--rd-row-tracks);
+  gap: var(--rd-row-gap);
   padding: 0 12px;
   font-weight: 600;
 }
@@ -2367,8 +2401,11 @@ function requestedState(item: InboxAwaitingSessionItem): ReviewState {
 }
 
 .what-title {
-  display: block;
+  display: flex;
   flex: 1 1 100%;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  align-items: center;
 }
 
 /*

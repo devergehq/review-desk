@@ -3401,3 +3401,185 @@ describe('a pull request nobody has picked up', () => {
     expect(drawn[0]!.find('.row').attributes('href')).toBe('/reviews/71')
   })
 })
+
+/*
+ * **The one list, DEV-1325.** Queue and Reviews became Pull requests: tabs over one table, a
+ * preview of the selected row, and J, K and Enter. The queue's own rules are tested above,
+ * unchanged; these are the rules the one list adds.
+ */
+describe('the Pull requests list', () => {
+  beforeEach(async () => {
+    await resetDesk()
+  })
+
+  /** The pull request numbers one tab's panel draws, in order. */
+  function panelNumbers(page: VueWrapper, view: string): string[] {
+    return page.findAll(`#panel-${view} .queue-line .pr`).map(one => one.text().replace('#', ''))
+  }
+
+  /** The pull request numbers one of the sidebar's groups draws. */
+  function sidebarNumbers(page: VueWrapper, group: string): string[] {
+    return page.findAll(`#sidebar .group--${group} .side-row`)
+      .map(one => one.text().match(/#(\d+)/)?.[1] ?? '')
+  }
+
+  it('holds exactly the sidebar’s rows under each of the sidebar’s groups', async () => {
+    /*
+     * **Contract 1 of DEV-1322's plan: the two never disagree.** The list keeps the queue's
+     * merge and the sidebar has its own, so this compares what each draws — the same pull
+     * requests, group for group, whatever order each sorts them in.
+     */
+    const layout = await shown(Layout)
+    const page = await shown(Inbox)
+    for (const [view, group] of [
+      ['waiting', 'waiting_on_you'],
+      ['reviewing', 'being_reviewed'],
+      ['author', 'waiting_on_author'],
+      ['done', 'done'],
+    ] as const) {
+      expect(panelNumbers(page, view).sort(), `${view} against the sidebar's ${group}`)
+        .toEqual(sidebarNumbers(layout, group).sort())
+    }
+    expect(panelNumbers(page, 'waiting').length).toBeGreaterThan(0)
+  })
+
+  it('draws each row’s state word from stateWord, the sidebar’s word for it', async () => {
+    const page = await shown(Inbox)
+    const four12 = page.findAll('#panel-waiting .queue-line').find(one => one.text().includes('#412'))!
+    expect(four12.find('.what-title').text()).toBe(stateWord('brief_ready'))
+  })
+
+  it('opens every row at its review’s Overview', async () => {
+    const page = await shown(Inbox)
+    const rows = page.findAll('#panel-waiting .queue-line')
+    expect(rows.length).toBeGreaterThan(0)
+    for (const one of rows) {
+      const id = Number(one.find('.row').attributes('href')!.split('/').pop())
+      expect(one.find('.row').attributes('href')).toBe(tabPath(id, 'overview'))
+    }
+  })
+
+  it('selects the first row and previews it from the record, with the header’s next action', async () => {
+    const page = await shown(Inbox)
+    await settle(page)
+    const first = page.find('#panel-waiting .queue-line')
+    expect(first.classes()).toContain('queue-line--selected')
+
+    const preview = page.find('[data-testid="list-preview"]')
+    expect(preview.exists()).toBe(true)
+    const number = first.find('.pr').text()
+    expect(preview.text()).toContain(number)
+    /* The state word is the row's own, and the action is `primaryAction`'s or none. */
+    expect(preview.find('[data-testid="preview-state"]').text())
+      .toBe(first.find('.what-title').text())
+    const action = preview.find('[data-testid="preview-action"]')
+    if (action.exists()) {
+      expect(['Confirm the brief', 'Sign off and post']).toContain(action.text().replace('→', '').trim())
+    }
+  })
+
+  it('draws the bottom line from bottomLine, and nothing when the brief has earned nothing', async () => {
+    const page = await shown(Inbox)
+    const rows = page.findAll('#panel-waiting .queue-line')
+    for (const one of rows) {
+      await one.trigger('mouseover')
+      await settle(page)
+      const id = Number(one.find('.row').attributes('href')!.split('/').pop())
+      const brief = loadSource().reviews.find(detail => detail.review.id === id)?.brief
+      const line = bottomLine(brief)
+      const drawn = page.find('[data-testid="bottom-line"]')
+      expect(drawn.exists(), `#${id}'s bottom line`).toBe(line != null)
+      if (line?.headline) expect(drawn.text()).toContain(line.headline)
+      for (const fact of line?.facts ?? []) expect(drawn.text()).toContain(fact.says)
+    }
+  })
+
+  it('moves the selection with J and K, and not while the find field has the cursor', async () => {
+    const page = await shown(Inbox, { attachTo: document.body })
+    const keys = (key: string, target: EventTarget = window) =>
+      target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+    const selectedNumber = () => page.find('#panel-waiting .queue-line--selected .pr').text()
+
+    const numbers = panelNumbers(page, 'waiting').map(pr => `#${pr}`)
+    expect(selectedNumber()).toBe(numbers[0])
+    keys('j')
+    await settle(page)
+    expect(selectedNumber()).toBe(numbers[1])
+    keys('k')
+    await settle(page)
+    expect(selectedNumber()).toBe(numbers[0])
+
+    /* Typed into the field, J is a letter. */
+    keys('j', page.find('input#start').element)
+    await settle(page)
+    expect(selectedNumber()).toBe(numbers[0])
+    page.unmount()
+  })
+
+  it('opens the selected row’s Overview with Enter', async () => {
+    const page = await shown(Inbox, { attachTo: document.body })
+    const href = page.find('#panel-waiting .queue-line--selected .row').attributes('href')
+    const push = vi.spyOn(page.vm.$router, 'push')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await settle(page)
+    expect(push).toHaveBeenCalledWith(href)
+    push.mockRestore()
+    page.unmount()
+  })
+
+  it('narrows every tab to what the find field matches, and a link narrows nothing', async () => {
+    const page = await shown(Inbox)
+    const all = page.findAll('.queue-line').length
+    await page.find('input#start').setValue('#412')
+    await settle(page)
+    expect(page.findAll('.queue-line').map(one => one.find('.pr').text())).toEqual(['#412'])
+
+    await page.find('input#start').setValue('https://github.com/acme/portal/pull/1')
+    await settle(page)
+    expect(page.findAll('.queue-line')).toHaveLength(all)
+  })
+
+  it('draws Every review, not the empty-database card, on a desk whose inbox is empty', async () => {
+    /*
+     * **Found by the end-to-end run on an empty database.** The card is for an inbox with
+     * nothing in it; *Every review* reads `GET /reviews`, which can still hold a dismissed
+     * or finished review — so `/reviews`, which redirects here, must never land on the card.
+     */
+    const source = loadSource()
+    const dismissed = source.reviews.map(detail => ({
+      ...detail,
+      review: { ...detail.review, dismissed_at: '2026-11-01T00:00:00Z', dismissed_reason: 'gone' },
+    }))
+    await resetDesk({ reviews: dismissed, drafts: [], rules: [], own_prs: [], review_requests: [] })
+    const card = await shown(Inbox)
+    expect(card.text()).toContain('Nothing here yet')
+    expect(card.find('a[href="/?view=every"]').exists()).toBe(true)
+
+    const page = await shown(Inbox, { route: '/?view=every' })
+    expect(page.text()).not.toContain('Nothing here yet')
+    expect(page.find('#panel-every').exists()).toBe(true)
+  })
+
+  it('says Nothing needs you, with a line for every other group, when nothing waits', async () => {
+    const source = loadSource()
+    await resetDesk({
+      reviews: source.reviews.filter(detail => detail.review.id === 70),
+      drafts: [],
+      rules: [],
+      own_prs: [],
+    })
+    const page = await shown(Inbox)
+    const card = page.find('[data-testid="nothing-needs-you"]')
+    expect(card.exists()).toBe(true)
+    const lines = card.findAll('.nothing-group').map(one => one.text())
+    expect(lines.map(line => line.split(' · ')[0])).toEqual([
+      'Being reviewed',
+      'Waiting on the author',
+      'Your own',
+      'Done this week',
+    ])
+    expect(lines[0]).toContain('#421')
+    /* And the preview says what changed since yesterday, from recorded times only. */
+    expect(page.find('[data-testid="since-yesterday"]').exists()).toBe(true)
+  })
+})

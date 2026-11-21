@@ -384,10 +384,15 @@ const ticket = computed(() => ticketUrl(props.ticketHref))
  */
 .row {
   display: grid;
-  grid-template-columns:
-    56px minmax(0, 1fr) minmax(0, 1fr) 90px 150px;
+  /*
+   * **The tracks are a variable so a list can tighten all of them at once** (DEV-1325): the
+   * Pull requests list draws a preview beside its rows and sets narrower number, age and
+   * action tracks on its own root, and every row under it — and the column heads, and the
+   * Every review fold — reads the same value, so the columns still line up.
+   */
+  grid-template-columns: var(--rd-row-tracks, 56px minmax(0, 1fr) minmax(0, 1fr) 90px 150px);
   flex: 1 1 100%;
-  gap: 6px 20px;
+  gap: 6px var(--rd-row-gap, 20px);
   align-items: center;
   min-height: var(--rd-control-min);
   min-width: 0;

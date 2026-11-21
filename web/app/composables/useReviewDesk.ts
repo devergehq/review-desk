@@ -805,6 +805,19 @@ export function useReviewDesk() {
     )
   }
 
+  /**
+   * Read every live resource again — **for the one write that cannot refresh as it returns**.
+   *
+   * A delete skips the refresh because the page it was made on reads the review that has
+   * just gone; its caller leaves first and then calls this. It used to rely on the Reviews
+   * list reading on mount, but the inbox is a shared read that does not, so since the list
+   * and the sidebar both draw from it (DEV-1325) a deleted review stayed on both until some
+   * other write refreshed them. Found by the end-to-end run.
+   */
+  async function refreshReads(): Promise<void> {
+    await refreshEverything()
+  }
+
   /** `POST /rules/{id}/promote` — the developer promotes; the app never promotes itself. */
   async function promoteRule(id: number, toStage: RuleStage = 'active'): Promise<WriteResult> {
     return write(
@@ -852,6 +865,7 @@ export function useReviewDesk() {
     dismissReview,
     restoreReview,
     deleteReview,
+    refreshReads,
     foldRound,
     confirmBrief,
     setFindingDisposition,

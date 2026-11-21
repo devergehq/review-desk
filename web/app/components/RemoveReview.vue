@@ -147,6 +147,8 @@ async function remove() {
   if (result.ok) {
     handOver(result.message)
     await navigateTo({ path: '/', query: { view: 'every' } })
+    /* Gone from the page it was on, so every read can be asked again without a 404. */
+    await desk.refreshReads()
   }
 }
 </script>
