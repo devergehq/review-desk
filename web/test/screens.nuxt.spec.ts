@@ -1903,6 +1903,18 @@ describe('the draft preview', () => {
     return shown(DraftPreview, { route: `/reviews/${id}/draft` })
   }
 
+  /** The header's action, which on Draft is the sign-off itself (DEV-1329). */
+  function signOff(page: VueWrapper) {
+    return page.find('button[data-testid="primary-action"]')
+  }
+
+  /** One of the preview's views, by its label. */
+  function viewTab(page: VueWrapper, label: string) {
+    const tab = page.findAll('[role="tab"]').find(one => one.text() === label)
+    if (!tab) throw new Error(`there is no view labelled ${label}`)
+    return tab
+  }
+
   it('says that nothing has been posted', async () => {
     const page = await open(17)
     expect(page.text()).toContain('Nothing has been posted. This is what GitHub will show.')
@@ -1927,16 +1939,23 @@ describe('the draft preview', () => {
     expect(page.html()).not.toContain('class="language-mermaid"')
   })
 
-  it('offers the three views as tabs', async () => {
+  /*
+   * S05's three views — Rendered, Markdown, *Changes since you read it* — and the editor the
+   * page already had, which no picture draws and which stays because nothing is removed.
+   */
+  it('offers the views as tabs, the editor among them', async () => {
     const page = await open(17)
     const tabs = page.findAll('[role="tab"]')
-    expect(tabs.map(tab => tab.text())).toEqual(['Rendered', 'Markdown', 'Edit'])
+    expect(tabs.map(tab => tab.text())).toEqual(['Rendered', 'Markdown', 'Changes since you read it', 'Edit'])
     expect(tabs[0]!.attributes('aria-selected')).toBe('true')
 
     await tabs[1]!.trigger('click')
     expect(page.find('pre').text()).toContain('```mermaid')
 
-    await tabs[2]!.trigger('click')
+    await viewTab(page, 'Changes since you read it').trigger('click')
+    expect(page.find('.changes').text()).toContain('The head has not moved since this round read it at')
+
+    await viewTab(page, 'Edit').trigger('click')
     expect(page.find('textarea#draft-body').exists()).toBe(true)
   })
 
@@ -1996,9 +2015,12 @@ describe('the draft preview', () => {
     const page = await open(41)
     const body = page.find('.preview').text()
 
-    /* The two labels: this is the body, and those are the comments. */
+    /*
+     * The two labels: this is the body, and those are the comments. The comments are S05's
+     * table under the preview's card now (DEV-1329), in the same column.
+     */
     expect(body).toContain('Posts as the review body')
-    expect(body).toContain('Posts as 9 comments on the code')
+    expect(page.find('.main').text()).toContain('Posts as 9 comments on the code')
 
     /* The index is folded, with its size on the one line the fold shows. */
     expect(body).toContain('Index · 12 findings')
@@ -2147,18 +2169,26 @@ describe('the draft preview', () => {
    * fact this cannot see either. What it can hold is the part that was wrong: the sign-off
    * was built last and drawn last. `.pinned` first, with the act inside it.
    */
-  it('puts the sign-off at the top of the aside, with its notice', async () => {
+  /*
+   * **DEV-1329 moved the act out of the aside and into the header**, and the header is
+   * pinned on this tab so the act stays in reach for the whole scroll — the reach the old
+   * aside's `.pinned` panel gave, measured by the design pass at a quarter of a 4,305px page
+   * without it. jsdom computes no layout, so what is held is the part a template decides:
+   * the header carries the pinned class here, there is no second sign-off, and the side
+   * column opens on the verdict, above the checks. The sticking is `e2e`'s to measure.
+   */
+  it('makes the sign-off the header’s action, with Post as first in the side column', async () => {
     const page = await open(41)
     const aside = page.find('.aside')
 
-    expect(aside.element.firstElementChild).toBe(page.find('.pinned').element)
+    expect(signOff(page).exists()).toBe(true)
+    expect(signOff(page).text()).toContain('Sign off and post')
+    expect(page.find('[data-testid="review-header"]').classes()).toContain('review-header--pinned')
+    expect(page.findAll('button').filter(one => one.text().startsWith('Sign off'))).toHaveLength(1)
+    expect(aside.findAll('button').some(one => one.text().startsWith('Sign off'))).toBe(false)
 
-    const pinned = page.find('.pinned')
-    expect(pinned.text()).toContain('Post as')
-    expect(pinned.findAll('button').map(one => one.text())).toContain('Sign off and post')
-
-    /* And the checks are still there, below it rather than above it. */
-    const labels = aside.findAll('.rd-label').map(one => one.text())
+    const labels = aside.findAll('.rd-rubric').map(one => one.text())
+    expect(labels[0]).toBe('Post as')
     expect(labels.indexOf('Post as')).toBeLessThan(labels.indexOf('Checks'))
   })
 
@@ -2234,7 +2264,7 @@ describe('the draft preview', () => {
     const page = await open(17)
     expect(page.text()).not.toContain('F3 · wording')
 
-    await page.findAll('[role="tab"]')[2]!.trigger('click')
+    await viewTab(page, 'Edit').trigger('click')
     const field = page.find('textarea#draft-body')
     await field.setValue(
       (field.element as HTMLTextAreaElement).value.replace(
@@ -2248,26 +2278,47 @@ describe('the draft preview', () => {
     expect(page.text()).toContain('F3 · wording')
   })
 
+  /*
+   * **The header's action is the sign-off, bound as the page's button was.** Once signed off
+   * the review waits on the session rather than on the developer, so the header draws no
+   * action at all — which is how "will not sign off twice" holds now: there is nothing left
+   * to press, not a greyed-out button.
+   */
   it('signs off with the chosen event, and will not sign off twice', async () => {
     const page = await open(17)
-    await page.find('select#event').setValue('comment')
-    await click(page, 'Sign off and post')
+    await page.find('input[name="event"][value="comment"]').setValue(true)
+    await signOff(page).trigger('click')
+    await settle(page)
 
     expect(page.text()).toContain(
       'Signed off. Will be posted as "Comment" — waiting for the session to post it.',
     )
     expect(page.text()).toContain('The review session posts it under your name')
-    expect(button(page, 'Sign off and post')!.attributes('disabled')).toBeDefined()
+    expect(signOff(page).exists()).toBe(false)
+    expect(page.findAll('button').some(one => one.text().startsWith('Sign off'))).toBe(false)
   })
 
   it('will not sign off a draft with unsaved changes', async () => {
     const page = await open(17)
-    await page.findAll('[role="tab"]')[2]!.trigger('click')
+    await viewTab(page, 'Edit').trigger('click')
     await page.find('textarea#draft-body').setValue('Replaced entirely.')
     await page.vm.$nextTick()
 
     expect(page.text()).toContain('Save or discard your changes before signing off.')
-    expect(button(page, 'Sign off and post')!.attributes('disabled')).toBeDefined()
+    expect(signOff(page).attributes('disabled')).toBeDefined()
+    /* And the disabled button says why, by the sentence beside the verdict. */
+    expect(signOff(page).attributes('aria-describedby')).toBe('sign-off-why')
+    expect(page.find('#sign-off-why').text()).toContain('Save or discard your changes')
+  })
+
+  /* The verdict is three radios under one legend: one of three, and the same `event`. */
+  it('offers the verdict as three segments, the record’s event chosen', async () => {
+    const page = await open(17)
+    const radios = page.findAll('fieldset.verdict input[type="radio"]')
+    expect(radios.map(one => (one.element as HTMLInputElement).value))
+      .toEqual(['request_changes', 'comment', 'approve'])
+    expect(page.find('fieldset.verdict legend').text()).toBe('Post as')
+    expect((page.find('input[value="request_changes"]').element as HTMLInputElement).checked).toBe(true)
   })
 
   /*
@@ -2294,13 +2345,13 @@ describe('the draft preview', () => {
    */
   it('uses "approve" nowhere in the draft page’s own copy but in the event control', async () => {
     const page = await open(17)
-    const control = page.find('select#event')
+    const control = page.find('fieldset.verdict')
 
-    /* The control still offers GitHub's three, under a label that names what they are. */
+    /* The control still offers GitHub's three, under a legend that names what they are. */
     expect(control.text()).toContain('Approve')
     expect(control.text()).toContain('Request changes')
     expect(control.text()).toContain('Comment')
-    expect(page.find('label[for="event"]').text()).toBe('Post as')
+    expect(control.find('legend').text()).toBe('Post as')
 
     /*
      * **Scoped to what the developer presses and reads as a label**, rather than to every
@@ -2314,12 +2365,43 @@ describe('the draft preview', () => {
      * does. Widening the exemption to one more string would have been the third exemption;
      * saying what the rule is actually about is better than listing what it is not.
      */
+    /*
+     * The verdict's own labels are the event control, which is the one exemption: they are
+     * `label`s now that the control is three radios (DEV-1329) rather than a select's options.
+     */
     const pressable = page.findAll('button, label, h1, h2, .rd-label')
+      .filter(one => !control.element.contains(one.element))
       .map(one => one.text())
       .join(' · ')
     expect(pressable).not.toMatch(/approv/i)
     expect(pressable).toContain('Sign off and post')
     expect(pressable).toContain('Ticket what is left, and sign off')
+  })
+
+  /*
+   * **Round 2's state, S16** (DEV-1329). `globex/portal#9541` round 2 carries F1 from round 1,
+   * still open: the header names the round, the side column says what became of round 1's
+   * findings, and the third view is the commits since round 1. (F1 has no hunk, so no
+   * thread: the carried row is `test/draft-threads.nuxt.spec.ts`'s.)
+   */
+  it('draws a later round as S16: its name, since round 1, and the carried thread', async () => {
+    const page = await open(61)
+
+    expect(signOff(page).text()).toContain('Sign off round 2 and post')
+    expect(page.find('[data-testid="since-round"]').text()).toContain('Since round 1')
+    expect(page.find('[data-testid="since-round"]').text()).toContain('F1 asked again.')
+    expect(page.find('.sign-off-note').text()).toContain('The review session posts round 2 under your name')
+
+    expect(page.findAll('[role="tab"]').map(one => one.text())).toContain('Changes since round 1')
+    await viewTab(page, 'Changes since round 1').trigger('click')
+    expect(page.find('.changes').text()).toContain('round 1’s head and this round’s')
+  })
+
+  /* A first round draws none of it. */
+  it('draws no Since section on a first round', async () => {
+    const page = await open(41)
+    expect(page.find('[data-testid="since-round"]').exists()).toBe(false)
+    expect(signOff(page).text()).toContain('Sign off and post')
   })
 
   it('asks for a note before sending a draft back, and keeps it when refused', async () => {
@@ -2349,7 +2431,7 @@ describe('the draft preview', () => {
     await useReviewDesk().approveDraft(15, 'comment')
     await settle(page)
 
-    await page.findAll('[role="tab"]')[2]!.trigger('click')
+    await viewTab(page, 'Edit').trigger('click')
     const field = page.find('textarea#draft-body')
     await field.setValue('An edit the record will refuse.')
     await click(page, 'Save the draft')

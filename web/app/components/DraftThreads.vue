@@ -48,7 +48,36 @@ const props = defineProps<{
   /** Where the pull request is, to say which anchors were not measured against it. */
   headSha: string
   posted?: boolean
+  /**
+   * The round each carried finding came from, by key. DEV-1329: a later round's thread on a
+   * carried finding says so. Absent, or no entry, for a finding raised in this round.
+   */
+  carriedFrom?: Readonly<Record<string, number>>
 }>()
+
+/**
+ * **What the row's right-hand cell says about the anchor**, S05's *line unchanged*.
+ *
+ * - **Carried from round N** for a carried finding, because that is what the record holds.
+ *   S16 draws *thread continues*, and the record says otherwise: `carry_finding` does not
+ *   carry `github_comment_id`, so a later round posts its own comment and opens a thread of
+ *   its own.
+ * - **Line unchanged** when the line was counted on the commit the pull request is at: the
+ *   head has not moved since the line was read.
+ * - Otherwise nothing here, and `measuredElsewhere` says which commit it was counted on.
+ *
+ * S16's *moved from :n* is not drawn. A carry copies the earlier line and re-measures
+ * nothing, so no record holds a line a carried finding moved from.
+ */
+function anchorState(thread: DraftThread): string | null {
+  const from = props.carriedFrom?.[thread.finding_key]
+  if (from != null) return `carried from round ${from}`
+  const measured = thread.line_sha
+  if (measured != null && measured.length > 0 && props.headSha.length > 0 && sameCommit(measured, props.headSha)) {
+    return 'line unchanged'
+  }
+  return null
+}
 
 /**
  * What this list is, said as where it lands on GitHub.
@@ -209,40 +238,53 @@ function measuredElsewhere(thread: DraftThread): string | null {
         :key="thread.finding_key"
         class="thread"
       >
-        <p class="where">
-          <span class="key">{{ thread.finding_key }}</span>
-          <span class="severity rd-meta">
-            <!--
-              `{{ ' ' }}`, for the reason `what-happened.vue` measures: without it the text
-              reads `Severity:blocker`, and neither a newline nor `&#32;` at the end of one
-              survives Vue's `whitespace: 'condense'`.
-            -->
-            <span class="rd-visually-hidden">Severity:</span>{{ ' ' }}{{ thread.severity }}
-          </span>
-          <code class="place">{{ thread.path }}:{{ thread.line }}</code>
+        <!--
+          **A row, with the comment folded under it** — S05's table of threads. The comment
+          is what posts on that line, so it is folded, never dropped: the fold opens on the
+          row, and `docs/design.md`'s rule that a page may fold and never remove is the one
+          this keeps.
+        -->
+        <details class="fold">
+          <summary class="where">
+            <span class="key">{{ thread.finding_key }}</span>
+            <span class="severity rd-meta">
+              <!--
+                `{{ ' ' }}`, for the reason `what-happened.vue` measures: without it the text
+                reads `Severity:blocker`, and neither a newline nor `&#32;` at the end of one
+                survives Vue's `whitespace: 'condense'`.
+              -->
+              <span class="rd-visually-hidden">Severity:</span>{{ ' ' }}{{ thread.severity }}
+            </span>
+            <code class="place">{{ thread.path }}:{{ thread.line }}</code>
+            <span
+              v-if="anchorState(thread)"
+              class="state rd-meta"
+            >{{ anchorState(thread) }}</span>
+          </summary>
           <!--
             Interpolated as text, as every other value on this card is. The commit is a
             value a reader copies, so it takes the monospace face the place does.
           -->
-          <span
+          <p
             v-if="measuredElsewhere(thread)"
             class="measured rd-meta"
-          >{{ measuredElsewhere(thread) }}</span>
-        </p>
-        <div class="comment">
-          <MarkdownView :source="thread.body" />
-        </div>
-        <!--
-          **The line GitHub does not show, shown — and the reason said once.** It renders as
-          nothing in the preview above, exactly as it will on GitHub, so what the developer
-          signs off would otherwise be missing a line of itself. What it is *for* is in the
-          card's own sentence at the top: nine threads is nine of these, and the same two
-          lines of prose under each of them is the repetition `HeldBackRows` exists to undo.
-        -->
-        <p class="rd-meta marker">
-          <span class="rd-visually-hidden">Ends with the marker</span>
-          <code>{{ threadMarker(thread.finding_key) }}</code>
-        </p>
+          >
+            {{ measuredElsewhere(thread) }}
+          </p>
+          <div class="comment">
+            <MarkdownView :source="thread.body" />
+          </div>
+          <!--
+            **The line GitHub does not show, shown — and the reason said once.** It renders as
+            nothing in the preview above, exactly as it will on GitHub, so what the developer
+            signs off would otherwise be missing a line of itself. What it is *for* is in the
+            card's own sentence at the top.
+          -->
+          <p class="rd-meta marker">
+            <span class="rd-visually-hidden">Ends with the marker</span>
+            <code>{{ threadMarker(thread.finding_key) }}</code>
+          </p>
+        </details>
       </li>
     </ol>
 
@@ -286,10 +328,18 @@ function measuredElsewhere(thread: DraftThread): string | null {
 .list {
   display: flex;
   flex-direction: column;
-  gap: 20px;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/* S05's table: one rule under each row, the comment opening beneath it. */
+.thread {
+  border-bottom: 1px solid var(--rd-line);
+}
+
+.fold[open] {
+  padding-bottom: 14px;
 }
 
 /*
@@ -299,9 +349,27 @@ function measuredElsewhere(thread: DraftThread): string | null {
 .where {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 10px;
+  gap: 4px 12px;
   align-items: baseline;
-  margin: 0 0 8px;
+  min-height: var(--rd-control-min);
+  padding: 10px 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.where::-webkit-details-marker {
+  display: none;
+}
+
+.where:focus-visible {
+  outline: 3px solid var(--rd-focus-ring);
+  outline-offset: -3px;
+}
+
+/* The anchor's state, at the row's end as S05 sets it. */
+.state {
+  margin-left: auto;
+  color: var(--rd-accent-dark);
 }
 
 .key {
@@ -322,6 +390,7 @@ function measuredElsewhere(thread: DraftThread): string | null {
  * "describes, does not grade" applied to the one fact an anchor could not carry.
  */
 .measured {
+  margin: 0 0 8px;
   font-family: var(--rd-font-mono);
   overflow-wrap: anywhere;
 }

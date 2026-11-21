@@ -398,6 +398,35 @@ first, so on a phone or to a screen reader it is reached before the proof, as it
 - **The tab's count is the *To post* list**, as S4 counts it, read off `listCounts`. The
   page's three tabs count with the same function, so the tab and the list cannot disagree.
 
+## Draft is what posts beside what you decide
+
+**S05, the Draft tab** (DEV-1329), is the draft inside the shell: *What GitHub will show* with
+its views (Rendered, Markdown, *Changes since…*, and the editor S05 does not draw), the
+comments on the code as S05's table under it, and a side column of *Post as*, *Checks*,
+*Held back*, your edits, the outline and the foot. The two sit side by side from 760px of the
+tab's own width, a container query as Findings' bench is.
+
+- **The sign-off is the header's primary action, and the page draws no second one.** The
+  binding and every gate it had moved there: the page hands the header `ActOnTab`, offered
+  only for a draft that is ready and can post, disabled while the draft is unread, edited
+  and unsaved, or a write is in flight. Its label and the note under it come from
+  `primaryAction` in `web/app/utils/reviewTabs.ts`. A later round reads *Sign off round 2
+  and post*, and the note names the commit the round read, because a sign-off is withdrawn
+  when the head moves past it (DEV-962). A draft that is signed off, sent back or being
+  rewritten has no sign-off, not a disabled one. **On Draft the header is pinned** from 1,024px
+  up, so the act stays in reach for the whole scroll, as the old aside's pinned panel kept it;
+  the outline and the foot ride under it in the side column.
+- **Post as is three segments**, radios under one legend, carrying the same `event`.
+- **Each comment on the code is folded under its row**, never dropped. The row says *line
+  unchanged* when the line was counted at the head, and a carried finding says *carried
+  from round N*. S16's *thread continues* is not drawn, because a later round posts its own
+  comment: `carry_finding` does not carry `github_comment_id`. *Re-anchored* and *moved from
+  :n* are not drawn either, because a carry copies the line and its commit and nothing
+  re-measures them.
+- **A later round's *Since round 1* is read off the carried findings' own `round_status`**,
+  `sinceRound` in `web/app/utils/outcomes.ts`, not off `sinceYouPosted`. A round's outcomes
+  are its own, and opening round 2 copies none of round 1's.
+
 ## If you are a session writing the content
 
 Nothing in the design loop changed the contract or what a session writes. These are the
@@ -446,6 +475,7 @@ Neither of these is a decision against; both are waiting on real use.
 | 21 Nov 2026 | The S screens are the target: a three-column shell, a review as five tabs, the conversation beside every tab | *The application shell*; `docs/mockups/s-structured` |
 | 21 Nov 2026 | Serif only on the wordmark; everything else on the sans scale | *A row is a row*; `--rd-font-wordmark` |
 | 21 Nov 2026 | `P` Promote and `N` Not a rule on Rules | The keys table |
+| 21 Nov 2026 | Draft's sign-off is the header's action; a later round names itself and says what became of the last | *Draft is what posts beside what you decide*; `primaryAction`, `sinceRound` |
 | 21 Nov 2026 | A session's answer follows the contract or is kept only as an unparsed message | `docs/answer-contract.md` |
 | 21 Nov 2026 | Queue and Reviews are one Pull requests list with a preview; the bottom line is one helper | *The application shell*; `pages/index.vue`, `bottomLine` |
 | 21 Nov 2026 | Overview is three pages chosen from the record; outcomes are grouped once, each with its basis | `overview.ts`, `sinceYouPosted` |

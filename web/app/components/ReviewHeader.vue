@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ReviewDetail } from '~/types/desk'
-import type { ReviewTab } from '~/utils/reviewTabs'
+import type { ActOnTab, ReviewTab } from '~/utils/reviewTabs'
 
 /**
  * **The review's header: which review, where it stands, what to do next, and the tabs.**
@@ -31,6 +31,25 @@ const props = defineProps<{
   detail: ReviewDetail
   /** Which tab the page is. `aria-current` names it. */
   tab: ReviewTab
+  /**
+   * **The act itself, from the tab that holds it.** DEV-1329.
+   *
+   * Off its own tab the action is a link to the tab that does it. *On* that tab a link to
+   * the page you are on is a control that does nothing, so the page hands its act up and
+   * the header draws a button bound to it. Draft is the one tab that does: the sign-off's
+   * binding and every one of its checks moved here, and the page draws no second button.
+   *
+   * - `offered: false` draws no action at all — a draft nothing can post (DEV-957) has
+   *   no sign-off, not a disabled one.
+   * - `disabled` is every gate the old button had, decided by the page that owns them.
+   */
+  act?: ActOnTab | null
+  /**
+   * **Pinned to the top while the tab scrolls** (DEV-1329): on Draft, so the sign-off stays
+   * in reach for the whole of a long draft, which the old aside's `.pinned` panel was for —
+   * the design pass measured it out of reach for three quarters of a 4,305px page.
+   */
+  pinned?: boolean
 }>()
 
 const review = computed(() => props.detail.review)
@@ -63,7 +82,14 @@ const word = computed(() => stateWord(state.value))
 
 const toAnswer = computed(() => repliesToAnswer(props.detail.outcomes))
 const action = computed(() =>
-  settled.value ? primaryAction(review.value.id, state.value, toAnswer.value) : null)
+  settled.value
+    ? primaryAction(
+        review.value.id,
+        state.value,
+        toAnswer.value,
+        { round: review.value.round, head: review.value.head_sha },
+      )
+    : null)
 
 /**
  * **The word is washed in the accent exactly when there is an action.** *Replies in* with
@@ -71,6 +97,33 @@ const action = computed(() =>
  * it draws neither. Asked by the self-review of #89.
  */
 const waitsOnYou = computed(() => action.value != null)
+
+/**
+ * **What the header draws as its action: the tab's own act, a link, or nothing.**
+ *
+ * - **The act**, when the tab hands one up and offers it — on Draft, a ready draft that can
+ *   post. Its label is `primaryAction`'s draft-ready answer whatever the review's state word
+ *   is, so a ready draft on a review whose brief also waits is still signed off from here,
+ *   as it was from the page before DEV-1329 moved the button.
+ * - **Nothing**, when the tab hands an act up, does not offer it, and the state's action
+ *   would only lead back to this tab: a draft nothing can post has no sign-off, not a link
+ *   to the page already open.
+ * - **The state's link** otherwise.
+ */
+const actionShape = computed<'act' | 'link' | 'none'>(() => {
+  if (props.act?.offered) return 'act'
+  if (!action.value) return 'none'
+  if (props.act && action.value.to === tabPath(review.value.id, props.tab)) return 'none'
+  return 'link'
+})
+
+/** The act's label, from the one function that words the action. */
+const actLabel = computed(() => primaryAction(
+  review.value.id,
+  'draft_ready',
+  [],
+  { round: review.value.round, head: review.value.head_sha },
+)?.label ?? '')
 
 /**
  * The facts line, each fact only when the record holds it.
@@ -106,6 +159,7 @@ const tabs = computed(() =>
 <template>
   <header
     class="review-header"
+    :class="{ 'review-header--pinned': pinned }"
     data-testid="review-header"
   >
     <div class="head">
@@ -168,8 +222,25 @@ const tabs = computed(() =>
         </p>
       </div>
 
+      <!--
+        **On its own tab the action is the act** — DEV-1329's sign-off, with the gates the
+        Draft page decides. `type="button"`, and the same class, so it is the same control
+        to look at and the one control to press.
+      -->
+      <button
+        v-if="actionShape === 'act' && act"
+        type="button"
+        class="action"
+        data-testid="primary-action"
+        :disabled="act.disabled"
+        :aria-describedby="act.disabled && act.describedBy ? act.describedBy : undefined"
+        @click="act.press"
+      >
+        {{ act.working ? 'Working…' : actLabel }}
+        <span aria-hidden="true">→</span>
+      </button>
       <NuxtLink
-        v-if="action"
+        v-else-if="actionShape === 'link' && action"
         class="action"
         data-testid="primary-action"
         :to="action.to"
@@ -312,6 +383,7 @@ const tabs = computed(() =>
 .action {
   flex: none;
   display: inline-flex;
+  min-height: var(--rd-control-min);
   align-items: center;
   gap: 8px;
   padding: 10px 18px;
@@ -324,6 +396,40 @@ const tabs = computed(() =>
 
 .action:hover {
   background: var(--rd-accent-hover);
+}
+
+/*
+ * **Pinned on the page's own ground**, so what scrolls under it is covered rather than
+ * read through. **From 1,024px only**, where the header was measured at 117px, inside the
+ * 120 it may take: below that its facts line wraps and the header grows to 137px at 760 and
+ * 237px at 700 — a quarter of a window held for the whole scroll. Under 700 the shell's own
+ * bar is the sticky top. Raised by the second round of #97's self-review.
+ */
+@media (min-width: 1024px) {
+  .review-header--pinned {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--rd-page);
+  }
+}
+
+/* The act drawn as a button on its own tab (DEV-1329): the same look as the link. */
+button.action {
+  border: 0;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button.action:focus-visible {
+  outline: 3px solid var(--rd-focus-ring);
+  outline-offset: 2px;
+}
+
+button.action:disabled {
+  background: var(--rd-ink-faint);
+  cursor: not-allowed;
 }
 
 .tabs {
