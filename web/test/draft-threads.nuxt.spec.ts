@@ -286,4 +286,35 @@ describe('the threads the draft hands over', () => {
     expect(caveat, `the caveat is drawn: ${said}`).toBeGreaterThan(-1)
     expect(head, `the head comes first: ${said}`).toBeLessThan(caveat)
   })
+
+  /*
+   * **S05's row: a key, a place, and what is true of the anchor** (DEV-1329). *Line unchanged*
+   * when the line was counted at the head; for a carried finding, the round it came from —
+   * not S16's *thread continues*, because a later round posts its own comment and opens a
+   * new thread. No *moved from :n*: nothing re-measures a carried line.
+   */
+  it('says the line is unchanged, or which round a carried thread came from', async () => {
+    const panel = await mountSuspended(DraftThreads, {
+      props: {
+        threads: [thread(3), thread(6, { line_sha: 'a1b2c3d' })],
+        headSha: HEAD,
+        carriedFrom: { F6: 1 },
+      },
+    })
+    const rows = panel.findAll('.thread')
+    expect(rows[0]!.find('.state').text()).toBe('line unchanged')
+    expect(rows[1]!.find('.state').text()).toBe('carried from round 1')
+    expect(rows[1]!.text()).toContain('measured at a1b2c3d, not at d41c8e2')
+    expect(panel.text()).not.toMatch(/thread continues|moved from/)
+  })
+
+  /* The comment is folded under its row, never dropped: it is what posts on that line. */
+  it('folds each comment under its row, closed', async () => {
+    const panel = await mountSuspended(DraftThreads, { props: { threads: [thread(9)], headSha: HEAD } })
+    const fold = panel.find('.thread details')
+    expect(fold.exists()).toBe(true)
+    expect(fold.attributes('open')).toBeUndefined()
+    expect(fold.find('summary').text()).toContain('F9')
+    expect(fold.find('.comment').text()).toContain('Should · F9')
+  })
 })

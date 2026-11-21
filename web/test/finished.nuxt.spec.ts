@@ -411,7 +411,10 @@ describe('the draft page of a review that cannot be posted', () => {
     const labels = page.findAll('button').map(one => one.text())
 
     expect(page.text()).toContain('Nothing to sign off')
-    expect(labels).not.toContain('Sign off and post')
+    /* Neither in the page nor as the header's action (DEV-1329). */
+    expect(labels.some(label => label.startsWith('Sign off'))).toBe(false)
+    const action = page.find('[data-testid="primary-action"]')
+    expect(action.exists() && action.text().startsWith('Sign off')).toBe(false)
     expect(labels.some(label => label.includes('Send back'))).toBe(false)
     expect(labels.some(label => label.includes('Ticket what is left'))).toBe(false)
     /* And the draft itself is still there to read, which is what "kept" means. */
@@ -425,7 +428,10 @@ describe('the draft page of a review that cannot be posted', () => {
      * fresh database. Round 2 of `#9541` is open and unharvested.
      */
     const page = await draftOf(61)
-    expect(page.findAll('button').map(one => one.text())).toContain('Sign off and post')
+    /* The header's action is the sign-off on Draft (DEV-1329), named for round 2. */
+    const action = page.find('button[data-testid="primary-action"]')
+    expect(action.exists()).toBe(true)
+    expect(action.text()).toContain('Sign off round 2 and post')
     expect(page.text()).not.toContain('Nothing to sign off')
   })
 
@@ -437,7 +443,7 @@ describe('the draft page of a review that cannot be posted', () => {
     const page = await draftOf(60)
     expect(page.text()).toContain('Not posted — superseded by round 2')
     expect(page.text()).toContain('The author pushed past the commit')
-    expect(page.findAll('button').map(one => one.text())).not.toContain('Sign off and post')
+    expect(page.findAll('button').map(one => one.text()).some(label => label.startsWith('Sign off'))).toBe(false)
   })
 
   it('says the pull request merged on a round that is both merged and superseded', async () => {

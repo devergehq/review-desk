@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ReviewLayerName, ReviewDetail } from '~/types/desk'
-import type { ReviewTab } from '~/utils/reviewTabs'
+import type { ActOnTab, ReviewTab } from '~/utils/reviewTabs'
 
 /**
  * The frame every tab of a review sits in.
@@ -50,6 +50,8 @@ const props = defineProps<{
   headline: string | null
   /** The line under the heading, when the page has one. */
   sub?: string | null
+  /** The tab's own act, which the header draws as its action on this tab. DEV-1329. */
+  act?: ActOnTab | null
 }>()
 
 /**
@@ -77,6 +79,7 @@ const stepName = computed(() => layerLabel(props.step))
       <ReviewHeader
         :detail="detail"
         :tab="tab"
+        :act="act"
       />
 
       <!--

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import type { DraftDetail, NotForSigning, ReviewEvent } from '~/types/desk'
+import type { DraftDetail, NotForSigning, ReviewDetail, ReviewEvent } from '~/types/desk'
 import type { WriteResult } from '~/composables/useReviewDesk'
 import type { DeskNotice } from '~/utils/format'
+import type { ActOnTab } from '~/utils/reviewTabs'
 
-import { withdrawnLine } from '~/utils/rounds'
+import { baseOnlyLine, commitLabel, nothingMoved, updatedLine, withdrawnLine } from '~/utils/rounds'
 
 /**
  * Step 6 — **the draft**: what GitHub will show, before anything is posted.
@@ -71,12 +72,30 @@ const heading = computed(() => {
   return 'Read it, then sign it off.'
 })
 
-type View = 'rendered' | 'markdown' | 'edit'
+type View = 'rendered' | 'markdown' | 'changes' | 'edit'
 const view = ref<View>('rendered')
-const views: Array<{ key: View, label: string }> = [
-  { key: 'rendered', label: 'Rendered' },
-  { key: 'markdown', label: 'Markdown' },
-  { key: 'edit', label: 'Edit' },
+
+/**
+ * **S05's three views, and the editor this page already had.** *Changes since…* is S05's
+ * and S16's third view, named for the round: a later round's changes are the commits since
+ * the round before, a first round's are what its head did after it was read. *Edit* is not
+ * on either picture and stays, because a page may never remove what it draws.
+ */
+const views = computed<Array<{ key: View, label: string }>>(() => {
+  const round = review.data.value?.review.round ?? 1
+  return [
+    { key: 'rendered', label: 'Rendered' },
+    { key: 'markdown', label: 'Markdown' },
+    { key: 'changes', label: round > 1 ? `Changes since round ${round - 1}` : 'Changes since you read it' },
+    { key: 'edit', label: 'Edit' },
+  ]
+})
+
+/** The three verdicts, in S05's order: the segments under *Post as*. */
+const EVENT_SEGMENTS: ReadonlyArray<{ value: ReviewEvent, label: string }> = [
+  { value: 'request_changes', label: 'Request changes' },
+  { value: 'comment', label: 'Comment' },
+  { value: 'approve', label: 'Approve' },
 ]
 
 const editing = ref('')
@@ -455,6 +474,9 @@ async function goTo(anchor: string) {
   view.value = 'rendered'
   await nextTick()
   const found = document.getElementById(anchor)
+  /* A thread's comment is folded under its row: reaching it opens it. */
+  const fold = found?.querySelector('details')
+  if (fold) fold.open = true
   if (typeof found?.scrollIntoView === 'function') {
     found.scrollIntoView({ block: 'start', behavior: 'smooth' })
   }
@@ -753,6 +775,113 @@ const openFindings = computed(
   () => (review.data.value?.findings ?? []).some(willPost),
 )
 
+/* ------------------------- The sign-off, as the header's action ------------------------- */
+
+/**
+ * **The sign-off is the header's primary action** (DEV-1329, contract 1 of DEV-1322's plan).
+ *
+ * The binding is `approve` above, unchanged, and every gate the page's own button had moves
+ * with it: not offered at all when nothing can post this draft, and disabled while the draft
+ * is decided, while there are unsaved edits, or while a write is in flight. The header
+ * draws the label `primaryAction` gives, so the page has no second sign-off button.
+ *
+ * **Offered only for a draft that is ready and can post.** Once it is signed off, sent back
+ * or posted, the review no longer waits on the developer for it and the header draws its
+ * state's own action instead; a draft nothing can post draws none. While the draft has not
+ * read yet, the review's own `draft_status` decides, and the button waits disabled.
+ */
+const signOffAct = computed<ActOnTab>(() => {
+  const data = detail.data.value
+  const offered = data
+    ? data.draft.status === 'ready' && !notForSigning(data)
+    : review.data.value?.draft_status === 'ready'
+  return {
+    press: approve,
+    disabled: !data || decided(data) || dirty.value || working.value,
+    working: working.value,
+    offered,
+  }
+})
+
+/**
+ * The sign-off's words: its note, from the one function that words the action. A later
+ * round names its round and the commit it read; `primaryAction` holds both.
+ */
+const signOffNote = computed(() => {
+  const owner = review.data.value?.review
+  if (!owner) return null
+  return primaryAction(owner.id, 'draft_ready', [], { round: owner.round, head: owner.head_sha })?.note ?? null
+})
+
+/* ------------------------------- A later round ------------------------------- */
+
+/** S16's *Since round 1*: what became of the carried findings. Null on a first round. */
+const since = computed(() => {
+  const owner = review.data.value
+  if (!owner || owner.review.round < 2) return null
+  return sinceRound(owner.findings, owner.outcomes)
+})
+
+const sinceLines = computed(() => (since.value ? sinceRoundLines(since.value) : []))
+
+/** The round each carried finding came from, by key, for the thread rows. */
+const carriedFrom = computed<Record<string, number>>(() => {
+  const held: Record<string, number> = {}
+  for (const finding of review.data.value?.findings ?? []) {
+    if (finding.continues_round != null) held[finding.key] = finding.continues_round
+  }
+  return held
+})
+
+/**
+ * *Raised before on this PR*, named. S16 names the carried findings rather than counting
+ * them; the lint's own count stays the measure, and the names are drawn only when they are
+ * exactly the findings it counted — the carried ones this draft posts. Otherwise the count,
+ * as before.
+ */
+function raisedBefore(data: DraftDetail): string {
+  const counted = data.lint?.raised_before_on_pr
+  if (counted == null) return 'Not measured'
+  if (counted === 0) return 'None'
+  const carried = (review.data.value?.findings ?? []).filter(one => isCarried(one) && willPost(one))
+  return carried.length === counted ? carried.map(one => one.key).join(', ') : String(counted)
+}
+
+/**
+ * S05's *Lines moved since read*, said as what the record measures: **which threads had
+ * their line counted on a commit other than the head**. A thread whose commit was not
+ * recorded makes the figure unmeasured rather than "none".
+ */
+function readElsewhere(data: DraftDetail): string {
+  if (data.threads.length === 0) return 'None'
+  if (data.threads.some(one => one.line_sha == null || one.line_sha.length === 0)) return 'Not measured'
+  const head = data.review.head_sha
+  const keys = data.threads.filter(one => !sameCommit(one.line_sha!, head)).map(one => one.finding_key)
+  return keys.length ? keys.join(', ') : 'None'
+}
+
+/**
+ * The *Changes since…* view's sentences: a later round's commits since the round before,
+ * or a first round's head since it was read. Each sentence is the one `rounds.ts` already
+ * words for the review page, so this view and that notice cannot say two things.
+ */
+function changesSaid(owner: ReviewDetail): { lead: string, commits: ReviewDetail['commits_since_previous_round'] } {
+  const updates = owner.head_updates ?? nothingMoved()
+  const moved = updatedLine(updates) ?? baseOnlyLine(updates)
+  if (owner.review.round > 1) {
+    const commits = owner.commits_since_previous_round ?? []
+    const lead = commits.length > 0
+      ? `${count(commits.length, 'commit')} between round ${owner.review.round - 1}’s head and this round’s.`
+      : `No commits between round ${owner.review.round - 1}’s head and this round’s are recorded.`
+    return { lead: moved ? `${lead} ${moved}.` : lead, commits }
+  }
+  const head = owner.review.head_sha ? commitLabel(owner.review.head_sha) : null
+  const lead = moved
+    ? `${moved}.`
+    : head ? `The head has not moved since this round read it at ${head}.` : 'The head has not moved since this round read it.'
+  return { lead, commits: [] }
+}
+
 function statusLine(data: DraftDetail): string {
   const draft = data.draft
   /*
@@ -826,12 +955,18 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
     what="this review"
   >
     <template #default="{ data: owner }">
+      <!--
+        **The sign-off is the header's action** (DEV-1329): `signOffAct` hands the header the
+        binding and its gates, and the header draws the one button. Nothing below draws a
+        second.
+      -->
       <ReviewStepPage
         :detail="owner"
         step="draft"
         tab="draft"
         :headline="heading"
         :sub="detail.data.value ? statusLine(detail.data.value) : null"
+        :act="signOffAct"
       >
         <!--
           **Unsaved edits belong to the review they were typed on**, and the navigation
@@ -933,128 +1068,51 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                 <strong>Your note:</strong> {{ data.draft.sent_back_note }}
               </p>
 
-              <div class="body">
-                <!--
-                  **Three panes: what posts, in order; what posts; and what you do about it.**
+              <!--
+                **S05: what GitHub will show, beside what you decide about it.**
 
-                  Step 1.3 of the design loop. The outline is the index as navigation —
-                  every block of the body and every comment on the code, in the order they
-                  post, each reaching the part of the preview it names. It is not a second
-                  copy of the index: the index is one folded line inside the body, where it
-                  posts from, and this is a way around the document.
-
-                  The preview is unchanged in what it holds. The aside keeps the checks, the
-                  edits and what was held back, with the sign-off at the top of it.
-                -->
-                <nav
-                  v-if="outline.length > 0 && data.draft.body.length > 0"
-                  class="outline"
-                  aria-label="What this draft posts"
-                >
-                  <p class="rd-label outline-label">
-                    {{ data.draft.status === 'posted' ? 'What was posted' : 'What posts' }}
-                  </p>
-                  <ol class="outline-rows">
-                    <li
-                      v-for="row in outline"
-                      :key="row.anchor"
-                      class="outline-row"
-                    >
-                      <!--
-                        `aria-controls` is the part of the post this row reaches, which is
-                        true of it and is also the only thing in the markup that says where
-                        a row goes — the browser test reads it to check that pressing a row
-                        brings that part into view, which is the half jsdom cannot hold.
-                      -->
-                      <button
-                        type="button"
-                        class="outline-go"
-                        :class="{ 'outline-go--reached': reached === row.anchor }"
-                        :aria-controls="row.anchor"
-                        :aria-current="reached === row.anchor ? 'true' : undefined"
-                        @click="goTo(row.anchor)"
-                      >
-                        <span class="outline-top">
-                          <SeverityTag
-                            v-if="row.severity"
-                            :severity="row.severity"
-                          />
-                          <span
-                            v-if="row.key"
-                            class="outline-key rd-mono"
-                          >{{ row.key }}</span>
-                          <!--
-                            Which half of the post this is, on the row rather than as two
-                            headed groups: the order is the order it posts in, and grouping
-                            would have to break that to say the same thing.
-                          -->
-                          <span
-                            v-if="row.lands"
-                            class="outline-lands"
-                          >{{ row.lands }}</span>
-                        </span>
-                        <span class="outline-label-text">{{ row.label }}</span>
-                      </button>
-                    </li>
-                  </ol>
-                </nav>
-
-                <!--
-                  **The main column is what posts; the aside is what you do about it.**
-
-                  Both halves of the post are inside the one preview card now — the body,
-                  and the comments on the code under it — because a finding was being drawn
-                  in two of three places and the page never said which half it was. The
-                  aside keeps the checks, the edits and what was held back, and the sign-off
-                  has moved to the top of it and stays there while this column scrolls: it
-                  used to run out about 1,590px down a 4,305px page, which put the one
-                  control this screen exists for out of reach for three quarters of it.
-                -->
+                The preview and the threads under it are the main column; the side column is
+                the verdict, the checks, what came of the round before, what is held back,
+                your edits, the outline, and the acts that are not the sign-off. Side by side
+                from 760px of the tab's own width, a container query as Findings' bench is,
+                because beside the conversation the main column is about 920px at 1,600.
+              -->
+              <div class="bench">
                 <div class="main">
+                  <div class="view-bar">
+                    <p class="rd-label view-label">
+                      {{ data.draft.status === 'posted' ? 'What GitHub shows' : 'What GitHub will show' }}
+                    </p>
+                    <div
+                      role="tablist"
+                      aria-label="How to view the draft"
+                      class="segments"
+                    >
+                      <button
+                        v-for="tab in views"
+                        :key="tab.key"
+                        type="button"
+                        role="tab"
+                        class="segment"
+                        :aria-selected="view === tab.key"
+                        @click="view = tab.key"
+                      >
+                        {{ tab.label }}
+                      </button>
+                    </div>
+                  </div>
+
                   <DeskCard
                     as="section"
                     pad="tight"
                     class="preview"
                   >
-                    <div class="tabs">
-                      <div class="rd-label tabs-label">
-                        Preview
-                      </div>
-                      <div
-                        role="tablist"
-                        aria-label="How to view the draft"
-                        class="tablist"
-                      >
-                        <button
-                          v-for="tab in views"
-                          :key="tab.key"
-                          type="button"
-                          role="tab"
-                          class="rd-btn rd-btn--quiet"
-                          :aria-selected="view === tab.key"
-                          @click="view = tab.key"
-                        >
-                          {{ tab.label }}
-                        </button>
-                      </div>
-                    </div>
-
                     <div class="pane">
                       <!--
                         **One document, and each part of it says where it lands on GitHub.**
-
-                        The page drew three things and called them the preview: an index
-                        table, the body's own finding sections, and a separate card of
-                        threads underneath. A finding with a line was in the index and in
-                        the threads; a finding without one was in the index and in the body.
-                        Everything was printed twice and nothing said which half of the post
-                        it was.
-
-                        Now: the body, labelled as the body; the comments on the code under
-                        it inside the same frame, labelled as comments; and the index folded
-                        to one line, because it was the duplicate. Folded and not taken out:
-                        every row of it is still here, one click from open, because this is
-                        the page the draft is signed off on. See `foldOpenIndex`.
+                        The body, labelled as the body, with the open index folded to one
+                        line because it was the duplicate — folded and not taken out, see
+                        `foldOpenIndex`. The comments on the code are under this card.
                       -->
                       <div
                         v-if="view === 'rendered' && data.draft.body.length > 0"
@@ -1070,11 +1128,8 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
 
                         <!--
                           **One block a heading, each with the anchor its outline row
-                          names.** The body is cut at its own top-level headings and
-                          nowhere else — never inside a proof's fence or inside the house
-                          style's own fold — and the pieces joined are the body, character
-                          for character. `bodyBlocks` argues it; `test/draft.spec.ts`
-                          asserts it.
+                          names.** The pieces joined are the body, character for character.
+                          `bodyBlocks` argues it; `test/draft.spec.ts` asserts it.
                         -->
                         <div class="blocks">
                           <section
@@ -1086,26 +1141,13 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                             <MarkdownView :source="block.markdown" />
                           </section>
                         </div>
-
-                        <!--
-                          **The head goes with the threads.** DEV-978: a thread's line was
-                          counted on some commit, and whether that is the one GitHub will
-                          anchor it against is the fact the developer is signing off on. The
-                          list compares the two; the page is what knows where the pull
-                          request is.
-                        -->
-                        <DraftThreads
-                          :threads="data.threads"
-                          :head-sha="data.review.head_sha"
-                          :posted="data.draft.status === 'posted'"
-                        />
                       </div>
 
                       <!--
-                A draft the session has opened and not written into. The body may be empty
-                while the status is `drafting`, which the contract says in as many words, so
-                the screen says what that is rather than drawing an empty page.
-              -->
+                        A draft the session has opened and not written into. The body may be
+                        empty while the status is `drafting`, which the contract says in as
+                        many words, so the screen says what that is.
+                      -->
                       <p
                         v-else-if="view === 'rendered'"
                         class="rd-empty"
@@ -1118,6 +1160,38 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                         v-else-if="view === 'markdown'"
                         class="source"
                       >{{ data.draft.body }}</pre>
+
+                      <!--
+                        **What changed under the draft, from the record's own sentences.** A
+                        later round lists the commits since the round before
+                        (`commits_since_previous_round`); a first round says what its head
+                        did after it was read. No diff: Review Desk reads no git.
+                      -->
+                      <div
+                        v-else-if="view === 'changes'"
+                        class="changes"
+                      >
+                        <p class="rd-note changes-lead">
+                          {{ changesSaid(owner).lead }}
+                        </p>
+                        <ol
+                          v-if="changesSaid(owner).commits?.length"
+                          class="commits"
+                        >
+                          <li
+                            v-for="commit in changesSaid(owner).commits"
+                            :key="commit.sha"
+                            class="commit"
+                          >
+                            <code class="commit-sha">{{ commitLabel(commit.sha) }}</code>
+                            <span class="commit-summary">{{ commit.summary }}</span>
+                            <span
+                              v-if="commit.files.length"
+                              class="rd-meta commit-files"
+                            >{{ count(commit.files.length, 'file') }}</span>
+                          </li>
+                        </ol>
+                      </div>
 
                       <div
                         v-else
@@ -1178,273 +1252,102 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                       </div>
                     </div>
                   </DeskCard>
+
+                  <!--
+                    **The comments on the code, as S05's table under the preview.** Each row
+                    is a thread and its comment is folded under it: what posts on the line is
+                    one press away, never gone. The head goes with them (DEV-978), and a later
+                    round's carried findings say which round they came from.
+                  -->
+                  <DraftThreads
+                    :threads="data.threads"
+                    :head-sha="data.review.head_sha"
+                    :posted="data.draft.status === 'posted'"
+                    :carried-from="carriedFrom"
+                  />
                 </div>
 
                 <aside class="aside">
                   <!--
-                    **The sign-off is the first thing in the aside, and it stays in view.**
-
-                    The design pass measured what it was: the rail ended about 1,590px down
-                    a 4,305px page and did not move, so for three quarters of the scroll the
-                    right third of the screen was empty and the one control this page exists
-                    for was somewhere above. The order inside the aside was the order the
-                    panels were built in -- checks, edits, held back, and the act last.
-
-                    **Sticky rather than fixed, and wrapped with the notice rather than on
-                    its own.** The notice is where a refused save, a refused sign-off and
-                    "this review is still being read" are said, and four of the five writes
-                    it reports on are in the panel above it. A sentence about a button that
-                    scrolls away from the button is a sentence nobody reads.
-
-                    The aside stretches to the main column's height for this to have
-                    anywhere to stick to -- see `.aside` in the stylesheet, where the
-                    narrow-width case is handled too.
+                    **What the last write did, first in the column**, so a press of the header's
+                    sign-off is answered where the eye goes next. It is the page's notice, not
+                    a panel's: it reports on the sign-off, the save, the send-back and both
+                    ticket asks, and it has to draw on a review nobody can sign off, where a
+                    refused save would otherwise have nowhere to be said.
                   -->
-                  <div class="pinned">
-                    <!--
-                      **No sign-off at all when nothing can post this draft**, which is
-                      DEV-957's "an unposted draft on a finished review says so and cannot be
-                      signed off". Not a disabled button: the panel is the three acts that
-                      each ask a session to do something afterwards — post it, file a ticket
-                      and post it, send it back to be rewritten — and on a merged pull request
-                      there is no session coming for any of them. A greyed-out "Sign off and
-                      post" would still be offering the act, and the API refuses it; the
-                      status line above says what happened instead.
-
-                      The card in its place is not a refusal notice. Nothing was refused and
-                      nothing is wrong: the record simply says what became of the pull request,
-                      and the draft stays on it to be read.
-                    -->
-                    <DeskCard
-                      v-if="notForSigning(data)"
-                      class="panel"
-                    >
-                      <p class="rd-label">
-                        Nothing to sign off
-                      </p>
-                      <p class="rd-note">
-                        {{ notForSigningLine(notForSigning(data)!) }}
-                      </p>
-                      <p class="rd-meta foot">
-                        The draft, the findings and your decisions are all still on the
-                        record. Nothing has been removed.
-                      </p>
-                    </DeskCard>
-
-                    <DeskCard
-                      v-else
-                      class="panel"
-                    >
-                      <label
-                        class="rd-label"
-                        for="event"
-                      >Post as</label>
-                      <select
-                        id="event"
-                        v-model="event"
-                        class="rd-field"
-                        :disabled="decided(data)"
-                      >
-                        <option value="request_changes">
-                          Request changes
-                        </option>
-                        <option value="comment">
-                          Comment
-                        </option>
-                        <option value="approve">
-                          Approve
-                        </option>
-                      </select>
-                      <button
-                        type="button"
-                        class="rd-btn rd-btn--primary"
-                        :disabled="decided(data) || dirty || working"
-                        @click="approve"
-                      >
-                        {{ working ? 'Working…' : 'Sign off and post' }}
-                      </button>
-                      <!--
-                  **"Ticket what is left, and sign off" — one act, and a sign-off.**
-
-                  Drawn only while there is something left to file. The API refuses a review
-                  with no open finding, saying to sign off instead and ask for a ticket for
-                  the nits on their own — so a button that is always there is a button that
-                  is sometimes a refusal, and the two things it would do are already the two
-                  buttons above it.
-                -->
-                      <template v-if="openFindings && !ticketingRest">
-                        <button
-                          type="button"
-                          class="rd-btn"
-                          :disabled="decided(data) || dirty || working"
-                          @click="ticketingRest = true"
-                        >
-                          Ticket what is left, and sign off
-                        </button>
-                      </template>
-                      <div
-                        v-else-if="ticketingRest"
-                        class="send-back"
-                      >
-                        <label
-                          class="rd-meta"
-                          for="ticket-rest-note"
-                        >Why is the rest going to a ticket? Optional.</label>
-                        <textarea
-                          id="ticket-rest-note"
-                          v-model="ticketNote"
-                          class="rd-field"
-                          rows="2"
-                        />
-                        <p class="rd-meta">
-                          Every open finding is held back and recorded as ticketed this round,
-                          and the draft is signed off. The event is not yours to choose here —
-                          the control above is set to Approve, because a request for changes
-                          that ticketed everything it asked for would contradict itself.
-                          Review Desk files no ticket; an agent does, and the sign-off cannot
-                          link to one that does not exist yet.
-                        </p>
-                        <div class="send-back-actions">
-                          <button
-                            type="button"
-                            class="rd-btn rd-btn--primary"
-                            :disabled="working"
-                            @click="ticketRest"
-                          >
-                            Ticket it and sign off
-                          </button>
-                          <button
-                            type="button"
-                            class="rd-btn"
-                            @click="ticketingRest = false"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-
-                      <!--
-                        **The one transition out of a sign-off.** A draft that is approved and
-                        not yet posted can be sent back, which takes the sign-off with it —
-                        and without that a draft the hand-over refuses has nowhere to go at
-                        all: it cannot be posted, cannot be rewritten, and could not be sent
-                        back. Measured by the session building the posting half of DEV-929.
-                        The label says what the button does, because taking back a sign-off is
-                        not the same act as sending back a draft nobody has signed.
-                      -->
-                      <template v-if="!sendingBack">
-                        <button
-                          type="button"
-                          class="rd-btn"
-                          :disabled="!canSendBack(data) || working"
-                          @click="sendingBack = true"
-                        >
-                          {{
-                            data.draft.status === 'approved'
-                              ? 'Take back the sign-off and send it back'
-                              : 'Send back with a note'
-                          }}
-                        </button>
-                      </template>
-                      <div
-                        v-else
-                        class="send-back"
-                      >
-                        <label
-                          class="rd-meta"
-                          for="send-back-note"
-                        >What is the session to change?</label>
-                        <textarea
-                          id="send-back-note"
-                          v-model="note"
-                          class="rd-field"
-                          rows="3"
-                        />
-                        <div class="send-back-actions">
-                          <!--
-                            **Guarded like the button that opened it**, which it did not need
-                            to be until this page started re-reading. The form opens on a
-                            draft that is `approved`, and the status can now move underneath
-                            it: the session posts while the note is being typed, the panel
-                            flips to "Posted", and an enabled Send back over a posted draft
-                            buys the developer a refusal from the server.
-                          -->
-                          <button
-                            type="button"
-                            class="rd-btn rd-btn--primary"
-                            :disabled="working || !canSendBack(data)"
-                            @click="sendBack"
-                          >
-                            Send back
-                          </button>
-                          <button
-                            type="button"
-                            class="rd-btn"
-                            @click="sendingBack = false"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                      <DeskNotice
-                        v-if="dirty"
-                        tone="problem"
-                      >
-                        Save or discard your changes before signing off.
-                      </DeskNotice>
-                      <!--
-                        **What happens after the press, kept current.** Everything above this
-                        is the developer's to do; this is the only part of the panel that
-                        reports on somebody else, so it is the only part that has to re-read
-                        the record — DEV-932, where a sign-off went 4 min 28 s with nothing
-                        on screen. It asks this page to read again; it writes nothing.
-                      -->
-                      <PostingWatch
-                        :draft="data.draft"
-                        :review="data.review"
-                        :last-activity-at="review.data.value?.timings.last_activity_at"
-                        :body-is-stale="data.body_is_stale"
-                        :record-is-current="recordIsCurrent"
-                        :reread="reread"
-                      />
-                      <p class="rd-meta foot">
-                        The review session posts it under your name, with no bot banner.
-                      </p>
-                    </DeskCard>
-
-                    <!--
-                      **What the last write did, in the aside itself and not in a panel.**
-
-                      It was the last line of the sign-off card — and that card is the `v-else`
-                      of the one that says "Nothing to sign off", so on a review the record
-                      will not let anybody sign off, there was no element on this page that
-                      could draw a notice at all. The editor is not gated on status, and the
-                      server refuses a save on an `approved` or a `posted` draft, so a
-                      developer on a merged pull request could press Save the draft, be refused
-                      with a 409, and watch nothing happen: `said()` set a sentence that had
-                      nowhere to go. Raised by a review of this branch, which also caught that
-                      `stillReading()` had been written into the same blind spot while its own
-                      comment claimed the page always had somewhere to say this.
-
-                      It belongs out here because it is the page's notice, not the sign-off
-                      panel's: four of the five writes it reports on are in that panel, and the
-                      fifth — the save — is in the editor in the other column.
-                    -->
-                    <DeskCard
-                      v-if="notice"
-                      class="panel"
-                    >
-                      <DeskNotice :tone="notice.tone">
-                        {{ notice.text }}
-                      </DeskNotice>
-                    </DeskCard>
+                  <div
+                    v-if="notice"
+                    class="side-part"
+                  >
+                    <DeskNotice :tone="notice.tone">
+                      {{ notice.text }}
+                    </DeskNotice>
                   </div>
 
-                  <DeskCard class="panel">
-                    <div class="rd-label">
-                      Checks
-                    </div>
+                  <!--
+                    **No verdict and no acts when nothing can post this draft**, DEV-957. Not
+                    disabled: on a merged pull request there is no session coming for any of
+                    them, and the header draws no sign-off either. The status line above says
+                    what happened.
+                  -->
+                  <section
+                    v-if="notForSigning(data)"
+                    class="side-part"
+                  >
+                    <p class="rd-rubric">
+                      Nothing to sign off
+                    </p>
+                    <p class="rd-note">
+                      {{ notForSigningLine(notForSigning(data)!) }}
+                    </p>
+                    <p class="rd-meta foot">
+                      The draft, the findings and your decisions are all still on the
+                      record. Nothing has been removed.
+                    </p>
+                  </section>
 
+                  <!--
+                    **Post as, as S05's three segments.** Radios, so the choice is one of
+                    three to a screen reader and the arrow keys move it; `event` is the same
+                    value the sign-off has always sent.
+                  -->
+                  <fieldset
+                    v-else
+                    class="side-part verdict"
+                    :disabled="decided(data)"
+                  >
+                    <legend class="rd-rubric">
+                      Post as
+                    </legend>
+                    <div class="verdicts">
+                      <label
+                        v-for="one in EVENT_SEGMENTS"
+                        :key="one.value"
+                        class="verdict-segment"
+                        :class="{ 'verdict-segment--on': event === one.value }"
+                      >
+                        <input
+                          v-model="event"
+                          type="radio"
+                          name="event"
+                          class="rd-visually-hidden"
+                          :value="one.value"
+                        >
+                        {{ one.label }}
+                      </label>
+                    </div>
+                  </fieldset>
+
+                  <section class="side-part">
+                    <p class="rd-rubric">
+                      Checks
+                    </p>
+                    <FactRow
+                      label="Lines read on another commit"
+                      :value="readElsewhere(data)"
+                      numeric
+                      :failing="!['None', 'Not measured'].includes(readElsewhere(data))"
+                    />
                     <!--
                 `lint` is null until the review-craft lint has run over this body, and a
                 body that was just saved has no result yet. Null is not a failing lint, so
@@ -1478,13 +1381,7 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                       />
                       <FactRow
                         label="Raised before on this PR"
-                        :value="
-                          data.lint.raised_before_on_pr == null
-                            ? 'Not measured'
-                            : data.lint.raised_before_on_pr === 0
-                              ? 'None'
-                              : String(data.lint.raised_before_on_pr)
-                        "
+                        :value="raisedBefore(data)"
                         :failing="(data.lint.raised_before_on_pr ?? 0) > 0"
                       />
                       <p
@@ -1505,12 +1402,71 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                       The review lint has not run over this body. That is not the same as it
                       failing: nothing has measured it yet.
                     </p>
-                  </DeskCard>
+                  </section>
 
-                  <DeskCard class="panel">
-                    <div class="rd-label">
+                  <!--
+                    **S16's Since round 1**, on a later round only, from the carried findings'
+                    own statuses (`sinceRound`). A sentence per kind of outcome, and a round
+                    that carried nothing draws nothing.
+                  -->
+                  <section
+                    v-if="since && sinceLines.length"
+                    class="side-part"
+                    data-testid="since-round"
+                  >
+                    <p class="rd-rubric">
+                      Since round {{ since.from }}
+                    </p>
+                    <p class="rd-note since">
+                      {{ sinceLines.join(' ') }}
+                    </p>
+                  </section>
+
+                  <!--
+                    **Held back, with the ticket ask gated like the sign-off**: `POST
+                    …/nit-ticket` is refused on a review that has left the desk, so the rows
+                    stay and only the button goes.
+                  -->
+                  <section
+                    v-if="data.held_back.length"
+                    class="side-part"
+                  >
+                    <!--
+                      **The rows, and the join that makes them possible.** `HeldBackFinding`
+                      carries a key, a claim and a severity; the title, the file and the line
+                      a row needs come from the review's own findings, which this page is
+                      already reading for the frame and the trail. Nothing about the record
+                      or the contract changed to allow it.
+                    -->
+                    <HeldBackRows :rows="heldRows" />
+                    <p
+                      v-if="offTheDesk(data)"
+                      class="rd-meta foot"
+                    >
+                      These stay on the record. There is no ticket to ask for: nothing will
+                      act on this review.
+                    </p>
+                    <button
+                      v-else
+                      type="button"
+                      class="rd-btn"
+                      :disabled="data.nit_ticket.status !== 'none' || working"
+                      @click="fileTicket"
+                    >
+                      {{
+                        data.nit_ticket.status === 'none'
+                          ? 'File as one ticket for an agent'
+                          : data.nit_ticket.status === 'requested'
+                            ? 'Queued as one ticket'
+                            : `Filed as ${data.nit_ticket.ticket_id}`
+                      }}
+                    </button>
+                  </section>
+
+                  <section class="side-part">
+                    <p class="rd-rubric">
                       Your edits to this draft
-                    </div>
+                    </p>
                     <p
                       v-if="data.edits.length === 0"
                       class="rd-meta help"
@@ -1545,57 +1501,224 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
                       Saved as feedback when you sign off. Three edits of the same kind become a
                       proposed rule.
                     </p>
-                  </DeskCard>
+                  </section>
 
                   <!--
-                    **Gated like the sign-off panel, because it is the fourth of the same
-                    four acts.** "File as one ticket for an agent" is `POST …/nit-ticket`,
-                    which `request_nit_ticket` refuses on a review that has left the desk
-                    for the reason the other three are refused: it asks an agent to file a
-                    ticket, and no agent is coming. The contract names it in
-                    `NotForSigning`'s own description. It lives in its own card, which is
-                    how it was missed when the panel below was gated — found by a review of
-                    the commit that gated the panel.
-
-                    **The rows stay; only the button goes.** What the review held back is
-                    part of the record, and a reader of a finished review still wants to see
-                    it. What they cannot do is ask for a ticket.
+                    **The outline: what this draft posts, in the order it posts it** — the
+                    index, as navigation. Not on S05, and kept, because a page may never
+                    remove what it draws; it is the side column's last part so it sits under
+                    what S05 puts first.
                   -->
-                  <DeskCard
-                    v-if="data.held_back.length"
-                    class="panel"
+                  <nav
+                    v-if="outline.length > 0 && data.draft.body.length > 0"
+                    class="side-part outline"
+                    aria-label="What this draft posts"
                   >
-                    <!--
-                      **The rows, and the join that makes them possible.** `HeldBackFinding`
-                      carries a key, a claim and a severity; the title, the file and the line
-                      a row needs come from the review's own findings, which this page is
-                      already reading for the frame and the trail. Nothing about the record
-                      or the contract changed to allow it.
-                    -->
-                    <HeldBackRows :rows="heldRows" />
-                    <p
-                      v-if="offTheDesk(data)"
-                      class="rd-meta foot"
-                    >
-                      These stay on the record. There is no ticket to ask for: nothing will
-                      act on this review.
+                    <p class="rd-rubric outline-label">
+                      {{ data.draft.status === 'posted' ? 'What was posted' : 'What posts' }}
                     </p>
-                    <button
-                      v-else
-                      type="button"
-                      class="rd-btn"
-                      :disabled="data.nit_ticket.status !== 'none' || working"
-                      @click="fileTicket"
+                    <ol class="outline-rows">
+                      <li
+                        v-for="row in outline"
+                        :key="row.anchor"
+                        class="outline-row"
+                      >
+                        <!--
+                        `aria-controls` is the part of the post this row reaches, which is
+                        true of it and is also the only thing in the markup that says where
+                        a row goes — the browser test reads it to check that pressing a row
+                        brings that part into view, which is the half jsdom cannot hold.
+                      -->
+                        <button
+                          type="button"
+                          class="outline-go"
+                          :class="{ 'outline-go--reached': reached === row.anchor }"
+                          :aria-controls="row.anchor"
+                          :aria-current="reached === row.anchor ? 'true' : undefined"
+                          @click="goTo(row.anchor)"
+                        >
+                          <span class="outline-top">
+                            <SeverityTag
+                              v-if="row.severity"
+                              :severity="row.severity"
+                            />
+                            <span
+                              v-if="row.key"
+                              class="outline-key rd-mono"
+                            >{{ row.key }}</span>
+                            <!--
+                            Which half of the post this is, on the row rather than as two
+                            headed groups: the order is the order it posts in, and grouping
+                            would have to break that to say the same thing.
+                          -->
+                            <span
+                              v-if="row.lands"
+                              class="outline-lands"
+                            >{{ row.lands }}</span>
+                          </span>
+                          <span class="outline-label-text">{{ row.label }}</span>
+                        </button>
+                      </li>
+                    </ol>
+                  </nav>
+
+                  <!--
+                    **The foot: what the sign-off does, and the two other ways out of the
+                    draft** — S05's note and its two links. The sign-off itself is the
+                    header's action.
+                  -->
+                  <div
+                    v-if="!notForSigning(data)"
+                    class="side-part foot-acts"
+                  >
+                    <DeskNotice
+                      v-if="dirty"
+                      tone="problem"
                     >
-                      {{
-                        data.nit_ticket.status === 'none'
-                          ? 'File as one ticket for an agent'
-                          : data.nit_ticket.status === 'requested'
-                            ? 'Queued as one ticket'
-                            : `Filed as ${data.nit_ticket.ticket_id}`
-                      }}
-                    </button>
-                  </DeskCard>
+                      Save or discard your changes before signing off.
+                    </DeskNotice>
+                    <!--
+                      **What happens after the press, kept current.** DEV-932: it asks this
+                      page to read again; it writes nothing.
+                    -->
+                    <PostingWatch
+                      :draft="data.draft"
+                      :review="data.review"
+                      :last-activity-at="review.data.value?.timings.last_activity_at"
+                      :body-is-stale="data.body_is_stale"
+                      :record-is-current="recordIsCurrent"
+                      :reread="reread"
+                    />
+                    <p
+                      v-if="signOffNote"
+                      class="rd-meta sign-off-note"
+                    >
+                      {{ signOffNote }}
+                    </p>
+                    <!--
+                  **"Ticket what is left, and sign off" — one act, and a sign-off.**
+
+                  Drawn only while there is something left to file. The API refuses a review
+                  with no open finding, saying to sign off instead and ask for a ticket for
+                  the nits on their own — so a button that is always there is a button that
+                  is sometimes a refusal, and the two things it would do are already the two
+                  buttons above it.
+                -->
+                    <template v-if="openFindings && !ticketingRest">
+                      <button
+                        type="button"
+                        class="link-act"
+                        :disabled="decided(data) || dirty || working"
+                        @click="ticketingRest = true"
+                      >
+                        Ticket what is left, and sign off
+                      </button>
+                    </template>
+                    <div
+                      v-else-if="ticketingRest"
+                      class="send-back"
+                    >
+                      <label
+                        class="rd-meta"
+                        for="ticket-rest-note"
+                      >Why is the rest going to a ticket? Optional.</label>
+                      <textarea
+                        id="ticket-rest-note"
+                        v-model="ticketNote"
+                        class="rd-field"
+                        rows="2"
+                      />
+                      <p class="rd-meta">
+                        Every open finding is held back and recorded as ticketed this round,
+                        and the draft is signed off. The event is not yours to choose here —
+                        the control above is set to Approve, because a request for changes
+                        that ticketed everything it asked for would contradict itself.
+                        Review Desk files no ticket; an agent does, and the sign-off cannot
+                        link to one that does not exist yet.
+                      </p>
+                      <div class="send-back-actions">
+                        <button
+                          type="button"
+                          class="rd-btn rd-btn--primary"
+                          :disabled="working"
+                          @click="ticketRest"
+                        >
+                          Ticket it and sign off
+                        </button>
+                        <button
+                          type="button"
+                          class="rd-btn"
+                          @click="ticketingRest = false"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+
+                    <!--
+                        **The one transition out of a sign-off.** A draft that is approved and
+                        not yet posted can be sent back, which takes the sign-off with it —
+                        and without that a draft the hand-over refuses has nowhere to go at
+                        all: it cannot be posted, cannot be rewritten, and could not be sent
+                        back. Measured by the session building the posting half of DEV-929.
+                        The label says what the button does, because taking back a sign-off is
+                        not the same act as sending back a draft nobody has signed.
+                      -->
+                    <template v-if="!sendingBack">
+                      <button
+                        type="button"
+                        class="link-act"
+                        :disabled="!canSendBack(data) || working"
+                        @click="sendingBack = true"
+                      >
+                        {{
+                          data.draft.status === 'approved'
+                            ? 'Take back the sign-off and send it back'
+                            : 'Send back with a note'
+                        }}
+                      </button>
+                    </template>
+                    <div
+                      v-else
+                      class="send-back"
+                    >
+                      <label
+                        class="rd-meta"
+                        for="send-back-note"
+                      >What is the session to change?</label>
+                      <textarea
+                        id="send-back-note"
+                        v-model="note"
+                        class="rd-field"
+                        rows="3"
+                      />
+                      <div class="send-back-actions">
+                        <!--
+                            **Guarded like the button that opened it**, which it did not need
+                            to be until this page started re-reading. The form opens on a
+                            draft that is `approved`, and the status can now move underneath
+                            it: the session posts while the note is being typed, the panel
+                            flips to "Posted", and an enabled Send back over a posted draft
+                            buys the developer a refusal from the server.
+                          -->
+                        <button
+                          type="button"
+                          class="rd-btn rd-btn--primary"
+                          :disabled="working || !canSendBack(data)"
+                          @click="sendBack"
+                        >
+                          Send back
+                        </button>
+                        <button
+                          type="button"
+                          class="rd-btn"
+                          @click="sendingBack = false"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </aside>
               </div>
             </div>
@@ -1611,23 +1734,6 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
   display: flex;
   flex-direction: column;
   gap: 20px;
-}
-
-.back {
-  font-size: 14px;
-}
-
-.title {
-  margin: 6px 0 0;
-}
-
-.status {
-  margin: 4px 0 0;
-}
-
-.status--decided {
-  color: var(--rd-accent-dark);
-  font-weight: 500;
 }
 
 .unsaved {
@@ -1651,98 +1757,288 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
 }
 
 /*
- * **Three panes at a desk, two at a laptop, one at a phone.**
+ * **S05's two columns: what posts, and what you decide about it.**
  *
- * A grid rather than the wrapping flex row it was, because the outline has to be able to
- * sit beside both columns at one width and above them at another, and a flex row can only
- * wrap in the order it is written. The areas say the arrangement in one place.
- *
- * Below 1,280px there is not the width for three, so the outline goes above the preview
- * with a height of its own — bounded, and scrolling inside itself, because an outline that
- * pushed a 4,000px page down by another 600 would cost more than it saves.
+ * A container query on the tab's own width, as Findings' bench is (DEV-1328): beside the
+ * conversation the main column is about 920px at a 1,600px window, so a rule keyed on the
+ * viewport would put two columns into room for one. From 760px of the tab the side column
+ * takes 300px; under it the side column follows the preview.
  */
-.body {
+.draft {
+  container: draft / inline-size;
+}
+
+.bench {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-areas:
-    'outline'
-    'main'
-    'aside';
-  gap: 24px;
+  gap: 28px;
   align-items: start;
+  min-width: 0;
 }
 
-@media (min-width: 920px) {
-  .body {
-    grid-template-columns: minmax(0, 1fr) 320px;
-    grid-template-areas:
-      'outline outline'
-      'main    aside';
+@container draft (min-width: 760px) {
+  .bench {
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 0;
+    align-items: stretch;
+  }
+
+  .main {
+    padding-right: 28px;
+  }
+
+  .aside {
+    padding-left: 28px;
+    border-left: 1px solid var(--rd-line);
   }
 }
 
-@media (min-width: 1280px) {
-  .body {
-    grid-template-columns: 260px minmax(0, 1fr) 330px;
-    grid-template-areas: 'outline main aside';
-    gap: 32px;
-  }
+.main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* -------------------------- the preview and its views -------------------------- */
+
+.view-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* "What GitHub will show": S05 sets it as the column's heading, in the body ink. */
+.view-label {
+  margin: 0;
+  color: var(--rd-ink);
+  font-size: var(--rd-type-lead);
+  font-weight: 600;
 }
 
 /*
- * The main column, which is what the preview alone used to be. The flex numbers moved out
- * here unchanged: the column takes the room, and the aside keeps its own 320px basis.
+ * **Segments, one quiet ground under the chosen one** — S05's view switch, and the same
+ * shape as Post as below it, so the page has one segmented control and not two.
  */
-.main {
-  grid-area: main;
+.segments,
+.verdicts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--rd-radius-sm);
+  background: var(--rd-ground);
+}
+
+.segment,
+.verdict-segment {
+  padding: 5px 12px;
+  border: 0;
+  border-radius: var(--rd-radius-sm);
+  background: transparent;
+  color: var(--rd-ink-muted);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.segment[aria-selected='true'],
+.verdict-segment--on {
+  background: var(--rd-surface);
+  color: var(--rd-ink);
+  font-weight: 600;
+  box-shadow: 0 0 0 1px var(--rd-line);
+}
+
+.segment:focus-visible,
+.verdict-segment:focus-within {
+  outline: 3px solid var(--rd-focus-ring);
+  outline-offset: 1px;
+}
+
+.preview {
   min-width: 0;
+  padding: 0;
+}
+
+.pane {
+  padding: 24px 24px;
+}
+
+.rendered {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Where this part lands on GitHub: a caption on the preview, not a heading in the review. */
+.lands {
+  margin: 0;
+  color: var(--rd-ink-muted);
+}
+
+.blocks {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  min-width: 0;
 }
 
-/* ------------------------------- the outline ---------------------------------- */
+.block {
+  min-width: 0;
+  /* So a row pressed in the outline does not land with its heading under the top edge. */
+  scroll-margin-top: 16px;
+}
 
-/*
- * **The index, as navigation.** It stays put while the preview scrolls, which is the whole
- * of what a three-pane document is for: the place you are in the post is readable from the
- * left without scrolling back to the table at the top of it.
- */
-.outline {
-  grid-area: outline;
+.source {
+  margin: 0;
+  padding: 16px;
+  overflow-x: auto;
+  background: var(--rd-ground);
+  border: 1px solid var(--rd-line);
+  border-radius: var(--rd-radius-sm);
+  font-family: var(--rd-font-mono);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.changes {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.changes-lead {
+  margin: 0;
+  max-width: var(--rd-measure);
+}
+
+.commits {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--rd-line);
+}
+
+.commit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rd-line);
+}
+
+.commit-sha {
+  font-family: var(--rd-font-mono);
+  font-size: 13px;
+}
+
+.commit-summary {
+  flex: 1 1 200px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.editor-help {
+  flex: 1 1 240px;
+  margin: 0;
+}
+
+/* ------------------------------- the side column ------------------------------- */
+
+.aside {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 24px;
 }
 
-@media (min-width: 1280px) {
-  .outline {
-    position: sticky;
-    top: 16px;
-    max-height: calc(100vh - 96px);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
+/* A part of the side column: S05 draws no cards here, only a label over what it holds. */
+.side-part {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
-/*
- * **Above the preview it is bounded rather than as long as the post.** Eleven rows of a
- * real review is about 600px, and an outline that pushed a 7,500px page down by another
- * 600 would cost more than it saves. Five rows and a scroll: enough to see what the shape
- * of the post is, and to reach the rest without leaving the top of the page.
- */
-@media (max-width: 1279px) {
-  .outline-rows {
-    max-height: 200px;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
+.side-part > .rd-rubric,
+.verdict > legend {
+  margin: 0;
+  padding: 0;
 }
 
-.outline-label {
+.verdict > legend {
+  margin-bottom: 10px;
+}
+
+.verdict:disabled .verdict-segment {
+  cursor: not-allowed;
+}
+
+.since {
   margin: 0;
 }
+
+/* The foot sits at the end of the column, as S05 sets the note and its two links. */
+.foot-acts {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--rd-line);
+}
+
+.sign-off-note {
+  margin: 0;
+}
+
+/* S05's two quiet links: the other ways out of a draft, not a second primary. */
+.link-act {
+  align-self: flex-start;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--rd-accent-dark);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.link-act:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.link-act:disabled {
+  color: var(--rd-ink-faint);
+  cursor: not-allowed;
+}
+
+.link-act:focus-visible {
+  outline: 3px solid var(--rd-focus-ring);
+  outline-offset: 2px;
+}
+
+/* ------------------------------- the outline ---------------------------------- */
 
 .outline-rows {
   margin: 0;
@@ -1750,6 +2046,9 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
   list-style: none;
   border-top: 1px solid var(--rd-ink);
   min-width: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .outline-row {
@@ -1816,149 +2115,7 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
   overflow: hidden;
 }
 
-/* The body's own parts, separated as the markdown renderer separates its blocks. */
-.blocks {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  min-width: 0;
-}
-
-.block {
-  min-width: 0;
-  /* So a row pressed in the outline does not land with its heading under the top edge. */
-  scroll-margin-top: 16px;
-}
-
-.preview {
-  min-width: 0;
-  padding: 0;
-}
-
-.tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  padding: 8px 12px 8px 20px;
-  border-bottom: 1px solid var(--rd-line);
-}
-
-.tabs-label {
-  margin-right: auto;
-}
-
-.tablist {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.pane {
-  padding: 24px 20px;
-}
-
-/* The body, with its index folded, and the comments on the code: one document. */
-.rendered {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-/*
- * Where this part of the page lands on GitHub, over the part it is about. Quiet: it is a
- * caption on the preview, not a heading in the review.
- */
-.lands {
-  margin: 0;
-  color: var(--rd-ink-muted);
-}
-
-.source {
-  margin: 0;
-  padding: 16px;
-  overflow-x: auto;
-  background: var(--rd-ground);
-  border: 1px solid var(--rd-line);
-  border-radius: var(--rd-radius-sm);
-  font-family: var(--rd-font-mono);
-  font-size: 13px;
-  line-height: 1.55;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.editor {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.editor-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
-.editor-help {
-  flex: 1 1 240px;
-  margin: 0;
-}
-
-/*
- * **Stretched to the row, so the panel inside it has something to stick to.**
- *
- * `position: sticky` works inside its own containing block and no further. With the aside
- * sized to its contents -- which `align-items: flex-start` on `.body` gives it -- a sticky
- * panel would stop sticking where the aside stopped, which on the measured page was 1,590px
- * into 4,305px. Stretching the aside to the main column's height is what makes the whole
- * scroll the sticky range, and it costs nothing visible: the aside's cards keep their own
- * sizes and the column below them is empty either way.
- */
-.aside {
-  grid-area: aside;
-  align-self: stretch;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-/*
- * The act, and the one place this page says what a write did.
- *
- * 16px, not 0: the page scrolls under it and a panel flush to the viewport edge reads as
- * cut off rather than pinned.
- */
-.pinned {
-  position: sticky;
-  top: 16px;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-/*
- * **Nothing is pinned once the aside is under the body rather than beside it.** Below this
- * width `.body` wraps, the aside is its own flex line at the foot of the page, and a sticky
- * panel there would pin the sign-off over the held-back findings a reader had just scrolled
- * to -- the panel would be the last thing on the page and would float over the end of it.
- * The breakpoint is `.main`'s own basis plus the aside's, which is where the two stop
- * fitting side by side.
- */
-@media (max-width: 920px) {
-  .pinned {
-    position: static;
-  }
-}
-
-.panel {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
+/* ------------------------------- edits and the rest ------------------------------ */
 
 .edit {
   margin: 0;
@@ -1969,11 +2126,7 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
   font-weight: 500;
 }
 
-/*
- * How many times a finding moved, beside where it ended up. Quiet and never wrapping inside
- * itself — it is a phrase, not a sentence — and in the body ink, because the number of times
- * somebody changed their mind is not a fault.
- */
+/* How many times a finding moved: a phrase, not a sentence, and not a fault. */
 .edit-times {
   white-space: nowrap;
 }
@@ -2000,9 +2153,5 @@ function ofFigure(value: number | null | undefined, of: number | null | undefine
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-.missing {
-  padding: 20px;
 }
 </style>

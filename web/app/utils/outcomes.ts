@@ -62,8 +62,9 @@
  */
 
 import { dayLabel, sinceLabel } from './format'
+import { isCarried, willPost } from './findings'
 
-import type { Actor, Instant, Outcome, OutcomeKind } from '~/types/desk'
+import type { Actor, Finding, Instant, Outcome, OutcomeKind } from '~/types/desk'
 
 /**
  * As much of an outcome as any of this needs.
@@ -906,4 +907,117 @@ export function sinceYouPosted(
   groups.newCode.sort((one, two) => one.seq - two.seq)
 
   return groups
+}
+
+/* ------------------------------ Since the round before ------------------------------ */
+
+/** One carried finding in a *Since round 1* group, with the commit its status rests on. */
+export interface CarriedFinding {
+  seq: number
+  key: string
+  /** `round_status_commit`, at seven characters — "F9 fixed in 3c1e2a". Null when none. */
+  commit: string | null
+}
+
+/**
+ * **What became of the earlier round's findings, as a later round's draft says it.**
+ * DEV-1329, S16's *Since round 1*.
+ *
+ * The companion of [`sinceYouPosted`], and deliberately not a second grouping of the same
+ * outcomes. `sinceYouPosted` groups what came back on a round *after it posted*, from that
+ * round's own outcomes. A later round holds none of those: a round's outcomes are its own,
+ * and opening round 2 copies none of round 1's. What it **does** hold is each carried
+ * finding's `round_status` — written by `carry_finding` with who decided and the commit it
+ * rests on — which is the record's own answer to "what became of F9 since round 1". So
+ * this reads that, plus the one act this round records on a carried finding,
+ * `raised_again`.
+ *
+ * | Group | The record |
+ * |---|---|
+ * | fixed | carried, `round_status` `fixed` |
+ * | answered | carried, `accepted`: their reason was taken |
+ * | raisedAgain | carried, still open, with a `raised_again` outcome on this round |
+ * | askedAgain | carried, still open, posting again, and not raised again |
+ * | withdrawn | carried, `withdrawn` |
+ * | ticketed | carried, `ticketed` |
+ *
+ * **Not here, because no record holds them:** *re-anchored* and *moved from :n*. A carry
+ * copies the earlier line and the commit it was counted on and re-measures nothing, so no
+ * field says a carried finding's line moved. A carried finding that is still open and not
+ * posting (set aside or ticketed this round) is in no group: its disposition says where it
+ * went, and the draft's held-back list draws it.
+ *
+ * `null` for a round that carried nothing, so a page draws no section rather than an empty
+ * one.
+ */
+export interface SinceRound {
+  /** The round the carried findings came from — the newest, when they came from several. */
+  from: number
+  fixed: CarriedFinding[]
+  answered: CarriedFinding[]
+  raisedAgain: CarriedFinding[]
+  askedAgain: CarriedFinding[]
+  withdrawn: CarriedFinding[]
+  ticketed: CarriedFinding[]
+}
+
+export function sinceRound(
+  findings: readonly Finding[],
+  outcomes: ReadonlyArray<Pick<Outcome, 'finding_seq' | 'kind'>>,
+): SinceRound | null {
+  const carried = findings.filter(isCarried).sort((one, two) => one.seq - two.seq)
+  if (carried.length === 0) return null
+
+  const raised = new Set(outcomes.filter(one => one.kind === 'raised_again').map(one => one.finding_seq))
+  const groups: SinceRound = {
+    from: Math.max(...carried.map(one => one.continues_round ?? 0)),
+    fixed: [], answered: [], raisedAgain: [], askedAgain: [], withdrawn: [], ticketed: [],
+  }
+  if (groups.from < 1) groups.from = 1
+
+  for (const finding of carried) {
+    const one: CarriedFinding = {
+      seq: finding.seq,
+      key: finding.key,
+      commit: shortCommit(finding.round_status_commit),
+    }
+    const status = finding.round_status
+    if (status === 'fixed') groups.fixed.push(one)
+    else if (status === 'accepted') groups.answered.push(one)
+    else if (status === 'withdrawn') groups.withdrawn.push(one)
+    else if (status === 'ticketed') groups.ticketed.push(one)
+    else if (raised.has(finding.seq)) groups.raisedAgain.push(one)
+    else if (willPost(finding)) groups.askedAgain.push(one)
+  }
+  return groups
+}
+
+/**
+ * The sentences S16's side column draws, from [`sinceRound`]'s groups: what is resolved,
+ * then what this round asks again, then what went elsewhere. A group with nothing in it
+ * says nothing.
+ */
+export function sinceRoundLines(since: SinceRound): string[] {
+  const keys = (group: CarriedFinding[]) => listed(group.map(one => one.key))
+  const lines: string[] = []
+
+  const resolved: string[] = []
+  for (const one of since.fixed) resolved.push(one.commit ? `${one.key} fixed in ${one.commit}` : `${one.key} fixed`)
+  if (since.answered.length) resolved.push(`${keys(since.answered)} answered`)
+  if (since.withdrawn.length) resolved.push(`${keys(since.withdrawn)} withdrawn`)
+  if (resolved.length) lines.push(`${listed(resolved)}.`)
+
+  const again: string[] = []
+  if (since.raisedAgain.length) again.push(`${keys(since.raisedAgain)} raised again`)
+  if (since.askedAgain.length) again.push(`${keys(since.askedAgain)} asked again`)
+  if (again.length) lines.push(`${listed(again)}.`)
+
+  if (since.ticketed.length) lines.push(`${keys(since.ticketed)} still ${since.ticketed.length === 1 ? 'goes' : 'go'} to a ticket.`)
+  return lines
+}
+
+/** "F1", "F1 and F3", "F1, F3 and F6". */
+function listed(items: readonly string[]): string {
+  if (items.length <= 1) return items[0] ?? ''
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
 }

@@ -16,6 +16,7 @@ import type { ReviewState } from './stateWord'
 import { durationLabel } from './format'
 
 import { listCounts } from './findings'
+import { shortCommit } from './outcomes'
 
 /** The five tabs, by the suffix their page sits at. */
 export type ReviewTab = 'overview' | 'understanding' | 'findings' | 'draft' | 'replies'
@@ -152,6 +153,52 @@ export interface PrimaryAction {
   label: string
   /** The tab that holds what it acts on. */
   to: string
+  /**
+   * What happens after it is pressed, for an action whose effect is not the tab it opens.
+   * Only the sign-off has one: the Draft tab draws it under the act (DEV-1329).
+   */
+  note?: string
+}
+
+/**
+ * **What a tab hands the header so the header's action is the act, not a link to it.**
+ * DEV-1329: the Draft tab's sign-off. `offered: false` draws no action; `disabled` is every
+ * gate the page's old button had.
+ */
+export interface ActOnTab {
+  press: () => void
+  disabled: boolean
+  working: boolean
+  offered: boolean
+}
+
+/** Which round the review is, and the commit it read, for the sign-off's words. */
+export interface ReadAt {
+  round: number
+  head: string | null
+}
+
+/**
+ * **The sign-off's label and note, by round.** DEV-1329, S05 and S16.
+ *
+ * Round 1 is *Sign off and post*; a later round names itself, *Sign off round 2 and post*,
+ * because what posts is that round's review over the one already on the pull request.
+ *
+ * **The note says what the record does, not what S16 paraphrases.** A signed-off draft
+ * whose head moves is no longer signed off (DEV-962, `withdrawnLine`), so the commit the
+ * round read is the one named. A round with no head recorded leaves the clause out rather
+ * than naming nothing.
+ */
+function signOff(read: ReadAt | undefined): { label: string, note: string } {
+  const later = read != null && read.round > 1
+  const label = later ? `Sign off round ${read.round} and post` : 'Sign off and post'
+  const what = later ? `round ${read.round}` : 'it'
+  const posts = `The session posts ${what} under your name, with no bot banner.`
+  const commit = shortCommit(read?.head ?? null)
+  const note = commit
+    ? `${posts} If the head moves past ${commit} after you sign, the sign-off is withdrawn and nothing posts.`
+    : posts
+  return { label, note }
 }
 
 /**
@@ -180,18 +227,20 @@ export interface PrimaryAction {
  * page's sign-off binding into the draft-ready action.
  *
  * `toAnswer` is the finding keys [`repliesToAnswer`] answers, passed in so this stays a
- * function of values.
+ * function of values. `read` is the round and its head, which the sign-off's label and note
+ * are worded from (`signOff`); without it the action reads as round 1's with no commit.
  */
 export function primaryAction(
   reviewId: number,
   state: ReviewState,
   toAnswer: readonly string[],
+  read?: ReadAt,
 ): PrimaryAction | null {
   switch (state) {
     case 'brief_ready':
       return { label: 'Confirm the brief', to: tabPath(reviewId, 'understanding') }
     case 'draft_ready':
-      return { label: 'Sign off and post', to: tabPath(reviewId, 'draft') }
+      return { ...signOff(read), to: tabPath(reviewId, 'draft') }
     case 'replies_in':
       if (toAnswer.length === 0) return null
       return {
