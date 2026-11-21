@@ -285,13 +285,12 @@ describe('a reply that did not follow the format', () => {
 })
 
 describe('a suggestion in a line', () => {
-  it('words each of the seven', () => {
+  it('words each of the six', () => {
     const lines = ([
       { type: 'new_finding', severity: 'should', title: 'Retries have no limit', where: 'Run.php:40', basis: 'ran' },
       { type: 'regrade', finding: 'F9', from: 'should', to: 'blocker', why: 'Both paths leak.' },
       { type: 'add_to_draft', finding: 'F9', text: 'It covers both paths.' },
       { type: 'set_aside', finding: 'F4', why: 'Naming only.' },
-      { type: 'answer_question', question: 2, answer: 'Yes.' },
       { type: 'draft_reply', finding: 'F3', call: 'accept_reason', words: 'Fair.' },
       { type: 'follow_up', question: 'And the CSV path?' },
     ] as Suggestion[]).map(one => suggestionLine(one).line)
@@ -300,7 +299,6 @@ describe('a suggestion in a line', () => {
       'Regrade F9 from should to blocker',
       'Add to F9 in the draft',
       'Set F4 aside',
-      'Answer question 2 on Overview',
       'Accept their reason on F3',
       'Ask next: And the CSV path?',
     ])

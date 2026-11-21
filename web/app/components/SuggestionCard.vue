@@ -2,7 +2,7 @@
 import type { Suggestion } from '~/types/desk'
 
 /**
- * **One thing an answer suggests**, from the closed list of seven. DEV-1333 draws it
+ * **One thing an answer suggests**, from the closed list of six. DEV-1333 draws it
  * **inert**: what it would do, and nothing to press.
  *
  * DEV-1334 makes it act. The `actions` slot is where its Accept and Dismiss go, so the card

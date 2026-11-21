@@ -238,7 +238,7 @@ const REPLY_CALLS = {
 
 /**
  * **One suggestion in a line**, and the words behind it when it carries any, from the closed
- * list of seven (`docs/answer-contract.md`). Drawn inert here; DEV-1334 gives the card its
+ * list of six (`docs/answer-contract.md`). Drawn inert here; DEV-1334 gives the card its
  * Accept and Dismiss.
  */
 export function suggestionLine(suggestion: Suggestion): { line: string, why: string | null } {
@@ -257,8 +257,6 @@ export function suggestionLine(suggestion: Suggestion): { line: string, why: str
       }
     case 'set_aside':
       return { line: `Set ${suggestion.finding} aside`, why: suggestion.why }
-    case 'answer_question':
-      return { line: `Answer question ${suggestion.question} on Overview`, why: suggestion.answer }
     case 'draft_reply':
       return { line: `${REPLY_CALLS[suggestion.call]} on ${suggestion.finding}`, why: suggestion.words }
     case 'follow_up':
