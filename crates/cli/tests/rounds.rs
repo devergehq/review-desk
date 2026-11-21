@@ -14,18 +14,16 @@ mod common;
 use std::path::Path;
 
 use common::{open_review, post_round, Desk};
-use tempfile::TempDir;
+use review_desk_fake_bin::FakeBin;
 
 /// A `gh` that answers the two reads `round commits` makes, and refuses anything else.
 ///
 /// **Any `gh` subcommand other than `api` exits non-zero**, which is what makes this a test
 /// of "Review Desk reads GitHub and never writes to it" rather than a convenience: a
 /// command that grew a `gh pr review` would fail here.
-fn fake_gh(dir: &Path) -> TempDir {
-    let bin = TempDir::new().expect("a directory for the fake gh");
+fn fake_gh(dir: &Path) -> FakeBin {
     let script = format!(
-        r#"#!/bin/sh
-if [ "$1" != "api" ]; then
+        r#"if [ "$1" != "api" ]; then
   echo "this fake gh only answers reads, and was asked: $*" >&2
   exit 1
 fi
@@ -38,16 +36,8 @@ esac
 "#,
         dir = dir.display()
     );
-
-    let path = bin.path().join("gh");
-    std::fs::write(&path, script).expect("write the fake gh");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-            .expect("make it executable");
-    }
-    bin
+    // Through the shared fake, which cannot be "Text file busy" — DEV-1356.
+    FakeBin::new("gh", &script)
 }
 
 /// The two commits between round 1 and round 2, as GitHub would answer for them.
@@ -396,7 +386,7 @@ fn round_commits_records_what_changed_since_the_previous_round() {
 
     let output = desk
         .command()
-        .env("PATH", bin.path())
+        .env("PATH", bin.dir())
         .args(["round", "commits", "--review", &second, "--json"])
         .assert()
         .success();
@@ -437,7 +427,7 @@ fn round_commits_on_a_first_round_says_what_it_needs_rather_than_reading_github(
 
     let output = desk
         .command()
-        .env("PATH", bin.path())
+        .env("PATH", bin.dir())
         .args(["round", "commits", "--review", &first, "--json"])
         .assert()
         .code(1);

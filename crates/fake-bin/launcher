@@ -1,0 +1,11 @@
+#!/bin/sh
+# The one file a test ever executes to stand in for a program — DEV-1356.
+#
+# Every fake is a symlink to this file, and this file runs the fake's body, `<link>.sh`
+# beside the link, with /bin/sh. The body is only ever read; it is never executed. This
+# file is never written by any test: git writes it once, at checkout. So nothing a test
+# executes can be open for writing, which is the only way to get ETXTBSY.
+#
+# `$0` is the path the program was started by, so the link, not this file. `exec` keeps
+# the process id, which is what lets a caller that kills the fake kill the right process.
+exec /bin/sh "$0.sh" "$@"

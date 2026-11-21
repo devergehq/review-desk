@@ -28,6 +28,8 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+# The fake `gh` that `tests/post.rs` and `tests/rounds.rs` put on `PATH` — DEV-1356.
+review-desk-fake-bin = { path = "../fake-bin" }
 assert_cmd.workspace = true
 predicates.workspace = true
 tempfile.workspace = true

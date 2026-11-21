@@ -1,0 +1,17 @@
+[package]
+name = "review-desk-fake-bin"
+description = "Test-only: a fake program a test can run without ever hitting ETXTBSY."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+name = "review_desk_fake_bin"
+path = "src/lib.rs"
+
+# A dev-dependency of every crate that uses it, and of nothing else, so none of this is in
+# a build that ships.
+[dependencies]
+tempfile.workspace = true

@@ -11,6 +11,7 @@ mod common;
 use std::path::PathBuf;
 
 use common::Desk;
+use review_desk_fake_bin::FakeBin;
 use review_desk_store::{Actor, DraftStatus, NewDraft, NewReview, PostedTagStatus, ReviewEvent};
 use serde_json::Value;
 use tempfile::TempDir;
@@ -19,43 +20,34 @@ use tempfile::TempDir;
 /// post records its standard input and answers from `answer`, unless a file called `fail`
 /// exists beside it, whose text it prints as `gh`'s error.
 struct FakeGh {
-    dir: TempDir,
+    fake: FakeBin,
 }
 
 impl FakeGh {
     fn new() -> Self {
-        let dir = TempDir::new().unwrap();
-        let script = dir.path().join("gh");
-        let here = dir.path().display();
-        std::fs::write(
-            &script,
-            format!(
-                "#!/bin/sh\n\
-                 echo \"$@\" >> '{here}/calls'\n\
-                 case \"$*\" in *--paginate*) /bin/cat '{here}/reviews' 2>/dev/null; exit 0;; esac\n\
-                 /bin/cat > '{here}/payload.json'\n\
-                 if [ -f '{here}/fail' ]; then /bin/cat '{here}/fail' >&2; exit 1; fi\n\
-                 /bin/cat '{here}/answer'\n"
-            ),
-        )
-        .unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
-        let gh = FakeGh { dir };
+        // The script reads and writes beside itself, in the fake's own directory. Its
+        // body is written before that directory is known, so it finds it from `$0`.
+        let fake = FakeBin::new(
+            "gh",
+            "here=\"${0%/*}\"\n\
+             echo \"$@\" >> \"$here/calls\"\n\
+             case \"$*\" in *--paginate*) /bin/cat \"$here/reviews\" 2>/dev/null; exit 0;; esac\n\
+             /bin/cat > \"$here/payload.json\"\n\
+             if [ -f \"$here/fail\" ]; then /bin/cat \"$here/fail\" >&2; exit 1; fi\n\
+             /bin/cat \"$here/answer\"\n",
+        );
+        let gh = FakeGh { fake };
         gh.answer(r#"{"id": 4140231301, "state": "CHANGES_REQUESTED"}"#);
         gh
     }
 
     fn answer(&self, text: &str) {
-        std::fs::write(self.dir.path().join("answer"), text).unwrap();
+        std::fs::write(self.fake.dir().join("answer"), text).unwrap();
     }
 
     /// Make the next post fail with `stderr`, or succeed again with `None`.
     fn fail(&self, stderr: Option<&str>) {
-        let flag = self.dir.path().join("fail");
+        let flag = self.fake.dir().join("fail");
         match stderr {
             Some(stderr) => std::fs::write(flag, stderr).unwrap(),
             None => {
@@ -70,11 +62,11 @@ impl FakeGh {
             .iter()
             .map(|(id, body)| serde_json::json!({ "id": id, "body": body }).to_string())
             .collect();
-        std::fs::write(self.dir.path().join("reviews"), lines.join("\n")).unwrap();
+        std::fs::write(self.fake.dir().join("reviews"), lines.join("\n")).unwrap();
     }
 
     fn calls(&self) -> Vec<String> {
-        std::fs::read_to_string(self.dir.path().join("calls"))
+        std::fs::read_to_string(self.fake.dir().join("calls"))
             .unwrap_or_default()
             .lines()
             .map(str::to_string)
@@ -83,7 +75,7 @@ impl FakeGh {
 
     fn payload(&self) -> Value {
         serde_json::from_str(
-            &std::fs::read_to_string(self.dir.path().join("payload.json")).unwrap(),
+            &std::fs::read_to_string(self.fake.dir().join("payload.json")).unwrap(),
         )
         .unwrap()
     }
@@ -127,7 +119,7 @@ fn approved(desk: &Desk) -> i64 {
 fn post(desk: &Desk, gh: &FakeGh, review: i64, allele: &Option<PathBuf>) -> assert_cmd::Command {
     let mut command = desk.command();
     command
-        .env("PATH", gh.dir.path())
+        .env("PATH", gh.fake.dir())
         .env("HOME", desk.dir())
         .args(["post", &review.to_string(), "--session", "session-1"])
         .args(["--go-ahead-at", "1763700000", "--json"]);

@@ -17,4 +17,6 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+# The fake `gh` the deadline test runs — DEV-1356.
+review-desk-fake-bin = { path = "../fake-bin" }
 tempfile.workspace = true

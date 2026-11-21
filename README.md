@@ -1411,6 +1411,7 @@ Tests always use a temporary file and never touch the default path.
 | `crates/harvest` | `review-desk-harvest`: reads a posted review's outcomes back from GitHub. GitHub sits behind a trait, so its tests replay responses captured from a real pull request. |
 | `crates/server` | `review-desk-server`: the local HTTP server. The contract's JSON API and the embedded dashboard, on `127.0.0.1`. |
 | `crates/cli` | `review-desk`: the binary. One module per command group under `src/commands`. |
+| `crates/fake-bin` | `review-desk-fake-bin`, test-only: the one way a test fakes a program such as `gh`, built so it cannot fail with "Text file busy". See its `src/lib.rs`. |
 | `web` | The dashboard: a Nuxt app, five screens, built to static files. |
 | `contract` | The OpenAPI file both sides are built to, its examples, and the checks over them. |
 | `tools` | The dependency checks: release age and known advisories. Standard-library Python, no dependencies of their own. |

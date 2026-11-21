@@ -384,17 +384,11 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_post_that_hangs_is_killed_at_the_deadline_and_is_not_a_refusal() {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = tempfile::TempDir::new().unwrap();
-        let script = dir.path().join("gh");
-        std::fs::write(
-            &script,
-            "#!/bin/sh\n/bin/cat > /dev/null\nexec /bin/sleep 30\n",
-        )
-        .unwrap();
-        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // Through the shared fake, which cannot be "Text file busy" — DEV-1356.
+        let fake =
+            review_desk_fake_bin::FakeBin::new("gh", "/bin/cat > /dev/null\nexec /bin/sleep 30\n");
 
-        let gh = Gh::with_program(&script).with_post_deadline(Duration::from_millis(300));
+        let gh = Gh::with_program(fake.path()).with_post_deadline(Duration::from_millis(300));
         let started = Instant::now();
         let error = gh
             .post_review("devergehq/locus", 64, "{}")

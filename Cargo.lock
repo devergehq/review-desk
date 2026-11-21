@@ -1058,6 +1058,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "predicates",
+ "review-desk-fake-bin",
  "review-desk-harvest",
  "review-desk-server",
  "review-desk-store",
@@ -1069,9 +1070,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "review-desk-fake-bin"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
+]
+
+[[package]]
 name = "review-desk-harvest"
 version = "0.1.0"
 dependencies = [
+ "review-desk-fake-bin",
  "review-desk-store",
  "serde",
  "serde_json",
