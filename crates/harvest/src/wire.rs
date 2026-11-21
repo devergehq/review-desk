@@ -13,7 +13,7 @@ use review_desk_store::{PrState, Timestamp};
 
 use crate::error::{HarvestError, Result};
 use crate::github::{
-    ChangedFile, Commit, CommitFiles, Comparison, PullRequest, Reply, ReviewThread,
+    BlobAt, ChangedFile, Commit, CommitFiles, Comparison, PullRequest, Reply, ReviewThread,
 };
 use crate::patch::changed_lines;
 
@@ -50,6 +50,7 @@ pub fn pull_request(json: &str) -> Result<PullRequest> {
         state,
         state_at,
         head_sha: wire.head.sha,
+        base_sha: wire.base.map(|base| base.sha),
         author: wire.user.and_then(|user| user.login),
         // Trimmed, and an empty title is no title: it would otherwise be shown as a
         // review with a blank name rather than one with none.
@@ -77,7 +78,12 @@ pub fn review_threads(json: &str) -> Result<Vec<ReviewThread>> {
             // A thread with no comments cannot be a finding's thread.
             let root = comments.next()?;
 
+            let original_commit = root
+                .original_commit
+                .as_ref()
+                .map(|commit| commit.oid.clone());
             Some(ReviewThread {
+                original_commit,
                 root_comment_id: root.database_id?.to_string(),
                 resolved: thread.is_resolved,
                 resolved_by: thread.resolved_by.and_then(|user| user.login),
@@ -110,6 +116,10 @@ pub fn comparison(json: &str) -> Result<Comparison> {
             .map(|commit| Commit {
                 committed_at: commit.committed_at(),
                 summary: commit.summary(),
+                is_merge: commit
+                    .parents
+                    .as_ref()
+                    .is_some_and(|parents| parents.len() > 1),
                 sha: commit.sha,
             })
             .collect(),
@@ -119,6 +129,8 @@ pub fn comparison(json: &str) -> Result<Comparison> {
             .map(|file| ChangedFile {
                 path: file.filename,
                 status: file.status,
+                previous_path: file.previous_filename,
+                changes: file.changes,
                 // A file with no patch — a binary, or one too large for GitHub to send
                 // — changed, but says nothing about which lines. That is the
                 // "only the file changed" case, not a reason to fail the run.
@@ -141,6 +153,37 @@ pub fn commit(json: &str) -> Result<CommitFiles> {
             .into_iter()
             .map(|file| file.filename)
             .collect(),
+    })
+}
+
+/// Read the GraphQL response for one file at one commit. DEV-1344.
+///
+/// The query asks for the commit and the file at it in one go — see `gh::BLOB_QUERY` — so
+/// a commit that is gone can be told from a file that is gone. GitHub answers `null` for
+/// both, and only asking for the commit on its own says which.
+pub fn blob(json: &str) -> Result<BlobAt> {
+    let wire: WireBlobResponse = read(json, "file at a commit")?;
+    let repository = wire.data.repository;
+
+    if repository.commit.is_none() {
+        return Ok(BlobAt::CommitMissing);
+    }
+    // A path naming a directory comes back as a tree, which carries no blob id: there is
+    // no file there for a finding to point at.
+    let Some(WireBlob {
+        oid: Some(oid),
+        text,
+        is_binary,
+        is_truncated,
+    }) = repository.file
+    else {
+        return Ok(BlobAt::PathMissing);
+    };
+
+    let whole = !is_binary.unwrap_or(false) && !is_truncated.unwrap_or(false);
+    Ok(BlobAt::Blob {
+        oid,
+        text: text.filter(|_| whole),
     })
 }
 
@@ -197,6 +240,7 @@ struct WirePullRequest {
     merged_at: Option<String>,
     closed_at: Option<String>,
     head: WireRef,
+    base: Option<WireRef>,
     user: Option<WireUser>,
     title: Option<String>,
     additions: Option<i64>,
@@ -257,6 +301,41 @@ struct WireComment {
     body: String,
     #[serde(rename = "createdAt")]
     created_at: Option<String>,
+    #[serde(rename = "originalCommit", default)]
+    original_commit: Option<WireOid>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WireOid {
+    oid: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct WireBlobResponse {
+    data: WireBlobData,
+}
+
+#[derive(Debug, Deserialize)]
+struct WireBlobData {
+    repository: WireBlobRepository,
+}
+
+#[derive(Debug, Deserialize)]
+struct WireBlobRepository {
+    commit: Option<WireOid>,
+    file: Option<WireBlob>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WireBlob {
+    #[serde(default)]
+    oid: Option<String>,
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(rename = "isBinary", default)]
+    is_binary: Option<bool>,
+    #[serde(rename = "isTruncated", default)]
+    is_truncated: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -275,6 +354,8 @@ struct WireComparison {
 struct WireCommit {
     sha: String,
     commit: Option<WireCommitDetail>,
+    #[serde(default)]
+    parents: Option<Vec<WireParent>>,
     files: Option<Vec<WireFile>>,
 }
 
@@ -304,6 +385,9 @@ impl WireCommit {
 }
 
 #[derive(Debug, Deserialize)]
+struct WireParent {}
+
+#[derive(Debug, Deserialize)]
 struct WireCommitDetail {
     committer: Option<WireCommitter>,
     /// The whole message. Only its first line is kept.
@@ -321,6 +405,10 @@ struct WireFile {
     #[serde(default)]
     status: String,
     patch: Option<String>,
+    #[serde(default)]
+    previous_filename: Option<String>,
+    #[serde(default)]
+    changes: Option<i64>,
 }
 
 #[cfg(test)]

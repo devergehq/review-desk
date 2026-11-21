@@ -1,6 +1,6 @@
 //! Reads the outcomes of a posted review back from GitHub and records them.
 //!
-//! Four facts, and nothing else:
+//! Four facts, and where one cannot be known, why:
 //!
 //! | Fact | Recorded as |
 //! | -- | -- |
@@ -8,6 +8,7 @@
 //! | Someone replied to a finding | An outcome of kind `replied`, with who and the verbatim text |
 //! | A finding's thread was resolved | An outcome of kind `thread_resolved` |
 //! | The file a finding points at changed later | An outcome of kind `code_changed_after` |
+//! | Whether it changed could not be known | An outcome of kind `code_change_unknown`, with the reason |
 //!
 //! **What it found goes on step 7 of the review's trail**, which is DEV-933: `running`
 //! while the pull request is open, `done` once it has merged or closed, and the counts as
@@ -35,6 +36,7 @@
 
 #![deny(missing_debug_implementations)]
 
+pub mod change;
 pub mod gh;
 pub mod github;
 pub mod patch;
@@ -47,7 +49,7 @@ mod error;
 
 pub use crate::error::{HarvestError, Result};
 pub use crate::github::{
-    ChangedFile, Commit, CommitFiles, Comparison, GitHub, PullRequest, Reply, ReviewThread,
+    BlobAt, ChangedFile, Commit, CommitFiles, Comparison, GitHub, PullRequest, Reply, ReviewThread,
 };
 pub use crate::rounds::commits_between;
 pub use crate::run::{harvest, Report, ReviewReport, Selection, StepSeven};

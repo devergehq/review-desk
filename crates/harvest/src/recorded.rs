@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::error::{HarvestError, Result};
-use crate::github::{CommitFiles, Comparison, GitHub, PullRequest, ReviewThread};
+use crate::github::{BlobAt, CommitFiles, Comparison, GitHub, PullRequest, ReviewThread};
 use crate::wire;
 
 /// Recorded GitHub responses, by what was asked for.
@@ -84,12 +84,36 @@ impl GitHub for Recorded {
         wire::review_threads(&self.load("review_threads", "review_threads.json")?)
     }
 
-    fn compare(&self, _repo: &str, _base: &str, _head: &str) -> Result<Comparison> {
+    /// `compare-BASE.json` for the first seven characters of the base where the recording
+    /// holds one — the pull request's own files, read from its base (DEV-1344) — and
+    /// `compare.json` otherwise, which is the reviewed range every earlier recording holds.
+    fn compare(&self, _repo: &str, base: &str, _head: &str) -> Result<Comparison> {
+        let short: String = base.chars().take(7).collect();
+        let key = format!("compare:{short}");
+        let named = format!("compare-{short}.json");
+        let held = self.files.contains_key(&key)
+            || self
+                .dir
+                .as_ref()
+                .is_some_and(|dir| dir.join(&named).exists());
+        if held {
+            return wire::comparison(&self.load(&key, &named)?);
+        }
         wire::comparison(&self.load("compare", "compare.json")?)
     }
 
     fn commit(&self, _repo: &str, sha: &str) -> Result<CommitFiles> {
         let short: String = sha.chars().take(7).collect();
         wire::commit(&self.load(&format!("commit:{sha}"), &format!("commit-{short}.json"))?)
+    }
+
+    /// `blob-SHA-PATH.json`, the commit's first seven characters and the path with each
+    /// `/` written `_`.
+    fn blob(&self, _repo: &str, commit: &str, path: &str) -> Result<BlobAt> {
+        let short: String = commit.chars().take(7).collect();
+        wire::blob(&self.load(
+            &format!("blob:{short}:{path}"),
+            &format!("blob-{short}-{}.json", path.replace('/', "_")),
+        )?)
     }
 }

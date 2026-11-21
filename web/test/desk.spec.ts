@@ -306,6 +306,11 @@ describe('the inbox', () => {
     }),
   })
 
+  /** An outcome a test seeds: a code change, a reply, or (DEV-1344) a change not known. */
+  type Seeded
+    = | ReturnType<typeof codeChanged | typeof repliedAt>
+      | (Omit<ReturnType<typeof codeChanged>, 'kind'> & { kind: 'code_change_unknown' })
+
   /**
    * The desk with these outcomes on each round, and round 2 posted unless asked otherwise.
    *
@@ -314,8 +319,8 @@ describe('the inbox', () => {
    * round that has reviewed nothing, which is DEV-990's third case.
    */
   async function twoRounds(options: {
-    onRoundOne?: ReturnType<typeof codeChanged | typeof repliedAt>[]
-    onRoundTwo?: ReturnType<typeof codeChanged | typeof repliedAt>[]
+    onRoundOne?: Seeded[]
+    onRoundTwo?: Seeded[]
     keepRoundOneReply?: boolean
     postRoundTwo?: boolean
   }) {
@@ -400,6 +405,33 @@ describe('the inbox', () => {
     expect(newest, 'the newest round carries the change nothing has reviewed').toBeDefined()
     expect(newest!.events.map(event => event.kind)).toEqual(['code_changed_after'])
     expect(newest!.round).toBe(2)
+  })
+
+  /* ---- a code change nobody could know is nobody's act (DEV-1344) ---- */
+
+  it('leaves out a code change the harvester could not know about', async () => {
+    const unknown = {
+      ...codeChanged(ROUND_TWO, 9300, JSON.stringify({
+        file: 'app/Providers/FortifyServiceProvider.php',
+        line: 72,
+        reason: 'history_rewritten',
+        basis: `compare ${ROUND_TWO_HEAD}...${LATER_HEAD}`,
+        method: 'blob_sha',
+        checks_run: 6,
+        checks_passed: 5,
+        method_version: 1,
+        time_basis: 'observed',
+      })),
+      kind: 'code_change_unknown' as const,
+    }
+    await twoRounds({ onRoundTwo: [unknown] })
+
+    const inbox = await settled(desk().inbox())
+    expect(
+      inbox.author_replies.map(item => item.review_id),
+      'the reviewed commit is gone from GitHub; the author did nothing the queue can draw',
+    ).not.toContain(ROUND_TWO)
+    expect(inbox.posted_awaiting_author.map(item => item.review_id)).toContain(ROUND_TWO)
   })
 
   /* ---- a reply a later posted round has already answered (DEV-990) ---- */

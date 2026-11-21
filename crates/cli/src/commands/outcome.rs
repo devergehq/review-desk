@@ -18,7 +18,8 @@ pub enum OutcomeCommand {
         #[arg(long, value_name = "FID")]
         finding: i64,
         /// One of: cut, regraded, rewritten, kept, rejected, ticketed, withdrawn,
-        /// raised_again, replied, thread_resolved, code_changed_after.
+        /// raised_again, replied, thread_resolved, code_changed_after,
+        /// code_change_unknown.
         ///
         /// Recording an outcome is not making a decision: it annotates a finding and
         /// cannot move it out of the draft, change its severity or recompose the body.

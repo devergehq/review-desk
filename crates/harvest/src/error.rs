@@ -85,6 +85,48 @@ impl HarvestError {
         }
     }
 
+    /// Whether GitHub answered that the thing asked for is not there. DEV-1344.
+    ///
+    /// A comparison from a commit a force-push took away is a 404, and that is an answer
+    /// about the history — not a reason to stop the run.
+    pub fn is_not_found(&self) -> bool {
+        match self {
+            HarvestError::GhFailed { stderr, .. } => {
+                stderr.contains("HTTP 404") || stderr.contains("Not Found")
+            }
+            _ => false,
+        }
+    }
+
+    /// Why a code-change answer is unknown, when this failure leaves one read unanswered
+    /// rather than the whole run unable to go on. DEV-1344.
+    ///
+    /// `None` for the failures that stop the run as they always have: no `gh`, nobody
+    /// logged in, the store broken. Every read after one of those would fail the same way,
+    /// so recording "unknown" per finding would bury the one message that says what to fix.
+    pub fn unknown_reason(&self) -> Option<&'static str> {
+        match self {
+            HarvestError::GhFailed { stderr, .. } => {
+                let stderr = stderr.to_ascii_lowercase();
+                if stderr.contains("rate limit") || stderr.contains("http 429") {
+                    Some("rate_limited")
+                } else if stderr.contains("http 401") || stderr.contains("http 403") {
+                    Some("auth_failed")
+                } else {
+                    Some("read_failed")
+                }
+            }
+            HarvestError::Unreadable { .. } => Some("response_unreadable"),
+            HarvestError::NotRecorded { .. } | HarvestError::Recording { .. } => {
+                Some("read_failed")
+            }
+            HarvestError::GhMissing
+            | HarvestError::GhNotAuthenticated
+            | HarvestError::RangeTooLong { .. }
+            | HarvestError::Store(_) => None,
+        }
+    }
+
     /// A short machine-readable code, for a `--json` caller that must not parse prose.
     pub fn code(&self) -> &'static str {
         match self {

@@ -1,0 +1,48 @@
+{
+  "status": "ahead",
+  "total_commits": 7,
+  "files": [
+    {
+      "filename": "CHANGELOG.md",
+      "status": "modified",
+      "changes": 51,
+      "previous_filename": null
+    },
+    {
+      "filename": "scripts/test-dispatcher-watch.sh",
+      "status": "added",
+      "changes": 361,
+      "previous_filename": null
+    },
+    {
+      "filename": "skills/dispatcher/SKILL.md",
+      "status": "modified",
+      "changes": 31,
+      "previous_filename": null
+    },
+    {
+      "filename": "skills/dispatcher/config.example.json",
+      "status": "modified",
+      "changes": 1,
+      "previous_filename": null
+    },
+    {
+      "filename": "skills/dispatcher/dispatcher.py",
+      "status": "modified",
+      "changes": 645,
+      "previous_filename": null
+    },
+    {
+      "filename": "skills/dispatcher/workers/_common.md",
+      "status": "modified",
+      "changes": 6,
+      "previous_filename": null
+    },
+    {
+      "filename": "skills/dispatcher/workers/implement.md",
+      "status": "modified",
+      "changes": 5,
+      "previous_filename": null
+    }
+  ]
+}

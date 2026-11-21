@@ -965,6 +965,47 @@ describe('the figures and the rows count the same findings', () => {
     expect(page.findAll('.answered-row')).toHaveLength(1)
   })
 
+  /**
+   * **A code change nobody could know is drawn, and is not counted as coming back.**
+   * DEV-1344. After a force-push the commit a review was posted on can be gone from GitHub;
+   * the row says "—" and why, and the line above does not call that a reply or a change.
+   */
+  it('draws an unknown code change with its dash, and does not count it as answered', async () => {
+    const findings = Array.from({ length: 3 }, (_, at) => finding(at + 1))
+    const outcomes = [outcome({
+      finding_seq: 2,
+      kind: 'code_change_unknown',
+      actor: 'harvester',
+      occurred_at: '2026-10-12T16:00:00Z',
+      detail: JSON.stringify({
+        file: 'app/Exports/ScheduledExport.php',
+        line: 40,
+        reason: 'history_rewritten',
+        basis: 'compare c1d2e31...e3f4a53',
+        method: 'blob_sha',
+        checks_run: 6,
+        checks_passed: 4,
+        method_version: 1,
+        time_basis: 'observed',
+      }),
+    })]
+    await withDense(dense({ findings, outcomes }))
+    const page = await shown(REVIEW)
+
+    const sub = page.find('.sub').text()
+    expect(sub).toContain('Nothing has come back on any of them')
+    expect(sub).toContain('for 1, whether the code changed is not known')
+    expect(sub).not.toContain('had something come back')
+    // The section's note says the same thing the line above it says, in its own words.
+    expect(page.text()).toContain('nothing yet · 1 not known')
+    expect(page.text()).not.toContain('1 of 3 findings')
+
+    const rows = page.findAll('.answered-row')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.text()).toContain('— whether the code it points at changed is not known')
+    expect(rows[0]!.text()).toContain('the history was rewritten')
+  })
+
   /*
    * And what the record holds about the other three is not lost. Counting them into the
    * figures put numbers on screen about rows that were not there; saying nothing would

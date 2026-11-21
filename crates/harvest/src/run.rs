@@ -5,8 +5,10 @@
 //! 1. The pull request's state and the time it reached it, onto the review.
 //! 2. Every reply in a linked finding's thread, verbatim.
 //! 3. Whether a linked finding's thread is resolved.
-//! 4. Whether the file a finding points at changed after the commit the review read,
-//!    and whether the finding's own lines changed with it.
+//! 4. Whether the file a finding points at changed after the commit the review was
+//!    posted on, and whether the finding's own lines changed with it — answered from the
+//!    files' contents by [`crate::change`], and recorded as unknown, with the reason, where
+//!    it cannot be.
 //! 5. What all of that came to, onto step 7 of the review's trail.
 //!
 //! **Running it twice records nothing twice.** Every row written carries the id of the
@@ -23,6 +25,7 @@ use review_desk_store::{
     ReviewLayerState, Store, StoreError, Timestamp,
 };
 
+use crate::change::{Change, Checker, METHOD_VERSION};
 use crate::error::{HarvestError, Result};
 use crate::github::{CommitFiles, GitHub, PullRequest, ReviewThread};
 
@@ -73,6 +76,15 @@ pub struct ReviewReport {
     pub replies_recorded: usize,
     pub threads_resolved_recorded: usize,
     pub code_changed_recorded: usize,
+    /// Findings recorded as `code_change_unknown`: whether their code changed cannot be
+    /// known, for a reason that will not go away by asking again. DEV-1344.
+    pub code_unknown_recorded: usize,
+    /// Findings whose answer is unknown for this run only — a read rate-limited or refused.
+    /// Not recorded, so the next harvest asks again.
+    pub code_unknown_this_run: usize,
+    /// Findings on a file the pull request does not change. Whatever changed it, it was not
+    /// the author's work on this pull request, so nothing is recorded. DEV-1344.
+    pub code_not_the_pull_requests: usize,
     /// Outcomes GitHub reported that were already in the record. On a second harvest
     /// of the same responses, this is where every one of them lands.
     pub already_recorded: usize,
@@ -115,6 +127,7 @@ impl Report {
             review.replies_recorded
                 + review.threads_resolved_recorded
                 + review.code_changed_recorded
+                + review.code_unknown_recorded
                 > 0
         })
     }
@@ -143,6 +156,17 @@ impl Report {
             plural(replies, "reply", "replies"),
             plural(resolved, "thread", "threads"),
         );
+        let unknown: usize = self
+            .reviews
+            .iter()
+            .map(|r| r.code_unknown_recorded + r.code_unknown_this_run)
+            .sum();
+        if unknown > 0 {
+            summary.push_str(&format!(
+                "; {unknown} {} code change unknown",
+                plural(unknown, "finding's", "findings'"),
+            ));
+        }
         if already > 0 {
             summary.push_str(&format!("; {already} already recorded"));
         }
@@ -323,6 +347,9 @@ fn harvest_one(
             replies_recorded: 0,
             threads_resolved_recorded: 0,
             code_changed_recorded: 0,
+            code_unknown_recorded: 0,
+            code_unknown_this_run: 0,
+            code_not_the_pull_requests: 0,
             already_recorded: 0,
             // Step 7 is not rewritten either. The last harvest that read this pull request
             // while it was open wrote it, and nothing has happened since.
@@ -352,29 +379,44 @@ fn harvest_one(
         replies_recorded: 0,
         threads_resolved_recorded: 0,
         code_changed_recorded: 0,
+        code_unknown_recorded: 0,
+        code_unknown_this_run: 0,
+        code_not_the_pull_requests: 0,
         already_recorded: 0,
         step_seven: None,
     };
 
-    if !linked.is_empty() {
-        // One read for every thread, rather than one per finding.
-        let threads = github.review_threads(&review.repo, review.pr)?;
-        let by_root: HashMap<&str, &ReviewThread> = threads
-            .iter()
-            .map(|thread| (thread.root_comment_id.as_str(), thread))
-            .collect();
+    // One read for every thread, rather than one per finding. Read before the code
+    // changes as well as the replies, because a thread's first comment names the commit
+    // it was posted on, and that is the baseline a code change is measured from.
+    let threads = if linked.is_empty() {
+        Vec::new()
+    } else {
+        github.review_threads(&review.repo, review.pr)?
+    };
+    let by_root: HashMap<&str, &ReviewThread> = threads
+        .iter()
+        .map(|thread| (thread.root_comment_id.as_str(), thread))
+        .collect();
 
-        for finding in &linked {
-            let comment_id = finding.github_comment_id.as_deref().unwrap_or_default();
-            let Some(thread) = by_root.get(comment_id) else {
-                report.findings_with_missing_thread += 1;
-                continue;
-            };
-            harvest_thread(store, finding, thread, &pull_request, &mut report)?;
-        }
+    for finding in &linked {
+        let comment_id = finding.github_comment_id.as_deref().unwrap_or_default();
+        let Some(thread) = by_root.get(comment_id) else {
+            report.findings_with_missing_thread += 1;
+            continue;
+        };
+        harvest_thread(store, finding, thread, &pull_request, &mut report)?;
     }
 
-    harvest_code_changes(store, github, review, &pull_request, &findings, &mut report)?;
+    harvest_code_changes(
+        store,
+        github,
+        review,
+        &pull_request,
+        &findings,
+        &by_root,
+        &mut report,
+    )?;
 
     store.mark_review_harvested(review.id, now())?;
 
@@ -463,71 +505,133 @@ fn harvest_thread(
     Ok(())
 }
 
-/// Whether the files the findings point at changed after the commit the review read.
+/// Whether the files the findings point at changed after the commit the review was
+/// posted on. DEV-1344: answered by [`crate::change`] from the files' contents.
+///
+/// **The baseline is the posted commit**: the commit the finding's comment was posted on,
+/// where GitHub says, and the record's own head otherwise — which is the commit a desk
+/// post goes out on. A commit made between reading and posting is never the author's
+/// answer to a finding they had not yet seen.
 fn harvest_code_changes(
     store: &Store,
     github: &dyn GitHub,
     review: &Review,
     pull_request: &PullRequest,
     findings: &[Finding],
+    threads: &HashMap<&str, &ReviewThread>,
     report: &mut ReviewReport,
 ) -> Result<()> {
-    if pull_request.head_sha == review.head_sha || pull_request.head_sha.is_empty() {
+    if pull_request.head_sha.is_empty() {
         return Ok(());
     }
     if !findings.iter().any(|finding| finding.file.is_some()) {
         return Ok(());
     }
 
-    // One comparison, not a diff per commit: see `crate::patch` for why the basis
-    // matters. GitHub returns at most 300 files and 250 commits in a comparison, so a
-    // pull request larger than that would under-report — a file missing from the
-    // response reads as a file that did not change. Nothing here can tell the
-    // difference, and paging it is the harvester's next job rather than this one's.
-    let comparison = github.compare(&review.repo, &review.head_sha, &pull_request.head_sha)?;
-    let basis = format!("compare {}...{}", review.head_sha, pull_request.head_sha);
+    let mut checker = Checker::new(github, &review.repo, pull_request);
     let mut commits: HashMap<String, CommitFiles> = HashMap::new();
 
     for finding in findings {
         let Some(path) = finding.file.as_deref() else {
             continue;
         };
-        let Some(changed) = comparison.file(path) else {
+        let posted = finding
+            .github_comment_id
+            .as_deref()
+            .and_then(|id| threads.get(id))
+            .and_then(|thread| thread.original_commit.clone())
+            .unwrap_or_else(|| review.head_sha.clone());
+        if same_commit(&posted, &pull_request.head_sha) {
             continue;
+        }
+
+        let answer = checker.answer(&posted, path, finding.line)?;
+        let basis = format!("compare {posted}...{}", pull_request.head_sha);
+        let reference = FindingRef {
+            review_id: finding.review_id,
+            seq: finding.seq,
         };
 
-        // Which commit changed it, not merely which commit the branch is at now.
-        let commit = newest_commit_touching(github, &review.repo, &comparison, path, &mut commits)?;
+        let (file_status, lines_changed) = match answer.change {
+            Change::Changed {
+                file_status,
+                lines_changed,
+            } => (file_status, lines_changed),
+            Change::Unchanged => continue,
+            Change::NotThePullRequests => {
+                report.code_not_the_pull_requests += 1;
+                continue;
+            }
+            Change::Unknown(why) if !why.is_lasting() => {
+                report.code_unknown_this_run += 1;
+                continue;
+            }
+            Change::Unknown(why) => {
+                // Not a nought and not "unchanged": a figure the record cannot support,
+                // and the reason it cannot. Keyed on the head, so a later push asks again.
+                let reason = why.as_str();
+                let detail = json!({
+                    "file": path,
+                    "line": finding.line,
+                    "reason": reason,
+                    "basis": basis,
+                    "method": answer.method,
+                    "checks_run": answer.checks_run,
+                    "checks_passed": answer.checks_passed,
+                    "method_version": METHOD_VERSION,
+                    "time_basis": "observed",
+                });
+                let written = store.add_harvested_outcome(
+                    reference,
+                    NewOutcome {
+                        kind: OutcomeKind::CodeChangeUnknown,
+                        actor: Actor::Harvester,
+                        detail: Some(detail.to_string()),
+                        occurred_at: None,
+                    },
+                    &format!("code_change_unknown:{}", pull_request.head_sha),
+                )?;
+                count(
+                    written.is_some(),
+                    &mut report.code_unknown_recorded,
+                    &mut report.already_recorded,
+                );
+                continue;
+            }
+        };
+
+        // Which commit changed it, where a comparison safe to read commits from says. The
+        // head otherwise, which is where the change is seen and is never before it.
+        let commit = match checker.trusted_range(&posted)? {
+            Some(comparison) => {
+                newest_commit_touching(github, &review.repo, comparison, path, &mut commits)?
+            }
+            None => None,
+        };
+        let commit = commit.unwrap_or_else(|| pull_request.head_sha.clone());
 
         let detail = json!({
             "file": path,
             "line": finding.line,
-            "lines_changed": changed.touches_line(finding.line),
-            "file_status": changed.status,
-            "commit": commit.as_deref().unwrap_or(pull_request.head_sha.as_str()),
+            "lines_changed": lines_changed,
+            "file_status": file_status,
+            "commit": commit,
             "basis": basis,
+            "method": answer.method,
+            "checks_run": answer.checks_run,
+            "checks_passed": answer.checks_passed,
+            "method_version": METHOD_VERSION,
         });
 
-        let key = format!(
-            "code_changed:{}",
-            commit.as_deref().unwrap_or(pull_request.head_sha.as_str())
-        );
-
         let written = store.add_harvested_outcome(
-            FindingRef {
-                review_id: finding.review_id,
-                seq: finding.seq,
-            },
+            reference,
             NewOutcome {
                 kind: OutcomeKind::CodeChangedAfter,
                 actor: Actor::Harvester,
                 detail: Some(detail.to_string()),
-                occurred_at: commit
-                    .as_deref()
-                    .and_then(|sha| commits.get(sha))
-                    .and_then(|commit| commit.committed_at),
+                occurred_at: commits.get(&commit).and_then(|commit| commit.committed_at),
             },
-            &key,
+            &format!("code_changed:{commit}"),
         )?;
 
         count(
@@ -538,6 +642,11 @@ fn harvest_code_changes(
     }
 
     Ok(())
+}
+
+/// Whether two commit ids name the same commit, either being abbreviated.
+fn same_commit(a: &str, b: &str) -> bool {
+    !a.is_empty() && !b.is_empty() && (a.starts_with(b) || b.starts_with(a))
 }
 
 /// The newest commit in the comparison that touched this path.

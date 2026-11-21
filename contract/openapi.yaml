@@ -1492,12 +1492,20 @@ components:
         decisions real actions: each of the eight leaves exactly one outcome, and
         overloading `cut` for "moved to a ticket" and "no longer stands" would lose the
         distinction the feedback loop exists to draw. The first eight are the developer's
-        and the last three the harvester's.
+        and the last four the harvester's.
 
         **Accepting the author's reason is recorded as `rejected`, with the reason as the
         detail.** That is what `RuleCounts.rejected_with_reason` counts — "author
         disagreed once, with a reason you accepted" — so it has to be that kind rather
         than one of its own that nothing would read.
+
+        **`code_change_unknown` was added by DEV-1344**, and it is the harvester's word for
+        "this could not be known". After a force-push the commit a review was posted on can
+        be gone from GitHub, and recording nothing there read as "unchanged". Its detail
+        carries the `reason` (`history_rewritten`, `own_files_unverified`, `not_after`,
+        `not_in_posted_commit`) and, like `code_changed_after`'s, the `method`,
+        `checks_run`, `checks_passed` and `method_version` that produced it. **It is not
+        an author's act**: the Inbox's "Author replied" group never lists it.
       enum:
         - cut
         - regraded
@@ -1510,6 +1518,7 @@ components:
         - replied
         - thread_resolved
         - code_changed_after
+        - code_change_unknown
     Actor:
       type: string
       enum: [developer, author, harvester]
