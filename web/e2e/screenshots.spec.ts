@@ -173,6 +173,34 @@ test.describe('the shell', () => {
 })
 
 /*
+ * **The review header and its five tabs** (DEV-1324), beside S2: Overview — the review's
+ * own address — and Understanding, at 1,600 and at 390. Viewport-high at 1,600, so the
+ * picture is the header and what sits under it, as S2 draws it.
+ */
+test.describe('the review header', () => {
+  test('Overview and Understanding, at 1,600 and 390', async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 1000 })
+    for (const [tab, name] of [['', 'header-1-overview'], ['/understanding', 'header-2-understanding']] as const) {
+      await page.goto(`${seeded}reviews/${structuredReviewId}${tab}`)
+      await expect(page.locator('[data-testid="review-header"]')).toBeVisible()
+      await page.waitForLoadState('networkidle')
+      await page.waitForTimeout(400)
+      await page.screenshot({ path: `${INTO}/${name}.png` })
+    }
+
+    await page.setViewportSize({ width: 390, height: 844 })
+    for (const [tab, name] of [['', 'header-1-overview-390'], ['/understanding', 'header-2-understanding-390']] as const) {
+      await page.goto(`${seeded}reviews/${structuredReviewId}${tab}`)
+      await expect(page.locator('[data-testid="review-header"]')).toBeVisible()
+      await page.waitForLoadState('networkidle')
+      await page.waitForTimeout(400)
+      await page.screenshot({ path: `${INTO}/${name}.png` })
+    }
+    await page.setViewportSize({ width: 1440, height: 900 })
+  })
+})
+
+/*
  * **The three step pages DEV-885 builds**, at the width of a laptop and at the width of a
  * phone, from the contract's invented example.
  *

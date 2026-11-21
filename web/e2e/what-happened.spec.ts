@@ -314,7 +314,7 @@ for (const { name, width, height } of WIDTHS) {
     await page.goto(`${serving.url}reviews/${reviewId}/replies`)
 
     /* The trail is there, step 7 is where you are, and it is called what it holds. */
-    await expect(page.locator('.face[aria-current="page"] .name')).toHaveText('7 What happened')
+    await expect(page.locator('.tabs [aria-current="page"]')).toContainText('Replies')
 
     /* Seven findings had something come back; the other seven are counted and folded. */
     await expect(page.locator('.answered-row')).toHaveCount(7)

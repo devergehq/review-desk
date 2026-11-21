@@ -446,7 +446,7 @@ test.describe('the whole path, on a seeded database', () => {
      * the review" link instead, because it was outside the shell; inside it, that link
      * beside a trail whose first step is the review would be the same door twice.
      */
-    await page.locator('.trail').getByRole('link', { name: /2 Understand/ }).click()
+    await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${reviewId}`)
     await page.locator('.trail').getByRole('link', { name: /6 Draft/ }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${reviewId}/draft`)
@@ -512,9 +512,10 @@ test.describe('the whole path, on a seeded database', () => {
      * line in the trail — which is the trail doing exactly what it is for.
      */
     await expect(page.locator('.sent-back')).toContainText(note)
-    await expect(page.locator('.trail')).toContainText(note)
 
     await page.goto(`${seeded}reviews/${reviewId}`)
+    /* The trail is on Overview since DEV-1324, and still says the draft was sent back. */
+    await expect(page.locator('.trail')).toContainText(note)
     const layers = await trail(page)
     expect(layers[5]).toContain('Draft')
     expect(layers[5]).toContain(note)
@@ -650,8 +651,12 @@ test.describe('the whole path, on a seeded database', () => {
       page.getByText('The admin screens, which this change does not touch.'),
     ).toBeVisible()
 
-    /* The seven steps of the trail, as the command line set them. */
-    await expect(page.locator('.steps li')).toHaveCount(7)
+    /*
+     * **The five tabs, with Findings marked**, where the trail's seven steps were: the trail
+     * is on Overview since DEV-1324, and its seven steps are asserted there.
+     */
+    await expect(page.locator('.tabs a')).toHaveCount(5)
+    await expect(page.locator('.tabs [aria-current="page"]')).toContainText('Findings')
   })
 
   /*
@@ -659,7 +664,8 @@ test.describe('the whole path, on a seeded database', () => {
    * in links people have and in anything written down; a route that 404s is worse than one
    * that lands somewhere useful, and every queue row already lands on Understand.
    */
-  test('the retired one-page review redirects to Understand', async ({ page }) => {
+  /* `/reviews/{id}` is Overview since DEV-1324, which draws the trail until DEV-1326. */
+  test('the review’s own address is Overview, with the trail on it', async ({ page }) => {
     await page.goto(`${seeded}reviews/${reviewId}`)
     await expect(page).toHaveURL(`${seeded}reviews/${reviewId}`)
     await expect(page.locator('.trail')).toBeVisible()
@@ -996,6 +1002,7 @@ test.describe('the case for one review, in three bands', () => {
 
     /* ---- band 3 · what was built, reached by the trail ---- */
 
+    await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
     await page.locator('.trail').getByRole('link', { name: /4 Solution/ }).click()
     await expect(page).toHaveURL(
       `${seeded}reviews/${structuredReviewId}/understanding#what-was-built`,
@@ -1116,6 +1123,7 @@ test.describe('the case for one review, in three bands', () => {
      * these two links are what stop the queue leading somewhere a reader cannot leave.
      * Both pages carry the trail themselves, so there is no way out of it at all.
      */
+    await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
     await page.locator('.trail').getByRole('link', { name: /5 Code review/ }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/findings`)
     /*
@@ -1124,12 +1132,12 @@ test.describe('the case for one review, in three bands', () => {
      * inside the shell. Both are now, so the way back is the trail, and a link beside a
      * trail whose first step is the review would be the same door twice.
      */
-    await expect(page.locator('.trail')).toBeVisible()
+    await expect(page.locator('.tabs')).toBeVisible()
     await expect(
       page.getByRole('link', { name: /^Back to / }),
       'the back links went with the dead ends they were for',
     ).toHaveCount(0)
-    await page.locator('.trail').getByRole('link', { name: /2 Understand/ }).click()
+    await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}`)
 
     /* ---- and back to 2 · Understand, which is what "move back freely" means ---- */
@@ -1140,11 +1148,12 @@ test.describe('the case for one review, in three bands', () => {
      * the navigation to `/alternatives` finished and the closing assertion would pass
      * either way.
      */
+    await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
     await page.locator('.trail').getByRole('link', { name: /3 Alternatives/ }).click()
     await expect(page).toHaveURL(
       `${seeded}reviews/${structuredReviewId}/understanding#what-was-chosen`,
     )
-    await page.locator('.trail').getByRole('link', { name: /2 Understand/ }).click()
+    await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}`)
 
     /*
@@ -1154,9 +1163,10 @@ test.describe('the case for one review, in three bands', () => {
      * screen is step 6 now and carries the trail either way, so the guard went with the
      * dead end it was for.
      */
+    await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
     await page.locator('.trail').getByRole('link', { name: /6 Draft/ }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/draft`)
-    await page.locator('.trail').getByRole('link', { name: /2 Understand/ }).click()
+    await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}`)
 
     /*
@@ -1164,9 +1174,10 @@ test.describe('the case for one review, in three bands', () => {
      * "What happened" is the whole of what came back on a posted review, and
      * `e2e/what-happened.spec.ts` measures it at both widths against a seed of its own.
      */
+    await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
     await page.locator('.trail').getByRole('link', { name: /7 What happened/ }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}/replies`)
-    await page.locator('.trail').getByRole('link', { name: /2 Understand/ }).click()
+    await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
     await expect(page).toHaveURL(`${seeded}reviews/${structuredReviewId}`)
 
     /* Lint alone is a label, not a link: it is the one step with no page of its own. */
@@ -4648,7 +4659,16 @@ test.describe('state that belongs to one review', () => {
   /** Every other step lands at the top of its own page, so it carries no fragment. */
   const band = (step: string) => BAND[step] ?? ''
 
-  const at = (id: number, step: string) => `${seeded}reviews/${id}/${step}${band(step)}`
+  /** Where the trail sends each step since DEV-1324: its tab, at its band where it has one. */
+  const TAB_OF: Record<string, string> = {
+    'understand': 'understanding',
+    'alternatives': 'understanding',
+    'solution': 'understanding',
+    'code-review': 'findings',
+    'draft': 'draft',
+  }
+
+  const at = (id: number, step: string) => `${seeded}reviews/${id}/${TAB_OF[step]}${band(step)}`
 
   async function byTheTrail(page: Page, id: number, step: string): Promise<number> {
     await page.getByRole('navigation', { name: 'Review Desk' })
@@ -4659,7 +4679,7 @@ test.describe('state that belongs to one review', () => {
     await expect(page).toHaveURL(`${seeded}reviews/${id}`)
     if (step === 'understand') return 2
 
-    await page.locator(`.trail a[href="/reviews/${id}/${step}${band(step)}"]`).click()
+    await page.locator(`.trail a[href="/reviews/${id}/${TAB_OF[step]}${band(step)}"]`).click()
     await expect(page).toHaveURL(at(id, step))
     return 3
   }
@@ -4707,8 +4727,8 @@ test.describe('state that belongs to one review', () => {
       await expect(page).toHaveURL(at(first, step))
 
       /* The arriving review has been read: its own pull request number is in the frame. */
-      await expect(page.getByText(`· #${firstPr}`).first()).toBeVisible()
-      await expect(page.getByText(`· #${secondPr}`)).toHaveCount(0)
+      await expect(page.locator('[data-testid="review-header"] h1')).toContainText(`#${firstPr}`)
+      await expect(page.locator('[data-testid="review-header"] h1')).not.toContainText(`#${secondPr}`)
 
       /*
        * **And this row exists here**, so the assertion is about something: both reviews carry
@@ -4755,8 +4775,8 @@ test.describe('state that belongs to one review', () => {
 
     await jump(page, -entries)
     await expect(page).toHaveURL(`${seeded}reviews/${first}/findings`)
-    await expect(page.getByText(`· #${firstPr}`).first()).toBeVisible()
-    await expect(page.getByText(`· #${secondPr}`)).toHaveCount(0)
+    await expect(page.locator('[data-testid="review-header"] h1')).toContainText(`#${firstPr}`)
+    await expect(page.locator('[data-testid="review-header"] h1')).not.toContainText(`#${secondPr}`)
 
     await expect(page.locator('.row--picked').locator('.key')).toHaveText(leads)
   })
@@ -4991,7 +5011,7 @@ test.describe('state that belongs to one review', () => {
     await page.getByRole('tab', { name: 'Rendered' }).click()
     await expect(page.locator('textarea#draft-body')).toHaveCount(0)
 
-    await page.locator(`.trail a[href="/reviews/${first}/findings"]`).click()
+    await page.locator(`.tabs a[href="/reviews/${first}/findings"]`).click()
     await expect(page.getByRole('button', { name: 'Keep editing' })).toBeVisible()
 
     await page.getByRole('button', { name: 'Keep editing' }).click()
@@ -5077,7 +5097,7 @@ test.describe('state that belongs to one review', () => {
     const editor = page.locator('textarea#draft-body')
     await editor.fill(`${bodyOf(first)}\n\n${TYPED}`)
 
-    const codeReview = page.locator(`.trail a[href="/reviews/${first}/findings"]`)
+    const codeReview = page.locator(`.tabs a[href="/reviews/${first}/findings"]`)
     await codeReview.click()
     await expect(page.getByRole('button', { name: 'Keep editing' })).toBeVisible()
     await expect(page).toHaveURL(`${seeded}reviews/${first}/draft`)

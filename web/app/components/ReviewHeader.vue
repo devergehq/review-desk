@@ -99,7 +99,7 @@ const tabs = computed(() =>
             class="sep"
             aria-hidden="true"
           >›</span>
-          <span>{{ review.repo }}</span>
+          <span class="repo">{{ review.repo }}</span>
         </nav>
 
         <h1 class="title">
@@ -187,13 +187,13 @@ const tabs = computed(() =>
 
 <style scoped>
 /*
- * **120px at 1,600, and measured.** Crumb 18, title 32, facts 24, tabs 36, and the gaps
- * between them — `e2e/shell.spec.ts` fails a header that grows past it.
+ * **120px at 1,600, and measured.** Crumb 18, title 32, facts 24, a 4px gap, tabs 34 and
+ * the rule under them: 113. `e2e/shell.spec.ts` fails a header that grows past 120.
  */
 .review-header {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
   border-bottom: 1px solid var(--rd-line);
 }
@@ -209,14 +209,16 @@ const tabs = computed(() =>
 .who {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0;
   min-width: 0;
 }
 
 .crumb {
   display: flex;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 0 8px;
   align-items: center;
+  min-width: 0;
   margin: 0;
   line-height: 18px;
   color: var(--rd-ink-muted);
@@ -224,6 +226,16 @@ const tabs = computed(() =>
 
 .crumb a {
   color: inherit;
+}
+
+/*
+ * **A repository name breaks anywhere**, because a flex item's min-content width is its
+ * longest word and a 38-character name is one word: `e2e/header-links.spec.ts` measures it
+ * at 390.
+ */
+.repo {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .title {
@@ -300,11 +312,12 @@ const tabs = computed(() =>
   align-items: center;
   gap: 6px;
   flex: none;
-  height: 36px;
+  height: 34px;
   border-bottom: 2px solid transparent;
   color: var(--rd-ink-muted);
   text-decoration: none;
   font-size: var(--rd-type-lead);
+  line-height: 20px;
 }
 
 .tab:hover {
@@ -338,8 +351,16 @@ const tabs = computed(() =>
     row-gap: 4px;
   }
 
+  /*
+   * **Wrapped, not scrolled, under 700px.** Five tabs and two counts are about 450px of
+   * text, and a strip that scrolls sideways hides Replies past the edge of a phone. Two
+   * rows keep all five in sight.
+   */
   .tabs {
-    gap: 20px;
+    flex-wrap: wrap;
+    column-gap: 20px;
+    row-gap: 0;
+    overflow-x: visible;
   }
 }
 </style>

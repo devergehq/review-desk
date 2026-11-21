@@ -69,20 +69,25 @@ const WIDTHS = [
   { name: '390', width: 390, height: 844 },
 ]
 
-/** The six step pages, by the suffix each sits at and the step the switcher names. */
+/**
+ * The four tabs that draw a step, by the suffix each sits at, the step the switcher names
+ * and the tab the header marks. Four since DEV-1324 made Understand, Alternatives and
+ * Solution one tab, Understanding, whose switcher is Understand's.
+ */
 const PAGES = [
-  { step: 'Understand', suffix: 'understand' },
-  { step: 'Alternatives', suffix: 'alternatives' },
-  { step: 'Solution map', suffix: 'solution' },
-  { step: 'Code review', suffix: 'code-review' },
-  { step: 'Draft', suffix: 'draft' },
-  { step: 'What happened', suffix: 'what-happened' },
+  { step: 'Understand', tab: 'Understanding', suffix: 'understanding' },
+  { step: 'Code review', tab: 'Findings', suffix: 'findings' },
+  { step: 'Draft', tab: 'Draft', suffix: 'draft' },
+  { step: 'What happened', tab: 'Replies', suffix: 'replies' },
 ]
 
-/** The three the brief feeds, which are the three a later round can hold none of. */
-const FROM_THE_BRIEF = PAGES.slice(0, 3)
+/** The tab the brief feeds, which is the one a later round can hold none of. */
+const FROM_THE_BRIEF = PAGES.slice(0, 1)
 /** The three whose record is the round's own, whatever any earlier round holds. */
-const ITS_OWN = PAGES.slice(3)
+const ITS_OWN = PAGES.slice(1)
+
+/** The tab the header marks as the page you are on. */
+const CURRENT_TAB = '.tabs [aria-current="page"]'
 
 /** What is typed into round 2's draft, for the leave guard. */
 const TYPED = 'A sentence typed into round 2 and never saved.'
@@ -299,11 +304,11 @@ for (const { name, width, height } of WIDTHS) {
   test(`every step page of round 2 shows the switcher at ${name}`, async ({ page }) => {
     await page.setViewportSize({ width, height })
 
-    for (const { step, suffix } of PAGES) {
+    for (const { step, tab, suffix } of PAGES) {
       await page.goto(`${serving.url}reviews/${rounds[1]}/${suffix}`)
 
-      /* The step page it says it is, so a wrong page cannot pass the rest of this. */
-      await expect(page.locator('.face[aria-current="page"] .name'), step).toContainText(step)
+      /* The tab it says it is, so a wrong page cannot pass the rest of this. */
+      await expect(page.locator(CURRENT_TAB), step).toContainText(tab)
 
       const switcher = page.locator('nav.rounds')
       await expect(switcher, `${step} draws the switcher`).toBeVisible()
@@ -371,9 +376,9 @@ for (const { name, width, height } of WIDTHS) {
   test(`a single-round review shows no switcher at ${name}`, async ({ page }) => {
     await page.setViewportSize({ width, height })
 
-    for (const { step, suffix } of PAGES) {
+    for (const { step, tab, suffix } of PAGES) {
       await page.goto(`${serving.url}reviews/${alone}/${suffix}`)
-      await expect(page.locator('.face[aria-current="page"] .name'), step).toContainText(step)
+      await expect(page.locator(CURRENT_TAB), step).toContainText(tab)
       await expect(page.locator('nav.rounds'), `${step} draws none`).toHaveCount(0)
       await expect(page.locator('main'), `${step} says no "of 1"`).not.toContainText('Round 1 of 1')
     }
@@ -446,10 +451,10 @@ test('a dismissed round is marked as dismissed and still links', async ({ page }
      * **Still a link.** Its pages are all still there and everything on it was kept, so what
      * the word changes is what a reader expects of the round, not where the chip goes.
      */
-    await expect(third).toHaveAttribute('href', `/reviews/${rounds[2]}`)
+    await expect(third).toHaveAttribute('href', `/reviews/${rounds[2]}/understanding`)
     await third.click()
-    await expect(page).toHaveURL(`${serving.url}reviews/${rounds[2]}`)
-    await expect(page.locator('.face[aria-current="page"] .name')).toContainText('Understand')
+    await expect(page).toHaveURL(`${serving.url}reviews/${rounds[2]}/understanding`)
+    await expect(page.locator(CURRENT_TAB)).toContainText('Understanding')
   }
   finally {
     const restored = await call(rounds[2]!, 'restore', {})
@@ -519,11 +524,11 @@ test('the round that wrote the brief says nothing about another round', async ({
  * what matters is where the browser lands and what the trail then says about it.
  */
 test('following a round link lands on the same step of that round', async ({ page }) => {
-  for (const { step, suffix } of PAGES) {
+  for (const { step, tab, suffix } of PAGES) {
     await page.goto(`${serving.url}reviews/${rounds[1]}/${suffix}`)
     await page.getByRole('link', { name: `Round 3 , ${step}` }).click()
     await expect(page).toHaveURL(`${serving.url}reviews/${rounds[2]}/${suffix}`)
-    await expect(page.locator('.face[aria-current="page"] .name'), step).toContainText(step)
+    await expect(page.locator(CURRENT_TAB), step).toContainText(tab)
     await expect(page.locator('nav.rounds'), step).toContainText('Round 3 of 3')
   }
 })
@@ -536,13 +541,13 @@ test('following a round link lands on the same step of that round', async ({ pag
 test('a round is reached and followed from the keyboard alone', async ({ page }) => {
   await page.goto(`${serving.url}reviews/${rounds[1]}/understanding#what-was-chosen`)
 
-  const link = page.getByRole('link', { name: 'Round 1 , Alternatives' })
+  const link = page.getByRole('link', { name: 'Round 1 , Understand' })
   await link.focus()
   await expect(link).toBeFocused()
   await link.press('Enter')
 
   await expect(page).toHaveURL(`${serving.url}reviews/${rounds[0]}/understanding`)
-  await expect(page.locator('.face[aria-current="page"] .name')).toContainText('Alternatives')
+  await expect(page.locator(CURRENT_TAB)).toContainText('Understanding')
 })
 
 /**
@@ -593,7 +598,7 @@ test('a round link off the draft page asks before it discards unsaved edits', as
   await page.getByRole('link', { name: 'Round 1 , Draft' }).click()
   await page.getByRole('button', { name: 'Discard the edits' }).click()
   await expect(page).toHaveURL(`${serving.url}reviews/${rounds[0]}/draft`)
-  await expect(page.locator('.face[aria-current="page"] .name')).toContainText('Draft')
+  await expect(page.locator(CURRENT_TAB)).toContainText('Draft')
   await expect(page.locator('nav.rounds')).toContainText('Round 1 of 3')
 
   expect(dialogs, 'the browser was never asked to put up a dialog').toEqual([])
