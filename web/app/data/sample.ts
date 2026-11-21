@@ -1658,6 +1658,7 @@ function addMessage(
     parsed: false,
     answer: null,
     superseded_by: null,
+    suggestion_answers: [],
   }
   source.messages.push(message)
   return message

@@ -315,9 +315,7 @@ impl Suggestion {
             | Suggestion::SetAside { finding, .. }
             | Suggestion::DraftReply { finding, .. } => Some(finding.0),
             Suggestion::AddToDraft { finding, .. } => finding.map(|n| n.0),
-            Suggestion::NewFinding { .. }
-            | Suggestion::AnswerQuestion { .. }
-            | Suggestion::FollowUp { .. } => None,
+            Suggestion::NewFinding { .. } | Suggestion::FollowUp { .. } => None,
         }
     }
 }
@@ -338,8 +336,6 @@ pub enum Accepting {
     Decides(&'static [FindingDecision]),
     /// Fills the ask box, and writes nothing. Only the developer sends.
     FillsTheAskBox,
-    /// Nothing is offered: there is no control on the page to accept it into.
-    NotOffered,
 }
 
 impl SuggestionType {
@@ -359,9 +355,6 @@ impl SuggestionType {
             SuggestionType::Regrade => Accepting::Decides(&[FindingDecision::Regrade]),
             SuggestionType::AddToDraft => Accepting::Decides(&[FindingDecision::Rewrite]),
             SuggestionType::SetAside => Accepting::Decides(&[FindingDecision::Cut]),
-            // Overview's questions are worked out from the record and nothing stores a tick,
-            // so there is nothing to accept into. DEV-1332 is taking the type out of the list.
-            SuggestionType::AnswerQuestion => Accepting::NotOffered,
             SuggestionType::DraftReply => Accepting::Decides(&[
                 FindingDecision::RaiseAgain,
                 FindingDecision::AcceptReason,

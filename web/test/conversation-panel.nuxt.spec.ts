@@ -67,6 +67,7 @@ function said(seq: number, over: Partial<ReviewMessage>): ReviewMessage {
     parsed: false,
     answer: null,
     superseded_by: null,
+    suggestion_answers: [],
     ...over,
   }
 }
