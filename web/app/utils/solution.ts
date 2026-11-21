@@ -17,6 +17,7 @@ import type { Brief, BriefPart, BriefPartFile, Disposition, Finding } from '~/ty
 
 import { partOf, roundStatusLabel } from './findings'
 import { count } from './format'
+import { findingPath } from './reviewTabs'
 
 /* --------------------------------- The three groups -------------------------------- */
 
@@ -268,13 +269,14 @@ export function labelOfProblem(brief: Brief, number: number): string | null {
 /**
  * Where a finding line goes: that finding on the code review page, not just the page.
  *
- * The hash is the finding's key, and the code review page reads it on arrival — it chooses
+ * `?finding=` names the finding's key (`findingPath`, DEV-1328), and the Findings tab reads it
+ * on arrival, as it still reads the older `#F9` — it chooses
  * the list the finding is in, clears the part filter and opens the row. Linking to the page
  * alone would leave the reader to find F9 among fifteen rows across three lists, which is
  * the work the line was supposed to have done for them.
  */
 export function findingLink(reviewId: number, finding: Finding): string {
-  return `/reviews/${reviewId}/findings#${finding.key}`
+  return findingPath(reviewId, finding.key)
 }
 
 /**

@@ -472,7 +472,7 @@ test('a row reaches its finding and its comment on GitHub', async ({ page, conte
 
   /* And the finding, which is on the code review page and reaches the finding itself. */
   await row.getByRole('link', { name: /on the code review page/ }).click()
-  await expect(page).toHaveURL(new RegExp(`/reviews/${reviewId}/findings#F1$`))
+  await expect(page).toHaveURL(new RegExp(`/reviews/${reviewId}/findings\\?finding=F1$`))
 })
 
 /**

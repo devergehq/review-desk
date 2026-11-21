@@ -187,7 +187,9 @@ watch([list, part], () => {
 })
 
 /**
- * Arriving at one finding, named in the hash — `…/findings#F9` (and `…/code-review#F9`, which redirects here keeping it).
+ * Arriving at one finding, named in the address — `…/findings?finding=F9`, which is how every
+ * other tab links one (`findingPath`), or the older `…/findings#F9` (and `…/code-review#F9`,
+ * which redirects here keeping it). `findingAsked` reads both. DEV-1328.
  *
  * **The Solution page's finding lines reach a finding, not the page it is on.** DEV-919's
  * criterion, and the reason it has to be a criterion: a row of that table says "2 to post"
@@ -213,42 +215,70 @@ watch([list, part], () => {
  */
 const arrived = ref(false)
 
+/**
+ * Put the finding an address names on the bench: the three steps above, in their order.
+ * `false` when the address names none, or one this review does not have.
+ */
+async function arriveAt(findings: Finding[]): Promise<boolean> {
+  const seq = findingAsked(route.query, route.hash)
+  /*
+   * A value naming a finding this review does not have is left alone rather than reported.
+   * It is a stale link — a finding withdrawn, or another review's number — and the page
+   * behind it is correct and complete; an error over it would be the page blaming the
+   * reader for the link they followed.
+   */
+  const finding = seq == null ? undefined : findings.find(one => one.seq === seq)
+  if (!finding) return false
+
+  list.value = listOf(finding)
+  part.value = 0
+  await nextTick()
+  picked.value = finding.seq
+  reasoning.value = false
+
+  /*
+   * And scrolled to, because the browser's own hash scrolling has already happened: the
+   * row did not exist when the page loaded, since the list it is in was chosen three
+   * lines ago. `block: 'center'` rather than `'start'` so the row and the detail it just
+   * opened are both on screen.
+   */
+  await nextTick()
+  const row = document.getElementById(finding.key)
+  if (typeof row?.scrollIntoView === 'function') row.scrollIntoView({ block: 'center' })
+  return true
+}
+
 watch(
   () => detail.data.value,
   async (data) => {
     if (arrived.value || !data) return
-    const seq = seqInHash(route.hash)
-    if (seq == null) {
-      /* No finding named: nothing to arrive at, and nothing to keep watching for. */
-      arrived.value = true
-      return
-    }
-    const finding = data.findings.find(one => one.seq === seq)
-    /*
-     * A hash naming a finding this review does not have is left alone rather than reported.
-     * It is a stale link — a finding withdrawn, or another review's number — and the page
-     * behind it is correct and complete; an error over it would be the page blaming the
-     * reader for the link they followed.
-     */
     arrived.value = true
-    if (!finding) return
-
-    list.value = listOf(finding)
-    part.value = 0
-    await nextTick()
-    picked.value = finding.seq
-    reasoning.value = false
-
-    /*
-     * And scrolled to, because the browser's own hash scrolling has already happened: the
-     * row did not exist when the page loaded, since the list it is in was chosen three
-     * lines ago. `block: 'center'` rather than `'start'` so the row and the detail it just
-     * opened are both on screen.
-     */
-    await nextTick()
-    document.getElementById(finding.key)?.scrollIntoView({ block: 'center' })
+    await arriveAt(data.findings)
   },
   { immediate: true },
+)
+
+/**
+ * **A link followed while already on this tab is an arrival too.** A link to `?finding=F3`
+ * from this page changes the query and nothing else, so the page is reused and the watch
+ * above, once-only, would ignore it.
+ *
+ * **The address names the arrival, not the bench.** Choosing a row does not rewrite it. That
+ * was tried on this branch and taken out (#96's self-review, round 2), because Nuxt's
+ * scroll rule for a same-page navigation that drops the hash sends the window to the top,
+ * and the address went stale whenever the list, the part or a decision moved the bench. The
+ * cost is that a link to the finding the reader arrived at, followed after they moved away,
+ * is the page's own address and does nothing. No such link is drawn on this page today. The
+ * conversation's cites (stack 2) are the first that would be, and that is where to write
+ * the bench into the address, with a router `scrollBehavior` that leaves the window alone.
+ */
+watch(
+  () => [route.query.finding, route.hash],
+  () => {
+    const data = detail.data.value
+    if (!data) return
+    void arriveAt(data.findings)
+  },
 )
 
 /**
@@ -332,13 +362,15 @@ const tiles = computed(() => partTiles(findings.value, parts.value))
  * whole came out. Two filters each narrowing the other's counts would leave a reader unable
  * to say what either number meant.
  */
-const segments = computed<TrackOption[]>(() =>
-  (['post', 'ticket', 'aside'] as FindingList[]).map(one => ({
+const segments = computed<TrackOption[]>(() => {
+  /* `listCounts`, the one count of the lists: the header's Findings tab reads it too. */
+  const counts = listCounts(findings.value)
+  return (['post', 'ticket', 'aside'] as FindingList[]).map(one => ({
     value: one,
     label: LIST_LABELS[one],
-    count: findings.value.filter(finding => listOf(finding) === one).length,
-  })),
-)
+    count: counts[one],
+  }))
+})
 
 const showing = computed(() => {
   if (part.value === 0) return 'Most serious first.'
@@ -552,11 +584,24 @@ function partName(finding: Finding): string {
   return at === 0 ? 'Outside the parts' : (parts.value[at - 1]?.title ?? '')
 }
 
-/** How a finding's verification reads. `unknown` draws nothing: it said nothing. */
-function verification(finding: Finding): string | null {
-  if (finding.verification === 'reproduced') return 'Reproduced'
-  if (finding.verification === 'read_not_run') return 'Read, not run'
-  return null
+/** Whether the parts select was last worked with the pointer. See its comment. */
+const pointerOnParts = ref(false)
+
+function partChosen(event: Event) {
+  if (pointerOnParts.value) (event.target as HTMLSelectElement).blur()
+  pointerOnParts.value = false
+}
+
+/**
+ * S4's *Raised before*, read off the record: a carried finding names the round it came from
+ * and how long it has been open; one raised this round says no.
+ */
+function raisedBefore(finding: Finding): string {
+  if (!isCarried(finding)) return 'No'
+  const where = finding.continues_round
+    ? `In round ${finding.continues_round}, carried into this one`
+    : 'In an earlier round, carried into this one'
+  return finding.rounds_open ? `${where} · open for ${count(finding.rounds_open, 'round')}` : where
 }
 
 /* ---------------------------------- The writes ----------------------------------- */
@@ -668,79 +713,60 @@ function coverage(data: ReviewDetail): string | null {
           because every one of them would be a count of nothing.
         -->
         <template v-if="findings.length > 0">
-          <!--
-            The parts strip. Drawn only when the brief describes the change in parts, which
-            is DEV-878's criterion: "A brief with no parts shows no strip."
-          -->
-          <section
-            v-if="parts.length > 0"
-            class="strip"
-          >
-            <h2
-              id="parts-strip"
-              class="rd-rubric"
-            >
-              Where they sit in what was built
-              <span class="rd-visually-hidden">— choose a part to see only its findings</span>
-              <span
-                class="hint"
-                aria-hidden="true"
-              >· click a part to see only its findings</span>
-            </h2>
-            <div
-              class="tiles"
-              role="radiogroup"
-              aria-labelledby="parts-strip"
-            >
-              <button
-                v-for="tile in tiles"
-                :key="tile.number"
-                type="button"
-                role="radio"
-                class="tile"
-                :class="{ 'tile--picked': part === tile.number }"
-                :aria-checked="part === tile.number"
-                @click="part = tile.number"
-              >
-                <span class="tile-name">{{ tile.name }}</span>
-                <span class="tile-tally">{{ tile.tally }}</span>
-              </button>
-            </div>
-          </section>
-
           <section class="findings">
+            <!--
+              **S4's head of the list: the three lists on the left, the part on the right.**
+              The parts were a strip of tiles over the list; S4 draws them as one control,
+              *All parts*. Folded, not dropped: every tile is an option, with its tally, and
+              "Outside the parts" is still one. Drawn only when the brief describes the change
+              in parts, which is DEV-878's criterion: "A brief with no parts shows no strip."
+            -->
             <div class="controls">
               <DecisionTrack
                 v-model="list"
                 :options="segments"
                 label="Which findings to show"
               />
+              <label
+                v-if="parts.length > 0"
+                class="parts"
+              >
+                <span class="rd-visually-hidden">Show only the findings in one part</span>
+                <!--
+                  **Blurred once chosen with the pointer, and only then.** A focused `<select>`
+                  is a field to `keyIsForThePage`, so after a part was picked with the mouse
+                  every key in the table stopped working, and the select's typeahead took T
+                  and S. A keyboard user keeps the select's own keys: on Windows and Linux an
+                  arrow on a closed select changes it and fires `change` on every press, and
+                  blurring then would throw their focus off the control after the first
+                  arrow. Both found by this branch's self-review.
+                -->
+                <select
+                  v-model.number="part"
+                  class="rd-field parts-select"
+                  @pointerdown="pointerOnParts = true"
+                  @keydown="pointerOnParts = false"
+                  @change="partChosen"
+                >
+                  <option
+                    v-for="tile in tiles"
+                    :key="tile.number"
+                    :value="tile.number"
+                  >
+                    {{ tile.number === 0 ? 'All parts' : tile.name }} · {{ tile.tally }}
+                  </option>
+                </select>
+              </label>
               <p class="rd-note showing">
                 {{ showing }}
-              </p>
-              <!--
-                **Shown because they work.** DEV-876's rule about a key drawn on a control
-                is the reason this line exists rather than a tooltip: the keys that decide
-                are drawn on the buttons that decide, and the keys that move have nowhere
-                else to be drawn — so this says what they do and points at the other set
-                rather than listing it twice. `aria-hidden`, as the decision track hides
-                its own: a screen reader reaches the rows by their own list.
-              -->
-              <p
-                class="rd-note moves"
-                aria-hidden="true"
-              >
-                <span class="key rd-mono">J</span>
-                <span class="key rd-mono">K</span>
-                move · the key on each button decides
               </p>
             </div>
 
             <!--
               **Two sentences, because a part filter is not always what emptied the list.**
-              "Nothing here for this part" on the default "Everything" tile blames a filter
-              that is not applied — on a review whose findings are all held back, which is
-              the state it is most likely to be read in.
+              "Nothing here for this part" on "All parts" blames a filter that is not
+              applied — on a review whose findings are all held back, which is the state it
+              is most likely to be read in.
             -->
             <div
               v-if="rows.length === 0"
@@ -754,10 +780,9 @@ function coverage(data: ReviewDetail): string | null {
             </div>
 
             <!--
-              **The bench: the list on the left, the finding on the right.** Direction B of
-              the design pass. The list is sticky and scrolls in its own pane, so deciding
-              on one finding does not move the next one — which is what made the page it
-              replaces a page of scrolling rather than of deciding.
+              **The bench: the list on the left, the one finding on the right.** S4, and
+              direction B of the design pass before it. The list is sticky and scrolls in its
+              own pane, so deciding on one finding does not move the next one.
             -->
             <div
               v-else
@@ -765,10 +790,9 @@ function coverage(data: ReviewDetail): string | null {
             >
               <ul class="rows">
                 <!--
-                  **`id` is the finding's key**, which is what a link from the Solution page
-                  names in its hash and what a person quotes. The button inside carries
-                  `row-{seq}`, which is what J and K scroll to — two names for two jobs, as
-                  the detail's own two ids are.
+                  **`id` is the finding's key**, which is what `#F9` names and what a person
+                  quotes. The button inside carries `row-{seq}`, which is what J and K scroll
+                  to — two names for two jobs, as the detail's own two ids are.
                 -->
                 <li
                   v-for="finding in rows"
@@ -777,10 +801,10 @@ function coverage(data: ReviewDetail): string | null {
                   class="line"
                 >
                   <!--
-                    **A row chooses; it no longer opens.** `aria-current` rather than
+                    **A row chooses; it does not open.** `aria-current` rather than
                     `aria-expanded`: nothing unfolds here, and one of these is the one being
-                    read. The hidden label is the key alone — everything else in the row is
-                    visible text a screen reader already reads.
+                    read. S4's row: the grade, the number, the title over where it is, and how
+                    it was checked at the end.
                   -->
                   <button
                     :id="`row-${finding.seq}`"
@@ -794,32 +818,42 @@ function coverage(data: ReviewDetail): string | null {
                     <span class="rd-visually-hidden">Show {{ finding.key }}:</span>{{ ' ' }}
                     <span class="grade">
                       <SeverityTag :severity="finding.severity" />
-                      <span class="key rd-mono">{{ finding.key }}</span>
+                    </span>{{ ' ' }}
+                    <span class="key rd-mono">{{ finding.key }}</span>{{ ' ' }}
+                    <span class="said">
+                      <!--
+                        The row's title. A finding with no title shows its claim clamped to
+                        two lines — never the whole of it — and the pane beside it shows all.
+                      -->
+                      <span
+                        class="title"
+                        :class="{ 'title--clamped': finding.title == null }"
+                        :title="finding.title == null ? finding.claim : undefined"
+                      >
+                        <TickedText :text="finding.title ?? finding.claim" />
+                      </span>{{ ' ' }}
+                      <span class="where rd-mono">{{ whereOf(finding) }}</span>
                       <!--
                         A carried finding's round status. DEV-878: "A carried finding from
                         an earlier round shows its round status."
                       -->
-                      <DeskPill
-                        v-if="roundStatusLabel(finding)"
-                        :tone="isStillOpen(finding.round_status) ? 'info' : 'quiet'"
-                      >
-                        {{ roundStatusLabel(finding) }}
-                      </DeskPill>
-                    </span>{{ ' ' }}
-                    <!--
-                      The row's one line. A finding with no title shows its claim clamped to
-                      two lines — the criterion's own wording — because the claim is a
-                      paragraph and a row is a line. `title` attribute so the whole of it is
-                      still reachable with a pointer, and the pane beside it shows all of it.
-                    -->
-                    <span
-                      class="title"
-                      :class="{ 'title--clamped': finding.title == null }"
-                      :title="finding.title == null ? finding.claim : undefined"
-                    >
-                      <TickedText :text="finding.title ?? finding.claim" />
-                    </span>{{ ' ' }}
-                    <span class="where rd-mono">{{ whereOf(finding) }}</span>
+                      <template v-if="roundStatusLabel(finding)">
+                        {{ ' ' }}<DeskPill
+                          :tone="isStillOpen(finding.round_status) ? 'info' : 'quiet'"
+                        >
+                          {{ roundStatusLabel(finding) }}
+                        </DeskPill>
+                      </template>
+                    </span>
+                    <template v-if="basisOf(finding)">
+                      {{ ' ' }}<span
+                        class="basis"
+                        :class="{ 'basis--ran': finding.verification === 'reproduced' }"
+                      ><span
+                        class="dot"
+                        aria-hidden="true"
+                      />{{ basisOf(finding) }}</span>
+                    </template>
                   </button>
                 </li>
               </ul>
@@ -831,6 +865,26 @@ function coverage(data: ReviewDetail): string | null {
                 role="region"
                 :aria-labelledby="`finding-${shown.seq}`"
               >
+                <!--
+                  **S4's head of the finding**: its grade, its number and how it was checked,
+                  on one line over its title. The basis is drawn only when the record holds
+                  one — `basisOf` is null for `unknown`, and S4's *Told by author* is never
+                  drawn, because no record says it.
+                -->
+                <p class="finding-head">
+                  <SeverityTag :severity="shown.severity" />{{ ' ' }}
+                  <span class="key rd-mono">{{ shown.key }}</span>
+                  <template v-if="basisOf(shown)">
+                    {{ ' ' }}<span
+                      class="basis"
+                      :class="{ 'basis--ran': shown.verification === 'reproduced' }"
+                    ><span
+                      class="dot"
+                      aria-hidden="true"
+                    />{{ basisOf(shown) }}</span>
+                  </template>
+                </p>
+
                 <h3
                   :id="`finding-${shown.seq}`"
                   class="rd-display-card claim"
@@ -839,34 +893,47 @@ function coverage(data: ReviewDetail): string | null {
                 </h3>
 
                 <!--
-                  **The two cells the row gave up.** How it was checked and which part of
-                  the change it is in were columns of a five-column row, and a 300px list
-                  cannot carry five columns. They are read here instead — about the one
-                  finding being decided, rather than scanned down a column.
+                  **S4's facts: where it is, which part, and whether it was raised before.**
+                  Each is read off the record. S4's *Second reader* is not drawn: the record
+                  holds no second reading of a finding, and a fact it cannot derive is left
+                  out. Part is drawn only on a brief that has parts.
                 -->
-                <p class="rd-note about">
-                  <span
-                    v-if="verification(shown)"
-                    class="method"
-                    :class="{ 'method--ran': shown.verification === 'reproduced' }"
+                <dl class="facts">
+                  <div class="fact">
+                    <dt>Where</dt>
+                    <dd class="rd-mono">
+                      {{ whereOf(shown) }}
+                    </dd>
+                  </div>
+                  <div
+                    v-if="parts.length > 0"
+                    class="fact"
                   >
-                    <span
-                      class="dot"
-                      aria-hidden="true"
-                    />
-                    {{ verification(shown) }}
-                  </span>
-                  <span class="in-part">{{ partName(shown) }}</span>
-                </p>
+                    <dt>Part</dt>
+                    <dd>{{ partName(shown) }}</dd>
+                  </div>
+                  <div class="fact">
+                    <dt>Raised before</dt>
+                    <dd class="carried">
+                      {{ raisedBefore(shown) }}
+                    </dd>
+                  </div>
+                  <div
+                    v-if="isCarried(shown) && shown.round_status_checked"
+                    class="fact"
+                  >
+                    <dt>Checked</dt>
+                    <dd class="rd-recorded">
+                      {{ shown.round_status_checked }}
+                    </dd>
+                  </div>
+                </dl>
 
                 <!--
                   **Which commit this line was measured on, where that is not the head.**
                   DEV-978: the link under this finding goes to the commit the line was
-                  counted on, and the pull request may have moved past it — a carried
-                  finding keeps the earlier round's numbering, and since DEV-962 a head
-                  moves without a new round opening. The sentence names both commits,
-                  which is `withdrawnLine`'s rule: naming one of two leaves the reader to
-                  find the other. Interpolated as text, never as markup.
+                  counted on, and the pull request may have moved past it. Interpolated as
+                  text, never as markup.
                 -->
                 <p
                   v-if="measuredAt(shown, data.review)"
@@ -875,33 +942,39 @@ function coverage(data: ReviewDetail): string | null {
                   {{ measuredAt(shown, data.review) }}
                 </p>
 
-                <p
-                  v-if="isCarried(shown) && shown.continues_round"
-                  class="rd-note carried"
-                >
-                  Raised in round {{ shown.continues_round }} and carried into this one.
-                  <template v-if="shown.rounds_open">
-                    Open for {{ count(shown.rounds_open, 'round') }}.
-                  </template>
-                  <template v-if="shown.round_status_checked">
-                    <strong>Checked:</strong> {{ shown.round_status_checked }}
-                  </template>
-                </p>
-
                 <!--
-                  **The call leads the pane.** It was the last thing on an opened row, under
-                  the proof and the folded reasoning — so the decision this screen exists for
-                  was the one thing on it that had to be scrolled to. Patrick accepts and
-                  posts almost everything, and "there's too much going on" is what he gave as
-                  the reason.
+                  **The call is the pane's foot, and it stays on screen.** S4 draws the
+                  buttons and their keys at the bottom of the finding; the earlier bench put
+                  them first, because a call under a long proof had to be scrolled to — which
+                  is what Patrick gave as the reason he posted everything. Both are kept: in
+                  the document the call comes before the fields, so it is the first thing a
+                  phone or a screen reader reaches, and on a bench wide enough for two
+                  columns it is drawn last and pinned to the bottom of the window, so it is
+                  never scrolled to either.
                 -->
-                <FindingCall
-                  :finding="shown"
-                  :sections="draft.data.value?.sections ?? null"
-                  :draft-status="data.draft_status ?? null"
-                  :working="working"
-                  @decide="request => decide(shown!.seq, request)"
-                />
+                <div class="call-foot">
+                  <FindingCall
+                    :finding="shown"
+                    :sections="draft.data.value?.sections ?? null"
+                    :draft-status="data.draft_status ?? null"
+                    :working="working"
+                    @decide="request => decide(shown!.seq, request)"
+                  />
+                  <!--
+                    **Shown because they work.** The keys that decide are drawn on the
+                    buttons that decide; the keys that move have nowhere else to be drawn.
+                    `aria-hidden`, as the decision track hides its own: a screen reader
+                    reaches the rows by their own list.
+                  -->
+                  <p
+                    class="rd-note moves"
+                    aria-hidden="true"
+                  >
+                    <span class="key-cap rd-mono">J</span>
+                    <span class="key-cap rd-mono">K</span>
+                    move through the list
+                  </p>
+                </div>
 
                 <div class="columns">
                   <div class="fields">
@@ -1020,13 +1093,28 @@ function coverage(data: ReviewDetail): string | null {
                   </div>
 
                   <div class="evidence">
+                    <!--
+                      **How it was checked, over the code**, which is S4's order. The basis
+                      itself is the chip at the head of the pane.
+                    -->
+                    <div
+                      v-if="shown.proof"
+                      class="field"
+                    >
+                      <span class="rd-rubric">How it was checked</span>
+                      <pre class="proof">{{ shown.proof }}</pre>
+                      <p
+                        v-if="shown.proof_note"
+                        class="rd-note proof-note"
+                      >
+                        {{ shown.proof_note }}
+                      </p>
+                    </div>
+
                     <div class="field">
                       <!--
                         The board's own caption, **but only when there is a comment under
-                        a line to caption.** A finding with no hunk draws the sentence
-                        saying why and its comment separately below, and a heading reading
-                        "the comment as it will post" over a dashed box saying there is no
-                        code promises something two lines further down.
+                        a line to caption.**
                       -->
                       <span class="rd-rubric">
                         {{
@@ -1062,22 +1150,6 @@ function coverage(data: ReviewDetail): string | null {
                       <span class="rd-rubric">The comment as it will post</span>
                       <p class="rd-recorded">
                         {{ shown.inline_comment }}
-                      </p>
-                    </div>
-
-                    <div
-                      v-if="shown.proof"
-                      class="field"
-                    >
-                      <span class="rd-rubric">
-                        Proof<template v-if="verification(shown)"> · {{ verification(shown) }}</template>
-                      </span>
-                      <pre class="proof">{{ shown.proof }}</pre>
-                      <p
-                        v-if="shown.proof_note"
-                        class="rd-note proof-note"
-                      >
-                        {{ shown.proof_note }}
                       </p>
                     </div>
                   </div>
@@ -1192,83 +1264,16 @@ function coverage(data: ReviewDetail): string | null {
 </template>
 
 <style scoped>
-/* ------------------------------- the parts strip ------------------------------- */
-
-.strip {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-width: 0;
-}
-
-.strip h2 {
-  margin: 0;
-}
-
-.hint {
-  color: var(--rd-ink-faint);
-  font-weight: 400;
-}
-
-/*
- * `auto-fit` with `minmax(min(…), 1fr)`, which is the three step pages' own pattern: four
- * tiles across at a laptop, two at a tablet, one at a phone. The `min(…, 100%)` is what
- * keeps a tile from being wider than the page at 390px, which is the whole of the criterion
- * that the page never scrolls sideways.
- */
-.tiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
-  gap: 8px;
-  min-width: 0;
-}
-
-.tile {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  align-items: flex-start;
-  min-height: 64px;
-  padding: 10px 12px;
-  border: 1px solid var(--rd-key-line);
-  border-radius: var(--rd-radius-control);
-  background: var(--rd-surface);
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  min-width: 0;
-}
-
-.tile--picked {
-  border-color: var(--rd-ink);
-  background: var(--rd-ground);
-}
-
-.tile:hover {
-  background: var(--rd-ground);
-}
-
-.tile:focus-visible {
-  outline: 3px solid var(--rd-focus-ring);
-  outline-offset: 2px;
-}
-
-.tile-name {
-  font-weight: 600;
-  font-size: 14px;
-  /* A part's title runs long; it wraps rather than widening the grid. */
-  overflow-wrap: anywhere;
-}
-
-.tile-tally {
-  font-size: 13px;
-  color: var(--rd-ink-muted);
-}
-
 /* -------------------------------- the bench ------------------------------------ */
 
+/*
+ * **The bench sizes itself by the main column, not by the window.** Under the shell the main
+ * column at a 1,600px window is about 920px — the sidebar and the conversation take the rest
+ * — so a rule keyed on the viewport would put two columns in a space for one. Every width
+ * rule on this bench is a container query, against `findings` and against `finding` below.
+ */
 .findings {
+  container: findings / inline-size;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -1282,67 +1287,74 @@ function coverage(data: ReviewDetail): string | null {
   align-items: center;
 }
 
+/* S4's *All parts*, at the end of the line the three lists start. */
+.parts {
+  margin-left: auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.parts-select {
+  max-width: 100%;
+  width: auto;
+}
+
 .showing {
+  flex-basis: 100%;
   margin: 0;
 }
 
-/* The two keys that move, drawn as keys — the same chip the decision track draws. */
-.moves {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  margin: 0 0 0 auto;
-}
-
-.moves .key {
-  padding: 1px 6px;
-  border: 1px solid var(--rd-key-line);
-  border-radius: var(--rd-radius-key);
-  background: var(--rd-surface);
-  font-size: 11px;
-}
-
 /*
- * **The bench: a list that stays put, and the finding beside it.**
- *
- * A fixed width and not a fraction, because the list's job is to be scannable at one width
- * while the finding takes whatever is left — a fraction would hand the extra width of a
- * wide window to the list as well, and a 400px list is not more scannable than a 340px one,
- * it is just wider. Below 1,000px there is not enough for both and the two stack, the list
- * first: a phone reads the list, taps, and reads the finding under it.
+ * **The list is the wider of the two, as S4 draws it** — about 600 of the 920 at 1,600 — because
+ * its rows carry a title on one line with a chip at each end, and the finding beside it is
+ * read down. Below 720px of list column (1,440 is 748, 1,280 is 588) there is not room for both and the two stack, the
+ * list first: a phone reads the list, taps, and reads the finding under it.
  */
 .bench {
   display: grid;
-  grid-template-columns: 296px minmax(0, 1fr);
-  gap: 28px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 22px;
   align-items: start;
   min-width: 0;
 }
 
-/* Past the old shell's width there is room for the list to breathe as well. */
-@media (min-width: 1280px) {
+@container findings (min-width: 720px) {
   .bench {
-    grid-template-columns: 340px minmax(0, 1fr);
-    gap: 36px;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: 0 28px;
+  }
+
+  /*
+   * **The list is the thing that does not move.** Its rows keep their places while the
+   * finding beside it is read, and the pane scrolls itself when the review is long.
+   */
+  .rows {
+    position: sticky;
+    top: 16px;
+    max-height: calc(100vh - 96px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /*
+   * **The call is drawn last and pinned to the window's foot**, S4's place for it. In the
+   * document it comes first (see the template), so nothing reaches it later than before.
+   */
+  .call-foot {
+    order: 99;
+    position: sticky;
+    bottom: 0;
+    padding: 14px 0 12px;
+    border-top: 1px solid var(--rd-line);
+    background: var(--rd-surface);
   }
 }
 
-/*
- * **The list is the thing that does not move.** Deciding on one finding used to push the
- * next one down the page by however tall the one above had unfolded; here the rows keep
- * their places, and the pane scrolls itself when the review is long. `100vh - 96px` leaves
- * the sticky offset and a little air at the foot.
- */
 .rows {
-  position: sticky;
-  top: 16px;
   margin: 0;
   padding: 0;
   list-style: none;
-  border-top: 1px solid var(--rd-ink);
-  max-height: calc(100vh - 96px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  border-top: 1px solid var(--rd-line);
   min-width: 0;
 }
 
@@ -1352,14 +1364,14 @@ function coverage(data: ReviewDetail): string | null {
 }
 
 /*
- * A row is three short lines: what grade and which finding, its title, and where it is.
- * The five-column row this replaces needed the width of the page; this one needs 320px,
- * which is what buys the pane beside it.
+ * S4's row: the grade, the number, the title over where it is, and how it was checked at
+ * the end. Four tracks, the middle one taking what is left.
  */
 .row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  align-items: center;
   width: 100%;
   padding: 10px 12px;
   border: 0;
@@ -1393,14 +1405,20 @@ function coverage(data: ReviewDetail): string | null {
 
 .grade {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
+  min-width: 0;
+}
+
+.said {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
   min-width: 0;
 }
 
 .title {
-  font-size: 14.5px;
+  max-width: 100%;
+  font-size: var(--rd-type-body);
   line-height: 1.32;
   /*
    * Two lines in the list, whatever the finding. A title is twelve words by the house
@@ -1416,10 +1434,8 @@ function coverage(data: ReviewDetail): string | null {
 
 /*
  * **A claim standing in for a title is clamped to exactly two lines**, which is the
- * criterion's own wording: "never the whole of it". Every title in this list is clamped to
- * two now, so this class carries no declaration of its own — it is kept because the
- * criterion is about the claim in particular, and a test reads it to say which rows are
- * showing a claim rather than a title.
+ * criterion's own wording: "never the whole of it". A test reads this class to say which
+ * rows are showing a claim rather than a title.
  */
 .title--clamped {
   font-style: normal;
@@ -1433,9 +1449,10 @@ function coverage(data: ReviewDetail): string | null {
 /*
  * The path, on one line and cut at the end rather than wrapped: a row that grows a line
  * for a deep path is a row whose height depends on where the code lives. The whole of it
- * is in the pane beside the list, over the code itself.
+ * is in the pane beside the list.
  */
 .where {
+  max-width: 100%;
   font-size: 12px;
   color: var(--rd-ink-muted);
   overflow: hidden;
@@ -1445,45 +1462,84 @@ function coverage(data: ReviewDetail): string | null {
 }
 
 /*
- * How it was checked: a filled dot for reproduced, a hollow one for read. Two shapes, so the
- * two are told apart without colour — and nothing at all for `unknown`, because a finding
- * that said nothing about its method has not said it was read.
+ * **On a narrow list a row is two lines**: the grade, the number and how it was checked over
+ * the title and where it is, which then has the row's whole width. Four tracks at a phone's
+ * width left a title four words wide.
  */
-.method {
+@container findings (max-width: 559px) {
+  .row {
+    grid-template-columns: auto auto minmax(0, 1fr);
+    grid-template-areas:
+      'grade key basis'
+      'said said said';
+  }
+
+  .grade {
+    grid-area: grade;
+  }
+
+  .row > .key {
+    grid-area: key;
+  }
+
+  .said {
+    grid-area: said;
+  }
+
+  .row > .basis {
+    grid-area: basis;
+    justify-self: end;
+  }
+}
+
+/*
+ * **How it was checked, as S4's chip**: a filled dot for Ran, a hollow one for Read. Two
+ * shapes, so the two are told apart without colour.
+ */
+.basis {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
+  padding: 2px 9px;
+  border: 1px solid var(--rd-line);
+  border-radius: 999px;
+  color: var(--rd-ink-muted);
+  font-size: 12px;
   white-space: nowrap;
 }
 
-.method--ran {
+.basis--ran {
   color: var(--rd-accent-dark);
 }
 
 .dot {
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
   border: 2px solid currentcolor;
   border-radius: 50%;
   box-sizing: border-box;
 }
 
-.method--ran .dot {
+.basis--ran .dot {
   background: currentcolor;
-}
-
-.in-part {
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
 
 /* ---------------------------- the finding on the bench ------------------------- */
 
 .detail {
+  container: finding / inline-size;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
   min-width: 0;
+}
+
+.finding-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  margin: 0;
 }
 
 .claim {
@@ -1491,45 +1547,75 @@ function coverage(data: ReviewDetail): string | null {
   max-width: 820px;
 }
 
-/*
- * **The two cells the row gave up**, on one line under the finding's name: how it was
- * checked, and which part of the change it sits in.
- */
-.about {
+/* S4's facts: a label on the left, its value on the right, a rule under each. */
+.facts {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 14px;
-  align-items: center;
-  margin: -8px 0 0;
+  flex-direction: column;
+  margin: 0;
+  min-width: 0;
+}
+
+.fact {
+  display: grid;
+  /* The label as wide as its words, so a path is not broken to make room for "Where". */
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rd-line);
+  min-width: 0;
+}
+
+.fact dt {
+  color: var(--rd-ink-muted);
+}
+
+.fact dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.call-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
 }
 
 /*
- * **The call leads the pane now**, so the rule that divided it from the fields above it
- * has nothing above it to divide from. Reached through `:deep` rather than by giving the
- * component a prop: where a thing sits is the page's business, and a border is not a
- * decision `FindingCall` should be asked to take a flag for.
+ * **The call has no rule of its own above it here**: the foot draws one when it is pinned.
+ * Reached through `:deep` rather than by giving the component a prop: where a thing sits is
+ * the page's business.
  */
-.detail :deep(.call) {
+.call-foot :deep(.call) {
   padding-top: 0;
   border-top: 0;
 }
 
+.moves {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 0;
+}
+
+/* The two keys that move, drawn as keys — the same chip the decision track draws. */
+.key-cap {
+  padding: 1px 6px;
+  border: 1px solid var(--rd-key-line);
+  border-radius: var(--rd-radius-key);
+  background: var(--rd-surface);
+  font-size: 11px;
+}
+
 /*
- * The same quiet weight as the carried note above it, and no colour: it is a fact about
- * where the link points, not a problem the developer has to deal with.
+ * The same quiet weight as the facts above it, and no colour: it is a fact about where the
+ * link points, not a problem the developer has to deal with.
  */
 .measured {
-  margin: 0 0 12px;
-  max-width: var(--rd-measure);
-}
-
-.carried {
   margin: 0;
-  max-width: var(--rd-measure-recorded);
-}
-
-.carried strong {
-  font-weight: 600;
+  max-width: var(--rd-measure);
 }
 
 /*
@@ -1537,7 +1623,8 @@ function coverage(data: ReviewDetail): string | null {
  * and What I'd do read down the left, and the code they are about is level with them.
  *
  * `minmax(0, …)` on both, and the second a little wider, because the thing in it is a code
- * block with a gutter. Below 1,180px the pane is too narrow to put a hunk beside a
+ * block with a gutter. Below 760px **of the finding's own pane** — which is every width
+ * under the shell with the conversation beside it — the pane is too narrow to put a hunk beside a
  * paragraph without making both unreadable, and the two stack — the fields first, since
  * they are what the decision is taken on.
  *
@@ -1558,7 +1645,7 @@ function coverage(data: ReviewDetail): string | null {
   min-width: 0;
 }
 
-@media (min-width: 1180px) {
+@container finding (min-width: 760px) {
   .columns {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
     gap: 24px 32px;
@@ -1773,40 +1860,7 @@ function coverage(data: ReviewDetail): string | null {
   font-size: var(--rd-type-title);
 }
 
-/*
- * **Under 1,000px the bench stacks**, which is the three step pages' own answer to the same
- * problem: a board has one width and an app has two. The list comes first and keeps its
- * rows; the finding is read under it. Nothing sticks — a pinned list at a phone's width is
- * a list sitting on top of the thing it was used to choose.
- */
-@media (max-width: 999px) {
-  .bench {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 22px;
-  }
-
-  .rows {
-    position: static;
-    max-height: none;
-    overflow-y: visible;
-  }
-}
-
-@media (max-width: 760px) {
-  .columns {
-    gap: 22px;
-  }
-
-  .moves {
-    margin-left: 0;
-  }
-}
-
 @media (max-width: 560px) {
-  .tiles {
-    gap: 6px;
-  }
-
   .foot {
     padding: 18px 16px;
   }

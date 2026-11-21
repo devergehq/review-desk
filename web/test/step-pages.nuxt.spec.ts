@@ -1869,7 +1869,7 @@ describe('Solution', () => {
     expect(blocker.text()).not.toContain('ColumnPolicy::for')
 
     /* **The whole line reaches that finding**, not the page it is on. */
-    expect(blocker.attributes('href')).toBe(`/reviews/${STRUCTURED}/findings#F9`)
+    expect(blocker.attributes('href')).toBe(`/reviews/${STRUCTURED}/findings?finding=F9`)
   })
 
   it('says where a held-back finding stands on its own line', async () => {
@@ -2084,7 +2084,7 @@ describe('Solution', () => {
     expect(loose).toHaveLength(2)
     expect(loose.map(one => one.find('.key').text())).toEqual(['F14', 'F15'])
     /* And each one reaches that finding, the same way a row's own lines do. */
-    expect(loose[1]!.attributes('href')).toBe(`/reviews/${STRUCTURED}/findings#F15`)
+    expect(loose[1]!.attributes('href')).toBe(`/reviews/${STRUCTURED}/findings?finding=F15`)
   })
 
   it('agrees with itself about one finding in no part', async () => {

@@ -31,8 +31,6 @@ const rows = computed(() => [...criteria]
     where: criterionWhere(criterion),
   })))
 
-const findings = computed(() => tabPath(reviewId, 'findings'))
-
 const meta = computed(() => {
   if (!rows.value.length) return null
   const met = rows.value.filter(row => row.observed.mark === 'met').length
@@ -100,7 +98,7 @@ const COLUMNS = ['Criterion', 'Observed', 'Where']
             />
             <NuxtLink
               v-if="row.observed.finding"
-              :to="`${findings}#${row.observed.finding}`"
+              :to="findingPath(reviewId, row.observed.finding)"
             >{{ row.observed.says }}</NuxtLink>
             <template v-else>
               {{ row.observed.says }}

@@ -78,6 +78,34 @@ export const LIST_LABELS: Record<FindingList, string> = {
 }
 
 /**
+ * **How many findings are in each of the three lists**, over the whole review.
+ *
+ * The one count of the lists. The Findings page's three tabs read it, and so does the review
+ * header's Findings tab count (`findingsCount` in `reviewTabs.ts`), which is the *To post*
+ * figure as S4 draws it: "Findings 12" over "To post · 12". Two counts of one grouping would
+ * be the tab and the list disagreeing the first time the grouping changed.
+ */
+export function listCounts(findings: readonly Finding[]): Record<FindingList, number> {
+  const counts: Record<FindingList, number> = { post: 0, ticket: 0, aside: 0 }
+  for (const finding of findings) counts[listOf(finding)] += 1
+  return counts
+}
+
+/**
+ * How a finding was checked, as the chip S4 draws on its row and over its detail: **Ran**
+ * for a finding reproduced by running something, **Read** for one read and not run.
+ *
+ * `null` for `unknown`, and so no chip: a finding that said nothing about its method has not
+ * said it was read. S4 also draws *Told by author*; the record holds no such basis, so it is
+ * never drawn rather than guessed at.
+ */
+export function basisOf(finding: Finding): 'Ran' | 'Read' | null {
+  if (finding.verification === 'reproduced') return 'Ran'
+  if (finding.verification === 'read_not_run') return 'Read'
+  return null
+}
+
+/**
  * The headline, from the counts of what is going to be posted.
  *
  * "No blockers. 4 should change, 1 question, 6 small points." — board A8's own sentence,
@@ -428,10 +456,9 @@ export function roundStatusLabel(finding: Finding): string | null {
 
 /** The tally at the foot: "11 to post, 2 for a ticket, 1 set aside". */
 export function tally(findings: Finding[]): string {
-  const of = (list: FindingList) => findings.filter(finding => listOf(finding) === list).length
-  return (
-    `${of('post')} to post, ${of('ticket')} for a ticket, ${of('aside')} set aside`
-  )
+  /* `listCounts`, the one count of the lists, so the foot cannot disagree with the tabs. */
+  const of = listCounts(findings)
+  return `${of.post} to post, ${of.ticket} for a ticket, ${of.aside} set aside`
 }
 
 /** The severity counts of a list of findings, in the contract's own shape. */

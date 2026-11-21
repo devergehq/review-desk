@@ -208,7 +208,16 @@ hunk could take the rest, which is backwards at the width where it matters: 70ch
 about 700px, so at a 1,440px window the fields took 699 of the 948 going, the code was left
 247, and the page scrolled sideways by 18px. The columns divide what there is in fractions;
 the paragraphs cap themselves. Enforced by `.columns` in
-`web/app/pages/reviews/[id]/code-review.vue`.
+`web/app/pages/reviews/[id]/findings.vue`.
+
+**Under the shell, a workbench measures its own column, not the window** (DEV-1328). At a
+1,600px window the main column beside the conversation is about 920px, so a rule keyed on the
+viewport would put two columns into room for one. Findings' bench and its `.columns` are
+container queries: the list and the finding sit side by side from 720px of their container (1,440 is 748; 1,280 stacks), and
+the fields sit beside the hunk only from 760px of the finding's own pane — which, with the
+conversation present, is never — so the hunk always has the pane's full width.
+`web/e2e/findings.spec.ts` asserts no sideways scroll on every finding at 1,600, with 16px to
+spare.
 
 ## A decision is one keystroke
 
@@ -366,6 +375,28 @@ old Alternatives and Solution addresses land, and Overview links to `what-was-ch
 table, are not drawn: the record holds no assumptions and a criterion carries only what was
 observed. *What was built* is not on S3 and stays, because nothing is removed. The rail is
 drawn when the case's own container is 820px wide or more, not by the window.
+
+## Findings is the list beside the one selected finding
+
+**S4, the Findings tab** (DEV-1328), is the code review bench inside the shell. The list is
+grouped by its three tabs, *To post*, *For a ticket* and *Set aside*, with *All parts* beside
+them. All parts is the old strip of part tiles folded into one control, with every tile still
+there as an option and its tally. Each row has the grade, the number, the title over where it is,
+and how it was checked. The finding beside the list has its grade, number and basis, its
+title, then *Where*, *Part* and *Raised before*. Under those are the fields, *How it was
+checked* over the code, and the folded reasoning. The call and its keys are the pane's foot,
+pinned to the window when the bench has two columns. In the document the call still comes
+first, so on a phone or to a screen reader it is reached before the proof, as it was.
+
+- **A basis is drawn only when the record holds one.** `verification` gives *Ran* or *Read*;
+  `unknown` draws nothing. S4's *Told by author* and *Second reader* are not drawn: no record
+  holds either. `basisOf` in `web/app/utils/findings.ts`.
+- **One finding has one address: `?finding=F9`**, `findingPath` in
+  `web/app/utils/reviewTabs.ts`. The header's *Answer F3*, Overview's *Needs your eye*, the
+  case's finding lines and Replies all link with it. `#F9` still works, and so does
+  `…/code-review#F9` through its redirect. `findingAsked` reads both forms.
+- **The tab's count is the *To post* list**, as S4 counts it, read off `listCounts`. The
+  page's three tabs count with the same function, so the tab and the list cannot disagree.
 
 ## If you are a session writing the content
 

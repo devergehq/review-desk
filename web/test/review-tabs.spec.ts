@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest'
 
 import {
   REVIEW_TABS,
+  findingAsked,
+  findingPath,
   findingsCount,
   openWait,
   primaryAction,
   retiredRouteTarget,
   tabPath,
 } from '../app/utils/reviewTabs'
+import { listCounts } from '../app/utils/findings'
 import { repliesToAnswer } from '../app/utils/outcomes'
 import type { ReviewState } from '../app/utils/stateWord'
 import type { Outcome } from '../app/types/desk'
@@ -35,9 +38,36 @@ describe('the five tabs', () => {
     ])
   })
 
-  it('count the findings, and draw no count before there are any', () => {
-    expect(findingsCount({ findings: [{}, {}, {}] as never })).toBe(3)
+  /*
+   * **The tab counts the *To post* list, as S4 draws it** — "Findings 12" over "To post · 12"
+   * — through `listCounts`, the count the Findings page's own three lists read. DEV-1328.
+   */
+  it('count the findings to post, and draw no count before there are any', () => {
+    const findings = [
+      { disposition: 'in_draft' }, { disposition: 'in_draft' },
+      { disposition: 'held_back' }, { disposition: 'suppressed' },
+    ] as never
+    expect(findingsCount({ findings })).toBe(2)
+    expect(findingsCount({ findings })).toBe(listCounts(findings).post)
+    expect(findingsCount({ findings: [{ disposition: 'held_back' }] as never }), 'all ticketed').toBe(0)
     expect(findingsCount({ findings: [] })).toBeNull()
+  })
+})
+
+describe('the address of one finding', () => {
+  it('is the Findings tab with the finding asked for', () => {
+    expect(findingPath(7, 'F9')).toBe('/reviews/7/findings?finding=F9')
+  })
+
+  it('reads the query first, then the hash, and nothing else', () => {
+    expect(findingAsked({ finding: 'F9' }, '')).toBe(9)
+    expect(findingAsked({ finding: 'F9' }, '#F3')).toBe(9)
+    expect(findingAsked({}, '#F3')).toBe(3)
+    expect(findingAsked({ finding: ['F4', 'F5'] }, '')).toBe(4)
+    expect(findingAsked({ finding: 'nine' }, '#F3'), 'a bad query falls back to the hash').toBe(3)
+    for (const hash of ['', '#', '#F', '#F0', '#f9', '#F9x', '#what-was-built']) {
+      expect(findingAsked({}, hash), hash).toBeNull()
+    }
   })
 })
 
@@ -93,10 +123,15 @@ describe('the one next action', () => {
       .toEqual({ label: 'Sign off and post', to: '/reviews/5/draft' })
   })
 
+  /*
+   * **Replies, not the finding on Findings** (DEV-1328's self-review): a reply comes in on a
+   * posted review, and Findings refuses every decision on one.
+   */
   it('names the one reply to answer, or counts them, and goes to Replies', () => {
     expect(primaryAction(5, 'replies_in', ['F3']))
       .toEqual({ label: 'Answer F3', to: '/reviews/5/replies' })
-    expect(primaryAction(5, 'replies_in', ['F3', 'F9'])?.label).toBe('Answer 2 replies')
+    expect(primaryAction(5, 'replies_in', ['F3', 'F9']))
+      .toEqual({ label: 'Answer 2 replies', to: '/reviews/5/replies' })
   })
 
   it('is nothing at all for a review with nothing for the developer to do', () => {
