@@ -64,7 +64,8 @@ function overviewOf(data: ReviewDetail) {
     questions,
     written: questions.filter(question => question.mark === 'written').length,
     cameBack: groups ? whatCameBack(data, groups) : [],
-    eye: needsYourEye(data, state),
+    eye: needsYourEye(data),
+    graded: findingsGraded(data),
   }
 }
 
@@ -302,7 +303,7 @@ const BASIS = BASIS_WORDS
                 id="eye-heading"
                 class="rd-rubric"
               >
-                {{ view.state === 'being_written' ? 'Early · not graded yet' : 'Needs your eye' }}
+                {{ view.graded ? 'Needs your eye' : 'Early · not graded yet' }}
               </h2>
               <NuxtLink
                 v-for="card in view.eye"

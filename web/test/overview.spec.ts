@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { loadSource } from '../app/data/sample'
 import { BASIS_WORDS, repliesToAnswer, sinceYouPosted } from '../app/utils/outcomes'
 import {
+  findingsGraded,
   fiveQuestions,
   groupsOf,
   needsYourEye,
@@ -121,7 +122,7 @@ describe('the bottom line', () => {
 
 describe('needs your eye', () => {
   it('draws at most three, most serious first, with their severity once graded', () => {
-    const cards = needsYourEye(fixture(READY), 'ready')
+    const cards = needsYourEye(fixture(READY))
     expect(cards.length).toBeLessThanOrEqual(3)
     expect(cards.every(card => card.severity != null)).toBe(true)
     expect(cards[0]!.severity).toBe('blocker')
@@ -131,9 +132,25 @@ describe('needs your eye', () => {
   it('draws no severity while the review is being written', () => {
     const detail = fixture(WRITING)
     detail.findings = fixture(READY).findings
-    const cards = needsYourEye(detail, 'being_written')
+    const cards = needsYourEye(detail)
     expect(cards.length).toBeGreaterThan(0)
     expect(cards.every(card => card.severity === null)).toBe(true)
+  })
+
+  /*
+   * Self-review F3: a review between steps — code review done, no draft session yet — draws
+   * the being-written Overview, and its findings are graded all the same.
+   */
+  it('grades by the code review step, not by the Overview state', () => {
+    const detail = fixture(READY)
+    detail.draft_status = null
+    detail.layers = detail.layers.map(layer => layer.name === 'draft' ? { ...layer, state: 'pending' } : layer)
+    expect(overviewState(detail)).toBe('being_written')
+    expect(findingsGraded(detail)).toBe(true)
+    expect(needsYourEye(detail).every(card => card.severity != null)).toBe(true)
+    const findings = readyBottomLine(detail, 'being_written').cells.find(cell => cell.label.startsWith('finding'))!
+    expect(findings.label).toBe('findings')
+    expect(findings.sub).not.toBe('not graded yet')
   })
 })
 
@@ -148,6 +165,15 @@ describe('the five questions', () => {
     expect(questions[2]!.link!.to).toBe('/reviews/41/findings')
     expect(questions[3]!.link!.to).toBe('/reviews/41/draft')
     expect(questions.every(one => one.mark === 'written')).toBe(true)
+  })
+
+  /* Self-review N1: a finished step whose field the brief lacks is not "Not started". */
+  it('says the brief records no answer when a finished step wrote none', () => {
+    const detail = fixture(READY)
+    detail.brief = { ...detail.brief!, flow_after_caption: null, approach_verdict: null, options: [] }
+    const [does, right] = fiveQuestions(detail)
+    expect(does!.answer).toBe('The brief records no answer to this.')
+    expect(right!.answer).toBe('The brief records no answer to this.')
   })
 
   it('says Writing now or Not started for what the brief has not reached', () => {
@@ -220,6 +246,35 @@ describe('since you posted: the outcome groups', () => {
       expect(whatCameBack(detail, no).some(row => row.title.startsWith('New code'))).toBe(false)
       expect(no.commits, 'the commit is still counted').toEqual(['3c1e2a9'])
     }
+  })
+
+  /* Self-review F1: the harvester's newest comparison is the current answer. */
+  it('reads the newest comparison per finding, so a later "not moved" wins', () => {
+    const compared = (lines: boolean, at: string, commit: string) => outcome({
+      finding_seq: 2,
+      kind: 'code_changed_after',
+      actor: 'harvester',
+      occurred_at: at,
+      detail: JSON.stringify({ commit, file: 'a.php', line: 41, lines_changed: lines }),
+    })
+    const groups = sinceYouPosted(posted, [
+      compared(true, '2026-11-20T10:00:00Z', '1111111aaa'),
+      compared(false, '2026-11-20T11:00:00Z', '2222222bbb'),
+    ])
+    expect(groups.newCode).toEqual([])
+    expect(groups.commits).toEqual(['2222222'])
+  })
+
+  /* Self-review F2: the harvester compares every finding with a file, posted or not. */
+  it('draws New code only for the findings the draft posted', () => {
+    const groups = sinceYouPosted(posted, [outcome({
+      finding_seq: 7,
+      kind: 'code_changed_after',
+      actor: 'harvester',
+      detail: JSON.stringify({ commit: '7777777ccc', file: 'b.php', line: 9, lines_changed: true }),
+    })])
+    expect(groups.newCode).toEqual([])
+    expect(groups.commits).toEqual([])
   })
 
   it('counts no commits when no comparison named one', () => {

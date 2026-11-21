@@ -158,6 +158,18 @@ function postedFindings(detail: OverviewSource): Finding[] {
 }
 
 /**
+ * **Whether the findings are graded: the code review step has finished.**
+ *
+ * Read off the step, never off the Overview's state. A review between steps — code review
+ * done, no draft session yet — draws the being-written Overview, and its findings are
+ * graded all the same; saying *not graded yet* there is a claim the record contradicts.
+ */
+export function findingsGraded(detail: Pick<OverviewSource, 'layers'>): boolean {
+  const state = detail.layers.find(layer => layer.name === 'code_review')?.state
+  return state === 'done' || state === 'waiting_on_you' || state === 'skipped'
+}
+
+/**
  * The bottom line of a review that has not had replies: the brief's headline and its
  * derived facts ([`bottomLine`], DEV-1325's), and the findings as one figure.
  *
@@ -167,6 +179,7 @@ function postedFindings(detail: OverviewSource): Finding[] {
 export function readyBottomLine(detail: OverviewSource, state: OverviewState): OverviewBottomLine {
   const line = bottomLine(detail.brief)
   const writing = state === 'being_written'
+  const graded = findingsGraded(detail)
 
   const cells: BottomCell[] = (line?.facts ?? []).map(fact => ({ figure: fact.figure, label: fact.label, sub: null }))
 
@@ -174,10 +187,10 @@ export function readyBottomLine(detail: OverviewSource, state: OverviewState): O
     const tally = severityTally(detail.finding_severities)
     cells.push({
       figure: String(detail.findings.length),
-      label: writing
+      label: writing && !graded
         ? (detail.findings.length === 1 ? 'finding so far' : 'findings so far')
         : (detail.findings.length === 1 ? 'finding' : 'findings'),
-      sub: writing ? 'not graded yet' : (tally || null),
+      sub: graded ? (tally || null) : 'not graded yet',
     })
   }
 
@@ -243,7 +256,9 @@ export function sinceBottomLine(detail: OverviewSource, groups: SinceYouPosted):
     {
       figure: String(groups.noReply.length),
       label: 'no reply yet',
-      sub: blockers.length ? `including ${blockers.length === 1 ? 'blocker' : 'blockers'} ${keys(blockers)}` : null,
+      sub: blockers.length
+        ? basisOf('not_rechecked', `including ${blockers.length === 1 ? 'blocker' : 'blockers'} ${keys(blockers)}`)
+        : BASIS_WORDS.not_rechecked,
     },
   ]
   /*
@@ -254,7 +269,12 @@ export function sinceBottomLine(detail: OverviewSource, groups: SinceYouPosted):
     cells.push({
       figure: String(groups.commits.length),
       label: groups.commits.length === 1 ? 'new commit seen' : 'new commits seen',
-      sub: basisOf('read', groups.newCode.length ? `under ${keys(groups.newCode)}` : `since ${detail.review.head_sha.slice(0, 7)}`),
+      /*
+       * **No baseline named.** The harvester compares against each thread's own posted
+       * commit, which this response does not carry, so "since {sha}" would name the wrong
+       * one; and a count of commits a comparison named is not a count of pushes.
+       */
+      sub: basisOf('read', groups.newCode.length ? `under ${keys(groups.newCode)}` : 'no posted finding\'s lines moved'),
     })
   }
 
@@ -297,10 +317,16 @@ export function fiveQuestions(detail: OverviewSource): Question[] {
     const one = stateOf(name)
     return one === 'done' || one === 'waiting_on_you'
   }
-  const pending = (steps: ReviewLayerName[], notStarted: string): { answer: string, mark: QuestionMark } =>
-    steps.some(name => stateOf(name) === 'running')
-      ? { answer: 'Writing now.', mark: 'writing' }
-      : { answer: notStarted, mark: 'not_started' }
+  /*
+   * **Three answers for an answer the record lacks**: the step behind it is running, it has
+   * finished and wrote no such field, or it has not started. "Not started" over a step that
+   * finished would be a claim about the step the record contradicts.
+   */
+  const pending = (steps: ReviewLayerName[], notStarted: string): { answer: string, mark: QuestionMark } => {
+    if (steps.some(name => stateOf(name) === 'running')) return { answer: 'Writing now.', mark: 'writing' }
+    if (steps.every(finished)) return { answer: 'The brief records no answer to this.', mark: 'written' }
+    return { answer: notStarted, mark: 'not_started' }
+  }
 
   const understanding = tabPath(id, 'understanding')
 
@@ -308,7 +334,7 @@ export function fiveQuestions(detail: OverviewSource): Question[] {
   const right = brief?.approach_verdict?.trim() || null
 
   const posted = mostSeriousFirst(postedFindings(detail))
-  const graded = finished('code_review')
+  const graded = findingsGraded(detail)
   const worst = posted[0] ?? null
 
   const draftWritten = finished('draft') || detail.draft_status === 'posted'
@@ -378,7 +404,7 @@ function postedTally(findings: readonly Finding[]) {
 export interface EyeCard {
   key: string
   claim: string
-  /** `null` while the review is being written: a finding is not graded until its step ends. */
+  /** `null` until the code review step has finished: a finding is not graded before then. */
   severity: Severity | null
   /** Where the finding points, when it points somewhere. */
   where: string | null
@@ -388,13 +414,14 @@ export interface EyeCard {
 /**
  * **Up to three findings**, most serious first, from the ones the draft carries.
  *
- * While the review is being written, **no severity**: the code review step grades findings
- * as it finishes, and a severity drawn before then is a guess the step may overturn (S12's
- * *Early · not graded yet*). Every card links to the Findings tab; DEV-1328 adds
+ * Until the code review step has finished, **no severity**: the step grades findings as it
+ * finishes, and a severity drawn before then is a guess the step may overturn (S12's
+ * *Early · not graded yet*). Read off the step, not the Overview's state — see
+ * [`findingsGraded`]. Every card links to the Findings tab; DEV-1328 adds
  * `?finding=` and repoints these at the finding itself.
  */
-export function needsYourEye(detail: OverviewSource, state: OverviewState): EyeCard[] {
-  const graded = state !== 'being_written'
+export function needsYourEye(detail: OverviewSource): EyeCard[] {
+  const graded = findingsGraded(detail)
   const pool = graded ? postedFindings(detail) : detail.findings
   return mostSeriousFirst(pool).slice(0, 3).map(finding => ({
     key: finding.key,

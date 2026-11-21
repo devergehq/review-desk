@@ -813,7 +813,11 @@ export interface SinceYouPosted {
    * F6" is a positive claim and only the comparison makes it.
    */
   newCode: GroupedFinding[]
-  /** Every commit a code comparison named, at seven characters, in the order first seen. */
+  /**
+   * The commits the newest comparison of each posted finding named, at seven characters.
+   * **Not the number of commits pushed**: a comparison names the newest commit that touched
+   * the finding's file, so five pushes to one file are one commit here.
+   */
   commits: string[]
 }
 
@@ -877,14 +881,26 @@ export function sinceYouPosted(
     }
   }
 
-  const moved = new Set<number>()
+  /*
+   * **The newest comparison per finding, and only for the findings the draft posted.**
+   *
+   * The harvester compares the posted commit with the pull request's head each time it
+   * reads, and records each new head's comparison as an outcome of its own — so the newest
+   * one is the current answer, and an earlier `lines_changed: true` that a later `false`
+   * overturns is no longer true. It also compares every finding with a file, cut and held
+   * back ones included; a finding the author never saw has nothing to re-anchor.
+   */
+  const postedSeqs = new Set(posted.map(finding => finding.seq))
+  const latest = new Map<number, Outcome>()
   for (const outcome of ordered) {
-    if (outcome.kind !== 'code_changed_after') continue
+    if (outcome.kind !== 'code_changed_after' || !postedSeqs.has(outcome.finding_seq)) continue
+    latest.set(outcome.finding_seq, outcome)
+  }
+  for (const outcome of latest.values()) {
     const held = facts(outcome.detail)
     const commit = shortCommit(held?.commit)
     if (commit != null && !groups.commits.includes(commit)) groups.commits.push(commit)
-    if (held?.lines_changed !== true || moved.has(outcome.finding_seq)) continue
-    moved.add(outcome.finding_seq)
+    if (held?.lines_changed !== true) continue
     groups.newCode.push({ seq: outcome.finding_seq, key: outcome.finding_key, basis: 'read', outcome })
   }
   groups.newCode.sort((one, two) => one.seq - two.seq)
