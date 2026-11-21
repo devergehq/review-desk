@@ -1,6 +1,6 @@
 //! What the harvester needs from GitHub, and nothing more.
 //!
-//! The trait is deliberately narrow: four reads, no writes. **Nothing posts to GitHub
+//! The trait is deliberately narrow: five reads, no writes. **Nothing posts to GitHub
 //! from here** — the harvester's whole job is to read back what a review already did. The
 //! one write in Review Desk, `review-desk post` (DEV-1347), is [`crate::gh::Gh::post_review`],
 //! and is deliberately not on this trait.

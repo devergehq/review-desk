@@ -1973,7 +1973,7 @@ all absent rather than measured, and the dashboard has to render the absence.
 
 `POST /reviews` reads a pull request's head commit when the caller omits one, which is
 what the Inbox screen needs: it has only a pasted link. The read goes through
-`crates/harvest`'s `GitHub` trait — four read-only methods, run through `gh`, so the
+`crates/harvest`'s `GitHub` trait — five read-only methods, run through `gh`, so the
 developer's existing login is used and Review Desk handles no tokens. The server writes
 nothing to GitHub. The one write is the `review-desk post` command, not this server.
 
